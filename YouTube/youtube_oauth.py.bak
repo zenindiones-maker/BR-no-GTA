@@ -1,0 +1,57 @@
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+import json
+import os
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+print("\n=== GTA / BR / YouTube ===\n")
+
+CREDENTIALS_FILE = "credentials/client_secret.json"
+TOKEN_FILE = "tokens/youtube_token.json"
+
+if not os.path.exists(CREDENTIALS_FILE):
+    print("ERRO: arquivo de credenciais não encontrado:")
+    print(CREDENTIALS_FILE)
+    raise SystemExit(1)
+
+with open(CREDENTIALS_FILE, "r") as f:
+    credentials = json.load(f)
+
+client = credentials.get("installed", {})
+
+print("Client ID:", client.get("client_id"))
+print("Client Secret: OK")
+
+os.makedirs("tokens", exist_ok=True)
+
+flow = InstalledAppFlow.from_client_config(credentials, SCOPES)
+
+print("\nAbrindo a autorização do Google...\n")
+print("Se aparecer um link, abra-o no navegador e autorize o BR no GTA.\n")
+
+creds = flow.run_local_server(
+    host="127.0.0.1",
+    port=0,
+    open_browser=False
+)
+
+with open(TOKEN_FILE, "w") as f:
+    f.write(creds.to_json())
+
+youtube = build("youtube", "v3", credentials=creds)
+
+response = youtube.channels().list(
+    part="snippet",
+    mine=True
+).execute()
+
+if response.get("items"):
+    channel = response["items"][0]["snippet"]
+
+    print("\n================================")
+    print("YOUTUBE CONECTADO COM SUCESSO!")
+    print("Canal:", channel["title"])
+    print("================================\n")
+else:
+    print("\nOAuth concluído, mas nenhum canal foi encontrado.")
