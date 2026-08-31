@@ -15,8 +15,15 @@ __pycache__/
 
 # Runtime
 logs/*
+!logs/.gitkeep
+
 output/*
+!output/.gitkeep
+
 data/*
+!data/.gitkeep
+!data/*/.gitkeep
+
 tmp/
 cache/
 
@@ -27,3 +34,11 @@ cache/
 
 # Termux / local
 .DS_Store
+
+# Keep structural data directories
+!data/database/
+!data/database/.gitkeep
+!data/processed/
+!data/processed/.gitkeep
+!data/raw/
+!data/raw/.gitkeep
