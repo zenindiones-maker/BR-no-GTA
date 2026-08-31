@@ -1,0 +1,29 @@
+# Python
+.venv/
+.venv.*/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+**/credentials/
+**/tokens/
+**/*.json
+
+# Runtime
+logs/*
+output/*
+data/*
+tmp/
+cache/
+
+# Backups
+*.bak
+*.backup
+*.old
+
+# Termux / local
+.DS_Store
