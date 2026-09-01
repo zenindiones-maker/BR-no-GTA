@@ -12,6 +12,7 @@ def insert_project(name: str) -> int:
             "INSERT INTO projects (name) VALUES (?)",
             (name,),
         )
+
         connection.commit()
         return int(cursor.lastrowid)
     finally:
@@ -34,8 +35,55 @@ def insert_source(
             """,
             (name, url, source_type),
         )
+
         connection.commit()
         return int(cursor.lastrowid)
+    finally:
+        connection.close()
+
+
+def get_project(project_id: int) -> dict[str, Any] | None:
+    """Retorna um projeto pelo ID."""
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                name,
+                created_at
+            FROM projects
+            WHERE id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        connection.close()
+
+
+def get_source(source_id: int) -> dict[str, Any] | None:
+    """Retorna uma fonte pelo ID."""
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                name,
+                url,
+                source_type,
+                created_at
+            FROM sources
+            WHERE id = ?
+            """,
+            (source_id,),
+        ).fetchone()
+
+        return dict(row) if row else None
     finally:
         connection.close()
 
@@ -47,7 +95,10 @@ def list_projects() -> list[dict[str, Any]]:
     try:
         rows = connection.execute(
             """
-            SELECT id, name, created_at
+            SELECT
+                id,
+                name,
+                created_at
             FROM projects
             ORDER BY id
             """
@@ -65,7 +116,12 @@ def list_sources() -> list[dict[str, Any]]:
     try:
         rows = connection.execute(
             """
-            SELECT id, name, url, source_type, created_at
+            SELECT
+                id,
+                name,
+                url,
+                source_type,
+                created_at
             FROM sources
             ORDER BY id
             """
