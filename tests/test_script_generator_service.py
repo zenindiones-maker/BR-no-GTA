@@ -112,3 +112,77 @@ def test_development_has_editorial_sections():
         assert "body" in section
         assert section["heading"]
         assert section["body"]
+
+
+def test_generate_and_save_script_persists_draft():
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - geração persistida",
+        description="Uma pauta aprovada para gerar um roteiro.",
+        status="approved",
+        score=9.0,
+    )
+
+    from app.services.script_generator_service import (
+        generate_and_save_script,
+    )
+    from app.database.scripts_repository import get_latest_script_by_idea
+
+    script_id = generate_and_save_script(idea_id)
+
+    script = get_latest_script_by_idea(idea_id)
+
+    assert script is not None
+    assert script["id"] == script_id
+    assert script["idea_id"] == idea_id
+    assert script["status"] == "draft"
+    assert script["version"] == 1
+    assert script["title"] == "TESTE - geração persistida"
+    assert script["content"]
+
+
+def test_generate_and_save_script_creates_new_version():
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - versões persistidas",
+        description="Uma pauta para testar versões.",
+        status="approved",
+        score=9.0,
+    )
+
+    from app.services.script_generator_service import (
+        generate_and_save_script,
+    )
+    from app.database.scripts_repository import (
+        get_latest_script_by_idea,
+    )
+
+    first_id = generate_and_save_script(idea_id)
+    second_id = generate_and_save_script(idea_id)
+
+    latest = get_latest_script_by_idea(idea_id)
+
+    assert latest is not None
+    assert latest["id"] == second_id
+    assert second_id != first_id
+    assert latest["version"] == 2
+
+
+def test_generate_and_save_script_rejects_unapproved_idea():
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - não aprovada",
+        description="Descrição.",
+        status="new",
+        score=7.0,
+    )
+
+    from app.services.script_generator_service import (
+        generate_and_save_script,
+    )
+
+    with pytest.raises(ValueError, match="ideia aprovada"):
+        generate_and_save_script(idea_id)
