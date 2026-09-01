@@ -6,6 +6,7 @@ from app.services.render_worker_service import process_next_render_job
 
 
 def _create_queued_render_job():
+    from app.database.render_queue_repository import enqueue_render_job
     from app.services.render_job_service import create_render_job
 
     job = create_render_job(
@@ -44,7 +45,7 @@ def _create_queued_render_job():
         }
     )
 
-    return job["id"]
+    return enqueue_render_job(job)
 
 
 def test_worker_executes_queued_job_through_orchestrator():
