@@ -110,21 +110,32 @@ def execute_next_render_job(
     executor: AbstractRenderExecutor | None = None,
 ) -> RenderExecutionResult | None:
     """
-    Executa o primeiro Render Job queued disponível.
+    Executa exatamente um Render Job queued.
+
+    O orquestrador:
+    1. consulta os jobs persistidos;
+    2. seleciona o primeiro job queued;
+    3. delega a execução para execute_render_job().
+
+    Jobs completed/failed/cancelled nunca são selecionados.
     """
 
     jobs = list_render_jobs()
 
-    queued_jobs = [
-        job
-        for job in jobs
-        if job.get("status") == "queued"
-    ]
+    for job in jobs:
+        if job.get("status") != "queued":
+            continue
 
-    if not queued_jobs:
-        return None
+        job_id = job.get("id")
 
-    return execute_render_job(
-        queued_jobs[0]["id"],
-        executor=executor,
-    )
+        if job_id is None:
+            raise ValueError(
+                "Render Job queued não possui id persistido."
+            )
+
+        return execute_render_job(
+            int(job_id),
+            executor=executor,
+        )
+
+    return None

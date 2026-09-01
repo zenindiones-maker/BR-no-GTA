@@ -1,15 +1,18 @@
 from typing import Any
 
+from app.database.render_queue_repository import enqueue_render_job
+
 
 def create_render_job(
     video_execution_spec: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Transforma uma Video Execution Spec em uma tarefa concreta de renderização.
+    Transforma uma Video Execution Spec em uma tarefa concreta
+    de renderização e persiste essa tarefa na fila.
 
     Esta camada não executa o render.
-    Ela prepara uma unidade de trabalho que poderá ser consumida
-    futuramente por FFmpeg, editor ou outro engine de vídeo.
+    Ela prepara e persiste uma unidade de trabalho que poderá
+    ser consumida futuramente por um executor de vídeo.
     """
 
     if (
@@ -110,7 +113,7 @@ def create_render_job(
                 f"o campo obrigatório: {field}."
             )
 
-    return {
+    render_job = {
         "content_item_id": video_execution_spec["content_item_id"],
         "script_id": video_execution_spec["script_id"],
         "idea_id": video_execution_spec["idea_id"],
@@ -132,3 +135,7 @@ def create_render_job(
         ),
         "render": dict(render),
     }
+
+    job_id = enqueue_render_job(render_job)
+    render_job["id"] = job_id
+    return render_job
