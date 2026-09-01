@@ -11,18 +11,37 @@ class RenderExecutionResult:
 
 
 class AbstractRenderExecutor(ABC):
-    """Contrato para qualquer engine responsável por executar um Render Job."""
+    """Contrato operacional para qualquer engine de renderização."""
 
     @abstractmethod
-    def execute(self, render_job: dict[str, Any]) -> RenderExecutionResult:
-        """Executa um Render Job e retorna o resultado da execução."""
+    def execute(
+        self,
+        render_job: dict[str, Any],
+    ) -> RenderExecutionResult:
+        """
+        Executa um Render Job.
+
+        Entrada:
+            render_job: Render Job completo e validado.
+
+        Saída:
+            RenderExecutionResult contendo sucesso, saída e/ou erro.
+
+        Implementações futuras podem usar FFmpeg, Blender,
+        outro engine ou serviço externo.
+        """
         raise NotImplementedError
 
 
 class NullRenderExecutor(AbstractRenderExecutor):
-    """Executor nulo usado enquanto nenhuma engine real está configurada."""
+    """
+    Executor nulo usado enquanto nenhuma engine real está configurada.
+    """
 
-    def execute(self, render_job: dict[str, Any]) -> RenderExecutionResult:
+    def execute(
+        self,
+        render_job: dict[str, Any],
+    ) -> RenderExecutionResult:
         if not isinstance(render_job, dict) or not render_job:
             raise ValueError("O render job informado é inválido.")
 

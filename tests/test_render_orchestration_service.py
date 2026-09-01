@@ -1,16 +1,18 @@
 import pytest
 
+from app.database.schema import initialize_schema
 from app.database.render_queue_repository import (
     enqueue_render_job,
     get_render_job,
 )
-from app.database.schema import initialize_schema
 from app.services.render_executor_service import (
     AbstractRenderExecutor,
-    NullRenderExecutor,
     RenderExecutionResult,
 )
-from app.services.render_orchestration_service import execute_render_job
+from app.services.render_orchestration_service import (
+    execute_render_job,
+    execute_next_render_job,
+)
 
 
 def _create_render_job():
@@ -49,129 +51,152 @@ def _create_render_job():
     }
 
 
-class SuccessfulExecutor(AbstractRenderExecutor):
-    def execute(self, render_job):
-        assert render_job["job_type"] == "video_render"
-        return RenderExecutionResult(
-            success=True,
-            output_path="/tmp/rendered.mp4",
-        )
-
-
-class FailedExecutor(AbstractRenderExecutor):
-    def execute(self, render_job):
-        assert render_job["job_type"] == "video_render"
-        return RenderExecutionResult(
-            success=False,
-            error="Falha simulada no executor.",
-        )
-
-
 def _enqueue_job():
     initialize_schema()
     return enqueue_render_job(_create_render_job())
 
 
-def test_execute_render_job_success():
+class SuccessfulExecutor(AbstractRenderExecutor):
+    def execute(self, render_job):
+        assert render_job["status"] == "queued"
+
+        return RenderExecutionResult(
+            success=True,
+            output_path="/renders/video-001.mp4",
+        )
+
+
+class FailedExecutor(AbstractRenderExecutor):
+    def execute(self, render_job):
+        assert render_job["status"] == "queued"
+
+        return RenderExecutionResult(
+            success=False,
+            output_path=None,
+            error="Falha simulada no executor.",
+        )
+
+
+class ExceptionExecutor(AbstractRenderExecutor):
+    def execute(self, render_job):
+        raise RuntimeError("Erro interno simulado.")
+
+
+class InvalidResultExecutor(AbstractRenderExecutor):
+    def execute(self, render_job):
+        return {"success": True}
+
+
+def test_execute_render_job_success_transitions_to_completed():
     job_id = _enqueue_job()
 
     result = execute_render_job(
         job_id,
-        SuccessfulExecutor(),
+        executor=SuccessfulExecutor(),
     )
 
     assert result.success is True
-    assert result.output_path == "/tmp/rendered.mp4"
+    assert result.output_path == "/renders/video-001.mp4"
 
-    stored = get_render_job(job_id)
+    job = get_render_job(job_id)
 
-    assert stored is not None
-    assert stored["status"] == "completed"
+    assert job["status"] == "completed"
 
 
-def test_execute_render_job_failure_updates_status():
+def test_execute_render_job_failure_transitions_to_failed():
     job_id = _enqueue_job()
 
     result = execute_render_job(
         job_id,
-        FailedExecutor(),
+        executor=FailedExecutor(),
     )
 
     assert result.success is False
     assert result.error == "Falha simulada no executor."
 
-    stored = get_render_job(job_id)
+    job = get_render_job(job_id)
 
-    assert stored is not None
-    assert stored["status"] == "failed"
+    assert job["status"] == "failed"
 
 
-def test_execute_render_job_with_null_executor():
+def test_execute_render_job_executor_exception_transitions_to_failed():
     job_id = _enqueue_job()
 
     result = execute_render_job(
         job_id,
-        NullRenderExecutor(),
+        executor=ExceptionExecutor(),
     )
 
     assert result.success is False
+    assert result.error == "Erro interno simulado."
 
-    stored = get_render_job(job_id)
+    job = get_render_job(job_id)
 
-    assert stored is not None
-    assert stored["status"] == "failed"
+    assert job["status"] == "failed"
+
+
+def test_execute_render_job_requires_queued_state():
+    job_id = _enqueue_job()
+
+    from app.database.render_queue_repository import (
+        update_render_job_status,
+    )
+
+    update_render_job_status(job_id, "completed")
+
+    with pytest.raises(ValueError, match="queued"):
+        execute_render_job(
+            job_id,
+            executor=SuccessfulExecutor(),
+        )
 
 
 def test_execute_render_job_rejects_missing_job():
     initialize_schema()
 
-    with pytest.raises(ValueError, match="Render job não encontrado"):
+    with pytest.raises(ValueError, match="não encontrado"):
         execute_render_job(
             999999,
-            NullRenderExecutor(),
+            executor=SuccessfulExecutor(),
         )
 
 
-def test_execute_render_job_rejects_invalid_executor():
-    job_id = _enqueue_job()
-
-    with pytest.raises(ValueError, match="executor"):
-        execute_render_job(
-            job_id,
-            object(),
-        )
-
-
-def test_execute_render_job_rejects_non_queued_job():
-    job_id = _enqueue_job()
-
-    from app.database.render_queue_repository import update_render_job_status
-
-    update_render_job_status(job_id, "running")
-
-    with pytest.raises(ValueError, match="queued"):
-        execute_render_job(
-            job_id,
-            NullRenderExecutor(),
-        )
-
-
-def test_execute_render_job_does_not_depend_on_ffmpeg():
+def test_execute_render_job_rejects_invalid_executor_result():
     job_id = _enqueue_job()
 
     result = execute_render_job(
         job_id,
-        SuccessfulExecutor(),
+        executor=InvalidResultExecutor(),
+    )
+
+    assert result.success is False
+    assert "RenderExecutionResult" in result.error
+
+    job = get_render_job(job_id)
+
+    assert job["status"] == "failed"
+
+
+def test_execute_next_render_job_processes_first_queued_job():
+    job_id = _enqueue_job()
+
+    result = execute_next_render_job(
+        executor=SuccessfulExecutor(),
     )
 
     assert result.success is True
-    assert result.output_path == "/tmp/rendered.mp4"
+    assert result.output_path == "/renders/video-001.mp4"
+
+    job = get_render_job(job_id)
+
+    assert job["status"] == "completed"
 
 
-def test_executor_contract_is_preserved():
-    executor = SuccessfulExecutor()
+def test_execute_next_render_job_returns_none_when_queue_is_empty():
+    initialize_schema()
 
-    assert isinstance(
-        executor,
-        AbstractRenderExecutor,
+    result = execute_next_render_job(
+        executor=SuccessfulExecutor(),
     )
+
+    assert result is None
