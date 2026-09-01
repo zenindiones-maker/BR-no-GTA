@@ -44,6 +44,25 @@ CREATE TABLE IF NOT EXISTS content_items (
     file_path TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS editorial_evaluations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    research_item_id INTEGER NOT NULL,
+    idea_id INTEGER NOT NULL,
+    score REAL NOT NULL,
+    decision TEXT NOT NULL,
+    relevance REAL NOT NULL,
+    novelty REAL NOT NULL,
+    interest REAL NOT NULL,
+    click_potential REAL NOT NULL,
+    timeliness REAL NOT NULL,
+    source_reliability REAL NOT NULL,
+    video_potential REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (research_item_id) REFERENCES research_items(id),
+    FOREIGN KEY (idea_id) REFERENCES ideas(id)
+);
+
 """
 
 
