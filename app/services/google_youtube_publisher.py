@@ -3,26 +3,27 @@ from typing import Any
 
 from googleapiclient.http import MediaFileUpload
 
-from app.services.youtube_publisher import (
-    YouTubePublishResult,
-)
+from app.services.youtube_publisher import YouTubePublishResult
 
 
 class GoogleYouTubePublisher:
     """
     Implementação real do contrato YouTubePublisher.
 
-    Esta classe não autentica no Google.
-    Recebe um cliente autenticado da API por injeção.
+    Recebe um cliente autenticado da API do YouTube por injeção.
 
-    OAuth será implementado separadamente.
+    Não é responsabilidade desta classe:
+    - executar OAuth;
+    - carregar ou salvar tokens;
+    - acessar SQLite;
+    - alterar o estado da YouTube Publication;
+    - executar a orquestração da publicação.
     """
 
-    def __init__(
-        self,
-        *,
-        youtube_service: Any,
-    ) -> None:
+    def __init__(self, *, youtube_service: Any) -> None:
+        if youtube_service is None:
+            raise ValueError("youtube_service is required")
+
         self.youtube_service = youtube_service
 
     def publish(
@@ -32,15 +33,11 @@ class GoogleYouTubePublisher:
         """
         Executa o upload de uma publicação para o YouTube.
 
-        Responsabilidades:
-        - validar a publicação;
-        - validar o arquivo;
-        - montar os metadados;
-        - chamar videos.insert();
-        - transformar a resposta em YouTubePublishResult.
+        A publicação deve fornecer:
+        - file_path
+        - title
 
-        Não persiste no SQLite.
-        Não executa OAuth.
+        Os demais metadados possuem valores padrão.
         """
 
         if not isinstance(publication, dict):
