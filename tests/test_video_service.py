@@ -1,97 +1,104 @@
 import pytest
 
-from app.database.ideas_repository import insert_idea
-from app.database.schema import initialize_schema
-from app.services.script_generator_service import generate_and_save_script
-from app.services.script_spec_service import generate_script_spec
-from app.services.content_item_service import create_content_item
-from app.services.production_plan_service import create_production_plan
-from app.services.video_service import create_video_spec
+from app.database.content_repository import insert_content_item
+from app.database.video_repository import get_video
+from app.services.video_service import create_video
 
 
-def _create_production_plan():
-    initialize_schema()
+def _create_video_spec(content_item_id: int) -> dict:
+    return {
+        "content_item_id": content_item_id,
+        "script_id": 10,
+        "idea_id": 20,
+        "objective": "Gerar vídeo para publicação.",
+        "format": "short",
+        "estimated_duration_seconds": 45,
+        "scenes": [
+            {
+                "order": 1,
+                "narrative_block": "Abertura",
+                "narration": "Introdução.",
+                "visual_type": "gameplay",
+                "visual_description": "Gameplay de GTA.",
+                "duration_seconds": 5,
+                "requirements": [],
+            }
+        ],
+        "audio_requirements": [],
+        "visual_requirements": [],
+        "render": {
+            "resolution": "1920x1080",
+            "fps": 30,
+            "aspect_ratio": "16:9",
+            "container": "mp4",
+            "video_codec": "h264",
+            "audio_codec": "aac",
+        },
+    }
 
-    idea_id = insert_idea(
-        title="TESTE - especificação de vídeo",
-        description="Uma pauta aprovada para gerar uma especificação de vídeo.",
-        status="approved",
-        score=9.5,
+
+def test_create_video_persists_video():
+    content_item_id = insert_content_item(
+        title="Content Item para vídeo",
+        content_type="short",
+        status="ready",
     )
 
-    script_id = generate_and_save_script(idea_id)
-    spec = generate_script_spec(script_id)
-    item = create_content_item(spec)
+    video_spec = _create_video_spec(content_item_id)
 
-    return create_production_plan(item)
+    video = create_video(video_spec)
 
+    assert video["id"] > 0
+    assert video["content_item_id"] == content_item_id
+    assert video["status"] == "draft"
+    assert video["scenes"]
 
-def test_create_video_spec_from_production_plan():
-    plan = _create_production_plan()
+    persisted = get_video(video["id"])
 
-    video = create_video_spec(plan)
-
-    assert video["content_item_id"] == plan["content_item_id"]
-    assert video["script_id"] == plan["script_id"]
-    assert video["idea_id"] == plan["idea_id"]
-    assert video["objective"] == plan["objective"]
-    assert video["format"] == plan["format"]
-    assert video["estimated_duration_seconds"] > 0
-    assert video["status"] == "ready"
+    assert persisted is not None
+    assert persisted["id"] == video["id"]
+    assert persisted["content_item_id"] == content_item_id
+    assert persisted["title"] == video["title"]
+    assert persisted["status"] == "draft"
 
 
-def test_video_spec_contains_scenes():
-    plan = _create_production_plan()
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "content_item_id",
+        "script_id",
+        "idea_id",
+        "objective",
+        "format",
+        "estimated_duration_seconds",
+        "scenes",
+        "audio_requirements",
+        "visual_requirements",
+    ],
+)
+def test_create_video_requires_fields(missing_field):
+    content_item_id = insert_content_item(
+        title="Content Item",
+        content_type="short",
+        status="ready",
+    )
 
-    video = create_video_spec(plan)
+    video_spec = _create_video_spec(content_item_id)
+    del video_spec[missing_field]
 
-    assert isinstance(video["scenes"], list)
-    assert len(video["scenes"]) >= 3
-
-    for scene in video["scenes"]:
-        assert "order" in scene
-        assert "narrative_block" in scene
-        assert "narration" in scene
-        assert "visual_type" in scene
-        assert "visual_description" in scene
-        assert "duration_seconds" in scene
-        assert "requirements" in scene
-
-        assert scene["order"] > 0
-        assert scene["narrative_block"]
-        assert scene["narration"]
-        assert scene["visual_type"]
-        assert scene["visual_description"]
-        assert scene["duration_seconds"] > 0
-        assert isinstance(scene["requirements"], list)
-
-
-def test_video_spec_preserves_audio_requirements():
-    plan = _create_production_plan()
-
-    video = create_video_spec(plan)
-
-    assert video["audio_requirements"] == plan["audio_requirements"]
+    with pytest.raises(ValueError):
+        create_video(video_spec)
 
 
-def test_video_spec_preserves_visual_requirements():
-    plan = _create_production_plan()
+def test_create_video_requires_scenes():
+    content_item_id = insert_content_item(
+        title="Content Item",
+        content_type="short",
+        status="ready",
+    )
 
-    video = create_video_spec(plan)
+    video_spec = _create_video_spec(content_item_id)
+    video_spec["scenes"] = []
 
-    assert video["visual_requirements"] == plan["visual_requirements"]
-
-
-def test_video_spec_rejects_invalid_production_plan():
-    initialize_schema()
-
-    with pytest.raises(ValueError, match="production plan"):
-        create_video_spec({})
-
-
-def test_video_spec_rejects_missing_scenes():
-    plan = _create_production_plan()
-    plan["scenes"] = []
-
-    with pytest.raises(ValueError, match="cenas"):
-        create_video_spec(plan)
+    with pytest.raises(ValueError):
+        create_video(video_spec)

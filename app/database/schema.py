@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS content_items (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS videos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_item_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    file_path TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (content_item_id) REFERENCES content_items(id)
+);
+
 CREATE TABLE IF NOT EXISTS scripts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     idea_id INTEGER NOT NULL,
