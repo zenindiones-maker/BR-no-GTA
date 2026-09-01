@@ -122,24 +122,3 @@ def evaluate_research_item(
             "video_potential": video_potential,
         },
     }
-
-
-def get_evaluation(evaluation_id: int) -> dict[str, Any] | None:
-    """Retorna uma avaliação editorial salva."""
-    return editorial_repository.get_editorial_evaluation(
-        evaluation_id
-    )
-
-
-def list_evaluations() -> list[dict[str, Any]]:
-    """Retorna o histórico de avaliações editoriais."""
-    return editorial_repository.list_editorial_evaluations()
-
-
-def list_research_evaluations(
-    research_item_id: int,
-) -> list[dict[str, Any]]:
-    """Retorna o histórico de avaliações de uma pesquisa."""
-    return editorial_repository.list_evaluations_for_research(
-        research_item_id
-    )
