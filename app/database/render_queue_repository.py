@@ -13,6 +13,15 @@ VALID_STATUSES = (
 )
 
 
+VALID_TRANSITIONS = {
+    "queued": {"running"},
+    "running": {"completed", "failed"},
+    "completed": set(),
+    "failed": set(),
+    "cancelled": set(),
+}
+
+
 REQUIRED_FIELDS = (
     "content_item_id",
     "script_id",
@@ -163,34 +172,139 @@ def list_render_jobs() -> list[dict[str, Any]]:
         connection.close()
 
 
-def update_render_job_status(
+def transition_render_job(
     job_id: int,
-    status: str,
-) -> bool:
-    """Atualiza o status de um Render Job."""
+    target_status: str,
+    *,
+    output_path: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """
+    Executa uma transição válida de estado do Render Job.
 
-    if status not in VALID_STATUSES:
-        raise ValueError(f"Status inválido para render job: {status}.")
+    Regras:
+
+        queued -> running
+            incrementa attempt em 1.
+
+        running -> completed
+            registra output_path e limpa error.
+
+        running -> failed
+            registra error e limpa output_path.
+
+    Nenhuma outra transição é permitida.
+    """
+
+    if target_status not in VALID_STATUSES:
+        raise ValueError(
+            f"Status inválido para render job: {target_status}."
+        )
 
     connection = get_connection()
 
     try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                status,
+                payload,
+                attempt
+            FROM render_jobs
+            WHERE id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError(f"Render job não encontrado: {job_id}")
+
+        current_status = row["status"]
+        allowed_targets = VALID_TRANSITIONS.get(current_status, set())
+
+        if target_status not in allowed_targets:
+            raise ValueError(
+                f"Transição inválida para render job {job_id}: "
+                f"{current_status} -> {target_status}"
+            )
+
+        job = json.loads(row["payload"])
+
+        if target_status == "running":
+            job["attempt"] = int(row["attempt"]) + 1
+            job["output_path"] = None
+            job["error"] = None
+
+        elif target_status == "completed":
+            if not output_path:
+                raise ValueError(
+                    "Render job concluído precisa possuir output_path."
+                )
+
+            job["output_path"] = output_path
+            job["error"] = None
+
+        elif target_status == "failed":
+            if not error:
+                raise ValueError(
+                    "Render job com falha precisa possuir error."
+                )
+
+            job["output_path"] = None
+            job["error"] = error
+
+        job["status"] = target_status
+
+        new_attempt = int(job.get("attempt", row["attempt"]))
+
         cursor = connection.execute(
             """
             UPDATE render_jobs
             SET
                 status = ?,
+                payload = ?,
+                attempt = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
+              AND status = ?
             """,
             (
-                status,
+                target_status,
+                json.dumps(job, ensure_ascii=False),
+                new_attempt,
                 job_id,
+                current_status,
             ),
         )
 
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"Render job {job_id} sofreu alteração concorrente."
+            )
+
         connection.commit()
-        return cursor.rowcount > 0
+
+        job["id"] = job_id
+        return job
 
     finally:
         connection.close()
+
+
+def update_render_job_status(
+    job_id: int,
+    status: str,
+) -> bool:
+    """
+    Compatibilidade controlada para alteração de estado.
+
+    A máquina de estados é sempre respeitada.
+    """
+
+    transition_render_job(
+        job_id,
+        status,
+    )
+
+    return True
