@@ -1,5 +1,3 @@
-from typing import Any
-
 from app.database.render_queue_repository import (
     get_render_job,
     list_render_jobs,
@@ -19,26 +17,32 @@ def execute_render_job(
     """
     Orquestra a execução de um Render Job.
 
-    Fluxo obrigatório:
+    O job só pode ser executado quando estiver em `queued`.
+
+    Fluxo:
 
         queued
           ↓
         running
           ↓
-      executor
-       ↙     ↘
-   completed  failed
+       executor
+        ↙    ↘
+    completed failed
     """
 
     render_job = get_render_job(job_id)
 
     if render_job is None:
-        raise ValueError(f"Render job não encontrado: {job_id}")
+        raise ValueError(
+            f"Render job não encontrado: {job_id}"
+        )
 
-    if render_job.get("status") != "queued":
+    current_status = render_job.get("status")
+
+    if current_status != "queued":
         raise ValueError(
             f"Render job {job_id} não está em estado queued: "
-            f"{render_job.get('status')}"
+            f"{current_status}"
         )
 
     selected_executor = executor or NullRenderExecutor()
@@ -120,9 +124,7 @@ def execute_next_render_job(
     if not queued_jobs:
         return None
 
-    job = queued_jobs[0]
-
     return execute_render_job(
-        job["id"],
+        queued_jobs[0]["id"],
         executor=executor,
     )
