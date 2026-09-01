@@ -1,6 +1,6 @@
 from app.database.render_queue_repository import (
+    claim_next_render_job,
     get_render_job,
-    list_render_jobs,
     transition_render_job,
 )
 from app.services.render_executor_service import (
@@ -10,47 +10,20 @@ from app.services.render_executor_service import (
 )
 
 
-def execute_render_job(
-    job_id: int,
+def _execute_running_render_job(
+    running_job: dict,
     executor: AbstractRenderExecutor | None = None,
 ) -> RenderExecutionResult:
-    """
-    Orquestra a execução de um Render Job.
+    """Executa um Render Job que já foi reservado como running."""
 
-    O job só pode ser executado quando estiver em `queued`.
+    job_id = running_job.get("id")
 
-    Fluxo:
-
-        queued
-          ↓
-        running
-          ↓
-       executor
-        ↙    ↘
-    completed failed
-    """
-
-    render_job = get_render_job(job_id)
-
-    if render_job is None:
+    if job_id is None:
         raise ValueError(
-            f"Render job não encontrado: {job_id}"
-        )
-
-    current_status = render_job.get("status")
-
-    if current_status != "queued":
-        raise ValueError(
-            f"Render job {job_id} não está em estado queued: "
-            f"{current_status}"
+            "Render Job running não possui id persistido."
         )
 
     selected_executor = executor or NullRenderExecutor()
-
-    running_job = transition_render_job(
-        job_id,
-        "running",
-    )
 
     try:
         result = selected_executor.execute(running_job)
@@ -68,35 +41,45 @@ def execute_render_job(
                 )
 
             transition_render_job(
-                job_id,
+                int(job_id),
                 "completed",
                 output_path=result.output_path,
             )
 
-        else:
-            if not result.error:
-                raise ValueError(
-                    "RenderExecutionResult de falha precisa possuir error."
-                )
+            return result
 
-            transition_render_job(
-                job_id,
-                "failed",
-                error=result.error,
+        if not result.error:
+            raise ValueError(
+                "RenderExecutionResult de falha precisa possuir error."
             )
+
+        transition_render_job(
+            int(job_id),
+            "failed",
+            error=result.error,
+        )
 
         return result
 
     except Exception as exc:
         error = str(exc)
 
+        # Se o executor ou a persistência do resultado falhar,
+        # garantimos que o job não permaneça preso em running.
         try:
-            transition_render_job(
-                job_id,
-                "failed",
-                error=error,
-            )
+            current_job = get_render_job(int(job_id))
+
+            if (
+                current_job is not None
+                and current_job.get("status") == "running"
+            ):
+                transition_render_job(
+                    int(job_id),
+                    "failed",
+                    error=error,
+                )
         except ValueError:
+            # Não mascaramos o erro original.
             pass
 
         return RenderExecutionResult(
@@ -106,36 +89,79 @@ def execute_render_job(
         )
 
 
+def execute_render_job(
+    job_id: int,
+    executor: AbstractRenderExecutor | None = None,
+) -> RenderExecutionResult:
+    """
+    Executa um Render Job específico.
+
+    Contrato:
+
+        queued
+          ↓
+        running
+          ↓
+        executor
+          ↓
+        completed | failed
+
+    Este fluxo é usado quando o chamador já conhece o ID do job.
+    """
+
+    render_job = get_render_job(job_id)
+
+    if render_job is None:
+        raise ValueError(
+            f"Render job não encontrado: {job_id}"
+        )
+
+    current_status = render_job.get("status")
+
+    if current_status != "queued":
+        raise ValueError(
+            f"Render job {job_id} não está em estado queued: "
+            f"{current_status}"
+        )
+
+    # Reserva o job e incrementa attempt exatamente uma vez.
+    running_job = transition_render_job(
+        job_id,
+        "running",
+    )
+
+    return _execute_running_render_job(
+        running_job,
+        executor=executor,
+    )
+
+
 def execute_next_render_job(
     executor: AbstractRenderExecutor | None = None,
 ) -> RenderExecutionResult | None:
     """
     Executa exatamente um Render Job queued.
 
-    O orquestrador:
-    1. consulta os jobs persistidos;
-    2. seleciona o primeiro job queued;
-    3. delega a execução para execute_render_job().
+    A seleção e reserva são atômicas e pertencem exclusivamente
+    a claim_next_render_job().
 
-    Jobs completed/failed/cancelled nunca são selecionados.
+    Fluxo:
+
+        claim_next_render_job()
+              ↓
+        queued → running
+              ↓
+        executor
+              ↓
+        completed | failed
     """
 
-    jobs = list_render_jobs()
+    running_job = claim_next_render_job()
 
-    for job in jobs:
-        if job.get("status") != "queued":
-            continue
+    if running_job is None:
+        return None
 
-        job_id = job.get("id")
-
-        if job_id is None:
-            raise ValueError(
-                "Render Job queued não possui id persistido."
-            )
-
-        return execute_render_job(
-            int(job_id),
-            executor=executor,
-        )
-
-    return None
+    return _execute_running_render_job(
+        running_job,
+        executor=executor,
+    )

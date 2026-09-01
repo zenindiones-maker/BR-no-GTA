@@ -41,7 +41,7 @@ REQUIRED_FIELDS = (
 
 
 def enqueue_render_job(render_job: dict[str, Any]) -> int:
-    """Persiste um Render Job na fila de renderização."""
+    """Persiste um Render Job na fila."""
 
     if not isinstance(render_job, dict) or not render_job:
         raise ValueError("O render job informado é inválido.")
@@ -55,12 +55,16 @@ def enqueue_render_job(render_job: dict[str, Any]) -> int:
     status = render_job.get("status")
 
     if status not in VALID_STATUSES:
-        raise ValueError(f"Status inválido para render job: {status}.")
+        raise ValueError(
+            f"Status inválido para render job: {status}."
+        )
 
     scenes = render_job.get("scenes")
 
     if not isinstance(scenes, list) or not scenes:
-        raise ValueError("O render job precisa possuir cenas.")
+        raise ValueError(
+            "O render job precisa possuir cenas."
+        )
 
     payload = dict(render_job)
 
@@ -100,6 +104,7 @@ def enqueue_render_job(render_job: dict[str, Any]) -> int:
         )
 
         connection.commit()
+
         return int(cursor.lastrowid)
 
     finally:
@@ -113,6 +118,7 @@ def _row_to_render_job(row) -> dict[str, Any] | None:
         return None
 
     job = json.loads(row["payload"])
+
     job["id"] = row["id"]
     job["status"] = row["status"]
 
@@ -172,6 +178,84 @@ def list_render_jobs() -> list[dict[str, Any]]:
         connection.close()
 
 
+def claim_next_render_job() -> dict[str, Any] | None:
+    """
+    Reserva atomicamente o próximo Render Job queued.
+
+    Contrato:
+        queued -> running
+
+    O attempt é incrementado exatamente uma vez.
+    """
+
+    connection = get_connection()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                status,
+                payload,
+                attempt
+            FROM render_jobs
+            WHERE status = 'queued'
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if row is None:
+            connection.commit()
+            return None
+
+        job = json.loads(row["payload"])
+
+        new_attempt = int(row["attempt"]) + 1
+
+        job["id"] = row["id"]
+        job["status"] = "running"
+        job["attempt"] = new_attempt
+        job["output_path"] = None
+        job["error"] = None
+
+        cursor = connection.execute(
+            """
+            UPDATE render_jobs
+            SET
+                status = 'running',
+                payload = ?,
+                attempt = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'queued'
+            """,
+            (
+                json.dumps(job, ensure_ascii=False),
+                new_attempt,
+                row["id"],
+            ),
+        )
+
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"Render job {row['id']} sofreu alteração concorrente."
+            )
+
+        connection.commit()
+
+        return job
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
 def transition_render_job(
     job_id: int,
     target_status: str,
@@ -180,20 +264,14 @@ def transition_render_job(
     error: str | None = None,
 ) -> dict[str, Any]:
     """
-    Executa uma transição válida de estado do Render Job.
+    Executa uma transição válida de estado.
 
-    Regras:
+    Importante:
+        queued -> running NÃO deve mais ser feito aqui pelo
+        fluxo normal do worker.
 
-        queued -> running
-            incrementa attempt em 1.
-
-        running -> completed
-            registra output_path e limpa error.
-
-        running -> failed
-            registra error e limpa output_path.
-
-    Nenhuma outra transição é permitida.
+    A reserva do próximo job é responsabilidade exclusiva
+    de claim_next_render_job().
     """
 
     if target_status not in VALID_STATUSES:
@@ -218,10 +296,16 @@ def transition_render_job(
         ).fetchone()
 
         if row is None:
-            raise ValueError(f"Render job não encontrado: {job_id}")
+            raise ValueError(
+                f"Render job não encontrado: {job_id}"
+            )
 
         current_status = row["status"]
-        allowed_targets = VALID_TRANSITIONS.get(current_status, set())
+
+        allowed_targets = VALID_TRANSITIONS.get(
+            current_status,
+            set(),
+        )
 
         if target_status not in allowed_targets:
             raise ValueError(
@@ -256,7 +340,9 @@ def transition_render_job(
 
         job["status"] = target_status
 
-        new_attempt = int(job.get("attempt", row["attempt"]))
+        new_attempt = int(
+            job.get("attempt", row["attempt"])
+        )
 
         cursor = connection.execute(
             """
@@ -286,6 +372,7 @@ def transition_render_job(
         connection.commit()
 
         job["id"] = job_id
+
         return job
 
     finally:
@@ -297,9 +384,9 @@ def update_render_job_status(
     status: str,
 ) -> bool:
     """
-    Compatibilidade controlada para alteração de estado.
+    Compatibilidade controlada.
 
-    A máquina de estados é sempre respeitada.
+    A máquina de estados continua sendo respeitada.
     """
 
     transition_render_job(

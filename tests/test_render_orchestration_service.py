@@ -5,6 +5,7 @@ from app.database.ideas_repository import insert_idea
 from app.database.render_queue_repository import (
     get_render_job,
     transition_render_job,
+    claim_next_render_job,
 )
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
