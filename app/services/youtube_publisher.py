@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol, Any
 
 
 @dataclass(frozen=True)
 class YouTubePublishResult:
     """
-    Resultado de uma tentativa de publicação no YouTube.
+    Resultado explícito de uma tentativa de publicação no YouTube.
     """
 
     success: bool
@@ -14,13 +14,23 @@ class YouTubePublishResult:
     error: str | None = None
 
 
+# Compatibilidade com o nome inicialmente introduzido pelo Publisher.
+PublishResult = YouTubePublishResult
+
+
 class YouTubePublisher(Protocol):
     """
-    Contrato para qualquer mecanismo de publicação no YouTube.
+    Contrato para qualquer implementação de publicação no YouTube.
+
+    A camada superior conhece apenas este contrato.
+    A implementação concreta pode ser fake, Google API etc.
     """
 
     def publish(
         self,
-        publication: dict[str, Any],
+        publication: Any,
     ) -> YouTubePublishResult:
+        """
+        Publica uma YouTubePublication e retorna o resultado da operação.
+        """
         ...

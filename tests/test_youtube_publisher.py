@@ -1,26 +1,28 @@
+from dataclasses import FrozenInstanceError
+
+import pytest
+
 from app.services.youtube_publisher import (
-    YouTubePublishResult,
+    PublishResult,
     YouTubePublisher,
 )
 
 
-def test_youtube_publish_result_success():
-    result = YouTubePublishResult(
+def test_publish_result_represents_success():
+    result = PublishResult(
         success=True,
-        youtube_video_id="abc123",
-        youtube_url="https://www.youtube.com/watch?v=abc123",
+        youtube_video_id="youtube-123",
+        youtube_url="https://youtube.com/watch?v=youtube-123",
     )
 
     assert result.success is True
-    assert result.youtube_video_id == "abc123"
-    assert result.youtube_url == (
-        "https://www.youtube.com/watch?v=abc123"
-    )
+    assert result.youtube_video_id == "youtube-123"
+    assert result.youtube_url == "https://youtube.com/watch?v=youtube-123"
     assert result.error is None
 
 
-def test_youtube_publish_result_failure():
-    result = YouTubePublishResult(
+def test_publish_result_represents_failure():
+    result = PublishResult(
         success=False,
         error="upload failed",
     )
@@ -31,22 +33,18 @@ def test_youtube_publish_result_failure():
     assert result.error == "upload failed"
 
 
-def test_youtube_publisher_contract_is_defined():
+def test_publish_result_is_immutable():
+    result = PublishResult(success=True)
+
+    with pytest.raises(FrozenInstanceError):
+        result.success = False
+
+
+def test_youtube_publisher_exposes_publish_contract():
     assert hasattr(YouTubePublisher, "publish")
 
 
-def test_youtube_publisher_contract_uses_publication_dict():
-    publication = {
-        "id": 1,
-        "video_id": 10,
-        "content_item_id": 20,
-        "file_path": "output/video.mp4",
-        "title": "Vídeo GTA",
-        "description": "Descrição",
-        "tags": ["gta6"],
-        "category_id": "20",
-        "privacy_status": "private",
-        "status": "pending",
-    }
+def test_publish_contract_is_callable():
+    publish = YouTubePublisher.publish
 
-    assert isinstance(publication, dict)
+    assert callable(publish)
