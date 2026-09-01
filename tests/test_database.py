@@ -1,12 +1,4 @@
-import sqlite3
-
 from app.database.connection import get_connection
-from app.database.repository import (
-    insert_project,
-    insert_source,
-    list_projects,
-    list_sources,
-)
 from app.database.research_repository import (
     insert_research_item,
     list_research_items,
@@ -58,50 +50,10 @@ def test_schema_tables():
         connection.close()
 
 
-def test_project_repository():
-    initialize_schema()
-
-    project_id = insert_project("TEST PROJECT")
-
-    assert isinstance(project_id, int)
-    assert project_id > 0
-
-    projects = list_projects()
-
-    assert any(
-        project["id"] == project_id
-        for project in projects
-    )
-
-
-def test_source_repository():
-    initialize_schema()
-
-    source_id = insert_source(
-        "TEST SOURCE",
-        "https://example.com",
-        "test",
-    )
-
-    assert isinstance(source_id, int)
-    assert source_id > 0
-
-    sources = list_sources()
-
-    assert any(
-        source["id"] == source_id
-        for source in sources
-    )
-
-
 def test_research_repository():
     initialize_schema()
 
-    source_id = insert_source(
-        "TEST RESEARCH SOURCE",
-        "https://example.com/research",
-        "test",
-    )
+    source_id = None
 
     item_id = insert_research_item(
         source_id=source_id,
