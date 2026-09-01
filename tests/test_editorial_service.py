@@ -106,3 +106,39 @@ def test_editorial_service_rejects_nonexistent_research():
         assert False, "Era esperado ValueError"
     except ValueError as error:
         assert "Research item não encontrado" in str(error)
+
+
+def test_re_evaluating_research_reuses_same_idea():
+    initialize_schema()
+
+    research_id = insert_research_item(
+        source_id=None,
+        title="GTA 6 apresenta uma mecânica inédita",
+        content="A pesquisa encontrou informações relevantes sobre GTA 6.",
+        url="https://example.com",
+    )
+
+    first = evaluate_research_item(
+        research_id,
+        relevance=9,
+        novelty=9,
+        interest=9,
+        click_potential=9,
+        timeliness=9,
+        source_reliability=9,
+        video_potential=9,
+    )
+
+    second = evaluate_research_item(
+        research_id,
+        relevance=10,
+        novelty=10,
+        interest=10,
+        click_potential=10,
+        timeliness=10,
+        source_reliability=10,
+        video_potential=10,
+    )
+
+    assert first["idea_id"] == second["idea_id"]
+    assert first["evaluation_id"] != second["evaluation_id"]

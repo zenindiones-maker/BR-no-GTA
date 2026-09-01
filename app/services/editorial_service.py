@@ -51,10 +51,18 @@ def evaluate_research_item(
     if research_item is None:
         raise ValueError("Research item não encontrado.")
 
-    idea_id = idea_service.create_idea(
-        title=research_item["title"],
-        description=research_item["content"],
+    idea = idea_service.get_idea_by_research_item(
+        research_item_id
     )
+
+    if idea is None:
+        idea_id = idea_service.create_idea(
+            title=research_item["title"],
+            description=research_item["content"],
+            research_item_id=research_item_id,
+        )
+    else:
+        idea_id = idea["id"]
 
     evaluation = evaluate_idea(
         relevance=relevance,

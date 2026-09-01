@@ -11,6 +11,7 @@ def create_idea(
     description: str | None = None,
     status: str = "new",
     score: float | None = None,
+    research_item_id: int | None = None,
 ) -> int:
     """Cria uma ideia aplicando as validações básicas do domínio."""
     normalized_title = title.strip()
@@ -34,6 +35,7 @@ def create_idea(
         description=normalized_description,
         status=status,
         score=score,
+        research_item_id=research_item_id,
     )
 
 
@@ -63,3 +65,12 @@ def validate_status(status: str) -> None:
             f"Status inválido: {status}. "
             f"Permitidos: {', '.join(sorted(VALID_STATUSES))}"
         )
+
+
+def get_idea_by_research_item(
+    research_item_id: int,
+) -> dict[str, Any] | None:
+    """Retorna a ideia vinculada a um item de pesquisa."""
+    return ideas_repository.get_idea_by_research_item(
+        research_item_id
+    )
