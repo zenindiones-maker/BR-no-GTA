@@ -59,6 +59,19 @@ CREATE TABLE IF NOT EXISTS content_items (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(idea_id, version),
+    FOREIGN KEY (idea_id) REFERENCES ideas(id)
+);
+
 CREATE TABLE IF NOT EXISTS editorial_evaluations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     research_item_id INTEGER NOT NULL,
