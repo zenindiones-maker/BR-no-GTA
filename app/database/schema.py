@@ -69,6 +69,28 @@ CREATE TABLE IF NOT EXISTS videos (
     FOREIGN KEY (content_item_id) REFERENCES content_items(id)
 );
 
+
+CREATE TABLE IF NOT EXISTS youtube_publications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id INTEGER NOT NULL UNIQUE,
+    content_item_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    category_id TEXT NOT NULL,
+    privacy_status TEXT NOT NULL DEFAULT 'private',
+    publish_at TEXT,
+    youtube_video_id TEXT,
+    youtube_url TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    published_at TEXT,
+    FOREIGN KEY (video_id) REFERENCES videos(id),
+    FOREIGN KEY (content_item_id) REFERENCES content_items(id)
+);
+
 CREATE TABLE IF NOT EXISTS scripts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     idea_id INTEGER NOT NULL,
