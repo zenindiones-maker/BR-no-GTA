@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS ideas (
     description TEXT,
     status TEXT NOT NULL DEFAULT 'new',
     score REAL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    research_item_id INTEGER UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (research_item_id) REFERENCES research_items(id)
 );
 
 CREATE TABLE IF NOT EXISTS content_items (
@@ -62,16 +64,42 @@ CREATE TABLE IF NOT EXISTS editorial_evaluations (
     FOREIGN KEY (research_item_id) REFERENCES research_items(id),
     FOREIGN KEY (idea_id) REFERENCES ideas(id)
 );
-
 """
 
 
+def _migrate_ideas_research_item_id(connection) -> None:
+    """Adiciona a relação pesquisa -> ideia em bancos existentes."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(ideas)"
+        ).fetchall()
+    }
+
+    if "research_item_id" not in columns:
+        connection.execute(
+            "ALTER TABLE ideas ADD COLUMN research_item_id INTEGER"
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_ideas_research_item_id
+        ON ideas(research_item_id)
+        WHERE research_item_id IS NOT NULL
+        """
+    )
+
+
 def initialize_schema() -> None:
-    """Cria as tabelas estruturais do banco."""
+    """Cria as tabelas estruturais e aplica migrações necessárias."""
+
     connection = get_connection()
 
     try:
         connection.executescript(SCHEMA_SQL)
+        _migrate_ideas_research_item_id(connection)
         connection.commit()
     finally:
         connection.close()

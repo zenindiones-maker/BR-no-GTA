@@ -8,6 +8,7 @@ def insert_idea(
     description: str | None = None,
     status: str = "new",
     score: float | None = None,
+    research_item_id: int | None = None,
 ) -> int:
     """Cria uma ideia e retorna seu ID."""
     connection = get_connection()
@@ -19,11 +20,18 @@ def insert_idea(
                 title,
                 description,
                 status,
-                score
+                score,
+                research_item_id
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (title, description, status, score),
+            (
+                title,
+                description,
+                status,
+                score,
+                research_item_id,
+            ),
         )
 
         connection.commit()
@@ -45,6 +53,7 @@ def list_ideas() -> list[dict[str, Any]]:
                 description,
                 status,
                 score,
+                research_item_id,
                 created_at
             FROM ideas
             ORDER BY id
@@ -69,6 +78,7 @@ def get_idea(idea_id: int) -> dict[str, Any] | None:
                 description,
                 status,
                 score,
+                research_item_id,
                 created_at
             FROM ideas
             WHERE id = ?
@@ -123,5 +133,35 @@ def update_idea_score(
 
         connection.commit()
         return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def get_idea_by_research_item(
+    research_item_id: int,
+) -> dict[str, Any] | None:
+    """Retorna a ideia vinculada a um item de pesquisa."""
+
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                title,
+                description,
+                status,
+                score,
+                research_item_id,
+                created_at
+            FROM ideas
+            WHERE research_item_id = ?
+            """,
+            (research_item_id,),
+        ).fetchone()
+
+        return dict(row) if row else None
+
     finally:
         connection.close()
