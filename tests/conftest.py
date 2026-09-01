@@ -2,6 +2,8 @@ import os
 
 import pytest
 
+from app.database.schema import initialize_schema
+
 
 @pytest.fixture(autouse=True)
 def test_database(tmp_path, monkeypatch):
@@ -11,5 +13,7 @@ def test_database(tmp_path, monkeypatch):
         "BR_TEST_DATABASE",
         str(database_path),
     )
+
+    initialize_schema()
 
     yield
