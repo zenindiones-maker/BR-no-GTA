@@ -38,6 +38,18 @@ CREATE TABLE IF NOT EXISTS ideas (
     FOREIGN KEY (research_item_id) REFERENCES research_items(id)
 );
 
+CREATE TABLE IF NOT EXISTS editorial_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id INTEGER NOT NULL,
+    priority_score REAL NOT NULL,
+    priority TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    queued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    FOREIGN KEY (idea_id) REFERENCES ideas(id)
+);
+
 CREATE TABLE IF NOT EXISTS content_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
