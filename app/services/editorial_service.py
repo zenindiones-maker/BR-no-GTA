@@ -4,6 +4,7 @@ from app.database import editorial_repository
 from app.database import research_repository
 from app.services import idea_service
 from app.services.editorial_scorer import evaluate_idea
+from app.services.editorial_queue_service import sync_idea_queue
 
 
 DECISION_TO_STATUS = {
@@ -35,9 +36,13 @@ def evaluate_research_item(
           ↓
     editorial_scorer
           ↓
-      score/decision
+    score/decision
           ↓
     editorial_evaluations
+          ↓
+      priority_engine
+          ↓
+    editorial_queue
           ↓
       idea status
           ↓
@@ -103,6 +108,21 @@ def evaluate_research_item(
         status,
     )
 
+    queue_result = sync_idea_queue(
+        idea_id=idea_id,
+        decision=decision,
+        editorial_score=score,
+        timeliness=timeliness,
+        interest=interest,
+        click_potential=click_potential,
+        video_potential=video_potential,
+    )
+
+    priority_score = queue_result["priority_score"]
+    priority_label = queue_result["priority"]
+    queue_id = queue_result["queue_id"]
+    queue_action = queue_result["action"] if "action" in queue_result else "none"
+
     idea = idea_service.get_idea(idea_id)
 
     return {
@@ -112,6 +132,10 @@ def evaluate_research_item(
         "score": score,
         "decision": decision,
         "status": idea["status"] if idea else None,
+        "priority_score": priority_score,
+        "priority": priority_label,
+        "queue_id": queue_id,
+        "queue_action": queue_action,
         "criteria": {
             "relevance": relevance,
             "novelty": novelty,

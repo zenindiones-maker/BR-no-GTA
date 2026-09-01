@@ -179,6 +179,29 @@ def update_queue_status(
         connection.close()
 
 
+def cancel_active_queue_item_by_idea(idea_id: int) -> bool:
+    """Cancela a entrada ativa de uma ideia, se existir."""
+    connection = get_connection()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE editorial_queue
+            SET
+                status = 'cancelled',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE idea_id = ?
+              AND status IN ('queued', 'scheduled', 'processing')
+            """,
+            (idea_id,),
+        )
+
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
 def update_queue_priority(
     queue_id: int,
     priority_score: float,
