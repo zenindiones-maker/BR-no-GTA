@@ -3,6 +3,7 @@ import pytest
 from app.database.schema import initialize_schema
 from app.database.render_queue_repository import (
     claim_next_render_job,
+    claim_render_job,
     enqueue_render_job,
     get_render_job,
     transition_render_job,
@@ -221,6 +222,60 @@ def test_attempt_increments_only_when_execution_starts():
 
     assert job["attempt"] == 1
 
+
+
+def test_claim_render_job_moves_specific_job_to_running():
+    job_id = _enqueue_job()
+    other_job_id = _enqueue_job()
+
+    claimed = claim_render_job(job_id)
+
+    assert claimed["id"] == job_id
+    assert claimed["status"] == "running"
+    assert claimed["attempt"] == 1
+
+    job = get_render_job(job_id)
+    other_job = get_render_job(other_job_id)
+
+    assert job["status"] == "running"
+    assert job["attempt"] == 1
+    assert other_job["status"] == "queued"
+    assert other_job["attempt"] == 0
+
+
+def test_claim_render_job_rejects_non_queued_job():
+    job_id = _enqueue_job()
+
+    transition_render_job(job_id, "running")
+
+    with pytest.raises(
+        ValueError,
+        match="não está em estado queued",
+    ):
+        claim_render_job(job_id)
+
+
+def test_claim_render_job_rejects_unknown_job():
+    initialize_schema()
+
+    with pytest.raises(
+        ValueError,
+        match="não encontrado",
+    ):
+        claim_render_job(999999)
+
+
+def test_claim_render_job_increments_attempt_exactly_once():
+    job_id = _enqueue_job()
+
+    claimed = claim_render_job(job_id)
+
+    assert claimed["attempt"] == 1
+
+    job = get_render_job(job_id)
+
+    assert job["status"] == "running"
+    assert job["attempt"] == 1
 
 def test_claim_next_render_job_moves_oldest_queued_job_to_running():
     first_id = _enqueue_job()

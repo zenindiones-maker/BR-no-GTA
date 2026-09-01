@@ -178,6 +178,93 @@ def list_render_jobs() -> list[dict[str, Any]]:
         connection.close()
 
 
+def claim_render_job(job_id: int) -> dict[str, Any]:
+    """
+    Reserva atomicamente um Render Job específico.
+
+    Contrato:
+        queued -> running
+
+    O attempt é incrementado exatamente uma vez.
+
+    Diferentemente de claim_next_render_job(), esta função
+    reserva exclusivamente o job identificado por job_id.
+    """
+    connection = get_connection()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                status,
+                payload,
+                attempt
+            FROM render_jobs
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError(
+                f"Render job não encontrado: {job_id}"
+            )
+
+        if row["status"] != "queued":
+            raise ValueError(
+                f"Render job {job_id} não está em estado queued: "
+                f"{row['status']}"
+            )
+
+        job = json.loads(row["payload"])
+
+        new_attempt = int(row["attempt"]) + 1
+
+        job["id"] = row["id"]
+        job["status"] = "running"
+        job["attempt"] = new_attempt
+        job["output_path"] = None
+        job["error"] = None
+
+        cursor = connection.execute(
+            """
+            UPDATE render_jobs
+            SET
+                status = 'running',
+                payload = ?,
+                attempt = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'queued'
+            """,
+            (
+                json.dumps(job, ensure_ascii=False),
+                new_attempt,
+                row["id"],
+            ),
+        )
+
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"Render job {job_id} sofreu alteração concorrente."
+            )
+
+        connection.commit()
+
+        return job
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
 def claim_next_render_job() -> dict[str, Any] | None:
     """
     Reserva atomicamente o próximo Render Job queued.

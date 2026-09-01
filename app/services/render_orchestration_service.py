@@ -1,5 +1,6 @@
 from app.database.render_queue_repository import (
     claim_next_render_job,
+    claim_render_job,
     get_render_job,
     transition_render_job,
 )
@@ -96,17 +97,22 @@ def execute_render_job(
     """
     Executa um Render Job específico.
 
-    Contrato:
+    O job precisa estar queued.
+
+    A reserva é feita exclusivamente por claim_render_job(job_id),
+    garantindo queued -> running e incremento único do attempt.
+
+    Fluxo:
 
         queued
+          ↓
+        claim_render_job(job_id)
           ↓
         running
           ↓
         executor
           ↓
         completed | failed
-
-    Este fluxo é usado quando o chamador já conhece o ID do job.
     """
 
     render_job = get_render_job(job_id)
@@ -124,11 +130,7 @@ def execute_render_job(
             f"{current_status}"
         )
 
-    # Reserva o job e incrementa attempt exatamente uma vez.
-    running_job = transition_render_job(
-        job_id,
-        "running",
-    )
+    running_job = claim_render_job(job_id)
 
     return _execute_running_render_job(
         running_job,
