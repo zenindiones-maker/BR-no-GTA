@@ -1,10 +1,9 @@
-from app.database.ideas_repository import get_idea
 from app.database.research_repository import insert_research_item
 from app.database.schema import initialize_schema
-from app.services.research_service import create_idea_from_research
+from app.services.research_service import get_research_item
 
 
-def test_create_idea_from_research():
+def test_get_research_item():
     initialize_schema()
 
     research_id = insert_research_item(
@@ -14,24 +13,19 @@ def test_create_idea_from_research():
         url="https://example.com",
     )
 
-    idea_id = create_idea_from_research(research_id)
+    research_item = get_research_item(research_id)
 
-    idea = get_idea(idea_id)
-
-    assert idea is not None
-    assert idea["title"] == "GTA 6 terá uma nova mecânica"
-    assert idea["description"] == (
+    assert research_item is not None
+    assert research_item["id"] == research_id
+    assert research_item["title"] == "GTA 6 terá uma nova mecânica"
+    assert research_item["content"] == (
         "A pesquisa encontrou informações relevantes sobre a mecânica."
     )
-    assert idea["status"] == "new"
-    assert idea["score"] is None
 
 
-def test_create_idea_from_nonexistent_research():
+def test_get_nonexistent_research_item():
     initialize_schema()
 
-    try:
-        create_idea_from_research(999999)
-        assert False, "Era esperado ValueError"
-    except ValueError as error:
-        assert "Research item não encontrado" in str(error)
+    research_item = get_research_item(999999)
+
+    assert research_item is None
