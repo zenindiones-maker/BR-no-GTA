@@ -1,8 +1,5 @@
 from typing import Any
 
-from app.database.render_queue_repository import enqueue_render_job
-
-
 def create_render_job(
     video_execution_spec: dict[str, Any],
 ) -> dict[str, Any]:
@@ -136,6 +133,4 @@ def create_render_job(
         "render": dict(render),
     }
 
-    job_id = enqueue_render_job(render_job)
-    render_job["id"] = job_id
     return render_job
