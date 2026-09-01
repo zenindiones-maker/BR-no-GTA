@@ -2,6 +2,7 @@ import pytest
 
 from app.database.schema import initialize_schema
 from app.database.render_queue_repository import (
+    claim_next_render_job,
     enqueue_render_job,
     get_render_job,
     transition_render_job,
@@ -218,4 +219,50 @@ def test_attempt_increments_only_when_execution_starts():
 
     job = get_render_job(job_id)
 
+    assert job["attempt"] == 1
+
+
+def test_claim_next_render_job_moves_oldest_queued_job_to_running():
+    first_id = _enqueue_job()
+    second_id = _enqueue_job()
+
+    claimed = claim_next_render_job()
+
+    assert claimed is not None
+    assert claimed["id"] == first_id
+    assert claimed["status"] == "running"
+    assert claimed["attempt"] == 1
+
+    first = get_render_job(first_id)
+    second = get_render_job(second_id)
+
+    assert first["status"] == "running"
+    assert first["attempt"] == 1
+
+    assert second["status"] == "queued"
+    assert second["attempt"] == 0
+
+
+def test_claim_next_render_job_returns_none_when_queue_is_empty():
+    initialize_schema()
+
+    assert claim_next_render_job() is None
+
+
+def test_claim_next_render_job_increments_attempt_exactly_once():
+    job_id = _enqueue_job()
+
+    first_claim = claim_next_render_job()
+
+    assert first_claim is not None
+    assert first_claim["id"] == job_id
+    assert first_claim["attempt"] == 1
+
+    second_claim = claim_next_render_job()
+
+    assert second_claim is None
+
+    job = get_render_job(job_id)
+
+    assert job["status"] == "running"
     assert job["attempt"] == 1
