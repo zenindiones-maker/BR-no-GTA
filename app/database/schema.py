@@ -72,6 +72,23 @@ CREATE TABLE IF NOT EXISTS scripts (
     FOREIGN KEY (idea_id) REFERENCES ideas(id)
 );
 
+CREATE TABLE IF NOT EXISTS render_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_item_id INTEGER NOT NULL,
+    script_id INTEGER NOT NULL,
+    idea_id INTEGER NOT NULL,
+    objective TEXT NOT NULL,
+    format TEXT NOT NULL,
+    estimated_duration_seconds REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    payload TEXT NOT NULL,
+    job_type TEXT NOT NULL,
+    queue TEXT NOT NULL,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS editorial_evaluations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     research_item_id INTEGER NOT NULL,
