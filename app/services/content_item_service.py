@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.database.content_repository import insert_content_item
+
 
 REQUIRED_FIELDS = (
     "script_id",
@@ -69,11 +71,21 @@ def create_content_item(
             "A especificação precisa possuir requisitos visuais."
         )
 
+    title = _build_title(script_spec)
+    description = _build_description(script_spec)
+
+    content_item_id = insert_content_item(
+        title=title,
+        content_type=script_spec["format"],
+        status="ready",
+    )
+
     return {
+        "id": content_item_id,
         "script_id": script_spec["script_id"],
         "idea_id": script_spec["idea_id"],
-        "title": _build_title(script_spec),
-        "description": _build_description(script_spec),
+        "title": title,
+        "description": description,
         "format": script_spec["format"],
         "objective": script_spec["objective"],
         "audience": script_spec["audience"],
