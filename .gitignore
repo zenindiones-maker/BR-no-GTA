@@ -42,3 +42,8 @@ cache/
 !data/processed/.gitkeep
 !data/raw/
 !data/raw/.gitkeep
+
+# SQLite database
+*.db
+*.db-shm
+*.db-wal
