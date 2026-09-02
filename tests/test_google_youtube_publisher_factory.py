@@ -24,24 +24,47 @@ def test_create_google_youtube_publisher_composes_real_dependencies(
     tmp_path,
 ):
     token_file = tmp_path / "youtube_token.json"
+    client_secrets_file = tmp_path / "client_secret.json"
 
     credentials = FakeCredentials()
     youtube_service = FakeYouTubeService()
 
+    authorization_runner = object()
+    request = object()
+
     calls = []
 
-    def fake_load_youtube_credentials(*, token_file):
-        calls.append(("load", token_file))
+    def fake_get_youtube_credentials(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
+        calls.append(
+            (
+                "credentials",
+                token_file,
+                client_secrets_file,
+                authorization_runner,
+                request,
+            )
+        )
         return credentials
 
     def fake_create_youtube_service(received_credentials):
-        calls.append(("service", received_credentials))
+        calls.append(
+            (
+                "service",
+                received_credentials,
+            )
+        )
         return youtube_service
 
     monkeypatch.setattr(
         factory,
-        "load_youtube_credentials",
-        fake_load_youtube_credentials,
+        "get_youtube_credentials",
+        fake_get_youtube_credentials,
     )
 
     monkeypatch.setattr(
@@ -52,6 +75,9 @@ def test_create_google_youtube_publisher_composes_real_dependencies(
 
     result = factory.create_google_youtube_publisher(
         token_file=str(token_file),
+        client_secrets_file=str(client_secrets_file),
+        authorization_runner=authorization_runner,
+        request=request,
     )
 
     assert isinstance(
@@ -62,8 +88,17 @@ def test_create_google_youtube_publisher_composes_real_dependencies(
     assert result.youtube_service is youtube_service
 
     assert calls == [
-        ("load", str(token_file)),
-        ("service", credentials),
+        (
+            "credentials",
+            str(token_file),
+            str(client_secrets_file),
+            authorization_runner,
+            request,
+        ),
+        (
+            "service",
+            credentials,
+        ),
     ]
 
     assert youtube_service.videos_calls == 0
@@ -73,10 +108,29 @@ def test_create_google_youtube_publisher_requires_token_file():
     try:
         factory.create_google_youtube_publisher(
             token_file="",
+            client_secrets_file="client_secret.json",
         )
     except ValueError as exc:
         assert str(exc) == "token_file is required"
     else:
         raise AssertionError(
             "Expected ValueError when token_file is empty"
+        )
+
+
+def test_create_google_youtube_publisher_requires_client_secrets_file(
+    tmp_path,
+):
+    token_file = tmp_path / "youtube_token.json"
+
+    try:
+        factory.create_google_youtube_publisher(
+            token_file=str(token_file),
+            client_secrets_file="",
+        )
+    except ValueError as exc:
+        assert str(exc) == "client_secrets_file is required"
+    else:
+        raise AssertionError(
+            "Expected ValueError when client_secrets_file is missing"
         )
