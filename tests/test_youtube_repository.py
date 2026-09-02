@@ -50,7 +50,7 @@ def test_insert_and_get_youtube_publication():
     assert publication["content_item_id"] == content_item_id
     assert publication["title"] == "Título YouTube"
     assert publication["description"] == "Descrição"
-    assert publication["tags"] == '["gta", "gta6"]'
+    assert publication["tags"] == ["gta", "gta6"]
     assert publication["category_id"] == "20"
     assert publication["privacy_status"] == "private"
     assert publication["status"] == "pending"

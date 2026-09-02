@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS youtube_publications (
     description TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     category_id TEXT NOT NULL,
+    file_path TEXT,
     privacy_status TEXT NOT NULL DEFAULT 'private',
     publish_at TEXT,
     youtube_video_id TEXT,
@@ -166,6 +167,23 @@ def _migrate_ideas_research_item_id(connection) -> None:
     )
 
 
+
+def _migrate_youtube_publication_file_path(connection) -> None:
+    """Adiciona o caminho do arquivo à intenção de publicação no YouTube."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(youtube_publications)"
+        ).fetchall()
+    }
+
+    if "file_path" not in columns:
+        connection.execute(
+            "ALTER TABLE youtube_publications ADD COLUMN file_path TEXT"
+        )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -174,6 +192,7 @@ def initialize_schema() -> None:
     try:
         connection.executescript(SCHEMA_SQL)
         _migrate_ideas_research_item_id(connection)
+        _migrate_youtube_publication_file_path(connection)
         connection.commit()
     finally:
         connection.close()

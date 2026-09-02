@@ -13,6 +13,7 @@ def insert_youtube_publication(
     category_id: str = "20",
     privacy_status: str = "private",
     publish_at: str | None = None,
+    file_path: str | None = None,
     status: str = "pending",
 ) -> int:
     """Cria uma publicação destinada ao YouTube."""
@@ -31,9 +32,10 @@ def insert_youtube_publication(
                 category_id,
                 privacy_status,
                 publish_at,
+                file_path,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 video_id,
@@ -47,6 +49,7 @@ def insert_youtube_publication(
                 category_id,
                 privacy_status,
                 publish_at,
+                file_path,
                 status,
             ),
         )
@@ -95,7 +98,9 @@ def get_youtube_publication(
         if row is None:
             return None
 
-        return dict(row)
+        publication = dict(row)
+        publication["tags"] = json.loads(publication["tags"] or "[]")
+        return publication
 
     finally:
         connection.close()
@@ -137,7 +142,9 @@ def get_youtube_publication_by_video_id(
         if row is None:
             return None
 
-        return dict(row)
+        publication = dict(row)
+        publication["tags"] = json.loads(publication["tags"] or "[]")
+        return publication
 
     finally:
         connection.close()
@@ -173,7 +180,10 @@ def list_youtube_publications() -> list[dict[str, Any]]:
             """
         ).fetchall()
 
-        return [dict(row) for row in rows]
+        publications = [dict(row) for row in rows]
+        for publication in publications:
+            publication["tags"] = json.loads(publication["tags"] or "[]")
+        return publications
 
     finally:
         connection.close()
