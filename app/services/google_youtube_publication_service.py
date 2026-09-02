@@ -1,5 +1,9 @@
 from typing import Any, Callable
 
+from app.database.youtube_repository import (
+    get_next_pending_youtube_publication,
+)
+
 from app.services.google_youtube_configuration import (
     get_youtube_client_secrets_file,
     get_youtube_token_file,
@@ -80,4 +84,38 @@ def publish_youtube_publication_with_google(
     return publish_youtube_publication(
         publication_id,
         publisher,
+    )
+
+
+
+def process_next_youtube_publication(
+    *,
+    token_file: str | None = None,
+    client_secrets_file: str | None = None,
+    authorization_runner: Callable[[Any], Any] | None = None,
+    request: Any | None = None,
+) -> dict[str, Any] | None:
+    """Processa a próxima publicação YouTube pendente.
+
+    Seleciona exatamente uma publicação pendente e delega sua
+    publicação ao entrypoint Google existente.
+
+    Retorna None quando não há publicação pendente.
+    """
+    publication = get_next_pending_youtube_publication()
+
+    if publication is None:
+        return None
+
+    publication_id = publication.get("id")
+
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError("pending YouTube publication must have a valid id")
+
+    return publish_youtube_publication_with_google(
+        publication_id=publication_id,
+        token_file=token_file,
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+        request=request,
     )

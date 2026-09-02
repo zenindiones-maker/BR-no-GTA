@@ -497,3 +497,72 @@ def test_publish_google_preserves_explicit_oauth_paths(
     }
 
     assert result == {"id": 42}
+
+
+from unittest.mock import patch
+
+from app.services.google_youtube_publication_service import (
+    process_next_youtube_publication,
+)
+
+
+def test_process_next_youtube_publication_returns_none_when_empty():
+    with patch(
+        "app.services.google_youtube_publication_service."
+        "get_next_pending_youtube_publication",
+        return_value=None,
+    ) as selector:
+        result = process_next_youtube_publication()
+
+    assert result is None
+    selector.assert_called_once_with()
+
+
+def test_process_next_youtube_publication_delegates_next_pending():
+    publication = {
+        "id": 42,
+        "video_id": 7,
+        "content_item_id": 9,
+        "title": "Vídeo pendente",
+        "status": "pending",
+    }
+
+    with patch(
+        "app.services.google_youtube_publication_service."
+        "get_next_pending_youtube_publication",
+        return_value=publication,
+    ) as selector, patch(
+        "app.services.google_youtube_publication_service."
+        "publish_youtube_publication_with_google",
+        return_value={"id": 42, "status": "published"},
+    ) as publisher:
+        result = process_next_youtube_publication()
+
+    assert result == {"id": 42, "status": "published"}
+    selector.assert_called_once_with()
+    publisher.assert_called_once_with(
+        publication_id=42,
+        token_file=None,
+        client_secrets_file=None,
+        authorization_runner=None,
+        request=None,
+    )
+
+
+def test_process_next_youtube_publication_rejects_invalid_pending_id():
+    publication = {
+        "id": 0,
+        "status": "pending",
+    }
+
+    with patch(
+        "app.services.google_youtube_publication_service."
+        "get_next_pending_youtube_publication",
+        return_value=publication,
+    ):
+        try:
+            process_next_youtube_publication()
+        except ValueError as exc:
+            assert str(exc) == "pending YouTube publication must have a valid id"
+        else:
+            raise AssertionError("ValueError was not raised")
