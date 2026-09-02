@@ -4,6 +4,9 @@ from app.integrations.gta6.news_aggregator import (
 from app.integrations.gta6.source import (
     GTA6SourceItem,
 )
+from app.services.gta6_confidence_classifier import (
+    classify_gta6_confidence,
+)
 
 
 def convert_news_item(
@@ -11,13 +14,18 @@ def convert_news_item(
 ) -> GTA6SourceItem:
     """Converte item agregado para o contrato GTA6SourceItem."""
 
+    confidence = classify_gta6_confidence(
+        item.title,
+        item.summary,
+    )
+
     return GTA6SourceItem(
         title=item.title,
         summary=item.summary,
         url=item.url,
         source_name=item.source_name,
         fact_type="news",
-        confidence="unconfirmed",
+        confidence=confidence,
         published_at=item.published_at,
     )
 
