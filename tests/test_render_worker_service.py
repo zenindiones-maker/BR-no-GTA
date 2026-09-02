@@ -361,3 +361,168 @@ def test_worker_uses_real_mpt_factory_and_executor_without_network(
     assert persisted_video is not None
     assert persisted_video["status"] == "ready"
     assert persisted_video["file_path"] == "/tmp/mpt-rendered-video.mp4"
+
+def test_worker_preserves_editorial_content_in_mpt_payload(
+    monkeypatch,
+):
+    initialize_schema()
+
+    video_id = insert_video(
+        content_item_id=1,
+        title="TESTE - contrato editorial BR -> MPT",
+        status="draft",
+    )
+
+    job = {
+        "content_item_id": 1,
+        "script_id": 42,
+        "idea_id": 24,
+        "objective": (
+            "Informar o público sobre uma nova informação "
+            "confirmada de GTA 6"
+        ),
+        "format": "YouTube editorial",
+        "estimated_duration_seconds": 120,
+        "status": "queued",
+        "job_type": "video_render",
+        "queue": "render",
+        "attempt": 0,
+        "video_id": video_id,
+        "scenes": [
+            {
+                "order": 1,
+                "narrative_block": "INTRODUÇÃO",
+                "narration": (
+                    "Uma nova informação sobre GTA 6 "
+                    "chamou a atenção da comunidade."
+                ),
+                "visual_type": "title_card",
+                "visual_description": (
+                    "Logo de GTA 6 com manchete de última hora."
+                ),
+                "duration_seconds": 8,
+                "execution_requirements": [],
+            },
+            {
+                "order": 2,
+                "narrative_block": "CONTEXTO",
+                "narration": (
+                    "O contexto ajuda a entender por que "
+                    "essa informação é relevante."
+                ),
+                "visual_type": "gameplay",
+                "visual_description": (
+                    "Gameplay de GTA 6 mostrando uma área urbana."
+                ),
+                "duration_seconds": 12,
+                "execution_requirements": [],
+            },
+            {
+                "order": 3,
+                "narrative_block": "IMPACTO",
+                "narration": (
+                    "A possível consequência pode afetar "
+                    "a expectativa dos jogadores."
+                ),
+                "visual_type": "gameplay_with_graphics",
+                "visual_description": (
+                    "Gameplay com gráfico destacando a informação."
+                ),
+                "duration_seconds": 10,
+                "execution_requirements": [],
+            },
+        ],
+        "audio_requirements": [],
+        "visual_requirements": [
+            "Usar imagens relacionadas a GTA 6.",
+        ],
+        "render": {
+            "resolution": "1920x1080",
+            "fps": 30,
+            "aspect_ratio": "16:9",
+            "container": "mp4",
+            "video_codec": "h264",
+            "audio_codec": "aac",
+        },
+    }
+
+    job_id = enqueue_render_job(job)
+
+    fake_client = FakeMoneyPrinterTurboClient()
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.MoneyPrinterTurboClient",
+        lambda **kwargs: fake_client,
+    )
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.settings.MPT_BASE_URL",
+        "http://127.0.0.1:8080",
+    )
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.settings.MPT_API_KEY",
+        "",
+    )
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.settings.MPT_TIMEOUT",
+        30.0,
+    )
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.settings.MPT_POLL_INTERVAL",
+        0.0,
+    )
+
+    monkeypatch.setattr(
+        "app.services.money_printer_turbo_factory.settings.MPT_MAX_POLLS",
+        3,
+    )
+
+    result = process_next_render_job()
+
+    assert result is not None
+    assert result.success is True
+
+    payload = fake_client.created_payload
+
+    assert payload is not None
+
+    assert payload["video_subject"] == (
+        "Informar o público sobre uma nova informação "
+        "confirmada de GTA 6."
+    )
+
+    assert payload["video_script"] == (
+        "Uma nova informação sobre GTA 6 "
+        "chamou a atenção da comunidade.\n\n"
+        "O contexto ajuda a entender por que "
+        "essa informação é relevante.\n\n"
+        "A possível consequência pode afetar "
+        "a expectativa dos jogadores."
+    )
+
+    assert payload["video_terms"] == [
+        "Logo de GTA 6 com manchete de última hora.",
+        "Gameplay de GTA 6 mostrando uma área urbana.",
+        "Gameplay com gráfico destacando a informação.",
+    ]
+
+    assert payload["video_language"] == "pt-BR"
+    assert payload["video_count"] == 1
+    assert payload["match_materials_to_script"] is True
+
+    assert fake_client.task_ids == ["test-task-001"]
+
+    persisted_job = get_render_job(job_id)
+
+    assert persisted_job is not None
+    assert persisted_job["status"] == "completed"
+    assert persisted_job["video_id"] == video_id
+
+    persisted_video = get_video(video_id)
+
+    assert persisted_video is not None
+    assert persisted_video["status"] == "ready"
+    assert persisted_video["file_path"] == "/tmp/mpt-rendered-video.mp4"
