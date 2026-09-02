@@ -361,3 +361,139 @@ def test_publish_youtube_publication_with_google_uses_factory_output_directly(
             factory_publisher,
         )
     ]
+
+
+def test_publish_google_uses_canonical_configuration_when_paths_are_omitted(
+    monkeypatch,
+):
+    import app.services.google_youtube_publication_service as service
+
+    calls = {}
+
+    class FakePublisher:
+        pass
+
+    fake_publisher = FakePublisher()
+
+    def fake_get_youtube_token_file():
+        calls["token_file"] = True
+        return "/canonical/token.json"
+
+    def fake_get_youtube_client_secrets_file():
+        calls["client_secrets_file"] = True
+        return "/canonical/client_secret.json"
+
+    def fake_create_google_youtube_publisher(**kwargs):
+        calls["factory"] = kwargs
+        return fake_publisher
+
+    def fake_publish_youtube_publication(
+        publication_id,
+        publisher,
+    ):
+        calls["orchestration"] = (
+            publication_id,
+            publisher,
+        )
+        return {"id": publication_id}
+
+    monkeypatch.setattr(
+        service,
+        "get_youtube_token_file",
+        fake_get_youtube_token_file,
+    )
+    monkeypatch.setattr(
+        service,
+        "get_youtube_client_secrets_file",
+        fake_get_youtube_client_secrets_file,
+    )
+    monkeypatch.setattr(
+        service,
+        "create_google_youtube_publisher",
+        fake_create_google_youtube_publisher,
+    )
+    monkeypatch.setattr(
+        service,
+        "publish_youtube_publication",
+        fake_publish_youtube_publication,
+    )
+
+    result = service.publish_youtube_publication_with_google(
+        publication_id=42,
+    )
+
+    assert calls["token_file"] is True
+    assert calls["client_secrets_file"] is True
+
+    assert calls["factory"] == {
+        "token_file": "/canonical/token.json",
+        "client_secrets_file": "/canonical/client_secret.json",
+        "authorization_runner": None,
+        "request": None,
+    }
+
+    assert calls["orchestration"] == (
+        42,
+        fake_publisher,
+    )
+
+    assert result == {"id": 42}
+
+
+def test_publish_google_preserves_explicit_oauth_paths(
+    monkeypatch,
+):
+    import app.services.google_youtube_publication_service as service
+
+    calls = {}
+
+    def fail_canonical_configuration():
+        raise AssertionError(
+            "canonical configuration should not be used"
+        )
+
+    def fake_create_google_youtube_publisher(**kwargs):
+        calls["factory"] = kwargs
+        return object()
+
+    def fake_publish_youtube_publication(
+        publication_id,
+        publisher,
+    ):
+        return {"id": publication_id}
+
+    monkeypatch.setattr(
+        service,
+        "get_youtube_token_file",
+        fail_canonical_configuration,
+    )
+    monkeypatch.setattr(
+        service,
+        "get_youtube_client_secrets_file",
+        fail_canonical_configuration,
+    )
+    monkeypatch.setattr(
+        service,
+        "create_google_youtube_publisher",
+        fake_create_google_youtube_publisher,
+    )
+    monkeypatch.setattr(
+        service,
+        "publish_youtube_publication",
+        fake_publish_youtube_publication,
+    )
+
+    result = service.publish_youtube_publication_with_google(
+        publication_id=42,
+        token_file="/explicit/token.json",
+        client_secrets_file="/explicit/client_secret.json",
+    )
+
+    assert calls["factory"] == {
+        "token_file": "/explicit/token.json",
+        "client_secrets_file": "/explicit/client_secret.json",
+        "authorization_runner": None,
+        "request": None,
+    }
+
+    assert result == {"id": 42}
