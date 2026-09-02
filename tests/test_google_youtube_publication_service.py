@@ -4,7 +4,14 @@ import app.services.google_youtube_publication_service as service
 
 
 class FakePublisher:
-    pass
+    def __init__(self):
+        self.publish_calls = 0
+
+    def publish(self, publication):
+        self.publish_calls += 1
+        raise AssertionError(
+            "Google publication service must not call publisher.publish() directly"
+        )
 
 
 def test_publish_youtube_publication_with_google_composes_and_delegates(
@@ -64,6 +71,8 @@ def test_publish_youtube_publication_with_google_composes_and_delegates(
         ("factory", token_file),
         ("orchestration", publication_id, publisher),
     ]
+
+    assert publisher.publish_calls == 0
 
 
 def test_publish_youtube_publication_with_google_rejects_none_publication_id():
@@ -171,6 +180,7 @@ def test_publish_youtube_publication_with_google_propagates_orchestration_error(
     ):
         assert publication_id == 123
         assert received_publisher is publisher
+
         raise RuntimeError("publication orchestration failed")
 
     monkeypatch.setattr(
@@ -214,6 +224,7 @@ def test_publish_youtube_publication_with_google_uses_factory_output_directly(
                 publisher,
             )
         )
+
         return {
             "id": publication_id,
             "status": "published",
