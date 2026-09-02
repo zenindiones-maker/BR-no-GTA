@@ -135,7 +135,6 @@ def test_orchestration_failure(monkeypatch):
     )
 
     publisher = FakeYouTubePublisher(
-        success=False,
         error="simulated upload failure",
     )
 
