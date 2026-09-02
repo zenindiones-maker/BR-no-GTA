@@ -11,6 +11,9 @@ from app.services.gta6_change_detector import (
     GTA6ChangeResult,
     detect_content_change,
 )
+from app.services.gta6_monitor_event_service import (
+    record_gta6_monitor_change,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,13 @@ def monitor_gta6_page_persisted(
         page.url,
         change.current_hash,
     )
+
+    if not baseline and change.changed:
+        record_gta6_monitor_change(
+            url=page.url,
+            previous_hash=change.previous_hash,
+            current_hash=change.current_hash,
+        )
 
     return GTA6PersistentMonitorResult(
         url=page.url,

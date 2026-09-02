@@ -198,3 +198,102 @@ def test_uses_monitor_response_url_when_persisting(
 
     assert result.url == "https://example.com/final"
     assert saved[0][0] == "https://example.com/final"
+
+
+def test_persists_monitor_event_when_existing_content_changes(
+    monkeypatch,
+) -> None:
+    from app.services import gta6_monitor_persistence_service as service
+    from app.services.gta6_change_detector import hash_monitored_content
+
+    old_hash = hash_monitored_content("<html>old</html>")
+
+    monkeypatch.setattr(
+        service,
+        "get_gta6_monitor_state",
+        lambda url: {
+            "id": 1,
+            "url": url,
+            "content_hash": old_hash,
+            "updated_at": "2026-01-01 00:00:00",
+        },
+    )
+
+    saved_state = []
+    saved_events = []
+
+    monkeypatch.setattr(
+        service,
+        "save_gta6_monitor_state",
+        lambda url, content_hash: saved_state.append(
+            (url, content_hash)
+        ),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "record_gta6_monitor_change",
+        lambda **kwargs: saved_events.append(kwargs),
+    )
+
+    monitor = FakeMonitor("<html>new</html>")
+
+    result = service.monitor_gta6_page_persisted(
+        monitor,
+        "https://example.com",
+    )
+
+    assert result.baseline is False
+    assert result.change.changed is True
+
+    assert saved_state == [
+        (
+            "https://example.com",
+            result.change.current_hash,
+        )
+    ]
+
+    assert saved_events == [
+        {
+            "url": "https://example.com",
+            "previous_hash": old_hash,
+            "current_hash": result.change.current_hash,
+        }
+    ]
+
+
+def test_does_not_persist_event_for_baseline(
+    monkeypatch,
+) -> None:
+    from app.services import gta6_monitor_persistence_service as service
+
+    monkeypatch.setattr(
+        service,
+        "get_gta6_monitor_state",
+        lambda url: None,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "save_gta6_monitor_state",
+        lambda url, content_hash: None,
+    )
+
+    saved_events = []
+
+    monkeypatch.setattr(
+        service,
+        "record_gta6_monitor_change",
+        lambda **kwargs: saved_events.append(kwargs),
+    )
+
+    monitor = FakeMonitor("<html>first observation</html>")
+
+    result = service.monitor_gta6_page_persisted(
+        monitor,
+        "https://example.com",
+    )
+
+    assert result.baseline is True
+    assert result.change.changed is True
+    assert saved_events == []
