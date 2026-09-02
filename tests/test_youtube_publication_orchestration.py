@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.fake_youtube_publisher import (
     FakeYouTubePublisher,
 )
@@ -63,7 +65,6 @@ def test_orchestration_success(monkeypatch):
         "get_youtube_publication",
         fake_get,
     )
-
     monkeypatch.setattr(
         "app.services.youtube_publication_orchestration."
         "mark_youtube_published",
@@ -79,11 +80,14 @@ def test_orchestration_success(monkeypatch):
         publisher,
     )
 
+    assert publisher.published_publication is stored
+
     assert result["status"] == "published"
     assert result["youtube_video_id"] == "fake123"
     assert result["youtube_url"] == (
         "https://www.youtube.com/watch?v=fake123"
     )
+    assert result["error"] is None
 
     assert calls == [
         (
@@ -101,6 +105,7 @@ def test_orchestration_failure(monkeypatch):
     calls = []
 
     def fake_get(publication_id):
+        assert publication_id == 1
         return stored
 
     def fake_update_status(
@@ -127,7 +132,6 @@ def test_orchestration_failure(monkeypatch):
         "get_youtube_publication",
         fake_get,
     )
-
     monkeypatch.setattr(
         "app.services.youtube_publication_orchestration."
         "update_youtube_publication_status",
@@ -145,6 +149,8 @@ def test_orchestration_failure(monkeypatch):
 
     assert result["status"] == "failed"
     assert result["error"] == "simulated upload failure"
+    assert result["youtube_video_id"] is None
+    assert result["youtube_url"] is None
 
     assert calls == [
         (
@@ -165,12 +171,13 @@ def test_orchestration_rejects_missing_publication(monkeypatch):
 
     publisher = FakeYouTubePublisher()
 
-    try:
-        publish_youtube_publication(999, publisher)
-        assert False, "Expected ValueError"
-    except ValueError as exc:
-        assert str(exc) == (
-            "YouTube publication not found: 999"
+    with pytest.raises(
+        ValueError,
+        match=r"^YouTube publication not found: 999$",
+    ):
+        publish_youtube_publication(
+            999,
+            publisher,
         )
 
 
@@ -188,12 +195,13 @@ def test_orchestration_rejects_non_pending_publication(
 
     publisher = FakeYouTubePublisher()
 
-    try:
-        publish_youtube_publication(1, publisher)
-        assert False, "Expected ValueError"
-    except ValueError as exc:
-        assert str(exc) == (
-            "YouTube publication is not pending: 1"
+    with pytest.raises(
+        ValueError,
+        match=r"^YouTube publication is not pending: 1$",
+    ):
+        publish_youtube_publication(
+            1,
+            publisher,
         )
 
 
@@ -212,16 +220,16 @@ def test_orchestration_rejects_invalid_publisher_result(
         def publish(self, publication):
             return {"success": True}
 
-    try:
+    with pytest.raises(
+        TypeError,
+        match=(
+            r"^publisher\.publish\(\) must return "
+            r"YouTubePublishResult$"
+        ),
+    ):
         publish_youtube_publication(
             1,
             InvalidPublisher(),
-        )
-        assert False, "Expected TypeError"
-    except TypeError as exc:
-        assert str(exc) == (
-            "publisher.publish() must return "
-            "YouTubePublishResult"
         )
 
 
@@ -243,14 +251,96 @@ def test_orchestration_rejects_success_without_video_id(
                 youtube_url="https://youtube.test/video",
             )
 
-    try:
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^Successful publication must provide "
+            r"youtube_video_id$"
+        ),
+    ):
         publish_youtube_publication(
             1,
             PublisherWithoutVideoId(),
         )
-        assert False, "Expected ValueError"
-    except ValueError as exc:
-        assert str(exc) == (
-            "Successful publication must provide "
-            "youtube_video_id"
+
+
+def test_orchestration_rejects_success_without_url(
+    monkeypatch,
+):
+    publication = make_publication()
+
+    monkeypatch.setattr(
+        "app.services.youtube_publication_orchestration."
+        "get_youtube_publication",
+        lambda publication_id: publication,
+    )
+
+    class PublisherWithoutUrl:
+        def publish(self, publication):
+            return YouTubePublishResult(
+                success=True,
+                youtube_video_id="fake123",
+            )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^Successful publication must provide "
+            r"youtube_url$"
+        ),
+    ):
+        publish_youtube_publication(
+            1,
+            PublisherWithoutUrl(),
         )
+
+
+def test_orchestration_returns_persisted_state(
+    monkeypatch,
+):
+    publication = make_publication()
+    stored = publication.copy()
+    get_calls = []
+
+    def fake_get(publication_id):
+        get_calls.append(publication_id)
+        return stored
+
+    def fake_mark_published(
+        publication_id,
+        youtube_video_id,
+        youtube_url,
+    ):
+        stored["status"] = "published"
+        stored["youtube_video_id"] = youtube_video_id
+        stored["youtube_url"] = youtube_url
+        stored["error"] = None
+        return True
+
+    monkeypatch.setattr(
+        "app.services.youtube_publication_orchestration."
+        "get_youtube_publication",
+        fake_get,
+    )
+    monkeypatch.setattr(
+        "app.services.youtube_publication_orchestration."
+        "mark_youtube_published",
+        fake_mark_published,
+    )
+
+    publisher = FakeYouTubePublisher(
+        youtube_video_id="persisted123",
+    )
+
+    result = publish_youtube_publication(
+        1,
+        publisher,
+    )
+
+    assert get_calls == [1, 1]
+    assert result is stored
+    assert result["status"] == "published"
+    assert result["youtube_video_id"] == "persisted123"
+    assert result["youtube_url"] == (
+        "https://www.youtube.com/watch?v=persisted123"
+    )
