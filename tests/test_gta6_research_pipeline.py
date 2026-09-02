@@ -1,112 +1,113 @@
-from app.services.gta6_research_pipeline import run_gta6_research
+from app.services import gta6_research_pipeline as module
 
 
-def test_run_gta6_research_runs_rockstar_monitor(monkeypatch):
+def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
+    monkeypatch,
+):
+    monitor_result = {"changed": True}
+
+    monitor_items = [
+        {
+            "research_item_id": 1,
+            "knowledge_id": 1,
+            "knowledge": None,
+            "duplicate": False,
+        }
+    ]
+
+    graph_items = [
+        {
+            "research_item_id": 2,
+            "knowledge_id": 2,
+            "knowledge": None,
+            "duplicate": True,
+        }
+    ]
+
+    news_items = [{"title": "News item"}]
     calls = []
 
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.monitor_rockstar_newswire",
-        lambda: calls.append(True) or "monitor-result",
-    )
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
-        lambda: [],
+        module,
+        "monitor_rockstar_newswire",
+        lambda: monitor_result,
     )
 
-    result = run_gta6_research()
-
-    assert calls == [True]
-    assert result["rockstar_monitor"] == "monitor-result"
-
-
-def test_run_gta6_research(monkeypatch):
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.monitor_rockstar_newswire",
-        lambda: "monitor-result",
+        module,
+        "ingest_rockstar_newswire_from_monitor",
+        lambda: monitor_items.copy(),
     )
+
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
+        module.settings,
+        "ROCKSTAR_QUERY_HASH",
         "test-query-hash",
     )
+
+    def fake_graph_ingestion(query_hash):
+        calls.append(query_hash)
+        return graph_items
+
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
-        lambda query_hash: [{"knowledge_id": 1}],
+        module,
+        "ingest_rockstar_newswire",
+        fake_graph_ingestion,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "run_gta6_news_pipeline",
+        lambda: news_items,
+    )
+
+    result = module.run_gta6_research()
+
+    assert calls == ["test-query-hash"]
+    assert result["rockstar_monitor"] == monitor_result
+    assert result["rockstar_newswire"] == monitor_items + graph_items
+    assert result["news_feeds"] == news_items
+    assert result["total"] == 3
+
+def test_run_gta6_research_does_not_call_graph_without_query_hash(
+    monkeypatch,
+):
+    monitor_result = {"changed": False}
+    monitor_items = []
+
+    monkeypatch.setattr(
+        module,
+        "monitor_rockstar_newswire",
+        lambda: monitor_result,
     )
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
-        lambda: [{"knowledge_id": 2}, {"knowledge_id": 3}],
-    )
-
-    result = run_gta6_research()
-
-    assert result == {
-        "rockstar_monitor": "monitor-result",
-        "rockstar_newswire": [{"knowledge_id": 1}],
-        "news_feeds": [
-            {"knowledge_id": 2},
-            {"knowledge_id": 3},
-        ],
-        "total": 3,
-    }
-
-
-def test_run_gta6_research_without_rockstar_query_hash(monkeypatch):
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.monitor_rockstar_newswire",
-        lambda: "monitor-result",
+        module,
+        "ingest_rockstar_newswire_from_monitor",
+        lambda: monitor_items,
     )
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
+        module.settings,
+        "ROCKSTAR_QUERY_HASH",
         None,
     )
 
     def fail_if_called(query_hash):
         raise AssertionError(
-            "Rockstar Graph ingestion should not run without query hash"
+            "Graph ingestion should not be called without query hash"
         )
 
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
+        module,
+        "ingest_rockstar_newswire",
         fail_if_called,
     )
     monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
-        lambda: [{"knowledge_id": 2}],
-    )
-
-    result = run_gta6_research()
-
-    assert result == {
-        "rockstar_monitor": "monitor-result",
-        "rockstar_newswire": [],
-        "news_feeds": [{"knowledge_id": 2}],
-        "total": 1,
-    }
-
-
-def test_run_gta6_research_empty(monkeypatch):
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.monitor_rockstar_newswire",
-        lambda: "monitor-result",
-    )
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
-        "test-query-hash",
-    )
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
-        lambda query_hash: [],
-    )
-    monkeypatch.setattr(
-        "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
+        module,
+        "run_gta6_news_pipeline",
         lambda: [],
     )
 
-    result = run_gta6_research()
+    result = module.run_gta6_research()
 
-    assert result == {
-        "rockstar_monitor": "monitor-result",
-        "rockstar_newswire": [],
-        "news_feeds": [],
-        "total": 0,
-    }
+    assert result["rockstar_newswire"] == []
+    assert result["total"] == 0
