@@ -35,6 +35,7 @@ class Settings:
     DATABASE_FILE = DATABASE_DIR / "br_no_gta.db"
 
     LOG_LEVEL = os.getenv("BR_LOG_LEVEL", "INFO")
+    ROCKSTAR_QUERY_HASH = os.getenv("BR_ROCKSTAR_QUERY_HASH")
 
 
 settings = Settings()

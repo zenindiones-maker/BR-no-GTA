@@ -3,8 +3,12 @@ from app.services.gta6_research_pipeline import run_gta6_research
 
 def test_run_gta6_research(monkeypatch):
     monkeypatch.setattr(
+        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
+        "test-query-hash",
+    )
+    monkeypatch.setattr(
         "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
-        lambda: [{"knowledge_id": 1}],
+        lambda query_hash: [{"knowledge_id": 1}],
     )
     monkeypatch.setattr(
         "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
@@ -23,10 +27,43 @@ def test_run_gta6_research(monkeypatch):
     }
 
 
-def test_run_gta6_research_empty(monkeypatch):
+def test_run_gta6_research_without_rockstar_query_hash(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
+        None,
+    )
+
+    def fail_if_called(query_hash):
+        raise AssertionError(
+            "Rockstar Graph ingestion should not run without query hash"
+        )
+
     monkeypatch.setattr(
         "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
-        lambda: [],
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
+        lambda: [{"knowledge_id": 2}],
+    )
+
+    result = run_gta6_research()
+
+    assert result == {
+        "rockstar_newswire": [],
+        "news_feeds": [{"knowledge_id": 2}],
+        "total": 1,
+    }
+
+
+def test_run_gta6_research_empty(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.gta6_research_pipeline.settings.ROCKSTAR_QUERY_HASH",
+        "test-query-hash",
+    )
+    monkeypatch.setattr(
+        "app.services.gta6_research_pipeline.ingest_rockstar_newswire",
+        lambda query_hash: [],
     )
     monkeypatch.setattr(
         "app.services.gta6_research_pipeline.run_gta6_news_pipeline",
