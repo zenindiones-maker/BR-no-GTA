@@ -6,6 +6,8 @@ from app.services.google_oauth import (
     YOUTUBE_UPLOAD_SCOPE,
     authorize_youtube,
     create_oauth_flow,
+    load_youtube_credentials,
+    save_youtube_credentials,
 )
 
 
@@ -67,9 +69,7 @@ def test_create_oauth_flow_does_not_execute_authorization(tmp_path):
     fake_flow.run_console.assert_not_called()
 
 
-def test_create_oauth_flow_rejects_nonexistent_file(
-    tmp_path: Path,
-):
+def test_create_oauth_flow_rejects_nonexistent_file(tmp_path):
     missing_file = tmp_path / "missing.json"
 
     with pytest.raises(
@@ -81,9 +81,7 @@ def test_create_oauth_flow_rejects_nonexistent_file(
         )
 
 
-def test_authorize_youtube_uses_injected_runner(
-    tmp_path: Path,
-):
+def test_authorize_youtube_uses_injected_runner(tmp_path):
     client_secrets = tmp_path / "client_secret.json"
     client_secrets.write_text("{}")
 
@@ -108,9 +106,7 @@ def test_authorize_youtube_uses_injected_runner(
     fake_flow.run_local_server.assert_not_called()
 
 
-def test_authorize_youtube_uses_default_authorization_flow(
-    tmp_path: Path,
-):
+def test_authorize_youtube_uses_default_authorization_flow(tmp_path):
     client_secrets = tmp_path / "client_secret.json"
     client_secrets.write_text("{}")
 
@@ -137,9 +133,7 @@ def test_authorize_youtube_uses_default_authorization_flow(
     )
 
 
-def test_authorize_youtube_rejects_missing_credentials(
-    tmp_path: Path,
-):
+def test_authorize_youtube_rejects_missing_credentials(tmp_path):
     client_secrets = tmp_path / "client_secret.json"
     client_secrets.write_text("{}")
 
@@ -158,3 +152,254 @@ def test_authorize_youtube_rejects_missing_credentials(
             authorize_youtube(
                 client_secrets_file=str(client_secrets),
             )
+
+
+def test_save_youtube_credentials_writes_json(tmp_path):
+    token_file = tmp_path / "oauth" / "token.json"
+
+    credentials = Mock()
+    credentials.to_json.return_value = '{"token": "access-token"}'
+
+    save_youtube_credentials(
+        credentials=credentials,
+        token_file=str(token_file),
+    )
+
+    assert token_file.is_file()
+    assert token_file.read_text(encoding="utf-8") == (
+        '{"token": "access-token"}'
+    )
+
+    credentials.to_json.assert_called_once_with()
+
+
+def test_save_youtube_credentials_creates_parent_directory(
+    tmp_path,
+):
+    token_file = tmp_path / "nested" / "oauth" / "token.json"
+
+    credentials = Mock()
+    credentials.to_json.return_value = "{}"
+
+    save_youtube_credentials(
+        credentials=credentials,
+        token_file=str(token_file),
+    )
+
+    assert token_file.is_file()
+    assert token_file.read_text(encoding="utf-8") == "{}"
+
+
+def test_save_youtube_credentials_rejects_missing_credentials(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+
+    with pytest.raises(
+        ValueError,
+        match="credentials are required",
+    ):
+        save_youtube_credentials(
+            credentials=None,
+            token_file=str(token_file),
+        )
+
+
+def test_save_youtube_credentials_rejects_missing_token_file():
+    credentials = Mock()
+
+    with pytest.raises(
+        ValueError,
+        match="token_file is required",
+    ):
+        save_youtube_credentials(
+            credentials=credentials,
+            token_file="",
+        )
+
+
+def test_load_youtube_credentials_returns_valid_credentials(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+    credentials.valid = True
+
+    with patch(
+        "app.services.google_oauth.Credentials"
+    ) as credentials_class:
+        credentials_class.from_authorized_user_file.return_value = (
+            credentials
+        )
+
+        result = load_youtube_credentials(
+            token_file=str(token_file),
+        )
+
+    assert result is credentials
+
+    credentials_class.from_authorized_user_file.assert_called_once_with(
+        str(token_file),
+        scopes=[YOUTUBE_UPLOAD_SCOPE],
+    )
+
+    credentials.refresh.assert_not_called()
+
+
+def test_load_youtube_credentials_rejects_missing_token_file(
+    tmp_path,
+):
+    token_file = tmp_path / "missing.json"
+
+    with pytest.raises(
+        ValueError,
+        match="token file not found",
+    ):
+        load_youtube_credentials(
+            token_file=str(token_file),
+        )
+
+
+def test_load_youtube_credentials_refreshes_expired_credentials(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+    credentials.valid = False
+    credentials.expired = True
+    credentials.refresh_token = "refresh-token"
+    credentials.to_json.return_value = (
+        '{"token": "refreshed-token"}'
+    )
+
+    request = Mock()
+
+    with patch(
+        "app.services.google_oauth.Credentials"
+    ) as credentials_class:
+        credentials_class.from_authorized_user_file.return_value = (
+            credentials
+        )
+
+        with patch(
+            "app.services.google_oauth.Request"
+        ) as request_class:
+            result = load_youtube_credentials(
+                token_file=str(token_file),
+                request=request,
+            )
+
+    assert result is credentials
+
+    credentials.refresh.assert_called_once_with(request)
+
+    request_class.assert_not_called()
+
+    assert token_file.read_text(encoding="utf-8") == (
+        '{"token": "refreshed-token"}'
+    )
+
+
+def test_load_youtube_credentials_creates_default_request_when_refreshing(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+    credentials.valid = False
+    credentials.expired = True
+    credentials.refresh_token = "refresh-token"
+    credentials.to_json.return_value = "{}"
+
+    generated_request = Mock()
+
+    with patch(
+        "app.services.google_oauth.Credentials"
+    ) as credentials_class:
+        credentials_class.from_authorized_user_file.return_value = (
+            credentials
+        )
+
+        with patch(
+            "app.services.google_oauth.Request",
+            return_value=generated_request,
+        ) as request_class:
+            result = load_youtube_credentials(
+                token_file=str(token_file),
+            )
+
+    assert result is credentials
+
+    request_class.assert_called_once_with()
+    credentials.refresh.assert_called_once_with(
+        generated_request
+    )
+
+
+def test_load_youtube_credentials_rejects_unrefreshable_credentials(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+    credentials.valid = False
+    credentials.expired = True
+    credentials.refresh_token = None
+
+    with patch(
+        "app.services.google_oauth.Credentials"
+    ) as credentials_class:
+        credentials_class.from_authorized_user_file.return_value = (
+            credentials
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "YouTube OAuth credentials are invalid "
+                "or cannot be refreshed"
+            ),
+        ):
+            load_youtube_credentials(
+                token_file=str(token_file),
+            )
+
+    credentials.refresh.assert_not_called()
+
+
+def test_load_youtube_credentials_rejects_invalid_nonexpired_credentials(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+    credentials.valid = False
+    credentials.expired = False
+    credentials.refresh_token = None
+
+    with patch(
+        "app.services.google_oauth.Credentials"
+    ) as credentials_class:
+        credentials_class.from_authorized_user_file.return_value = (
+            credentials
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "YouTube OAuth credentials are invalid "
+                "or cannot be refreshed"
+            ),
+        ):
+            load_youtube_credentials(
+                token_file=str(token_file),
+            )
+
+    credentials.refresh.assert_not_called()
