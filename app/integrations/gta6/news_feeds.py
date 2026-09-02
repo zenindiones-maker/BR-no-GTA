@@ -57,12 +57,15 @@ def fetch_gta6_news_feeds(
     items: list[GTA6NewsFeedItem] = []
 
     for source_name, url in GTA6_NEWS_FEEDS.items():
-        items.extend(
-            fetch_news_feed(
-                source_name=source_name,
-                url=url,
-                timeout=timeout,
+        try:
+            items.extend(
+                fetch_news_feed(
+                    source_name=source_name,
+                    url=url,
+                    timeout=timeout,
+                )
             )
-        )
+        except RuntimeError:
+            continue
 
     return items

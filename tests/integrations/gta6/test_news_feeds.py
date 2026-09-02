@@ -88,5 +88,33 @@ def test_fetch_gta6_news_feeds(monkeypatch):
     result = fetch_gta6_news_feeds(timeout=7)
 
     assert result == []
-    assert len(calls) == 2
+    assert len(calls) == 4
     assert all(call[2] == 7 for call in calls)
+
+
+def test_fetch_gta6_news_feeds_continues_after_source_failure(monkeypatch):
+    from app.integrations.gta6.news_aggregator import GTA6NewsFeedItem
+
+    def fake_fetch_news_feed(*, source_name, url, timeout):
+        if source_name == "IGN":
+            raise RuntimeError("failed to fetch news feed: IGN")
+
+        return [
+            GTA6NewsFeedItem(
+                title=f"{source_name} GTA VI News",
+                summary="New information.",
+                url=url,
+                source_name=source_name,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.integrations.gta6.news_feeds.fetch_news_feed",
+        fake_fetch_news_feed,
+    )
+
+    result = fetch_gta6_news_feeds(timeout=7)
+
+    assert result
+    assert all(item.source_name != "IGN" for item in result)
+    assert any(item.source_name == "GameSpot" for item in result)
