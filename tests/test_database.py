@@ -43,6 +43,7 @@ def test_schema_tables():
             "research_items",
             "ideas",
             "content_items",
+            "gta6_knowledge",
         }
 
         assert expected.issubset(tables)

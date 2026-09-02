@@ -184,6 +184,23 @@ def _migrate_youtube_publication_file_path(connection) -> None:
         )
 
 
+def _migrate_gta6_knowledge(connection) -> None:
+    """Cria a camada de conhecimento especializada em GTA 6."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_knowledge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_item_id INTEGER NOT NULL UNIQUE,
+            fact_type TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (research_item_id)
+                REFERENCES research_items(id)
+        )
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -193,6 +210,7 @@ def initialize_schema() -> None:
         connection.executescript(SCHEMA_SQL)
         _migrate_ideas_research_item_id(connection)
         _migrate_youtube_publication_file_path(connection)
+        _migrate_gta6_knowledge(connection)
         connection.commit()
     finally:
         connection.close()
