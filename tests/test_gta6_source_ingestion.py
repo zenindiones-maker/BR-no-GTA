@@ -1,63 +1,65 @@
-from app.integrations.gta6.source import GTA6SourceItem
-from app.services.gta6_source_ingestion import (
-    ingest_rockstar_newswire,
-)
+from app.services import gta6_source_ingestion
 
 
-def test_ingest_rockstar_newswire_persists_items(monkeypatch):
-    items = [
-        GTA6SourceItem(
-            title="GTA VI News",
-            summary="Official GTA VI news.",
-            url="https://example.com/gta6/news",
-            source_name="Rockstar Newswire",
-            fact_type="news",
-            confidence="confirmed",
-            published_at="2026-09-02T00:00:00+00:00",
-        ),
-        GTA6SourceItem(
-            title="GTA VI Feature",
-            summary="A GTA VI feature.",
-            url="https://example.com/gta6/feature",
-            source_name="Rockstar Newswire",
-            fact_type="feature",
-            confidence="confirmed",
-            published_at="2026-09-02T00:01:00+00:00",
-        ),
-    ]
+def test_ingest_rockstar_newswire_uses_graph_source(monkeypatch):
+    calls = {}
 
-    def fake_fetch():
-        return items
+    class FakeClient:
+        def __init__(self, query_hash):
+            calls["query_hash"] = query_hash
+
+    def fake_fetch(client):
+        calls["client"] = client
+        return [{"title": "GTA VI News"}]
+
+    def fake_ingest(items):
+        calls["items"] = items
+        return [{"knowledge_id": 1, "duplicate": False}]
 
     monkeypatch.setattr(
-        "app.services.gta6_source_ingestion."
-        "fetch_rockstar_newswire",
+        gta6_source_ingestion,
+        "RockstarNewswireGraphClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        gta6_source_ingestion,
+        "fetch_rockstar_newswire_source",
         fake_fetch,
     )
-
-    results = ingest_rockstar_newswire()
-
-    assert len(results) == 2
-
-    assert results[0]["knowledge"]["title"] == (
-        "GTA VI News"
+    monkeypatch.setattr(
+        gta6_source_ingestion,
+        "ingest_gta6_source_items",
+        fake_ingest,
     )
 
-    assert results[1]["knowledge"]["title"] == (
-        "GTA VI Feature"
+    result = gta6_source_ingestion.ingest_rockstar_newswire(
+        "test-query-hash"
     )
 
+    assert calls["query_hash"] == "test-query-hash"
+    assert calls["client"].__class__ is FakeClient
+    assert calls["items"] == [{"title": "GTA VI News"}]
+    assert result == [{"knowledge_id": 1, "duplicate": False}]
 
-def test_ingest_rockstar_newswire_returns_empty_when_source_empty(
-    monkeypatch,
-):
-    def fake_fetch():
-        return []
+
+def test_ingest_rockstar_newswire_returns_empty_without_items(monkeypatch):
+    class FakeClient:
+        def __init__(self, query_hash):
+            pass
 
     monkeypatch.setattr(
-        "app.services.gta6_source_ingestion."
-        "fetch_rockstar_newswire",
-        fake_fetch,
+        gta6_source_ingestion,
+        "RockstarNewswireGraphClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(
+        gta6_source_ingestion,
+        "fetch_rockstar_newswire_source",
+        lambda client: [],
     )
 
-    assert ingest_rockstar_newswire() == []
+    result = gta6_source_ingestion.ingest_rockstar_newswire(
+        "test-query-hash"
+    )
+
+    assert result == []
