@@ -2,13 +2,59 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from app.database.render_queue_repository import (
+    enqueue_render_job,
+    get_render_job,
+)
+from app.services.render_executor_service import (
+    AbstractRenderExecutor,
+    RenderExecutionResult,
+)
 from app.services.render_worker_service import (
     process_next_render_job,
 )
 
 
+def _create_queued_render_job() -> int:
+    return enqueue_render_job(
+        {
+            "content_item_id": 1,
+            "script_id": 1,
+            "idea_id": 1,
+            "objective": "Testar execução do Worker.",
+            "format": "YouTube editorial",
+            "estimated_duration_seconds": 60,
+            "status": "queued",
+            "job_type": "video_render",
+            "queue": "render",
+            "attempt": 0,
+            "scenes": [
+                {
+                    "order": 1,
+                    "narrative_block": "INTRODUÇÃO",
+                    "narration": "Teste de renderização.",
+                    "visual_type": "title_card",
+                    "visual_description": "Tela de teste.",
+                    "duration_seconds": 5,
+                    "requirements": [],
+                }
+            ],
+            "audio_requirements": [],
+            "visual_requirements": [],
+            "render": {
+                "resolution": "1920x1080",
+                "fps": 30,
+                "aspect_ratio": "16:9",
+                "container": "mp4",
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
+        }
+    )
+
+
 def test_worker_preserves_explicit_executor(monkeypatch):
-    explicit_executor = object()
+    explicit_executor = Mock(spec=AbstractRenderExecutor)
     orchestration = Mock()
 
     monkeypatch.setattr(
@@ -70,3 +116,43 @@ def test_worker_passes_none_when_mpt_is_not_configured(
     orchestration.assert_called_once_with(
         executor=None,
     )
+
+
+def test_worker_executes_queued_job_with_mpt_executor(
+    monkeypatch,
+):
+    job_id = _create_queued_render_job()
+
+    mpt_executor = Mock(spec=AbstractRenderExecutor)
+    mpt_executor.execute.return_value = RenderExecutionResult(
+        success=True,
+        output_path="http://127.0.0.1:8080/tasks/video.mp4",
+    )
+
+    factory = Mock(return_value=mpt_executor)
+
+    monkeypatch.setattr(
+        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        factory,
+    )
+
+    result = process_next_render_job()
+
+    assert result is not None
+    assert result.success is True
+    assert result.output_path == (
+        "http://127.0.0.1:8080/tasks/video.mp4"
+    )
+
+    factory.assert_called_once_with()
+    mpt_executor.execute.assert_called_once()
+
+    persisted_job = get_render_job(job_id)
+
+    assert persisted_job is not None
+    assert persisted_job["status"] == "completed"
+    assert persisted_job["attempt"] == 1
+    assert persisted_job["output_path"] == (
+        "http://127.0.0.1:8080/tasks/video.mp4"
+    )
+    assert persisted_job["error"] is None
