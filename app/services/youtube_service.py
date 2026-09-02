@@ -198,6 +198,7 @@ def create_youtube_publication(
         ),
         privacy_status=privacy_status,
         publish_at=publish_spec.get("publish_at"),
+        file_path=str(publish_spec["file_path"]),
         status="pending",
     )
 
