@@ -23,6 +23,49 @@ def test_normalize_removes_script_and_style():
     assert "Release date: 2026" in result
 
 
+def test_normalize_preserves_json_ld():
+    content = """
+    <html>
+        GTA VI
+        <script type="application/ld+json">
+        {"headline": "GTA VI News"}
+        </script>
+    </html>
+    """
+
+    result = normalize_monitored_content(content)
+
+    assert "application/ld+json" in result
+    assert '"headline": "GTA VI News"' in result
+
+
+def test_json_ld_change_is_detected():
+    previous_content = """
+    <html>
+        <script type="application/ld+json">
+        {"headline": "GTA VI News"}
+        </script>
+    </html>
+    """
+
+    current_content = """
+    <html>
+        <script type="application/ld+json">
+        {"headline": "GTA VI News Updated"}
+        </script>
+    </html>
+    """
+
+    previous_hash = hash_monitored_content(previous_content)
+
+    result = detect_content_change(
+        current_content,
+        previous_hash,
+    )
+
+    assert result.changed is True
+
+
 def test_hash_is_stable_for_same_content():
     content = "GTA VI release date"
 
@@ -86,6 +129,29 @@ def test_script_only_change_is_ignored():
         <html>
             GTA VI
             <script>version=2</script>
+        </html>
+        """,
+        previous_hash,
+    )
+
+    assert result.changed is False
+
+
+def test_style_only_change_is_ignored():
+    previous_hash = hash_monitored_content(
+        """
+        <html>
+            GTA VI
+            <style>.title { color: red; }</style>
+        </html>
+        """
+    )
+
+    result = detect_content_change(
+        """
+        <html>
+            GTA VI
+            <style>.title { color: blue; }</style>
         </html>
         """,
         previous_hash,

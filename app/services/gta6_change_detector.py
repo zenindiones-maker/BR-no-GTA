@@ -19,6 +19,18 @@ def normalize_monitored_content(content: str) -> str:
         raise ValueError("content must be a string")
 
     normalized = content
+    json_ld_blocks: list[str] = []
+
+    def preserve_json_ld(match: re.Match[str]) -> str:
+        json_ld_blocks.append(match.group(0))
+        return f"__GTA6_JSON_LD_{len(json_ld_blocks) - 1}__"
+
+    normalized = re.sub(
+        r'<script\b[^>]*type=["\']application/ld\+json["\'][^>]*>.*?</script>',
+        preserve_json_ld,
+        normalized,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
 
     normalized = re.sub(
         r"<script\b[^>]*>.*?</script>",
@@ -34,11 +46,13 @@ def normalize_monitored_content(content: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    normalized = re.sub(
-        r"\s+",
-        " ",
-        normalized,
-    )
+    for index, block in enumerate(json_ld_blocks):
+        normalized = normalized.replace(
+            f"__GTA6_JSON_LD_{index}__",
+            block,
+        )
+
+    normalized = re.sub(r"\s+", " ", normalized)
 
     return normalized.strip()
 
