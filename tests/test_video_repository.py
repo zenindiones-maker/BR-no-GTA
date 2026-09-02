@@ -2,6 +2,7 @@ from app.database.content_repository import insert_content_item
 from app.database.video_repository import (
     get_video,
     insert_video,
+    mark_video_ready,
     list_videos,
     update_video_file_path,
     update_video_status,
@@ -102,3 +103,35 @@ def test_update_video_file_path():
 
     assert video is not None
     assert video["file_path"] == "output/video.mp4"
+
+
+def test_mark_video_ready_persists_file_path_and_status_atomically():
+    content_item_id = insert_content_item(
+        title="Content Item para Video Ready",
+        content_type="short",
+        status="ready",
+    )
+
+    video_id = insert_video(
+        content_item_id=content_item_id,
+        title="Vídeo pronto",
+        status="draft",
+    )
+
+    assert mark_video_ready(
+        video_id,
+        "renders/final.mp4",
+    )
+
+    video = get_video(video_id)
+
+    assert video is not None
+    assert video["file_path"] == "renders/final.mp4"
+    assert video["status"] == "ready"
+
+
+def test_mark_video_ready_returns_false_for_missing_video():
+    assert not mark_video_ready(
+        999999,
+        "renders/missing.mp4",
+    )

@@ -133,3 +133,33 @@ def update_video_file_path(
         return cursor.rowcount > 0
     finally:
         connection.close()
+
+def mark_video_ready(
+    video_id: int,
+    file_path: str,
+) -> bool:
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN")
+
+        cursor = connection.execute(
+            """
+            UPDATE videos
+            SET file_path = ?,
+                status = ?
+            WHERE id = ?
+            """,
+            (file_path, "ready", video_id),
+        )
+
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return False
+
+        connection.commit()
+        return True
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
