@@ -1,4 +1,7 @@
 import app.services.google_youtube_publisher_factory as factory
+from app.services.google_youtube_publisher import (
+    GoogleYouTubePublisher,
+)
 
 
 class FakeCredentials:
@@ -6,12 +9,14 @@ class FakeCredentials:
 
 
 class FakeYouTubeService:
-    pass
+    def __init__(self):
+        self.videos_calls = 0
 
-
-class FakePublisher:
-    def __init__(self, *, youtube_service):
-        self.youtube_service = youtube_service
+    def videos(self):
+        self.videos_calls += 1
+        raise AssertionError(
+            "YouTube API must not be called during publisher composition"
+        )
 
 
 def test_create_google_youtube_publisher_composes_real_dependencies(
@@ -33,38 +38,35 @@ def test_create_google_youtube_publisher_composes_real_dependencies(
         calls.append(("service", received_credentials))
         return youtube_service
 
-    def fake_publisher(*, youtube_service):
-        calls.append(("publisher", youtube_service))
-        return FakePublisher(youtube_service=youtube_service)
-
     monkeypatch.setattr(
         factory,
         "load_youtube_credentials",
         fake_load_youtube_credentials,
     )
+
     monkeypatch.setattr(
         factory,
         "create_youtube_service",
         fake_create_youtube_service,
-    )
-    monkeypatch.setattr(
-        factory,
-        "GoogleYouTubePublisher",
-        fake_publisher,
     )
 
     result = factory.create_google_youtube_publisher(
         token_file=str(token_file),
     )
 
-    assert isinstance(result, FakePublisher)
+    assert isinstance(
+        result,
+        GoogleYouTubePublisher,
+    )
+
     assert result.youtube_service is youtube_service
 
     assert calls == [
         ("load", str(token_file)),
         ("service", credentials),
-        ("publisher", youtube_service),
     ]
+
+    assert youtube_service.videos_calls == 0
 
 
 def test_create_google_youtube_publisher_requires_token_file():
