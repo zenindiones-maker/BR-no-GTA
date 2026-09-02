@@ -191,6 +191,7 @@ def _migrate_gta6_knowledge(connection) -> None:
         CREATE TABLE IF NOT EXISTS gta6_knowledge (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_item_id INTEGER NOT NULL UNIQUE,
+            source_name TEXT NOT NULL DEFAULT '',
             fact_type TEXT NOT NULL,
             confidence TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -200,6 +201,21 @@ def _migrate_gta6_knowledge(connection) -> None:
         )
         """
     )
+
+
+def _migrate_gta6_knowledge_source_name(connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(gta6_knowledge)"
+        ).fetchall()
+    }
+
+    if "source_name" not in columns:
+        connection.execute(
+            "ALTER TABLE gta6_knowledge "
+            "ADD COLUMN source_name TEXT NOT NULL DEFAULT ''"
+        )
 
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
@@ -211,6 +227,7 @@ def initialize_schema() -> None:
         _migrate_ideas_research_item_id(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
+        _migrate_gta6_knowledge_source_name(connection)
         connection.commit()
     finally:
         connection.close()

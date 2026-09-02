@@ -5,6 +5,7 @@ from app.database.connection import get_connection
 
 def insert_gta6_knowledge(
     research_item_id: int,
+    source_name: str,
     fact_type: str,
     confidence: str,
 ) -> int:
@@ -13,6 +14,8 @@ def insert_gta6_knowledge(
     if not isinstance(research_item_id, int) or research_item_id <= 0:
         raise ValueError("research_item_id must be a positive integer")
 
+    if not isinstance(source_name, str) or not source_name.strip():
+        raise ValueError("source_name is required")
     if not isinstance(fact_type, str) or not fact_type.strip():
         raise ValueError("fact_type is required")
 
@@ -26,13 +29,15 @@ def insert_gta6_knowledge(
             """
             INSERT INTO gta6_knowledge (
                 research_item_id,
+                source_name,
                 fact_type,
                 confidence
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
             """,
             (
                 research_item_id,
+                source_name.strip(),
                 fact_type.strip(),
                 confidence.strip(),
             ),
@@ -61,6 +66,7 @@ def get_gta6_knowledge(
             SELECT
                 id,
                 research_item_id,
+                source_name,
                 fact_type,
                 confidence,
                 created_at,
@@ -93,6 +99,7 @@ def get_gta6_knowledge_by_research_item(
             SELECT
                 id,
                 research_item_id,
+                source_name,
                 fact_type,
                 confidence,
                 created_at,
@@ -120,6 +127,7 @@ def list_gta6_knowledge() -> list[dict[str, Any]]:
             SELECT
                 id,
                 research_item_id,
+                source_name,
                 fact_type,
                 confidence,
                 created_at,

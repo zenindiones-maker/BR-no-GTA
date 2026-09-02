@@ -22,6 +22,7 @@ def test_insert_and_get_gta6_knowledge():
 
     knowledge_id = insert_gta6_knowledge(
         research_item_id=research_item_id,
+        source_name="Test Source",
         fact_type="news",
         confidence="confirmed",
     )
@@ -50,6 +51,7 @@ def test_get_gta6_knowledge_by_research_item():
 
     knowledge_id = insert_gta6_knowledge(
         research_item_id=research_item_id,
+        source_name="Test Source",
         fact_type="feature",
         confidence="probable",
     )
@@ -84,12 +86,14 @@ def test_list_gta6_knowledge():
 
     first_id = insert_gta6_knowledge(
         research_item_id=first_research_id,
+        source_name="Test Source",
         fact_type="news",
         confidence="confirmed",
     )
 
     second_id = insert_gta6_knowledge(
         research_item_id=second_research_id,
+        source_name="Test Source",
         fact_type="gameplay",
         confidence="unconfirmed",
     )
@@ -117,6 +121,7 @@ def test_insert_gta6_knowledge_without_existing_research_item():
 
     knowledge_id = insert_gta6_knowledge(
         research_item_id=999999,
+        source_name="Test Source",
         fact_type="news",
         confidence="unconfirmed",
     )
@@ -142,6 +147,7 @@ def test_duplicate_research_item_is_rejected():
 
     insert_gta6_knowledge(
         research_item_id=research_item_id,
+        source_name="Test Source",
         fact_type="news",
         confidence="confirmed",
     )
@@ -149,6 +155,7 @@ def test_duplicate_research_item_is_rejected():
     with pytest.raises(Exception):
         insert_gta6_knowledge(
             research_item_id=research_item_id,
+        source_name="Test Source",
             fact_type="feature",
             confidence="probable",
         )
@@ -164,6 +171,7 @@ def test_invalid_research_item_id(research_item_id):
     with pytest.raises(ValueError):
         insert_gta6_knowledge(
             research_item_id=research_item_id,
+        source_name="Test Source",
             fact_type="news",
             confidence="confirmed",
         )
@@ -203,6 +211,7 @@ def test_invalid_fact_type(fact_type):
     with pytest.raises(ValueError):
         insert_gta6_knowledge(
             research_item_id=1,
+        source_name="Test Source",
             fact_type=fact_type,
             confidence="confirmed",
         )
@@ -218,6 +227,7 @@ def test_invalid_confidence(confidence):
     with pytest.raises(ValueError):
         insert_gta6_knowledge(
             research_item_id=1,
+        source_name="Test Source",
             fact_type="news",
             confidence=confidence,
         )

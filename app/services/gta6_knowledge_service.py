@@ -55,6 +55,7 @@ def create_gta6_knowledge(
 
     knowledge_id = insert_gta6_knowledge(
         research_item_id=research_item_id,
+        source_name=item.source_name,
         fact_type=item.fact_type,
         confidence=item.confidence,
     )
