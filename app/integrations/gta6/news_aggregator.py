@@ -3,6 +3,32 @@ from html import unescape
 from xml.etree import ElementTree
 
 
+GTA6_RELEVANCE_KEYWORDS = (
+    "gta 6",
+    "gta vi",
+    "grand theft auto vi",
+    "grand theft auto 6",
+    "vice city",
+)
+
+
+def is_gta6_relevant(
+    title: str,
+    summary: str = "",
+) -> bool:
+    """Verifica se o conteúdo possui referência direta a GTA VI."""
+
+    if not isinstance(title, str) or not isinstance(summary, str):
+        raise ValueError("title and summary must be strings")
+
+    combined = f"{title} {summary}".strip().lower()
+
+    return any(
+        keyword in combined
+        for keyword in GTA6_RELEVANCE_KEYWORDS
+    )
+
+
 @dataclass(frozen=True)
 class GTA6NewsFeedItem:
     title: str
@@ -46,13 +72,19 @@ def _parse_rss_feed(
         url = _text(element.find("link"))
         published_at = _text(element.find("pubDate"))
 
+        title = unescape(title)
+        summary = unescape(summary)
+
         if not title or not url:
+            continue
+
+        if not is_gta6_relevant(title, summary):
             continue
 
         items.append(
             GTA6NewsFeedItem(
-                title=unescape(title),
-                summary=unescape(summary),
+                title=title,
+                summary=summary,
                 url=url,
                 source_name=source_name,
                 published_at=published_at or None,
@@ -88,13 +120,19 @@ def _parse_atom_feed(
                 element.find(f"{{{namespace}}}updated")
             )
 
+        title = unescape(title)
+        summary = unescape(summary)
+
         if not title or not url:
+            continue
+
+        if not is_gta6_relevant(title, summary):
             continue
 
         items.append(
             GTA6NewsFeedItem(
-                title=unescape(title),
-                summary=unescape(summary),
+                title=title,
+                summary=summary,
                 url=url,
                 source_name=source_name,
                 published_at=published_at or None,

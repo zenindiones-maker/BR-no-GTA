@@ -134,3 +134,71 @@ def test_parse_atom_feed():
     assert item.url == "https://example.com/gta6/atom"
     assert item.source_name == "Atom Source"
     assert item.published_at == "2026-09-02T00:00:00Z"
+
+
+def test_is_gta6_relevant_accepts_gta6_keywords():
+    from app.integrations.gta6.news_aggregator import is_gta6_relevant
+
+    assert is_gta6_relevant("GTA VI recebe novidades", "")
+    assert is_gta6_relevant("Grand Theft Auto VI", "")
+    assert is_gta6_relevant("Novidades", "GTA 6 terá novos recursos")
+    assert is_gta6_relevant("Vice City", "Novos detalhes do jogo")
+
+
+def test_is_gta6_relevant_rejects_unrelated_content():
+    from app.integrations.gta6.news_aggregator import is_gta6_relevant
+
+    assert not is_gta6_relevant(
+        "Novo jogo da Rockstar",
+        "Informações sobre outro título.",
+    )
+
+
+def test_rss_parser_filters_unrelated_items():
+    from app.integrations.gta6.news_aggregator import parse_rss_feed
+
+    xml = """
+    <rss>
+      <channel>
+        <item>
+          <title>GTA VI News</title>
+          <description>New GTA VI information.</description>
+          <link>https://example.com/gta6</link>
+        </item>
+        <item>
+          <title>Other Game News</title>
+          <description>Unrelated information.</description>
+          <link>https://example.com/other</link>
+        </item>
+      </channel>
+    </rss>
+    """
+
+    result = parse_rss_feed(xml, source_name="Test")
+
+    assert len(result) == 1
+    assert result[0].title == "GTA VI News"
+
+
+def test_atom_parser_filters_unrelated_items():
+    from app.integrations.gta6.news_aggregator import parse_rss_feed
+
+    xml = """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>GTA VI Atom News</title>
+        <summary>New GTA VI information.</summary>
+        <link href="https://example.com/gta6" />
+      </entry>
+      <entry>
+        <title>Other Game News</title>
+        <summary>Unrelated information.</summary>
+        <link href="https://example.com/other" />
+      </entry>
+    </feed>
+    """
+
+    result = parse_rss_feed(xml, source_name="Test")
+
+    assert len(result) == 1
+    assert result[0].title == "GTA VI Atom News"
