@@ -1,4 +1,5 @@
 import pytest
+from app.database.video_repository import get_video
 
 from app.database.schema import initialize_schema
 from app.database.ideas_repository import insert_idea
@@ -212,3 +213,48 @@ def test_orchestration_does_not_increment_attempt_when_not_queued():
 
     assert job_after["status"] == "running"
     assert job_after["attempt"] == 1
+
+def test_execute_render_job_success_completes_associated_video():
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - fechamento Render -> Video",
+        description="Pauta aprovada para testar o fechamento do ciclo.",
+        status="approved",
+        score=9.5,
+    )
+
+    script_id = generate_and_save_script(idea_id)
+    spec = generate_script_spec(script_id)
+    item = create_content_item(spec)
+    plan = create_production_plan(item)
+    video_spec = create_video_spec(plan)
+
+    from app.services.video_service import create_video
+
+    video = create_video(video_spec)
+    video_id = video["id"]
+
+    execution = create_video_execution_spec(video)
+    job_id = enqueue_video_render(execution, video_id=video_id)
+
+    result = execute_render_job(
+        job_id,
+        executor=SuccessfulExecutor(),
+    )
+
+    assert result.success is True
+    assert result.output_path == "/tmp/rendered-video.mp4"
+
+    job = get_render_job(job_id)
+
+    assert job is not None
+    assert job["status"] == "completed"
+    assert job["video_id"] == video_id
+    assert job["output_path"] == "/tmp/rendered-video.mp4"
+
+    persisted_video = get_video(video_id)
+
+    assert persisted_video is not None
+    assert persisted_video["status"] == "ready"
+    assert persisted_video["file_path"] == "/tmp/rendered-video.mp4"
