@@ -1,19 +1,24 @@
 from pathlib import Path
 
 import pytest
-
+import app.services.google_youtube_publisher as publisher_module
 from app.services.google_youtube_publisher import (
     GoogleYouTubePublisher,
 )
-from app.services.youtube_publisher import YouTubePublishResult
+from app.services.youtube_publisher import (
+    YouTubePublishResult,
+)
 
 
 class FakeRequest:
-    def __init__(self, *, response=None, error=None):
+    def __init__(self, response=None, error=None):
         self.response = response
         self.error = error
+        self.execute_calls = 0
 
     def execute(self):
+        self.execute_calls += 1
+
         if self.error is not None:
             raise self.error
 
@@ -32,248 +37,362 @@ class FakeVideosResource:
 
 class FakeYouTubeService:
     def __init__(self, request):
-        self.videos_resource = FakeVideosResource(request)
+        self.request = request
         self.videos_calls = 0
+        self.videos_resource = FakeVideosResource(request)
 
     def videos(self):
         self.videos_calls += 1
         return self.videos_resource
 
 
-@pytest.fixture
-def video_file(tmp_path: Path) -> Path:
-    path = tmp_path / "video.mp4"
-    path.write_bytes(b"fake video content")
-    return path
+class FakeMediaFileUpload:
+    calls = []
+
+    def __init__(self, filename, chunksize, resumable):
+        self.filename = filename
+        self.chunksize = chunksize
+        self.resumable = resumable
+
+        type(self).calls.append(
+            {
+                "filename": filename,
+                "chunksize": chunksize,
+                "resumable": resumable,
+            }
+        )
 
 
-def make_publication(video_file: Path) -> dict:
-    return {
-        "id": 123,
+def test_google_youtube_publisher_requires_service():
+    try:
+        GoogleYouTubePublisher(
+            youtube_service=None,
+        )
+    except ValueError as exc:
+        assert str(exc) == "youtube_service is required"
+    else:
+        raise AssertionError(
+            "Expected ValueError when youtube_service is None"
+        )
+
+
+def test_instantiation_does_not_execute_youtube_upload():
+    request = FakeRequest(
+        response={"id": "never-used"},
+    )
+    service = FakeYouTubeService(request)
+
+    publisher = GoogleYouTubePublisher(
+        youtube_service=service,
+    )
+
+    assert isinstance(
+        publisher,
+        GoogleYouTubePublisher,
+    )
+
+    assert service.videos_calls == 0
+    assert service.videos_resource.insert_calls == []
+    assert request.execute_calls == 0
+
+
+def test_publish_executes_upload_and_returns_youtube_publish_result(
+    monkeypatch,
+    tmp_path,
+):
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(b"fake video")
+
+    request = FakeRequest(
+        response={"id": "abc123"},
+    )
+    service = FakeYouTubeService(request)
+
+    FakeMediaFileUpload.calls = []
+
+    monkeypatch.setattr(
+        publisher_module,
+        "MediaFileUpload",
+        FakeMediaFileUpload,
+    )
+
+    publisher = GoogleYouTubePublisher(
+        youtube_service=service,
+    )
+
+    publication = {
         "file_path": str(video_file),
-        "title": "Vídeo GTA",
+        "title": "BR no GTA",
         "description": "Descrição do vídeo",
-        "tags": ["GTA", "GTA 6"],
+        "tags": ["GTA", "BR", "YouTube"],
         "category_id": "20",
         "privacy_status": "private",
     }
 
+    result = publisher.publish(publication)
 
-def test_google_youtube_publisher_returns_success(video_file):
+    assert isinstance(
+        result,
+        YouTubePublishResult,
+    )
+
+    assert result.success is True
+    assert result.youtube_video_id == "abc123"
+    assert (
+        result.youtube_url
+        == "https://www.youtube.com/watch?v=abc123"
+    )
+    assert result.error is None
+
+    assert service.videos_calls == 1
+    assert len(service.videos_resource.insert_calls) == 1
+    assert request.execute_calls == 1
+
+    media_upload_calls = FakeMediaFileUpload.calls
+
+    assert media_upload_calls == [
+        {
+            "filename": str(video_file),
+            "chunksize": -1,
+            "resumable": True,
+        }
+    ]
+
+    insert_call = service.videos_resource.insert_calls[0]
+
+    assert insert_call["part"] == "snippet,status"
+    assert isinstance(
+        insert_call["media_body"],
+        FakeMediaFileUpload,
+    )
+
+    assert insert_call["body"] == {
+        "snippet": {
+            "title": "BR no GTA",
+            "description": "Descrição do vídeo",
+            "tags": ["GTA", "BR", "YouTube"],
+            "categoryId": "20",
+        },
+        "status": {
+            "privacyStatus": "private",
+        },
+    }
+
+
+def test_publish_includes_publish_at_when_provided(
+    monkeypatch,
+    tmp_path,
+):
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(b"fake video")
+
     request = FakeRequest(
-        response={"id": "youtube-123"},
+        response={"id": "scheduled123"},
     )
     service = FakeYouTubeService(request)
+
+    monkeypatch.setattr(
+        publisher_module,
+        "MediaFileUpload",
+        FakeMediaFileUpload,
+    )
+
     publisher = GoogleYouTubePublisher(
         youtube_service=service,
     )
 
     result = publisher.publish(
-        make_publication(video_file),
+        {
+            "file_path": str(video_file),
+            "title": "Vídeo agendado",
+            "publish_at": "2026-09-10T18:00:00Z",
+        }
     )
 
-    assert isinstance(result, YouTubePublishResult)
     assert result.success is True
-    assert result.youtube_video_id == "youtube-123"
-    assert (
-        result.youtube_url
-        == "https://www.youtube.com/watch?v=youtube-123"
-    )
-    assert result.error is None
+    assert result.youtube_video_id == "scheduled123"
 
+    insert_call = service.videos_resource.insert_calls[0]
 
-def test_google_youtube_publisher_calls_youtube_api(video_file):
-    request = FakeRequest(
-        response={"id": "youtube-456"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    publisher.publish(make_publication(video_file))
-
-    assert service.videos_calls == 1
-    assert len(service.videos_resource.insert_calls) == 1
-
-
-def test_google_youtube_publisher_builds_metadata(video_file):
-    request = FakeRequest(
-        response={"id": "youtube-789"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    publisher.publish(make_publication(video_file))
-
-    call = service.videos_resource.insert_calls[0]
-
-    assert call["part"] == "snippet,status"
-
-    assert call["body"]["snippet"] == {
-        "title": "Vídeo GTA",
-        "description": "Descrição do vídeo",
-        "tags": ["GTA", "GTA 6"],
-        "categoryId": "20",
-    }
-
-    assert call["body"]["status"] == {
-        "privacyStatus": "private",
-    }
-
-
-def test_google_youtube_publisher_accepts_publish_at(video_file):
-    request = FakeRequest(
-        response={"id": "youtube-scheduled"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    publication = make_publication(video_file)
-    publication["publish_at"] = "2026-09-10T18:00:00Z"
-
-    publisher.publish(publication)
-
-    call = service.videos_resource.insert_calls[0]
-
-    assert call["body"]["status"] == {
+    assert insert_call["body"]["status"] == {
         "privacyStatus": "private",
         "publishAt": "2026-09-10T18:00:00Z",
     }
 
 
-def test_google_youtube_publisher_creates_media_upload(
-    video_file,
+def test_publish_requires_publication_dict():
+    publisher = GoogleYouTubePublisher(
+        youtube_service=FakeYouTubeService(
+            FakeRequest(),
+        ),
+    )
+
+    try:
+        publisher.publish(None)
+    except TypeError as exc:
+        assert str(exc) == "publication must be a dict"
+    else:
+        raise AssertionError(
+            "Expected TypeError when publication is not a dict"
+        )
+
+
+def test_publish_requires_file_path():
+    publisher = GoogleYouTubePublisher(
+        youtube_service=FakeYouTubeService(
+            FakeRequest(),
+        ),
+    )
+
+    result = publisher.publish(
+        {
+            "title": "Vídeo",
+        }
+    )
+
+    assert result == YouTubePublishResult(
+        success=False,
+        error="publication file_path is required",
+    )
+
+
+def test_publish_requires_existing_video_file():
+    missing_file = Path(
+        "/tmp/br-no-gta-video-does-not-exist.mp4"
+    )
+
+    publisher = GoogleYouTubePublisher(
+        youtube_service=FakeYouTubeService(
+            FakeRequest(),
+        ),
+    )
+
+    result = publisher.publish(
+        {
+            "file_path": str(missing_file),
+            "title": "Vídeo",
+        }
+    )
+
+    assert result == YouTubePublishResult(
+        success=False,
+        error=(
+            "video file not found: "
+            f"{missing_file}"
+        ),
+    )
+
+
+def test_publish_requires_title(tmp_path):
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(b"fake video")
+
+    publisher = GoogleYouTubePublisher(
+        youtube_service=FakeYouTubeService(
+            FakeRequest(),
+        ),
+    )
+
+    result = publisher.publish(
+        {
+            "file_path": str(video_file),
+        }
+    )
+
+    assert result == YouTubePublishResult(
+        success=False,
+        error="publication title is required",
+    )
+
+
+def test_publish_fails_when_youtube_response_has_no_video_id(
+    monkeypatch,
+    tmp_path,
 ):
-    request = FakeRequest(
-        response={"id": "youtube-upload"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(b"fake video")
 
-    result = publisher.publish(make_publication(video_file))
-
-    assert result.success is True
-
-    assert len(service.videos_resource.insert_calls) == 1
-
-    call = service.videos_resource.insert_calls[0]
-
-    assert call["part"] == "snippet,status"
-    assert call["media_body"] is not None
-    assert call["media_body"].__class__.__name__ == "MediaFileUpload"
-
-
-def test_google_youtube_publisher_rejects_missing_file():
-    request = FakeRequest(
-        response={"id": "unused"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    publication = {
-        "file_path": "/does/not/exist/video.mp4",
-        "title": "Vídeo GTA",
-    }
-
-    result = publisher.publish(publication)
-
-    assert result.success is False
-    assert result.youtube_video_id is None
-    assert result.youtube_url is None
-    assert "video file not found" in result.error
-
-
-def test_google_youtube_publisher_rejects_missing_title(
-    video_file,
-):
-    request = FakeRequest(
-        response={"id": "unused"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    publication = {
-        "file_path": str(video_file),
-    }
-
-    result = publisher.publish(publication)
-
-    assert result.success is False
-    assert result.youtube_video_id is None
-    assert result.youtube_url is None
-    assert result.error == "publication title is required"
-
-
-def test_google_youtube_publisher_rejects_invalid_publication():
-    request = FakeRequest(
-        response={"id": "unused"},
-    )
-    service = FakeYouTubeService(request)
-    publisher = GoogleYouTubePublisher(
-        youtube_service=service,
-    )
-
-    with pytest.raises(TypeError, match="publication must be a dict"):
-        publisher.publish("invalid")
-
-
-def test_google_youtube_publisher_requires_service():
-    with pytest.raises(
-        ValueError,
-        match="youtube_service is required",
-    ):
-        GoogleYouTubePublisher(youtube_service=None)
-
-
-def test_google_youtube_publisher_handles_missing_video_id(
-    video_file,
-):
     request = FakeRequest(
         response={},
     )
     service = FakeYouTubeService(request)
+
+    monkeypatch.setattr(
+        publisher_module,
+        "MediaFileUpload",
+        FakeMediaFileUpload,
+    )
+
     publisher = GoogleYouTubePublisher(
         youtube_service=service,
     )
 
     result = publisher.publish(
-        make_publication(video_file),
+        {
+            "file_path": str(video_file),
+            "title": "Vídeo",
+        }
     )
 
-    assert result.success is False
-    assert result.youtube_video_id is None
-    assert result.youtube_url is None
-    assert (
-        result.error
-        == "YouTube API response did not contain video id"
+    assert result == YouTubePublishResult(
+        success=False,
+        error=(
+            "YouTube API response did not "
+            "contain video id"
+        ),
     )
 
+    assert service.videos_calls == 1
+    assert request.execute_calls == 1
 
-def test_google_youtube_publisher_handles_api_error(video_file):
+
+def test_publish_converts_youtube_api_exception_to_failure(
+    monkeypatch,
+    tmp_path,
+):
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(b"fake video")
+
     request = FakeRequest(
         error=RuntimeError("simulated YouTube API failure"),
     )
     service = FakeYouTubeService(request)
+
+    monkeypatch.setattr(
+        publisher_module,
+        "MediaFileUpload",
+        FakeMediaFileUpload,
+    )
+
     publisher = GoogleYouTubePublisher(
         youtube_service=service,
     )
 
     result = publisher.publish(
-        make_publication(video_file),
+        {
+            "file_path": str(video_file),
+            "title": "Vídeo",
+        }
     )
 
-    assert result.success is False
-    assert result.youtube_video_id is None
-    assert result.youtube_url is None
-    assert result.error == "simulated YouTube API failure"
+    assert result == YouTubePublishResult(
+        success=False,
+        error="simulated YouTube API failure",
+    )
+
+    assert service.videos_calls == 1
+    assert len(service.videos_resource.insert_calls) == 1
+    assert request.execute_calls == 1
+
+def test_google_youtube_publisher_rejects_invalid_publication():
+    publisher = GoogleYouTubePublisher(
+        youtube_service=FakeYouTubeService(
+            FakeRequest(),
+        ),
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="publication must be a dict",
+    ):
+        publisher.publish("invalid")
