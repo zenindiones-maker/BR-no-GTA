@@ -89,6 +89,7 @@ def save_youtube_credentials(
         raise ValueError("token_file is required")
 
     path = Path(token_file)
+
     path.parent.mkdir(parents=True, exist_ok=True)
 
     path.write_text(
@@ -145,3 +146,60 @@ def load_youtube_credentials(
     raise RuntimeError(
         "YouTube OAuth credentials are invalid or cannot be refreshed"
     )
+
+
+def get_youtube_credentials(
+    *,
+    token_file: str,
+    client_secrets_file: str,
+    authorization_runner: Callable[[Any], Any] | None = None,
+    request: Any | None = None,
+) -> Any:
+    """
+    Obtém credenciais OAuth do YouTube.
+
+    Estratégia:
+
+    1. Tenta carregar as credenciais persistidas.
+    2. Se o token existir e estiver válido, reutiliza.
+    3. Se estiver expirado e puder ser renovado, o carregamento
+       executa o refresh automaticamente.
+    4. Se o token ainda não existir, executa a autorização OAuth.
+    5. Persiste as credenciais obtidas pela autorização.
+    6. Retorna as credenciais.
+
+    A autorização permanece delegada a authorize_youtube().
+    O carregamento e refresh permanecem delegados a
+    load_youtube_credentials().
+
+    O authorization_runner e o request existem para permitir
+    testes determinísticos sem navegador, rede ou interação humana.
+    """
+    if not isinstance(token_file, str) or not token_file.strip():
+        raise ValueError("token_file is required")
+
+    token_path = Path(token_file)
+
+    if token_path.is_file():
+        return load_youtube_credentials(
+            token_file=token_file,
+            request=request,
+        )
+
+    if (
+        not isinstance(client_secrets_file, str)
+        or not client_secrets_file.strip()
+    ):
+        raise ValueError("client_secrets_file is required")
+
+    credentials = authorize_youtube(
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+    )
+
+    save_youtube_credentials(
+        credentials=credentials,
+        token_file=token_file,
+    )
+
+    return credentials

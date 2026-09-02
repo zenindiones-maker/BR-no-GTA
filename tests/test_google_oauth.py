@@ -6,6 +6,7 @@ from app.services.google_oauth import (
     YOUTUBE_UPLOAD_SCOPE,
     authorize_youtube,
     create_oauth_flow,
+    get_youtube_credentials,
     load_youtube_credentials,
     save_youtube_credentials,
 )
@@ -403,3 +404,135 @@ def test_load_youtube_credentials_rejects_invalid_nonexpired_credentials(
             )
 
     credentials.refresh.assert_not_called()
+
+
+def test_get_youtube_credentials_loads_existing_token(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{}")
+
+    credentials = Mock()
+
+    with patch(
+        "app.services.google_oauth.load_youtube_credentials"
+    ) as load_credentials:
+        load_credentials.return_value = credentials
+
+        result = get_youtube_credentials(
+            token_file=str(token_file),
+            client_secrets_file="",
+        )
+
+    assert result is credentials
+
+    load_credentials.assert_called_once_with(
+        token_file=str(token_file),
+        request=None,
+    )
+
+
+def test_get_youtube_credentials_authorizes_when_token_is_missing(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    client_secrets_file = tmp_path / "client_secret.json"
+
+    credentials = Mock()
+
+    client_secrets_file.write_text("{}")
+
+    with patch(
+        "app.services.google_oauth.authorize_youtube"
+    ) as authorize:
+        with patch(
+            "app.services.google_oauth.save_youtube_credentials"
+        ) as save_credentials:
+            authorize.return_value = credentials
+
+            result = get_youtube_credentials(
+                token_file=str(token_file),
+                client_secrets_file=str(client_secrets_file),
+            )
+
+    assert result is credentials
+
+    authorize.assert_called_once_with(
+        client_secrets_file=str(client_secrets_file),
+        authorization_runner=None,
+    )
+
+    save_credentials.assert_called_once_with(
+        credentials=credentials,
+        token_file=str(token_file),
+    )
+
+
+def test_get_youtube_credentials_passes_injected_authorization_runner(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+    client_secrets_file = tmp_path / "client_secret.json"
+
+    client_secrets_file.write_text("{}")
+
+    credentials = Mock()
+    authorization_runner = Mock()
+
+    with patch(
+        "app.services.google_oauth.authorize_youtube"
+    ) as authorize:
+        with patch(
+            "app.services.google_oauth.save_youtube_credentials"
+        ) as save_credentials:
+            authorize.return_value = credentials
+
+            result = get_youtube_credentials(
+                token_file=str(token_file),
+                client_secrets_file=str(client_secrets_file),
+                authorization_runner=authorization_runner,
+            )
+
+    assert result is credentials
+
+    authorize.assert_called_once_with(
+        client_secrets_file=str(client_secrets_file),
+        authorization_runner=authorization_runner,
+    )
+
+    save_credentials.assert_called_once_with(
+        credentials=credentials,
+        token_file=str(token_file),
+    )
+
+
+def test_get_youtube_credentials_rejects_missing_token_file_argument():
+    try:
+        get_youtube_credentials(
+            token_file="",
+            client_secrets_file="client_secret.json",
+        )
+    except ValueError as exc:
+        assert str(exc) == "token_file is required"
+    else:
+        raise AssertionError(
+            "Expected ValueError when token_file is missing"
+        )
+
+
+def test_get_youtube_credentials_rejects_missing_client_secrets_argument(
+    tmp_path,
+):
+    token_file = tmp_path / "token.json"
+
+    try:
+        get_youtube_credentials(
+            token_file=str(token_file),
+            client_secrets_file="",
+        )
+    except ValueError as exc:
+        assert str(exc) == "client_secrets_file is required"
+    else:
+        raise AssertionError(
+            "Expected ValueError when client_secrets_file is missing"
+        )
