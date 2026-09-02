@@ -7,7 +7,9 @@ from app.integrations.gta6.news_aggregator import (
 
 GTA6_NEWS_FEEDS = {
     "IGN": "https://feeds.feedburner.com/ignfeeds",
+    "IGN GTA 6": "https://www.ign.com/rss/articles/feed?tags=grand-theft-auto-vi",
     "GameSpot": "https://www.gamespot.com/feeds/news/",
+    "Reddit GTA6": "https://www.reddit.com/r/GTA6/top/.rss?t=day",
 }
 
 
