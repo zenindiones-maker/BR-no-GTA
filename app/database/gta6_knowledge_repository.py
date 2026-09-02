@@ -133,3 +133,33 @@ def list_gta6_knowledge() -> list[dict[str, Any]]:
 
     finally:
         connection.close()
+
+
+def get_gta6_knowledge_by_source_url(
+    source_url: str,
+) -> dict[str, Any] | None:
+    if not isinstance(source_url, str) or not source_url.strip():
+        raise ValueError("source_url is required")
+
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                k.id,
+                k.research_item_id,
+                k.fact_type,
+                k.confidence,
+                k.created_at,
+                k.updated_at
+            FROM gta6_knowledge AS k
+            JOIN research_items AS r
+                ON r.id = k.research_item_id
+            WHERE r.url = ?
+            LIMIT 1
+            """,
+            (source_url.strip(),),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        connection.close()
