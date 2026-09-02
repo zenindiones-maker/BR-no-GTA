@@ -19,6 +19,9 @@ def test_publish_youtube_publication_with_google_composes_and_delegates(
 ):
     publication_id = 123
     token_file = "/tmp/youtube_token.json"
+    client_secrets_file = "/tmp/client_secret.json"
+    authorization_runner = object()
+    request = object()
 
     publisher = FakePublisher()
 
@@ -31,8 +34,22 @@ def test_publish_youtube_publication_with_google_composes_and_delegates(
 
     calls = []
 
-    def fake_create_google_youtube_publisher(*, token_file):
-        calls.append(("factory", token_file))
+    def fake_create_google_youtube_publisher(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
+        calls.append(
+            (
+                "factory",
+                token_file,
+                client_secrets_file,
+                authorization_runner,
+                request,
+            )
+        )
         return publisher
 
     def fake_publish_youtube_publication(
@@ -63,13 +80,26 @@ def test_publish_youtube_publication_with_google_composes_and_delegates(
     result = service.publish_youtube_publication_with_google(
         publication_id=publication_id,
         token_file=token_file,
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+        request=request,
     )
 
     assert result is persisted_result
 
     assert calls == [
-        ("factory", token_file),
-        ("orchestration", publication_id, publisher),
+        (
+            "factory",
+            token_file,
+            client_secrets_file,
+            authorization_runner,
+            request,
+        ),
+        (
+            "orchestration",
+            publication_id,
+            publisher,
+        ),
     ]
 
     assert publisher.publish_calls == 0
@@ -83,6 +113,7 @@ def test_publish_youtube_publication_with_google_rejects_none_publication_id():
         service.publish_youtube_publication_with_google(
             publication_id=None,
             token_file="/tmp/youtube_token.json",
+            client_secrets_file="/tmp/client_secret.json",
         )
 
 
@@ -94,6 +125,7 @@ def test_publish_youtube_publication_with_google_rejects_empty_token_file():
         service.publish_youtube_publication_with_google(
             publication_id=123,
             token_file="",
+            client_secrets_file="/tmp/client_secret.json",
         )
 
 
@@ -105,6 +137,31 @@ def test_publish_youtube_publication_with_google_rejects_whitespace_token_file()
         service.publish_youtube_publication_with_google(
             publication_id=123,
             token_file="   ",
+            client_secrets_file="/tmp/client_secret.json",
+        )
+
+
+def test_publish_youtube_publication_with_google_rejects_empty_client_secrets_file():
+    with pytest.raises(
+        ValueError,
+        match=r"^client_secrets_file is required$",
+    ):
+        service.publish_youtube_publication_with_google(
+            publication_id=123,
+            token_file="/tmp/youtube_token.json",
+            client_secrets_file="",
+        )
+
+
+def test_publish_youtube_publication_with_google_rejects_whitespace_client_secrets_file():
+    with pytest.raises(
+        ValueError,
+        match=r"^client_secrets_file is required$",
+    ):
+        service.publish_youtube_publication_with_google(
+            publication_id=123,
+            token_file="/tmp/youtube_token.json",
+            client_secrets_file="   ",
         )
 
 
@@ -113,8 +170,21 @@ def test_publish_youtube_publication_with_google_does_not_call_factory_on_invali
 ):
     calls = []
 
-    def fake_create_google_youtube_publisher(*, token_file):
-        calls.append(token_file)
+    def fake_create_google_youtube_publisher(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
+        calls.append(
+            (
+                token_file,
+                client_secrets_file,
+                authorization_runner,
+                request,
+            )
+        )
         return FakePublisher()
 
     monkeypatch.setattr(
@@ -130,6 +200,7 @@ def test_publish_youtube_publication_with_google_does_not_call_factory_on_invali
         service.publish_youtube_publication_with_google(
             publication_id=None,
             token_file="/tmp/youtube_token.json",
+            client_secrets_file="/tmp/client_secret.json",
         )
 
     with pytest.raises(
@@ -139,6 +210,17 @@ def test_publish_youtube_publication_with_google_does_not_call_factory_on_invali
         service.publish_youtube_publication_with_google(
             publication_id=123,
             token_file="",
+            client_secrets_file="/tmp/client_secret.json",
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^client_secrets_file is required$",
+    ):
+        service.publish_youtube_publication_with_google(
+            publication_id=123,
+            token_file="/tmp/youtube_token.json",
+            client_secrets_file="",
         )
 
     assert calls == []
@@ -147,7 +229,13 @@ def test_publish_youtube_publication_with_google_does_not_call_factory_on_invali
 def test_publish_youtube_publication_with_google_propagates_factory_error(
     monkeypatch,
 ):
-    def fake_create_google_youtube_publisher(*, token_file):
+    def fake_create_google_youtube_publisher(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
         raise RuntimeError("credential loading failed")
 
     monkeypatch.setattr(
@@ -163,6 +251,7 @@ def test_publish_youtube_publication_with_google_propagates_factory_error(
         service.publish_youtube_publication_with_google(
             publication_id=123,
             token_file="/tmp/youtube_token.json",
+            client_secrets_file="/tmp/client_secret.json",
         )
 
 
@@ -171,7 +260,13 @@ def test_publish_youtube_publication_with_google_propagates_orchestration_error(
 ):
     publisher = FakePublisher()
 
-    def fake_create_google_youtube_publisher(*, token_file):
+    def fake_create_google_youtube_publisher(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
         return publisher
 
     def fake_publish_youtube_publication(
@@ -202,6 +297,7 @@ def test_publish_youtube_publication_with_google_propagates_orchestration_error(
         service.publish_youtube_publication_with_google(
             publication_id=123,
             token_file="/tmp/youtube_token.json",
+            client_secrets_file="/tmp/client_secret.json",
         )
 
 
@@ -211,7 +307,13 @@ def test_publish_youtube_publication_with_google_uses_factory_output_directly(
     factory_publisher = object()
     received = []
 
-    def fake_create_google_youtube_publisher(*, token_file):
+    def fake_create_google_youtube_publisher(
+        *,
+        token_file,
+        client_secrets_file,
+        authorization_runner,
+        request,
+    ):
         return factory_publisher
 
     def fake_publish_youtube_publication(
@@ -245,6 +347,7 @@ def test_publish_youtube_publication_with_google_uses_factory_output_directly(
     result = service.publish_youtube_publication_with_google(
         publication_id=456,
         token_file="/tmp/youtube_token.json",
+        client_secrets_file="/tmp/client_secret.json",
     )
 
     assert result == {
