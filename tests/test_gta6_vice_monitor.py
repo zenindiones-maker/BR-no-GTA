@@ -137,3 +137,32 @@ def test_invalid_user_agent_is_rejected():
         match="user_agent must be a non-empty string",
     ):
         GTA6ViceMonitor(user_agent="   ")
+
+def test_fetch_stops_after_max_retries(monkeypatch):
+    attempts = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        attempts["count"] += 1
+        raise OSError("persistent failure")
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "time.sleep",
+        lambda delay: None,
+    )
+
+    monitor = GTA6ViceMonitor(
+        max_retries=3,
+        retry_backoff=0,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="persistent failure",
+    ):
+        monitor.fetch("https://example.com")
+
+    assert attempts["count"] == 3
