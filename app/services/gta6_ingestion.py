@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.integrations.gta6.source import GTA6SourceItem
+from app.database.gta6_knowledge_repository import get_gta6_knowledge_by_source_url
 from app.services.gta6_knowledge_service import create_gta6_knowledge
 
 
@@ -8,6 +9,16 @@ def ingest_gta6_source_item(
     item: GTA6SourceItem,
 ) -> dict[str, Any]:
     """Persiste um item de fonte como conhecimento GTA 6."""
+
+    existing = get_gta6_knowledge_by_source_url(item.url)
+
+    if existing is not None:
+        return {
+            "research_item_id": existing["research_item_id"],
+            "knowledge_id": existing["id"],
+            "knowledge": None,
+            "duplicate": True,
+        }
 
     result = create_gta6_knowledge(
         title=item.title,
@@ -19,6 +30,7 @@ def ingest_gta6_source_item(
         published_at=item.published_at,
     )
 
+    result["duplicate"] = False
     return result
 
 

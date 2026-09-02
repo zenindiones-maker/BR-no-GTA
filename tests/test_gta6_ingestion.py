@@ -92,3 +92,41 @@ def test_ingest_gta6_source_items_persists_all_items():
     assert results[1]["knowledge"]["title"] == (
         "GTA VI Feature"
     )
+
+
+def test_ingest_gta6_source_item_skips_duplicate(monkeypatch):
+    from app.integrations.gta6.source import GTA6SourceItem
+    from app.services import gta6_ingestion
+
+    monkeypatch.setattr(
+        gta6_ingestion,
+        "get_gta6_knowledge_by_source_url",
+        lambda url: {
+            "id": 99,
+            "research_item_id": 55,
+        },
+    )
+
+    def fail_create(**kwargs):
+        raise AssertionError("duplicate should not be created")
+
+    monkeypatch.setattr(
+        gta6_ingestion,
+        "create_gta6_knowledge",
+        fail_create,
+    )
+
+    item = GTA6SourceItem(
+        title="GTA 6",
+        summary="Resumo",
+        url="https://example.com/gta6",
+        source_name="Example",
+        fact_type="news",
+        confidence="unconfirmed",
+    )
+
+    result = gta6_ingestion.ingest_gta6_source_item(item)
+
+    assert result["knowledge_id"] == 99
+    assert result["research_item_id"] == 55
+    assert result["duplicate"] is True
