@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from app.services.google_oauth import (
-    YOUTUBE_UPLOAD_SCOPE,
+    YOUTUBE_SCOPES,
     authorize_youtube,
     create_oauth_flow,
     get_youtube_credentials,
@@ -12,11 +12,11 @@ from app.services.google_oauth import (
 )
 
 
-def test_youtube_upload_scope_is_correct():
-    assert (
-        YOUTUBE_UPLOAD_SCOPE
-        == "https://www.googleapis.com/auth/youtube.upload"
-    )
+def test_youtube_scopes_are_correct():
+    assert YOUTUBE_SCOPES == [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+    ]
 
 
 def test_create_oauth_flow_uses_client_secrets_and_scope(tmp_path):
@@ -37,7 +37,7 @@ def test_create_oauth_flow_uses_client_secrets_and_scope(tmp_path):
 
     flow_class.from_client_secrets_file.assert_called_once_with(
         str(client_secrets_file),
-        scopes=[YOUTUBE_UPLOAD_SCOPE],
+        scopes=YOUTUBE_SCOPES,
     )
 
 
@@ -243,7 +243,7 @@ def test_load_youtube_credentials_returns_valid_credentials(
 
     credentials_class.from_authorized_user_file.assert_called_once_with(
         str(token_file),
-        scopes=[YOUTUBE_UPLOAD_SCOPE],
+        scopes=YOUTUBE_SCOPES,
     )
 
     credentials.refresh.assert_not_called()

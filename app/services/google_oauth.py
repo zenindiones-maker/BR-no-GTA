@@ -6,9 +6,10 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 
-YOUTUBE_UPLOAD_SCOPE = (
-    "https://www.googleapis.com/auth/youtube.upload"
-)
+YOUTUBE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 
 
 def create_oauth_flow(
@@ -36,7 +37,7 @@ def create_oauth_flow(
 
     return InstalledAppFlow.from_client_secrets_file(
         str(path),
-        scopes=[YOUTUBE_UPLOAD_SCOPE],
+        scopes=YOUTUBE_SCOPES,
     )
 
 
@@ -123,7 +124,7 @@ def load_youtube_credentials(
 
     credentials = Credentials.from_authorized_user_file(
         str(path),
-        scopes=[YOUTUBE_UPLOAD_SCOPE],
+        scopes=YOUTUBE_SCOPES,
     )
 
     if credentials.valid:
