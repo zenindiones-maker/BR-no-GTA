@@ -4,6 +4,9 @@ from app.services.gta6_news_pipeline import run_gta6_news_pipeline
 from app.services.gta6_rockstar_monitor_service import (
     monitor_rockstar_newswire,
 )
+from app.services.gta6_rockstar_monitor_ingestion import (
+    ingest_rockstar_newswire_from_monitor,
+)
 from app.services.gta6_source_ingestion import ingest_rockstar_newswire
 from app.settings import settings
 
@@ -13,11 +16,13 @@ def run_gta6_research() -> dict[str, Any]:
 
     rockstar_monitor = monitor_rockstar_newswire()
 
-    rockstar_items: list[dict[str, Any]] = []
+    rockstar_items = ingest_rockstar_newswire_from_monitor()
 
     if settings.ROCKSTAR_QUERY_HASH:
-        rockstar_items = ingest_rockstar_newswire(
-            settings.ROCKSTAR_QUERY_HASH
+        rockstar_items.extend(
+            ingest_rockstar_newswire(
+                settings.ROCKSTAR_QUERY_HASH
+            )
         )
 
     news_items = run_gta6_news_pipeline()
