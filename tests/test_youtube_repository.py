@@ -40,6 +40,7 @@ def test_insert_and_get_youtube_publication():
         tags=["gta", "gta6"],
         category_id="20",
         privacy_status="private",
+        file_path="output/youtube-test.mp4",
     )
 
     publication = get_youtube_publication(publication_id)
@@ -53,6 +54,7 @@ def test_insert_and_get_youtube_publication():
     assert publication["tags"] == ["gta", "gta6"]
     assert publication["category_id"] == "20"
     assert publication["privacy_status"] == "private"
+    assert publication["file_path"] == "output/youtube-test.mp4"
     assert publication["status"] == "pending"
 
 
@@ -63,6 +65,7 @@ def test_get_youtube_publication_by_video_id():
         video_id=video_id,
         content_item_id=content_item_id,
         title="Publicação",
+        file_path="output/by-video-id.mp4",
     )
 
     publication = get_youtube_publication_by_video_id(video_id)
@@ -70,6 +73,7 @@ def test_get_youtube_publication_by_video_id():
     assert publication is not None
     assert publication["id"] == publication_id
     assert publication["video_id"] == video_id
+    assert publication["file_path"] == "output/by-video-id.mp4"
 
 
 def test_list_youtube_publications():
@@ -79,6 +83,7 @@ def test_list_youtube_publications():
         video_id=video_id,
         content_item_id=content_item_id,
         title="Publicação 1",
+        file_path="output/list-one.mp4",
     )
 
     content_item_id_2 = insert_content_item(
@@ -98,6 +103,7 @@ def test_list_youtube_publications():
         video_id=video_id_2,
         content_item_id=content_item_id_2,
         title="Publicação 2",
+        file_path="output/list-two.mp4",
     )
 
     publications = list_youtube_publications()
@@ -105,6 +111,12 @@ def test_list_youtube_publications():
 
     assert first_id in ids
     assert second_id in ids
+
+    first = next(item for item in publications if item["id"] == first_id)
+    second = next(item for item in publications if item["id"] == second_id)
+
+    assert first["file_path"] == "output/list-one.mp4"
+    assert second["file_path"] == "output/list-two.mp4"
 
 
 def test_update_youtube_publication_status():

@@ -80,6 +80,7 @@ def get_youtube_publication(
                 description,
                 tags,
                 category_id,
+                file_path,
                 privacy_status,
                 publish_at,
                 youtube_video_id,
@@ -124,6 +125,7 @@ def get_youtube_publication_by_video_id(
                 description,
                 tags,
                 category_id,
+                file_path,
                 privacy_status,
                 publish_at,
                 youtube_video_id,
@@ -166,6 +168,7 @@ def list_youtube_publications() -> list[dict[str, Any]]:
                 description,
                 tags,
                 category_id,
+                file_path,
                 privacy_status,
                 publish_at,
                 youtube_video_id,
@@ -196,9 +199,51 @@ def update_youtube_publication_status(
 ) -> bool:
     """Atualiza o estado operacional da publicação."""
 
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError("publication_id must be a positive integer.")
+
+    if status not in {"pending", "published", "failed"}:
+        raise ValueError(
+            "status must be one of: pending, published, failed."
+        )
+
+    if status == "failed":
+        if not isinstance(error, str) or not error.strip():
+            raise ValueError(
+                "error is required when status is failed."
+            )
+        error = error.strip()
+    else:
+        error = None
+
     connection = get_connection()
 
     try:
+        connection.execute("BEGIN")
+
+        row = connection.execute(
+            """
+            SELECT
+                status
+            FROM youtube_publications
+            WHERE id = ?
+            """,
+            (publication_id,),
+        ).fetchone()
+
+        if row is None:
+            connection.rollback()
+            return False
+
+        current_status = row["status"]
+
+        if current_status != "pending":
+            connection.rollback()
+            raise ValueError(
+                "YouTube Publication só pode sair de pending: "
+                f"status atual = {current_status}"
+            )
+
         cursor = connection.execute(
             """
             UPDATE youtube_publications
@@ -207,6 +252,7 @@ def update_youtube_publication_status(
                 error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
+              AND status = 'pending'
             """,
             (
                 status,
@@ -215,9 +261,16 @@ def update_youtube_publication_status(
             ),
         )
 
-        connection.commit()
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return False
 
-        return cursor.rowcount > 0
+        connection.commit()
+        return True
+
+    except Exception:
+        connection.rollback()
+        raise
 
     finally:
         connection.close()
@@ -230,9 +283,46 @@ def mark_youtube_published(
 ) -> bool:
     """Registra uma publicação efetivamente realizada no YouTube."""
 
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError("publication_id must be a positive integer.")
+
+    if not isinstance(youtube_video_id, str) or not youtube_video_id.strip():
+        raise ValueError(
+            "youtube_video_id is required."
+        )
+
+    if not isinstance(youtube_url, str) or not youtube_url.strip():
+        raise ValueError(
+            "youtube_url is required."
+        )
+
     connection = get_connection()
 
     try:
+        connection.execute("BEGIN")
+
+        row = connection.execute(
+            """
+            SELECT
+                status
+            FROM youtube_publications
+            WHERE id = ?
+            """,
+            (publication_id,),
+        ).fetchone()
+
+        if row is None:
+            connection.rollback()
+            return False
+
+        if row["status"] != "pending":
+            connection.rollback()
+            raise ValueError(
+                "YouTube Publication só pode ser publicada a partir de "
+                "pending: "
+                f"status atual = {row['status']}"
+            )
+
         cursor = connection.execute(
             """
             UPDATE youtube_publications
@@ -244,17 +334,97 @@ def mark_youtube_published(
                 published_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
+              AND status = 'pending'
             """,
             (
-                youtube_video_id,
-                youtube_url,
+                youtube_video_id.strip(),
+                youtube_url.strip(),
                 publication_id,
             ),
         )
 
-        connection.commit()
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return False
 
-        return cursor.rowcount > 0
+        connection.commit()
+        return True
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
+def mark_youtube_failed(
+    publication_id: int,
+    error: str,
+) -> bool:
+    """Registra uma tentativa de publicação que falhou."""
+
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError("publication_id must be a positive integer.")
+
+    if not isinstance(error, str) or not error.strip():
+        raise ValueError("error is required.")
+
+    connection = get_connection()
+
+    try:
+        connection.execute("BEGIN")
+
+        row = connection.execute(
+            """
+            SELECT
+                status
+            FROM youtube_publications
+            WHERE id = ?
+            """,
+            (publication_id,),
+        ).fetchone()
+
+        if row is None:
+            connection.rollback()
+            return False
+
+        if row["status"] != "pending":
+            connection.rollback()
+            raise ValueError(
+                "YouTube Publication só pode falhar a partir de pending: "
+                f"status atual = {row['status']}"
+            )
+
+        cursor = connection.execute(
+            """
+            UPDATE youtube_publications
+            SET
+                status = 'failed',
+                error = ?,
+                youtube_video_id = NULL,
+                youtube_url = NULL,
+                published_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'pending'
+            """,
+            (
+                error.strip(),
+                publication_id,
+            ),
+        )
+
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return False
+
+        connection.commit()
+        return True
+
+    except Exception:
+        connection.rollback()
+        raise
 
     finally:
         connection.close()

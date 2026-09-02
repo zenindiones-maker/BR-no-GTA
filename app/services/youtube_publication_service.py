@@ -78,3 +78,75 @@ def create_youtube_publication(
         )
 
     return publication
+
+
+def mark_youtube_publication_published(
+    publication_id: int,
+    youtube_video_id: str,
+    youtube_url: str,
+) -> dict[str, Any]:
+    """
+    Marca uma YouTube Publication como publicada.
+
+    Esta função NÃO chama o Publisher e NÃO chama a Google API.
+    Ela apenas registra o resultado de uma publicação já executada.
+    """
+
+    from app.database.youtube_repository import mark_youtube_published
+
+    updated = mark_youtube_published(
+        publication_id=publication_id,
+        youtube_video_id=youtube_video_id,
+        youtube_url=youtube_url,
+    )
+
+    if not updated:
+        raise RuntimeError(
+            "YouTube Publication não encontrada: "
+            f"{publication_id}"
+        )
+
+    publication = get_youtube_publication(publication_id)
+
+    if publication is None:
+        raise RuntimeError(
+            "YouTube Publication não foi encontrada após atualização: "
+            f"{publication_id}"
+        )
+
+    return publication
+
+
+def mark_youtube_publication_failed(
+    publication_id: int,
+    error: str,
+) -> dict[str, Any]:
+    """
+    Marca uma YouTube Publication como failed.
+
+    Esta função NÃO chama o Publisher e NÃO chama a Google API.
+    Ela apenas registra o resultado de uma tentativa que falhou.
+    """
+
+    from app.database.youtube_repository import mark_youtube_failed
+
+    updated = mark_youtube_failed(
+        publication_id=publication_id,
+        error=error,
+    )
+
+    if not updated:
+        raise RuntimeError(
+            "YouTube Publication não encontrada: "
+            f"{publication_id}"
+        )
+
+    publication = get_youtube_publication(publication_id)
+
+    if publication is None:
+        raise RuntimeError(
+            "YouTube Publication não foi encontrada após atualização: "
+            f"{publication_id}"
+        )
+
+    return publication
