@@ -5,7 +5,8 @@ from app.database.schema import initialize_schema
 from app.database.youtube_repository import (
     get_youtube_publication_by_video_id,
 )
-from app.database.video_repository import insert_video
+from app.database.video_repository import mark_video_ready
+from app.services.video_service import create_video
 from app.services.youtube_publication_service import (
     create_youtube_publication,
 )
@@ -23,17 +24,41 @@ def create_ready_video():
         status="ready",
     )
 
-    video_id = insert_video(
-        content_item_id=content_item_id,
-        title="Vídeo pronto para YouTube",
-        status="ready",
+    video = create_video(
+        {
+            "content_item_id": content_item_id,
+            "script_id": 10,
+            "idea_id": 20,
+            "objective": "Gerar vídeo para publicação.",
+            "format": "short",
+            "estimated_duration_seconds": 45,
+            "scenes": [
+                {
+                    "order": 1,
+                    "narrative_block": "Abertura",
+                    "narration": "Introdução.",
+                    "visual_type": "gameplay",
+                    "visual_description": "Gameplay de GTA.",
+                    "duration_seconds": 5,
+                    "requirements": [],
+                }
+            ],
+            "audio_requirements": [],
+            "visual_requirements": [],
+        }
+    )
+
+    assert video["status"] == "draft"
+
+    ready = mark_video_ready(
+        video_id=video["id"],
         file_path="output/youtube.mp4",
     )
 
+    assert ready is True
+
     return {
-        "id": video_id,
-        "content_item_id": content_item_id,
-        "title": "Vídeo pronto para YouTube",
+        **video,
         "status": "ready",
         "file_path": "output/youtube.mp4",
     }
