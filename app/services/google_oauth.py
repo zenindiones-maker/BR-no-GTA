@@ -63,6 +63,7 @@ def authorize_youtube(
             port=0,
             access_type="offline",
             prompt="consent",
+            open_browser=False,
         )
 
     if credentials is None:

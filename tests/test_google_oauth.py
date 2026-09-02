@@ -131,6 +131,7 @@ def test_authorize_youtube_uses_default_authorization_flow(tmp_path):
         port=0,
         access_type="offline",
         prompt="consent",
+        open_browser=False,
     )
 
 
