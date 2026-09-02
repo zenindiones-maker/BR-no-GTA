@@ -6,6 +6,8 @@ from app.database.render_queue_repository import (
     enqueue_render_job,
     get_render_job,
 )
+from app.database.schema import initialize_schema
+from app.database.video_repository import get_video, insert_video
 from app.services.render_executor_service import (
     AbstractRenderExecutor,
     RenderExecutionResult,
@@ -156,3 +158,78 @@ def test_worker_executes_queued_job_with_mpt_executor(
         "http://127.0.0.1:8080/tasks/video.mp4"
     )
     assert persisted_job["error"] is None
+
+
+def test_process_next_render_job_completes_associated_video():
+    initialize_schema()
+
+    video_id = insert_video(
+        content_item_id=1,
+        title="TESTE - Worker fecha Render -> Video",
+        status="draft",
+    )
+
+    job = {
+        "content_item_id": 1,
+        "script_id": 1,
+        "idea_id": 1,
+        "objective": "Testar fechamento do Worker.",
+        "format": "YouTube editorial",
+        "estimated_duration_seconds": 60,
+        "status": "queued",
+        "job_type": "video_render",
+        "queue": "render",
+        "attempt": 0,
+        "video_id": video_id,
+        "scenes": [
+            {
+                "order": 1,
+                "narrative_block": "INTRODUÇÃO",
+                "narration": "Teste de renderização.",
+                "visual_type": "title_card",
+                "visual_description": "Tela de teste.",
+                "duration_seconds": 5,
+                "requirements": [],
+            }
+        ],
+        "audio_requirements": [],
+        "visual_requirements": [],
+        "render": {
+            "resolution": "1920x1080",
+            "fps": 30,
+            "aspect_ratio": "16:9",
+            "container": "mp4",
+            "video_codec": "h264",
+            "audio_codec": "aac",
+        },
+    }
+
+    job_id = enqueue_render_job(job)
+
+    executor = Mock(spec=AbstractRenderExecutor)
+    executor.execute.return_value = RenderExecutionResult(
+        success=True,
+        output_path="/tmp/rendered-video.mp4",
+    )
+
+    result = process_next_render_job(
+        executor=executor,
+    )
+
+    assert result is not None
+    assert result.success is True
+    assert result.output_path == "/tmp/rendered-video.mp4"
+
+    persisted_job = get_render_job(job_id)
+
+    assert persisted_job is not None
+    assert persisted_job["status"] == "completed"
+    assert persisted_job["video_id"] == video_id
+    assert persisted_job["attempt"] == 1
+    assert persisted_job["output_path"] == "/tmp/rendered-video.mp4"
+
+    persisted_video = get_video(video_id)
+
+    assert persisted_video is not None
+    assert persisted_video["status"] == "ready"
+    assert persisted_video["file_path"] == "/tmp/rendered-video.mp4"
