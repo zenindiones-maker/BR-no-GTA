@@ -396,3 +396,104 @@ def test_google_youtube_publisher_rejects_invalid_publication():
         match="publication must be a dict",
     ):
         publisher.publish("invalid")
+
+
+def test_google_youtube_publisher_contract_preserves_complete_publication_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    video_file = tmp_path / "br-no-gta.mp4"
+    video_file.write_bytes(b"fake mp4")
+
+    request = FakeRequest(
+        response={
+            "id": "contract-video-001",
+            "snippet": {
+                "title": "GTA 6 — O que mudou",
+            },
+        },
+    )
+
+    service = FakeYouTubeService(request)
+
+    FakeMediaFileUpload.calls = []
+
+    monkeypatch.setattr(
+        publisher_module,
+        "MediaFileUpload",
+        FakeMediaFileUpload,
+    )
+
+    publisher = GoogleYouTubePublisher(
+        youtube_service=service,
+    )
+
+    publication = {
+        "id": 77,
+        "video_id": 42,
+        "content_item_id": 21,
+        "title": "GTA 6 — O que mudou",
+        "description": (
+            "Análise editorial do GTA 6 para o canal BR no GTA."
+        ),
+        "tags": [
+            "GTA 6",
+            "GTA VI",
+            "Rockstar Games",
+            "BR no GTA",
+        ],
+        "category_id": "20",
+        "privacy_status": "private",
+        "publish_at": None,
+        "file_path": str(video_file),
+    }
+
+    result = publisher.publish(publication)
+
+    assert result == YouTubePublishResult(
+        success=True,
+        youtube_video_id="contract-video-001",
+        youtube_url=(
+            "https://www.youtube.com/watch?v=contract-video-001"
+        ),
+        error=None,
+    )
+
+    assert service.videos_calls == 1
+    assert request.execute_calls == 1
+
+    assert len(service.videos_resource.insert_calls) == 1
+
+    insert_call = service.videos_resource.insert_calls[0]
+
+    assert insert_call["part"] == "snippet,status"
+
+    media_body = insert_call["media_body"]
+
+    assert isinstance(
+        media_body,
+        FakeMediaFileUpload,
+    )
+
+    assert media_body.filename == str(video_file)
+    assert media_body.chunksize == -1
+    assert media_body.resumable is True
+
+    assert insert_call["body"] == {
+        "snippet": {
+            "title": "GTA 6 — O que mudou",
+            "description": (
+                "Análise editorial do GTA 6 para o canal BR no GTA."
+            ),
+            "tags": [
+                "GTA 6",
+                "GTA VI",
+                "Rockstar Games",
+                "BR no GTA",
+            ],
+            "categoryId": "20",
+        },
+        "status": {
+            "privacyStatus": "private",
+        },
+    }
