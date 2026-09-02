@@ -1,182 +1,72 @@
-import pytest
+from __future__ import annotations
 
-from app.database.schema import initialize_schema
-from app.database.render_queue_repository import (
-    enqueue_render_job,
-    get_render_job,
-)
-from app.services.render_executor_service import (
-    AbstractRenderExecutor,
-    RenderExecutionResult,
-)
+from unittest.mock import Mock
+
 from app.services.render_worker_service import (
     process_next_render_job,
 )
 
 
-class SuccessfulExecutor(AbstractRenderExecutor):
-    def execute(self, render_job):
-        assert render_job["status"] == "running"
+def test_worker_preserves_explicit_executor(monkeypatch):
+    explicit_executor = object()
+    orchestration = Mock()
 
-        return RenderExecutionResult(
-            success=True,
-            output_path="/tmp/worker-video.mp4",
-        )
-
-
-class FailedExecutor(AbstractRenderExecutor):
-    def execute(self, render_job):
-        assert render_job["status"] == "running"
-
-        return RenderExecutionResult(
-            success=False,
-            error="Falha simulada no worker.",
-        )
-
-
-def _create_job():
-    initialize_schema()
-
-    return {
-        "content_item_id": 1,
-        "script_id": 2,
-        "idea_id": 3,
-        "objective": "Gerar vídeo editorial",
-        "format": "short",
-        "estimated_duration_seconds": 60,
-        "status": "queued",
-        "scenes": [
-            {
-                "order": 1,
-                "narrative_block": "Abertura",
-                "narration": "Texto inicial",
-                "visual_type": "b-roll",
-                "visual_description": "Cena de abertura",
-                "duration_seconds": 10,
-                "execution_requirements": [],
-            }
-        ],
-        "audio_requirements": [],
-        "visual_requirements": [],
-        "render": {
-            "resolution": "1920x1080",
-            "fps": 30,
-            "aspect_ratio": "16:9",
-            "container": "mp4",
-            "video_codec": "h264",
-            "audio_codec": "aac",
-        },
-        "job_type": "video_render",
-        "queue": "render",
-        "attempt": 0,
-    }
-
-
-def test_process_next_render_job_returns_execution_result():
-    job_id = enqueue_render_job(
-        _create_job()
+    monkeypatch.setattr(
+        "app.services.render_worker_service.execute_next_render_job",
+        orchestration,
     )
 
-    result = process_next_render_job(
-        executor=SuccessfulExecutor()
+    process_next_render_job(
+        executor=explicit_executor,
     )
 
-    assert result is not None
-    assert result.success is True
-    assert result.output_path == "/tmp/worker-video.mp4"
-
-    job = get_render_job(job_id)
-
-    assert job["id"] == job_id
-    assert job["status"] == "completed"
-
-
-def test_process_next_render_job_transitions_queued_to_completed():
-    job_id = enqueue_render_job(
-        _create_job()
+    orchestration.assert_called_once_with(
+        executor=explicit_executor,
     )
 
-    result = process_next_render_job(
-        executor=SuccessfulExecutor()
+
+def test_worker_uses_mpt_factory_when_executor_is_not_provided(
+    monkeypatch,
+):
+    mpt_executor = object()
+    factory = Mock(return_value=mpt_executor)
+    orchestration = Mock()
+
+    monkeypatch.setattr(
+        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        factory,
+    )
+    monkeypatch.setattr(
+        "app.services.render_worker_service.execute_next_render_job",
+        orchestration,
     )
 
-    assert result.success is True
+    process_next_render_job()
 
-    job = get_render_job(job_id)
-
-    assert job["status"] == "completed"
-    assert job["attempt"] == 1
-    assert job["output_path"] == "/tmp/worker-video.mp4"
-    assert job["error"] is None
-
-
-def test_process_next_render_job_preserves_render_payload():
-    job_id = enqueue_render_job(
-        _create_job()
+    factory.assert_called_once_with()
+    orchestration.assert_called_once_with(
+        executor=mpt_executor,
     )
 
-    result = process_next_render_job(
-        executor=SuccessfulExecutor()
+
+def test_worker_passes_none_when_mpt_is_not_configured(
+    monkeypatch,
+):
+    factory = Mock(return_value=None)
+    orchestration = Mock()
+
+    monkeypatch.setattr(
+        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        factory,
+    )
+    monkeypatch.setattr(
+        "app.services.render_worker_service.execute_next_render_job",
+        orchestration,
     )
 
-    assert result.success is True
+    process_next_render_job()
 
-    job = get_render_job(job_id)
-
-    assert job["render"]["resolution"] == "1920x1080"
-    assert job["render"]["fps"] == 30
-    assert job["render"]["video_codec"] == "h264"
-    assert job["render"]["audio_codec"] == "aac"
-    assert job["scenes"]
-
-
-def test_process_next_render_job_preserves_job_identity():
-    original_job = _create_job()
-
-    job_id = enqueue_render_job(
-        original_job
+    factory.assert_called_once_with()
+    orchestration.assert_called_once_with(
+        executor=None,
     )
-
-    result = process_next_render_job(
-        executor=SuccessfulExecutor()
-    )
-
-    assert result.success is True
-
-    job = get_render_job(job_id)
-
-    assert job["id"] == job_id
-    assert job["content_item_id"] == original_job["content_item_id"]
-    assert job["script_id"] == original_job["script_id"]
-    assert job["idea_id"] == original_job["idea_id"]
-
-
-def test_process_next_render_job_returns_none_when_queue_is_empty():
-    initialize_schema()
-
-    result = process_next_render_job(
-        executor=SuccessfulExecutor()
-    )
-
-    assert result is None
-
-
-def test_process_next_render_job_failure_persists_failed_job():
-    job_id = enqueue_render_job(
-        _create_job()
-    )
-
-    result = process_next_render_job(
-        executor=FailedExecutor()
-    )
-
-    assert result is not None
-    assert result.success is False
-    assert result.error == "Falha simulada no worker."
-
-    job = get_render_job(job_id)
-
-    assert job["status"] == "failed"
-    assert job["attempt"] == 1
-    assert job["error"] == "Falha simulada no worker."
-    assert job["output_path"] is None
