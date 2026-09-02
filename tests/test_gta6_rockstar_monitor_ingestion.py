@@ -120,3 +120,40 @@ def test_ingest_rockstar_newswire_from_monitor_returns_empty_without_items(
     )
 
     assert module.ingest_rockstar_newswire_from_monitor() == []
+
+def test_collect_rockstar_newswire_items_passes_timeout(monkeypatch):
+    captured = {}
+
+    class FakeMonitor:
+        def __init__(self, *, timeout):
+            captured["timeout"] = timeout
+
+    def fake_monitor_gta6_page_persisted(monitor, url):
+        captured["monitor"] = monitor
+        captured["url"] = url
+
+        return type(
+            "Result",
+            (),
+            {"content": "<html></html>"},
+        )()
+
+    monkeypatch.setattr(
+        module,
+        "GTA6ViceMonitor",
+        FakeMonitor,
+    )
+    monkeypatch.setattr(
+        module,
+        "monitor_gta6_page_persisted",
+        fake_monitor_gta6_page_persisted,
+    )
+
+    result = module.collect_rockstar_newswire_items(
+        timeout=42.0,
+    )
+
+    assert result == []
+    assert captured["timeout"] == 42.0
+    assert isinstance(captured["monitor"], FakeMonitor)
+    assert captured["url"] == module.ROCKSTAR_NEWSWIRE_URL
