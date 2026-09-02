@@ -106,3 +106,54 @@ def test_monitor_returns_changed_content(monkeypatch):
     assert recorded["url"] == page.url
     assert recorded["previous_hash"] == "old-hash"
     assert recorded["current_hash"] == result.change.current_hash
+
+def test_monitor_does_not_record_event_when_content_is_unchanged(monkeypatch):
+    page = FakePage(
+        url="https://example.com",
+        status_code=200,
+        content="<html>same content</html>",
+    )
+
+    monitor = GTA6ViceMonitor()
+
+    monkeypatch.setattr(
+        monitor,
+        "fetch",
+        lambda url: page,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "get_gta6_monitor_state",
+        lambda url: {
+            "content_hash": module.detect_content_change(
+                page.content,
+                None,
+            ).current_hash,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "save_gta6_monitor_state",
+        lambda url, content_hash: None,
+    )
+
+    def fail_if_called(**kwargs):
+        raise AssertionError(
+            "record_gta6_monitor_change should not be called"
+        )
+
+    monkeypatch.setattr(
+        module,
+        "record_gta6_monitor_change",
+        fail_if_called,
+    )
+
+    result = module.monitor_gta6_page_persisted(
+        monitor,
+        page.url,
+    )
+
+    assert result.baseline is False
+    assert result.change.changed is False
