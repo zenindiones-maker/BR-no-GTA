@@ -20,6 +20,7 @@ from app.services.gta6_monitor_event_service import (
 class GTA6PersistentMonitorResult:
     url: str
     status_code: int
+    content: str
     change: GTA6ChangeResult
     baseline: bool
 
@@ -29,12 +30,9 @@ def monitor_gta6_page_persisted(
     url: str,
 ) -> GTA6PersistentMonitorResult:
     if not isinstance(monitor, GTA6ViceMonitor):
-        raise ValueError(
-            "monitor must be a GTA6ViceMonitor"
-        )
+        raise ValueError("monitor must be a GTA6ViceMonitor")
 
     previous_state = get_gta6_monitor_state(url)
-
     previous_hash = (
         previous_state["content_hash"]
         if previous_state is not None
@@ -65,6 +63,7 @@ def monitor_gta6_page_persisted(
     return GTA6PersistentMonitorResult(
         url=page.url,
         status_code=page.status_code,
+        content=page.content,
         change=change,
         baseline=baseline,
     )
