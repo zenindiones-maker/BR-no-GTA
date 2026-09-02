@@ -1,15 +1,15 @@
 from app.database.ideas_repository import insert_idea
+from app.database.video_repository import get_video
 from app.database.render_queue_repository import get_render_job
 from app.services.content_item_service import create_content_item
 from app.services.fake_render_executor_service import FakeRenderExecutor
 from app.services.production_plan_service import create_production_plan
-from app.services.render_job_service import create_render_job
 from app.services.render_orchestration_service import execute_render_job
-from app.services.render_queue_service import enqueue_video_render
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
 from app.services.video_execution_service import create_video_execution_spec
 from app.services.video_service import create_video_spec
+from app.services.video_render_service import create_video_and_enqueue_render
 
 
 def test_full_production_to_render_pipeline():
@@ -62,30 +62,27 @@ def test_full_production_to_render_pipeline():
     assert video_execution_spec["scenes"]
     assert video_execution_spec["render"]
 
-    # 7. VIDEO EXECUTION SPEC -> RENDER JOB
-    render_job = create_render_job(video_execution_spec)
+    # 7. VIDEO SPEC -> VIDEO PERSISTIDO -> RENDER QUEUE
+    composed = create_video_and_enqueue_render(video_spec)
 
-    assert render_job["content_item_id"] == content_item["id"]
-    assert render_job["script_id"] == script_id
-    assert render_job["status"] == "queued"
-    assert render_job["attempt"] == 0
-    assert render_job["scenes"]
-    assert render_job["render"]
+    video = composed["video"]
+    queued_job = composed["render_job"]
 
-    # 8. RENDER JOB -> QUEUE
-    queued_job_id = enqueue_video_render(video_execution_spec)
+    assert video["id"] > 0
+    assert video["content_item_id"] == content_item["id"]
+    assert video["status"] == "draft"
+    assert video["file_path"] is None
+
+    queued_job_id = queued_job["id"]
 
     assert queued_job_id > 0
-
-    queued_job = get_render_job(queued_job_id)
-
-    assert queued_job is not None
     assert queued_job["content_item_id"] == content_item["id"]
+    assert queued_job["video_id"] == video["id"]
     assert queued_job["status"] == "queued"
     assert queued_job["attempt"] == 0
     assert queued_job["job_type"] == "video_render"
 
-    # 9. QUEUE -> EXECUTION
+    # 8. QUEUE -> EXECUTION
     executor = FakeRenderExecutor(
         success=True,
         output_path="output/integration_test.mp4",
@@ -100,14 +97,24 @@ def test_full_production_to_render_pipeline():
     assert result.output_path == "output/integration_test.mp4"
     assert result.error is None
 
-    # 10. EXECUTION -> PERSISTED COMPLETED JOB
+    # 9. EXECUTION -> RENDER JOB COMPLETED -> VIDEO READY
     persisted_after_execution = get_render_job(queued_job_id)
 
     assert persisted_after_execution is not None
     assert persisted_after_execution["status"] == "completed"
     assert persisted_after_execution["attempt"] == 1
+    assert persisted_after_execution["video_id"] == video["id"]
     assert (
         persisted_after_execution["output_path"]
         == "output/integration_test.mp4"
     )
     assert persisted_after_execution["error"] is None
+
+    persisted_video = get_video(video["id"])
+
+    assert persisted_video is not None
+    assert persisted_video["status"] == "ready"
+    assert (
+        persisted_video["file_path"]
+        == "output/integration_test.mp4"
+    )

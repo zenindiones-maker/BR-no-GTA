@@ -135,6 +135,7 @@ def create_video(
             video_spec["estimated_duration_seconds"]
         ),
         "status": "draft",
+        "file_path": None,
         "scenes": video_spec["scenes"],
         "audio_requirements": list(
             video_spec.get("audio_requirements") or []

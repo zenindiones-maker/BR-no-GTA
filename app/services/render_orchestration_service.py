@@ -9,6 +9,9 @@ from app.services.render_executor_service import (
     NullRenderExecutor,
     RenderExecutionResult,
 )
+from app.services.video_render_completion_service import (
+    complete_video_from_render_job,
+)
 
 
 def _execute_running_render_job(
@@ -46,6 +49,14 @@ def _execute_running_render_job(
                 "completed",
                 output_path=result.output_path,
             )
+
+            completed_job = get_render_job(int(job_id))
+
+            if (
+                completed_job is not None
+                and completed_job.get("video_id") is not None
+            ):
+                complete_video_from_render_job(int(job_id))
 
             return result
 
