@@ -203,6 +203,23 @@ def _migrate_gta6_knowledge(connection) -> None:
     )
 
 
+def _migrate_gta6_monitor_events(connection) -> None:
+    """Cria a persistência dos eventos de mudança dos monitores GTA 6."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_monitor_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            previous_hash TEXT,
+            current_hash TEXT NOT NULL,
+            detected_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
 def _migrate_gta6_monitor_state(connection) -> None:
     """Cria a persistência mínima do estado dos monitores GTA 6."""
 
@@ -245,6 +262,7 @@ def initialize_schema() -> None:
         _migrate_gta6_knowledge(connection)
         _migrate_gta6_knowledge_source_name(connection)
         _migrate_gta6_monitor_state(connection)
+        _migrate_gta6_monitor_events(connection)
         connection.commit()
     finally:
         connection.close()
