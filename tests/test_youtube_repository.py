@@ -5,8 +5,10 @@ from app.database.video_repository import insert_video
 from app.database.youtube_repository import (
     get_youtube_publication,
     get_youtube_publication_by_video_id,
+    get_next_pending_youtube_publication,
     insert_youtube_publication,
     list_youtube_publications,
+    mark_youtube_failed,
     mark_youtube_published,
     update_youtube_publication_status,
 )
@@ -118,6 +120,99 @@ def test_list_youtube_publications():
     assert first["file_path"] == "output/list-one.mp4"
     assert second["file_path"] == "output/list-two.mp4"
 
+
+def test_get_next_pending_youtube_publication_returns_none_when_empty():
+    publication = get_next_pending_youtube_publication()
+
+    assert publication is None
+
+
+def test_get_next_pending_youtube_publication_returns_oldest_pending():
+    first_id = insert_youtube_publication(
+        video_id=101,
+        content_item_id=201,
+        title="Primeira",
+        description="",
+        tags=["first"],
+        category_id="20",
+        file_path="/tmp/first.mp4",
+        privacy_status="private",
+        publish_at=None,
+    )
+    second_id = insert_youtube_publication(
+        video_id=102,
+        content_item_id=202,
+        title="Segunda",
+        description="",
+        tags=["second"],
+        category_id="20",
+        file_path="/tmp/second.mp4",
+        privacy_status="private",
+        publish_at=None,
+    )
+
+    publication = get_next_pending_youtube_publication()
+
+    assert publication is not None
+    assert publication["id"] == first_id
+    assert publication["id"] != second_id
+    assert publication["status"] == "pending"
+
+
+def test_get_next_pending_youtube_publication_ignores_non_pending():
+    published_id = insert_youtube_publication(
+        video_id=103,
+        content_item_id=203,
+        title="Publicado",
+        description="",
+        tags=["published"],
+        category_id="20",
+        file_path="/tmp/published.mp4",
+        privacy_status="private",
+        publish_at=None,
+    )
+    mark_youtube_published(
+        published_id,
+        youtube_video_id="youtube-published",
+        youtube_url="https://www.youtube.com/watch?v=youtube-published",
+    )
+
+    failed_id = insert_youtube_publication(
+        video_id=104,
+        content_item_id=204,
+        title="Falhou",
+        description="",
+        tags=["failed"],
+        category_id="20",
+        file_path="/tmp/failed.mp4",
+        privacy_status="private",
+        publish_at=None,
+    )
+    mark_youtube_failed(
+        failed_id,
+        error="erro de teste",
+    )
+
+    pending_id = insert_youtube_publication(
+        video_id=105,
+        content_item_id=205,
+        title="Pendente",
+        description="",
+        tags=["pending", "test"],
+        category_id="20",
+        file_path="/tmp/pending.mp4",
+        privacy_status="private",
+        publish_at=None,
+    )
+
+    publication = get_next_pending_youtube_publication()
+
+    assert publication is not None
+    assert publication["id"] == pending_id
+    assert publication["id"] != published_id
+    assert publication["id"] != failed_id
+    assert publication["tags"] == ["pending", "test"]
+    assert isinstance(publication["tags"], list)
 
 def test_update_youtube_publication_status():
     content_item_id, video_id = _create_video()

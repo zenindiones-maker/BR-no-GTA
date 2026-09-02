@@ -152,6 +152,47 @@ def get_youtube_publication_by_video_id(
         connection.close()
 
 
+
+def get_next_pending_youtube_publication() -> dict[str, Any] | None:
+    """Busca a próxima publicação YouTube pendente por ordem de criação."""
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                video_id,
+                content_item_id,
+                title,
+                description,
+                tags,
+                category_id,
+                file_path,
+                privacy_status,
+                publish_at,
+                youtube_video_id,
+                youtube_url,
+                status,
+                error,
+                created_at,
+                updated_at,
+                published_at
+            FROM youtube_publications
+            WHERE status = 'pending'
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        publication = dict(row)
+        publication["tags"] = json.loads(publication["tags"] or "[]")
+        return publication
+    finally:
+        connection.close()
+
 def list_youtube_publications() -> list[dict[str, Any]]:
     """Lista todas as publicações destinadas ao YouTube."""
 
