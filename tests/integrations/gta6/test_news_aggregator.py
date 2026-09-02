@@ -202,3 +202,63 @@ def test_atom_parser_filters_unrelated_items():
 
     assert len(result) == 1
     assert result[0].title == "GTA VI Atom News"
+
+
+def test_deduplicate_news_items_preserves_first_occurrence():
+    from app.integrations.gta6.news_aggregator import (
+        GTA6NewsFeedItem,
+        deduplicate_news_items,
+    )
+
+    first = GTA6NewsFeedItem(
+        title="GTA VI News",
+        summary="First",
+        url="https://example.com/story",
+        source_name="IGN",
+    )
+
+    duplicate = GTA6NewsFeedItem(
+        title="GTA VI News Updated",
+        summary="Duplicate",
+        url="https://example.com/story",
+        source_name="GameSpot",
+    )
+
+    another = GTA6NewsFeedItem(
+        title="Another GTA VI News",
+        summary="Another story",
+        url="https://example.com/another",
+        source_name="IGN",
+    )
+
+    result = deduplicate_news_items(
+        [first, duplicate, another]
+    )
+
+    assert result == [first, another]
+
+
+def test_parse_rss_feed_deduplicates_urls():
+    from app.integrations.gta6.news_aggregator import parse_rss_feed
+
+    xml = """
+    <rss>
+      <channel>
+        <item>
+          <title>GTA VI News</title>
+          <description>First version.</description>
+          <link>https://example.com/story</link>
+        </item>
+        <item>
+          <title>GTA VI News Updated</title>
+          <description>Duplicate version.</description>
+          <link>https://example.com/story</link>
+        </item>
+      </channel>
+    </rss>
+    """
+
+    result = parse_rss_feed(xml, source_name="Test")
+
+    assert len(result) == 1
+    assert result[0].title == "GTA VI News"

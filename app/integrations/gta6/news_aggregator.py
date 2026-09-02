@@ -48,15 +48,35 @@ def parse_rss_feed(
     root = ElementTree.fromstring(xml)
 
     if _local_name(root.tag) == "feed":
-        return _parse_atom_feed(
+        items = _parse_atom_feed(
+            root,
+            source_name=source_name,
+        )
+    else:
+        items = _parse_rss_feed(
             root,
             source_name=source_name,
         )
 
-    return _parse_rss_feed(
-        root,
-        source_name=source_name,
-    )
+    return deduplicate_news_items(items)
+
+
+def deduplicate_news_items(
+    items: list[GTA6NewsFeedItem],
+) -> list[GTA6NewsFeedItem]:
+    """Remove itens duplicados preservando a primeira ocorrência."""
+
+    unique_items: list[GTA6NewsFeedItem] = []
+    seen_urls: set[str] = set()
+
+    for item in items:
+        if item.url in seen_urls:
+            continue
+
+        seen_urls.add(item.url)
+        unique_items.append(item)
+
+    return unique_items
 
 
 def _parse_rss_feed(
