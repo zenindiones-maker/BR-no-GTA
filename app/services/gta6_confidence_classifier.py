@@ -5,6 +5,8 @@ CONFIRMED_MARKERS = (
     "rockstar confirmed",
     "rockstar games confirmed",
     "confirmed by rockstar",
+    "rockstar announced",
+    "officially announced",
 )
 
 RUMOR_MARKERS = (
@@ -20,7 +22,10 @@ PROBABLE_MARKERS = (
     "likely",
     "reportedly",
     "report says",
+    "reports say",
     "according to reports",
+    "sources say",
+    "sources claim",
 )
 
 UNCONFIRMED_MARKERS = (
@@ -30,6 +35,9 @@ UNCONFIRMED_MARKERS = (
     "might",
     "may",
     "theory",
+    "unconfirmed",
+    "possibly",
+    "allegedly",
 )
 
 
@@ -37,8 +45,10 @@ def classify_gta6_confidence(
     text: str,
     summary: str = "",
 ) -> str:
+    """Classifica a confiança de uma informação sobre GTA VI."""
+
     if not isinstance(text, str) or not isinstance(summary, str):
-        raise ValueError("text must be a string")
+        raise ValueError("text and summary must be strings")
 
     combined = f"{text} {summary}".strip().lower()
 
