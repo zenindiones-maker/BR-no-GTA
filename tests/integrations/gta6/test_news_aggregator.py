@@ -106,3 +106,31 @@ def test_parse_rss_feed_empty():
         xml,
         source_name="Test Source",
     ) == []
+
+
+def test_parse_atom_feed():
+    xml = """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+            <title>GTA VI Atom News</title>
+            <summary>New GTA VI information.</summary>
+            <link href="https://example.com/gta6/atom" />
+            <published>2026-09-02T00:00:00Z</published>
+        </entry>
+    </feed>
+    """
+
+    items = parse_rss_feed(
+        xml,
+        source_name="Atom Source",
+    )
+
+    assert len(items) == 1
+
+    item = items[0]
+
+    assert item.title == "GTA VI Atom News"
+    assert item.summary == "New GTA VI information."
+    assert item.url == "https://example.com/gta6/atom"
+    assert item.source_name == "Atom Source"
+    assert item.published_at == "2026-09-02T00:00:00Z"
