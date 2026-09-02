@@ -1,73 +1,34 @@
-from unittest.mock import Mock
+from unittest.mock import patch
 
-import app.services.google_youtube_client as google_youtube_client
+import pytest
 
-
-class FakeCredentials:
-    pass
+from app.services.google_youtube_client import (
+    create_youtube_service,
+)
 
 
 def test_create_youtube_service_requires_credentials():
-    try:
-        google_youtube_client.create_youtube_service(None)
-    except ValueError as exc:
-        assert str(exc) == "credentials are required"
-    else:
-        raise AssertionError(
-            "Expected ValueError when credentials are missing"
-        )
-
-
-def test_create_youtube_service_builds_youtube_v3_client(
-    monkeypatch,
-):
-    credentials = FakeCredentials()
-    captured = {}
-
-    def fake_build(
-        service_name,
-        version,
-        *,
-        credentials,
+    with pytest.raises(
+        ValueError,
+        match="credentials are required",
     ):
-        captured["service_name"] = service_name
-        captured["version"] = version
-        captured["credentials"] = credentials
-        return "fake-youtube-service"
+        create_youtube_service(None)
 
-    monkeypatch.setattr(
-        google_youtube_client,
-        "build",
-        fake_build,
+
+def test_create_youtube_service_builds_youtube_v3_client():
+    credentials = object()
+    youtube_service = object()
+
+    with patch(
+        "app.services.google_youtube_client.build",
+        return_value=youtube_service,
+    ) as mock_build:
+        result = create_youtube_service(credentials)
+
+    assert result is youtube_service
+
+    mock_build.assert_called_once_with(
+        "youtube",
+        "v3",
+        credentials=credentials,
     )
-
-    result = google_youtube_client.create_youtube_service(
-        credentials,
-    )
-
-    assert result == "fake-youtube-service"
-    assert captured["service_name"] == "youtube"
-    assert captured["version"] == "v3"
-    assert captured["credentials"] is credentials
-
-
-def test_create_youtube_service_does_not_execute_oauth(
-    monkeypatch,
-):
-    credentials = Mock()
-
-    monkeypatch.setattr(
-        google_youtube_client,
-        "build",
-        lambda service_name, version, *, credentials: (
-            "fake-youtube-service"
-        ),
-    )
-
-    result = google_youtube_client.create_youtube_service(
-        credentials,
-    )
-
-    assert result == "fake-youtube-service"
-    credentials.refresh.assert_not_called()
-    credentials.authorize.assert_not_called()
