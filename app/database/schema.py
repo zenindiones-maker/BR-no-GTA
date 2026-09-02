@@ -203,6 +203,22 @@ def _migrate_gta6_knowledge(connection) -> None:
     )
 
 
+def _migrate_gta6_monitor_state(connection) -> None:
+    """Cria a persistência mínima do estado dos monitores GTA 6."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_monitor_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL UNIQUE,
+            content_hash TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+
 def _migrate_gta6_knowledge_source_name(connection) -> None:
     columns = {
         row["name"]
@@ -228,6 +244,7 @@ def initialize_schema() -> None:
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_gta6_knowledge_source_name(connection)
+        _migrate_gta6_monitor_state(connection)
         connection.commit()
     finally:
         connection.close()
