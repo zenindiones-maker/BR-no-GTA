@@ -2,6 +2,8 @@ from typing import Any
 
 def create_render_job(
     video_execution_spec: dict[str, Any],
+    *,
+    video_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Transforma uma Video Execution Spec em uma tarefa concreta
@@ -11,6 +13,11 @@ def create_render_job(
     Ela prepara e persiste uma unidade de trabalho que poderá
     ser consumida futuramente por um executor de vídeo.
     """
+
+    if video_id is not None and (
+        not isinstance(video_id, int) or video_id <= 0
+    ):
+        raise ValueError("video_id must be a positive integer.")
 
     if (
         not isinstance(video_execution_spec, dict)
@@ -132,5 +139,8 @@ def create_render_job(
         ),
         "render": dict(render),
     }
+
+    if video_id is not None:
+        render_job["video_id"] = video_id
 
     return render_job

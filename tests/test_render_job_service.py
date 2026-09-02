@@ -33,7 +33,7 @@ def _create_video_execution_spec():
 def test_create_render_job_from_video_execution_spec():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert job["content_item_id"] == execution["content_item_id"]
     assert job["script_id"] == execution["script_id"]
@@ -47,7 +47,7 @@ def test_create_render_job_from_video_execution_spec():
 def test_render_job_contains_scenes():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert isinstance(job["scenes"], list)
     assert len(job["scenes"]) >= 3
@@ -73,7 +73,7 @@ def test_render_job_contains_scenes():
 def test_render_job_preserves_audio_requirements():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert job["audio_requirements"] == execution["audio_requirements"]
 
@@ -81,7 +81,7 @@ def test_render_job_preserves_audio_requirements():
 def test_render_job_preserves_visual_requirements():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert job["visual_requirements"] == execution["visual_requirements"]
 
@@ -89,7 +89,7 @@ def test_render_job_preserves_visual_requirements():
 def test_render_job_contains_render_configuration():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert job["render"]["resolution"]
     assert job["render"]["fps"] > 0
@@ -102,7 +102,7 @@ def test_render_job_contains_render_configuration():
 def test_render_job_contains_execution_metadata():
     execution = _create_video_execution_spec()
 
-    job = create_render_job(execution)
+    job = create_render_job(execution, video_id=123)
 
     assert job["job_type"] == "video_render"
     assert job["queue"] == "render"
@@ -113,7 +113,7 @@ def test_render_job_rejects_invalid_video_execution_spec():
     initialize_schema()
 
     with pytest.raises(ValueError, match="video execution spec"):
-        create_render_job({})
+        create_render_job({}, video_id=123)
 
 
 def test_render_job_rejects_missing_scenes():
@@ -121,4 +121,29 @@ def test_render_job_rejects_missing_scenes():
     execution["scenes"] = []
 
     with pytest.raises(ValueError, match="cenas"):
-        create_render_job(execution)
+        create_render_job(execution, video_id=123)
+
+
+def test_render_job_contains_video_id():
+    execution = _create_video_execution_spec()
+
+    job = create_render_job(
+        execution,
+        video_id=123,
+    )
+
+    assert job["video_id"] == 123
+
+
+@pytest.mark.parametrize("invalid_video_id", [0, -1, "123"])
+def test_render_job_rejects_invalid_video_id(invalid_video_id):
+    execution = _create_video_execution_spec()
+
+    with pytest.raises(
+        ValueError,
+        match="video_id",
+    ):
+        create_render_job(
+            execution,
+            video_id=invalid_video_id,
+        )

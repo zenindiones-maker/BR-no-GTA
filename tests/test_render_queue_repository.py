@@ -119,3 +119,14 @@ def test_render_job_rejects_invalid_status():
 
     with pytest.raises(ValueError, match="status"):
         update_render_job_status(job_id, "invalid_status")
+
+
+def test_render_job_persists_video_id():
+    job = _create_job()
+    job["video_id"] = 123
+
+    job_id = enqueue_render_job(job)
+    stored = get_render_job(job_id)
+
+    assert stored is not None
+    assert stored["video_id"] == 123

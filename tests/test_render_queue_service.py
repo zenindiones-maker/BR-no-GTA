@@ -1,4 +1,5 @@
 import pytest
+from app.database.render_queue_repository import get_render_job
 
 from app.database.schema import initialize_schema
 from app.services.script_generator_service import generate_and_save_script
@@ -44,7 +45,6 @@ def test_enqueue_video_render_creates_queued_job():
 
     job_id = enqueue_video_render(execution)
 
-    from app.database.render_queue_repository import get_render_job
 
     job = get_render_job(job_id)
 
@@ -60,7 +60,6 @@ def test_enqueue_video_render_preserves_identity():
 
     job_id = enqueue_video_render(execution)
 
-    from app.database.render_queue_repository import get_render_job
 
     job = get_render_job(job_id)
 
@@ -74,7 +73,6 @@ def test_enqueue_video_render_preserves_payload():
 
     job_id = enqueue_video_render(execution)
 
-    from app.database.render_queue_repository import get_render_job
 
     job = get_render_job(job_id)
 
@@ -91,3 +89,47 @@ def test_enqueue_video_render_rejects_invalid_execution_spec():
 
     with pytest.raises(ValueError, match="video execution spec"):
         enqueue_video_render({})
+
+def test_enqueue_video_render_preserves_video_id():
+    video_execution_spec = {
+        "content_item_id": 1,
+        "script_id": 2,
+        "idea_id": 3,
+        "objective": "Teste de render",
+        "format": "short",
+        "estimated_duration_seconds": 30.0,
+        "status": "ready",
+        "scenes": [
+            {
+                "order": 1,
+                "narrative_block": "Bloco narrativo de teste",
+                "narration": "Narração de teste.",
+                "visual_type": "static",
+                "visual_description": "Visual de teste.",
+                "duration_seconds": 30.0,
+                "execution_requirements": [],
+            }
+        ],
+        "audio_requirements": [],
+        "visual_requirements": [],
+        "render": {
+            "resolution": "1920x1080",
+            "fps": 30,
+            "aspect_ratio": "16:9",
+            "container": "mp4",
+            "video_codec": "h264",
+            "audio_codec": "aac",
+        },
+    }
+
+    video_id = 123
+
+    job_id = enqueue_video_render(
+        video_execution_spec,
+        video_id=video_id,
+    )
+
+    stored_job = get_render_job(job_id)
+
+    assert stored_job is not None
+    assert stored_job["video_id"] == video_id
