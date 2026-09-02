@@ -47,8 +47,10 @@ def classify_gta6_confidence(
 ) -> str:
     """Classifica a confiança de uma informação sobre GTA VI."""
 
-    if not isinstance(text, str) or not isinstance(summary, str):
-        raise ValueError("text and summary must be strings")
+    if not isinstance(text, str):
+        raise ValueError("text must be a string")
+    if not isinstance(summary, str):
+        raise ValueError("summary must be a string")
 
     combined = f"{text} {summary}".strip().lower()
 
