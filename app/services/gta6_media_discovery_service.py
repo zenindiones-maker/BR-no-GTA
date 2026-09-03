@@ -55,6 +55,10 @@ def normalize_video_candidate(
     source: str = "youtube",
     description: str = "",
     published_at: str | None = None,
+    video_id: str | None = None,
+    channel_id: str | None = None,
+    channel_title: str | None = None,
+    source_authority: str = "community",
 ) -> dict[str, Any]:
     """
     Normaliza um vídeo descoberto pelo Brain.
@@ -83,10 +87,19 @@ def normalize_video_candidate(
             "source é obrigatório."
         )
 
-    return {
+    if (
+        not isinstance(source_authority, str)
+        or not source_authority.strip()
+    ):
+        raise GTA6MediaDiscoveryError(
+            "source_authority deve ser uma string não vazia."
+        )
+
+    candidate = {
         "title": title.strip(),
         "url": url.strip(),
         "source": source.strip().lower(),
+        "source_authority": source_authority.strip().lower(),
         "description": (
             description.strip()
             if isinstance(description, str)
@@ -96,7 +109,12 @@ def normalize_video_candidate(
         "media_type": "video",
         "game": "gta6",
         "status": "discovered",
+        "video_id": video_id,
+        "channel_id": channel_id,
+        "channel_title": channel_title,
     }
+
+    return candidate
 
 
 def rank_video_candidate(
@@ -192,6 +210,13 @@ def discover_gta6_media_candidates(
             source=result.get("source", "youtube"),
             description=result.get("description", ""),
             published_at=result.get("published_at"),
+            video_id=result.get("video_id"),
+            channel_id=result.get("channel_id"),
+            channel_title=result.get("channel_title"),
+            source_authority=result.get(
+                "source_authority",
+                "community",
+            ),
         )
 
         candidate["relevance_score"] = rank_video_candidate(

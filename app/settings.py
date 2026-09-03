@@ -42,6 +42,17 @@ class Settings:
         "BR_ROCKSTAR_QUERY_HASH",
     )
 
+    # Fontes oficiais de mídia GTA6.
+    # O Brain usa essas fontes como prioridade para descoberta
+    # audiovisual antes de ampliar a pesquisa para terceiros.
+    GTA6_OFFICIAL_YOUTUBE_CHANNEL_IDS = (
+        "UC6VcWc1rAoWdBCM0JxrRQ3A",
+    )
+
+    GTA6_OFFICIAL_MEDIA_URL = (
+        "https://www.rockstargames.com/VI/media/videos"
+    )
+
     # MoneyPrinterTurbo
     #
     # O MPT é opcional no ambiente do BR.
