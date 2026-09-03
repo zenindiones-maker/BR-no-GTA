@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import signal
+from types import FrameType
 from typing import Any
 
 
@@ -23,6 +25,11 @@ class GTA6MonitorRuntime:
 
         self._scheduler = scheduler
         self._running = False
+        self._previous_signal_handlers: dict[
+            int,
+            Any,
+        ] = {}
+        self._signals_installed = False
 
     @property
     def scheduler(self) -> Any:
@@ -32,6 +39,46 @@ class GTA6MonitorRuntime:
     def running(self) -> bool:
         """Indica se o Runtime está atualmente em execução."""
         return self._running
+
+    def install_signal_handlers(self) -> None:
+        """Registra handlers para encerramento gracioso do processo."""
+        if self._signals_installed:
+            return
+
+        self._previous_signal_handlers = {
+            signal.SIGINT: signal.signal(
+                signal.SIGINT,
+                self._handle_shutdown_signal,
+            ),
+            signal.SIGTERM: signal.signal(
+                signal.SIGTERM,
+                self._handle_shutdown_signal,
+            ),
+        }
+
+        self._signals_installed = True
+
+    def restore_signal_handlers(self) -> None:
+        """Restaura os handlers de sinais anteriores."""
+        if not self._signals_installed:
+            return
+
+        for signum, handler in self._previous_signal_handlers.items():
+            signal.signal(
+                signum,
+                handler,
+            )
+
+        self._previous_signal_handlers = {}
+        self._signals_installed = False
+
+    def _handle_shutdown_signal(
+        self,
+        signum: int,
+        frame: FrameType | None,
+    ) -> None:
+        """Solicita o encerramento gracioso do Runtime."""
+        self.stop()
 
     def start(self) -> None:
         """Configura e inicia o scheduler do monitor."""

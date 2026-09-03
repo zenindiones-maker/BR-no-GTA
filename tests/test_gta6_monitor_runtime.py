@@ -242,3 +242,163 @@ def test_start_failure_does_not_allow_stop_to_stop_scheduler():
 
     scheduler.stop.assert_not_called()
     assert runtime.running is False
+
+
+def test_install_signal_handlers_registers_sigint_and_sigterm(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    registered = {}
+
+    def fake_signal(signum, handler):
+        registered[signum] = handler
+        return f"previous-{signum}"
+
+    monkeypatch.setattr(
+        "signal.signal",
+        fake_signal,
+    )
+
+    runtime.install_signal_handlers()
+
+    import signal
+
+    assert registered[signal.SIGINT] == runtime._handle_shutdown_signal
+    assert registered[signal.SIGTERM] == runtime._handle_shutdown_signal
+
+
+def test_install_signal_handlers_preserves_previous_handlers(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    previous = {}
+
+    def fake_signal(signum, handler):
+        previous[signum] = f"previous-{signum.name}"
+        return previous[signum]
+
+    monkeypatch.setattr(
+        "signal.signal",
+        fake_signal,
+    )
+
+    runtime.install_signal_handlers()
+
+    import signal
+
+    assert runtime._previous_signal_handlers == {
+        signal.SIGINT: "previous-SIGINT",
+        signal.SIGTERM: "previous-SIGTERM",
+    }
+
+
+def test_shutdown_signal_requests_runtime_stop(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime.start()
+
+    runtime._handle_shutdown_signal(
+        2,
+        None,
+    )
+
+    scheduler.stop.assert_called_once_with()
+    assert runtime.running is False
+
+
+def test_shutdown_signal_is_safe_when_runtime_is_already_stopped():
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime._handle_shutdown_signal(
+        2,
+        None,
+    )
+
+    scheduler.stop.assert_not_called()
+    assert runtime.running is False
+
+
+def test_restore_signal_handlers_restores_previous_handlers(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    def fake_signal(signum, handler):
+        calls.append((signum, handler))
+        return None
+
+    monkeypatch.setattr(
+        "signal.signal",
+        fake_signal,
+    )
+
+    import signal
+
+    runtime._previous_signal_handlers = {
+        signal.SIGINT: "old-int",
+        signal.SIGTERM: "old-term",
+    }
+    runtime._signals_installed = True
+
+    runtime.restore_signal_handlers()
+
+    assert calls == [
+        (signal.SIGINT, "old-int"),
+        (signal.SIGTERM, "old-term"),
+    ]
+
+
+def test_restore_signal_handlers_is_idempotent(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        "signal.signal",
+        lambda signum, handler: calls.append(
+            (signum, handler)
+        ),
+    )
+
+    runtime.restore_signal_handlers()
+    runtime.restore_signal_handlers()
+
+    assert calls == []
+
+
+def test_unrelated_signal_is_not_registered(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    registered = []
+
+    monkeypatch.setattr(
+        "signal.signal",
+        lambda signum, handler: registered.append(
+            signum
+        ),
+    )
+
+    runtime.install_signal_handlers()
+
+    import signal
+
+    assert signal.SIGUSR1 not in registered
