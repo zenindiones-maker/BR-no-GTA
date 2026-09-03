@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.database.content_segment_repository import (
+    insert_content_segment,
+    get_content_segment,
+)
 from app.services.content_unit_service import (
     ContentUnitError,
     validate_content_unit,
@@ -233,6 +237,66 @@ def create_segment_from_content_unit(
         source_end_seconds=source_end,
         role=role,
     )
+
+
+def create_and_persist_content_segment(
+    *,
+    content_unit_id: int,
+    order: int,
+    duration_seconds: float,
+    media_format: str,
+    source_start_seconds: float,
+    source_end_seconds: float,
+    role: str = "content",
+    status: str = "ready",
+    file_path: str | None = None,
+) -> dict[str, Any]:
+    """
+    Cria um Content Segment, valida o domínio e persiste o registro.
+
+    O service continua responsável pela validação e pelas regras
+    do domínio.
+
+    O repository continua responsável pelo SQLite.
+
+    Esta função não:
+    - renderiza;
+    - corta vídeo;
+    - chama FFmpeg;
+    - chama MPT;
+    - publica no YouTube.
+    """
+    segment = create_content_segment(
+        content_unit_id=content_unit_id,
+        order=order,
+        duration_seconds=duration_seconds,
+        media_format=media_format,
+        source_start_seconds=source_start_seconds,
+        source_end_seconds=source_end_seconds,
+        role=role,
+    )
+
+    segment_id = insert_content_segment(
+        content_unit_id=segment["content_unit_id"],
+        segment_order=segment["order"],
+        duration_seconds=segment["duration_seconds"],
+        media_format=segment["media_format"],
+        source_start_seconds=segment["source_start_seconds"],
+        source_end_seconds=segment["source_end_seconds"],
+        role=segment["role"],
+        status=status,
+        file_path=file_path,
+    )
+
+    persisted = get_content_segment(segment_id)
+
+    if persisted is None:
+        raise RuntimeError(
+            "Content Segment não foi encontrado após persistência: "
+            f"{segment_id}"
+        )
+
+    return persisted
 
 
 def validate_content_segment(

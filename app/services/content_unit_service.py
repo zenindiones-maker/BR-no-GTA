@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.database.content_unit_repository import (
+    insert_content_unit,
+    get_content_unit,
+)
 from app.services.media_format_service import (
     MediaFormatError,
     get_media_format,
@@ -281,3 +285,74 @@ def validate_content_unit(unit: dict[str, Any]) -> None:
         narration=unit["narration"],
         visual_requirements=unit["visual_requirements"],
     )
+
+
+def create_and_persist_content_unit(
+    *,
+    content_item_id: int,
+    title: str,
+    unit_type: str,
+    duration_seconds: float,
+    media_format: str,
+    script_id: int,
+    idea_id: int,
+    objective: str,
+    hook: str,
+    narration: str,
+    visual_requirements: list[dict[str, Any]] | None = None,
+    status: str = "ready",
+    file_path: str | None = None,
+) -> dict[str, Any]:
+    """
+    Cria uma Content Unit, valida o domínio e persiste o registro.
+
+    A regra de negócio permanece neste service.
+    O acesso ao SQLite permanece no repository.
+    """
+    if (
+        not isinstance(content_item_id, int)
+        or isinstance(content_item_id, bool)
+        or content_item_id <= 0
+    ):
+        raise ContentUnitError(
+            "content_item_id deve ser um inteiro positivo."
+        )
+
+    unit = create_content_unit(
+        title=title,
+        unit_type=unit_type,
+        duration_seconds=duration_seconds,
+        media_format=media_format,
+        script_id=script_id,
+        idea_id=idea_id,
+        objective=objective,
+        hook=hook,
+        narration=narration,
+        visual_requirements=visual_requirements,
+    )
+
+    unit_id = insert_content_unit(
+        content_item_id=content_item_id,
+        title=unit["title"],
+        unit_type=unit["unit_type"],
+        duration_seconds=unit["duration_seconds"],
+        media_format=unit["media_format"],
+        script_id=unit["script_id"],
+        idea_id=unit["idea_id"],
+        objective=unit["objective"],
+        hook=unit["hook"],
+        narration=unit["narration"],
+        visual_requirements=unit["visual_requirements"],
+        status=status,
+        file_path=file_path,
+    )
+
+    persisted = get_content_unit(unit_id)
+
+    if persisted is None:
+        raise RuntimeError(
+            "Content Unit não foi encontrada após persistência: "
+            f"{unit_id}"
+        )
+
+    return persisted
