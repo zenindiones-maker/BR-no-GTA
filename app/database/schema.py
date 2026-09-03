@@ -273,6 +273,117 @@ CREATE TABLE IF NOT EXISTS editorial_evaluations (
 """
 
 
+
+def _migrate_memory_claims(connection) -> None:
+    """Cria a persistência das afirmações derivadas do Brain."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim TEXT NOT NULL,
+            claim_type TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 5.0,
+            status TEXT NOT NULL DEFAULT 'active',
+            scope TEXT NOT NULL DEFAULT 'gta6',
+            valid_at TEXT,
+            invalid_at TEXT,
+            extraction_method TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claims_type
+        ON memory_claims(claim_type)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claims_status
+        ON memory_claims(status)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claims_scope
+        ON memory_claims(scope)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claims_confidence
+        ON memory_claims(confidence)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claims_validity
+        ON memory_claims(valid_at, invalid_at)
+        """
+    )
+
+
+def _migrate_memory_claim_evidence(connection) -> None:
+    """Cria a ligação persistente entre claims e evidências."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_claim_evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id INTEGER NOT NULL,
+            event_id INTEGER NOT NULL,
+            evidence_role TEXT NOT NULL DEFAULT 'supporting',
+            weight REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (claim_id)
+                REFERENCES memory_claims(id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (event_id)
+                REFERENCES memory_events(id)
+                ON DELETE RESTRICT,
+            UNIQUE(claim_id, event_id)
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claim_evidence_claim
+        ON memory_claim_evidence(claim_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claim_evidence_event
+        ON memory_claim_evidence(event_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_claim_evidence_role
+        ON memory_claim_evidence(evidence_role)
+        """
+    )
+
+
 def _migrate_memory_events(connection) -> None:
     """Cria o log append-only de evidências do Brain."""
 
@@ -502,6 +613,8 @@ def initialize_schema() -> None:
         connection.executescript(SCHEMA_SQL)
         _migrate_ideas_research_item_id(connection)
         _migrate_memory_records(connection)
+        _migrate_memory_claims(connection)
+        _migrate_memory_claim_evidence(connection)
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
