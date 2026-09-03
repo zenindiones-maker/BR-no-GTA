@@ -44,6 +44,7 @@ def test_stop_stops_scheduler():
         scheduler=scheduler,
     )
 
+    runtime.start()
     runtime.stop()
 
     scheduler.stop.assert_called_once_with()
@@ -121,3 +122,77 @@ def test_scheduler_property_is_read_only():
 
     with pytest.raises(AttributeError):
         runtime.scheduler = Mock()
+
+
+def test_start_cannot_be_called_twice_without_stop():
+    scheduler = Mock()
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime.start()
+    runtime.start()
+
+    assert scheduler.configure.call_count == 1
+    assert scheduler.start.call_count == 1
+
+
+def test_stop_after_start_is_forwarded_once():
+    scheduler = Mock()
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime.start()
+    runtime.stop()
+
+    scheduler.stop.assert_called_once_with()
+
+
+def test_runtime_can_start_again_after_stop():
+    scheduler = Mock()
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime.start()
+    runtime.stop()
+    runtime.start()
+
+    assert scheduler.configure.call_count == 2
+    assert scheduler.start.call_count == 2
+
+
+def test_stop_before_start_is_idempotent():
+    scheduler = Mock()
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    runtime.stop()
+
+    scheduler.start.assert_not_called()
+    scheduler.stop.assert_not_called()
+    assert runtime.running is False
+
+
+def test_runtime_running_state_changes_with_lifecycle():
+    scheduler = Mock()
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    assert runtime.running is False
+
+    runtime.start()
+
+    assert runtime.running is True
+
+    runtime.stop()
+
+    assert runtime.running is False
