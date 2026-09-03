@@ -128,9 +128,10 @@ def test_get_next_pending_youtube_publication_returns_none_when_empty():
 
 
 def test_get_next_pending_youtube_publication_returns_oldest_pending():
+    first_content_item_id, first_video_id = _create_video()
     first_id = insert_youtube_publication(
-        video_id=101,
-        content_item_id=201,
+        video_id=first_video_id,
+        content_item_id=first_content_item_id,
         title="Primeira",
         description="",
         tags=["first"],
@@ -139,9 +140,11 @@ def test_get_next_pending_youtube_publication_returns_oldest_pending():
         privacy_status="private",
         publish_at=None,
     )
+
+    second_content_item_id, second_video_id = _create_video()
     second_id = insert_youtube_publication(
-        video_id=102,
-        content_item_id=202,
+        video_id=second_video_id,
+        content_item_id=second_content_item_id,
         title="Segunda",
         description="",
         tags=["second"],
@@ -160,9 +163,10 @@ def test_get_next_pending_youtube_publication_returns_oldest_pending():
 
 
 def test_get_next_pending_youtube_publication_ignores_non_pending():
+    published_content_item_id, published_video_id = _create_video()
     published_id = insert_youtube_publication(
-        video_id=103,
-        content_item_id=203,
+        video_id=published_video_id,
+        content_item_id=published_content_item_id,
         title="Publicado",
         description="",
         tags=["published"],
@@ -177,9 +181,10 @@ def test_get_next_pending_youtube_publication_ignores_non_pending():
         youtube_url="https://www.youtube.com/watch?v=youtube-published",
     )
 
+    failed_content_item_id, failed_video_id = _create_video()
     failed_id = insert_youtube_publication(
-        video_id=104,
-        content_item_id=204,
+        video_id=failed_video_id,
+        content_item_id=failed_content_item_id,
         title="Falhou",
         description="",
         tags=["failed"],
@@ -193,9 +198,10 @@ def test_get_next_pending_youtube_publication_ignores_non_pending():
         error="erro de teste",
     )
 
+    pending_content_item_id, pending_video_id = _create_video()
     pending_id = insert_youtube_publication(
-        video_id=105,
-        content_item_id=205,
+        video_id=pending_video_id,
+        content_item_id=pending_content_item_id,
         title="Pendente",
         description="",
         tags=["pending", "test"],
