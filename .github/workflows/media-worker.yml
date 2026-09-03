@@ -2,6 +2,16 @@ name: BR no GTA Media Worker
 
 on:
   workflow_dispatch:
+    inputs:
+      source_url:
+        description: "URL direta da fonte de vídeo"
+        required: true
+        type: string
+      source_name:
+        description: "Nome da fonte"
+        required: false
+        default: "gta6-source"
+        type: string
 
 jobs:
   media-worker:
@@ -23,40 +33,103 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Verificar ambiente de mídia
+      - name: Verificar ambiente
         run: |
           python --version
           pip --version
-          ffmpeg -version
-          ffprobe -version
-          git status --short
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
 
-      - name: Verificar estrutura BR
+      - name: Criar workspace de mídia
         run: |
-          test -d app
-          test -d tests
-          test -d app/services
-          test -d app/database
+          mkdir -p workspace/input
+          mkdir -p workspace/analysis
+          mkdir -p workspace/output
 
-      - name: Instalar dependências Python
+      - name: Baixar fonte de vídeo
+        env:
+          SOURCE_URL: ${{ inputs.source_url }}
+          SOURCE_NAME: ${{ inputs.source_name }}
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pytest
+          curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --connect-timeout 20 \
+            --output "workspace/input/${SOURCE_NAME}.mp4" \
+            "$SOURCE_URL"
 
-      - name: Validar código
+          test -s "workspace/input/${SOURCE_NAME}.mp4"
+
+          ls -lh workspace/input/
+
+      - name: Analisar mídia com ffprobe
+        env:
+          SOURCE_NAME: ${{ inputs.source_name }}
         run: |
-          python -m compileall -q app
-          pytest -q
+          ffprobe \
+            -v error \
+            -show_format \
+            -show_streams \
+            -of json \
+            "workspace/input/${SOURCE_NAME}.mp4" \
+            > workspace/analysis/media_probe.json
+
+          cat workspace/analysis/media_probe.json
+
+      - name: Validar análise
+        run: |
+          test -s workspace/analysis/media_probe.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("workspace/analysis/media_probe.json")
+          data = json.loads(path.read_text())
+
+          streams = data.get("streams", [])
+          media_format = data.get("format", {})
+
+          if not streams:
+              raise SystemExit("Nenhum stream encontrado na mídia.")
+
+          if not media_format:
+              raise SystemExit("Metadata de formato não encontrada.")
+
+          video_streams = [
+              stream
+              for stream in streams
+              if stream.get("codec_type") == "video"
+          ]
+
+          if not video_streams:
+              raise SystemExit("Nenhum stream de vídeo encontrado.")
+
+          video = video_streams[0]
+
+          print("===== MEDIA PROBE OK =====")
+          print("format:", media_format.get("format_name"))
+          print("duration:", media_format.get("duration"))
+          print("size:", media_format.get("size"))
+          print("video_codec:", video.get("codec_name"))
+          print("width:", video.get("width"))
+          print("height:", video.get("height"))
+          print("fps:", video.get("r_frame_rate"))
+          PY
+
+      - name: Publicar análise
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-analysis-${{ github.run_id }}
+          path: workspace/analysis/media_probe.json
+          retention-days: 7
 
       - name: Resumo do worker
         run: |
-          printf '\n===== MEDIA WORKER READY =====\n'
-          printf 'Python: '
-          python --version
-          printf 'FFmpeg: '
-          ffmpeg -version | head -1
-          printf 'FFprobe: '
-          ffprobe -version | head -1
-          printf 'Status Git: '
-          git status --short
+          printf '\n===== MEDIA WORKER =====\n'
+          printf 'Fonte: %s\n' "${{ inputs.source_name }}"
+          printf 'Runner: %s\n' "${RUNNER_NAME}"
+          printf 'Workspace: %s\n' "$GITHUB_WORKSPACE"
+          printf 'Análise: workspace/analysis/media_probe.json\n'
+          printf 'Status: READY\n'
