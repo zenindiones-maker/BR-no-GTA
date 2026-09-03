@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS gta6_media_catalog (
     reuse_allowed INTEGER NOT NULL DEFAULT 0,
     reuse_license TEXT,
     provenance TEXT NOT NULL DEFAULT '',
+    media_role TEXT NOT NULL DEFAULT 'unknown',
     status TEXT NOT NULL DEFAULT 'discovered',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

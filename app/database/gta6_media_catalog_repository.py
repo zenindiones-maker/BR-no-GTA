@@ -22,6 +22,7 @@ def insert_media_record(
     reuse_allowed: bool = False,
     reuse_license: str | None = None,
     provenance: str = "",
+    media_role: str = "unknown",
     status: str = "discovered",
 ) -> int:
     """Persiste uma mídia GTA6 no catálogo."""
@@ -46,9 +47,10 @@ def insert_media_record(
             reuse_allowed,
             reuse_license,
             provenance,
+            media_role,
             status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             video_id,
@@ -66,6 +68,7 @@ def insert_media_record(
             int(reuse_allowed),
             reuse_license,
             provenance,
+            media_role,
             status,
         ),
     )
@@ -101,6 +104,7 @@ def get_media_record(
             reuse_allowed,
             reuse_license,
             provenance,
+            media_role,
             status,
             created_at,
             updated_at
@@ -147,6 +151,7 @@ def get_media_record_by_video_id(
             reuse_allowed,
             reuse_license,
             provenance,
+            media_role,
             status,
             created_at,
             updated_at
@@ -205,6 +210,7 @@ def list_media_records(
             reuse_allowed,
             reuse_license,
             provenance,
+            media_role,
             status,
             created_at,
             updated_at
@@ -284,6 +290,79 @@ def update_media_reuse_policy(
         (
             int(reuse_allowed),
             reuse_license,
+            media_id,
+        ),
+    )
+
+    connection.commit()
+
+    return cursor.rowcount > 0
+
+
+def update_media_record(
+    media_id: int,
+    *,
+    title: str,
+    url: str,
+    source: str,
+    source_authority: str,
+    channel_id: str | None = None,
+    channel_title: str | None = None,
+    description: str = "",
+    published_at: str | None = None,
+    media_type: str = "video",
+    game: str = "gta6",
+    relevance_score: float = 0.0,
+    reuse_allowed: bool = False,
+    reuse_license: str | None = None,
+    provenance: str = "",
+    media_role: str = "unknown",
+    status: str = "discovered",
+) -> bool:
+    """Atualiza os metadados de uma mídia já catalogada."""
+
+    connection = get_connection()
+
+    cursor = connection.execute(
+        """
+        UPDATE gta6_media_catalog
+        SET
+            title = ?,
+            url = ?,
+            source = ?,
+            source_authority = ?,
+            channel_id = ?,
+            channel_title = ?,
+            description = ?,
+            published_at = ?,
+            media_type = ?,
+            game = ?,
+            relevance_score = ?,
+            reuse_allowed = ?,
+            reuse_license = ?,
+            provenance = ?,
+            media_role = ?,
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            title,
+            url,
+            source,
+            source_authority,
+            channel_id,
+            channel_title,
+            description,
+            published_at,
+            media_type,
+            game,
+            relevance_score,
+            int(reuse_allowed),
+            reuse_license,
+            provenance,
+            media_role,
+            status,
             media_id,
         ),
     )

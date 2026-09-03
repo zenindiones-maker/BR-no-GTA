@@ -46,6 +46,7 @@ class GTA6MediaRecord:
     reuse_allowed: bool = False
     reuse_license: str | None = None
     provenance: str = ""
+    media_role: str = "unknown"
     status: str = "discovered"
 
 
@@ -66,6 +67,7 @@ def create_media_record(
     reuse_allowed: bool = False,
     reuse_license: str | None = None,
     provenance: str = "",
+    media_role: str = "unknown",
     status: str = "discovered",
 ) -> GTA6MediaRecord:
     """
@@ -164,6 +166,22 @@ def create_media_record(
             "provenance deve ser uma string."
         )
 
+    normalized_media_role = (
+        media_role.strip().lower()
+        if isinstance(media_role, str)
+        else ""
+    )
+
+    if normalized_media_role not in {
+        "gameplay",
+        "footage",
+        "analysis",
+        "unknown",
+    }:
+        raise GTA6MediaCatalogError(
+            f"media_role inválido: {media_role}"
+        )
+
     return GTA6MediaRecord(
         video_id=video_id.strip(),
         title=title.strip(),
@@ -192,6 +210,7 @@ def create_media_record(
         reuse_allowed=reuse_allowed,
         reuse_license=reuse_license,
         provenance=provenance.strip(),
+        media_role=normalized_media_role,
         status=normalized_status,
     )
 
@@ -248,6 +267,10 @@ def media_record_from_discovery_candidate(
             "provenance",
             "",
         ),
+        media_role=candidate.get(
+            "media_role",
+            "unknown",
+        ),
         status=candidate.get(
             "status",
             "discovered",
@@ -275,6 +298,7 @@ def validate_media_record(
         reuse_allowed=record.reuse_allowed,
         reuse_license=record.reuse_license,
         provenance=record.provenance,
+        media_role=record.media_role,
         status=record.status,
     )
 
@@ -296,6 +320,7 @@ def persist_media_record(
     from app.database.gta6_media_catalog_repository import (
         get_media_record_by_video_id,
         insert_media_record,
+        update_media_record,
         get_media_record,
     )
 
@@ -308,7 +333,35 @@ def persist_media_record(
     )
 
     if existing is not None:
-        return existing
+        update_media_record(
+            existing["id"],
+            title=record.title,
+            url=record.url,
+            source=record.source,
+            source_authority=record.source_authority,
+            channel_id=record.channel_id,
+            channel_title=record.channel_title,
+            description=record.description,
+            published_at=record.published_at,
+            media_type=record.media_type,
+            game=record.game,
+            relevance_score=record.relevance_score,
+            reuse_allowed=record.reuse_allowed,
+            reuse_license=record.reuse_license,
+            provenance=record.provenance,
+            media_role=record.media_role,
+            status=record.status,
+        )
+
+        refreshed = get_media_record(existing["id"])
+
+        if refreshed is None:
+            raise RuntimeError(
+                "Mídia não encontrada após atualização: "
+                f"{existing['id']}"
+            )
+
+        return refreshed
 
     media_id = insert_media_record(
         video_id=record.video_id,
@@ -326,6 +379,7 @@ def persist_media_record(
         reuse_allowed=record.reuse_allowed,
         reuse_license=record.reuse_license,
         provenance=record.provenance,
+        media_role=record.media_role,
         status=record.status,
     )
 
