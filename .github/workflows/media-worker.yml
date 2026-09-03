@@ -32,6 +32,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade "yt-dlp[default]"
 
       - name: Verificar ambiente
         run: |
@@ -39,6 +40,7 @@ jobs:
           pip --version
           ffmpeg -version | head -1
           ffprobe -version | head -1
+          yt-dlp --version
 
       - name: Criar workspace de mídia
         run: |
@@ -51,31 +53,81 @@ jobs:
           SOURCE_URL: ${{ inputs.source_url }}
           SOURCE_NAME: ${{ inputs.source_name }}
         run: |
-          curl \
-            --fail \
-            --location \
-            --retry 3 \
-            --connect-timeout 20 \
-            --output "workspace/input/${SOURCE_NAME}.mp4" \
-            "$SOURCE_URL"
+          set -euo pipefail
 
-          test -s "workspace/input/${SOURCE_NAME}.mp4"
+          SAFE_NAME="$(printf '%s' "$SOURCE_NAME" | tr -cd '[:alnum:]_.-')"
 
-          ls -lh workspace/input/
+          if [ -z "$SAFE_NAME" ]; then
+            SAFE_NAME="gta6-source"
+          fi
+
+          OUTPUT="workspace/input/${SAFE_NAME}.mp4"
+
+          echo "===== MEDIA INGESTION ====="
+          echo "Fonte: $SOURCE_URL"
+          echo "Saída: $OUTPUT"
+
+          case "$SOURCE_URL" in
+            https://www.youtube.com/*|\
+            https://youtube.com/*|\
+            https://m.youtube.com/*|\
+            https://youtu.be/*)
+              echo "Tipo: plataforma de vídeo"
+              echo "Downloader: yt-dlp"
+
+              yt-dlp \
+                --no-playlist \
+                --format "bv*+ba/b" \
+                --merge-output-format mp4 \
+                --output "$OUTPUT" \
+                "$SOURCE_URL"
+              ;;
+
+            *)
+              echo "Tipo: URL direta"
+              echo "Downloader: curl"
+
+              curl \
+                --fail \
+                --location \
+                --retry 3 \
+                --connect-timeout 20 \
+                --output "$OUTPUT" \
+                "$SOURCE_URL"
+              ;;
+          esac
+
+          test -s "$OUTPUT"
+
+          echo "===== MEDIA DOWNLOADED ====="
+          ls -lh "$OUTPUT"
 
       - name: Analisar mídia com ffprobe
         env:
           SOURCE_NAME: ${{ inputs.source_name }}
         run: |
+          set -euo pipefail
+
+          SAFE_NAME="$(printf '%s' "$SOURCE_NAME" | tr -cd '[:alnum:]_.-')"
+
+          if [ -z "$SAFE_NAME" ]; then
+            SAFE_NAME="gta6-source"
+          fi
+
+          INPUT="workspace/input/${SAFE_NAME}.mp4"
+
+          test -s "$INPUT"
+
           ffprobe \
             -v error \
             -show_format \
             -show_streams \
             -of json \
-            "workspace/input/${SOURCE_NAME}.mp4" \
+            "$INPUT" \
             > workspace/analysis/media_probe.json
 
           cat workspace/analysis/media_probe.json
+
 
       - name: Validar análise
         run: |
