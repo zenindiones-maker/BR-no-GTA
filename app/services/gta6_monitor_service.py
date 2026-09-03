@@ -13,6 +13,7 @@ from app.services.gta6_change_detector import (
 class GTA6MonitorResult:
     url: str
     status_code: int
+    content: str
     change: GTA6ChangeResult
 
 
@@ -38,5 +39,6 @@ def monitor_gta6_page(
     return GTA6MonitorResult(
         url=page.url,
         status_code=page.status_code,
+        content=page.content,
         change=change,
     )
