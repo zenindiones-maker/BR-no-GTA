@@ -1,5 +1,9 @@
 import pytest
 
+from app.database.content_repository import insert_content_item
+from app.database.schema import initialize_schema
+from app.database.video_repository import insert_video
+
 from app.database.youtube_repository import (
     get_youtube_publication,
     insert_youtube_publication,
@@ -11,9 +15,24 @@ from app.services.youtube_publication_service import (
 
 
 def _create_publication():
+    initialize_schema()
+
+    content_item_id = insert_content_item(
+        title="GTA 6 Test",
+        content_type="video",
+        status="ready",
+    )
+
+    video_id = insert_video(
+        content_item_id=content_item_id,
+        title="GTA 6 Test",
+        status="ready",
+        file_path="output/test.mp4",
+    )
+
     return insert_youtube_publication(
-        video_id=1,
-        content_item_id=1,
+        video_id=video_id,
+        content_item_id=content_item_id,
         title="GTA 6 Test",
         description="Teste",
         tags=["GTA 6"],
