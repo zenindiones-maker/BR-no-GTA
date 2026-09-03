@@ -1,0 +1,67 @@
+name: BR no GTA Media Worker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  media-worker:
+    name: Media Worker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar ferramentas de mídia
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Verificar ambiente de mídia
+        run: |
+          python --version
+          pip --version
+          ffmpeg -version
+          ffprobe -version
+          git status --short
+
+      - name: Verificar estrutura BR
+        run: |
+          test -d app
+          test -d tests
+          test -d app/services
+          test -d app/database
+
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          elif [ -f requirements-dev.txt ]; then
+            python -m pip install -r requirements-dev.txt
+          else
+            python -m pip install pytest
+          fi
+
+      - name: Validar código
+        run: |
+          python -m compileall -q app
+          pytest -q
+
+      - name: Resumo do worker
+        run: |
+          printf '\n===== MEDIA WORKER READY =====\n'
+          printf 'Python: '
+          python --version
+          printf 'FFmpeg: '
+          ffmpeg -version | head -1
+          printf 'FFprobe: '
+          ffprobe -version | head -1
+          printf 'Status Git: '
+          git status --short
