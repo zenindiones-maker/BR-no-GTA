@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from types import SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.cli import main
@@ -6,18 +9,16 @@ from app.cli import main
 def test_cli_gta6_monitor_run_once_processes_monitor_cycle(
     capsys,
 ):
-    result = {
-        "url": "https://www.rockstargames.com/newswire",
-        "status_code": 200,
-        "change": {
-            "changed": True,
-        },
-        "baseline": False,
-        "items_found": 3,
-        "items_ingested": 2,
-        "items_duplicated": 1,
-        "knowledge_ids": [10, 11, 12],
-    }
+    result = SimpleNamespace(
+        url="https://www.rockstargames.com/newswire",
+        status_code=200,
+        change=SimpleNamespace(changed=True),
+        baseline=False,
+        items_found=3,
+        items_ingested=2,
+        items_duplicated=1,
+        knowledge_ids=[10, 11, 12],
+    )
 
     with patch(
         "sys.argv",
@@ -43,18 +44,16 @@ def test_cli_gta6_monitor_run_once_processes_monitor_cycle(
 def test_cli_gta6_monitor_run_once_reports_no_change(
     capsys,
 ):
-    result = {
-        "url": "https://www.rockstargames.com/newswire",
-        "status_code": 200,
-        "change": {
-            "changed": False,
-        },
-        "baseline": False,
-        "items_found": 0,
-        "items_ingested": 0,
-        "items_duplicated": 0,
-        "knowledge_ids": [],
-    }
+    result = SimpleNamespace(
+        url="https://www.rockstargames.com/newswire",
+        status_code=200,
+        change=SimpleNamespace(changed=False),
+        baseline=False,
+        items_found=0,
+        items_ingested=0,
+        items_duplicated=0,
+        knowledge_ids=[],
+    )
 
     with patch(
         "sys.argv",

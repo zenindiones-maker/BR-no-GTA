@@ -166,11 +166,11 @@ def main() -> None:
 
         print(
             "Monitor GTA6 executado: "
-            f"status={monitor_result['status_code']} "
-            f"changed={monitor_result['change']['changed']} "
-            f"items_found={monitor_result['items_found']} "
-            f"items_ingested={monitor_result['items_ingested']} "
-            f"items_duplicated={monitor_result['items_duplicated']}"
+            f"status={monitor_result.status_code} "
+            f"changed={monitor_result.change.changed} "
+            f"items_found={monitor_result.items_found} "
+            f"items_ingested={monitor_result.items_ingested} "
+            f"items_duplicated={monitor_result.items_duplicated}"
         )
         return
 
