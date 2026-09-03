@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from app.database.gta6_monitor_repository import (
+    save_gta6_monitor_state,
+)
 from app.database.memory_claim_repository import insert_memory_claim
 from app.services.gta6_claim_extraction_service import extract_gta6_claims
 from app.services.gta6_knowledge import GTA6KnowledgeItem
@@ -40,6 +43,11 @@ def run_gta6_monitor_pipeline(
         monitor=monitor,
         url=url,
         previous_hash=previous_hash,
+    )
+
+    save_gta6_monitor_state(
+        monitor_result.url,
+        monitor_result.change.current_hash,
     )
 
     if not monitor_result.change.changed:

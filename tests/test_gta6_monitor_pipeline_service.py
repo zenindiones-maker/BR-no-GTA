@@ -202,3 +202,173 @@ def test_pipeline_first_observation_is_treated_as_change(monkeypatch):
     )
 
     assert result.monitor.change.changed is True
+
+def test_pipeline_persists_current_hash_after_monitoring(monkeypatch):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=True)
+    monitor = Mock(return_value=monitor_result)
+    knowledge = _knowledge()
+
+    persist_monitor_state = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        monitor,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        Mock(
+            return_value={
+                "research_item_id": 10,
+                "knowledge_id": 20,
+                "knowledge": knowledge.to_dict(),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        Mock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        Mock(),
+    )
+
+    gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+        url="https://example.com/gta6",
+        monitor=Mock(),
+        previous_hash=None,
+        knowledge_factory=Mock(return_value=knowledge),
+    )
+
+    persist_monitor_state.assert_called_once_with(
+        "https://example.com/gta6",
+        "def456",
+    )
+
+def test_pipeline_is_idempotent_for_same_content(monkeypatch):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=False)
+    monitor = Mock(return_value=monitor_result)
+
+    knowledge_service = Mock()
+    claim_extraction_service = Mock()
+    memory_repository = Mock()
+    persist_monitor_state = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        monitor,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        knowledge_service,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        claim_extraction_service,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        memory_repository,
+    )
+
+    result = gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+        url="https://example.com/gta6",
+        monitor=Mock(),
+        previous_hash="abc123",
+        knowledge_factory=Mock(),
+    )
+
+    assert result.monitor.change.changed is False
+    assert result.knowledge_created is False
+    assert result.claims_created == 0
+    assert result.memory_claim_ids == []
+
+    persist_monitor_state.assert_called_once_with(
+        "https://example.com/gta6",
+        "abc123",
+    )
+    knowledge_service.assert_not_called()
+    claim_extraction_service.assert_not_called()
+    memory_repository.assert_not_called()
+
+def test_pipeline_persists_monitor_result_hash_exactly(monkeypatch):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = GTA6MonitorResult(
+        url="https://example.com/gta6",
+        status_code=200,
+        content="<html>GTA 6 conteúdo novo</html>",
+        change=GTA6ChangeResult(
+            changed=True,
+            previous_hash="old-hash",
+            current_hash="unique-current-hash-789",
+        ),
+    )
+
+    persist_monitor_state = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        Mock(return_value=monitor_result),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        Mock(
+            return_value={
+                "research_item_id": 10,
+                "knowledge_id": 20,
+                "knowledge": _knowledge().to_dict(),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        Mock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        Mock(),
+    )
+
+    gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+        url="https://example.com/gta6",
+        monitor=Mock(),
+        previous_hash="old-hash",
+        knowledge_factory=Mock(),
+    )
+
+    persist_monitor_state.assert_called_once_with(
+        "https://example.com/gta6",
+        "unique-current-hash-789",
+    )
