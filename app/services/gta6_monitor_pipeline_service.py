@@ -45,12 +45,11 @@ def run_gta6_monitor_pipeline(
         previous_hash=previous_hash,
     )
 
-    save_gta6_monitor_state(
-        monitor_result.url,
-        monitor_result.change.current_hash,
-    )
-
     if not monitor_result.change.changed:
+        save_gta6_monitor_state(
+            monitor_result.url,
+            monitor_result.change.current_hash,
+        )
         return GTA6MonitorPipelineResult(
             monitor=monitor_result,
             knowledge_created=False,
@@ -77,6 +76,11 @@ def run_gta6_monitor_pipeline(
         insert_memory_claim(claim)
         for claim in claims
     ]
+
+    save_gta6_monitor_state(
+        monitor_result.url,
+        monitor_result.change.current_hash,
+    )
 
     return GTA6MonitorPipelineResult(
         monitor=monitor_result,

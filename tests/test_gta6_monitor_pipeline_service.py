@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 from unittest.mock import Mock
 
@@ -428,11 +429,46 @@ def test_pipeline_stops_when_knowledge_acquisition_fails(monkeypatch):
             "pipeline should propagate knowledge acquisition failure"
         )
 
-    persist_monitor_state.assert_called_once_with(
-        "https://example.com/gta6",
-        "def456",
-    )
+    persist_monitor_state.assert_not_called()
     knowledge_factory.assert_called_once_with(monitor_result)
     knowledge_service.assert_not_called()
     claim_extraction_service.assert_not_called()
     memory_repository.assert_not_called()
+
+def test_pipeline_does_not_persist_hash_when_knowledge_acquisition_fails(
+    monkeypatch,
+):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=True)
+
+    persist_monitor_state = Mock()
+    knowledge_factory = Mock(
+        side_effect=RuntimeError(
+            "knowledge acquisition failed"
+        )
+    )
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        Mock(return_value=monitor_result),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="knowledge acquisition failed",
+    ):
+        gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+            url="https://example.com/gta6",
+            monitor=Mock(),
+            previous_hash="old-hash",
+            knowledge_factory=knowledge_factory,
+        )
+
+    persist_monitor_state.assert_not_called()
