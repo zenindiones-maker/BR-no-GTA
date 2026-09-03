@@ -3,6 +3,9 @@ from typing import Any
 from app.integrations.gta6.source import GTA6SourceItem
 from app.database.gta6_knowledge_repository import get_gta6_knowledge_by_source_url
 from app.services.gta6_knowledge_service import create_gta6_knowledge
+from app.services.gta6_knowledge_memory_ingestion_service import (
+    ingest_gta6_knowledge_memory_event,
+)
 
 
 def ingest_gta6_source_item(
@@ -13,12 +16,16 @@ def ingest_gta6_source_item(
     existing = get_gta6_knowledge_by_source_url(item.url)
 
     if existing is not None:
-        return {
+        result = {
             "research_item_id": existing["research_item_id"],
             "knowledge_id": existing["id"],
             "knowledge": None,
             "duplicate": True,
         }
+
+        ingest_gta6_knowledge_memory_event(result)
+
+        return result
 
     result = create_gta6_knowledge(
         title=item.title,
@@ -31,6 +38,9 @@ def ingest_gta6_source_item(
     )
 
     result["duplicate"] = False
+
+    ingest_gta6_knowledge_memory_event(result)
+
     return result
 
 
