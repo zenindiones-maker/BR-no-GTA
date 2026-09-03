@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
-
-from apscheduler.schedulers.background import BackgroundScheduler
+from typing import Callable
 
 from app.services.gta6_monitor_schedule import (
     GTA6MonitorSchedule,
@@ -10,14 +8,19 @@ from app.services.gta6_monitor_schedule import (
 
 
 class APSchedulerGTA6MonitorAdapter:
-    """Adapter entre o contrato do monitor GTA6 e o APScheduler."""
+    """Adapter do scheduler do projeto para a infraestrutura APScheduler.
+
+    Esta classe define o contrato de infraestrutura utilizado pelo
+    GTA6MonitorScheduler. A integração concreta com APScheduler será
+    adicionada posteriormente, mantendo o domínio desacoplado da
+    biblioteca de agendamento.
+    """
 
     def __init__(
         self,
         *,
         schedule: GTA6MonitorSchedule,
         executor: Callable[[], object],
-        scheduler: Any | None = None,
     ) -> None:
         if not isinstance(schedule, GTA6MonitorSchedule):
             raise ValueError(
@@ -25,37 +28,31 @@ class APSchedulerGTA6MonitorAdapter:
             )
 
         if not callable(executor):
-            raise ValueError("executor must be callable")
+            raise ValueError(
+                "executor must be callable"
+            )
 
         self._schedule = schedule
         self._executor = executor
-        self._scheduler = (
-            scheduler
-            if scheduler is not None
-            else BackgroundScheduler()
-        )
 
     @property
     def schedule(self) -> GTA6MonitorSchedule:
-        """Retorna a configuração do agendamento."""
+        """Retorna a configuração recebida pelo adapter."""
         return self._schedule
 
-    def configure(self) -> None:
-        """Registra o job no APScheduler quando o agendamento está ativo."""
-        if not self._schedule.enabled:
-            return
+    @property
+    def executor(self) -> Callable[[], object]:
+        """Retorna o executor operacional configurado."""
+        return self._executor
 
-        self._scheduler.add_job(
-            self._executor,
-            trigger="interval",
-            seconds=float(self._schedule.interval_seconds),
-            id=self._schedule.job_id,
-        )
+    def configure(self) -> None:
+        """Configura o job na infraestrutura de agendamento."""
+        raise NotImplementedError
 
     def start(self) -> None:
-        """Inicia o scheduler subjacente."""
-        self._scheduler.start()
+        """Inicia a infraestrutura de agendamento."""
+        raise NotImplementedError
 
     def stop(self) -> None:
-        """Encerra o scheduler subjacente."""
-        self._scheduler.shutdown()
+        """Interrompe a infraestrutura de agendamento."""
+        raise NotImplementedError
