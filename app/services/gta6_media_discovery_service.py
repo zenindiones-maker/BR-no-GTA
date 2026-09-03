@@ -117,6 +117,65 @@ def normalize_video_candidate(
     return candidate
 
 
+def validate_gta6_media_relevance(
+    candidate: dict[str, Any],
+) -> bool:
+    """
+    Valida se uma mídia realmente pertence ao universo GTA6.
+
+    A validação é conservadora:
+    autoridade da fonte não substitui relevância GTA6.
+
+    Nenhuma rede, banco ou análise de vídeo é executada aqui.
+    """
+    if not isinstance(candidate, dict):
+        raise GTA6MediaDiscoveryError(
+            "candidate deve ser um dicionário."
+        )
+
+    title = str(candidate.get("title", "")).strip().lower()
+    description = str(
+        candidate.get("description", "")
+    ).strip().lower()
+
+    searchable_text = f"{title} {description}"
+
+    gta6_markers = (
+        "gta 6",
+        "gta vi",
+        "gta6",
+        "grand theft auto vi",
+        "grand theft auto 6",
+    )
+
+    if not any(
+        marker in searchable_text
+        for marker in gta6_markers
+    ):
+        return False
+
+    excluded_markers = (
+        "gta online",
+        "grand theft auto online",
+        "gta iii",
+        "grand theft auto iii",
+        "gta 3",
+        "grand theft auto 3",
+        "red dead redemption",
+        "red dead online",
+        "red dead redemption 2",
+        "red dead redemption ii",
+    )
+
+    if any(
+        marker in searchable_text
+        for marker in excluded_markers
+    ):
+        return False
+
+    return True
+
+
 def rank_video_candidate(
     candidate: dict[str, Any],
     *,
@@ -218,6 +277,9 @@ def discover_gta6_media_candidates(
                 "community",
             ),
         )
+
+        if not validate_gta6_media_relevance(candidate):
+            continue
 
         candidate["relevance_score"] = rank_video_candidate(
             candidate,

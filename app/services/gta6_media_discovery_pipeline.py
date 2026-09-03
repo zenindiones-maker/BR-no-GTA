@@ -6,6 +6,9 @@ from app.services.gta6_media_discovery_service import (
     build_gta6_video_search_queries,
     discover_gta6_media_candidates,
 )
+from app.services.gta6_media_catalog_service import (
+    persist_media_record,
+)
 from app.services.gta6_youtube_discovery_client import (
     search_gta6_youtube_videos,
 )
@@ -139,4 +142,10 @@ def run_gta6_media_discovery(
 
         unique_candidates.append(candidate)
 
-    return unique_candidates
+    cataloged_candidates: list[dict[str, Any]] = []
+
+    for candidate in unique_candidates:
+        cataloged = persist_media_record(candidate)
+        cataloged_candidates.append(cataloged)
+
+    return cataloged_candidates

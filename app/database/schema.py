@@ -123,6 +123,41 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 
 
+
+CREATE TABLE IF NOT EXISTS gta6_media_catalog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_authority TEXT NOT NULL,
+    channel_id TEXT,
+    channel_title TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    published_at TEXT,
+    media_type TEXT NOT NULL DEFAULT 'video',
+    game TEXT NOT NULL DEFAULT 'gta6',
+    relevance_score REAL NOT NULL DEFAULT 0,
+    reuse_allowed INTEGER NOT NULL DEFAULT 0,
+    reuse_license TEXT,
+    provenance TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'discovered',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_gta6_media_catalog_status
+ON gta6_media_catalog(status);
+
+CREATE INDEX IF NOT EXISTS idx_gta6_media_catalog_authority
+ON gta6_media_catalog(source_authority);
+
+CREATE INDEX IF NOT EXISTS idx_gta6_media_catalog_relevance
+ON gta6_media_catalog(relevance_score);
+
+CREATE INDEX IF NOT EXISTS idx_gta6_media_catalog_channel
+ON gta6_media_catalog(channel_id);
+
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
