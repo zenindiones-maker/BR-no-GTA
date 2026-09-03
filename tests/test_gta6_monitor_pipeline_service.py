@@ -472,3 +472,69 @@ def test_pipeline_does_not_persist_hash_when_knowledge_acquisition_fails(
         )
 
     persist_monitor_state.assert_not_called()
+
+
+def test_pipeline_persists_monitor_state_after_successful_processing(
+    monkeypatch,
+):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=True)
+
+    persist_monitor_state = Mock()
+    create_knowledge = Mock(
+        return_value={
+            "research_item_id": 10,
+            "knowledge_id": 20,
+            "knowledge": _knowledge().to_dict(),
+        }
+    )
+    extract_claims = Mock(return_value=[])
+    insert_claim = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        Mock(return_value=monitor_result),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        create_knowledge,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        extract_claims,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        insert_claim,
+    )
+
+    result = gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+        url="https://example.com/gta6",
+        monitor=Mock(),
+        previous_hash="old-hash",
+        knowledge_factory=Mock(return_value=_knowledge()),
+    )
+
+    assert result.knowledge_created is True
+    assert result.knowledge_id == 20
+    assert result.claims_created == 0
+    assert result.memory_claim_ids == []
+
+    create_knowledge.assert_called_once()
+    extract_claims.assert_called_once()
+    insert_claim.assert_not_called()
+
+    persist_monitor_state.assert_called_once_with(
+        "https://example.com/gta6",
+        "def456",
+    )
