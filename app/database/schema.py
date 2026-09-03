@@ -123,6 +123,48 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 
 
+CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    target_duration_seconds REAL NOT NULL,
+    min_duration_seconds REAL NOT NULL,
+    max_duration_seconds REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_episodes_status
+ON episodes(status);
+
+CREATE TABLE IF NOT EXISTS episode_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER NOT NULL,
+    content_segment_id INTEGER NOT NULL,
+    segment_order INTEGER NOT NULL,
+    start_offset_seconds REAL NOT NULL DEFAULT 0,
+    role TEXT NOT NULL DEFAULT 'content',
+    status TEXT NOT NULL DEFAULT 'ready',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (episode_id)
+        REFERENCES episodes(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (content_segment_id)
+        REFERENCES content_segments(id)
+        ON DELETE CASCADE,
+    UNIQUE(episode_id, segment_order)
+);
+
+CREATE INDEX IF NOT EXISTS idx_episode_segments_episode_id
+ON episode_segments(episode_id);
+
+CREATE INDEX IF NOT EXISTS idx_episode_segments_content_segment_id
+ON episode_segments(content_segment_id);
+
+CREATE INDEX IF NOT EXISTS idx_episode_segments_status
+ON episode_segments(status);
+
 CREATE TABLE IF NOT EXISTS youtube_publications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id INTEGER NOT NULL UNIQUE,
