@@ -736,3 +736,91 @@ def test_pipeline_does_not_persist_hash_when_memory_persistence_fails(
     extract_claims.assert_called_once()
     insert_claim.assert_called_once()
     persist_monitor_state.assert_not_called()
+
+def test_pipeline_preserves_architectural_execution_order(
+    monkeypatch,
+):
+    from app.services import gta6_monitor_pipeline_service
+
+    execution_order = []
+
+    monitor_result = _monitor_result(changed=True)
+    knowledge = _knowledge()
+
+    def fake_monitor_gta6_page(**kwargs):
+        execution_order.append("monitor")
+        return monitor_result
+
+    def fake_knowledge_factory(result):
+        execution_order.append("knowledge")
+        assert result is monitor_result
+        return knowledge
+
+    def fake_create_gta6_knowledge(**kwargs):
+        execution_order.append("knowledge_persist")
+        return {
+            "research_item_id": 10,
+            "knowledge_id": 20,
+            "knowledge": knowledge.to_dict(),
+        }
+
+    def fake_extract_gta6_claims(item):
+        execution_order.append("claims")
+        assert item is knowledge
+        return [object()]
+
+    def fake_insert_memory_claim(claim):
+        execution_order.append("memory")
+        return 30
+
+    def fake_save_gta6_monitor_state(url, content_hash):
+        execution_order.append("state")
+        assert url == monitor_result.url
+        assert content_hash == monitor_result.change.current_hash
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        fake_monitor_gta6_page,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        fake_create_gta6_knowledge,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        fake_extract_gta6_claims,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        fake_insert_memory_claim,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        fake_save_gta6_monitor_state,
+    )
+
+    result = gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+        url="https://example.com/gta6",
+        monitor=Mock(),
+        previous_hash="old-hash",
+        knowledge_factory=fake_knowledge_factory,
+    )
+
+    assert result.knowledge_created is True
+    assert result.knowledge_id == 20
+    assert result.claims_created == 1
+    assert result.memory_claim_ids == [30]
+
+    assert execution_order == [
+        "monitor",
+        "knowledge",
+        "knowledge_persist",
+        "claims",
+        "memory",
+        "state",
+    ]
