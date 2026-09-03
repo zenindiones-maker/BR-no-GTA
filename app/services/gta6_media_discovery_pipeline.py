@@ -9,6 +9,9 @@ from app.services.gta6_media_discovery_service import (
 from app.services.gta6_media_catalog_service import (
     persist_media_record,
 )
+from app.services.gta6_media_intelligence_service import (
+    rank_gta6_media_by_intelligence,
+)
 from app.services.gta6_youtube_discovery_client import (
     search_gta6_youtube_videos,
 )
@@ -30,6 +33,7 @@ def run_gta6_media_discovery(
     *,
     topic: str | None = None,
     max_results_per_query: int = 10,
+    trending_topics: list[str] | tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Executa a descoberta real de vídeos GTA6.
@@ -42,12 +46,19 @@ def run_gta6_media_discovery(
              ↓
         candidatos brutos
              ↓
-        Media Discovery Service
+        GTA6 Validation
              ↓
-        candidatos ranqueados
+        Media Discovery
+             ↓
+        Media Intelligence
+             ↓
+        ranking editorial
+             ↓
+        Media Catalog
 
     Este pipeline não baixa vídeos.
     """
+
     queries = build_gta6_video_search_queries(
         topic=topic,
     )
@@ -64,8 +75,10 @@ def run_gta6_media_discovery(
 
     raw_results: list[dict[str, Any]] = []
 
-    # 1. Fontes oficiais: prioridade máxima.
-    # A busca é restrita ao canal oficial da Rockstar Games.
+    # 1. Fontes oficiais.
+    #
+    # A busca é restrita aos canais oficiais configurados
+    # para o ecossistema GTA6.
     official_queries = [
         (
             f"GTA 6 {topic.strip()}"
@@ -100,8 +113,10 @@ def run_gta6_media_discovery(
 
             raw_results.extend(results)
 
-    # 2. Ecossistema GTA6: pesquisa ampla para descobrir
-    # fontes secundárias e comunitárias relevantes.
+    # 2. Ecossistema GTA6.
+    #
+    # Pesquisa ampla para descobrir fontes secundárias,
+    # especialistas e comunidade.
     for query in queries:
         try:
             results = search_gta6_youtube_videos(
@@ -123,11 +138,16 @@ def run_gta6_media_discovery(
 
         raw_results.extend(results)
 
+    # 3. Validação especializada GTA6.
+    #
+    # Remove candidatos que não pertencem ao GTA6 antes
+    # da inteligência editorial.
     candidates = discover_gta6_media_candidates(
         raw_results,
         topic=topic,
     )
 
+    # 4. Deduplicação por video_id.
     unique_candidates: list[dict[str, Any]] = []
     seen_video_ids: set[str] = set()
 
@@ -142,10 +162,24 @@ def run_gta6_media_discovery(
 
         unique_candidates.append(candidate)
 
+    # 5. Inteligência editorial.
+    #
+    # A inteligência não altera a identidade da fonte.
+    # Ela apenas adiciona sinais para a decisão editorial.
+    ranked_candidates = rank_gta6_media_by_intelligence(
+        unique_candidates,
+        topic=topic,
+        trending_topics=trending_topics,
+    )
+
+    # 6. Persistência do catálogo.
     cataloged_candidates: list[dict[str, Any]] = []
 
-    for candidate in unique_candidates:
+    for candidate in ranked_candidates:
         cataloged = persist_media_record(candidate)
-        cataloged_candidates.append(cataloged)
+
+        cataloged_candidates.append(
+            cataloged
+        )
 
     return cataloged_candidates

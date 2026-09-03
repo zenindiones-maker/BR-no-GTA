@@ -273,6 +273,64 @@ CREATE TABLE IF NOT EXISTS editorial_evaluations (
 """
 
 
+def _migrate_memory_records(connection) -> None:
+    """Cria a persistência base das memórias do Brain."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            memory_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            confidence REAL NOT NULL DEFAULT 5.0,
+            importance REAL NOT NULL DEFAULT 5.0,
+            scope TEXT NOT NULL DEFAULT 'gta6',
+            valid_at TEXT,
+            invalid_at TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            access_count INTEGER NOT NULL DEFAULT 0,
+            last_accessed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_records_type
+        ON memory_records(memory_type)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_records_scope
+        ON memory_records(scope)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_records_status
+        ON memory_records(status)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_records_source
+        ON memory_records(source_type, source_id)
+        """
+    )
+
+
 def _migrate_ideas_research_item_id(connection) -> None:
     """Adiciona a relação pesquisa -> ideia em bancos existentes."""
 
@@ -389,6 +447,7 @@ def initialize_schema() -> None:
     try:
         connection.executescript(SCHEMA_SQL)
         _migrate_ideas_research_item_id(connection)
+        _migrate_memory_records(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_gta6_knowledge_source_name(connection)
