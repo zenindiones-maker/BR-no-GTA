@@ -16,6 +16,7 @@ def search_gta6_youtube_videos(
     *,
     query: str,
     max_results: int = 10,
+    channel_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Pesquisa vídeos GTA6 no YouTube Data API v3.
@@ -55,6 +56,14 @@ def search_gta6_youtube_videos(
             "max_results deve ser um inteiro entre 1 e 50."
         )
 
+    if channel_id is not None:
+        if not isinstance(channel_id, str) or not channel_id.strip():
+            raise GTA6YouTubeDiscoveryError(
+                "channel_id deve ser uma string não vazia ou None."
+            )
+
+        channel_id = channel_id.strip()
+
     youtube = create_youtube_service(credentials)
 
     try:
@@ -66,6 +75,11 @@ def search_gta6_youtube_videos(
                 type="video",
                 maxResults=max_results,
                 order="relevance",
+                **(
+                    {"channelId": channel_id}
+                    if channel_id
+                    else {}
+                ),
             )
             .execute()
         )
