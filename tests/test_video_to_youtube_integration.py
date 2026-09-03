@@ -1,3 +1,6 @@
+from app.database.content_repository import insert_content_item
+from app.database.schema import initialize_schema
+from app.database.video_repository import insert_video
 from app.database.youtube_repository import (
     get_youtube_publication_by_video_id,
 )
@@ -14,9 +17,24 @@ from app.services.youtube_service import (
 def test_video_can_reach_youtube_publication_and_be_published(
     monkeypatch,
 ):
+    initialize_schema()
+
+    content_item_id = insert_content_item(
+        title="BR no GTA — Conteúdo de Integração",
+        content_type="video",
+        status="ready",
+    )
+
+    video_id = insert_video(
+        content_item_id=content_item_id,
+        title="BR no GTA — Teste de Integração",
+        status="ready",
+        file_path="/tmp/test-video.mp4",
+    )
+
     video = {
-        "id": 1001,
-        "content_item_id": 2001,
+        "id": video_id,
+        "content_item_id": content_item_id,
         "title": "BR no GTA — Teste de Integração",
         "status": "ready",
         "file_path": "/tmp/test-video.mp4",
@@ -44,6 +62,7 @@ def test_video_can_reach_youtube_publication_and_be_published(
     publisher = FakeYouTubePublisher(
         success=True,
         youtube_video_id="integration-test-video-id",
+        youtube_url="https://www.youtube.com/watch?v=integration-test-video-id",
     )
 
     result = publish_youtube_publication(
