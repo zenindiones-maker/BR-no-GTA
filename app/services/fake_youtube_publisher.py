@@ -21,11 +21,14 @@ class FakeYouTubePublisher:
     def __init__(
         self,
         *,
-        success: bool,
+        success: bool | None = None,
         youtube_video_id: str | None = None,
         youtube_url: str | None = None,
         error: str | None = None,
     ) -> None:
+        if success is None:
+            success = error is None
+
         self.success = success
         self.youtube_video_id = youtube_video_id
         self.youtube_url = youtube_url

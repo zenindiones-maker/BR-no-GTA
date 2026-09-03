@@ -7,6 +7,7 @@ from app.database.render_queue_repository import (
     get_render_job,
 )
 from app.database.schema import initialize_schema
+from app.database.content_repository import insert_content_item
 from app.database.video_repository import get_video, insert_video
 from app.services.render_executor_service import (
     AbstractRenderExecutor,
@@ -163,14 +164,20 @@ def test_worker_executes_queued_job_with_mpt_executor(
 def test_process_next_render_job_completes_associated_video():
     initialize_schema()
 
+    content_item_id = insert_content_item(
+        title="Conteúdo de teste do Render Worker",
+        content_type="video",
+        status="draft",
+    )
+
     video_id = insert_video(
-        content_item_id=1,
+        content_item_id=content_item_id,
         title="TESTE - Worker fecha Render -> Video",
         status="draft",
     )
 
     job = {
-        "content_item_id": 1,
+        "content_item_id": content_item_id,
         "script_id": 1,
         "idea_id": 1,
         "objective": "Testar fechamento do Worker.",
@@ -259,14 +266,20 @@ def test_worker_uses_real_mpt_factory_and_executor_without_network(
 ):
     initialize_schema()
 
+    content_item_id = insert_content_item(
+        title="Conteúdo de teste do Render Worker",
+        content_type="video",
+        status="draft",
+    )
+
     video_id = insert_video(
-        content_item_id=1,
+        content_item_id=content_item_id,
         title="TESTE - Worker -> Factory -> MPT Executor",
         status="draft",
     )
 
     job = {
-        "content_item_id": 1,
+        "content_item_id": content_item_id,
         "script_id": 1,
         "idea_id": 1,
         "objective": "Testar integração real do Worker com a factory MPT.",
@@ -367,14 +380,20 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
 ):
     initialize_schema()
 
+    content_item_id = insert_content_item(
+        title="Conteúdo de teste do Render Worker",
+        content_type="video",
+        status="draft",
+    )
+
     video_id = insert_video(
-        content_item_id=1,
+        content_item_id=content_item_id,
         title="TESTE - contrato editorial BR -> MPT",
         status="draft",
     )
 
     job = {
-        "content_item_id": 1,
+        "content_item_id": content_item_id,
         "script_id": 42,
         "idea_id": 24,
         "objective": (

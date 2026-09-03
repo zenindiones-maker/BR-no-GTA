@@ -116,11 +116,18 @@ def test_get_nonexistent_gta6_knowledge():
     assert get_gta6_knowledge_by_research_item(999999) is None
 
 
-def test_insert_gta6_knowledge_without_existing_research_item():
+def test_insert_gta6_knowledge_with_valid_research_item():
     initialize_schema()
 
+    research_item_id = insert_research_item(
+        source_id=None,
+        title="GTA 6 KNOWLEDGE TEST",
+        content="Pesquisa válida para teste de conhecimento GTA 6.",
+        url="https://example.com/gta6/knowledge",
+    )
+
     knowledge_id = insert_gta6_knowledge(
-        research_item_id=999999,
+        research_item_id=research_item_id,
         source_name="Test Source",
         fact_type="news",
         confidence="unconfirmed",
@@ -132,8 +139,7 @@ def test_insert_gta6_knowledge_without_existing_research_item():
     knowledge = get_gta6_knowledge(knowledge_id)
 
     assert knowledge is not None
-    assert knowledge["research_item_id"] == 999999
-
+    assert knowledge["research_item_id"] == research_item_id
 
 def test_duplicate_research_item_is_rejected():
     initialize_schema()
