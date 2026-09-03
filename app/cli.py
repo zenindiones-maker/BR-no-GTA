@@ -12,8 +12,8 @@ from app.services.editorial_queue_consumer import (
 from app.services.google_youtube_publication_service import (
     process_next_youtube_publication,
 )
-from app.services.gta6_monitor_run_service import (
-    run_gta6_monitor_once,
+from app.services.gta6_monitor_worker_service import (
+    execute_gta6_monitor,
 )
 
 
@@ -162,7 +162,7 @@ def main() -> None:
         args.command == "gta6-monitor"
         and args.gta6_monitor_command == "run-once"
     ):
-        monitor_result = run_gta6_monitor_once()
+        monitor_result = execute_gta6_monitor()
 
         print(
             "Monitor GTA6 executado: "

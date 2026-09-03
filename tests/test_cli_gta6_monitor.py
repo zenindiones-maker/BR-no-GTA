@@ -24,12 +24,12 @@ def test_cli_gta6_monitor_run_once_processes_monitor_cycle(
         "sys.argv",
         ["br-no-gta", "gta6-monitor", "run-once"],
     ), patch(
-        "app.cli.run_gta6_monitor_once",
+        "app.cli.execute_gta6_monitor",
         return_value=result,
-    ) as run_monitor:
+    ) as execute_monitor:
         main()
 
-    run_monitor.assert_called_once_with()
+    execute_monitor.assert_called_once_with()
 
     captured = capsys.readouterr()
 
@@ -59,12 +59,12 @@ def test_cli_gta6_monitor_run_once_reports_no_change(
         "sys.argv",
         ["br-no-gta", "gta6-monitor", "run-once"],
     ), patch(
-        "app.cli.run_gta6_monitor_once",
+        "app.cli.execute_gta6_monitor",
         return_value=result,
-    ) as run_monitor:
+    ) as execute_monitor:
         main()
 
-    run_monitor.assert_called_once_with()
+    execute_monitor.assert_called_once_with()
 
     captured = capsys.readouterr()
 
