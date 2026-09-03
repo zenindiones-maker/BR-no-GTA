@@ -44,6 +44,7 @@ def test_first_run_ingests_changed_content(monkeypatch):
     monitor = FakeMonitor(page)
     saved_states = []
     ingested = []
+    events = []
 
     monkeypatch.setattr(
         gta6_monitor_run_service,
@@ -79,6 +80,11 @@ def test_first_run_ingests_changed_content(monkeypatch):
             (url, content_hash)
         ),
     )
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "record_gta6_monitor_change",
+        lambda **kwargs: events.append(kwargs),
+    )
 
     result = gta6_monitor_run_service.run_gta6_monitor_once()
 
@@ -96,6 +102,14 @@ def test_first_run_ingests_changed_content(monkeypatch):
     assert len(saved_states) == 1
     assert saved_states[0][0] == page.url
     assert saved_states[0][1] == result.change.current_hash
+
+    assert events == [
+        {
+            "url": page.url,
+            "previous_hash": None,
+            "current_hash": result.change.current_hash,
+        }
+    ]
 
 
 def test_unchanged_run_does_not_ingest(monkeypatch):

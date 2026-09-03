@@ -23,6 +23,9 @@ from app.services.gta6_change_detector import (
 from app.services.gta6_ingestion import (
     ingest_gta6_source_items,
 )
+from app.services.gta6_monitor_event_service import (
+    record_gta6_monitor_change,
+)
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,12 @@ def run_gta6_monitor_once(
 
         if result.get("duplicate") is True:
             duplicated += 1
+
+    record_gta6_monitor_change(
+        url=page.url,
+        previous_hash=change.previous_hash,
+        current_hash=change.current_hash,
+    )
 
     save_gta6_monitor_state(
         page.url,
