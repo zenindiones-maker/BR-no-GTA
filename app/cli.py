@@ -12,6 +12,9 @@ from app.services.editorial_queue_consumer import (
 from app.services.google_youtube_publication_service import (
     process_next_youtube_publication,
 )
+from app.services.gta6_monitor_run_service import (
+    run_gta6_monitor_once,
+)
 
 
 def main() -> None:
@@ -55,6 +58,20 @@ def main() -> None:
     execution_subparsers.add_parser(
         "run-once",
         help="Executa uma unidade do ciclo operacional.",
+    )
+
+    gta6_monitor_parser = subparsers.add_parser(
+        "gta6-monitor",
+        help="Operações do monitor GTA 6.",
+    )
+
+    gta6_monitor_subparsers = gta6_monitor_parser.add_subparsers(
+        dest="gta6_monitor_command"
+    )
+
+    gta6_monitor_subparsers.add_parser(
+        "run-once",
+        help="Executa uma coleta real do Rockstar Newswire.",
     )
 
     youtube_parser = subparsers.add_parser(
@@ -138,6 +155,22 @@ def main() -> None:
             "Ciclo de execução processado: "
             f"editorial={editorial_status} "
             f"render={render_status}"
+        )
+        return
+
+    if (
+        args.command == "gta6-monitor"
+        and args.gta6_monitor_command == "run-once"
+    ):
+        monitor_result = run_gta6_monitor_once()
+
+        print(
+            "Monitor GTA6 executado: "
+            f"status={monitor_result['status_code']} "
+            f"changed={monitor_result['change']['changed']} "
+            f"items_found={monitor_result['items_found']} "
+            f"items_ingested={monitor_result['items_ingested']} "
+            f"items_duplicated={monitor_result['items_duplicated']}"
         )
         return
 
