@@ -21,6 +21,7 @@ from app.database.episode_segment_repository import (
 from app.database.ideas_repository import insert_idea
 from app.database.schema import initialize_schema
 from app.database.scripts_repository import insert_script
+from app.services.content_item_service import create_content_item
 
 
 @pytest.fixture(autouse=True)
@@ -40,8 +41,36 @@ def create_dependencies():
         content="Conteúdo do script.",
     )
 
-    content_item_id = insert_content_unit(
-        content_item_id=1,
+    content_item = create_content_item(
+        {
+            "script_id": script_id,
+            "idea_id": idea_id,
+            "objective": "Teste",
+            "audience": "Público GTA 6.",
+            "estimated_duration_seconds": 60,
+            "format": "segment",
+            "tone": "informativo",
+            "hook": "Hook",
+            "narrative_blocks": [
+                "Bloco narrativo de teste.",
+            ],
+            "facts_sources": [
+                "Fonte de teste.",
+            ],
+            "cta": "Acompanhe o BR no GTA.",
+            "visual_requirements": [
+                {
+                    "type": "gameplay",
+                    "description": "Gameplay de GTA 6.",
+                },
+            ],
+        }
+    )
+
+    content_item_id = content_item["id"]
+
+    content_unit_id = insert_content_unit(
+        content_item_id=content_item_id,
         title="Unidade GTA 6",
         unit_type="segment",
         duration_seconds=60,
@@ -54,7 +83,7 @@ def create_dependencies():
         visual_requirements=[],
     )
 
-    return idea_id, script_id, content_item_id
+    return idea_id, script_id, content_unit_id
 
 
 def create_content_segment_for_test(

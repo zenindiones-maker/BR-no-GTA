@@ -137,3 +137,66 @@ def validate_episode_segment(
         ],
         role=segment["role"],
     )
+
+from app.database.episode_segment_repository import (
+    insert_episode_segment,
+    get_episode_segment,
+)
+
+
+def create_and_persist_episode_segment(
+    *,
+    episode_id: int,
+    content_segment_id: int,
+    order: int,
+    start_offset_seconds: float = 0.0,
+    role: str = "content",
+    status: str = "ready",
+) -> dict[str, Any]:
+    """
+    Cria um Episode Segment, valida o domínio e persiste o registro.
+
+    O Episode Segment representa a utilização de um
+    Content Segment dentro de um Episode.
+
+    O service permanece responsável por:
+    - validação;
+    - regras do domínio;
+    - normalização.
+
+    O repository permanece responsável pelo SQLite.
+
+    Esta função não:
+    - renderiza;
+    - corta vídeo;
+    - chama FFmpeg;
+    - chama MoneyPrinterTurbo;
+    - publica no YouTube.
+    """
+    segment = create_episode_segment(
+        episode_id=episode_id,
+        content_segment_id=content_segment_id,
+        order=order,
+        start_offset_seconds=start_offset_seconds,
+        role=role,
+    )
+
+    episode_segment_id = insert_episode_segment(
+        episode_id=segment["episode_id"],
+        content_segment_id=segment["content_segment_id"],
+        episode_order=segment["order"],
+        start_offset_seconds=segment[
+            "start_offset_seconds"
+        ],
+        role=segment["role"],
+    )
+
+    persisted = get_episode_segment(episode_segment_id)
+
+    if persisted is None:
+        raise RuntimeError(
+            "Episode Segment não foi encontrado após persistência: "
+            f"{episode_segment_id}"
+        )
+
+    return persisted

@@ -175,3 +175,62 @@ def is_episode_duration_valid(
         <= duration_seconds
         <= validated["max_duration_seconds"]
     )
+
+from app.database.episode_repository import (
+    insert_episode,
+    get_episode,
+)
+
+
+def create_and_persist_episode(
+    *,
+    title: str,
+    target_duration_seconds: float = 900.0,
+    min_duration_seconds: float = 840.0,
+    max_duration_seconds: float = 960.0,
+    status: str = "draft",
+) -> dict[str, Any]:
+    """
+    Cria um Episode, valida o domínio e persiste o registro.
+
+    A regra de negócio permanece neste service.
+    O acesso ao SQLite permanece no repository.
+
+    Esta função não:
+    - renderiza;
+    - chama FFmpeg;
+    - chama MoneyPrinterTurbo;
+    - cria vídeos;
+    - publica no YouTube.
+    """
+    episode = create_episode(
+        title=title,
+        target_duration_seconds=target_duration_seconds,
+        min_duration_seconds=min_duration_seconds,
+        max_duration_seconds=max_duration_seconds,
+        status=status,
+    )
+
+    episode_id = insert_episode(
+        title=episode["title"],
+        target_duration_seconds=episode[
+            "target_duration_seconds"
+        ],
+        min_duration_seconds=episode[
+            "min_duration_seconds"
+        ],
+        max_duration_seconds=episode[
+            "max_duration_seconds"
+        ],
+        status=episode["status"],
+    )
+
+    persisted = get_episode(episode_id)
+
+    if persisted is None:
+        raise RuntimeError(
+            "Episode não foi encontrado após persistência: "
+            f"{episode_id}"
+        )
+
+    return persisted
