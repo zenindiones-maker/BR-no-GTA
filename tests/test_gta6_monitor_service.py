@@ -44,6 +44,7 @@ def test_monitor_service_detects_change():
     assert isinstance(result, GTA6MonitorResult)
     assert result.url == page.url
     assert result.status_code == 200
+    assert result.content == page.content
     assert result.change.changed is True
     assert monitor.requested_url == page.url
 
