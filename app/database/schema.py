@@ -274,6 +274,44 @@ CREATE TABLE IF NOT EXISTS editorial_evaluations (
 
 
 
+def _migrate_memory_record_claims(connection) -> None:
+    """Cria a linhagem persistente entre memória semântica e Claims."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_record_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            memory_record_id INTEGER NOT NULL,
+            claim_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (memory_record_id)
+                REFERENCES memory_records(id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (claim_id)
+                REFERENCES memory_claims(id)
+                ON DELETE RESTRICT,
+            UNIQUE(memory_record_id, claim_id)
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_record_claims_record
+        ON memory_record_claims(memory_record_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_record_claims_claim
+        ON memory_record_claims(claim_id)
+        """
+    )
+
+
 def _migrate_memory_claims(connection) -> None:
     """Cria a persistência das afirmações derivadas do Brain."""
 
@@ -614,6 +652,7 @@ def initialize_schema() -> None:
         _migrate_ideas_research_item_id(connection)
         _migrate_memory_records(connection)
         _migrate_memory_claims(connection)
+        _migrate_memory_record_claims(connection)
         _migrate_memory_claim_evidence(connection)
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
