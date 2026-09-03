@@ -3,6 +3,9 @@ import argparse
 from app.services.gta6_research_pipeline import (
     run_gta6_research,
 )
+from app.services.editorial_queue_consumer import (
+    process_next_editorial_queue_item,
+)
 from app.services.google_youtube_publication_service import (
     process_next_youtube_publication,
 )
@@ -22,6 +25,20 @@ def main() -> None:
     )
 
     radar_parser.set_defaults(command_handler="radar")
+
+    editorial_parser = subparsers.add_parser(
+        "editorial",
+        help="Operações da fila editorial.",
+    )
+
+    editorial_subparsers = editorial_parser.add_subparsers(
+        dest="editorial_command"
+    )
+
+    editorial_subparsers.add_parser(
+        "process-next",
+        help="Processa o próximo item da fila editorial.",
+    )
 
     youtube_parser = subparsers.add_parser(
         "youtube",
@@ -52,6 +69,25 @@ def main() -> None:
             f"{len(result['editorial'])}"
         )
 
+        return
+
+    if (
+        args.command == "editorial"
+        and args.editorial_command == "process-next"
+    ):
+        queue_result = process_next_editorial_queue_item()
+
+        if queue_result is None:
+            print("Nenhum item da fila editorial pendente.")
+            return
+
+        queue_item = queue_result["queue_item"]
+
+        print(
+            "Fila editorial processada: "
+            f"id={queue_item['id']} "
+            f"status={queue_result['status']}"
+        )
         return
 
     if (
