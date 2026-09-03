@@ -172,6 +172,7 @@ def test_full_production_to_youtube_pipeline():
     publisher = FakeYouTubePublisher(
         success=True,
         youtube_video_id="full-integration-video-id",
+        youtube_url="https://www.youtube.com/watch?v=full-integration-video-id",
     )
 
     published = publish_youtube_publication(

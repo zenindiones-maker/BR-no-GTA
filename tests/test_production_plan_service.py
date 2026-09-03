@@ -29,7 +29,7 @@ def test_create_production_plan_from_content_item():
 
     plan = create_production_plan(item)
 
-    assert plan["content_item_id"] == item["script_id"]
+    assert plan["content_item_id"] == item["id"]
     assert plan["script_id"] == item["script_id"]
     assert plan["objective"]
     assert plan["format"]
