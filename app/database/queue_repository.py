@@ -154,6 +154,79 @@ def get_active_queue_item_by_idea(
         connection.close()
 
 
+def claim_next_queue_item() -> dict[str, Any] | None:
+    """Reivindica atomicamente o próximo item queued da fila editorial."""
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                idea_id,
+                priority_score,
+                priority,
+                status,
+                queued_at,
+                updated_at,
+                completed_at
+            FROM editorial_queue
+            WHERE status = 'queued'
+            ORDER BY priority_score DESC, id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if row is None:
+            connection.commit()
+            return None
+
+        queue_id = row["id"]
+
+        cursor = connection.execute(
+            """
+            UPDATE editorial_queue
+            SET
+                status = 'processing',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'queued'
+            """,
+            (queue_id,),
+        )
+
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return None
+
+        claimed = connection.execute(
+            """
+            SELECT
+                id,
+                idea_id,
+                priority_score,
+                priority,
+                status,
+                queued_at,
+                updated_at,
+                completed_at
+            FROM editorial_queue
+            WHERE id = ?
+            """,
+            (queue_id,),
+        ).fetchone()
+
+        connection.commit()
+
+        return dict(claimed) if claimed else None
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 def update_queue_status(
     queue_id: int,
     status: str,

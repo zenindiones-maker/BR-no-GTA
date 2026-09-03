@@ -142,3 +142,81 @@ def test_update_nonexistent_queue_item_returns_false():
     assert update_queue_status(999999, "processing") is False
     assert update_queue_priority(999999, 8.0, "high") is False
     assert mark_queue_item_completed(999999) is False
+
+def test_claim_next_queue_item_moves_highest_priority_to_processing():
+    from app.database.queue_repository import claim_next_queue_item
+
+    low_id = insert_queue_item(
+        idea_id=11,
+        priority_score=5.0,
+        priority="low",
+    )
+
+    high_id = insert_queue_item(
+        idea_id=12,
+        priority_score=9.5,
+        priority="high",
+    )
+
+    claimed = claim_next_queue_item()
+
+    assert claimed is not None
+    assert claimed["id"] == high_id
+    assert claimed["idea_id"] == 12
+    assert claimed["status"] == "processing"
+
+    low_item = get_queue_item(low_id)
+    assert low_item is not None
+    assert low_item["status"] == "queued"
+
+
+def test_claim_next_queue_item_returns_none_when_queue_is_empty():
+    from app.database.queue_repository import claim_next_queue_item
+
+    assert claim_next_queue_item() is None
+
+
+def test_claim_next_queue_item_does_not_claim_processing_item():
+    from app.database.queue_repository import claim_next_queue_item
+
+    processing_id = insert_queue_item(
+        idea_id=13,
+        priority_score=10.0,
+        priority="high",
+        status="processing",
+    )
+
+    queued_id = insert_queue_item(
+        idea_id=14,
+        priority_score=7.0,
+        priority="medium",
+    )
+
+    claimed = claim_next_queue_item()
+
+    assert claimed is not None
+    assert claimed["id"] == queued_id
+    assert claimed["status"] == "processing"
+
+    processing_item = get_queue_item(processing_id)
+    assert processing_item is not None
+    assert processing_item["status"] == "processing"
+
+
+def test_claim_next_queue_item_does_not_claim_completed_item():
+    from app.database.queue_repository import claim_next_queue_item
+
+    completed_id = insert_queue_item(
+        idea_id=15,
+        priority_score=10.0,
+        priority="high",
+        status="completed",
+    )
+
+    claimed = claim_next_queue_item()
+
+    assert claimed is None
+
+    completed_item = get_queue_item(completed_id)
+    assert completed_item is not None
+    assert completed_item["status"] == "completed"
