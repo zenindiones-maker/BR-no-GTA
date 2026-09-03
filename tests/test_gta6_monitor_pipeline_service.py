@@ -372,3 +372,67 @@ def test_pipeline_persists_monitor_result_hash_exactly(monkeypatch):
         "https://example.com/gta6",
         "unique-current-hash-789",
     )
+
+def test_pipeline_stops_when_knowledge_acquisition_fails(monkeypatch):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=True)
+
+    persist_monitor_state = Mock()
+    knowledge_factory = Mock(
+        side_effect=RuntimeError(
+            "knowledge acquisition failed"
+        )
+    )
+    knowledge_service = Mock()
+    claim_extraction_service = Mock()
+    memory_repository = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        Mock(return_value=monitor_result),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        knowledge_service,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        claim_extraction_service,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        memory_repository,
+    )
+
+    try:
+        gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+            url="https://example.com/gta6",
+            monitor=Mock(),
+            previous_hash="old-hash",
+            knowledge_factory=knowledge_factory,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "knowledge acquisition failed"
+    else:
+        raise AssertionError(
+            "pipeline should propagate knowledge acquisition failure"
+        )
+
+    persist_monitor_state.assert_called_once_with(
+        "https://example.com/gta6",
+        "def456",
+    )
+    knowledge_factory.assert_called_once_with(monitor_result)
+    knowledge_service.assert_not_called()
+    claim_extraction_service.assert_not_called()
+    memory_repository.assert_not_called()
