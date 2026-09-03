@@ -196,3 +196,49 @@ def test_runtime_running_state_changes_with_lifecycle():
     runtime.stop()
 
     assert runtime.running is False
+
+
+def test_start_failure_does_not_mark_runtime_as_running():
+    scheduler = Mock()
+    scheduler.start.side_effect = RuntimeError("scheduler start failed")
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(RuntimeError, match="scheduler start failed"):
+        runtime.start()
+
+    assert runtime.running is False
+
+
+def test_configure_failure_does_not_mark_runtime_as_running():
+    scheduler = Mock()
+    scheduler.configure.side_effect = RuntimeError("configuration failed")
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(RuntimeError, match="configuration failed"):
+        runtime.start()
+
+    assert runtime.running is False
+    scheduler.start.assert_not_called()
+
+
+def test_start_failure_does_not_allow_stop_to_stop_scheduler():
+    scheduler = Mock()
+    scheduler.start.side_effect = RuntimeError("scheduler start failed")
+
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(RuntimeError, match="scheduler start failed"):
+        runtime.start()
+
+    runtime.stop()
+
+    scheduler.stop.assert_not_called()
+    assert runtime.running is False
