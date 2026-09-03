@@ -59,6 +59,59 @@ CREATE TABLE IF NOT EXISTS content_items (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS content_units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_item_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    unit_type TEXT NOT NULL,
+    duration_seconds REAL NOT NULL,
+    media_format TEXT NOT NULL,
+    script_id INTEGER NOT NULL,
+    idea_id INTEGER NOT NULL,
+    objective TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    narration TEXT NOT NULL,
+    visual_requirements TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'ready',
+    file_path TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (content_item_id) REFERENCES content_items(id),
+    FOREIGN KEY (script_id) REFERENCES scripts(id),
+    FOREIGN KEY (idea_id) REFERENCES ideas(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_units_content_item_id
+ON content_units(content_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_content_units_status
+ON content_units(status);
+
+CREATE TABLE IF NOT EXISTS content_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_unit_id INTEGER NOT NULL,
+    segment_order INTEGER NOT NULL,
+    duration_seconds REAL NOT NULL,
+    media_format TEXT NOT NULL,
+    source_start_seconds REAL NOT NULL,
+    source_end_seconds REAL NOT NULL,
+    role TEXT NOT NULL DEFAULT 'content',
+    status TEXT NOT NULL DEFAULT 'ready',
+    file_path TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (content_unit_id)
+        REFERENCES content_units(id)
+        ON DELETE CASCADE,
+    UNIQUE(content_unit_id, segment_order)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_segments_content_unit_id
+ON content_segments(content_unit_id);
+
+CREATE INDEX IF NOT EXISTS idx_content_segments_status
+ON content_segments(status);
+
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content_item_id INTEGER NOT NULL,
