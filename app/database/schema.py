@@ -273,6 +273,60 @@ CREATE TABLE IF NOT EXISTS editorial_evaluations (
 """
 
 
+def _migrate_memory_events(connection) -> None:
+    """Cria o log append-only de evidências do Brain."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            content TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'gta6',
+            occurred_at TEXT,
+            observed_at TEXT,
+            provenance TEXT NOT NULL DEFAULT '',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_events_type
+        ON memory_events(event_type)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_events_source
+        ON memory_events(source_type, source_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_events_scope
+        ON memory_events(scope)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_memory_events_observed
+        ON memory_events(observed_at)
+        """
+    )
+
+
 def _migrate_memory_records(connection) -> None:
     """Cria a persistência base das memórias do Brain."""
 
@@ -448,6 +502,7 @@ def initialize_schema() -> None:
         connection.executescript(SCHEMA_SQL)
         _migrate_ideas_research_item_id(connection)
         _migrate_memory_records(connection)
+        _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_gta6_knowledge_source_name(connection)
