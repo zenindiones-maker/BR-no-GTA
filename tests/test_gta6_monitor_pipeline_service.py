@@ -670,3 +670,69 @@ def test_pipeline_propagates_monitor_state_persistence_failure(
         "https://example.com/gta6",
         "def456",
     )
+
+def test_pipeline_does_not_persist_hash_when_memory_persistence_fails(
+    monkeypatch,
+):
+    from app.services import gta6_monitor_pipeline_service
+
+    monitor_result = _monitor_result(changed=True)
+
+    create_knowledge = Mock(
+        return_value={
+            "research_item_id": 10,
+            "knowledge_id": 20,
+            "knowledge": _knowledge().to_dict(),
+        }
+    )
+    extract_claims = Mock(
+        return_value=[object()]
+    )
+    insert_claim = Mock(
+        side_effect=RuntimeError(
+            "memory persistence failed"
+        )
+    )
+    persist_monitor_state = Mock()
+
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "monitor_gta6_page",
+        Mock(return_value=monitor_result),
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "create_gta6_knowledge",
+        create_knowledge,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "extract_gta6_claims",
+        extract_claims,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "insert_memory_claim",
+        insert_claim,
+    )
+    monkeypatch.setattr(
+        gta6_monitor_pipeline_service,
+        "save_gta6_monitor_state",
+        persist_monitor_state,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="memory persistence failed",
+    ):
+        gta6_monitor_pipeline_service.run_gta6_monitor_pipeline(
+            url="https://example.com/gta6",
+            monitor=Mock(),
+            previous_hash="old-hash",
+            knowledge_factory=Mock(return_value=_knowledge()),
+        )
+
+    create_knowledge.assert_called_once()
+    extract_claims.assert_called_once()
+    insert_claim.assert_called_once()
+    persist_monitor_state.assert_not_called()
