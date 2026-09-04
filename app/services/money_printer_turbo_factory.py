@@ -1,38 +1,60 @@
 from __future__ import annotations
 
-from app.services.money_printer_turbo_client import (
-    MoneyPrinterTurboClient,
+from pathlib import Path
+
+from app import settings
+from app.services.money_printer_turbo_ssh_executor import (
+    MoneyPrinterTurboSshExecutor,
 )
-from app.services.money_printer_turbo_executor import (
-    MoneyPrinterTurboExecutor,
+from app.services.ssh_money_printer_turbo_transport import (
+    SshMoneyPrinterTurboTransport,
 )
-from app.settings import settings
 
 
-def create_money_printer_turbo_executor() -> (
-    MoneyPrinterTurboExecutor | None
-):
+def create_money_printer_turbo_executor():
     """
-    Cria o executor do MoneyPrinterTurbo quando configurado.
+    Cria o executor oficial do MoneyPrinterTurbo.
 
-    O MPT é opcional no ambiente do BR:
-    - sem BR_MPT_BASE_URL, retorna None;
-    - com BR_MPT_BASE_URL, cria o cliente HTTP e o executor.
+    Arquitetura:
 
-    Esta função não faz nenhuma chamada de rede.
+        BR
+         ↓
+        SshMoneyPrinterTurboTransport
+         ↓
+        SSH / rsync
+         ↓
+        máquina de produção
+         ↓
+        MoneyPrinterTurbo CLI
+
+    O BR não inicia nem consome API HTTP do MPT.
     """
 
-    if not settings.MPT_BASE_URL:
+    if not settings.MPT_SSH_HOST:
         return None
 
-    client = MoneyPrinterTurboClient(
-        base_url=settings.MPT_BASE_URL,
-        api_key=settings.MPT_API_KEY,
-        timeout=settings.MPT_TIMEOUT,
+    if not settings.MPT_SSH_USER:
+        return None
+
+    if not settings.MPT_SSH_KEY:
+        return None
+
+    transport = SshMoneyPrinterTurboTransport(
+        host=settings.MPT_SSH_HOST,
+        user=settings.MPT_SSH_USER,
+        port=settings.MPT_SSH_PORT,
+        ssh_key=settings.MPT_SSH_KEY,
+        remote_root=settings.MPT_REMOTE_ROOT,
+        remote_runner=settings.MPT_REMOTE_RUNNER,
+        connect_timeout=settings.MPT_SSH_CONNECT_TIMEOUT,
+        command_timeout=settings.MPT_SSH_COMMAND_TIMEOUT,
     )
 
-    return MoneyPrinterTurboExecutor(
-        client=client,
-        poll_interval=settings.MPT_POLL_INTERVAL,
-        max_polls=settings.MPT_MAX_POLLS,
+    input_root = Path(
+        settings.MPT_LOCAL_INPUT_ROOT
+    )
+
+    return MoneyPrinterTurboSshExecutor(
+        transport=transport,
+        input_root=input_root,
     )

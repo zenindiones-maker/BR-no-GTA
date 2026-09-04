@@ -54,41 +54,101 @@ class Settings:
     )
 
     # MoneyPrinterTurbo
-    #
-    # O MPT é opcional no ambiente do BR.
-    # Quando essas variáveis não existem, o sistema
-    # continua funcionando normalmente sem MPT.
 
-    MPT_BASE_URL = os.getenv(
-        "BR_MPT_BASE_URL",
-        "",
-    )
+# MoneyPrinterTurbo SSH / rsync
+#
+# O MPT roda exclusivamente na máquina de produção.
+# O BR apenas controla a execução através de SSH/rsync.
+#
+# Não inicia API HTTP do MoneyPrinterTurbo.
 
-    MPT_API_KEY = os.getenv(
-        "BR_MPT_API_KEY",
-        "",
-    )
+MPT_SSH_HOST = os.getenv(
+    "BR_MPT_SSH_HOST",
+    "",
+)
 
-    MPT_TIMEOUT = float(
-        os.getenv(
-            "BR_MPT_TIMEOUT",
-            "30",
-        )
-    )
+MPT_SSH_USER = os.getenv(
+    "BR_MPT_SSH_USER",
+    "",
+)
 
-    MPT_POLL_INTERVAL = float(
-        os.getenv(
-            "BR_MPT_POLL_INTERVAL",
-            "5",
-        )
+MPT_SSH_PORT = int(
+    os.getenv(
+        "BR_MPT_SSH_PORT",
+        "22",
     )
+)
 
-    MPT_MAX_POLLS = int(
-        os.getenv(
-            "BR_MPT_MAX_POLLS",
-            "120",
-        )
+MPT_SSH_KEY = os.getenv(
+    "BR_MPT_SSH_KEY",
+    "",
+)
+
+MPT_REMOTE_ROOT = os.getenv(
+    "BR_MPT_REMOTE_ROOT",
+    "/opt/money-printer-turbo",
+)
+
+MPT_REMOTE_RUNNER = os.getenv(
+    "BR_MPT_REMOTE_RUNNER",
+    "/opt/money-printer-turbo/"
+    "money_printer_turbo_remote_runner.py",
+)
+
+MPT_SSH_CONNECT_TIMEOUT = float(
+    os.getenv(
+        "BR_MPT_SSH_CONNECT_TIMEOUT",
+        "30",
     )
+)
+
+MPT_SSH_COMMAND_TIMEOUT = float(
+    os.getenv(
+        "BR_MPT_SSH_COMMAND_TIMEOUT",
+        "3600",
+    )
+)
+
+MPT_LOCAL_INPUT_ROOT = os.getenv(
+    "BR_MPT_LOCAL_INPUT_ROOT",
+    "storage/money_printer_turbo",
+)
+
+#
+# O MPT é opcional no ambiente do BR.
+# Quando essas variáveis não existem, o sistema
+# continua funcionando normalmente sem MPT.
+
+MPT_BASE_URL = os.getenv(
+    "BR_MPT_BASE_URL",
+    "",
+)
+
+MPT_API_KEY = os.getenv(
+    "BR_MPT_API_KEY",
+    "",
+)
+
+MPT_TIMEOUT = float(
+    os.getenv(
+        "BR_MPT_TIMEOUT",
+        "30",
+    )
+)
+
+MPT_POLL_INTERVAL = float(
+    os.getenv(
+        "BR_MPT_POLL_INTERVAL",
+        "5",
+    )
+)
+
+MPT_MAX_POLLS = int(
+    os.getenv(
+        "BR_MPT_MAX_POLLS",
+        "120",
+    )
+)
 
 
 settings = Settings()

@@ -23,13 +23,13 @@ def test_run_execution_cycle_processes_editorial_and_render():
         "app.services.execution_cycle_service.process_next_editorial_queue_item",
         return_value=editorial_result,
     ) as process_editorial, patch(
-        "app.services.execution_cycle_service.execute_next_render_job",
+        "app.services.execution_cycle_service.process_next_render_job",
         return_value=render_result,
-    ) as execute_render:
+    ) as process_render:
         result = run_execution_cycle()
 
     process_editorial.assert_called_once_with()
-    execute_render.assert_called_once_with()
+    process_render.assert_called_once_with()
 
     assert result == {
         "editorial": editorial_result,
@@ -42,13 +42,13 @@ def test_run_execution_cycle_handles_empty_queues():
         "app.services.execution_cycle_service.process_next_editorial_queue_item",
         return_value=None,
     ) as process_editorial, patch(
-        "app.services.execution_cycle_service.execute_next_render_job",
+        "app.services.execution_cycle_service.process_next_render_job",
         return_value=None,
-    ) as execute_render:
+    ) as process_render:
         result = run_execution_cycle()
 
     process_editorial.assert_called_once_with()
-    execute_render.assert_called_once_with()
+    process_render.assert_called_once_with()
 
     assert result == {
         "editorial": None,

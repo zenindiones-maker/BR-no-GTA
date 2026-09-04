@@ -3,8 +3,8 @@ from typing import Any
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
-from app.services.render_orchestration_service import (
-    execute_next_render_job,
+from app.services.render_worker_service import (
+    process_next_render_job,
 )
 
 
@@ -20,9 +20,14 @@ def run_execution_cycle() -> dict[str, Any]:
              ↓
         render_queue
              ↓
+        render worker
+             ↓
         render executor
 
-    Este serviço apenas orquestra os executores existentes.
+    O Render Worker é responsável por selecionar o executor
+    configurado para o ambiente, incluindo o MoneyPrinterTurbo.
+
+    Este serviço apenas orquestra os workers existentes.
 
     Não contém:
     - regras editoriais;
@@ -34,7 +39,7 @@ def run_execution_cycle() -> dict[str, Any]:
 
     editorial_result = process_next_editorial_queue_item()
 
-    render_result = execute_next_render_job()
+    render_result = process_next_render_job()
 
     return {
         "editorial": editorial_result,
