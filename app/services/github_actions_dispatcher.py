@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -13,7 +14,7 @@ class GitHubActionsDispatchResult:
     repository: str
     workflow: str
     ref: str
-    run_id: int | None = None
+    run_id: int
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -23,16 +24,25 @@ class GitHubActionsDispatcher:
     """
     Responsável exclusivamente por disparar workflows do GitHub Actions.
 
+    Fluxo:
+
+        gh workflow run
+              ↓
+        URL do workflow run
+              ↓
+        run_id
+
     Não conhece:
     - banco de dados;
     - render queue;
     - MoneyPrinterTurbo;
     - YouTube;
     - regras editoriais.
-
-    Ele apenas transforma uma solicitação em uma chamada
-    ao GitHub CLI (gh).
     """
+
+    _RUN_ID_PATTERN = re.compile(
+        r"/actions/runs/(\d+)(?:/|$)"
+    )
 
     def __init__(
         self,
@@ -44,6 +54,25 @@ class GitHubActionsDispatcher:
             )
 
         self.command_runner = command_runner
+
+    @classmethod
+    def _extract_run_id(
+        cls,
+        output: str,
+    ) -> int:
+        if not output:
+            raise RuntimeError(
+                "O GitHub Actions não retornou a URL do workflow run."
+            )
+
+        match = cls._RUN_ID_PATTERN.search(output.strip())
+
+        if match is None:
+            raise RuntimeError(
+                "Não foi possível extrair o run_id do workflow GitHub."
+            )
+
+        return int(match.group(1))
 
     def dispatch(
         self,
@@ -57,7 +86,7 @@ class GitHubActionsDispatcher:
 
             gh workflow run
 
-        Os inputs são enviados como --field.
+        e captura o run_id a partir da URL retornada pelo GitHub.
         """
 
         if not repository:
@@ -104,10 +133,13 @@ class GitHubActionsDispatcher:
                 ]
             )
 
-        self.command_runner(command)
+        output = self.command_runner(command)
+
+        run_id = self._extract_run_id(output)
 
         return GitHubActionsDispatchResult(
             repository=repository,
             workflow=workflow,
             ref=ref,
+            run_id=run_id,
         )

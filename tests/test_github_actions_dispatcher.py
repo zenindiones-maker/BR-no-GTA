@@ -11,7 +11,7 @@ class FakeCommandRunner:
 
     def __call__(self, command):
         self.commands.append(list(command))
-        return ""
+        return "https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/123456789"
 
 
 def test_dispatch_requires_repository():
@@ -77,6 +77,7 @@ def test_dispatch_builds_expected_gh_command():
     assert result.repository == "zenindiones-maker/BR-no-GTA"
     assert result.workflow == "render-worker.yml"
     assert result.ref == "main"
+    assert result.run_id == 123456789
 
     assert runner.commands == [
         [
