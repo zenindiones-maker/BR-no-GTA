@@ -13,6 +13,10 @@ from apscheduler.events import (
     JobSubmissionEvent,
 )
 
+from app.services.gta6_monitor_execution_result import (
+    GTA6MonitorExecutionResult,
+)
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -25,6 +29,8 @@ class SchedulerEventRecord:
     observed_at: datetime | None = None
     exception: str | None = None
     traceback_text: str | None = None
+    run_id: int | None = None
+    execution_id: str | None = None
 
 
 class GTA6SchedulerObservability:
@@ -85,10 +91,22 @@ class GTA6SchedulerObservability:
     ) -> SchedulerEventRecord:
         exception = None
         traceback_text = None
+        run_id = None
+        execution_id = None
 
         if event_type == "ERROR":
             exception = self._format_exception(event.exception)
             traceback_text = event.traceback
+
+        if (
+            event_type == "EXECUTED"
+            and isinstance(
+                event.retval,
+                GTA6MonitorExecutionResult,
+            )
+        ):
+            run_id = event.retval.run_id
+            execution_id = event.retval.execution_id
 
         record = SchedulerEventRecord(
             job_id=event.job_id,
@@ -97,6 +115,8 @@ class GTA6SchedulerObservability:
             observed_at=observed_at,
             exception=exception,
             traceback_text=traceback_text,
+            run_id=run_id,
+            execution_id=execution_id,
         )
 
         self._log_record(record)
