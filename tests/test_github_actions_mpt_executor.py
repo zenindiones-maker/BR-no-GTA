@@ -184,8 +184,13 @@ def test_executor_dispatches_render_job(tmp_path):
     assert result.success is True
     assert result.error is None
     assert result.output_path is not None
-    assert Path(result.output_path).name == "video.mp4"
-    assert Path(result.output_path).is_file()
+
+    output_path = Path(result.output_path)
+
+    assert output_path.name == "video.mp4"
+    assert output_path.exists()
+    assert output_path.is_file()
+    assert output_path.stat().st_size > 0
 
     assert watcher.calls == [
         (
