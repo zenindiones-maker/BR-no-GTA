@@ -26,6 +26,11 @@ from app.services.gta6_ingestion import (
 from app.services.gta6_monitor_event_service import (
     record_gta6_monitor_change,
 )
+from app.services.gta6_monitor_run_lifecycle_service import (
+    complete_gta6_monitor_run,
+    fail_gta6_monitor_run,
+    start_gta6_monitor_run,
+)
 
 
 @dataclass(frozen=True)
@@ -48,84 +53,124 @@ def run_gta6_monitor_once(
 ) -> GTA6MonitorRunResult:
     """Executa um ciclo real do monitor Rockstar Newswire."""
 
-    monitor = GTA6ViceMonitor(timeout=timeout)
-
-    previous_state = get_gta6_monitor_state(
-        ROCKSTAR_NEWSWIRE_URL,
+    run = start_gta6_monitor_run(
+        url=ROCKSTAR_NEWSWIRE_URL,
     )
 
-    previous_hash = (
-        previous_state["content_hash"]
-        if previous_state is not None
-        else None
-    )
+    run_id = run["id"]
+    status_code: int | None = None
 
-    page = monitor.fetch(
-        ROCKSTAR_NEWSWIRE_URL,
-    )
+    try:
+        monitor = GTA6ViceMonitor(timeout=timeout)
 
-    change = detect_content_change(
-        page.content,
-        previous_hash,
-    )
+        previous_state = get_gta6_monitor_state(
+            ROCKSTAR_NEWSWIRE_URL,
+        )
 
-    baseline = previous_hash is None
+        previous_hash = (
+            previous_state["content_hash"]
+            if previous_state is not None
+            else None
+        )
 
-    if not change.changed:
+        page = monitor.fetch(
+            ROCKSTAR_NEWSWIRE_URL,
+        )
+
+        status_code = page.status_code
+
+        change = detect_content_change(
+            page.content,
+            previous_hash,
+        )
+
+        baseline = previous_hash is None
+
+        if not change.changed:
+            save_gta6_monitor_state(
+                page.url,
+                change.current_hash,
+            )
+
+            result = GTA6MonitorRunResult(
+                url=page.url,
+                status_code=page.status_code,
+                change=change,
+                baseline=baseline,
+                items_found=0,
+                items_ingested=0,
+                items_duplicated=0,
+                knowledge_ids=[],
+            )
+
+            complete_gta6_monitor_run(
+                run_id=run_id,
+                status_code=result.status_code,
+                baseline=result.baseline,
+                items_found=result.items_found,
+                items_ingested=result.items_ingested,
+                items_duplicated=result.items_duplicated,
+            )
+
+            return result
+
+        items = parse_rockstar_newswire_html(
+            page.content,
+        )
+
+        ingestion_results = ingest_gta6_source_items(
+            items,
+        )
+
+        knowledge_ids: list[int] = []
+        duplicated = 0
+
+        for result in ingestion_results:
+            knowledge_id = result.get("knowledge_id")
+
+            if isinstance(knowledge_id, int):
+                knowledge_ids.append(knowledge_id)
+
+            if result.get("duplicate") is True:
+                duplicated += 1
+
+        record_gta6_monitor_change(
+            url=page.url,
+            previous_hash=change.previous_hash,
+            current_hash=change.current_hash,
+        )
+
         save_gta6_monitor_state(
             page.url,
             change.current_hash,
         )
 
-        return GTA6MonitorRunResult(
+        monitor_result = GTA6MonitorRunResult(
             url=page.url,
             status_code=page.status_code,
             change=change,
             baseline=baseline,
-            items_found=0,
-            items_ingested=0,
-            items_duplicated=0,
-            knowledge_ids=[],
+            items_found=len(items),
+            items_ingested=len(items) - duplicated,
+            items_duplicated=duplicated,
+            knowledge_ids=knowledge_ids,
         )
 
-    items = parse_rockstar_newswire_html(
-        page.content,
-    )
+        complete_gta6_monitor_run(
+            run_id=run_id,
+            status_code=monitor_result.status_code,
+            baseline=monitor_result.baseline,
+            items_found=monitor_result.items_found,
+            items_ingested=monitor_result.items_ingested,
+            items_duplicated=monitor_result.items_duplicated,
+        )
 
-    ingestion_results = ingest_gta6_source_items(
-        items,
-    )
+        return monitor_result
 
-    knowledge_ids: list[int] = []
-    duplicated = 0
-
-    for result in ingestion_results:
-        knowledge_id = result.get("knowledge_id")
-
-        if isinstance(knowledge_id, int):
-            knowledge_ids.append(knowledge_id)
-
-        if result.get("duplicate") is True:
-            duplicated += 1
-
-    record_gta6_monitor_change(
-        url=page.url,
-        previous_hash=change.previous_hash,
-        current_hash=change.current_hash,
-    )
-
-    save_gta6_monitor_state(
-        page.url,
-        change.current_hash,
-    )
-
-    return GTA6MonitorRunResult(
-        url=page.url,
-        status_code=page.status_code,
-        change=change,
-        baseline=baseline,
-        items_found=len(items),
-        items_ingested=len(items) - duplicated,
-        items_duplicated=duplicated,
-        knowledge_ids=knowledge_ids,
-    )
+    except Exception as exc:
+        fail_gta6_monitor_run(
+            run_id=run_id,
+            error=str(exc),
+            status_code=status_code,
+        )
+        raise
