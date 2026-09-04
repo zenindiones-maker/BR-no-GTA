@@ -14,7 +14,7 @@ class FakeCommandRunner:
 
     def __call__(self, command):
         self.commands.append(list(command))
-        return ""
+        return "https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/123456789"
 
 
 def test_executor_requires_repository():
