@@ -140,30 +140,23 @@ jobs:
           TASK_ID: ${{ inputs.task_id }}
         run: |
           TASK_DIR="$MPT_DIR/storage/tasks/$TASK_ID"
-
           if [ ! -d "$TASK_DIR" ]; then
             echo "::error::Diretório da tarefa não encontrado: $TASK_DIR"
             exit 1
           fi
-
           mapfile -t VIDEOS < <(
-            find "$TASK_DIR" \
-              -type f \
-              -iname '*.mp4' \
-              -print
+            find "$TASK_DIR"               -type f               -name 'final-*.mp4'               -print
           )
-
           if [ "${#VIDEOS[@]}" -eq 0 ]; then
-            echo "::error::Nenhum arquivo MP4 foi produzido."
+            echo "::error::Nenhum vídeo final final-*.mp4 foi produzido."
             exit 1
           fi
-
           if [ "${#VIDEOS[@]}" -gt 1 ]; then
-            echo "::error::Mais de um MP4 foi produzido:"
+            echo "::error::Mais de um vídeo final final-*.mp4 foi produzido:"
             printf '%s\n' "${VIDEOS[@]}"
             exit 1
           fi
-
+          echo "Vídeo final selecionado: ${VIDEOS[0]}"
           cp "${VIDEOS[0]}" "$RENDER_OUTPUT/video.mp4"
 
       - name: Validate rendered MP4
