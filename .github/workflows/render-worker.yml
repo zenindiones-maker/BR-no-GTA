@@ -1,0 +1,218 @@
+name: Render Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_subject:
+        description: "Tema do vídeo"
+        required: true
+        type: string
+
+      video_script:
+        description: "Roteiro completo do vídeo"
+        required: true
+        type: string
+
+      task_id:
+        description: "ID único da tarefa de renderização"
+        required: true
+        type: string
+
+jobs:
+  render:
+    name: MoneyPrinterTurbo Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      MPT_DIR: ${{ github.workspace }}/MoneyPrinterTurbo
+      RENDER_ROOT: ${{ github.workspace }}/runtime/render
+      RENDER_OUTPUT: ${{ github.workspace }}/runtime/render/output
+
+    steps:
+      - name: Checkout BR-no-GTA
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Clone MoneyPrinterTurbo
+        run: |
+          git clone --depth 1 \
+            https://github.com/harry0703/MoneyPrinterTurbo.git \
+            "$MPT_DIR"
+
+      - name: Install MoneyPrinterTurbo dependencies
+        working-directory: ${{ env.MPT_DIR }}
+        run: |
+          uv sync --frozen
+
+      - name: Prepare render directories
+        run: |
+          mkdir -p "$RENDER_ROOT"
+          mkdir -p "$RENDER_OUTPUT"
+
+      - name: Configure MoneyPrinterTurbo
+        working-directory: ${{ env.MPT_DIR }}
+        env:
+          MPT_CONFIG_TOML: ${{ secrets.MPT_CONFIG_TOML }}
+        run: |
+          if [ -z "$MPT_CONFIG_TOML" ]; then
+            echo "::error::Secret MPT_CONFIG_TOML não configurado."
+            exit 1
+          fi
+
+          printf '%s' "$MPT_CONFIG_TOML" > config.toml
+
+      - name: Execute MoneyPrinterTurbo CLI
+        working-directory: ${{ env.MPT_DIR }}
+        env:
+          VIDEO_SUBJECT: ${{ inputs.video_subject }}
+          VIDEO_SCRIPT: ${{ inputs.video_script }}
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          uv run python cli.py \
+            --video-subject "$VIDEO_SUBJECT" \
+            --video-script "$VIDEO_SCRIPT" \
+            --task-id "$TASK_ID" \
+            --stop-at video
+
+      - name: Locate rendered MP4
+        env:
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          TASK_DIR="$MPT_DIR/storage/tasks/$TASK_ID"
+
+          if [ ! -d "$TASK_DIR" ]; then
+            echo "::error::Diretório da tarefa não encontrado: $TASK_DIR"
+            exit 1
+          fi
+
+          mapfile -t VIDEOS < <(
+            find "$TASK_DIR" \
+              -type f \
+              -iname '*.mp4' \
+              -print
+          )
+
+          if [ "${#VIDEOS[@]}" -eq 0 ]; then
+            echo "::error::Nenhum arquivo MP4 foi produzido."
+            exit 1
+          fi
+
+          if [ "${#VIDEOS[@]}" -gt 1 ]; then
+            echo "::error::Mais de um MP4 foi produzido:"
+            printf '%s\n' "${VIDEOS[@]}"
+            exit 1
+          fi
+
+          cp "${VIDEOS[0]}" "$RENDER_OUTPUT/video.mp4"
+
+      - name: Validate rendered MP4
+        run: |
+          VIDEO_PATH="$RENDER_OUTPUT/video.mp4"
+
+          test -f "$VIDEO_PATH"
+          test -s "$VIDEO_PATH"
+
+          ffprobe \
+            -v error \
+            -show_entries stream=codec_type \
+            -show_entries format=duration \
+            -of json \
+            "$VIDEO_PATH" \
+            > "$RENDER_ROOT/video-probe.json"
+
+          python - <<'PY'
+          import json
+          import math
+          import sys
+
+          probe_path = "runtime/render/video-probe.json"
+
+          with open(probe_path, "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          streams = data.get("streams")
+
+          if not isinstance(streams, list):
+              print("::error::ffprobe não retornou streams válidos.")
+              sys.exit(1)
+
+          video_streams = [
+              stream
+              for stream in streams
+              if stream.get("codec_type") == "video"
+          ]
+
+          if not video_streams:
+              print("::error::O MP4 não possui stream de vídeo.")
+              sys.exit(1)
+
+          duration_raw = data.get("format", {}).get("duration")
+
+          try:
+              duration = float(duration_raw)
+          except (TypeError, ValueError):
+              print("::error::Duração do vídeo inválida.")
+              sys.exit(1)
+
+          if not math.isfinite(duration) or duration <= 0:
+              print("::error::Duração do vídeo deve ser maior que zero.")
+              sys.exit(1)
+
+          print(f"Video streams: {len(video_streams)}")
+          print(f"Duration: {duration:.3f}s")
+          PY
+
+      - name: Write render manifest
+        env:
+          TASK_ID: ${{ inputs.task_id }}
+          VIDEO_SUBJECT: ${{ inputs.video_subject }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output = Path("runtime/render/output/video.mp4")
+
+          manifest = {
+              "task_id": os.environ["TASK_ID"],
+              "video_subject": os.environ["VIDEO_SUBJECT"],
+              "filename": output.name,
+              "size_bytes": output.stat().st_size,
+          }
+
+          Path("runtime/render/render-manifest.json").write_text(
+              json.dumps(
+                  manifest,
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload render artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-output
+          path: |
+            runtime/render/output/video.mp4
+            runtime/render/video-probe.json
+            runtime/render/render-manifest.json
+          if-no-files-found: error
+          retention-days: 3
