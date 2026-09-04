@@ -15,6 +15,7 @@ from app.services.github_actions_run_watcher import (
 from app.services.github_actions_mpt_executor import (
     GitHubActionsMptExecutor,
 )
+from app.services.mpt_render_request_service import build_mpt_task_id
 from app.services.render_artifact_validator import (
     RenderArtifactValidationResult,
 )
@@ -163,6 +164,7 @@ def test_executor_dispatches_render_job(tmp_path):
 
     render_job = {
         "id": 123,
+        "attempt": 1,
         "script_id": 20,
         "objective": "GTA 6 novidades",
     }
@@ -170,7 +172,7 @@ def test_executor_dispatches_render_job(tmp_path):
     expected_mpt_request = {
         "video_subject": "GTA 6 novidades",
         "video_script": "Este é o roteiro do vídeo.",
-        "task_id": "123",
+        "task_id": build_mpt_task_id(123, 1),
     }
 
     with patch(
@@ -225,6 +227,6 @@ def test_executor_dispatches_render_job(tmp_path):
             "--field",
             "video_script=Este é o roteiro do vídeo.",
             "--field",
-            "task_id=123",
+            f"task_id={build_mpt_task_id(123, 1)}",
         ]
     ]
