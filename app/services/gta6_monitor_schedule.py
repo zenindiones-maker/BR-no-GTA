@@ -9,6 +9,7 @@ class GTA6MonitorSchedule:
 
     interval_seconds: float = 300.0
     timeout: float = 15.0
+    misfire_grace_time: int = 60
     enabled: bool = True
     job_id: str = "gta6-monitor"
 
@@ -29,6 +30,15 @@ class GTA6MonitorSchedule:
         ):
             raise ValueError(
                 "timeout must be a positive number"
+            )
+
+        if (
+            not isinstance(self.misfire_grace_time, int)
+            or isinstance(self.misfire_grace_time, bool)
+            or self.misfire_grace_time <= 0
+        ):
+            raise ValueError(
+                "misfire_grace_time must be a positive integer"
             )
 
         if not isinstance(self.enabled, bool):

@@ -69,3 +69,26 @@ def test_schedule_rejects_invalid_enabled(value):
 def test_schedule_rejects_invalid_job_id(value):
     with pytest.raises(ValueError, match="job_id"):
         GTA6MonitorSchedule(job_id=value)
+
+def test_default_misfire_grace_time_is_60_seconds():
+    schedule = GTA6MonitorSchedule()
+
+    assert schedule.misfire_grace_time == 60
+
+
+def test_misfire_grace_time_accepts_positive_integer():
+    schedule = GTA6MonitorSchedule(
+        misfire_grace_time=120,
+    )
+
+    assert schedule.misfire_grace_time == 120
+
+
+def test_misfire_grace_time_rejects_invalid_values():
+    invalid_values = [0, -1, 1.5, True, False, "60", None]
+
+    for value in invalid_values:
+        with pytest.raises(ValueError):
+            GTA6MonitorSchedule(
+                misfire_grace_time=value,
+            )

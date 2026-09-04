@@ -68,6 +68,7 @@ class APSchedulerGTA6MonitorAdapter:
             replace_existing=True,
             max_instances=1,
             coalesce=True,
+            misfire_grace_time=self._schedule.misfire_grace_time,
         )
 
     def start(self) -> None:
