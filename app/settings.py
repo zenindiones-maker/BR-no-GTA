@@ -110,6 +110,16 @@ GITHUB_ACTIONS_RUN_TIMEOUT = float(
     os.getenv("BR_GITHUB_ACTIONS_RUN_TIMEOUT", "3600")
 )
 
+GITHUB_ACTIONS_ARTIFACT_NAME = os.getenv(
+    "BR_GITHUB_ACTIONS_ARTIFACT_NAME",
+    "render-output",
+)
+
+GITHUB_ACTIONS_ARTIFACT_ROOT = os.getenv(
+    "BR_GITHUB_ACTIONS_ARTIFACT_ROOT",
+    "runtime/github-actions-artifacts",
+)
+
 MPT_SSH_COMMAND_TIMEOUT = float(
     os.getenv(
         "BR_MPT_SSH_COMMAND_TIMEOUT",
