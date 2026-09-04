@@ -47,3 +47,7 @@ cache/
 *.db
 *.db-shm
 *.db-wal
+
+# Local runtime artifacts
+.runtime/
+runtime/
