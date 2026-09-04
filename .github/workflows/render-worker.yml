@@ -86,10 +86,14 @@ jobs:
           config_path = Path("config.toml")
           data = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
-          provider = data.get("llm_provider")
-          video_source = data.get("video_source")
-          gemini_key = data.get("gemini_api_key")
-          pexels_keys = data.get("pexels_api_keys")
+          app_config = data.get("app", {})
+          if not isinstance(app_config, dict):
+              raise SystemExit("Configuração inválida: seção [app] ausente.")
+
+          provider = app_config.get("llm_provider")
+          video_source = app_config.get("video_source")
+          gemini_key = app_config.get("gemini_api_key")
+          pexels_keys = app_config.get("pexels_api_keys")
 
           print(f"Effective llm_provider: {provider!r}")
           print(f"Effective video_source: {video_source!r}")
