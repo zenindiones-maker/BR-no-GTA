@@ -76,6 +76,48 @@ jobs:
 
           printf '%s' "$MPT_CONFIG_TOML" > config.toml
 
+      - name: Verify MoneyPrinterTurbo configuration
+        working-directory: ${{ env.MPT_DIR }}
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          config_path = Path("config.toml")
+          data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+          provider = data.get("llm_provider")
+          video_source = data.get("video_source")
+          gemini_key = data.get("gemini_api_key")
+          pexels_keys = data.get("pexels_api_keys")
+
+          print(f"Effective llm_provider: {provider!r}")
+          print(f"Effective video_source: {video_source!r}")
+          print(f"Gemini API key present: {bool(gemini_key)}")
+          print(
+              "Pexels API keys present: "
+              f"{isinstance(pexels_keys, list) and len(pexels_keys) > 0}"
+          )
+
+          if provider != "gemini":
+              raise SystemExit(
+                  f"Configuração inválida: llm_provider={provider!r}"
+              )
+
+          if not gemini_key:
+              raise SystemExit("Configuração inválida: Gemini API key ausente.")
+
+          if video_source != "pexels":
+              raise SystemExit(
+                  f"Configuração inválida: video_source={video_source!r}"
+              )
+
+          if not isinstance(pexels_keys, list) or not pexels_keys:
+              raise SystemExit("Configuração inválida: Pexels API key ausente.")
+
+          print("MoneyPrinterTurbo configuration: OK")
+          PY
+
       - name: Execute MoneyPrinterTurbo CLI
         working-directory: ${{ env.MPT_DIR }}
         env:
