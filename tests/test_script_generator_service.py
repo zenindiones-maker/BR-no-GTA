@@ -4,6 +4,7 @@ from app.database.ideas_repository import insert_idea
 from app.database.research_repository import insert_research_item
 from app.database.schema import initialize_schema
 from app.services.script_generator_service import (
+    generate_and_save_script,
     generate_script_structure,
 )
 
@@ -186,3 +187,122 @@ def test_generate_and_save_script_rejects_unapproved_idea():
 
     with pytest.raises(ValueError, match="ideia aprovada"):
         generate_and_save_script(idea_id)
+
+
+def test_generate_script_structure_uses_ai_provider():
+    from app.services.fake_ai_provider import FakeAIProvider
+
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="GTA 6 terá uma grande novidade online",
+        description="A experiência online pode receber mudanças importantes.",
+        status="approved",
+        score=9.5,
+    )
+
+    provider = FakeAIProvider(
+        response=(
+            '{"hook":"HOOK IA",'
+            '"introduction":"INTRO IA",'
+            '"development":['
+            '{"heading":"Contexto IA","body":"CONTEXTO IA"},'
+            '{"heading":"Novidade IA","body":"NOVIDADE IA"},'
+            '{"heading":"Impacto IA","body":"IMPACTO IA"}'
+            '],'
+            '"conclusion":"CONCLUSÃO IA",'
+            '"cta":"CTA IA"}'
+        )
+    )
+
+    structure = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+    )
+
+    assert structure["title"] == (
+        "GTA 6 terá uma grande novidade online"
+    )
+    assert structure["hook"] == "HOOK IA"
+    assert structure["introduction"] == "INTRO IA"
+    assert structure["development"][0]["heading"] == "Contexto IA"
+    assert structure["development"][0]["body"] == "CONTEXTO IA"
+    assert structure["conclusion"] == "CONCLUSÃO IA"
+    assert structure["cta"] == "CTA IA"
+
+    assert len(provider.prompts) == 1
+    assert "GTA 6 terá uma grande novidade online" in provider.prompts[0]
+    assert "experiência online" in provider.prompts[0]
+
+
+def test_generate_script_structure_rejects_invalid_ai_json():
+    from app.services.fake_ai_provider import FakeAIProvider
+    from app.services.ai_provider import AIProviderError
+
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - JSON inválido",
+        description="Descrição válida.",
+        status="approved",
+        score=9.0,
+    )
+
+    provider = FakeAIProvider(
+        response="não é json"
+    )
+
+    with pytest.raises(
+        AIProviderError,
+        match="invalid JSON",
+    ):
+        generate_script_structure(
+            idea_id,
+            ai_provider=provider,
+        )
+
+
+def test_generate_and_save_script_uses_ai_provider():
+    from app.services.fake_ai_provider import FakeAIProvider
+    from app.database.scripts_repository import (
+        get_latest_script_by_idea,
+    )
+
+    initialize_schema()
+
+    idea_id = insert_idea(
+        title="TESTE - roteiro IA persistido",
+        description="Descrição para geração por IA.",
+        status="approved",
+        score=9.5,
+    )
+
+    provider = FakeAIProvider(
+        response=(
+            '{"hook":"HOOK IA",'
+            '"introduction":"INTRO IA",'
+            '"development":['
+            '{"heading":"A","body":"B"},'
+            '{"heading":"C","body":"D"},'
+            '{"heading":"E","body":"F"}'
+            '],'
+            '"conclusion":"CONCLUSÃO IA",'
+            '"cta":"CTA IA"}'
+        )
+    )
+
+    script_id = generate_and_save_script(
+        idea_id,
+        ai_provider=provider,
+    )
+
+    script = get_latest_script_by_idea(idea_id)
+
+    assert script is not None
+    assert script["id"] == script_id
+    assert script["title"] == "TESTE - roteiro IA persistido"
+    assert script["status"] == "draft"
+    assert "HOOK IA" in script["content"]
+    assert "INTRO IA" in script["content"]
+    assert "CONCLUSÃO IA" in script["content"]
+    assert "CTA IA" in script["content"]
