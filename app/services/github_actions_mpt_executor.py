@@ -13,6 +13,9 @@ from app.services.github_actions_dispatcher import (
 from app.services.github_actions_run_watcher import (
     GitHubActionsRunWatcher,
 )
+from app.services.mpt_render_request_service import (
+    build_mpt_render_request,
+)
 from app.services.render_artifact_validator import (
     RenderArtifactValidator,
 )
@@ -188,25 +191,6 @@ class GitHubActionsMptExecutor(AbstractRenderExecutor):
                 "O render job informado é inválido."
             )
 
-        video_subject = render_job.get("video_subject")
-        video_script = render_job.get("video_script")
-        task_id = render_job.get("task_id")
-
-        if not video_subject:
-            raise ValueError(
-                "O assunto do vídeo é obrigatório."
-            )
-
-        if not video_script:
-            raise ValueError(
-                "O roteiro do vídeo é obrigatório."
-            )
-
-        if not task_id:
-            raise ValueError(
-                "O task_id do render é obrigatório."
-            )
-
         if self.dispatcher is None:
             raise RuntimeError(
                 "O dispatcher do GitHub Actions não está configurado."
@@ -229,15 +213,15 @@ class GitHubActionsMptExecutor(AbstractRenderExecutor):
                 "não está configurado."
             )
 
+        mpt_request = build_mpt_render_request(
+            render_job
+        )
+
         dispatch_result = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=self.workflow,
             ref=self.ref,
-            inputs={
-                "video_subject": str(video_subject),
-                "video_script": str(video_script),
-                "task_id": str(task_id),
-            },
+            inputs=mpt_request,
         )
 
         watch_result = self.watcher.wait_for_completion(

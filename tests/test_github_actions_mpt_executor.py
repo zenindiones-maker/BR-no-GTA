@@ -1,5 +1,7 @@
-import pytest
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 from app.services.github_actions_artifact_service import (
     GitHubActionsArtifactDownloadResult,
 )
@@ -76,69 +78,6 @@ def test_executor_requires_dispatcher():
                 "video_subject": "GTA 6 novidades",
                 "video_script": "Roteiro",
                 "task_id": "render-001",
-            }
-        )
-
-
-def test_executor_requires_video_subject():
-    runner = FakeCommandRunner()
-    dispatcher = GitHubActionsDispatcher(runner)
-
-    executor = GitHubActionsMptExecutor(
-        repository="zenindiones-maker/BR-no-GTA",
-        dispatcher=dispatcher,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="assunto do vídeo",
-    ):
-        executor.execute(
-            {
-                "video_script": "Roteiro",
-                "task_id": "render-001",
-            }
-        )
-
-
-def test_executor_requires_video_script():
-    runner = FakeCommandRunner()
-    dispatcher = GitHubActionsDispatcher(runner)
-
-    executor = GitHubActionsMptExecutor(
-        repository="zenindiones-maker/BR-no-GTA",
-        dispatcher=dispatcher,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="roteiro do vídeo",
-    ):
-        executor.execute(
-            {
-                "video_subject": "GTA 6 novidades",
-                "task_id": "render-001",
-            }
-        )
-
-
-def test_executor_requires_task_id():
-    runner = FakeCommandRunner()
-    dispatcher = GitHubActionsDispatcher(runner)
-
-    executor = GitHubActionsMptExecutor(
-        repository="zenindiones-maker/BR-no-GTA",
-        dispatcher=dispatcher,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="task_id",
-    ):
-        executor.execute(
-            {
-                "video_subject": "GTA 6 novidades",
-                "video_script": "Roteiro",
             }
         )
 
@@ -222,13 +161,25 @@ def test_executor_dispatches_render_job(tmp_path):
         validator=validator,
     )
 
-    result = executor.execute(
-        {
-            "video_subject": "GTA 6 novidades",
-            "video_script": "Este é o roteiro do vídeo.",
-            "task_id": "render-001",
-        }
-    )
+    render_job = {
+        "id": 123,
+        "script_id": 20,
+        "objective": "GTA 6 novidades",
+    }
+
+    expected_mpt_request = {
+        "video_subject": "GTA 6 novidades",
+        "video_script": "Este é o roteiro do vídeo.",
+        "task_id": "123",
+    }
+
+    with patch(
+        "app.services.github_actions_mpt_executor.build_mpt_render_request",
+        return_value=expected_mpt_request,
+    ) as build_request:
+        result = executor.execute(render_job)
+
+    build_request.assert_called_once_with(render_job)
 
     assert result.success is True
     assert result.error is None
@@ -269,6 +220,6 @@ def test_executor_dispatches_render_job(tmp_path):
             "--field",
             "video_script=Este é o roteiro do vídeo.",
             "--field",
-            "task_id=render-001",
+            "task_id=123",
         ]
     ]
