@@ -1,10 +1,20 @@
 import pytest
+from pathlib import Path
+from app.services.github_actions_artifact_service import (
+    GitHubActionsArtifactDownloadResult,
+)
 
 from app.services.github_actions_dispatcher import (
     GitHubActionsDispatcher,
 )
+from app.services.github_actions_run_watcher import (
+    GitHubActionsRunWatchResult,
+)
 from app.services.github_actions_mpt_executor import (
     GitHubActionsMptExecutor,
+)
+from app.services.render_artifact_validator import (
+    RenderArtifactValidationResult,
 )
 
 
@@ -63,6 +73,9 @@ def test_executor_requires_dispatcher():
         executor.execute(
             {
                 "content_item_id": 1,
+                "video_subject": "GTA 6 novidades",
+                "video_script": "Roteiro",
+                "task_id": "render-001",
             }
         )
 
@@ -130,15 +143,83 @@ def test_executor_requires_task_id():
         )
 
 
-def test_executor_dispatches_render_job():
+def test_executor_dispatches_render_job(tmp_path):
     runner = FakeCommandRunner()
     dispatcher = GitHubActionsDispatcher(runner)
+
+    class FakeWatcher:
+        def __init__(self):
+            self.calls = []
+
+        def wait_for_completion(self, repository, run_id):
+            self.calls.append((repository, run_id))
+            return GitHubActionsRunWatchResult(
+                run_id=run_id,
+                status="completed",
+                conclusion="success",
+            )
+
+    class FakeArtifactService:
+        def __init__(self):
+            self.calls = []
+
+        def download(
+            self,
+            repository,
+            run_id,
+            artifact_name,
+            output_dir,
+        ):
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            mp4_path = output_dir / "video.mp4"
+            mp4_path.write_bytes(b"fake-mp4")
+
+            self.calls.append(
+                (
+                    repository,
+                    run_id,
+                    artifact_name,
+                    output_dir,
+                )
+            )
+
+            return GitHubActionsArtifactDownloadResult(
+                repository=repository,
+                run_id=run_id,
+                artifact_name=artifact_name,
+                output_dir=str(output_dir),
+            )
+
+    class FakeValidator:
+        def __init__(self):
+            self.calls = []
+
+        def validate(self, output_path):
+            self.calls.append(Path(output_path))
+
+            return RenderArtifactValidationResult(
+                valid=True,
+                output_path=str(output_path),
+                duration_seconds=42.0,
+                video_stream_count=1,
+            )
+
+    watcher = FakeWatcher()
+    artifact_service = FakeArtifactService()
+    validator = FakeValidator()
 
     executor = GitHubActionsMptExecutor(
         repository="zenindiones-maker/BR-no-GTA",
         workflow="render-worker.yml",
         ref="main",
         dispatcher=dispatcher,
+        watcher=watcher,
+        artifact_service=artifact_service,
+        artifact_name="render-output",
+        artifact_root=tmp_path,
+        validator=validator,
     )
 
     result = executor.execute(
@@ -149,9 +230,29 @@ def test_executor_dispatches_render_job():
         }
     )
 
-    assert result.success is False
-    assert result.output_path is None
-    assert "GitHub Actions foi acionado" in result.error
+    assert result.success is True
+    assert result.error is None
+    assert result.output_path is not None
+    assert Path(result.output_path).name == "video.mp4"
+    assert Path(result.output_path).is_file()
+
+    assert watcher.calls == [
+        (
+            "zenindiones-maker/BR-no-GTA",
+            123456789,
+        )
+    ]
+
+    assert len(artifact_service.calls) == 1
+    assert artifact_service.calls[0][0] == (
+        "zenindiones-maker/BR-no-GTA"
+    )
+    assert artifact_service.calls[0][1] == 123456789
+    assert artifact_service.calls[0][2] == "render-output"
+
+    assert validator.calls == [
+        Path(result.output_path)
+    ]
 
     assert runner.commands == [
         [
