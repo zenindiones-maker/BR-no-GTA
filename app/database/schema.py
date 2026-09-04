@@ -642,6 +642,28 @@ def _migrate_gta6_knowledge_source_name(connection) -> None:
             "ADD COLUMN source_name TEXT NOT NULL DEFAULT ''"
         )
 
+
+def _migrate_gta6_monitor_runs(connection) -> None:
+    """Cria a persistência das execuções do monitor GTA 6."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_monitor_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            url TEXT NOT NULL,
+            status_code INTEGER,
+            baseline INTEGER NOT NULL DEFAULT 0,
+            items_found INTEGER NOT NULL DEFAULT 0,
+            items_ingested INTEGER NOT NULL DEFAULT 0,
+            items_duplicated INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -660,6 +682,7 @@ def initialize_schema() -> None:
         _migrate_gta6_knowledge_source_name(connection)
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
+        _migrate_gta6_monitor_runs(connection)
         connection.commit()
     finally:
         connection.close()
