@@ -12,6 +12,9 @@ from app.services.gta6_monitor_scheduler import (
 from app.services.gta6_monitor_worker_service import (
     execute_gta6_monitor,
 )
+from app.services.gta6_scheduler_observability import (
+    GTA6SchedulerObservability,
+)
 
 
 def create_gta6_monitor_scheduler(
@@ -48,9 +51,12 @@ def create_gta6_monitor_scheduler(
             "schedule must be a GTA6MonitorSchedule"
         )
 
+    observability = GTA6SchedulerObservability()
+
     adapter = APSchedulerGTA6MonitorAdapter(
         schedule=selected_schedule,
         executor=execute_gta6_monitor,
+        observability=observability,
     )
 
     return GTA6MonitorScheduler(

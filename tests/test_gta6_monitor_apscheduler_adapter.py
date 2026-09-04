@@ -1,3 +1,14 @@
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+)
+from apscheduler.schedulers.background import BackgroundScheduler
+from app.services.gta6_scheduler_observability import (
+    GTA6SchedulerObservability,
+)
+
 from unittest.mock import Mock, patch
 
 import pytest
@@ -279,3 +290,60 @@ def test_configure_sets_misfire_grace_time():
         coalesce=True,
         misfire_grace_time=60,
     )
+
+def test_adapter_exposes_injected_observability():
+    observability = GTA6SchedulerObservability()
+
+    adapter = APSchedulerGTA6MonitorAdapter(
+        schedule=GTA6MonitorSchedule(),
+        executor=lambda: None,
+        observability=observability,
+    )
+
+    assert adapter.observability is observability
+
+
+def test_adapter_configure_registers_scheduler_observability_listener():
+    scheduler = Mock(spec=BackgroundScheduler)
+    observability = GTA6SchedulerObservability()
+
+    adapter = APSchedulerGTA6MonitorAdapter(
+        schedule=GTA6MonitorSchedule(),
+        executor=lambda: None,
+        observability=observability,
+    )
+    adapter._scheduler = scheduler
+
+    adapter.configure()
+
+    scheduler.add_listener.assert_called_once()
+
+    listener, event_mask = scheduler.add_listener.call_args.args
+
+    expected_mask = (
+        EVENT_JOB_EXECUTED
+        | EVENT_JOB_ERROR
+        | EVENT_JOB_MISSED
+        | EVENT_JOB_MAX_INSTANCES
+    )
+
+    assert callable(listener)
+    assert event_mask == expected_mask
+
+
+def test_adapter_configure_registers_listener_only_once():
+    scheduler = Mock(spec=BackgroundScheduler)
+    observability = GTA6SchedulerObservability()
+
+    adapter = APSchedulerGTA6MonitorAdapter(
+        schedule=GTA6MonitorSchedule(),
+        executor=lambda: None,
+        observability=observability,
+    )
+    adapter._scheduler = scheduler
+
+    adapter.configure()
+    adapter.configure()
+
+    assert scheduler.add_listener.call_count == 1
+    assert scheduler.add_job.call_count == 2
