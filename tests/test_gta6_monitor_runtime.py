@@ -402,3 +402,161 @@ def test_unrelated_signal_is_not_registered(monkeypatch):
     import signal
 
     assert signal.SIGUSR1 not in registered
+
+
+def test_run_forever_installs_and_restores_signal_handlers(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        runtime,
+        "install_signal_handlers",
+        lambda: calls.append("install"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "start",
+        lambda: calls.append("start"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_wait_forever",
+        lambda: calls.append("wait"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "stop",
+        lambda: calls.append("stop"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "restore_signal_handlers",
+        lambda: calls.append("restore"),
+    )
+
+    runtime.run_forever()
+
+    assert calls == [
+        "install",
+        "start",
+        "wait",
+        "stop",
+        "restore",
+    ]
+
+
+def test_run_forever_restores_signal_handlers_when_wait_fails(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        runtime,
+        "install_signal_handlers",
+        lambda: calls.append("install"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "start",
+        lambda: calls.append("start"),
+    )
+
+    def fail_wait():
+        calls.append("wait")
+        raise RuntimeError("wait failed")
+
+    monkeypatch.setattr(
+        runtime,
+        "_wait_forever",
+        fail_wait,
+    )
+    monkeypatch.setattr(
+        runtime,
+        "stop",
+        lambda: calls.append("stop"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "restore_signal_handlers",
+        lambda: calls.append("restore"),
+    )
+
+    try:
+        runtime.run_forever()
+    except RuntimeError as exc:
+        assert str(exc) == "wait failed"
+    else:
+        raise AssertionError(
+            "run_forever must propagate wait failures"
+        )
+
+    assert calls == [
+        "install",
+        "start",
+        "wait",
+        "stop",
+        "restore",
+    ]
+
+
+def test_run_forever_restores_signal_handlers_when_start_fails(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        runtime,
+        "install_signal_handlers",
+        lambda: calls.append("install"),
+    )
+
+    def fail_start():
+        calls.append("start")
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr(
+        runtime,
+        "start",
+        fail_start,
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_wait_forever",
+        lambda: calls.append("wait"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "stop",
+        lambda: calls.append("stop"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "restore_signal_handlers",
+        lambda: calls.append("restore"),
+    )
+
+    try:
+        runtime.run_forever()
+    except RuntimeError as exc:
+        assert str(exc) == "start failed"
+    else:
+        raise AssertionError(
+            "run_forever must propagate start failures"
+        )
+
+    assert calls == [
+        "install",
+        "start",
+        "stop",
+        "restore",
+    ]

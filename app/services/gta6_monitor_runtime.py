@@ -105,12 +105,14 @@ class GTA6MonitorRuntime:
         O Runtime não implementa temporização própria. A execução
         periódica continua sendo responsabilidade do scheduler.
         """
-        self.start()
+        self.install_signal_handlers()
 
         try:
+            self.start()
             self._wait_forever()
         finally:
             self.stop()
+            self.restore_signal_handlers()
 
     def _wait_forever(self) -> None:
         """Mantém o processo ativo até que o Runtime seja interrompido."""
