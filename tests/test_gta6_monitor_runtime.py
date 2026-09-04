@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import Mock
+import signal
 
 import pytest
 
@@ -557,6 +558,107 @@ def test_run_forever_restores_signal_handlers_when_start_fails(monkeypatch):
     assert calls == [
         "install",
         "start",
+        "stop",
+        "restore",
+    ]
+
+
+def test_shutdown_signal_sets_shutdown_event(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    stop_calls = []
+
+    monkeypatch.setattr(
+        runtime,
+        "stop",
+        lambda: stop_calls.append("stop"),
+    )
+
+    assert not runtime._shutdown_event.is_set()
+
+    runtime._handle_shutdown_signal(
+        signal.SIGTERM,
+        None,
+    )
+
+    assert stop_calls == ["stop"]
+    assert runtime._shutdown_event.is_set()
+
+
+def test_wait_forever_waits_on_runtime_shutdown_event(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    wait_calls = []
+
+    class FakeEvent:
+        def wait(self):
+            wait_calls.append("wait")
+
+    monkeypatch.setattr(
+        runtime,
+        "_shutdown_event",
+        FakeEvent(),
+    )
+
+    runtime._wait_forever()
+
+    assert wait_calls == ["wait"]
+
+
+def test_run_forever_clears_shutdown_event_before_wait(monkeypatch):
+    scheduler = Mock()
+    runtime = GTA6MonitorRuntime(
+        scheduler=scheduler,
+    )
+
+    calls = []
+
+    class FakeEvent:
+        def clear(self):
+            calls.append("clear")
+
+        def wait(self):
+            calls.append("wait")
+
+    monkeypatch.setattr(
+        runtime,
+        "_shutdown_event",
+        FakeEvent(),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "install_signal_handlers",
+        lambda: calls.append("install"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "start",
+        lambda: calls.append("start"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "stop",
+        lambda: calls.append("stop"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "restore_signal_handlers",
+        lambda: calls.append("restore"),
+    )
+
+    runtime.run_forever()
+
+    assert calls == [
+        "clear",
+        "install",
+        "start",
+        "wait",
         "stop",
         "restore",
     ]

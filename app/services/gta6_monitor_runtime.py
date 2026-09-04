@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import threading
 from types import FrameType
 from typing import Any
 
@@ -30,6 +31,7 @@ class GTA6MonitorRuntime:
             Any,
         ] = {}
         self._signals_installed = False
+        self._shutdown_event = threading.Event()
 
     @property
     def scheduler(self) -> Any:
@@ -79,6 +81,7 @@ class GTA6MonitorRuntime:
     ) -> None:
         """Solicita o encerramento gracioso do Runtime."""
         self.stop()
+        self._shutdown_event.set()
 
     def start(self) -> None:
         """Configura e inicia o scheduler do monitor."""
@@ -105,6 +108,7 @@ class GTA6MonitorRuntime:
         O Runtime não implementa temporização própria. A execução
         periódica continua sendo responsabilidade do scheduler.
         """
+        self._shutdown_event.clear()
         self.install_signal_handlers()
 
         try:
@@ -116,6 +120,4 @@ class GTA6MonitorRuntime:
 
     def _wait_forever(self) -> None:
         """Mantém o processo ativo até que o Runtime seja interrompido."""
-        import threading
-
-        threading.Event().wait()
+        self._shutdown_event.wait()
