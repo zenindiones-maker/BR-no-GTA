@@ -102,6 +102,14 @@ MPT_SSH_CONNECT_TIMEOUT = float(
     )
 )
 
+GITHUB_ACTIONS_POLL_INTERVAL = float(
+    os.getenv("BR_GITHUB_ACTIONS_POLL_INTERVAL", "5")
+)
+
+GITHUB_ACTIONS_RUN_TIMEOUT = float(
+    os.getenv("BR_GITHUB_ACTIONS_RUN_TIMEOUT", "3600")
+)
+
 MPT_SSH_COMMAND_TIMEOUT = float(
     os.getenv(
         "BR_MPT_SSH_COMMAND_TIMEOUT",
