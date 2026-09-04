@@ -221,4 +221,32 @@ def test_configure_limits_monitor_to_one_concurrent_instance():
         id="gta6-monitor",
         replace_existing=True,
         max_instances=1,
+        coalesce=True,
+    )
+
+def test_configure_coalesces_missed_monitor_runs():
+    from unittest.mock import Mock
+
+    executor = Mock()
+    scheduler = Mock()
+
+    adapter = APSchedulerGTA6MonitorAdapter(
+        schedule=GTA6MonitorSchedule(
+            interval_seconds=300,
+        ),
+        executor=executor,
+    )
+
+    adapter._scheduler = scheduler
+
+    adapter.configure()
+
+    scheduler.add_job.assert_called_once_with(
+        executor,
+        trigger="interval",
+        seconds=300,
+        id="gta6-monitor",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )

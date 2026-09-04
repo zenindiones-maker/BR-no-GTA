@@ -67,6 +67,7 @@ class APSchedulerGTA6MonitorAdapter:
             id=self._schedule.job_id,
             replace_existing=True,
             max_instances=1,
+            coalesce=True,
         )
 
     def start(self) -> None:
