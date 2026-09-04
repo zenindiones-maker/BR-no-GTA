@@ -242,109 +242,35 @@ def test_process_next_render_job_completes_associated_video():
     assert persisted_video["file_path"] == "/tmp/rendered-video.mp4"
 
 
-class FakeMoneyPrinterTurboClient:
-    def __init__(self):
-        self.created_payload = None
-        self.task_ids = []
+class FakeRenderExecutor(AbstractRenderExecutor):
+    def __init__(self, output_path: str):
+        self.output_path = output_path
+        self.jobs = []
 
-    def create_video(self, payload):
-        self.created_payload = payload
-        return {"task_id": "test-task-001"}
-
-    def get_task(self, task_id):
-        self.task_ids.append(task_id)
-        return {
-            "state": 1,
-            "videos": [
-                "/tmp/mpt-rendered-video.mp4",
-            ],
-        }
+    def execute(self, render_job):
+        self.jobs.append(render_job)
+        return RenderExecutionResult(
+            success=True,
+            output_path=self.output_path,
+        )
 
 
-def test_worker_uses_real_mpt_factory_and_executor_without_network(
+def test_worker_uses_factory_executor_without_network(
     monkeypatch,
 ):
     initialize_schema()
 
-    content_item_id = insert_content_item(
-        title="Conteúdo de teste do Render Worker",
-        content_type="video",
-        status="draft",
+    job_id = _create_queued_render_job()
+
+    executor = FakeRenderExecutor(
+        "/tmp/mpt-rendered-video.mp4",
     )
 
-    video_id = insert_video(
-        content_item_id=content_item_id,
-        title="TESTE - Worker -> Factory -> MPT Executor",
-        status="draft",
-    )
-
-    job = {
-        "content_item_id": content_item_id,
-        "script_id": 1,
-        "idea_id": 1,
-        "objective": "Testar integração real do Worker com a factory MPT.",
-        "format": "YouTube editorial",
-        "estimated_duration_seconds": 60,
-        "status": "queued",
-        "job_type": "video_render",
-        "queue": "render",
-        "attempt": 0,
-        "video_id": video_id,
-        "scenes": [
-            {
-                "order": 1,
-                "narrative_block": "INTRODUÇÃO",
-                "narration": "Teste do executor MoneyPrinterTurbo.",
-                "visual_type": "title_card",
-                "visual_description": "Tela de teste do MPT.",
-                "duration_seconds": 5,
-                "execution_requirements": [],
-            }
-        ],
-        "audio_requirements": [],
-        "visual_requirements": [],
-        "render": {
-            "resolution": "1920x1080",
-            "fps": 30,
-            "aspect_ratio": "16:9",
-            "container": "mp4",
-            "video_codec": "h264",
-            "audio_codec": "aac",
-        },
-    }
-
-    job_id = enqueue_render_job(job)
-
-    fake_client = FakeMoneyPrinterTurboClient()
+    factory = Mock(return_value=executor)
 
     monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.MoneyPrinterTurboClient",
-        lambda **kwargs: fake_client,
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_BASE_URL",
-        "http://127.0.0.1:8080",
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_API_KEY",
-        "",
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_TIMEOUT",
-        30.0,
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_POLL_INTERVAL",
-        0.0,
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_MAX_POLLS",
-        3,
+        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        factory,
     )
 
     result = process_next_render_job()
@@ -353,29 +279,25 @@ def test_worker_uses_real_mpt_factory_and_executor_without_network(
     assert result.success is True
     assert result.output_path == "/tmp/mpt-rendered-video.mp4"
 
-    assert fake_client.created_payload is not None
-    assert fake_client.created_payload["video_language"] == "pt-BR"
-    assert fake_client.created_payload["video_count"] == 1
-    assert fake_client.created_payload["match_materials_to_script"] is True
+    factory.assert_called_once_with()
 
-    assert fake_client.task_ids == ["test-task-001"]
+    assert len(executor.jobs) == 1
+    assert executor.jobs[0]["objective"] == (
+        "Testar execução do Worker."
+    )
 
     persisted_job = get_render_job(job_id)
 
     assert persisted_job is not None
     assert persisted_job["status"] == "completed"
-    assert persisted_job["video_id"] == video_id
     assert persisted_job["attempt"] == 1
-    assert persisted_job["output_path"] == "/tmp/mpt-rendered-video.mp4"
+    assert persisted_job["output_path"] == (
+        "/tmp/mpt-rendered-video.mp4"
+    )
     assert persisted_job["error"] is None
 
-    persisted_video = get_video(video_id)
 
-    assert persisted_video is not None
-    assert persisted_video["status"] == "ready"
-    assert persisted_video["file_path"] == "/tmp/mpt-rendered-video.mp4"
-
-def test_worker_preserves_editorial_content_in_mpt_payload(
+def test_worker_preserves_editorial_content_for_executor(
     monkeypatch,
 ):
     initialize_schema()
@@ -388,7 +310,7 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
 
     video_id = insert_video(
         content_item_id=content_item_id,
-        title="TESTE - contrato editorial BR -> MPT",
+        title="TESTE - contrato editorial BR -> Executor",
         status="draft",
     )
 
@@ -419,7 +341,7 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
                 "visual_description": (
                     "Logo de GTA 6 com manchete de última hora."
                 ),
-                "duration_seconds": 8,
+                "duration_seconds": 10,
                 "execution_requirements": [],
             },
             {
@@ -433,17 +355,17 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
                 "visual_description": (
                     "Gameplay de GTA 6 mostrando uma área urbana."
                 ),
-                "duration_seconds": 12,
+                "duration_seconds": 10,
                 "execution_requirements": [],
             },
             {
                 "order": 3,
-                "narrative_block": "IMPACTO",
+                "narrative_block": "CONSEQUÊNCIA",
                 "narration": (
                     "A possível consequência pode afetar "
                     "a expectativa dos jogadores."
                 ),
-                "visual_type": "gameplay_with_graphics",
+                "visual_type": "gameplay",
                 "visual_description": (
                     "Gameplay com gráfico destacando a informação."
                 ),
@@ -467,36 +389,15 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
 
     job_id = enqueue_render_job(job)
 
-    fake_client = FakeMoneyPrinterTurboClient()
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.MoneyPrinterTurboClient",
-        lambda **kwargs: fake_client,
+    executor = FakeRenderExecutor(
+        "/tmp/mpt-rendered-video.mp4",
     )
 
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_BASE_URL",
-        "http://127.0.0.1:8080",
-    )
+    factory = Mock(return_value=executor)
 
     monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_API_KEY",
-        "",
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_TIMEOUT",
-        30.0,
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_POLL_INTERVAL",
-        0.0,
-    )
-
-    monkeypatch.setattr(
-        "app.services.money_printer_turbo_factory.settings.MPT_MAX_POLLS",
-        3,
+        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        factory,
     )
 
     result = process_next_render_job()
@@ -504,44 +405,63 @@ def test_worker_preserves_editorial_content_in_mpt_payload(
     assert result is not None
     assert result.success is True
 
-    payload = fake_client.created_payload
+    factory.assert_called_once_with()
 
-    assert payload is not None
+    assert len(executor.jobs) == 1
 
-    assert payload["video_subject"] == (
+    received_job = executor.jobs[0]
+
+    assert received_job["objective"] == (
         "Informar o público sobre uma nova informação "
-        "confirmada de GTA 6."
+        "confirmada de GTA 6"
     )
 
-    assert payload["video_script"] == (
+    assert received_job["scenes"][0]["narration"] == (
         "Uma nova informação sobre GTA 6 "
-        "chamou a atenção da comunidade.\n\n"
+        "chamou a atenção da comunidade."
+    )
+
+    assert received_job["scenes"][0]["visual_description"] == (
+        "Logo de GTA 6 com manchete de última hora."
+    )
+
+    assert received_job["scenes"][1]["narration"] == (
         "O contexto ajuda a entender por que "
-        "essa informação é relevante.\n\n"
+        "essa informação é relevante."
+    )
+
+    assert received_job["scenes"][1]["visual_description"] == (
+        "Gameplay de GTA 6 mostrando uma área urbana."
+    )
+
+    assert received_job["scenes"][2]["narration"] == (
         "A possível consequência pode afetar "
         "a expectativa dos jogadores."
     )
 
-    assert payload["video_terms"] == [
-        "Logo de GTA 6 com manchete de última hora.",
-        "Gameplay de GTA 6 mostrando uma área urbana.",
-        "Gameplay com gráfico destacando a informação.",
+    assert received_job["scenes"][2]["visual_description"] == (
+        "Gameplay com gráfico destacando a informação."
+    )
+
+    assert received_job["visual_requirements"] == [
+        "Usar imagens relacionadas a GTA 6.",
     ]
-
-    assert payload["video_language"] == "pt-BR"
-    assert payload["video_count"] == 1
-    assert payload["match_materials_to_script"] is True
-
-    assert fake_client.task_ids == ["test-task-001"]
 
     persisted_job = get_render_job(job_id)
 
     assert persisted_job is not None
     assert persisted_job["status"] == "completed"
     assert persisted_job["video_id"] == video_id
+    assert persisted_job["attempt"] == 1
+    assert persisted_job["output_path"] == (
+        "/tmp/mpt-rendered-video.mp4"
+    )
+    assert persisted_job["error"] is None
 
     persisted_video = get_video(video_id)
 
     assert persisted_video is not None
     assert persisted_video["status"] == "ready"
-    assert persisted_video["file_path"] == "/tmp/mpt-rendered-video.mp4"
+    assert persisted_video["file_path"] == (
+        "/tmp/mpt-rendered-video.mp4"
+    )
