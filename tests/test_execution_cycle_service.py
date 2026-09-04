@@ -54,3 +54,30 @@ def test_run_execution_cycle_handles_empty_queues():
         "editorial": None,
         "render": None,
     }
+
+
+def test_run_execution_cycle_propagates_ai_provider():
+    fake_provider = object()
+    editorial_result = {"status": "completed"}
+    render_result = {"status": "completed"}
+
+    with patch(
+        "app.services.execution_cycle_service.process_next_editorial_queue_item",
+        return_value=editorial_result,
+    ) as process_editorial, patch(
+        "app.services.execution_cycle_service.process_next_render_job",
+        return_value=render_result,
+    ) as process_render:
+        result = run_execution_cycle(
+            ai_provider=fake_provider,
+        )
+
+    process_editorial.assert_called_once_with(
+        ai_provider=fake_provider,
+    )
+    process_render.assert_called_once_with()
+
+    assert result == {
+        "editorial": editorial_result,
+        "render": render_result,
+    }

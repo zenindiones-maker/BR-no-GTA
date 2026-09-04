@@ -252,3 +252,62 @@ def test_process_next_editorial_queue_item_requires_render_result():
             )
 
     complete.assert_not_called()
+
+
+def test_process_next_editorial_queue_item_propagates_ai_provider():
+    queue_item = {
+        "id": 101,
+        "idea_id": 202,
+        "priority_score": 9.5,
+        "priority": "high",
+        "status": "processing",
+    }
+
+    script = {"id": 303}
+    fake_provider = object()
+
+    with (
+        patch(
+            "app.services.editorial_queue_consumer.claim_next_queue_item",
+            return_value=queue_item,
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.generate_and_save_script",
+            return_value=script,
+        ) as generate_script,
+        patch(
+            "app.services.editorial_queue_consumer.generate_script_spec",
+            return_value={"script_id": 303},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.create_content_item",
+            return_value={"id": 404},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.create_production_plan",
+            return_value={"content_item_id": 404},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.create_video_spec",
+            return_value={"content_item_id": 404},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.create_video_and_enqueue_render",
+            return_value={"render_job": {"id": 606}},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.mark_queue_item_completed",
+            return_value=True,
+        ),
+    ):
+        result = process_next_editorial_queue_item(
+            ai_provider=fake_provider,
+        )
+
+    generate_script.assert_called_once_with(
+        202,
+        ai_provider=fake_provider,
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"

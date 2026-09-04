@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.services.ai_provider import AIProvider
+
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
@@ -8,7 +10,10 @@ from app.services.render_worker_service import (
 )
 
 
-def run_execution_cycle() -> dict[str, Any]:
+def run_execution_cycle(
+    *,
+    ai_provider: AIProvider | None = None,
+) -> dict[str, Any]:
     """
     Executa uma unidade controlada do ciclo operacional do BR.
 
@@ -37,7 +42,12 @@ def run_execution_cycle() -> dict[str, Any]:
     - publicação no YouTube.
     """
 
-    editorial_result = process_next_editorial_queue_item()
+    if ai_provider is None:
+        editorial_result = process_next_editorial_queue_item()
+    else:
+        editorial_result = process_next_editorial_queue_item(
+            ai_provider=ai_provider,
+        )
 
     render_result = process_next_render_job()
 

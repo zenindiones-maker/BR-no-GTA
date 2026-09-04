@@ -18,16 +18,23 @@ def test_cli_execution_run_once_calls_execution_cycle(capsys):
         },
     }
 
+    fake_provider = object()
+
     with patch(
         "sys.argv",
         ["br-no-gta", "execution", "run-once"],
+    ), patch(
+        "app.cli.create_ai_provider",
+        return_value=fake_provider,
     ), patch(
         "app.cli.run_execution_cycle",
         return_value=result,
     ) as run_cycle:
         main()
 
-    run_cycle.assert_called_once_with()
+    run_cycle.assert_called_once_with(
+        ai_provider=fake_provider,
+    )
 
     captured = capsys.readouterr()
 
@@ -37,9 +44,14 @@ def test_cli_execution_run_once_calls_execution_cycle(capsys):
 
 
 def test_cli_execution_run_once_reports_empty_cycle(capsys):
+    fake_provider = object()
+
     with patch(
         "sys.argv",
         ["br-no-gta", "execution", "run-once"],
+    ), patch(
+        "app.cli.create_ai_provider",
+        return_value=fake_provider,
     ), patch(
         "app.cli.run_execution_cycle",
         return_value={
@@ -49,7 +61,9 @@ def test_cli_execution_run_once_reports_empty_cycle(capsys):
     ) as run_cycle:
         main()
 
-    run_cycle.assert_called_once_with()
+    run_cycle.assert_called_once_with(
+        ai_provider=fake_provider,
+    )
 
     captured = capsys.readouterr()
 

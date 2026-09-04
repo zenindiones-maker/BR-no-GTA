@@ -15,6 +15,7 @@ from app.services.google_youtube_publication_service import (
 from app.services.gta6_monitor_worker_service import (
     execute_gta6_monitor,
 )
+from app.services.ai_provider_factory import create_ai_provider
 
 
 def main() -> None:
@@ -109,7 +110,10 @@ def main() -> None:
         args.command == "editorial"
         and args.editorial_command == "process-next"
     ):
-        queue_result = process_next_editorial_queue_item()
+        ai_provider = create_ai_provider()
+        queue_result = process_next_editorial_queue_item(
+            ai_provider=ai_provider,
+        )
 
         if queue_result is None:
             print("Nenhum item da fila editorial pendente.")
@@ -128,7 +132,10 @@ def main() -> None:
         args.command == "execution"
         and args.execution_command == "run-once"
     ):
-        cycle_result = run_execution_cycle()
+        ai_provider = create_ai_provider()
+        cycle_result = run_execution_cycle(
+            ai_provider=ai_provider,
+        )
 
         editorial_result = cycle_result["editorial"]
         render_result = cycle_result["render"]

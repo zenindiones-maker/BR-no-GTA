@@ -12,16 +12,23 @@ def test_cli_process_editorial_queue_calls_consumer(capsys):
         "status": "completed",
     }
 
+    fake_provider = object()
+
     with patch(
         "sys.argv",
         ["br-no-gta", "editorial", "process-next"],
+    ), patch(
+        "app.cli.create_ai_provider",
+        return_value=fake_provider,
     ), patch(
         "app.cli.process_next_editorial_queue_item",
         return_value=result,
     ) as process_next:
         main()
 
-    process_next.assert_called_once_with()
+    process_next.assert_called_once_with(
+        ai_provider=fake_provider,
+    )
 
     captured = capsys.readouterr()
 
@@ -31,16 +38,23 @@ def test_cli_process_editorial_queue_calls_consumer(capsys):
 
 
 def test_cli_process_editorial_queue_reports_empty_queue(capsys):
+    fake_provider = object()
+
     with patch(
         "sys.argv",
         ["br-no-gta", "editorial", "process-next"],
+    ), patch(
+        "app.cli.create_ai_provider",
+        return_value=fake_provider,
     ), patch(
         "app.cli.process_next_editorial_queue_item",
         return_value=None,
     ) as process_next:
         main()
 
-    process_next.assert_called_once_with()
+    process_next.assert_called_once_with(
+        ai_provider=fake_provider,
+    )
 
     captured = capsys.readouterr()
 
