@@ -35,6 +35,10 @@ def test_pipeline_uses_ffprobe_result(monkeypatch, tmp_path):
         "app.services.media_analysis.pipeline.detect_scenes",
         lambda _: (),
     )
+    monkeypatch.setattr(
+        "app.services.media_analysis.pipeline.analyze_audio",
+        lambda _: ((), ()),
+    )
 
     result = analyze_media(source)
 
@@ -44,6 +48,8 @@ def test_pipeline_uses_ffprobe_result(monkeypatch, tmp_path):
     assert result.metadata["probe_available"] is True
     assert result.metadata["scenes_available"] is True
     assert result.metadata["scene_count"] == 0
+    assert result.metadata["audio_analysis_available"] is True
+    assert result.metadata["beats_available"] is True
 
 
 def test_pipeline_builds_scene_knowledge(monkeypatch, tmp_path):
@@ -73,6 +79,11 @@ def test_pipeline_builds_scene_knowledge(monkeypatch, tmp_path):
                 end_seconds=8.25,
             ),
         ),
+    )
+
+    monkeypatch.setattr(
+        "app.services.media_analysis.pipeline.analyze_audio",
+        lambda _: ((), ()),
     )
 
     result = analyze_media(source)

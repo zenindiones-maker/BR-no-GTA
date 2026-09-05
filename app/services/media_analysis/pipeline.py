@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.services.media_analysis.audio_analyzer import (
+    analyze_audio,
+)
 from app.services.media_analysis.ffprobe_analyzer import (
     probe_media,
 )
@@ -22,7 +25,7 @@ def analyze_media(
     source_path: str | Path,
 ) -> MediaKnowledge:
     """
-    Constrói conhecimento técnico inicial sobre uma mídia.
+    Constrói conhecimento técnico sobre uma mídia.
 
     Esta etapa é somente análise.
     Nenhuma operação editorial é executada.
@@ -53,18 +56,24 @@ def analyze_media(
         for index, scene in enumerate(scenes, start=1)
     )
 
+    audio_features, beats = analyze_audio(path)
+
     return MediaKnowledge(
         source_path=str(path),
         probe=probe,
         scenes=scene_knowledge,
+        audio_features=audio_features,
+        beats=beats,
         metadata={
-            "analysis_version": "2",
+            "analysis_version": "3",
             "probe_available": True,
             "scenes_available": True,
-            "scene_count": len(scenes),
+            "scene_count": len(scene_knowledge),
             "transcript_available": False,
-            "audio_analysis_available": False,
-            "beats_available": False,
+            "audio_analysis_available": True,
+            "beats_available": True,
             "visual_samples_available": False,
+            "audio_feature_count": len(audio_features),
+            "beat_count": len(beats),
         },
     )
