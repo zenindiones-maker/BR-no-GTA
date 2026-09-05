@@ -7,6 +7,7 @@ from mcp.server.mcpserver.exceptions import (
     ToolError,
 )
 from vedit import mcp_server as srv
+from vedit.store import EditError
 
 
 async def main():
@@ -95,6 +96,35 @@ async def main():
         print(
             "NEXT QUESTION: verificar se a causa original é "
             "EditError e se o comportamento coincide com o contrato MCP 2.x."
+        )
+
+    except ToolError as exc:
+        print("EXCEPTION TYPE:", type(exc).__name__)
+        print("EXCEPTION MODULE:", type(exc).__module__)
+        print("EXCEPTION MESSAGE:", str(exc))
+        print()
+
+        cause = exc.__cause__
+
+        print("CAUSE TYPE:", type(cause).__name__ if cause else None)
+        print(
+            "CAUSE MODULE:",
+            type(cause).__module__ if cause else None,
+        )
+        print(
+            "CAUSE MESSAGE:",
+            str(cause) if cause else None,
+        )
+        print(
+            "CAUSE IS EditError:",
+            isinstance(cause, EditError) if cause else False,
+        )
+
+        print()
+        print("CLASSIFICATION: EXPECTED_TOOL_ERROR")
+        print(
+            "INTERPRETATION: EditError foi convertido "
+            "corretamente para ToolError."
         )
 
 
