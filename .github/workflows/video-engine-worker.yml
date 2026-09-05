@@ -64,139 +64,23 @@ jobs:
         working-directory: video-engine
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          p = Path("backend/vedit/story.py")
-          lines = p.read_text().splitlines(keepends=True)
-
-          matches = [
-              i
-              for i, line in enumerate(lines)
-              if 'out.append(f"durata {total:.1f}s contro {target:.1f}s richiesti: "' in line
-          ]
-
-          if len(matches) != 1:
-              raise SystemExit(
-                  f"Expected exactly one Vedit timing line, found {len(matches)}."
-              )
-
-          i = matches[0]
-
-          if i + 1 >= len(lines):
-              raise SystemExit("ERRO: continuação da expressão Vedit não encontrada.")
-
-          if "si puo\\' stringere ancora" not in lines[i + 1]:
-              raise SystemExit(
-                  "ERRO: continuação da expressão Vedit não corresponde ao código esperado."
-              )
-
-          indent = lines[i].split("out.append", 1)[0]
-
-          lines[i:i + 2] = [
-              indent + "out.append(\n",
-              indent + '    f"durata {total:.1f}s contro {target:.1f}s richiesti: "\n',
-              indent + '    + ("serve altro materiale" if total < target else "si puo\' stringere ancora")\n',
-              indent + ")\n",
-          ]
-
-          p.write_text("".join(lines))
-
-          print("===== VEDIT PATCH =====")
-          print("Python 3.11 syntax compatibility patch applied.")
-          print("===== END VEDIT PATCH =====")
-          PY
-
+          python ../.github/scripts/patch_vedit_story.py
           python -m py_compile backend/vedit/story.py
 
       - name: Inspect Vedit MCP SDK behavior
         working-directory: video-engine
         run: |
-          python - <<'PY'
-          import inspect
-          import mcp
-          from mcp.server.mcpserver import MCPServer
-          from mcp.server.mcpserver.exceptions import ToolError
-
-          print("MCP module:", mcp.__file__)
-          print("MCP version:", getattr(mcp, "__version__", "unknown"))
-          print("MCPServer:", MCPServer)
-          print("ToolError:", ToolError)
-          print("call_tool signature:", inspect.signature(MCPServer.call_tool))
-          print("MCP SDK inspection complete.")
-          PY
+          python ../.github/scripts/inspect_mcp.py
 
       - name: Diagnose MCP 2.x error semantics
-          working-directory: video-engine
-          run: |
-            python - <<'PY'
-            import asyncio
-            import json
-
-            import mcp
-            from mcp.server.mcpserver import CallToolResult
-            from mcp.server.mcpserver.exceptions import ToolError
-            from vedit import mcp_server as srv
-
-            async def main():
-                print("===== MCP ERROR SEMANTICS =====")
-                print("MCP version:", getattr(mcp, "__version__", "unknown"))
-                print("MCP module:", mcp.__file__)
-                print()
-
-                try:
-                    result = await srv.mcp.call_tool(
-                        "add_clip",
-                        {"media": "x"},
-                    )
-
-                    print("Result type:", type(result).__name__)
-                    print("Result:", result)
-                    print("is_error:", getattr(result, "is_error", None))
-                    print(
-                        "structured_content:",
-                        getattr(result, "structured_content", None),
-                    )
-
-                    content = getattr(result, "content", None) or []
-
-                    texts = [
-                        getattr(item, "text", None)
-                        for item in content
-                        if getattr(item, "text", None) is not None
-                    ]
-
-                    print(
-                        "content texts:",
-                        json.dumps(texts, ensure_ascii=False),
-                    )
-
-                    assert isinstance(result, CallToolResult)
-                    assert result.is_error is True
-                    assert texts
-                    assert "Error executing tool add_clip" in texts[0]
-
-                    print()
-                    print(
-                        "PASS: MCP 2.x representa o erro como "
-                        "CallToolResult(is_error=True)."
-                    )
-                    print(
-                        "PASS: a mensagem semântica do Vedit permanece "
-                        "disponível no resultado."
-                    )
-
-                except ToolError as exc:
-                    print("UNEXPECTED DIRECT ToolError:", repr(exc))
-                    raise
-
-            asyncio.run(main())
-            PY
+        working-directory: video-engine
+        run: |
+          python ../.github/scripts/diagnose_mcp.py
 
       - name: Run Vedit fast tests
-          working-directory: video-engine
-          run: |
-            pytest -q -m "not slow"
+        working-directory: video-engine
+        run: |
+          pytest -q -m "not slow"
 
       - name: Run Vedit slow tests
         if: ${{ inputs.run_slow_tests }}
