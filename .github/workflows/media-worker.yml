@@ -33,6 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           python -m pip install --upgrade "yt-dlp[default]"
+          python -m pip install -r requirements/media.txt
 
       - name: Verificar ambiente
         run: |
@@ -41,6 +42,61 @@ jobs:
           ffmpeg -version | head -1
           ffprobe -version | head -1
           yt-dlp --version
+          python - <<'PYTEST'
+          import scenedetect
+          from scenedetect import ContentDetector, detect
+
+          print("PySceneDetect:", scenedetect.__version__)
+          print("ContentDetector:", ContentDetector.__name__)
+          print("detect:", detect.__name__)
+          PYTEST
+
+      - name: Testar detecção real de cenas
+        run: |
+          set -euo pipefail
+
+          mkdir -p workspace/test
+
+          ffmpeg -y \
+            -f lavfi \
+            -i "color=c=black:s=320x240:r=30:d=2" \
+            -f lavfi \
+            -i "color=c=white:s=320x240:r=30:d=2" \
+            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p" \
+            -t 4 \
+            workspace/test/scene_test.mp4
+
+          python - <<'PYTEST'
+          from pathlib import Path
+
+          from scenedetect import ContentDetector, detect
+
+          source = Path("workspace/test/scene_test.mp4")
+
+          scenes = detect(
+              str(source),
+              ContentDetector(threshold=10.0),
+          )
+
+          print("===== PYSCENEDETECT REAL TEST =====")
+          print("Arquivo:", source)
+          print("Cenas detectadas:", len(scenes))
+
+          for index, (start, end) in enumerate(scenes, start=1):
+              print(
+                  f"Cena {index}: "
+                  f"{start.get_seconds():.3f}s -> "
+                  f"{end.get_seconds():.3f}s"
+              )
+
+          if len(scenes) < 2:
+              raise SystemExit(
+                  "ERRO: PySceneDetect não detectou os dois planos esperados."
+              )
+
+          print("RESULTADO: PASS")
+          print("PySceneDetect executou detecção real de cenas.")
+          PYTEST
 
       - name: Criar workspace de mídia
         run: |
