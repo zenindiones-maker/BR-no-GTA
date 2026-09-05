@@ -234,3 +234,124 @@ def test_media_generation_config_loader_allows_missing_environment(monkeypatch):
     assert config.api_key is None
     assert config.endpoint is None
     assert config.model is None
+
+
+def test_minimax_h3_request_mapper_preserves_br_request():
+    from app.services.media_generation.minimax_h3.mapper import (
+        MiniMaxH3RequestMapper,
+    )
+    from app.services.media_generation.minimax_h3.request import (
+        MiniMaxH3GenerationRequest,
+    )
+
+    request = MediaGenerationRequest(
+        prompt="GTA 6 cinematic night drive",
+        duration_seconds=8,
+        aspect_ratio="16:9",
+        reference_images=("frame-a.png",),
+        reference_videos=("reference.mp4",),
+        reference_audio=("voice.wav",),
+    )
+
+    mapped = MiniMaxH3RequestMapper().map(request)
+
+    assert mapped == MiniMaxH3GenerationRequest(
+        prompt="GTA 6 cinematic night drive",
+        duration_seconds=8,
+        aspect_ratio="16:9",
+        reference_images=("frame-a.png",),
+        reference_videos=("reference.mp4",),
+        reference_audio=("voice.wav",),
+    )
+
+
+def test_minimax_h3_validator_accepts_valid_request():
+    from app.services.media_generation.minimax_h3.request import (
+        MiniMaxH3GenerationRequest,
+    )
+    from app.services.media_generation.minimax_h3.validation import (
+        MiniMaxH3RequestValidator,
+    )
+
+    request = MiniMaxH3GenerationRequest(
+        prompt="GTA 6 cinematic night drive",
+        duration_seconds=8,
+        reference_images=("a.png", "b.png"),
+        reference_videos=("reference.mp4",),
+        reference_audio=("voice.wav",),
+    )
+
+    MiniMaxH3RequestValidator().validate(request)
+
+
+def test_minimax_h3_validator_rejects_too_many_images():
+    from app.services.media_generation.minimax_h3.request import (
+        MiniMaxH3GenerationRequest,
+    )
+    from app.services.media_generation.minimax_h3.validation import (
+        MiniMaxH3RequestValidationError,
+        MiniMaxH3RequestValidator,
+    )
+
+    request = MiniMaxH3GenerationRequest(
+        prompt="GTA 6 cinematic scene",
+        reference_images=tuple(f"image-{index}.png" for index in range(10)),
+    )
+
+    with pytest.raises(
+        MiniMaxH3RequestValidationError,
+        match="at most 9 reference images",
+    ):
+        MiniMaxH3RequestValidator().validate(request)
+
+
+def test_minimax_h3_validator_rejects_too_many_videos():
+    from app.services.media_generation.minimax_h3.request import (
+        MiniMaxH3GenerationRequest,
+    )
+    from app.services.media_generation.minimax_h3.validation import (
+        MiniMaxH3RequestValidationError,
+        MiniMaxH3RequestValidator,
+    )
+
+    request = MiniMaxH3GenerationRequest(
+        prompt="GTA 6 cinematic scene",
+        reference_videos=(
+            "a.mp4",
+            "b.mp4",
+            "c.mp4",
+            "d.mp4",
+        ),
+    )
+
+    with pytest.raises(
+        MiniMaxH3RequestValidationError,
+        match="at most 3 reference videos",
+    ):
+        MiniMaxH3RequestValidator().validate(request)
+
+
+def test_minimax_h3_validator_rejects_too_many_audio_clips():
+    from app.services.media_generation.minimax_h3.request import (
+        MiniMaxH3GenerationRequest,
+    )
+    from app.services.media_generation.minimax_h3.validation import (
+        MiniMaxH3RequestValidationError,
+        MiniMaxH3RequestValidator,
+    )
+
+    request = MiniMaxH3GenerationRequest(
+        prompt="GTA 6 cinematic scene",
+        reference_audio=(
+            "a.wav",
+            "b.wav",
+            "c.wav",
+            "d.wav",
+        ),
+    )
+
+    with pytest.raises(
+        MiniMaxH3RequestValidationError,
+        match="at most 3 reference audio clips",
+    ):
+        MiniMaxH3RequestValidator().validate(request)
