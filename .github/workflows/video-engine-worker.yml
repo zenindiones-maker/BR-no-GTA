@@ -68,25 +68,42 @@ jobs:
           from pathlib import Path
 
           p = Path("backend/vedit/story.py")
-          text = p.read_text()
+          lines = p.read_text().splitlines(keepends=True)
 
-          old = '''out.append(f"durata {total:.1f}s contro {target:.1f}s richiesti: "
-                     f"{'serve altro materiale' if total < target else 'si puo\\' stringere ancora'}")'''
+          matches = [
+              i
+              for i, line in enumerate(lines)
+              if 'out.append(f"durata {total:.1f}s contro {target:.1f}s richiesti: "' in line
+          ]
 
-          new = '''out.append(
-              f"durata {total:.1f}s contro {target:.1f}s richiesti: "
-              + ("serve altro materiale" if total < target else "si puo' stringere ancora")
-          )'''
-
-          if text.count(old) != 1:
+          if len(matches) != 1:
               raise SystemExit(
-                  f"Expected exactly one Vedit timing expression, found {text.count(old)}."
+                  f"Expected exactly one Vedit timing line, found {len(matches)}."
               )
 
-          p.write_text(text.replace(old, new, 1))
+          i = matches[0]
+
+          if i + 1 >= len(lines):
+              raise SystemExit("ERRO: continuação da expressão Vedit não encontrada.")
+
+          if "si puo\\' stringere ancora" not in lines[i + 1]:
+              raise SystemExit(
+                  "ERRO: continuação da expressão Vedit não corresponde ao código esperado."
+              )
+
+          indent = lines[i].split("out.append", 1)[0]
+
+          lines[i:i + 2] = [
+              f"{indent}out.append(\\n",
+              f'{indent}    f"durata {{total:.1f}}s contro {{target:.1f}}s richiesti: "\\n',
+              f'{indent}    + ("serve altro materiale" if total < target else "si puo\' stringere ancora")\\n',
+              f"{indent})\\n",
+          ]
+
+          p.write_text("".join(lines))
 
           print("===== VEDIT PATCH =====")
-          print(new)
+          print("Python 3.11 syntax compatibility patch applied.")
           print("===== END VEDIT PATCH =====")
           PY
 
