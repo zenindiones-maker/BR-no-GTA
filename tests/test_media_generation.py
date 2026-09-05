@@ -119,3 +119,40 @@ def test_media_generation_public_api_exports_provider_config():
 
     assert config.provider == "minimax-h3"
     assert config.model == "H3"
+
+
+def test_media_generation_config_loader_reads_provider_environment(monkeypatch):
+    from app.services.media_generation.config_loader import (
+        load_media_generation_provider_config,
+    )
+
+    monkeypatch.setenv("MINIMAX_H3_API_KEY", "test-key")
+    monkeypatch.setenv(
+        "MINIMAX_H3_ENDPOINT",
+        "https://example.invalid/v1",
+    )
+    monkeypatch.setenv("MINIMAX_H3_MODEL", "H3")
+
+    config = load_media_generation_provider_config("minimax-h3")
+
+    assert config.provider == "minimax-h3"
+    assert config.api_key == "test-key"
+    assert config.endpoint == "https://example.invalid/v1"
+    assert config.model == "H3"
+
+
+def test_media_generation_config_loader_allows_missing_environment(monkeypatch):
+    from app.services.media_generation.config_loader import (
+        load_media_generation_provider_config,
+    )
+
+    monkeypatch.delenv("MINIMAX_H3_API_KEY", raising=False)
+    monkeypatch.delenv("MINIMAX_H3_ENDPOINT", raising=False)
+    monkeypatch.delenv("MINIMAX_H3_MODEL", raising=False)
+
+    config = load_media_generation_provider_config("minimax-h3")
+
+    assert config.provider == "minimax-h3"
+    assert config.api_key is None
+    assert config.endpoint is None
+    assert config.model is None
