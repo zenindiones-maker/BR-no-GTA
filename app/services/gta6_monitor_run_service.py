@@ -26,6 +26,12 @@ from app.services.gta6_ingestion import (
 from app.services.gta6_monitor_event_service import (
     record_gta6_monitor_change,
 )
+from app.services.gta6_monitor_execution_context import (
+    GTA6MonitorExecutionContext,
+)
+from app.services.gta6_monitor_execution_error import (
+    GTA6MonitorExecutionError,
+)
 from app.services.gta6_monitor_run_lifecycle_service import (
     complete_gta6_monitor_run,
     fail_gta6_monitor_run,
@@ -58,6 +64,10 @@ def run_gta6_monitor_once(
     )
 
     run_id = run["id"]
+    execution_context = GTA6MonitorExecutionContext.create(
+        job_id="gta6-monitor",
+        run_id=run_id,
+    )
     status_code: int | None = None
 
     try:
@@ -173,4 +183,7 @@ def run_gta6_monitor_once(
             error=str(exc),
             status_code=status_code,
         )
-        raise
+        raise GTA6MonitorExecutionError(
+            context=execution_context,
+            cause=exc,
+        ) from exc
