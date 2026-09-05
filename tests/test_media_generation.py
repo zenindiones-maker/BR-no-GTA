@@ -60,7 +60,7 @@ def test_minimax_h3_provider_name():
     assert provider.config == config
 
 
-def test_minimax_h3_provider_is_not_configured():
+def test_minimax_h3_provider_submit_is_not_configured():
     config = MediaGenerationProviderConfig(
         provider="minimax-h3",
         model="H3",
@@ -72,9 +72,37 @@ def test_minimax_h3_provider_is_not_configured():
 
     with pytest.raises(
         MediaGenerationError,
-        match="not configured for generation yet",
+        match="not configured for submission yet",
     ):
-        provider.generate(request)
+        provider.submit(request)
+
+
+def test_minimax_h3_provider_get_status_is_not_configured():
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+    provider = MiniMaxH3Provider(config)
+
+    with pytest.raises(
+        MediaGenerationError,
+        match="not configured for status queries yet",
+    ):
+        provider.get_status("remote-task-123")
+
+
+def test_minimax_h3_provider_get_result_is_not_configured():
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+    provider = MiniMaxH3Provider(config)
+
+    with pytest.raises(
+        MediaGenerationError,
+        match="not configured for result retrieval yet",
+    ):
+        provider.get_result("remote-task-123")
 
 def test_media_generation_task_represents_async_lifecycle():
     task = MediaGenerationTask(
