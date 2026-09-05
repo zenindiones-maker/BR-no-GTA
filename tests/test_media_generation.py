@@ -556,3 +556,62 @@ def test_minimax_h3_provider_maps_failed_response():
     assert result.status == MediaGenerationStatus.FAILED
     assert result.remote_id == "task-456"
     assert result.output_path is None
+
+
+def test_minimax_h3_provider_completes_offline_submission_flow():
+    from app.services.media_generation.config import (
+        MediaGenerationProviderConfig,
+    )
+    from app.services.media_generation.minimax_h3.fake_client import (
+        FakeMiniMaxH3Client,
+    )
+    from app.services.media_generation.minimax_h3.provider import (
+        MiniMaxH3Provider,
+    )
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.models import (
+        MediaGenerationRequest,
+        MediaGenerationStatus,
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="fake-task-001",
+        status="completed",
+        output_path="/tmp/fake-generated.mp4",
+    )
+
+    client = FakeMiniMaxH3Client(response)
+
+    provider = MiniMaxH3Provider(
+        MediaGenerationProviderConfig(
+            provider="minimax-h3",
+        ),
+        client=client,
+    )
+
+    request = MediaGenerationRequest(
+        prompt="A cinematic GTA 6 inspired city at night",
+        duration_seconds=8,
+        aspect_ratio="16:9",
+    )
+
+    task = provider.submit(request)
+
+    assert task.provider == "minimax-h3"
+    assert task.status == MediaGenerationStatus.COMPLETED
+    assert task.remote_id == "fake-task-001"
+    assert task.output_path == "/tmp/fake-generated.mp4"
+
+    assert client.last_request is not None
+    assert client.last_request.prompt == request.prompt
+    assert client.last_request.duration_seconds == 8
+    assert client.last_request.aspect_ratio == "16:9"
+
+    result = provider.get_result(task.remote_id)
+
+    assert result.provider == "minimax-h3"
+    assert result.status == MediaGenerationStatus.COMPLETED
+    assert result.remote_id == "fake-task-001"
+    assert result.output_path == "/tmp/fake-generated.mp4"
