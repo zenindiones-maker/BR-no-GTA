@@ -8,6 +8,9 @@ from app.services.media_analysis.ffprobe_analyzer import (
 from app.services.media_analysis.models import (
     MediaKnowledge,
 )
+from app.services.media_analysis.scene_analyzer import (
+    detect_scenes,
+)
 
 
 class MediaAnalysisError(RuntimeError):
@@ -34,13 +37,17 @@ def analyze_media(
 
     probe = probe_media(path)
 
+    scenes = detect_scenes(path)
+
     return MediaKnowledge(
         source_path=str(path),
         probe=probe,
+        scenes=scenes,
         metadata={
-            "analysis_version": "1",
+            "analysis_version": "2",
             "probe_available": True,
-            "scenes_available": False,
+            "scenes_available": True,
+            "scene_count": len(scenes),
             "transcript_available": False,
             "audio_analysis_available": False,
             "beats_available": False,

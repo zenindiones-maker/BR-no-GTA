@@ -27,3 +27,13 @@ __all__ = [
     "MediaAnalysisError",
     "analyze_media",
 ]
+
+from app.services.media_analysis.scene_analyzer import (
+    SceneAnalysisError,
+    detect_scenes,
+)
+
+__all__ += [
+    "SceneAnalysisError",
+    "detect_scenes",
+]

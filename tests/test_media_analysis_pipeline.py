@@ -29,6 +29,10 @@ def test_pipeline_uses_ffprobe_result(monkeypatch, tmp_path):
         "app.services.media_analysis.pipeline.probe_media",
         lambda _: FakeProbe(),
     )
+    monkeypatch.setattr(
+        "app.services.media_analysis.pipeline.detect_scenes",
+        lambda _: (),
+    )
 
     result = analyze_media(source)
 
@@ -36,4 +40,5 @@ def test_pipeline_uses_ffprobe_result(monkeypatch, tmp_path):
     assert result.probe is not None
     assert result.probe.duration_seconds == 12.5
     assert result.metadata["probe_available"] is True
-    assert result.metadata["scenes_available"] is False
+    assert result.metadata["scenes_available"] is True
+    assert result.metadata["scene_count"] == 0
