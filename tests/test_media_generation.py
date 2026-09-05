@@ -410,3 +410,81 @@ def test_minimax_h3_provider_valid_request_reaches_submission_boundary():
         match="not configured for submission yet",
     ):
         provider.submit(request)
+
+
+def test_minimax_h3_response_mapper_maps_completed_result():
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.minimax_h3.response_mapper import (
+        MiniMaxH3ResponseMapper,
+    )
+    from app.services.media_generation.models import (
+        GeneratedMedia,
+        MediaGenerationStatus,
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="task-123",
+        status="completed",
+        output_path="/tmp/generated.mp4",
+    )
+
+    mapped = MiniMaxH3ResponseMapper().map_result(response)
+
+    assert mapped == GeneratedMedia(
+        provider="minimax-h3",
+        status=MediaGenerationStatus.COMPLETED,
+        output_path="/tmp/generated.mp4",
+        remote_id="task-123",
+        metadata={},
+    )
+
+
+def test_minimax_h3_response_mapper_maps_failed_result():
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.minimax_h3.response_mapper import (
+        MiniMaxH3ResponseMapper,
+    )
+    from app.services.media_generation.models import (
+        GeneratedMedia,
+        MediaGenerationStatus,
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="task-456",
+        status="failed",
+        error="generation failed",
+    )
+
+    mapped = MiniMaxH3ResponseMapper().map_result(response)
+
+    assert mapped == GeneratedMedia(
+        provider="minimax-h3",
+        status=MediaGenerationStatus.FAILED,
+        output_path=None,
+        remote_id="task-456",
+        metadata={},
+    )
+
+
+def test_minimax_h3_response_mapper_rejects_unknown_status():
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.minimax_h3.response_mapper import (
+        MiniMaxH3ResponseMapper,
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="task-789",
+        status="something-unknown",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unsupported MiniMax H3 status",
+    ):
+        MiniMaxH3ResponseMapper().map_result(response)
