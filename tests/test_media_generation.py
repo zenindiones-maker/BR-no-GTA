@@ -4,6 +4,8 @@ from app.services.media_generation import (
     GeneratedMedia,
     MediaGenerationError,
     MediaGenerationStatus,
+    MediaGenerationTask,
+    MediaGenerationTask,
     MediaGenerationProviderConfig,
     MediaGenerationRequest,
     MediaGenerationService,
@@ -73,6 +75,34 @@ def test_minimax_h3_provider_is_not_configured():
         match="not configured for generation yet",
     ):
         provider.generate(request)
+
+def test_media_generation_task_represents_async_lifecycle():
+    task = MediaGenerationTask(
+        provider="minimax-h3",
+        status=MediaGenerationStatus.QUEUED,
+        remote_id="task-123",
+    )
+
+    assert task.provider == "minimax-h3"
+    assert task.status is MediaGenerationStatus.QUEUED
+    assert task.remote_id == "task-123"
+    assert task.output_path is None
+    assert task.error is None
+
+
+def test_media_generation_task_represents_async_lifecycle():
+    task = MediaGenerationTask(
+        provider="minimax-h3",
+        status=MediaGenerationStatus.QUEUED,
+        remote_id="task-123",
+    )
+
+    assert task.provider == "minimax-h3"
+    assert task.status is MediaGenerationStatus.QUEUED
+    assert task.remote_id == "task-123"
+    assert task.output_path is None
+    assert task.error is None
+
 
 def test_generated_media_uses_explicit_generation_status():
     media = GeneratedMedia(

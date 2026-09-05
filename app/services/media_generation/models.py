@@ -36,6 +36,18 @@ class MediaGenerationStatus(StrEnum):
 
 
 @dataclass(frozen=True)
+class MediaGenerationTask:
+    """Represents the lifecycle of an asynchronous media generation task."""
+
+    provider: str
+    status: MediaGenerationStatus
+    remote_id: str | None = None
+    output_path: str | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class GeneratedMedia:
     """Represents the result of a media generation request."""
 
