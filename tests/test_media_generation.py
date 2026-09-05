@@ -112,14 +112,33 @@ def test_generation_service_exposes_provider_name():
     assert service.provider_name == "minimax-h3"
 
 
-def test_generation_service_delegates_to_provider():
+def test_generation_service_delegates_submission_to_provider():
     class FakeProvider:
         @property
         def name(self) -> str:
             return "fake"
 
-        def generate(self, request):
-            return "generated"
+        def submit(self, request):
+            return MediaGenerationTask(
+                provider=self.name,
+                status=MediaGenerationStatus.QUEUED,
+                remote_id="task-123",
+            )
+
+        def get_status(self, remote_id):
+            return MediaGenerationTask(
+                provider=self.name,
+                status=MediaGenerationStatus.PROCESSING,
+                remote_id=remote_id,
+            )
+
+        def get_result(self, remote_id):
+            return GeneratedMedia(
+                provider=self.name,
+                status=MediaGenerationStatus.COMPLETED,
+                remote_id=remote_id,
+                output_path="/tmp/generated.mp4",
+            )
 
     service = MediaGenerationService(FakeProvider())
 
@@ -127,7 +146,11 @@ def test_generation_service_delegates_to_provider():
         prompt="test generation",
     )
 
-    assert service.generate(request) == "generated"
+    task = service.submit(request)
+
+    assert task.provider == "fake"
+    assert task.status is MediaGenerationStatus.QUEUED
+    assert task.remote_id == "task-123"
 
 
 def test_media_generation_public_api_exports_expected_symbols():
