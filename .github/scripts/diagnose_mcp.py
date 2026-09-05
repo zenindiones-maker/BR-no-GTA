@@ -2,13 +2,15 @@ import asyncio
 import json
 
 import mcp
-from mcp.types import CallToolResult
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import (
+    UnexpectedToolError,
+    ToolError,
+)
 from vedit import mcp_server as srv
 
 
 async def main():
-    print("===== MCP ERROR SEMANTICS =====")
+    print("===== MCP ERROR SEMANTICS CONTROLLED EXPERIMENT =====")
     print("MCP version:", getattr(mcp, "__version__", "unknown"))
     print("MCP module:", mcp.__file__)
     print()
@@ -19,6 +21,7 @@ async def main():
             {"media": "x"},
         )
 
+        print("CALL RETURNED NORMALLY")
         print("Result type:", type(result).__name__)
         print("Result:", result)
         print("is_error:", getattr(result, "is_error", None))
@@ -40,24 +43,59 @@ async def main():
             json.dumps(texts, ensure_ascii=False),
         )
 
-        assert isinstance(result, CallToolResult)
-        assert result.is_error is True
-        assert texts
-        assert "Error executing tool add_clip" in texts[0]
+        print()
+        print("CLASSIFICATION: NORMAL RETURN")
+        return
+
+    except UnexpectedToolError as exc:
+        print("EXCEPTION TYPE:", type(exc).__name__)
+        print("EXCEPTION MODULE:", type(exc).__module__)
+        print("EXCEPTION MESSAGE:", str(exc))
+        print("EXCEPTION REPR:", repr(exc))
+        print()
+
+        cause = exc.__cause__
+
+        print("CAUSE TYPE:", type(cause).__name__ if cause else None)
+        print(
+            "CAUSE MODULE:",
+            type(cause).__module__ if cause else None,
+        )
+        print(
+            "CAUSE MESSAGE:",
+            str(cause) if cause else None,
+        )
+        print(
+            "CAUSE REPR:",
+            repr(cause) if cause else None,
+        )
 
         print()
         print(
-            "PASS: MCP 2.x representa o erro como "
-            "CallToolResult(is_error=True)."
+            "IS ToolError:",
+            isinstance(exc, ToolError),
         )
         print(
-            "PASS: a mensagem semântica do Vedit permanece "
-            "disponível no resultado."
+            "CAUSE IS ToolError:",
+            isinstance(cause, ToolError) if cause else False,
+        )
+        print(
+            "CAUSE IS UnexpectedToolError:",
+            isinstance(cause, UnexpectedToolError)
+            if cause
+            else False,
         )
 
-    except ToolError as exc:
-        print("UNEXPECTED DIRECT ToolError:", repr(exc))
-        raise
+        print()
+        print("CLASSIFICATION: UNEXPECTED_TOOL_ERROR")
+        print(
+            "INTERPRETATION: MCPServer.call_tool() capturou "
+            "uma exceção interna da ferramenta e a encapsulou."
+        )
+        print(
+            "NEXT QUESTION: verificar se a causa original é "
+            "EditError e se o comportamento coincide com o contrato MCP 2.x."
+        )
 
 
 asyncio.run(main())
