@@ -12,6 +12,11 @@ on:
         required: false
         default: "gta6-source"
         type: string
+      test_only:
+        description: "Executar somente os testes das engines de mídia"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   media-worker:
@@ -99,12 +104,14 @@ jobs:
           PYTEST
 
       - name: Criar workspace de mídia
+        if: ${{ !inputs.test_only }}
         run: |
           mkdir -p workspace/input
           mkdir -p workspace/analysis
           mkdir -p workspace/output
 
       - name: Baixar fonte de vídeo
+        if: ${{ !inputs.test_only }}
         env:
           SOURCE_URL: ${{ inputs.source_url }}
           SOURCE_NAME: ${{ inputs.source_name }}
@@ -159,6 +166,7 @@ jobs:
           ls -lh "$OUTPUT"
 
       - name: Analisar mídia com ffprobe
+        if: ${{ !inputs.test_only }}
         env:
           SOURCE_NAME: ${{ inputs.source_name }}
         run: |
@@ -186,6 +194,7 @@ jobs:
 
 
       - name: Validar análise
+        if: ${{ !inputs.test_only }}
         run: |
           test -s workspace/analysis/media_probe.json
 
@@ -227,6 +236,7 @@ jobs:
           PY
 
       - name: Publicar análise
+        if: ${{ !inputs.test_only }}
         uses: actions/upload-artifact@v4
         with:
           name: media-analysis-${{ github.run_id }}
@@ -234,6 +244,7 @@ jobs:
           retention-days: 7
 
       - name: Resumo do worker
+        if: ${{ !inputs.test_only }}
         run: |
           printf '\n===== MEDIA WORKER =====\n'
           printf 'Fonte: %s\n' "${{ inputs.source_name }}"
