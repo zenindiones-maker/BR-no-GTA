@@ -74,6 +74,13 @@ jobs:
           python ../.github/scripts/patch_vedit_mcp_errors.py
           python -m py_compile backend/vedit/mcp_server.py
 
+      - name: Patch Vedit effect validation errors
+        working-directory: video-engine
+        run: |
+          set -euo pipefail
+          python ../.github/scripts/patch_vedit_effect_validation.py
+          python -m py_compile backend/vedit/store.py
+
       - name: Inspect Vedit MCP SDK behavior
         working-directory: video-engine
         run: |
