@@ -1,55 +1,62 @@
-from dataclasses import dataclass
-
 from app.services.fake_youtube_publisher import FakeYouTubePublisher
-from app.services.youtube_publisher import PublishResult
+from app.services.youtube_publisher import (
+    YouTubeUploadResult,
+    YouTubeVisibilityResult,
+)
 
 
-@dataclass
-class FakePublication:
-    id: int = 123
-
-
-def test_fake_youtube_publisher_implements_publish():
-    publisher = FakeYouTubePublisher()
-
-    assert callable(publisher.publish)
-
-
-def test_fake_youtube_publisher_returns_success():
-    publication = FakePublication()
+def test_fake_upload_success() -> None:
     publisher = FakeYouTubePublisher(
-        youtube_video_id="fake-123",
-        youtube_url="https://youtube.com/watch?v=fake-123",
+        upload_video_id="abc123",
+        upload_url="https://youtube.com/watch?v=abc123",
     )
 
-    result = publisher.publish(publication)
+    publication = {"id": 10}
 
-    assert isinstance(result, PublishResult)
+    result = publisher.upload(publication)
+
+    assert isinstance(result, YouTubeUploadResult)
     assert result.success is True
-    assert result.youtube_video_id == "fake-123"
-    assert result.youtube_url == "https://youtube.com/watch?v=fake-123"
+    assert result.youtube_video_id == "abc123"
+    assert result.youtube_url == "https://youtube.com/watch?v=abc123"
     assert result.error is None
+    assert publisher.uploaded_publication == publication
+    assert publisher.uploaded_publications == [publication]
 
 
-def test_fake_youtube_publisher_receives_publication():
-    publication = FakePublication()
-    publisher = FakeYouTubePublisher()
-
-    publisher.publish(publication)
-
-    assert publisher.published_publication is publication
-
-
-def test_fake_youtube_publisher_returns_failure():
-    publication = FakePublication()
+def test_fake_upload_failure() -> None:
     publisher = FakeYouTubePublisher(
-        error="simulated upload failure",
+        upload_success=False,
+        upload_error="erro de upload",
     )
 
-    result = publisher.publish(publication)
+    result = publisher.upload({"id": 20})
 
-    assert isinstance(result, PublishResult)
+    assert isinstance(result, YouTubeUploadResult)
     assert result.success is False
-    assert result.youtube_video_id is None
-    assert result.youtube_url is None
-    assert result.error == "simulated upload failure"
+    assert result.error == "erro de upload"
+
+
+def test_fake_make_public_success() -> None:
+    publisher = FakeYouTubePublisher()
+
+    result = publisher.make_public("abc123")
+
+    assert isinstance(result, YouTubeVisibilityResult)
+    assert result.success is True
+    assert result.error is None
+    assert publisher.made_public_video_ids == ["abc123"]
+
+
+def test_fake_make_public_failure() -> None:
+    publisher = FakeYouTubePublisher(
+        visibility_success=False,
+        visibility_error="erro de visibilidade",
+    )
+
+    result = publisher.make_public("abc123")
+
+    assert isinstance(result, YouTubeVisibilityResult)
+    assert result.success is False
+    assert result.error == "erro de visibilidade"
+    assert publisher.made_public_video_ids == []

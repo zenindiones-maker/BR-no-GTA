@@ -7,6 +7,7 @@ from app.database.video_repository import insert_video
 from app.database.youtube_repository import (
     get_youtube_publication,
     insert_youtube_publication,
+    mark_youtube_uploaded,
 )
 from app.services.youtube_publication_service import (
     mark_youtube_publication_failed,
@@ -43,8 +44,20 @@ def _create_publication():
     )
 
 
+def _mark_uploaded(publication_id):
+    updated = mark_youtube_uploaded(
+        publication_id,
+        "youtube123",
+        "https://youtube.com/watch?v=youtube123",
+    )
+
+    assert updated is True
+
+
+
 def test_service_marks_publication_as_published():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     publication = mark_youtube_publication_published(
         publication_id,
@@ -80,6 +93,7 @@ def test_service_marks_publication_as_failed():
 
 def test_published_publication_cannot_be_published_again():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     mark_youtube_publication_published(
         publication_id,
@@ -97,6 +111,7 @@ def test_published_publication_cannot_be_published_again():
 
 def test_published_publication_cannot_be_failed():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     mark_youtube_publication_published(
         publication_id,
@@ -144,6 +159,7 @@ def test_failed_publication_cannot_be_failed_again():
 
 def test_published_requires_video_id():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     with pytest.raises(ValueError):
         mark_youtube_publication_published(
@@ -155,6 +171,7 @@ def test_published_requires_video_id():
 
 def test_published_requires_url():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     with pytest.raises(ValueError):
         mark_youtube_publication_published(
@@ -191,6 +208,7 @@ def test_nonexistent_publication_raises_runtime_error():
 
 def test_service_persists_published_state():
     publication_id = _create_publication()
+    _mark_uploaded(publication_id)
 
     mark_youtube_publication_published(
         publication_id,

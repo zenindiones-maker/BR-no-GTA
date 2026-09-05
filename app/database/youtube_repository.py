@@ -349,6 +349,43 @@ def mark_youtube_uploaded(
         connection.close()
 
 
+def mark_youtube_visibility_failed(
+    publication_id: int,
+    error: str,
+) -> bool:
+    """Registra falha ao tornar público um vídeo já enviado."""
+
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError("publication_id must be a positive integer.")
+
+    if not isinstance(error, str) or not error.strip():
+        raise ValueError("error is required.")
+
+    connection = get_connection()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE youtube_publications
+            SET
+                status = 'uploaded',
+                error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'uploaded'
+            """,
+            (
+                error.strip(),
+                publication_id,
+            ),
+        )
+
+        connection.commit()
+        return cursor.rowcount == 1
+
+    finally:
+        connection.close()
+
 def mark_youtube_published(
     publication_id: int,
     youtube_video_id: str,

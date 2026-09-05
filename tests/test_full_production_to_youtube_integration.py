@@ -11,11 +11,16 @@ from app.services.production_plan_service import create_production_plan
 from app.services.render_orchestration_service import execute_render_job
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
-from app.services.video_execution_service import create_video_execution_spec
-from app.services.video_render_service import create_video_and_enqueue_render
+from app.services.video_execution_service import (
+    create_video_execution_spec,
+)
+from app.services.video_render_service import (
+    create_video_and_enqueue_render,
+)
 from app.services.video_service import create_video_spec
 from app.services.youtube_publication_orchestration import (
-    publish_youtube_publication,
+    make_youtube_publication_public,
+    upload_youtube_publication,
 )
 from app.services.youtube_service import (
     create_youtube_publish_spec,
@@ -59,19 +64,30 @@ def test_full_production_to_youtube_pipeline():
     # 5. CONTENT ITEM -> PRODUCTION PLAN
     production_plan = create_production_plan(content_item)
 
-    assert production_plan["content_item_id"] == content_item["id"]
+    assert (
+        production_plan["content_item_id"]
+        == content_item["id"]
+    )
     assert production_plan["scenes"]
 
     # 6. PRODUCTION PLAN -> VIDEO SPEC
     video_spec = create_video_spec(production_plan)
 
-    assert video_spec["content_item_id"] == content_item["id"]
+    assert (
+        video_spec["content_item_id"]
+        == content_item["id"]
+    )
     assert video_spec["scenes"]
 
     # 7. VIDEO SPEC -> VIDEO EXECUTION SPEC
-    video_execution_spec = create_video_execution_spec(video_spec)
+    video_execution_spec = create_video_execution_spec(
+        video_spec
+    )
 
-    assert video_execution_spec["content_item_id"] == content_item["id"]
+    assert (
+        video_execution_spec["content_item_id"]
+        == content_item["id"]
+    )
     assert video_execution_spec["status"] == "ready"
     assert video_execution_spec["scenes"]
     assert video_execution_spec["render"]
@@ -83,19 +99,27 @@ def test_full_production_to_youtube_pipeline():
     render_job = composed["render_job"]
 
     assert video["id"] > 0
-    assert video["content_item_id"] == content_item["id"]
+    assert (
+        video["content_item_id"]
+        == content_item["id"]
+    )
     assert video["status"] == "draft"
     assert video["file_path"] is None
 
     assert render_job["id"] > 0
     assert render_job["video_id"] == video["id"]
-    assert render_job["content_item_id"] == content_item["id"]
+    assert (
+        render_job["content_item_id"]
+        == content_item["id"]
+    )
     assert render_job["status"] == "queued"
 
     # 9. RENDER JOB -> VIDEO READY
     executor = FakeRenderExecutor(
         success=True,
-        output_path="output/full_production_to_youtube.mp4",
+        output_path=(
+            "output/full_production_to_youtube.mp4"
+        ),
     )
 
     render_result = execute_render_job(
@@ -110,12 +134,17 @@ def test_full_production_to_youtube_pipeline():
     )
     assert render_result.error is None
 
-    persisted_render_job = get_render_job(render_job["id"])
+    persisted_render_job = get_render_job(
+        render_job["id"]
+    )
 
     assert persisted_render_job is not None
     assert persisted_render_job["status"] == "completed"
     assert persisted_render_job["attempt"] == 1
-    assert persisted_render_job["video_id"] == video["id"]
+    assert (
+        persisted_render_job["video_id"]
+        == video["id"]
+    )
     assert (
         persisted_render_job["output_path"]
         == "output/full_production_to_youtube.mp4"
@@ -136,52 +165,95 @@ def test_full_production_to_youtube_pipeline():
         persisted_video,
     )
 
-    assert publish_spec["video_id"] == persisted_video["id"]
+    assert (
+        publish_spec["video_id"]
+        == persisted_video["id"]
+    )
     assert (
         publish_spec["content_item_id"]
         == persisted_video["content_item_id"]
     )
-    assert publish_spec["title"] == persisted_video["title"]
+    assert (
+        publish_spec["title"]
+        == persisted_video["title"]
+    )
     assert (
         publish_spec["file_path"]
         == "output/full_production_to_youtube.mp4"
     )
 
-    # 11. YOUTUBE PUBLISH SPEC -> PENDING PUBLICATION
+    # 11. YOUTUBE PUBLISH SPEC -> PENDING
     publication = create_youtube_publication(
         publish_spec,
     )
 
     assert publication["id"] > 0
-    assert publication["video_id"] == persisted_video["id"]
+    assert (
+        publication["video_id"]
+        == persisted_video["id"]
+    )
     assert publication["status"] == "pending"
 
-    persisted_publication = get_youtube_publication_by_video_id(
-        persisted_video["id"]
+    persisted_publication = (
+        get_youtube_publication_by_video_id(
+            persisted_video["id"]
+        )
     )
 
     assert persisted_publication is not None
-    assert persisted_publication["id"] == publication["id"]
+    assert (
+        persisted_publication["id"]
+        == publication["id"]
+    )
     assert persisted_publication["status"] == "pending"
     assert (
         persisted_publication["file_path"]
         == "output/full_production_to_youtube.mp4"
     )
 
-    # 12. PENDING -> PUBLISHED
+    # 12. PENDING -> UPLOADED
     publisher = FakeYouTubePublisher(
-        success=True,
-        youtube_video_id="full-integration-video-id",
-        youtube_url="https://www.youtube.com/watch?v=full-integration-video-id",
+        upload_video_id="full-integration-video-id",
+        upload_url=(
+            "https://www.youtube.com/watch?v="
+            "full-integration-video-id"
+        ),
     )
 
-    published = publish_youtube_publication(
+    uploaded = upload_youtube_publication(
+        publication["id"],
+        publisher,
+    )
+
+    assert uploaded["id"] == publication["id"]
+    assert (
+        uploaded["video_id"]
+        == persisted_video["id"]
+    )
+    assert uploaded["status"] == "uploaded"
+    assert (
+        uploaded["youtube_video_id"]
+        == "full-integration-video-id"
+    )
+    assert (
+        uploaded["youtube_url"]
+        == (
+            "https://www.youtube.com/watch?v="
+            "full-integration-video-id"
+        )
+    )
+
+    # 13. UPLOADED -> PUBLISHED
+    published = make_youtube_publication_public(
         publication["id"],
         publisher,
     )
 
     assert published["id"] == publication["id"]
-    assert published["video_id"] == persisted_video["id"]
+    assert (
+        published["video_id"]
+        == persisted_video["id"]
+    )
     assert published["status"] == "published"
     assert (
         published["youtube_video_id"]
@@ -195,7 +267,7 @@ def test_full_production_to_youtube_pipeline():
         )
     )
 
-    # 13. PUBLICAÇÃO PERSISTIDA
+    # 14. PUBLICAÇÃO PERSISTIDA
     persisted_after_publish = (
         get_youtube_publication_by_video_id(
             persisted_video["id"]
@@ -203,7 +275,10 @@ def test_full_production_to_youtube_pipeline():
     )
 
     assert persisted_after_publish is not None
-    assert persisted_after_publish["status"] == "published"
+    assert (
+        persisted_after_publish["status"]
+        == "published"
+    )
     assert (
         persisted_after_publish["youtube_video_id"]
         == "full-integration-video-id"
@@ -216,7 +291,12 @@ def test_full_production_to_youtube_pipeline():
         )
     )
 
-    # 14. O Publisher recebeu exatamente a publicação
-    assert publisher.published_publications == [
+    # 15. O Publisher recebeu exatamente o upload
+    assert publisher.uploaded_publications == [
         persisted_publication
+    ]
+
+    # 16. A operação de visibilidade recebeu o ID remoto
+    assert publisher.made_public_video_ids == [
+        "full-integration-video-id"
     ]

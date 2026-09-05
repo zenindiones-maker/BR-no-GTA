@@ -2,8 +2,8 @@ from typing import Any, Callable
 
 from app.database.youtube_repository import (
     get_next_pending_youtube_publication,
+    get_youtube_publication,
 )
-
 from app.services.google_youtube_configuration import (
     get_youtube_client_secrets_file,
     get_youtube_token_file,
@@ -12,44 +12,18 @@ from app.services.google_youtube_publisher_factory import (
     create_google_youtube_publisher,
 )
 from app.services.youtube_publication_orchestration import (
-    publish_youtube_publication,
+    make_youtube_publication_public,
+    upload_youtube_publication,
 )
 
 
-def publish_youtube_publication_with_google(
+def _create_google_publisher(
     *,
-    publication_id: int,
     token_file: str | None = None,
     client_secrets_file: str | None = None,
     authorization_runner: Callable[[Any], Any] | None = None,
     request: Any | None = None,
-) -> dict[str, Any]:
-    """
-    Publica uma YouTube Publication usando o Publisher real do Google.
-
-    Os caminhos OAuth são resolvidos pela configuração canônica
-    quando não forem fornecidos explicitamente.
-
-    Responsabilidades:
-    1. Validar a identificação da publicação.
-    2. Resolver a configuração Google/YouTube.
-    3. Compor o GoogleYouTubePublisher através da Factory.
-    4. Entregar o Publisher para a orquestração.
-    5. Retornar o resultado da orquestração.
-
-    Esta função não:
-    - implementa OAuth;
-    - abre navegador;
-    - carrega Credentials diretamente;
-    - constrói o cliente Google diretamente;
-    - executa upload diretamente;
-    - acessa SQLite;
-    - altera o estado da publicação diretamente.
-    """
-
-    if publication_id is None:
-        raise ValueError("publication_id is required")
-
+) -> Any:
     resolved_token_file = (
         token_file
         if token_file is not None
@@ -74,18 +48,91 @@ def publish_youtube_publication_with_google(
     ):
         raise ValueError("client_secrets_file is required")
 
-    publisher = create_google_youtube_publisher(
+    return create_google_youtube_publisher(
         token_file=resolved_token_file,
         client_secrets_file=resolved_client_secrets_file,
         authorization_runner=authorization_runner,
         request=request,
     )
 
-    return publish_youtube_publication(
-        publication_id,
-        publisher,
+
+def upload_youtube_publication_with_google(
+    *,
+    publication_id: int,
+    token_file: str | None = None,
+    client_secrets_file: str | None = None,
+    authorization_runner: Callable[[Any], Any] | None = None,
+    request: Any | None = None,
+) -> dict[str, Any]:
+    """
+    Faz upload de uma YouTube Publication usando o Publisher real do Google.
+
+    O vídeo é enviado ao YouTube como privado.
+
+    Esta função não torna o vídeo público.
+    """
+
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError(
+            "publication_id must be a positive integer"
+        )
+
+    publisher = _create_google_publisher(
+        token_file=token_file,
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+        request=request,
     )
 
+    return upload_youtube_publication(
+        publication_id=publication_id,
+        publisher=publisher,
+    )
+
+
+def make_youtube_publication_public_with_google(
+    *,
+    publication_id: int,
+    token_file: str | None = None,
+    client_secrets_file: str | None = None,
+    authorization_runner: Callable[[Any], Any] | None = None,
+    request: Any | None = None,
+) -> dict[str, Any]:
+    """
+    Torna público um vídeo previamente enviado ao YouTube.
+
+    Esta operação exige que a publicação esteja em estado ``uploaded``.
+    """
+
+    if not isinstance(publication_id, int) or publication_id <= 0:
+        raise ValueError(
+            "publication_id must be a positive integer"
+        )
+
+    publication = get_youtube_publication(publication_id)
+
+    if publication is None:
+        raise ValueError(
+            f"YouTube publication not found: {publication_id}"
+        )
+
+    if publication["status"] != "uploaded":
+        raise ValueError(
+            "YouTube publication is not uploaded: "
+            f"{publication_id}"
+        )
+
+    publisher = _create_google_publisher(
+        token_file=token_file,
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+        request=request,
+    )
+
+    return make_youtube_publication_public(
+        publication_id=publication_id,
+        publisher=publisher,
+    )
 
 
 def process_next_youtube_publication(
@@ -95,13 +142,14 @@ def process_next_youtube_publication(
     authorization_runner: Callable[[Any], Any] | None = None,
     request: Any | None = None,
 ) -> dict[str, Any] | None:
-    """Processa a próxima publicação YouTube pendente.
+    """
+    Processa a próxima publicação YouTube pendente.
 
-    Seleciona exatamente uma publicação pendente e delega sua
-    publicação ao entrypoint Google existente.
+    Esta operação executa somente o upload privado.
 
     Retorna None quando não há publicação pendente.
     """
+
     publication = get_next_pending_youtube_publication()
 
     if publication is None:
@@ -110,9 +158,11 @@ def process_next_youtube_publication(
     publication_id = publication.get("id")
 
     if not isinstance(publication_id, int) or publication_id <= 0:
-        raise ValueError("pending YouTube publication must have a valid id")
+        raise ValueError(
+            "pending YouTube publication must have a valid id"
+        )
 
-    return publish_youtube_publication_with_google(
+    return upload_youtube_publication_with_google(
         publication_id=publication_id,
         token_file=token_file,
         client_secrets_file=client_secrets_file,

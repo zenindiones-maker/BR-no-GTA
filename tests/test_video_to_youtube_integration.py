@@ -6,7 +6,7 @@ from app.database.youtube_repository import (
 )
 from app.services.fake_youtube_publisher import FakeYouTubePublisher
 from app.services.youtube_publication_orchestration import (
-    publish_youtube_publication,
+    upload_youtube_publication,
 )
 from app.services.youtube_service import (
     create_youtube_publish_spec,
@@ -14,7 +14,7 @@ from app.services.youtube_service import (
 )
 
 
-def test_video_can_reach_youtube_publication_and_be_published(
+def test_video_can_reach_youtube_publication_and_be_uploaded(
     monkeypatch,
 ):
     initialize_schema()
@@ -43,7 +43,10 @@ def test_video_can_reach_youtube_publication_and_be_published(
     publish_spec = create_youtube_publish_spec(video)
 
     assert publish_spec["video_id"] == video["id"]
-    assert publish_spec["content_item_id"] == video["content_item_id"]
+    assert (
+        publish_spec["content_item_id"]
+        == video["content_item_id"]
+    )
     assert publish_spec["title"] == video["title"]
     assert publish_spec["file_path"] == video["file_path"]
 
@@ -60,34 +63,49 @@ def test_video_can_reach_youtube_publication_and_be_published(
     assert persisted["status"] == "pending"
 
     publisher = FakeYouTubePublisher(
-        success=True,
-        youtube_video_id="integration-test-video-id",
-        youtube_url="https://www.youtube.com/watch?v=integration-test-video-id",
+        upload_video_id="integration-test-video-id",
+        upload_url=(
+            "https://www.youtube.com/watch?v="
+            "integration-test-video-id"
+        ),
     )
 
-    result = publish_youtube_publication(
+    result = upload_youtube_publication(
         publication["id"],
         publisher,
     )
 
     assert result["id"] == publication["id"]
     assert result["video_id"] == video["id"]
-    assert result["status"] == "published"
-    assert result["youtube_video_id"] == "integration-test-video-id"
+    assert result["status"] == "uploaded"
     assert (
-        result["youtube_url"]
-        == "https://www.youtube.com/watch?v=integration-test-video-id"
-    )
-
-    persisted_after_publish = get_youtube_publication_by_video_id(
-        video["id"]
-    )
-
-    assert persisted_after_publish is not None
-    assert persisted_after_publish["status"] == "published"
-    assert (
-        persisted_after_publish["youtube_video_id"]
+        result["youtube_video_id"]
         == "integration-test-video-id"
     )
+    assert (
+        result["youtube_url"]
+        == (
+            "https://www.youtube.com/watch?v="
+            "integration-test-video-id"
+        )
+    )
 
-    assert publisher.published_publications == [persisted]
+    persisted_after_upload = (
+        get_youtube_publication_by_video_id(video["id"])
+    )
+
+    assert persisted_after_upload is not None
+    assert persisted_after_upload["status"] == "uploaded"
+    assert (
+        persisted_after_upload["youtube_video_id"]
+        == "integration-test-video-id"
+    )
+    assert (
+        persisted_after_upload["youtube_url"]
+        == (
+            "https://www.youtube.com/watch?v="
+            "integration-test-video-id"
+        )
+    )
+
+    assert publisher.uploaded_publications == [persisted]

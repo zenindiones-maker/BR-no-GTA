@@ -1,6 +1,9 @@
 from typing import Any
 
-from app.services.youtube_publisher import YouTubePublishResult
+from app.services.youtube_publisher import (
+    YouTubeUploadResult,
+    YouTubeVisibilityResult,
+)
 
 
 class FakeYouTubePublisher:
@@ -11,48 +14,76 @@ class FakeYouTubePublisher:
     - OAuth;
     - Google API;
     - rede;
-    - upload;
-    - filesystem.
+    - upload real;
+    - alteração real de visibilidade.
 
-    Apenas simula o resultado de uma publicação e registra
-    a Publication recebida.
+    Simula separadamente:
+    - upload;
+    - tornar público.
     """
 
     def __init__(
         self,
         *,
-        success: bool | None = None,
-        youtube_video_id: str | None = None,
-        youtube_url: str | None = None,
-        error: str | None = None,
+        upload_success: bool | None = None,
+        upload_video_id: str | None = None,
+        upload_url: str | None = None,
+        upload_error: str | None = None,
+        visibility_success: bool = True,
+        visibility_error: str | None = None,
     ) -> None:
-        if success is None:
-            success = error is None
+        if upload_success is None:
+            upload_success = upload_error is None
 
-        self.success = success
-        self.youtube_video_id = youtube_video_id
-        self.youtube_url = youtube_url
-        self.error = error
+        self.upload_success = upload_success
+        self.upload_video_id = upload_video_id
+        self.upload_url = upload_url
+        self.upload_error = upload_error
 
-        self.published_publication: Any | None = None
-        self.published_publications: list[Any] = []
+        self.visibility_success = visibility_success
+        self.visibility_error = visibility_error
 
-    def publish(
+        self.uploaded_publication: Any | None = None
+        self.uploaded_publications: list[Any] = []
+
+        self.made_public_video_ids: list[str] = []
+
+    def upload(
         self,
         publication: Any,
-    ) -> YouTubePublishResult:
-        self.published_publication = publication
-        self.published_publications.append(publication)
+    ) -> YouTubeUploadResult:
+        self.uploaded_publication = publication
+        self.uploaded_publications.append(publication)
 
-        if not self.success:
-            return YouTubePublishResult(
+        if not self.upload_success:
+            return YouTubeUploadResult(
                 success=False,
-                error=self.error or "Falha simulada no Publisher.",
+                error=self.upload_error or "Falha simulada no upload.",
             )
 
-        return YouTubePublishResult(
+        return YouTubeUploadResult(
             success=True,
-            youtube_video_id=self.youtube_video_id,
-            youtube_url=self.youtube_url,
+            youtube_video_id=self.upload_video_id,
+            youtube_url=self.upload_url,
+            error=None,
+        )
+
+    def make_public(
+        self,
+        youtube_video_id: str,
+    ) -> YouTubeVisibilityResult:
+        if not self.visibility_success:
+            return YouTubeVisibilityResult(
+                success=False,
+                error=(
+                    self.visibility_error
+                    or "Falha simulada ao tornar vídeo público."
+                ),
+            )
+
+        self.made_public_video_ids.append(youtube_video_id)
+
+        return YouTubeVisibilityResult(
+            success=True,
             error=None,
         )

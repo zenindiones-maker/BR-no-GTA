@@ -3,80 +3,66 @@ from typing import Any
 
 from googleapiclient.http import MediaFileUpload
 
-from app.services.youtube_publisher import YouTubePublishResult
+from app.services.youtube_publisher import (
+    YouTubeUploadResult,
+    YouTubeVisibilityResult,
+)
 
 
 class GoogleYouTubePublisher:
     """
-    Implementação real do contrato YouTubePublisher.
+    Implementação real do contrato YouTubePublisher usando
+    a YouTube Data API.
 
-    Recebe um cliente autenticado da API do YouTube por injeção.
+    Responsabilidades:
+    - fazer upload de vídeos;
+    - alterar visibilidade de vídeos já existentes.
 
     Não é responsabilidade desta classe:
+    - persistir SQLite;
+    - decidir o ciclo de vida da publicação;
     - executar OAuth;
-    - carregar ou salvar tokens;
-    - acessar SQLite;
-    - alterar o estado da YouTube Publication;
-    - executar a orquestração da publicação.
+    - decidir quando um vídeo deve ser publicado.
     """
 
-    def __init__(self, *, youtube_service: Any) -> None:
+    def __init__(self, youtube_service: Any) -> None:
         if youtube_service is None:
             raise ValueError("youtube_service is required")
 
         self.youtube_service = youtube_service
 
-    def publish(
+    def upload(
         self,
-        publication: dict[str, Any],
-    ) -> YouTubePublishResult:
-        """
-        Executa o upload de uma publicação para o YouTube.
-
-        A publicação deve fornecer:
-        - file_path
-        - title
-
-        Os demais metadados possuem valores padrão.
-        """
-
-        if not isinstance(publication, dict):
-            raise TypeError("publication must be a dict")
-
+        publication: Any,
+    ) -> YouTubeUploadResult:
         file_path = publication.get("file_path")
+        title = publication.get("title")
 
-        if not isinstance(file_path, str) or not file_path.strip():
-            return YouTubePublishResult(
+        if not file_path:
+            return YouTubeUploadResult(
                 success=False,
-                error="publication file_path is required",
+                error="YouTube publication requires file_path",
+            )
+
+        if not title:
+            return YouTubeUploadResult(
+                success=False,
+                error="YouTube publication requires title",
             )
 
         path = Path(file_path)
 
         if not path.is_file():
-            return YouTubePublishResult(
+            return YouTubeUploadResult(
                 success=False,
-                error=f"video file not found: {file_path}",
-            )
-
-        title = publication.get("title")
-
-        if not isinstance(title, str) or not title.strip():
-            return YouTubePublishResult(
-                success=False,
-                error="publication title is required",
+                error=f"YouTube video file not found: {file_path}",
             )
 
         description = publication.get("description", "")
         tags = publication.get("tags", [])
-        category_id = publication.get("category_id", "20")
-        privacy_status = publication.get(
-            "privacy_status",
-            "private",
-        )
-        publish_at = publication.get("publish_at")
+        category_id = publication.get("category_id", "22")
 
-        body: dict[str, Any] = {
+        body = {
             "snippet": {
                 "title": title,
                 "description": description,
@@ -84,17 +70,13 @@ class GoogleYouTubePublisher:
                 "categoryId": category_id,
             },
             "status": {
-                "privacyStatus": privacy_status,
+                "privacyStatus": "private",
             },
         }
-
-        if publish_at is not None:
-            body["status"]["publishAt"] = publish_at
 
         try:
             media_body = MediaFileUpload(
                 str(path),
-                chunksize=-1,
                 resumable=True,
             )
 
@@ -109,27 +91,52 @@ class GoogleYouTubePublisher:
             youtube_video_id = response.get("id")
 
             if not youtube_video_id:
-                return YouTubePublishResult(
+                return YouTubeUploadResult(
                     success=False,
-                    error=(
-                        "YouTube API response did not "
-                        "contain video id"
-                    ),
+                    error="YouTube API upload response missing video id",
                 )
 
-            youtube_url = (
-                "https://www.youtube.com/watch?v="
-                f"{youtube_video_id}"
-            )
-
-            return YouTubePublishResult(
+            return YouTubeUploadResult(
                 success=True,
                 youtube_video_id=youtube_video_id,
-                youtube_url=youtube_url,
+                youtube_url=(
+                    f"https://www.youtube.com/watch?v={youtube_video_id}"
+                ),
             )
 
         except Exception as exc:
-            return YouTubePublishResult(
+            return YouTubeUploadResult(
+                success=False,
+                error=str(exc),
+            )
+
+    def make_public(
+        self,
+        youtube_video_id: str,
+    ) -> YouTubeVisibilityResult:
+        if not youtube_video_id:
+            return YouTubeVisibilityResult(
+                success=False,
+                error="youtube_video_id is required",
+            )
+
+        try:
+            self.youtube_service.videos().update(
+                part="status",
+                body={
+                    "id": youtube_video_id,
+                    "status": {
+                        "privacyStatus": "public",
+                    },
+                },
+            ).execute()
+
+            return YouTubeVisibilityResult(
+                success=True,
+            )
+
+        except Exception as exc:
+            return YouTubeVisibilityResult(
                 success=False,
                 error=str(exc),
             )
