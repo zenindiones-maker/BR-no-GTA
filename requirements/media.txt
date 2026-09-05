@@ -1,1 +1,5 @@
 scenedetect~=0.7
+librosa~=1.0
+opencv-python-headless~=5.0
+av~=16.0
+whisperx~=3.8
