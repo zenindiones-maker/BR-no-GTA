@@ -60,7 +60,7 @@ jobs:
           vedit --help
           vedit doctor
 
-      - name: Patch Vedit Python 3.11 syntax compatibility
+      - name: Inspect Vedit Python 3.11 syntax issue
         working-directory: video-engine
         run: |
           set -euo pipefail
@@ -68,19 +68,26 @@ jobs:
           from pathlib import Path
 
           p = Path("backend/vedit/story.py")
-          s = p.read_text()
+          lines = p.read_text().splitlines()
 
-          old = r"""f"{'serve altro materiale' if total < target else 'si puo\\' stringere ancora'}" """
-          replacement = """("serve altro materiale" if total < target else "si puo' stringere ancora")"""
+          matches = []
 
-          if old not in s:
-              raise SystemExit("Target syntax not found; upstream Vedit changed.")
+          for number, line in enumerate(lines, 1):
+              if "serve altro materiale" in line or "si puo" in line:
+                  matches.append((number, line))
 
-          p.write_text(s.replace(old, replacement, 1))
-          print("Vedit syntax patch: applied")
+          if not matches:
+              raise SystemExit(
+                  "Vedit diagnostic target not found: expected Italian timing text."
+              )
+
+          print("===== VEDIT TARGET LINES =====")
+
+          for number, line in matches:
+              print(f"{number}: {line}")
+
+          print("===== END VEDIT TARGET LINES =====")
           PY
-
-          python -m py_compile backend/vedit/story.py
 
       - name: Run Vedit fast tests
         working-directory: video-engine
