@@ -3,6 +3,7 @@ import pytest
 from app.services.media_generation import (
     GeneratedMedia,
     MediaGenerationError,
+    MediaGenerationStatus,
     MediaGenerationProviderConfig,
     MediaGenerationRequest,
     MediaGenerationService,
@@ -72,6 +73,16 @@ def test_minimax_h3_provider_is_not_configured():
         match="not configured for generation yet",
     ):
         provider.generate(request)
+
+def test_generated_media_uses_explicit_generation_status():
+    media = GeneratedMedia(
+        provider="minimax-h3",
+        status=MediaGenerationStatus.COMPLETED,
+        output_path="/tmp/output.mp4",
+    )
+
+    assert media.status is MediaGenerationStatus.COMPLETED
+    assert media.status.value == "completed"
 
 
 def test_generation_service_exposes_provider_name():

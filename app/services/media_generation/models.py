@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 
@@ -25,12 +26,21 @@ class MediaGenerationRequest:
                 )
 
 
+class MediaGenerationStatus(StrEnum):
+    """Lifecycle status for a media generation task."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True)
 class GeneratedMedia:
     """Represents the result of a media generation request."""
 
     provider: str
-    status: str
+    status: MediaGenerationStatus
     output_path: str | None = None
     remote_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
