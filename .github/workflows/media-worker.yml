@@ -103,6 +103,82 @@ jobs:
           print("PySceneDetect executou detecção real de cenas.")
           PYTEST
 
+      - name: Smoke test completo do MediaKnowledge
+        run: |
+          set -euo pipefail
+
+          mkdir -p workspace/test
+          mkdir -p workspace/test/.media_analysis
+
+          ffmpeg -y \
+            -f lavfi \
+            -i "color=c=black:s=320x240:r=30:d=2" \
+            -f lavfi \
+            -i "color=c=white:s=320x240:r=30:d=2" \
+            -f lavfi \
+            -i "sine=frequency=440:sample_rate=16000:duration=4" \
+            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v]" \
+            -map "[v]" \
+            -map 2:a \
+            -t 4 \
+            -c:v libx264 \
+            -preset ultrafast \
+            -pix_fmt yuv420p \
+            -c:a aac \
+            workspace/test/media_knowledge_test.mp4
+
+          python - <<'PYTEST'
+          import json
+          from dataclasses import asdict
+          from pathlib import Path
+
+          from app.services.media_analysis.pipeline import analyze_media
+
+          source = Path("workspace/test/media_knowledge_test.mp4")
+          knowledge = analyze_media(source)
+
+          assert knowledge.source_path == str(source)
+          assert knowledge.probe is not None
+          assert knowledge.probe.duration_seconds > 0
+          assert len(knowledge.scenes) >= 2
+          assert len(knowledge.audio_features) > 0
+          assert knowledge.metadata["probe_available"] is True
+          assert knowledge.metadata["scenes_available"] is True
+          assert knowledge.metadata["audio_analysis_available"] is True
+          assert knowledge.metadata["beats_available"] is True
+          assert knowledge.metadata["visual_samples_available"] is True
+          assert knowledge.metadata["motion_analysis_available"] is True
+          assert len(knowledge.visual_samples) > 0
+          assert len(knowledge.motion_features) > 0
+
+          result = asdict(knowledge)
+
+          Path("workspace/analysis").mkdir(
+              parents=True,
+              exist_ok=True,
+          )
+
+          Path(
+              "workspace/analysis/media_knowledge_smoke.json"
+          ).write_text(
+              json.dumps(
+                  result,
+                  indent=2,
+                  ensure_ascii=False,
+              )
+          )
+
+          print("===== MEDIA KNOWLEDGE SMOKE TEST =====")
+          print("Arquivo:", source)
+          print("Duração:", knowledge.probe.duration_seconds)
+          print("Cenas:", len(knowledge.scenes))
+          print("Áudio:", len(knowledge.audio_features))
+          print("Beats:", len(knowledge.beats))
+          print("Amostras visuais:", len(knowledge.visual_samples))
+          print("Features de movimento:", len(knowledge.motion_features))
+          print("RESULTADO: PASS")
+          PYTEST
+
       - name: Criar workspace de mídia
         if: ${{ !inputs.test_only }}
         run: |

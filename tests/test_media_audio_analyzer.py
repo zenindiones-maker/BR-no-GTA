@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import pytest
 
+from app.services.media_analysis import audio_analyzer
 from app.services.media_analysis.audio_analyzer import (
     AudioAnalysisError,
     analyze_audio,
@@ -24,10 +26,6 @@ class FakeLibrosa:
             return [1.0] * 20
 
     @staticmethod
-    def load(*args, **kwargs):
-        return [1.0] * 22050, 22050
-
-    @staticmethod
     def frames_to_time(frames, sr, hop_length):
         return [
             float(frame) * hop_length / sr
@@ -39,8 +37,14 @@ def test_audio_analysis_builds_features_and_beats(
     monkeypatch,
     tmp_path,
 ):
-    source = tmp_path / "sample.wav"
-    source.write_bytes(b"fake-audio")
+    source = tmp_path / "sample.mp4"
+    source.write_bytes(b"fake-media")
+
+    monkeypatch.setattr(
+        audio_analyzer,
+        "_decode_audio",
+        lambda path: ([1.0] * 22050, 22050),
+    )
 
     monkeypatch.setitem(
         __import__("sys").modules,
@@ -54,7 +58,6 @@ def test_audio_analysis_builds_features_and_beats(
     assert features[0].rms == 0.5
     assert features[1].rms == 0.25
     assert features[0].silence is False
-
     assert len(beats) == 2
     assert beats[0].time_seconds == 0.0
     assert beats[1].time_seconds == pytest.approx(
@@ -63,7 +66,7 @@ def test_audio_analysis_builds_features_and_beats(
 
 
 def test_audio_analysis_missing_file_fails(tmp_path):
-    missing = Path(tmp_path) / "missing.wav"
+    missing = Path(tmp_path) / "missing.mp4"
 
     with pytest.raises(AudioAnalysisError):
         analyze_audio(missing)
@@ -73,8 +76,8 @@ def test_audio_analysis_reports_missing_librosa(
     monkeypatch,
     tmp_path,
 ):
-    source = tmp_path / "sample.wav"
-    source.write_bytes(b"fake-audio")
+    source = tmp_path / "sample.mp4"
+    source.write_bytes(b"fake-media")
 
     monkeypatch.setitem(
         __import__("sys").modules,

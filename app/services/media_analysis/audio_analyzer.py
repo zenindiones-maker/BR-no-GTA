@@ -10,6 +10,92 @@ class AudioAnalysisError(RuntimeError):
     """Erro durante a análise de áudio da mídia."""
 
 
+def _decode_audio(
+    source_path: Path,
+):
+    try:
+        import av
+    except ImportError as exc:
+        raise AudioAnalysisError(
+            "PyAV não está instalado no ambiente de análise."
+        ) from exc
+
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise AudioAnalysisError(
+            "NumPy não está instalado no ambiente de análise."
+        ) from exc
+
+    try:
+        with av.open(source_path) as container:
+            audio_stream = next(
+                iter(container.streams.audio),
+                None,
+            )
+
+            if audio_stream is None:
+                return np.empty(0, dtype=np.float32), None
+
+            sample_rate = (
+                audio_stream.codec_context.sample_rate
+                or audio_stream.rate
+            )
+
+            if not sample_rate:
+                raise AudioAnalysisError(
+                    f"Stream de áudio sem sample rate: {source_path}"
+                )
+
+            resampler = av.audio.resampler.AudioResampler(
+                format="fltp",
+                layout="mono",
+                rate=int(sample_rate),
+            )
+
+            chunks = []
+
+            for frame in container.decode(
+                audio=audio_stream.index,
+            ):
+                for resampled_frame in resampler.resample(frame):
+                    array = resampled_frame.to_ndarray()
+
+                    chunks.append(
+                        np.asarray(
+                            array,
+                            dtype=np.float32,
+                        ).reshape(-1)
+                    )
+
+            for resampled_frame in resampler.resample(None):
+                array = resampled_frame.to_ndarray()
+
+                chunks.append(
+                    np.asarray(
+                        array,
+                        dtype=np.float32,
+                    ).reshape(-1)
+                )
+
+            if not chunks:
+                return (
+                    np.empty(0, dtype=np.float32),
+                    int(sample_rate),
+                )
+
+            audio = np.concatenate(chunks)
+
+            return audio, int(sample_rate)
+
+    except AudioAnalysisError:
+        raise
+    except Exception as exc:
+        raise AudioAnalysisError(
+            f"Falha na decodificação de áudio: {source_path}"
+        ) from exc
+
+
 def analyze_audio(
     source_path: str | Path,
     *,
@@ -26,14 +112,15 @@ def analyze_audio(
 
     try:
         import librosa
+    except ImportError as exc:
+        raise AudioAnalysisError(
+            "librosa não está instalada no ambiente de análise."
+        ) from exc
 
-        audio, sample_rate = librosa.load(
-            path,
-            sr=None,
-            mono=True,
-        )
+    try:
+        audio, sample_rate = _decode_audio(path)
 
-        if len(audio) == 0:
+        if len(audio) == 0 or sample_rate is None:
             return (), ()
 
         rms_values = librosa.feature.rms(
@@ -72,15 +159,19 @@ def analyze_audio(
                 )
             )
 
+            start_sample = int(start * sample_rate)
+            end_sample = max(
+                int(end * sample_rate),
+                start_sample + 1,
+            )
+
+            segment = audio[
+                start_sample:end_sample
+            ]
+
             peak_value = max(
                 abs(float(sample))
-                for sample in audio[
-                    int(start * sample_rate):
-                    max(
-                        int(end * sample_rate),
-                        int(start * sample_rate) + 1,
-                    )
-                ]
+                for sample in segment
             )
 
             audio_features.append(
@@ -132,11 +223,8 @@ def analyze_audio(
 
         return tuple(audio_features), beats
 
-    except ImportError as exc:
-        raise AudioAnalysisError(
-            "librosa não está instalada no ambiente de análise."
-        ) from exc
-
+    except AudioAnalysisError:
+        raise
     except Exception as exc:
         raise AudioAnalysisError(
             f"Falha na análise de áudio: {path}"
