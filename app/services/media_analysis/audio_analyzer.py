@@ -56,7 +56,7 @@ def _decode_audio(
             chunks = []
 
             for frame in container.decode(
-                audio=audio_stream.index,
+                audio=audio_stream,
             ):
                 for resampled_frame in resampler.resample(frame):
                     array = resampled_frame.to_ndarray()
