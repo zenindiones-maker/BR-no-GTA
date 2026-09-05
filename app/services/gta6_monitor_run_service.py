@@ -32,6 +32,9 @@ from app.services.gta6_monitor_execution_context import (
 from app.services.gta6_monitor_execution_error import (
     GTA6MonitorExecutionError,
 )
+from app.services.gta6_monitor_execution_result import (
+    GTA6MonitorExecutionResult,
+)
 from app.services.gta6_monitor_run_lifecycle_service import (
     complete_gta6_monitor_run,
     fail_gta6_monitor_run,
@@ -56,7 +59,7 @@ class GTA6MonitorRunResult:
 def run_gta6_monitor_once(
     *,
     timeout: float = 15.0,
-) -> GTA6MonitorRunResult:
+) -> GTA6MonitorExecutionResult:
     """Executa um ciclo real do monitor Rockstar Newswire."""
 
     run = start_gta6_monitor_run(
@@ -122,7 +125,10 @@ def run_gta6_monitor_once(
                 items_duplicated=result.items_duplicated,
             )
 
-            return result
+            return GTA6MonitorExecutionResult(
+                context=execution_context,
+                result=result,
+            )
 
         items = parse_rockstar_newswire_html(
             page.content,
@@ -175,7 +181,10 @@ def run_gta6_monitor_once(
             items_duplicated=monitor_result.items_duplicated,
         )
 
-        return monitor_result
+        return GTA6MonitorExecutionResult(
+            context=execution_context,
+            result=monitor_result,
+        )
 
     except Exception as exc:
         fail_gta6_monitor_run(

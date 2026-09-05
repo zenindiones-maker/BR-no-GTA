@@ -5,6 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import gta6_monitor_run_service
+from app.services.gta6_monitor_execution_error import (
+    GTA6MonitorExecutionError,
+)
 from app.services.gta6_monitor_run_lifecycle_service import (
     GTA6_MONITOR_RUN_COMPLETED,
     GTA6_MONITOR_RUN_ERROR,
@@ -154,10 +157,16 @@ def test_run_once_marks_error_when_execution_fails(
     )
 
     with pytest.raises(
-        RuntimeError,
+        GTA6MonitorExecutionError,
         match="change detection failed",
-    ):
+    ) as exc_info:
         gta6_monitor_run_service.run_gta6_monitor_once()
+
+    assert isinstance(exc_info.value.cause, RuntimeError)
+    assert str(exc_info.value.cause) == "change detection failed"
+    assert exc_info.value.run_id == 456
+    assert exc_info.value.job_id == "gta6-monitor"
+    assert exc_info.value.execution_id
 
     assert started == [page.url]
 

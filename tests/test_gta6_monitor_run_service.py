@@ -5,6 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import gta6_monitor_run_service
+from app.services.gta6_monitor_execution_error import (
+    GTA6MonitorExecutionError,
+)
 
 
 class FakeMonitor:
@@ -294,10 +297,16 @@ def test_ingestion_failure_does_not_update_monitor_state(monkeypatch):
     )
 
     with pytest.raises(
-        RuntimeError,
+        GTA6MonitorExecutionError,
         match="ingestion failed",
-    ):
+    ) as exc_info:
         gta6_monitor_run_service.run_gta6_monitor_once()
+
+    assert isinstance(exc_info.value.cause, RuntimeError)
+    assert str(exc_info.value.cause) == "ingestion failed"
+    assert exc_info.value.run_id > 0
+    assert exc_info.value.job_id == "gta6-monitor"
+    assert exc_info.value.execution_id
 
     assert saved_states == []
 

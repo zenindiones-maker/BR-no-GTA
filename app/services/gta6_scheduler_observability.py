@@ -4,6 +4,10 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.database.gta6_scheduler_event_repository import (
+    create_gta6_scheduler_event,
+)
+
 from apscheduler.events import (
     EVENT_JOB_ERROR,
     EVENT_JOB_EXECUTED,
@@ -233,6 +237,26 @@ def create_scheduler_event_listener(
     def listener(
         event: JobExecutionEvent | JobSubmissionEvent,
     ) -> None:
-        observability.handle_event(event)
+        record = observability.handle_event(event)
+
+        if record is None:
+            return
+
+        if record.observed_at is None:
+            raise RuntimeError(
+                "scheduler event record must have observed_at"
+            )
+
+        create_gta6_scheduler_event(
+            job_id=record.job_id,
+            event_type=record.event_type,
+            scheduled_run_time=record.scheduled_run_time,
+            scheduled_run_times=record.scheduled_run_times,
+            observed_at=record.observed_at,
+            exception=record.exception,
+            traceback_text=record.traceback_text,
+            run_id=record.run_id,
+            execution_id=record.execution_id,
+        )
 
     return listener

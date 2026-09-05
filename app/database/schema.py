@@ -664,6 +664,27 @@ def _migrate_gta6_monitor_runs(connection) -> None:
         """
     )
 
+def _migrate_gta6_scheduler_events(connection) -> None:
+    """Cria a persistência dos eventos operacionais do scheduler GTA 6."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_scheduler_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            scheduled_run_time TEXT,
+            scheduled_run_times TEXT,
+            observed_at TEXT NOT NULL,
+            exception TEXT,
+            traceback_text TEXT,
+            run_id INTEGER,
+            execution_id TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -683,6 +704,7 @@ def initialize_schema() -> None:
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
         _migrate_gta6_monitor_runs(connection)
+        _migrate_gta6_scheduler_events(connection)
         connection.commit()
     finally:
         connection.close()
