@@ -1,5 +1,12 @@
 import pytest
 
+from app.services.media_generation import (
+    GeneratedMedia,
+    MediaGenerationError,
+    MediaGenerationRequest,
+    MediaGenerationService,
+)
+
 from app.services.media_generation.generation_service import MediaGenerationService
 from app.services.media_generation.models import (
     MediaGenerationError,
@@ -80,3 +87,10 @@ def test_generation_service_delegates_to_provider():
     )
 
     assert service.generate(request) == "generated"
+
+
+def test_media_generation_public_api_exports_expected_symbols():
+    assert MediaGenerationRequest.__name__ == "MediaGenerationRequest"
+    assert GeneratedMedia.__name__ == "GeneratedMedia"
+    assert MediaGenerationError.__name__ == "MediaGenerationError"
+    assert MediaGenerationService.__name__ == "MediaGenerationService"
