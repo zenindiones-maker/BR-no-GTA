@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import mcp
-from mcp.server.mcpserver import CallToolResult
+from mcp.types import CallToolResult
 from mcp.server.mcpserver.exceptions import ToolError
 from vedit import mcp_server as srv
 
