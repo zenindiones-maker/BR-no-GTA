@@ -30,6 +30,14 @@ class SceneBoundary:
     end_seconds: float
     score: float | None = None
 
+@dataclass(frozen=True)
+class SceneKnowledge:
+    index: int
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    detection_method: str
+
 
 @dataclass(frozen=True)
 class TranscriptWord:
@@ -74,7 +82,7 @@ class VisualSample:
 class MediaKnowledge:
     source_path: str
     probe: MediaProbe | None = None
-    scenes: tuple[SceneBoundary, ...] = ()
+    scenes: tuple[SceneKnowledge, ...] = ()
     transcript: tuple[TranscriptSegment, ...] = ()
     audio_features: tuple[AudioFeature, ...] = ()
     beats: tuple[Beat, ...] = ()

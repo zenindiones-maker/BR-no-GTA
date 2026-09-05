@@ -7,6 +7,7 @@ from app.services.media_analysis.ffprobe_analyzer import (
 )
 from app.services.media_analysis.models import (
     MediaKnowledge,
+    SceneKnowledge,
 )
 from app.services.media_analysis.scene_analyzer import (
     detect_scenes,
@@ -39,10 +40,23 @@ def analyze_media(
 
     scenes = detect_scenes(path)
 
+    scene_knowledge = tuple(
+        SceneKnowledge(
+            index=index,
+            start_seconds=scene.start_seconds,
+            end_seconds=scene.end_seconds,
+            duration_seconds=(
+                scene.end_seconds - scene.start_seconds
+            ),
+            detection_method="pyscenedetect",
+        )
+        for index, scene in enumerate(scenes, start=1)
+    )
+
     return MediaKnowledge(
         source_path=str(path),
         probe=probe,
-        scenes=scenes,
+        scenes=scene_knowledge,
         metadata={
             "analysis_version": "2",
             "probe_available": True,
