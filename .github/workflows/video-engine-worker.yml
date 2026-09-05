@@ -67,6 +67,13 @@ jobs:
           python ../.github/scripts/patch_vedit_story.py
           python -m py_compile backend/vedit/story.py
 
+      - name: Patch Vedit MCP domain error semantics
+        working-directory: video-engine
+        run: |
+          set -euo pipefail
+          python ../.github/scripts/patch_vedit_mcp_errors.py
+          python -m py_compile backend/vedit/mcp_server.py
+
       - name: Inspect Vedit MCP SDK behavior
         working-directory: video-engine
         run: |
