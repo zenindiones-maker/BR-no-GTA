@@ -13,6 +13,9 @@ from apscheduler.events import (
     JobSubmissionEvent,
 )
 
+from app.services.gta6_monitor_execution_error import (
+    GTA6MonitorExecutionError,
+)
 from app.services.gta6_monitor_execution_result import (
     GTA6MonitorExecutionResult,
 )
@@ -97,6 +100,13 @@ class GTA6SchedulerObservability:
         if event_type == "ERROR":
             exception = self._format_exception(event.exception)
             traceback_text = event.traceback
+
+            if isinstance(
+                event.exception,
+                GTA6MonitorExecutionError,
+            ):
+                run_id = event.exception.run_id
+                execution_id = event.exception.execution_id
 
         if (
             event_type == "EXECUTED"
