@@ -1,6 +1,12 @@
 from app.services.media_generation.config import (
     MediaGenerationProviderConfig,
 )
+from app.services.media_generation.minimax_h3.mapper import (
+    MiniMaxH3RequestMapper,
+)
+from app.services.media_generation.minimax_h3.validation import (
+    MiniMaxH3RequestValidator,
+)
 from app.services.media_generation.models import (
     GeneratedMedia,
     MediaGenerationError,
@@ -21,6 +27,8 @@ class MiniMaxH3Provider:
         config: MediaGenerationProviderConfig,
     ) -> None:
         self._config = config
+        self._mapper = MiniMaxH3RequestMapper()
+        self._validator = MiniMaxH3RequestValidator()
 
     @property
     def name(self) -> str:
@@ -34,6 +42,9 @@ class MiniMaxH3Provider:
         self,
         request: MediaGenerationRequest,
     ) -> MediaGenerationTask:
+        h3_request = self._mapper.map(request)
+        self._validator.validate(h3_request)
+
         raise MediaGenerationError(
             "MiniMax H3 provider is not configured for submission yet"
         )

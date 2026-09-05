@@ -355,3 +355,58 @@ def test_minimax_h3_validator_rejects_too_many_audio_clips():
         match="at most 3 reference audio clips",
     ):
         MiniMaxH3RequestValidator().validate(request)
+
+
+def test_minimax_h3_provider_rejects_invalid_request_before_submission():
+    from app.services.media_generation.config import (
+        MediaGenerationProviderConfig,
+    )
+    from app.services.media_generation.minimax_h3.provider import (
+        MiniMaxH3Provider,
+    )
+    from app.services.media_generation.minimax_h3.validation import (
+        MiniMaxH3RequestValidationError,
+    )
+
+    provider = MiniMaxH3Provider(
+        MediaGenerationProviderConfig(provider="minimax-h3")
+    )
+
+    request = MediaGenerationRequest(
+        prompt="GTA 6 cinematic scene",
+        reference_images=tuple(
+            f"image-{index}.png"
+            for index in range(10)
+        ),
+    )
+
+    with pytest.raises(
+        MiniMaxH3RequestValidationError,
+        match="at most 9 reference images",
+    ):
+        provider.submit(request)
+
+
+def test_minimax_h3_provider_valid_request_reaches_submission_boundary():
+    from app.services.media_generation.config import (
+        MediaGenerationProviderConfig,
+    )
+    from app.services.media_generation.minimax_h3.provider import (
+        MiniMaxH3Provider,
+    )
+
+    provider = MiniMaxH3Provider(
+        MediaGenerationProviderConfig(provider="minimax-h3")
+    )
+
+    request = MediaGenerationRequest(
+        prompt="GTA 6 cinematic night drive",
+        duration_seconds=8,
+        aspect_ratio="16:9",
+    )
+
+    with pytest.raises(
+        MediaGenerationError,
+        match="not configured for submission yet",
+    ):
+        provider.submit(request)
