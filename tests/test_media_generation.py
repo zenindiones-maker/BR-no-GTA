@@ -47,13 +47,22 @@ def test_media_generation_request_rejects_duration_above_maximum():
 
 
 def test_minimax_h3_provider_name():
-    provider = MiniMaxH3Provider()
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+    provider = MiniMaxH3Provider(config)
 
     assert provider.name == "minimax-h3"
+    assert provider.config == config
 
 
 def test_minimax_h3_provider_is_not_configured():
-    provider = MiniMaxH3Provider()
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+    provider = MiniMaxH3Provider(config)
     request = MediaGenerationRequest(
         prompt="GTA 6 cinematic city footage",
     )
@@ -66,7 +75,11 @@ def test_minimax_h3_provider_is_not_configured():
 
 
 def test_generation_service_exposes_provider_name():
-    provider = MiniMaxH3Provider()
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+    provider = MiniMaxH3Provider(config)
     service = MediaGenerationService(provider)
 
     assert service.provider_name == "minimax-h3"

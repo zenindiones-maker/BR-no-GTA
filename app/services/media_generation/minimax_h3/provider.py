@@ -1,3 +1,6 @@
+from app.services.media_generation.config import (
+    MediaGenerationProviderConfig,
+)
 from app.services.media_generation.models import (
     GeneratedMedia,
     MediaGenerationError,
@@ -12,9 +15,19 @@ class MiniMaxH3Provider:
     network client, GPU dependency, or checkpoint loading.
     """
 
+    def __init__(
+        self,
+        config: MediaGenerationProviderConfig,
+    ) -> None:
+        self._config = config
+
     @property
     def name(self) -> str:
-        return "minimax-h3"
+        return self._config.provider
+
+    @property
+    def config(self) -> MediaGenerationProviderConfig:
+        return self._config
 
     def generate(
         self,
