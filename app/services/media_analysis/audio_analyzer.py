@@ -165,20 +165,30 @@ def analyze_audio(
                 )
             )
 
-            start_sample = int(start * sample_rate)
-            end_sample = max(
-                int(end * sample_rate),
-                start_sample + 1,
+            start_sample = min(
+                max(int(start * sample_rate), 0),
+                len(audio),
+            )
+
+            end_sample = min(
+                max(
+                    int(end * sample_rate),
+                    start_sample + 1,
+                ),
+                len(audio),
             )
 
             segment = audio[
                 start_sample:end_sample
             ]
 
-            peak_value = max(
-                abs(float(sample))
-                for sample in segment
-            )
+            if len(segment) == 0:
+                peak_value = 0.0
+            else:
+                peak_value = max(
+                    abs(float(sample))
+                    for sample in segment
+                )
 
             audio_features.append(
                 AudioFeature(
