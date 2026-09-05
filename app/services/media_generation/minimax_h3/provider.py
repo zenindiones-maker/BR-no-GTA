@@ -4,6 +4,12 @@ from app.services.media_generation.config import (
 from app.services.media_generation.minimax_h3.mapper import (
     MiniMaxH3RequestMapper,
 )
+from app.services.media_generation.minimax_h3.response import (
+    MiniMaxH3GenerationResponse,
+)
+from app.services.media_generation.minimax_h3.response_mapper import (
+    MiniMaxH3ResponseMapper,
+)
 from app.services.media_generation.minimax_h3.validation import (
     MiniMaxH3RequestValidator,
 )
@@ -18,7 +24,7 @@ from app.services.media_generation.models import (
 class MiniMaxH3Provider:
     """Provider boundary for MiniMax H3 media generation.
 
-    The initial implementation intentionally contains no model runtime,
+    The implementation intentionally contains no model runtime,
     network client, GPU dependency, or checkpoint loading.
     """
 
@@ -29,6 +35,7 @@ class MiniMaxH3Provider:
         self._config = config
         self._mapper = MiniMaxH3RequestMapper()
         self._validator = MiniMaxH3RequestValidator()
+        self._response_mapper = MiniMaxH3ResponseMapper()
 
     @property
     def name(self) -> str:
@@ -64,3 +71,9 @@ class MiniMaxH3Provider:
         raise MediaGenerationError(
             "MiniMax H3 provider is not configured for result retrieval yet"
         )
+
+    def _map_response(
+        self,
+        response: MiniMaxH3GenerationResponse,
+    ) -> GeneratedMedia:
+        return self._response_mapper.map_result(response)

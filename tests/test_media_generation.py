@@ -488,3 +488,71 @@ def test_minimax_h3_response_mapper_rejects_unknown_status():
         match="unsupported MiniMax H3 status",
     ):
         MiniMaxH3ResponseMapper().map_result(response)
+
+
+def test_minimax_h3_provider_maps_completed_response():
+    from app.services.media_generation.config import (
+        MediaGenerationProviderConfig,
+    )
+    from app.services.media_generation.minimax_h3.provider import (
+        MiniMaxH3Provider,
+    )
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.models import (
+        MediaGenerationStatus,
+    )
+
+    provider = MiniMaxH3Provider(
+        MediaGenerationProviderConfig(
+            provider="minimax-h3",
+        )
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="task-123",
+        status="completed",
+        output_path="/tmp/generated.mp4",
+    )
+
+    result = provider._map_response(response)
+
+    assert result.provider == "minimax-h3"
+    assert result.status == MediaGenerationStatus.COMPLETED
+    assert result.remote_id == "task-123"
+    assert result.output_path == "/tmp/generated.mp4"
+
+
+def test_minimax_h3_provider_maps_failed_response():
+    from app.services.media_generation.config import (
+        MediaGenerationProviderConfig,
+    )
+    from app.services.media_generation.minimax_h3.provider import (
+        MiniMaxH3Provider,
+    )
+    from app.services.media_generation.minimax_h3.response import (
+        MiniMaxH3GenerationResponse,
+    )
+    from app.services.media_generation.models import (
+        MediaGenerationStatus,
+    )
+
+    provider = MiniMaxH3Provider(
+        MediaGenerationProviderConfig(
+            provider="minimax-h3",
+        )
+    )
+
+    response = MiniMaxH3GenerationResponse(
+        remote_id="task-456",
+        status="failed",
+        error="generation failed",
+    )
+
+    result = provider._map_response(response)
+
+    assert result.provider == "minimax-h3"
+    assert result.status == MediaGenerationStatus.FAILED
+    assert result.remote_id == "task-456"
+    assert result.output_path is None
