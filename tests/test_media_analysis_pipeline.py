@@ -39,6 +39,10 @@ def test_pipeline_uses_ffprobe_result(monkeypatch, tmp_path):
         "app.services.media_analysis.pipeline.analyze_audio",
         lambda _: ((), ()),
     )
+    monkeypatch.setattr(
+        "app.services.media_analysis.pipeline.analyze_visual",
+        lambda _: ((), ()),
+    )
 
     result = analyze_media(source)
 
@@ -83,6 +87,10 @@ def test_pipeline_builds_scene_knowledge(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "app.services.media_analysis.pipeline.analyze_audio",
+        lambda _: ((), ()),
+    )
+    monkeypatch.setattr(
+        "app.services.media_analysis.pipeline.analyze_visual",
         lambda _: ((), ()),
     )
 

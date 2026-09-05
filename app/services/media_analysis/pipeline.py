@@ -15,6 +15,9 @@ from app.services.media_analysis.models import (
 from app.services.media_analysis.scene_analyzer import (
     detect_scenes,
 )
+from app.services.media_analysis.visual_analyzer import (
+    analyze_visual,
+)
 
 
 class MediaAnalysisError(RuntimeError):
@@ -57,6 +60,7 @@ def analyze_media(
     )
 
     audio_features, beats = analyze_audio(path)
+    visual_samples, motion_features = analyze_visual(path)
 
     return MediaKnowledge(
         source_path=str(path),
@@ -72,7 +76,10 @@ def analyze_media(
             "transcript_available": False,
             "audio_analysis_available": True,
             "beats_available": True,
-            "visual_samples_available": False,
+            "visual_samples_available": True,
+            "motion_analysis_available": True,
+            "visual_sample_count": len(visual_samples),
+            "motion_feature_count": len(motion_features),
             "audio_feature_count": len(audio_features),
             "beat_count": len(beats),
         },

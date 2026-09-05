@@ -79,6 +79,13 @@ class VisualSample:
 
 
 @dataclass(frozen=True)
+class MotionFeature:
+    start_seconds: float
+    end_seconds: float
+    motion_score: float
+
+
+@dataclass(frozen=True)
 class MediaKnowledge:
     source_path: str
     probe: MediaProbe | None = None
@@ -87,4 +94,5 @@ class MediaKnowledge:
     audio_features: tuple[AudioFeature, ...] = ()
     beats: tuple[Beat, ...] = ()
     visual_samples: tuple[VisualSample, ...] = ()
+    motion_features: tuple[MotionFeature, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
