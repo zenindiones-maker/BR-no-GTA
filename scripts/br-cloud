@@ -1,0 +1,113 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+set -euo pipefail
+
+REPO="zenindiones-maker/BR-no-GTA"
+WORKFLOW="video-engine-worker.yml"
+
+cd ~/GTA/BR
+
+usage() {
+    echo "Uso:"
+    echo "  br-cloud vedit"
+    echo "  br-cloud status"
+    echo "  br-cloud help"
+}
+
+case "${1:-help}" in
+
+    vedit)
+        echo "=========================================="
+        echo " BR CLOUD — VEDIT + WHISPER"
+        echo "=========================================="
+        echo
+        echo "Repository : $REPO"
+        echo "Workflow   : $WORKFLOW"
+        echo "Branch     : main"
+        echo
+
+        echo "[1/3] Verificando Git..."
+        git diff --check
+        git status --short
+
+        if [ -n "$(git status --short)" ]; then
+            echo
+            echo "ERRO: working tree não está limpo."
+            echo "Faça commit antes de enviar trabalho ao cloud worker."
+            exit 1
+        fi
+
+        echo
+        echo "[2/3] Atualizando referência remota..."
+        git fetch origin main
+
+        LOCAL_SHA="$(git rev-parse HEAD)"
+        REMOTE_SHA="$(git rev-parse origin/main)"
+
+        echo "Local : $LOCAL_SHA"
+        echo "Remote: $REMOTE_SHA"
+
+        if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+            echo
+            echo "ERRO: sua branch local não está sincronizada com origin/main."
+            echo "Sincronize primeiro."
+            exit 1
+        fi
+
+        echo
+        echo "[3/3] Enviando job para Ubuntu..."
+        gh workflow run "$WORKFLOW" \
+            --repo "$REPO" \
+            --ref main \
+            -f run_slow_tests=false
+
+        echo
+        echo "Workflow disparado."
+        echo "Aguardando o GitHub registrar a execução..."
+
+        sleep 3
+
+        RUN_ID="$(
+            gh run list \
+                --repo "$REPO" \
+                --workflow "$WORKFLOW" \
+                --branch main \
+                --limit 1 \
+                --json databaseId \
+                --jq '.[0].databaseId'
+        )"
+
+        if [ -z "$RUN_ID" ]; then
+            echo "ERRO: não foi possível localizar a execução."
+            exit 1
+        fi
+
+        echo
+        echo "Run ID: $RUN_ID"
+        echo
+        echo "=========================================="
+        echo " EXECUÇÃO NO UBUNTU"
+        echo "=========================================="
+        echo
+
+        gh run watch "$RUN_ID" \
+            --repo "$REPO" \
+            --exit-status
+
+        echo
+        echo "=========================================="
+        echo " CLOUD WORKER FINALIZADO"
+        echo "=========================================="
+        ;;
+
+    status)
+        gh run list \
+            --repo "$REPO" \
+            --workflow "$WORKFLOW" \
+            --limit 10
+        ;;
+
+    help|*)
+        usage
+        ;;
+esac
