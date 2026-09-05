@@ -10,6 +10,7 @@ from app.database.youtube_repository import (
     list_youtube_publications,
     mark_youtube_failed,
     mark_youtube_published,
+    mark_youtube_uploaded,
     update_youtube_publication_status,
 )
 
@@ -175,6 +176,12 @@ def test_get_next_pending_youtube_publication_ignores_non_pending():
         privacy_status="private",
         publish_at=None,
     )
+    mark_youtube_uploaded(
+        published_id,
+        youtube_video_id="youtube-published",
+        youtube_url="https://www.youtube.com/watch?v=youtube-published",
+    )
+
     mark_youtube_published(
         published_id,
         youtube_video_id="youtube-published",
@@ -250,6 +257,12 @@ def test_mark_youtube_published():
         content_item_id=content_item_id,
         title="Publicação",
     )
+
+    assert mark_youtube_uploaded(
+        publication_id,
+        "youtube123",
+        "https://youtube.com/watch?v=youtube123",
+    ) is True
 
     assert mark_youtube_published(
         publication_id,

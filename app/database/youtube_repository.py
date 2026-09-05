@@ -317,6 +317,38 @@ def update_youtube_publication_status(
         connection.close()
 
 
+def mark_youtube_uploaded(
+    publication_id: int,
+    youtube_video_id: str,
+    youtube_url: str,
+) -> bool:
+    connection = get_connection()
+
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE youtube_publications
+            SET
+                youtube_video_id = ?,
+                youtube_url = ?,
+                status = 'uploaded',
+                error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'pending'
+            """,
+            (
+                youtube_video_id,
+                youtube_url,
+                publication_id,
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount == 1
+    finally:
+        connection.close()
+
+
 def mark_youtube_published(
     publication_id: int,
     youtube_video_id: str,
@@ -328,14 +360,10 @@ def mark_youtube_published(
         raise ValueError("publication_id must be a positive integer.")
 
     if not isinstance(youtube_video_id, str) or not youtube_video_id.strip():
-        raise ValueError(
-            "youtube_video_id is required."
-        )
+        raise ValueError("youtube_video_id is required.")
 
     if not isinstance(youtube_url, str) or not youtube_url.strip():
-        raise ValueError(
-            "youtube_url is required."
-        )
+        raise ValueError("youtube_url is required.")
 
     connection = get_connection()
 
@@ -344,8 +372,7 @@ def mark_youtube_published(
 
         row = connection.execute(
             """
-            SELECT
-                status
+            SELECT status
             FROM youtube_publications
             WHERE id = ?
             """,
@@ -356,11 +383,11 @@ def mark_youtube_published(
             connection.rollback()
             return False
 
-        if row["status"] != "pending":
+        if row["status"] != "uploaded":
             connection.rollback()
             raise ValueError(
                 "YouTube Publication só pode ser publicada a partir de "
-                "pending: "
+                "uploaded: "
                 f"status atual = {row['status']}"
             )
 
@@ -368,18 +395,18 @@ def mark_youtube_published(
             """
             UPDATE youtube_publications
             SET
-                status = 'published',
                 youtube_video_id = ?,
                 youtube_url = ?,
+                status = 'published',
                 error = NULL,
                 published_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-              AND status = 'pending'
+              AND status = 'uploaded'
             """,
             (
-                youtube_video_id.strip(),
-                youtube_url.strip(),
+                youtube_video_id,
+                youtube_url,
                 publication_id,
             ),
         )
@@ -397,7 +424,6 @@ def mark_youtube_published(
 
     finally:
         connection.close()
-
 
 def mark_youtube_failed(
     publication_id: int,
