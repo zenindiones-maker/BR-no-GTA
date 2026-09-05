@@ -10,6 +10,7 @@ from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
 from app.services.google_youtube_publication_service import (
+    make_youtube_publication_public_with_google,
     process_next_youtube_publication,
 )
 from app.services.gta6_monitor_worker_service import (
@@ -87,6 +88,16 @@ def main() -> None:
     youtube_subparsers.add_parser(
         "publish-next",
         help="Processa a próxima publicação YouTube pendente.",
+    )
+
+    pode_postar_parser = youtube_subparsers.add_parser(
+        "pode-postar",
+        help="Torna pública uma publicação YouTube pelo ID.",
+    )
+
+    pode_postar_parser.add_argument(
+        "publication_id",
+        type=int,
     )
 
     args = parser.parse_args()
@@ -178,6 +189,21 @@ def main() -> None:
             f"items_found={monitor_result.items_found} "
             f"items_ingested={monitor_result.items_ingested} "
             f"items_duplicated={monitor_result.items_duplicated}"
+        )
+        return
+
+    if (
+        args.command == "youtube"
+        and args.youtube_command == "pode-postar"
+    ):
+        publication = make_youtube_publication_public_with_google(
+            publication_id=args.publication_id,
+        )
+
+        print(
+            "Publicação YouTube publicada: "
+            f"id={publication['id']} "
+            f"status={publication['status']}"
         )
         return
 
