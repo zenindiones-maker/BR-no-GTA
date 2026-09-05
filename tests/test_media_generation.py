@@ -3,6 +3,7 @@ import pytest
 from app.services.media_generation import (
     GeneratedMedia,
     MediaGenerationError,
+    MediaGenerationProviderConfig,
     MediaGenerationRequest,
     MediaGenerationService,
 )
@@ -94,3 +95,14 @@ def test_media_generation_public_api_exports_expected_symbols():
     assert GeneratedMedia.__name__ == "GeneratedMedia"
     assert MediaGenerationError.__name__ == "MediaGenerationError"
     assert MediaGenerationService.__name__ == "MediaGenerationService"
+
+
+
+def test_media_generation_public_api_exports_provider_config():
+    config = MediaGenerationProviderConfig(
+        provider="minimax-h3",
+        model="H3",
+    )
+
+    assert config.provider == "minimax-h3"
+    assert config.model == "H3"
