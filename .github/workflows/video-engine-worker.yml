@@ -94,10 +94,10 @@ jobs:
           indent = lines[i].split("out.append", 1)[0]
 
           lines[i:i + 2] = [
-              f"{indent}out.append(\\n",
-              f'{indent}    f"durata {{total:.1f}}s contro {{target:.1f}}s richiesti: "\\n',
-              f'{indent}    + ("serve altro materiale" if total < target else "si puo\' stringere ancora")\\n',
-              f"{indent})\\n",
+              indent + "out.append(\n",
+              indent + '    f"durata {total:.1f}s contro {target:.1f}s richiesti: "\n',
+              indent + '    + ("serve altro materiale" if total < target else "si puo\' stringere ancora")\n',
+              indent + ")\n",
           ]
 
           p.write_text("".join(lines))
