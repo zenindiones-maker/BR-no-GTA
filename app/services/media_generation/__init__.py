@@ -8,7 +8,6 @@ from app.services.media_generation.models import (
     MediaGenerationRequest,
     MediaGenerationStatus,
     MediaGenerationTask,
-    MediaGenerationTask,
 )
 
 __all__ = [
@@ -17,7 +16,6 @@ __all__ = [
     "MediaGenerationError",
     "MediaGenerationRequest",
     "MediaGenerationStatus",
-    "MediaGenerationTask",
     "MediaGenerationTask",
     "MediaGenerationService",
 ]
