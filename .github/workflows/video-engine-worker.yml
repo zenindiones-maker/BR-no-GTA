@@ -60,7 +60,7 @@ jobs:
           vedit --help
           vedit doctor
 
-      - name: Inspect Vedit Python 3.11 syntax issue
+      - name: Patch Vedit Python 3.11 syntax issue
         working-directory: video-engine
         run: |
           set -euo pipefail
@@ -68,26 +68,29 @@ jobs:
           from pathlib import Path
 
           p = Path("backend/vedit/story.py")
-          lines = p.read_text().splitlines()
+          text = p.read_text()
 
-          matches = []
+          old = '''out.append(f"durata {total:.1f}s contro {target:.1f}s richiesti: "
+                     f"{'serve altro materiale' if total < target else 'si puo\\' stringere ancora'}")'''
 
-          for number, line in enumerate(lines, 1):
-              if "serve altro materiale" in line or "si puo" in line:
-                  matches.append((number, line))
+          new = '''out.append(
+              f"durata {total:.1f}s contro {target:.1f}s richiesti: "
+              + ("serve altro materiale" if total < target else "si puo' stringere ancora")
+          )'''
 
-          if not matches:
+          if text.count(old) != 1:
               raise SystemExit(
-                  "Vedit diagnostic target not found: expected Italian timing text."
+                  f"Expected exactly one Vedit timing expression, found {text.count(old)}."
               )
 
-          print("===== VEDIT TARGET LINES =====")
+          p.write_text(text.replace(old, new, 1))
 
-          for number, line in matches:
-              print(f"{number}: {line}")
-
-          print("===== END VEDIT TARGET LINES =====")
+          print("===== VEDIT PATCH =====")
+          print(new)
+          print("===== END VEDIT PATCH =====")
           PY
+
+          python -m py_compile backend/vedit/story.py
 
       - name: Run Vedit fast tests
         working-directory: video-engine
