@@ -60,6 +60,28 @@ jobs:
           vedit --help
           vedit doctor
 
+      - name: Patch Vedit Python 3.11 syntax compatibility
+        working-directory: video-engine
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("backend/vedit/story.py")
+          s = p.read_text()
+
+          old = r"""f"{'serve altro materiale' if total < target else 'si puo\\' stringere ancora'}" """
+          replacement = """("serve altro materiale" if total < target else "si puo' stringere ancora")"""
+
+          if old not in s:
+              raise SystemExit("Target syntax not found; upstream Vedit changed.")
+
+          p.write_text(s.replace(old, replacement, 1))
+          print("Vedit syntax patch: applied")
+          PY
+
+          python -m py_compile backend/vedit/story.py
+
       - name: Run Vedit fast tests
         working-directory: video-engine
         run: |
