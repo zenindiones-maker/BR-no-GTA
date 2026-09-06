@@ -148,15 +148,18 @@ def test_unconfirmed_information_is_more_reliable_than_rumor():
     )
 
 
-def test_new_research_is_more_novel_than_existing_same_title():
+def test_new_research_is_less_novel_than_existing_same_title():
     research_item = make_research_item()
 
     existing = [
-        make_research_item(
-            title=research_item["title"],
-            content=research_item["content"],
-            url="https://example.com/old-source",
-        )
+        {
+            **make_research_item(
+                title=research_item["title"],
+                content=research_item["content"],
+                url="https://example.com/old-source",
+            ),
+            "id": 2,
+        }
     ]
 
     result = evaluate_gta6_research_item(
@@ -166,7 +169,20 @@ def test_new_research_is_more_novel_than_existing_same_title():
         now="2026-09-02T12:00:00+00:00",
     )
 
-    assert 0 <= result["novelty"] <= 10
+    assert result["novelty"] == 3.0
+
+
+def test_current_research_item_is_not_treated_as_existing_duplicate():
+    research_item = make_research_item()
+
+    result = evaluate_gta6_research_item(
+        research_item,
+        make_knowledge(),
+        existing_research_items=[research_item],
+        now="2026-09-02T12:00:00+00:00",
+    )
+
+    assert result["novelty"] == 10.0
 
 
 def test_recent_research_has_valid_timeliness_score():

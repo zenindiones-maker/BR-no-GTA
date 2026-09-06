@@ -136,8 +136,16 @@ def _calculate_novelty(
     if not title:
         return 0.0
 
+    research_item_id = research_item.get("id")
+
     for existing in existing_research_items:
         if not isinstance(existing, dict):
+            continue
+
+        if (
+            research_item_id is not None
+            and existing.get("id") == research_item_id
+        ):
             continue
 
         existing_title = _normalize(
