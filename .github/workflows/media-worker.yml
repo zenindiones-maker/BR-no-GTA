@@ -253,18 +253,15 @@ jobs:
       - name: Download source media
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
-          SOURCE_NAME: ${{ github.event.inputs.source_name }}
+          MEDIA_OUTPUT_PATH: workspace/input/${{ github.event.inputs.source_name }}.mp4
+          YTDLP_PLAYER_CLIENT: mweb
+          YTDLP_JS_RUNTIME: deno
+          YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
+          PYTHONPATH: .
         run: |
           set -euo pipefail
 
-          yt-dlp \
-            --verbose \
-            --no-playlist \
-            --js-runtimes deno \
-            --extractor-args "youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
-            --merge-output-format mp4 \
-            -o "workspace/input/${SOURCE_NAME}.%(ext)s" \
-            "$SOURCE_URL"
+          python -m app.services.media_ingestion_cli
 
           echo "Downloaded files:"
           find workspace/input \
