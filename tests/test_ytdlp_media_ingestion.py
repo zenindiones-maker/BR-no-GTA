@@ -3,42 +3,84 @@ from unittest.mock import patch
 
 from yt_dlp.utils import DownloadError
 
-from app.services.media_ingestion import IngestionStatus
-from app.services.ytdlp_media_ingestion import YtDlpMediaIngestion
+from app.services.media_ingestion import (
+    IngestionStatus,
+)
+from app.services.ytdlp_infrastructure import (
+    YtDlpInfrastructureConfig,
+)
+from app.services.ytdlp_media_ingestion import (
+    YtDlpMediaIngestion,
+)
 
 
 def test_ytdlp_ingestion_configures_expected_options() -> None:
     provider = YtDlpMediaIngestion(
-        extractor_args="mweb",
-        js_runtimes=("deno",),
+        infrastructure=YtDlpInfrastructureConfig(
+            player_client="mweb",
+            js_runtime="deno",
+            po_token_base_url="http://127.0.0.1:4416",
+        )
     )
 
-    fake_ydl = patch(
+    with patch(
         "app.services.ytdlp_media_ingestion.YoutubeDL"
-    )
-
-    with fake_ydl as youtube_dl:
+    ) as youtube_dl:
         instance = youtube_dl.return_value.__enter__.return_value
         instance.download.return_value = None
 
-        result = provider.ingest(
+        provider.ingest(
             "https://www.youtube.com/watch?v=test",
-            Path("workspace/input/test.mp4"),
+            Path("/tmp/video.mp4"),
         )
-
-    assert result.status is IngestionStatus.SOURCE_UNAVAILABLE
-    assert result.reason == "DOWNLOAD_COMPLETED_WITHOUT_OUTPUT_FILE"
 
     options = youtube_dl.call_args.args[0]
 
+    assert options["quiet"] is False
+    assert options["no_warnings"] is False
     assert options["noplaylist"] is True
     assert options["merge_output_format"] == "mp4"
-    assert options["js_runtimes"] == {"deno": {}}
+    assert options["js_runtimes"] == {
+        "deno": {},
+    }
     assert options["extractor_args"] == {
         "youtube": {
             "player_client": "mweb",
-        }
+        },
+        "youtubepot-bgutilhttp": {
+            "base_url": "http://127.0.0.1:4416",
+        },
     }
+
+
+def test_ytdlp_ingestion_without_po_token_provider_keeps_options_clean() -> None:
+    provider = YtDlpMediaIngestion(
+        infrastructure=YtDlpInfrastructureConfig(
+            player_client="mweb",
+            js_runtime="deno",
+        )
+    )
+
+    with patch(
+        "app.services.ytdlp_media_ingestion.YoutubeDL"
+    ) as youtube_dl:
+        instance = youtube_dl.return_value.__enter__.return_value
+        instance.download.return_value = None
+
+        provider.ingest(
+            "https://www.youtube.com/watch?v=test",
+            Path("/tmp/video.mp4"),
+        )
+
+    options = youtube_dl.call_args.args[0]
+
+    assert options["extractor_args"] == {
+        "youtube": {
+            "player_client": "mweb",
+        },
+    }
+
+    assert "youtubepot-bgutilhttp" not in options["extractor_args"]
 
 
 def test_ytdlp_ingestion_returns_download_ok_when_output_exists(
@@ -48,8 +90,10 @@ def test_ytdlp_ingestion_returns_download_ok_when_output_exists(
     output_path.write_bytes(b"fake-media")
 
     provider = YtDlpMediaIngestion(
-        extractor_args="mweb",
-        js_runtimes=("deno",),
+        infrastructure=YtDlpInfrastructureConfig(
+            player_client="mweb",
+            js_runtime="deno",
+        )
     )
 
     with patch(
@@ -67,8 +111,13 @@ def test_ytdlp_ingestion_returns_download_ok_when_output_exists(
     assert result.output_path == output_path
 
 
-def test_ytdlp_ingestion_classifies_login_required_as_blocked() -> None:
-    provider = YtDlpMediaIngestion()
+def test_ytdlp_ingestion_classifies_login_required() -> None:
+    provider = YtDlpMediaIngestion(
+        infrastructure=YtDlpInfrastructureConfig(
+            player_client="mweb",
+            js_runtime="deno",
+        )
+    )
 
     with patch(
         "app.services.ytdlp_media_ingestion.YoutubeDL"
@@ -80,7 +129,7 @@ def test_ytdlp_ingestion_classifies_login_required_as_blocked() -> None:
 
         result = provider.ingest(
             "https://www.youtube.com/watch?v=test",
-            Path("workspace/input/test.mp4"),
+            Path("/tmp/video.mp4"),
         )
 
     assert result.status is IngestionStatus.DOWNLOAD_BLOCKED

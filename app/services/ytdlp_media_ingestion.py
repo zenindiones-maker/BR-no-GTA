@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
@@ -9,6 +8,9 @@ from yt_dlp.utils import DownloadError
 from app.services.media_ingestion import (
     IngestionResult,
     IngestionStatus,
+)
+from app.services.ytdlp_infrastructure import (
+    YtDlpInfrastructureConfig,
 )
 
 
@@ -22,11 +24,11 @@ class YtDlpMediaIngestion:
     def __init__(
         self,
         *,
-        extractor_args: str | None = None,
-        js_runtimes: Sequence[str] = ("deno",),
+        infrastructure: YtDlpInfrastructureConfig | None = None,
     ) -> None:
-        self._extractor_args = extractor_args
-        self._js_runtimes = tuple(js_runtimes)
+        self._infrastructure = (
+            infrastructure or YtDlpInfrastructureConfig()
+        )
 
     def ingest(
         self,
@@ -43,29 +45,36 @@ class YtDlpMediaIngestion:
             "merge_output_format": "mp4",
         }
 
-        if self._js_runtimes:
+        infrastructure = self._infrastructure
+
+        if infrastructure.js_runtime:
             options["js_runtimes"] = {
-                runtime: {}
-                for runtime in self._js_runtimes
+                infrastructure.js_runtime: {},
             }
 
-        if self._extractor_args:
-            options["extractor_args"] = {
-                "youtube": {
-                    "player_client": self._extractor_args,
-                }
+        extractor_args = {
+            "youtube": {
+                "player_client": infrastructure.player_client,
+            },
+        }
+
+        if infrastructure.po_token_base_url:
+            extractor_args["youtubepot-bgutilhttp"] = {
+                "base_url": infrastructure.po_token_base_url,
             }
+
+        options["extractor_args"] = extractor_args
 
         try:
             with YoutubeDL(options) as ydl:
                 ydl.download([source_url])
         except DownloadError as exc:
-            reason = _classify_download_error(str(exc))
+            status, reason = _classify_download_error(str(exc))
 
             return IngestionResult(
-                status=reason[0],
+                status=status,
                 source_url=source_url,
-                reason=reason[1],
+                reason=reason,
             )
 
         downloaded = _resolve_downloaded_file(output_path)
@@ -129,7 +138,7 @@ def _classify_download_error(
 
     if (
         "video unavailable" in normalized
-        or "unavailable" in normalized
+        or "this video is unavailable" in normalized
     ):
         return (
             IngestionStatus.SOURCE_UNAVAILABLE,
