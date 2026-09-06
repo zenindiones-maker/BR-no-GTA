@@ -251,6 +251,8 @@ jobs:
           done
 
       - name: Download source media
+          id: media-ingestion
+          shell: bash
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
           MEDIA_OUTPUT_PATH: workspace/input/${{ github.event.inputs.source_name }}.mp4
@@ -259,9 +261,57 @@ jobs:
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
           PYTHONPATH: .
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
-          python -m app.services.media_ingestion_cli
+          result_file="runtime/media-worker/ingestion-result.json"
+
+          set +e
+          python -m app.services.media_ingestion_cli \
+            > "$result_file"
+          cli_exit_code=$?
+          set -e
+
+          echo "=== Media ingestion result ==="
+          cat "$result_file"
+
+          if [ "$cli_exit_code" -eq 2 ]; then
+            echo "Ingestion CLI failed technically."
+            exit 2
+          fi
+
+          python -m app.services.media_ingestion_result \
+            < "$result_file"
+
+          result_exit_code=$?
+
+          if [ "$result_exit_code" -ne 0 ]; then
+            echo "Failed to interpret ingestion result."
+            exit 2
+          fi
+
+          status="$(
+            python -c '
+import json
+from pathlib import Path
+
+payload = json.loads(
+    Path("runtime/media-worker/ingestion-result.json").read_text()
+)
+
+print(payload["status"])
+'
+          )"
+
+          echo "INGESTION_STATUS=$status"
+          echo "ingestion_status=$status" >> "$GITHUB_OUTPUT"
+
+          if [ "$status" = "DOWNLOAD_OK" ]; then
+            echo "Ingestion succeeded."
+            echo "ingestion_succeeded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Ingestion completed with domain status: $status"
+            echo "ingestion_succeeded=false" >> "$GITHUB_OUTPUT"
+          fi
 
           echo "Downloaded files:"
           find workspace/input \
@@ -270,6 +320,7 @@ jobs:
             -printf '%p\n'
 
       - name: Locate downloaded media
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         id: media
         run: |
           set -euo pipefail
@@ -297,6 +348,7 @@ jobs:
           echo "$MEDIA_FILE"
 
       - name: Validate media with ffprobe
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         env:
           MEDIA_FILE: ${{ steps.media.outputs.media_file }}
         run: |
@@ -329,7 +381,7 @@ jobs:
           PY
 
       - name: Run MediaKnowledge analysis
-        if: ${{ github.event.inputs.test_only != 'true' }}
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
         env:
           MEDIA_FILE: ${{ steps.media.outputs.media_file }}
           PYTHONPATH: .
@@ -365,7 +417,7 @@ jobs:
           PY
 
       - name: Create smoke-test MediaKnowledge artifact
-        if: ${{ github.event.inputs.test_only == 'true' }}
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only == 'true' }}
         env:
           MEDIA_FILE: ${{ steps.media.outputs.media_file }}
           PYTHONPATH: .
@@ -394,6 +446,7 @@ jobs:
           PY
 
       - name: Create Media Worker manifest
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
           SOURCE_NAME: ${{ github.event.inputs.source_name }}
@@ -457,6 +510,7 @@ jobs:
             runtime/media-worker/artifact/media_probe.json
 
       - name: Validate final artifact
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         run: |
           set -euo pipefail
 
@@ -521,6 +575,7 @@ jobs:
             | sort
 
       - name: Upload MediaKnowledge artifact
+          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: media-knowledge
