@@ -576,6 +576,32 @@ def _migrate_youtube_publication_file_path(connection) -> None:
         )
 
 
+def _migrate_media_knowledge(connection) -> None:
+    """Cria a persistência dos resultados de análise multimídia."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS media_knowledge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_path TEXT NOT NULL,
+            analysis_version TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_media_knowledge_source_path
+        ON media_knowledge(source_path)
+        """
+    )
+
+
+
 def _migrate_gta6_knowledge(connection) -> None:
     """Cria a camada de conhecimento especializada em GTA 6."""
     connection.execute(
@@ -700,6 +726,7 @@ def initialize_schema() -> None:
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
+        _migrate_media_knowledge(connection)
         _migrate_gta6_knowledge_source_name(connection)
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
