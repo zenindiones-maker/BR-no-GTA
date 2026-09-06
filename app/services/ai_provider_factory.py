@@ -1,16 +1,13 @@
 from app.services.ai_provider import AIProvider
-from app.services.gemini_ai_provider import GeminiAIProvider
+from app.services.tuxevil_ai_provider import TuxevilAIProvider
 
 
 def create_ai_provider() -> AIProvider:
     """
-    Compõe o AI provider real usado pelo ambiente de produção.
+    Cria o provider oficial de IA do BR.
 
-    Atualmente o backend de produção é o GeminiAIProvider.
-
-    A seleção de backend fica deliberadamente fora desta factory por enquanto.
-    Uma evolução futura poderá introduzir configuração como:
-        BR_AI_PROVIDER=gemini
-        BR_GEMINI_MODEL=...
+    O BR não gerencia credenciais dos provedores externos.
+    Todas as chamadas de IA passam pelo Tuxevil Rotator,
+    que gerencia a pool de contas Google Antigravity.
     """
-    return GeminiAIProvider()
+    return TuxevilAIProvider()
