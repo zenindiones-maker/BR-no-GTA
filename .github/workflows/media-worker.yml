@@ -1,330 +1,343 @@
-name: BR no GTA Media Worker
+name: media-worker
 
 on:
   workflow_dispatch:
     inputs:
       source_url:
-        description: "URL direta da fonte de vídeo"
+        description: "URL da mídia a ser analisada"
         required: true
         type: string
+
       source_name:
-        description: "Nome da fonte"
+        description: "Nome lógico da fonte"
         required: false
-        default: "gta6-source"
+        default: "gta6-media"
         type: string
+
       test_only:
-        description: "Executar somente os testes das engines de mídia"
+        description: "Executar somente smoke test"
         required: false
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
+concurrency:
+  group: media-worker-${{ github.event.inputs.source_url }}
+  cancel-in-progress: false
+
 jobs:
-  media-worker:
-    name: Media Worker
+  analyze-media:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout BR-no-GTA
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          python-version: "3.11"
 
-      - name: Instalar ferramentas de mídia
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade "yt-dlp[default]"
-          python -m pip install -r requirements/media.txt
+          sudo apt-get install -y \
+            ffmpeg \
+            libgl1 \
+            libglib2.0-0
 
-      - name: Verificar ambiente
+      - name: Install Python dependencies
         run: |
-          python --version
-          pip --version
-          ffmpeg -version | head -1
-          ffprobe -version | head -1
-          yt-dlp --version
-          python - <<'PYTEST'
-          import scenedetect
-          from scenedetect import ContentDetector, detect
+          python -m pip install --upgrade pip
+          pip install yt-dlp
+          pip install -r requirements/media.txt
 
-          print("PySceneDetect:", scenedetect.__version__)
-          print("ContentDetector:", ContentDetector.__name__)
-          print("detect:", detect.__name__)
-          PYTEST
-
-      - name: Testar detecção real de cenas
+      - name: Prepare workspace
         run: |
-          set -euo pipefail
+          mkdir -p runtime/media-worker/source
+          mkdir -p runtime/media-worker/analysis
+          mkdir -p runtime/media-worker/artifact
 
-          mkdir -p workspace/test
-
-          ffmpeg -y \
-            -f lavfi \
-            -i "color=c=black:s=320x240:r=30:d=2" \
-            -f lavfi \
-            -i "color=c=white:s=320x240:r=30:d=2" \
-            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p" \
-            -t 4 \
-            workspace/test/scene_test.mp4
-
-          python - <<'PYTEST'
-          from pathlib import Path
-
-          from scenedetect import ContentDetector, detect
-
-          source = Path("workspace/test/scene_test.mp4")
-
-          scenes = detect(
-              str(source),
-              ContentDetector(threshold=10.0),
-          )
-
-          print("===== PYSCENEDETECT REAL TEST =====")
-          print("Arquivo:", source)
-          print("Cenas detectadas:", len(scenes))
-
-          for index, (start, end) in enumerate(scenes, start=1):
-              print(
-                  f"Cena {index}: "
-                  f"{start.get_seconds():.3f}s -> "
-                  f"{end.get_seconds():.3f}s"
-              )
-
-          if len(scenes) < 2:
-              raise SystemExit(
-                  "ERRO: PySceneDetect não detectou os dois planos esperados."
-              )
-
-          print("RESULTADO: PASS")
-          print("PySceneDetect executou detecção real de cenas.")
-          PYTEST
-
-      - name: Smoke test completo do MediaKnowledge
-        run: |
-          set -euo pipefail
-
-          mkdir -p workspace/test
-          mkdir -p workspace/test/.media_analysis
-
-          ffmpeg -y \
-            -f lavfi \
-            -i "color=c=black:s=320x240:r=30:d=2" \
-            -f lavfi \
-            -i "color=c=white:s=320x240:r=30:d=2" \
-            -f lavfi \
-            -i "sine=frequency=440:sample_rate=16000:duration=4" \
-            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v]" \
-            -map "[v]" \
-            -map 2:a \
-            -t 4 \
-            -c:v libx264 \
-            -preset ultrafast \
-            -pix_fmt yuv420p \
-            -c:a aac \
-            workspace/test/media_knowledge_test.mp4
-
-          python - <<'PYTEST'
-          import json
-          from dataclasses import asdict
-          from pathlib import Path
-
-          from app.services.media_analysis.pipeline import analyze_media
-
-          source = Path("workspace/test/media_knowledge_test.mp4")
-          knowledge = analyze_media(source)
-
-          assert knowledge.source_path == str(source)
-          assert knowledge.probe is not None
-          assert knowledge.probe.duration_seconds > 0
-          assert len(knowledge.scenes) >= 2
-          assert len(knowledge.audio_features) > 0
-          assert knowledge.metadata["probe_available"] is True
-          assert knowledge.metadata["scenes_available"] is True
-          assert knowledge.metadata["audio_analysis_available"] is True
-          assert knowledge.metadata["beats_available"] is True
-          assert knowledge.metadata["visual_samples_available"] is True
-          assert knowledge.metadata["motion_analysis_available"] is True
-          assert len(knowledge.visual_samples) > 0
-          assert len(knowledge.motion_features) > 0
-
-          result = asdict(knowledge)
-
-          Path("workspace/analysis").mkdir(
-              parents=True,
-              exist_ok=True,
-          )
-
-          Path(
-              "workspace/analysis/media_knowledge_smoke.json"
-          ).write_text(
-              json.dumps(
-                  result,
-                  indent=2,
-                  ensure_ascii=False,
-              )
-          )
-
-          print("===== MEDIA KNOWLEDGE SMOKE TEST =====")
-          print("Arquivo:", source)
-          print("Duração:", knowledge.probe.duration_seconds)
-          print("Cenas:", len(knowledge.scenes))
-          print("Áudio:", len(knowledge.audio_features))
-          print("Beats:", len(knowledge.beats))
-          print("Amostras visuais:", len(knowledge.visual_samples))
-          print("Features de movimento:", len(knowledge.motion_features))
-          print("RESULTADO: PASS")
-          PYTEST
-
-      - name: Criar workspace de mídia
-        if: ${{ !inputs.test_only }}
-        run: |
-          mkdir -p workspace/input
-          mkdir -p workspace/analysis
-          mkdir -p workspace/output
-
-      - name: Baixar fonte de vídeo
-        if: ${{ !inputs.test_only }}
+      - name: Download source media
         env:
-          SOURCE_URL: ${{ inputs.source_url }}
-          SOURCE_NAME: ${{ inputs.source_name }}
+          SOURCE_URL: ${{ github.event.inputs.source_url }}
+          SOURCE_NAME: ${{ github.event.inputs.source_name }}
         run: |
           set -euo pipefail
 
-          SAFE_NAME="$(printf '%s' "$SOURCE_NAME" | tr -cd '[:alnum:]_.-')"
+          yt-dlp \
+            --no-playlist \
+            --merge-output-format mp4 \
+            -o "runtime/media-worker/source/${SOURCE_NAME}.%(ext)s" \
+            "$SOURCE_URL"
 
-          if [ -z "$SAFE_NAME" ]; then
-            SAFE_NAME="gta6-source"
+          echo "Downloaded files:"
+          find runtime/media-worker/source \
+            -maxdepth 1 \
+            -type f \
+            -printf '%p\n'
+
+      - name: Locate downloaded media
+        id: media
+        run: |
+          set -euo pipefail
+
+          MEDIA_FILE="$(find runtime/media-worker/source \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -iname '*.mp4' \
+              -o -iname '*.mkv' \
+              -o -iname '*.webm' \
+              -o -iname '*.mov' \
+              -o -iname '*.avi' \
+            \) \
+            | head -n 1)"
+
+          if [ -z "$MEDIA_FILE" ]; then
+            echo "Nenhuma mídia compatível encontrada."
+            exit 1
           fi
 
-          OUTPUT="workspace/input/${SAFE_NAME}.mp4"
+          echo "media_file=$MEDIA_FILE" >> "$GITHUB_OUTPUT"
 
-          echo "===== MEDIA INGESTION ====="
-          echo "Fonte: $SOURCE_URL"
-          echo "Saída: $OUTPUT"
+          echo "Media file:"
+          echo "$MEDIA_FILE"
 
-          case "$SOURCE_URL" in
-            https://www.youtube.com/*|\
-            https://youtube.com/*|\
-            https://m.youtube.com/*|\
-            https://youtu.be/*)
-              echo "Tipo: plataforma de vídeo"
-              echo "Downloader: yt-dlp"
-
-              yt-dlp \
-                --no-playlist \
-                --format "bv*+ba/b" \
-                --merge-output-format mp4 \
-                --output "$OUTPUT" \
-                "$SOURCE_URL"
-              ;;
-
-            *)
-              echo "Tipo: URL direta"
-              echo "Downloader: curl"
-
-              curl \
-                --fail \
-                --location \
-                --retry 3 \
-                --connect-timeout 20 \
-                --output "$OUTPUT" \
-                "$SOURCE_URL"
-              ;;
-          esac
-
-          test -s "$OUTPUT"
-
-          echo "===== MEDIA DOWNLOADED ====="
-          ls -lh "$OUTPUT"
-
-      - name: Analisar mídia com ffprobe
-        if: ${{ !inputs.test_only }}
+      - name: Validate media with ffprobe
         env:
-          SOURCE_NAME: ${{ inputs.source_name }}
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
         run: |
           set -euo pipefail
-
-          SAFE_NAME="$(printf '%s' "$SOURCE_NAME" | tr -cd '[:alnum:]_.-')"
-
-          if [ -z "$SAFE_NAME" ]; then
-            SAFE_NAME="gta6-source"
-          fi
-
-          INPUT="workspace/input/${SAFE_NAME}.mp4"
-
-          test -s "$INPUT"
 
           ffprobe \
             -v error \
             -show_format \
             -show_streams \
             -of json \
-            "$INPUT" \
-            > workspace/analysis/media_probe.json
-
-          cat workspace/analysis/media_probe.json
-
-
-      - name: Validar análise
-        if: ${{ !inputs.test_only }}
-        run: |
-          test -s workspace/analysis/media_probe.json
+            "$MEDIA_FILE" \
+            > runtime/media-worker/analysis/media_probe.json
 
           python - <<'PY'
           import json
           from pathlib import Path
 
-          path = Path("workspace/analysis/media_probe.json")
-          data = json.loads(path.read_text())
+          path = Path("runtime/media-worker/analysis/media_probe.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
 
-          streams = data.get("streams", [])
-          media_format = data.get("format", {})
+          streams = payload.get("streams", [])
+          fmt = payload.get("format", {})
 
           if not streams:
-              raise SystemExit("Nenhum stream encontrado na mídia.")
+              raise SystemExit("ffprobe não encontrou streams.")
 
-          if not media_format:
-              raise SystemExit("Metadata de formato não encontrada.")
-
-          video_streams = [
-              stream
-              for stream in streams
-              if stream.get("codec_type") == "video"
-          ]
-
-          if not video_streams:
-              raise SystemExit("Nenhum stream de vídeo encontrado.")
-
-          video = video_streams[0]
-
-          print("===== MEDIA PROBE OK =====")
-          print("format:", media_format.get("format_name"))
-          print("duration:", media_format.get("duration"))
-          print("size:", media_format.get("size"))
-          print("video_codec:", video.get("codec_name"))
-          print("width:", video.get("width"))
-          print("height:", video.get("height"))
-          print("fps:", video.get("r_frame_rate"))
+          print("format:", fmt.get("format_name"))
+          print("duration:", fmt.get("duration"))
+          print("streams:", len(streams))
           PY
 
-      - name: Publicar análise
-        if: ${{ !inputs.test_only }}
+      - name: Run MediaKnowledge analysis
+        if: ${{ github.event.inputs.test_only != 'true' }}
+        env:
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from app.services.media_analysis.pipeline import analyze_media
+          from app.services.media_worker_artifact import (
+              write_media_knowledge_artifact,
+          )
+
+          source_path = Path(os.environ["MEDIA_FILE"])
+
+          print(f"Analisando mídia: {source_path}")
+
+          knowledge = analyze_media(source_path)
+
+          artifact_path = write_media_knowledge_artifact(
+              knowledge,
+              "runtime/media-worker/artifact",
+          )
+
+          print(f"MediaKnowledge criado: {artifact_path}")
+          print(f"Scenes: {len(knowledge.scenes)}")
+          print(f"Audio features: {len(knowledge.audio_features)}")
+          print(f"Beats: {len(knowledge.beats)}")
+          print(f"Visual samples: {len(knowledge.visual_samples)}")
+          print(f"Motion features: {len(knowledge.motion_features)}")
+          PY
+
+      - name: Create smoke-test MediaKnowledge artifact
+        if: ${{ github.event.inputs.test_only == 'true' }}
+        env:
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from app.services.media_analysis.pipeline import analyze_media
+          from app.services.media_worker_artifact import (
+              write_media_knowledge_artifact,
+          )
+
+          source_path = Path(os.environ["MEDIA_FILE"])
+
+          knowledge = analyze_media(source_path)
+
+          artifact_path = write_media_knowledge_artifact(
+              knowledge,
+              "runtime/media-worker/artifact",
+          )
+
+          print(f"Smoke MediaKnowledge criado: {artifact_path}")
+          PY
+
+      - name: Create Media Worker manifest
+        env:
+          SOURCE_URL: ${{ github.event.inputs.source_url }}
+          SOURCE_NAME: ${{ github.event.inputs.source_name }}
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          artifact_dir = Path("runtime/media-worker/artifact")
+          knowledge_path = artifact_dir / "media_knowledge.json"
+          probe_path = Path(
+              "runtime/media-worker/analysis/media_probe.json"
+          )
+
+          if not knowledge_path.is_file():
+              raise SystemExit(
+                  "media_knowledge.json não foi produzido."
+              )
+
+          if not probe_path.is_file():
+              raise SystemExit(
+                  "media_probe.json não foi produzido."
+              )
+
+          manifest = {
+              "worker": "media-worker",
+              "worker_version": "1",
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "source_url": os.environ["SOURCE_URL"],
+              "source_name": os.environ["SOURCE_NAME"],
+              "source_file": os.environ["MEDIA_FILE"],
+              "analysis_artifact": "media_knowledge.json",
+              "probe_artifact": "media_probe.json",
+              "created_at": datetime.now(
+                  timezone.utc
+              ).isoformat(),
+          }
+
+          path = artifact_dir / "media-worker-manifest.json"
+
+          path.write_text(
+              json.dumps(
+                  manifest,
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+
+          print(path)
+          PY
+
+          cp \
+            runtime/media-worker/analysis/media_probe.json \
+            runtime/media-worker/artifact/media_probe.json
+
+      - name: Validate final artifact
+        run: |
+          set -euo pipefail
+
+          test -s runtime/media-worker/artifact/media_knowledge.json
+          test -s runtime/media-worker/artifact/media_probe.json
+          test -s runtime/media-worker/artifact/media-worker-manifest.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifact_dir = Path("runtime/media-worker/artifact")
+
+          knowledge = json.loads(
+              (artifact_dir / "media_knowledge.json")
+              .read_text(encoding="utf-8")
+          )
+
+          manifest = json.loads(
+              (artifact_dir / "media-worker-manifest.json")
+              .read_text(encoding="utf-8")
+          )
+
+          if not isinstance(knowledge, dict):
+              raise SystemExit(
+                  "media_knowledge.json precisa conter um objeto JSON."
+              )
+
+          required = {
+              "source_path",
+              "scenes",
+              "audio_features",
+              "beats",
+              "visual_samples",
+              "motion_features",
+              "metadata",
+          }
+
+          missing = required - knowledge.keys()
+
+          if missing:
+              raise SystemExit(
+                  f"MediaKnowledge incompleto: {sorted(missing)}"
+              )
+
+          if manifest.get("worker") != "media-worker":
+              raise SystemExit("Manifest inválido.")
+
+          print("Final artifact validation: OK")
+          print("Knowledge keys:", sorted(knowledge.keys()))
+          print("Analysis version:", knowledge["metadata"].get(
+              "analysis_version"
+          ))
+          PY
+
+          echo
+          echo "=== MEDIA WORKER ARTIFACT ==="
+          find runtime/media-worker/artifact \
+            -maxdepth 1 \
+            -type f \
+            -printf '%f %s bytes\n' \
+            | sort
+
+      - name: Upload MediaKnowledge artifact
         uses: actions/upload-artifact@v4
         with:
-          name: media-analysis-${{ github.run_id }}
-          path: workspace/analysis/media_probe.json
-          retention-days: 7
-
-      - name: Resumo do worker
-        if: ${{ !inputs.test_only }}
-        run: |
-          printf '\n===== MEDIA WORKER =====\n'
-          printf 'Fonte: %s\n' "${{ inputs.source_name }}"
-          printf 'Runner: %s\n' "${RUNNER_NAME}"
-          printf 'Workspace: %s\n' "$GITHUB_WORKSPACE"
-          printf 'Análise: workspace/analysis/media_probe.json\n'
-          printf 'Status: READY\n'
+          name: media-knowledge
+          path: |
+            runtime/media-worker/artifact/media_knowledge.json
+            runtime/media-worker/artifact/media_probe.json
+            runtime/media-worker/artifact/media-worker-manifest.json
+          if-no-files-found: error
+          retention-days: 3
