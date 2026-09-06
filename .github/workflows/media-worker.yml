@@ -161,6 +161,11 @@ jobs:
             web_embedded
             web_safari
             android_vr
+            tv
+            tv_simply
+            web_music
+            android
+            ios
           )
 
           for client in "${clients[@]}"; do
