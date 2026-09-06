@@ -76,6 +76,7 @@ jobs:
           yt-dlp \
             --no-playlist \
             --js-runtimes deno \
+            --extractor-args "youtube:player_client=web_embedded" \
             --merge-output-format mp4 \
             -o "runtime/media-worker/source/${SOURCE_NAME}.%(ext)s" \
             "$SOURCE_URL"
