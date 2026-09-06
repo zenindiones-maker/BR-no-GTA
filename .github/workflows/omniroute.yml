@@ -29,3 +29,21 @@ jobs:
           node --version
           npm --version
           omniroute --version
+
+      - name: Start OmniRoute
+        run: |
+          nohup omniroute serve > /tmp/omniroute.log 2>&1 &
+          echo $! > /tmp/omniroute.pid
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:20128/health >/tmp/omniroute-health.json 2>/dev/null; then
+              echo "OMNIROUTE HEALTH OK"
+              cat /tmp/omniroute-health.json
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "OMNIROUTE FAILED TO START"
+          cat /tmp/omniroute.log
+          exit 1
