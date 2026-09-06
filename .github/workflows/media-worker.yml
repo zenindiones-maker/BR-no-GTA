@@ -144,6 +144,103 @@ jobs:
               print(f"{name}: {spec}")
           PY2
 
+      - name: Compare YouTube clients
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          mkdir -p runtime/media-worker/youtube-clients
+
+          clients=(
+            mweb
+            web
+            web_embedded
+            web_safari
+            android_vr
+          )
+
+          for client in "${clients[@]}"; do
+            log="runtime/media-worker/youtube-clients/${client}.log"
+
+            echo
+            echo "============================================================"
+            echo "YOUTUBE CLIENT: ${client}"
+            echo "============================================================"
+
+            yt-dlp \
+              --verbose \
+              --simulate \
+              --no-playlist \
+              --js-runtimes deno \
+              --extractor-args "youtube:player_client=${client};youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+              "$SOURCE_URL" \
+              2>&1 | tee "$log"
+
+            rc=${PIPESTATUS[0]}
+
+            echo
+            echo "CLIENT=${client}"
+            echo "EXIT_CODE=${rc}"
+
+            if grep -q "\[pot:bgutil:http\]" "$log"; then
+              echo "BGUTIL_HTTP=INVOKED"
+            else
+              echo "BGUTIL_HTTP=NOT_INVOKED"
+            fi
+
+            if grep -q "Retrieved a gvs PO Token" "$log"; then
+              echo "GVS_PO_TOKEN=RETRIEVED"
+            else
+              echo "GVS_PO_TOKEN=NOT_RETRIEVED"
+            fi
+
+            if grep -q "LOGIN_REQUIRED" "$log"; then
+              echo "PLAYABILITY=LOGIN_REQUIRED"
+            elif grep -q "UNPLAYABLE" "$log"; then
+              echo "PLAYABILITY=UNPLAYABLE"
+            elif grep -q "ERROR:" "$log"; then
+              echo "PLAYABILITY=ERROR"
+            else
+              echo "PLAYABILITY=NO_FATAL_PLAYABILITY_ERROR"
+            fi
+
+            echo
+          done
+
+          echo
+          echo "============================================================"
+          echo "YOUTUBE CLIENT COMPARISON SUMMARY"
+          echo "============================================================"
+
+          for client in "${clients[@]}"; do
+            log="runtime/media-worker/youtube-clients/${client}.log"
+
+            if grep -q "\[pot:bgutil:http\]" "$log"; then
+              pot="INVOKED"
+            else
+              pot="NOT_INVOKED"
+            fi
+
+            if grep -q "Retrieved a gvs PO Token" "$log"; then
+              token="RETRIEVED"
+            else
+              token="NOT_RETRIEVED"
+            fi
+
+            if grep -q "LOGIN_REQUIRED" "$log"; then
+              result="LOGIN_REQUIRED"
+            elif grep -q "UNPLAYABLE" "$log"; then
+              result="UNPLAYABLE"
+            elif grep -q "ERROR:" "$log"; then
+              result="ERROR"
+            else
+              result="NO_FATAL_ERROR"
+            fi
+
+            printf '%-16s POT=%-12s TOKEN=%-12s RESULT=%s\n' \
+              "$client" "$pot" "$token" "$result"
+          done
+
       - name: Download source media
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
