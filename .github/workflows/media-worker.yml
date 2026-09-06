@@ -146,8 +146,12 @@ jobs:
 
       - name: Compare YouTube clients
         shell: bash
+        env:
+          SOURCE_URL: ${{ github.event.inputs.source_url }}
         run: |
-          set -uo pipefail
+          set +e
+          set -u
+          set -o pipefail
 
           mkdir -p runtime/media-worker/youtube-clients
 
