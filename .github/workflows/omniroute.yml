@@ -1,0 +1,32 @@
+name: OmniRoute AI Gateway
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  omniroute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout BR-no-GTA
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install OmniRoute
+        run: |
+          npm install -g omniroute@3.8.50
+
+      - name: Verify installation
+        run: |
+          node --version
+          npm --version
+          omniroute --version
