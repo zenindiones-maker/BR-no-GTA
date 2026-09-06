@@ -95,6 +95,55 @@ jobs:
 
           echo "PO Token provider iniciado em 127.0.0.1:4416"
 
+      - name: Diagnose YouTube PO Token
+        run: |
+          set -euo pipefail
+
+          echo "=== yt-dlp ==="
+          which yt-dlp
+          yt-dlp --version
+
+          echo "=== Python ==="
+          which python
+          python --version
+
+          echo "=== bgutil package ==="
+          python -m pip show bgutil-ytdlp-pot-provider || true
+
+          echo "=== PO Token provider ==="
+          if kill -0 "$(cat runtime/bgutil-ytdlp-pot-provider/server/provider.pid)" 2>/dev/null; then
+            echo "PO Token provider process: OK"
+          else
+            echo "PO Token provider process: FAILED"
+            cat runtime/bgutil-ytdlp-pot-provider/server/provider.log || true
+            exit 1
+          fi
+
+          echo "=== PO Token provider log ==="
+          tail -n 100 runtime/bgutil-ytdlp-pot-provider/server/provider.log || true
+
+          echo "=== yt-dlp diagnostic ==="
+          yt-dlp \
+            --verbose \
+            --simulate \
+            --no-playlist \
+            --js-runtimes deno \
+            --extractor-args "youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            "https://www.youtube.com/watch?v=VQRLujxTm3c" \
+            2>&1 | tee runtime/media-worker/yt-dlp-diagnostic.log || true
+
+          echo "=== plugin discovery ==="
+          python - <<'PY2'
+          import importlib.util
+
+          for name in (
+              "yt_dlp_plugins",
+              "yt_dlp_plugins.postprocessor",
+          ):
+              spec = importlib.util.find_spec(name)
+              print(f"{name}: {spec}")
+          PY2
+
       - name: Download source media
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
@@ -103,6 +152,7 @@ jobs:
           set -euo pipefail
 
           yt-dlp \
+            --verbose \
             --no-playlist \
             --js-runtimes deno \
             --extractor-args "youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
