@@ -68,6 +68,8 @@ def analyze_media(
         scenes=scene_knowledge,
         audio_features=audio_features,
         beats=beats,
+        visual_samples=visual_samples,
+        motion_features=motion_features,
         metadata={
             "analysis_version": "3",
             "probe_available": True,
