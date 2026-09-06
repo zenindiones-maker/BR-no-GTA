@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from app.services.gta6_knowledge import (
@@ -373,10 +374,13 @@ def _parse_datetime(
         parsed = datetime.fromisoformat(
             value.replace("Z", "+00:00")
         )
-    except ValueError as exc:
-        raise ValueError(
-            f"data inválida: {value}"
-        ) from exc
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"data inválida: {value}"
+            ) from exc
 
     if parsed.tzinfo is None:
         parsed = parsed.replace(
