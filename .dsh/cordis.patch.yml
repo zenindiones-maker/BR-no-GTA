@@ -1,0 +1,13 @@
+- insert:
+    - id: mcp-br
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: br
+        transport: stdio
+        command: python3
+        args:
+          - -m
+          - app.integrations.deepseek_harness.server
+        cwd: !!js process.cwd()
+        toolCallTimeoutMs: 120000
+        failOnStartupError: true
