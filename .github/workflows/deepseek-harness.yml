@@ -75,6 +75,63 @@ jobs:
           print("FASTMCP: OK")
           PY
 
+      - name: DSH MCP discovery
+        run: |
+          echo "===== DSH MCP DISCOVERY ====="
+          printf '%s\\n' "Verificando patch do BR MCP..."
+          test -f .dsh/cordis.patch.yml
+          grep -A14 -B2 "mcp-br" .dsh/cordis.patch.yml
+
+          echo "===== DSH CONFIG ====="
+          npx --yes @deepseek-ai/dsh \
+            --profile headless \
+            --patch .dsh/cordis.patch.yml \
+            --dump-config 2>&1 | tee /tmp/dsh-config.log
+
+          echo "===== MCP SERVER DIRECT DISCOVERY ====="
+          python3 - <<'PY2'
+          import asyncio
+          import sys
+
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          async def main():
+              server = StdioServerParameters(
+                  command=sys.executable,
+                  args=["-m", "app.integrations.deepseek_harness.server"],
+              )
+
+              async with stdio_client(server) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      result = await session.list_tools()
+
+                      names = [tool.name for tool in result.tools]
+
+                      print("MCP TOOLS:", names)
+                      print("TOTAL:", len(names))
+
+                      expected = {
+                          "br_research_run",
+                          "br_editorial_process_next",
+                          "br_execution_run_once",
+                          "br_gta6_monitor_run_once",
+                      }
+
+                      assert set(names) == expected
+                      assert len(names) == 4
+
+                      print("MCP DISCOVERY: OK")
+
+          asyncio.run(main())
+          PY2
+
+          echo "===== DSH MCP PATCH CHECK ====="
+          grep -q "serverName: br" .dsh/cordis.patch.yml
+          grep -q "app.integrations.deepseek_harness.server" .dsh/cordis.patch.yml
+          echo "DSH MCP CONFIG: OK"
+
       - name: BR tests
         run: |
           echo "===== PYTEST ====="
