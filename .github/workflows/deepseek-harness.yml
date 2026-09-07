@@ -15,20 +15,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
-      - name: Show environment
+      - name: Environment
         run: |
           echo "===== ENVIRONMENT ====="
           uname -a
           node -v
           npm -v
           git --version
+          python3 --version
 
-      - name: Install DeepSeek Harness
+      - name: DeepSeek Harness CLI
         run: |
-          npm install -g pnpm
-          pnpm -v
-
-      - name: Test DeepSeek Harness
-        run: |
+          echo "===== DSH HELP ====="
           npx --yes @deepseek-ai/dsh --help
+
+      - name: DeepSeek Harness Package
+        run: |
+          echo "===== PACKAGE ====="
+          npm view @deepseek-ai/dsh name version description repository.url
+
+      - name: BR baseline
+        run: |
+          echo "===== BR GIT ====="
+          git rev-parse HEAD
+          git status --short
+
+      - name: BR tests
+        run: |
+          echo "===== PYTEST ====="
+          python3 -m pip install -q pytest
+          python3 -m pytest -q
