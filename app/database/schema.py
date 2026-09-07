@@ -690,6 +690,56 @@ def _migrate_gta6_monitor_runs(connection) -> None:
         """
     )
 
+def _migrate_gta6_master_agent_runs(connection) -> None:
+    """Cria a persistência dos ciclos operacionais do GTA6 Master Agent."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_master_agent_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id TEXT NOT NULL,
+            cycle_number INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            action TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            tool TEXT,
+            success INTEGER NOT NULL,
+            result_json TEXT NOT NULL,
+            error_type TEXT,
+            error TEXT,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_master_agent_runs_execution_id
+        ON gta6_master_agent_runs(execution_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_master_agent_runs_status
+        ON gta6_master_agent_runs(status)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_master_agent_runs_action
+        ON gta6_master_agent_runs(action)
+        """
+    )
+
+
 def _migrate_gta6_scheduler_events(connection) -> None:
     """Cria a persistência dos eventos operacionais do scheduler GTA 6."""
 
@@ -731,6 +781,7 @@ def initialize_schema() -> None:
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
         _migrate_gta6_monitor_runs(connection)
+        _migrate_gta6_master_agent_runs(connection)
         _migrate_gta6_scheduler_events(connection)
         connection.commit()
     finally:

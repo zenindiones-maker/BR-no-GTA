@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
+from app.database.gta6_master_agent_repository import (
+    create_gta6_master_agent_run,
+)
 from app.services.ai_provider import AIProvider
 from app.services.ai_provider_factory import create_ai_provider
 from app.services.gta6_action_dispatcher import (
@@ -53,13 +58,51 @@ class GTA6MasterAgent:
         """
         Executa exatamente um ciclo:
 
-        1. Brain observa o estado.
-        2. Brain decide uma ação.
-        3. Dispatcher executa somente essa ação.
-        4. Retorna decisão + resultado.
+        1. Gera o execution_id do ciclo.
+        2. Brain observa o estado.
+        3. Brain decide uma ação.
+        4. Dispatcher executa somente essa ação.
+        5. Persiste decisão + ação + resultado.
+        6. Retorna decisão + resultado da ação.
         """
+        execution_id = str(uuid4())
+        cycle_number = 1
+        started_at = datetime.now(timezone.utc).isoformat()
+
         decision = self.brain.decide()
         action_result = self.dispatcher.dispatch(decision)
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+
+        create_gta6_master_agent_run(
+            execution_id=execution_id,
+            cycle_number=cycle_number,
+            action=decision.action,
+            reason=decision.reason,
+            priority=decision.priority,
+            confidence=decision.confidence,
+            tool=action_result.tool,
+            success=action_result.success,
+            started_at=started_at,
+            completed_at=completed_at,
+            result=action_result.result,
+            error_type=(
+                action_result.result.get("error_type")
+                if (
+                    not action_result.success
+                    and isinstance(action_result.result, dict)
+                )
+                else None
+            ),
+            error=(
+                action_result.result.get("error")
+                if (
+                    not action_result.success
+                    and isinstance(action_result.result, dict)
+                )
+                else None
+            ),
+        )
 
         return MasterAgentCycleResult(
             decision=decision,
