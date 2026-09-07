@@ -1,0 +1,34 @@
+name: DeepSeek Harness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout BR-no-GTA
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Show environment
+        run: |
+          echo "===== ENVIRONMENT ====="
+          uname -a
+          node -v
+          npm -v
+          git --version
+
+      - name: Install DeepSeek Harness
+        run: |
+          npm install -g pnpm
+          pnpm -v
+
+      - name: Test DeepSeek Harness
+        run: |
+          npx --yes @deepseek-ai/dsh --help
