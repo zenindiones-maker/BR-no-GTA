@@ -6,6 +6,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.services.ai_provider_factory import create_ai_provider
+from app.services.gta6_brain import GTA6Brain
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
@@ -32,6 +33,17 @@ def _json_result(
         },
         ensure_ascii=False,
         default=str,
+    )
+
+
+@mcp.tool()
+def br_gta6_brain_decide() -> str:
+    brain = GTA6Brain(ai_provider=create_ai_provider())
+    decision = brain.decide()
+
+    return _json_result(
+        operation="br_gta6_brain_decide",
+        result=decision,
     )
 
 

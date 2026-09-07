@@ -51,3 +51,5 @@ cache/
 # Local runtime artifacts
 .runtime/
 runtime/
+
+.env.local

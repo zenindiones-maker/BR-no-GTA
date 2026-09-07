@@ -1,3 +1,38 @@
+- id: session-persistence-jsonl
+
+- id: llm-pi-ai
+  config:
+    providers:
+      tuxevil:
+        displayName: Tuxevil
+        apiKeyEnv: TUXEVIL_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:51200/v1
+        models:
+          - id: gemini-3-flash
+            name: Gemini 3 Flash
+            contextWindow: 1000000
+
+- id: agent-default-model
+  config:
+    provider: tuxevil
+    model: gemini-3-flash
+
+- id: web
+  disabled: true
+
+- id: web-fetch-http
+  disabled: true
+
+- id: attachment-local
+  disabled: true
+
+- id: web-search-deepseek
+  disabled: true
+
+- id: tool-web
+  disabled: true
+
 - insert:
     - id: mcp-br
       name: '@deepseek-ai/dsh-mcp-client'
