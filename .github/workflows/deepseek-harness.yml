@@ -36,6 +36,12 @@ jobs:
           npm install --global pnpm@10
           pnpm --version
 
+      - name: Install DeepSeek Harness MCP client
+        run: |
+          echo "===== DSH MCP CLIENT ====="
+          npx --yes @deepseek-ai/dsh plugin --profile headless add @deepseek-ai/dsh-mcp-client@0.0.1-rc.1
+          npx --yes @deepseek-ai/dsh plugin --profile headless list
+
       - name: DeepSeek Harness CLI
         run: |
           echo "===== DSH HELP ====="
