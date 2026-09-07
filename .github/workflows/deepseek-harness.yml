@@ -64,6 +64,17 @@ jobs:
           python3 -m pip install -r requirements.txt
           python3 -m pip install pytest==9.1.1
 
+      - name: MCP SDK
+        run: |
+          echo "===== MCP SDK ====="
+          python3 -m pip show mcp
+          python3 - <<'PY'
+          import mcp
+          from mcp.server.fastmcp import FastMCP
+          print("MCP IMPORT: OK")
+          print("FASTMCP: OK")
+          PY
+
       - name: BR tests
         run: |
           echo "===== PYTEST ====="
