@@ -11,6 +11,11 @@ jobs:
       - name: Checkout BR-no-GTA
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -41,8 +46,15 @@ jobs:
           git rev-parse HEAD
           git status --short
 
+      - name: Install BR dependencies
+        run: |
+          echo "===== PYTHON DEPENDENCIES ====="
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest==9.1.1
+
       - name: BR tests
         run: |
           echo "===== PYTEST ====="
-          python3 -m pip install -q pytest
+          python3 --version
           python3 -m pytest -q
