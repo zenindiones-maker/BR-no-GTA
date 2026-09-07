@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 
 from app.services.ai_provider_factory import create_ai_provider
 from app.services.gta6_brain import GTA6Brain
+from app.services.gta6_master_agent import GTA6MasterAgent
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
@@ -34,6 +35,27 @@ def _json_result(
         ensure_ascii=False,
         default=str,
     )
+
+
+@mcp.tool()
+def br_gta6_master_agent_run_once() -> str:
+    """
+    Execute exactly one GTA6 Master Agent control cycle.
+
+    The GTA6 Brain decides the next action and the Master Agent
+    dispatcher executes only that authorized action.
+    """
+    agent = GTA6MasterAgent(
+        ai_provider=create_ai_provider(),
+    )
+
+    result = agent.run_once()
+
+    return _json_result(
+        operation="br_gta6_master_agent_run_once",
+        result=agent.to_dict(result),
+    )
+
 
 
 @mcp.tool()
