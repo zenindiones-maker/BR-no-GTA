@@ -81,6 +81,13 @@ def br_editorial_process_next() -> str:
         ai_provider=ai_provider,
     )
 
+    if result is None:
+        result = {
+            "status": "no_work",
+            "executed": False,
+            "reason": "Nenhum item queued disponível na fila editorial.",
+        }
+
     return _json_result(
         operation="br_editorial_process_next",
         result=result,
