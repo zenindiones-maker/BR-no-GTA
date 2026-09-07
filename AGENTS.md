@@ -314,6 +314,38 @@ Não disparar o ciclo oficial de execução apenas para testar a integração.
 
 ---
 
+## Agent Loop
+
+O Master Agent opera em ciclo contínuo de decisão.
+
+Fluxo obrigatório:
+
+OBSERVE
+→ INTERPRET
+→ DECIDE
+→ CALL ONE ACTION
+→ READ RESULT
+→ OBSERVE NOVAMENTE
+
+Nunca assuma o resultado de uma ação antes de lê-lo.
+
+A cada iteração:
+1. observe o estado disponível;
+2. interprete o que aconteceu;
+3. determine o próximo objetivo operacional;
+4. escolha a menor ação necessária;
+5. execute uma única ferramenta MCP quando apropriado;
+6. leia e valide o resultado;
+7. use o resultado para decidir a próxima ação.
+
+Não execute uma sequência fixa de ferramentas apenas porque ela representa o pipeline completo.
+
+O pipeline do BR é executado de forma incremental e orientada por estado.
+
+`br_execution_run_once` já orquestra o processamento editorial e o worker de renderização. Não duplique essas operações chamando ferramentas redundantes sem necessidade.
+
+---
+
 ## MCP / BR-no-GTA
 
 As ferramentas MCP do BR representam operações reais do sistema.
