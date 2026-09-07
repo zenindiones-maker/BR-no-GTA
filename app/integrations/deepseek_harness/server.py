@@ -6,13 +6,12 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.services.ai_provider_factory import create_ai_provider
-from app.services.gta6_brain import GTA6Brain
-from app.services.gta6_master_agent import GTA6MasterAgent
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
 from app.services.execution_cycle_service import run_execution_cycle
 from app.services.gta6_monitor_worker_service import execute_gta6_monitor
+from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_research_pipeline import run_gta6_research
 
 
@@ -37,35 +36,19 @@ def _json_result(
     )
 
 
-@mcp.tool()
-def br_gta6_master_agent_run_once() -> str:
-    """
-    Execute exactly one GTA6 Master Agent control cycle.
-
-    The GTA6 Brain decides the next action and the Master Agent
-    dispatcher executes only that authorized action.
-    """
-    agent = GTA6MasterAgent(
-        ai_provider=create_ai_provider(),
-    )
-
-    result = agent.run_once()
-
-    return _json_result(
-        operation="br_gta6_master_agent_run_once",
-        result=agent.to_dict(result),
-    )
-
-
 
 @mcp.tool()
-def br_gta6_brain_decide() -> str:
-    brain = GTA6Brain(ai_provider=create_ai_provider())
-    decision = brain.decide()
+def br_observe() -> str:
+    """
+    Observe the current GTA6 operational state.
 
+    This is a read-only observation tool for the DeepSeek Harness.
+    It does not execute pipelines, call AI, or modify persistence.
+    """
+    result = build_gta6_observation()
     return _json_result(
-        operation="br_gta6_brain_decide",
-        result=decision,
+        operation="br_observe",
+        result=result,
     )
 
 
