@@ -8,3 +8,7 @@ python-dotenv==1.2.3
 google-genai==2.21.0
 
 yt-dlp==2026.08.19
+
+mcp==1.29.1
+
+mcp==1.29.1
