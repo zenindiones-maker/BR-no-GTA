@@ -30,10 +30,21 @@ jobs:
           git --version
           python3 --version
 
+      - name: Install pnpm
+        run: |
+          echo "===== PNPM ====="
+          npm install --global pnpm@10
+          pnpm --version
+
       - name: DeepSeek Harness CLI
         run: |
           echo "===== DSH HELP ====="
           npx --yes @deepseek-ai/dsh --help
+
+      - name: DeepSeek Harness plugin manager
+        run: |
+          echo "===== DSH PLUGIN ====="
+          npx --yes @deepseek-ai/dsh plugin --profile headless list
 
       - name: DeepSeek Harness Package
         run: |
