@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -12,7 +13,12 @@ from app.services.editorial_queue_consumer import (
 from app.services.execution_cycle_service import run_execution_cycle
 from app.services.gta6_monitor_worker_service import execute_gta6_monitor
 from app.services.gta6_observation_service import build_gta6_observation
+from app.services.gta6_knowledge_query_service import (
+    knowledge_context_to_dict,
+    query_gta6_knowledge_context,
+)
 from app.services.gta6_research_pipeline import run_gta6_research
+from app.main import initialize_application
 
 
 mcp = FastMCP(
@@ -26,10 +32,16 @@ def _json_result(
     result: Any,
 ) -> str:
     """Serialize a BR operation result for MCP."""
+    serialized_result = (
+        asdict(result)
+        if is_dataclass(result)
+        else result
+    )
+
     return json.dumps(
         {
             "operation": operation,
-            "result": result,
+            "result": serialized_result,
         },
         ensure_ascii=False,
         default=str,
@@ -48,6 +60,34 @@ def br_observe() -> str:
     result = build_gta6_observation()
     return _json_result(
         operation="br_observe",
+        result=result,
+    )
+
+
+
+@mcp.tool()
+def br_knowledge_query(query: str) -> str:
+    """
+    Query the GTA6 Knowledge Brain.
+
+    Returns the most relevant persisted knowledge context,
+    including confidence and evidence lineage.
+    """
+    context = query_gta6_knowledge_context(
+        query=query,
+    )
+
+    if context is None:
+        result = {
+            "status": "no_knowledge",
+            "query": query,
+            "reason": "Nenhum conhecimento relevante encontrado no GTA6 Knowledge Brain.",
+        }
+    else:
+        result = knowledge_context_to_dict(context)
+
+    return _json_result(
+        operation="br_knowledge_query",
         result=result,
     )
 
@@ -129,6 +169,7 @@ def br_gta6_monitor_run_once() -> str:
 
 def main() -> None:
     """Run the BR MCP server over stdio."""
+    initialize_application()
     mcp.run(
         transport="stdio",
     )

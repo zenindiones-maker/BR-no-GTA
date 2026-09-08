@@ -62,3 +62,7 @@ class GTA6MonitorExecutionResult:
     @property
     def knowledge_ids(self) -> list[int]:
         return self.result.knowledge_ids
+
+    @property
+    def intelligence(self) -> list[dict[str, Any]]:
+        return self.result.intelligence

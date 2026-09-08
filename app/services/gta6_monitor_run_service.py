@@ -38,6 +38,10 @@ from app.database.memory_claim_evidence_repository import (
 from app.services.memory_claim_resolution_service import (
     resolve_memory_claim,
 )
+from app.services.memory_claim_intelligence_service import (
+    analyze_memory_claim,
+    claim_intelligence_to_dict,
+)
 from app.services.memory_consolidation_persistence_service import (
     consolidate_and_persist_claim,
 )
@@ -88,8 +92,14 @@ def _process_gta6_knowledge_brain(
     claim_ids: list[int] = []
     evidence_ids: list[int] = []
     memory_ids: list[int] = []
+    intelligence_results: list[dict[str, Any]] = []
 
     for claim in claims:
+        intelligence = analyze_memory_claim(claim)
+        intelligence_results.append(
+            claim_intelligence_to_dict(intelligence)
+        )
+
         resolution = resolve_memory_claim(claim)
         claim_id = resolution.claim_id
 
@@ -125,6 +135,7 @@ def _process_gta6_knowledge_brain(
         "claim_ids": claim_ids,
         "evidence_ids": evidence_ids,
         "memory_ids": memory_ids,
+        "intelligence": intelligence_results,
     }
 
 
@@ -140,6 +151,7 @@ class GTA6MonitorRunResult:
     items_ingested: int
     items_duplicated: int
     knowledge_ids: list[int]
+    intelligence: list[dict[str, Any]]
 
 
 def run_gta6_monitor_once(
@@ -200,6 +212,7 @@ def run_gta6_monitor_once(
                 items_ingested=0,
                 items_duplicated=0,
                 knowledge_ids=[],
+                intelligence=[],
             )
 
             complete_gta6_monitor_run(
@@ -225,6 +238,7 @@ def run_gta6_monitor_once(
         )
 
         knowledge_ids: list[int] = []
+        intelligence: list[dict[str, Any]] = []
         duplicated = 0
 
         for item, result in zip(items, ingestion_results):
@@ -236,10 +250,14 @@ def run_gta6_monitor_once(
             if result.get("duplicate") is True:
                 duplicated += 1
 
-            _process_gta6_knowledge_brain(
+            brain_result = _process_gta6_knowledge_brain(
                 item=item,
                 ingestion_result=result,
             )
+
+            item_intelligence = brain_result.get("intelligence", [])
+            if isinstance(item_intelligence, list):
+                intelligence.extend(item_intelligence)
 
         record_gta6_monitor_change(
             url=page.url,
@@ -261,6 +279,7 @@ def run_gta6_monitor_once(
             items_ingested=len(items) - duplicated,
             items_duplicated=duplicated,
             knowledge_ids=knowledge_ids,
+            intelligence=intelligence,
         )
 
         complete_gta6_monitor_run(
