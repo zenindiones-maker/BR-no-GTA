@@ -435,6 +435,10 @@
 
       toolOrder:
         - br_observe
+        - br_knowledge_query
+        - get_goal
+        - create_goal
+        - update_goal
         - br_gta6_monitor_run_once
         - br_research_run
         - br_editorial_process_next
