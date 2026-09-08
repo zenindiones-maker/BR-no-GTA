@@ -333,6 +333,28 @@ def _migrate_memory_claims(connection) -> None:
         """
     )
 
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(memory_claims)"
+        ).fetchall()
+    }
+
+    if "canonical_key" not in columns:
+        connection.execute(
+            "ALTER TABLE memory_claims "
+            "ADD COLUMN canonical_key TEXT NOT NULL DEFAULT ''"
+        )
+
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_memory_claims_canonical_key
+        ON memory_claims(canonical_key)
+        WHERE canonical_key != ''
+        """
+    )
+
     connection.execute(
         """
         CREATE INDEX IF NOT EXISTS

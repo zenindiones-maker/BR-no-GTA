@@ -27,9 +27,10 @@ def insert_memory_claim(
                 scope,
                 valid_at,
                 invalid_at,
-                extraction_method
+                extraction_method,
+                canonical_key
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 claim.claim,
@@ -40,6 +41,7 @@ def insert_memory_claim(
                 claim.valid_at,
                 claim.invalid_at,
                 claim.extraction_method,
+                claim.canonical_key,
             ),
         )
 
@@ -66,9 +68,59 @@ def _deserialize_claim(
         "valid_at": row["valid_at"],
         "invalid_at": row["invalid_at"],
         "extraction_method": row["extraction_method"],
+        "canonical_key": row["canonical_key"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def find_memory_claim_by_canonical_key(
+    canonical_key: str,
+) -> dict[str, Any] | None:
+    """Busca o claim persistido pela identidade canônica."""
+
+    if not isinstance(canonical_key, str):
+        raise TypeError(
+            "canonical_key deve ser uma string."
+        )
+
+    normalized_key = canonical_key.strip()
+
+    if not normalized_key:
+        raise ValueError(
+            "canonical_key não pode ser vazio."
+        )
+
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                claim,
+                claim_type,
+                confidence,
+                status,
+                scope,
+                valid_at,
+                invalid_at,
+                extraction_method,
+                canonical_key,
+                created_at,
+                updated_at
+            FROM memory_claims
+            WHERE canonical_key = ?
+            LIMIT 1
+            """,
+            (normalized_key,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return _deserialize_claim(row)
+    finally:
+        connection.close()
 
 
 def get_memory_claim(
@@ -91,6 +143,7 @@ def get_memory_claim(
                 valid_at,
                 invalid_at,
                 extraction_method,
+                canonical_key,
                 created_at,
                 updated_at
             FROM memory_claims
@@ -169,6 +222,7 @@ def list_memory_claims(
                 valid_at,
                 invalid_at,
                 extraction_method,
+                canonical_key,
                 created_at,
                 updated_at
             FROM memory_claims

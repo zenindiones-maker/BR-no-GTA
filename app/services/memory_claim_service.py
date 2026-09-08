@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+import unicodedata
 from typing import Any
+
+
+def _canonicalize_claim_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = normalized.strip().casefold()
+    normalized = re.sub(r"\\s+", " ", normalized)
+    return normalized
 
 
 class MemoryClaimError(ValueError):
@@ -26,6 +35,7 @@ VALID_CLAIM_STATUSES = {
 
 @dataclass(frozen=True)
 class MemoryClaim:
+    canonical_key: str
     """Afirmação derivada de uma ou mais evidências."""
 
     claim: str
@@ -136,8 +146,13 @@ def create_memory_claim(
                 "invalid_at não pode ser anterior a valid_at."
             )
 
+    normalized_claim = claim.strip()
+    normalized_scope = scope.strip()
+    canonical_key = f"{normalized_scope.casefold()}:{_canonicalize_claim_text(normalized_claim)}"
+
     return MemoryClaim(
-        claim=claim.strip(),
+        claim=normalized_claim,
+        canonical_key=canonical_key,
         claim_type=claim_type,
         confidence=normalized_confidence,
         status=status,
@@ -155,6 +170,7 @@ def claim_to_dict(
 
     return {
         "claim": claim.claim,
+        "canonical_key": claim.canonical_key,
         "claim_type": claim.claim_type,
         "confidence": claim.confidence,
         "status": claim.status,
