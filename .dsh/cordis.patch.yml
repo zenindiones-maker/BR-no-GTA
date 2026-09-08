@@ -484,6 +484,7 @@
     maxParallelToolCalls: 1
     agents:
       - id: gta6-master
+        sessionId: gta6-master-session
         provider: tuxevil
         model: gemini-3-flash
 
@@ -500,3 +501,6 @@
         cwd: !!js process.cwd()
         toolCallTimeoutMs: 120000
         failOnStartupError: true
+- insert:
+    - id: gta6-master-activation
+      name: ./plugins/gta6-master-activation.mjs
