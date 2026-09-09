@@ -3,9 +3,6 @@ import argparse
 from app.services.gta6_research_pipeline import (
     run_gta6_research,
 )
-from app.services.execution_cycle_service import (
-    run_execution_cycle,
-)
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
@@ -46,20 +43,6 @@ def main() -> None:
     editorial_subparsers.add_parser(
         "process-next",
         help="Processa o próximo item da fila editorial.",
-    )
-
-    execution_parser = subparsers.add_parser(
-        "execution",
-        help="Operações do ciclo de execução.",
-    )
-
-    execution_subparsers = execution_parser.add_subparsers(
-        dest="execution_command"
-    )
-
-    execution_subparsers.add_parser(
-        "run-once",
-        help="Executa uma unidade do ciclo operacional.",
     )
 
     gta6_monitor_parser = subparsers.add_parser(
@@ -136,43 +119,6 @@ def main() -> None:
             "Fila editorial processada: "
             f"id={queue_item['id']} "
             f"status={queue_result['status']}"
-        )
-        return
-
-    if (
-        args.command == "execution"
-        and args.execution_command == "run-once"
-    ):
-        ai_provider = create_ai_provider()
-        cycle_result = run_execution_cycle(
-            ai_provider=ai_provider,
-        )
-
-        editorial_result = cycle_result["editorial"]
-        render_result = cycle_result["render"]
-
-        if editorial_result is None and render_result is None:
-            print(
-                "Nenhum trabalho pendente no ciclo de execução."
-            )
-            return
-
-        editorial_status = (
-            editorial_result["status"]
-            if editorial_result is not None
-            else "none"
-        )
-
-        render_status = (
-            render_result["status"]
-            if render_result is not None
-            else "none"
-        )
-
-        print(
-            "Ciclo de execução processado: "
-            f"editorial={editorial_status} "
-            f"render={render_status}"
         )
         return
 

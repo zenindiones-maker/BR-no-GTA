@@ -14,6 +14,7 @@ def make_dispatcher(calls: list[str]) -> GTA6ActionDispatcher:
         research=lambda: calls.append("research") or {"ok": "research"},
         editorial=lambda: calls.append("editorial") or {"ok": "editorial"},
         execution=lambda: calls.append("execution") or {"ok": "execution"},
+        youtube=lambda: calls.append("youtube") or {"ok": "youtube"},
     )
 
 
@@ -38,7 +39,7 @@ def make_dispatcher(calls: list[str]) -> GTA6ActionDispatcher:
         (
             "EXECUTION",
             "execution",
-            "br_execution_run_once",
+            "br_render_process_next",
         ),
     ],
 )
@@ -94,6 +95,7 @@ def test_action_failure_is_returned_as_result():
         research=failing_research,
         editorial=lambda: None,
         execution=lambda: None,
+        youtube=lambda: None,
     )
 
     decision = BrainDecision(

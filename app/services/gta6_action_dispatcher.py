@@ -21,7 +21,8 @@ class GTA6ActionDispatcher:
         "MONITOR": "br_gta6_monitor_run_once",
         "RESEARCH": "br_research_run",
         "EDITORIAL": "br_editorial_process_next",
-        "EXECUTION": "br_execution_run_once",
+        "EXECUTION": "br_render_process_next",
+        "YOUTUBE": "br_youtube_publication_run_once",
     }
 
     def __init__(
@@ -31,6 +32,7 @@ class GTA6ActionDispatcher:
         research: Callable[[], Any],
         editorial: Callable[[], Any],
         execution: Callable[[], Any],
+        youtube: Callable[[], Any],
     ):
         self._actions = {
             "MONITOR": (
@@ -46,8 +48,12 @@ class GTA6ActionDispatcher:
                 editorial,
             ),
             "EXECUTION": (
-                "br_execution_run_once",
+                "br_render_process_next",
                 execution,
+            ),
+            "YOUTUBE": (
+                "br_youtube_publication_run_once",
+                youtube,
             ),
         }
 

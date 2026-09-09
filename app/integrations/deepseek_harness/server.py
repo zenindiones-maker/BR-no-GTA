@@ -10,8 +10,11 @@ from app.services.ai_provider_factory import create_ai_provider
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
-from app.services.execution_cycle_service import run_execution_cycle
 from app.services.gta6_monitor_worker_service import execute_gta6_monitor
+from app.services.gta6_master_agent import GTA6MasterAgent
+from app.services.google_youtube_publication_service import (
+    make_youtube_publication_public_with_google,
+)
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_knowledge_query_service import (
     knowledge_context_to_dict,
@@ -135,26 +138,6 @@ def br_editorial_process_next() -> str:
 
 
 @mcp.tool()
-def br_execution_run_once() -> str:
-    """
-    Execute one official BR editorial/execution cycle.
-
-    Existing BR services remain responsible for business rules,
-    persistence, and execution.
-    """
-    ai_provider = create_ai_provider()
-
-    result = run_execution_cycle(
-        ai_provider=ai_provider,
-    )
-
-    return _json_result(
-        operation="br_execution_run_once",
-        result=result,
-    )
-
-
-@mcp.tool()
 def br_gta6_monitor_run_once() -> str:
     """
     Execute one GTA6 monitor cycle.
@@ -163,6 +146,40 @@ def br_gta6_monitor_run_once() -> str:
 
     return _json_result(
         operation="br_gta6_monitor_run_once",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_master_run_once() -> str:
+    """
+    Execute one official GTA6 Master Agent control cycle.
+
+    The GTA6 Brain decides the authorized action and the Master Agent
+    dispatches only that action through the existing BR services.
+    """
+    agent = GTA6MasterAgent()
+    result = agent.run_once()
+    return _json_result(
+        operation="br_master_run_once",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_youtube_pode_postar(publication_id: int) -> str:
+    """
+    Explicit authorization gate for public YouTube publication.
+
+    This operation is intentionally separate from the GTA6 Brain YOUTUBE
+    action. YOUTUBE may upload pending content, while this operation
+    authorizes the existing uploaded -> published transition.
+    """
+    result = make_youtube_publication_public_with_google(
+        publication_id=publication_id,
+    )
+    return _json_result(
+        operation="br_youtube_pode_postar",
         result=result,
     )
 

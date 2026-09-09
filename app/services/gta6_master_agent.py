@@ -20,7 +20,10 @@ from app.services.gta6_research_pipeline import run_gta6_research
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
-from app.services.execution_cycle_service import run_execution_cycle
+from app.services.render_worker_service import process_next_render_job
+from app.services.google_youtube_publication_service import (
+    process_next_youtube_publication,
+)
 
 
 @dataclass(frozen=True)
@@ -43,15 +46,32 @@ class GTA6MasterAgent:
             ai_provider=self.ai_provider,
         )
 
+        self._current_brain_decision = BrainDecision(
+            action="WAIT",
+            reason="Nenhuma decisão executada ainda.",
+            priority="LOW",
+            confidence=0.0,
+        )
+
         self.dispatcher = GTA6ActionDispatcher(
             monitor=execute_gta6_monitor,
             research=run_gta6_research,
-            editorial=lambda: process_next_editorial_queue_item(
-                ai_provider=self.ai_provider,
-            ),
-            execution=lambda: run_execution_cycle(
-                ai_provider=self.ai_provider,
-            ),
+            editorial=lambda: self._run_editorial_with_brain_context(),
+            execution=process_next_render_job,
+            youtube=process_next_youtube_publication,
+        )
+
+    def _run_editorial_with_brain_context(self):
+        decision = self._current_brain_decision
+
+        return process_next_editorial_queue_item(
+            ai_provider=self.ai_provider,
+            brain_decision={
+                "action": decision.action,
+                "reason": decision.reason,
+                "priority": decision.priority,
+                "confidence": decision.confidence,
+            },
         )
 
     def run_once(self) -> MasterAgentCycleResult:
@@ -70,6 +90,8 @@ class GTA6MasterAgent:
         started_at = datetime.now(timezone.utc).isoformat()
 
         decision = self.brain.decide()
+        self._current_brain_decision = decision
+
         action_result = self.dispatcher.dispatch(decision)
 
         completed_at = datetime.now(timezone.utc).isoformat()

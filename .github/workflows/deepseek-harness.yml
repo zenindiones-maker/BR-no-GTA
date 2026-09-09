@@ -122,16 +122,13 @@ jobs:
                           "br_observe",
                           "br_research_run",
                           "br_editorial_process_next",
-                          "br_execution_run_once",
                           "br_gta6_monitor_run_once",
                       }
-
                       assert set(names) == expected
-                      assert len(names) == 5
-
+                      assert len(names) == 4
                       print("MCP DISCOVERY: OK")
 
-          asyncio.run(main())
+                      asyncio.run(main())
           PY2
 
           echo "===== DSH MCP PATCH CHECK ====="
