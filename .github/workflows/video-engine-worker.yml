@@ -27,6 +27,20 @@ jobs:
 
       - name: Install FFmpeg
         run: |
+          set -euo pipefail
+
+          # The GitHub-hosted runner may preload the Google Chrome APT
+          # repository. This worker does not use Chrome. A transient
+          # metadata mismatch there must not block FFmpeg installation.
+          while IFS= read -r -d '' source; do
+            if sudo grep -qiE 'dl\.google\.com/linux/chrome-stable|google-chrome' "$source"; then
+              echo "Disabling unrelated Google Chrome APT source: $source"
+              sudo mv "$source" "${source}.disabled"
+            fi
+          done < <(
+            sudo find /etc/apt/sources.list.d -type f               \( -name '*.list' -o -name '*.sources' \)               -print0
+          )
+
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
