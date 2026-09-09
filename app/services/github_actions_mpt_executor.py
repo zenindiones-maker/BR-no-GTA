@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,20 +22,6 @@ from app.services.render_executor_service import (
     AbstractRenderExecutor,
     RenderExecutionResult,
 )
-
-
-@dataclass
-class GitHubActionsMptExecutionRequest:
-    """
-    Solicitação de execução do MoneyPrinterTurbo via GitHub Actions.
-    """
-
-    repository: str
-    workflow: str
-    ref: str
-    video_subject: str
-    video_script: str
-    task_id: str
 
 
 class GitHubActionsMptExecutor(AbstractRenderExecutor):
