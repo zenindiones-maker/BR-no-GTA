@@ -38,8 +38,8 @@ class YtDlpMediaIngestion:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         options = {
-            "quiet": False,
-            "no_warnings": False,
+            "quiet": True,
+            "no_warnings": True,
             "noplaylist": True,
             "outtmpl": str(output_path.with_suffix(".%(ext)s")),
             "merge_output_format": "mp4",
@@ -54,7 +54,7 @@ class YtDlpMediaIngestion:
 
         extractor_args = {
             "youtube": {
-                "player_client": infrastructure.player_client,
+                "player_client": [infrastructure.player_client],
             },
         }
 

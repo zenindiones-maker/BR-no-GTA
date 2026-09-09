@@ -36,8 +36,8 @@ def test_ytdlp_ingestion_configures_expected_options() -> None:
 
     options = youtube_dl.call_args.args[0]
 
-    assert options["quiet"] is False
-    assert options["no_warnings"] is False
+    assert options["quiet"] is True
+    assert options["no_warnings"] is True
     assert options["noplaylist"] is True
     assert options["merge_output_format"] == "mp4"
     assert options["js_runtimes"] == {
@@ -45,7 +45,7 @@ def test_ytdlp_ingestion_configures_expected_options() -> None:
     }
     assert options["extractor_args"] == {
         "youtube": {
-            "player_client": "mweb",
+            "player_client": ["mweb"],
         },
         "youtubepot-bgutilhttp": {
             "base_url": "http://127.0.0.1:4416",
@@ -76,7 +76,7 @@ def test_ytdlp_ingestion_without_po_token_provider_keeps_options_clean() -> None
 
     assert options["extractor_args"] == {
         "youtube": {
-            "player_client": "mweb",
+            "player_client": ["mweb"],
         },
     }
 
