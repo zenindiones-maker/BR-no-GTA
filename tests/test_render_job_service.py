@@ -12,20 +12,68 @@ from app.services.render_job_service import create_render_job
 
 
 def _create_video_execution_spec():
-    initialize_schema()
-
-    idea_id = insert_idea(
-        title="TESTE - render job",
-        description="Uma pauta aprovada para gerar uma tarefa de renderização.",
-        status="approved",
-        score=9.5,
-    )
-
-    script_id = generate_and_save_script(idea_id)
-    spec = generate_script_spec(script_id)
-    item = create_content_item(spec)
-    plan = create_production_plan(item)
-    video = create_video_spec(plan)
+    video = {
+        "content_item_id": 1,
+        "script_id": 2,
+        "idea_id": 3,
+        "objective": "Testar a criação de um Render Job.",
+        "format": "youtube_short",
+        "estimated_duration_seconds": 30.0,
+        "scenes": [
+            {
+                "order": 1,
+                "narrative_block": "Introdução",
+                "narration": "Introdução do teste.",
+                "visual_type": "gameplay",
+                "visual_description": "Gameplay de teste.",
+                "duration_seconds": 10.0,
+                "requirements": ["media_real"],
+                "file_path": "/tmp/test-media.mp4",
+                "segment_id": 101,
+                "content_unit_id": 201,
+                "source_start_seconds": 0.0,
+                "source_end_seconds": 10.0,
+                "role": "primary",
+            },
+            {
+                "order": 2,
+                "narrative_block": "Desenvolvimento",
+                "narration": "Desenvolvimento do teste.",
+                "visual_type": "gameplay",
+                "visual_description": "Gameplay complementar de teste.",
+                "duration_seconds": 10.0,
+                "requirements": ["media_real"],
+                "file_path": "/tmp/test-media.mp4",
+                "segment_id": 102,
+                "content_unit_id": 202,
+                "source_start_seconds": 10.0,
+                "source_end_seconds": 20.0,
+                "role": "secondary",
+            },
+            {
+                "order": 3,
+                "narrative_block": "Conclusão",
+                "narration": "Conclusão do teste.",
+                "visual_type": "title_card",
+                "visual_description": "Encerramento de teste.",
+                "duration_seconds": 10.0,
+                "requirements": ["media_real"],
+                "file_path": "/tmp/test-media.mp4",
+                "segment_id": 103,
+                "content_unit_id": 203,
+                "source_start_seconds": 20.0,
+                "source_end_seconds": 30.0,
+                "role": "secondary",
+            },
+        ],
+        "audio_requirements": ["voiceover"],
+        "visual_requirements": ["real_media"],
+        "edit_plan": {
+            "duration_seconds": 30.0,
+            "scenes": [],
+            "cuts": [],
+        },
+    }
 
     return create_video_execution_spec(video)
 
@@ -42,6 +90,23 @@ def test_create_render_job_from_video_execution_spec():
     assert job["format"] == execution["format"]
     assert job["estimated_duration_seconds"] > 0
     assert job["status"] == "queued"
+
+
+def test_render_job_preserves_authorization_context():
+    execution = _create_video_execution_spec()
+    execution.update(
+        {
+            "brain_decision_id": "brain-test-001",
+            "execution_id": "execution-test-001",
+            "authorized_action": "EXECUTION",
+        }
+    )
+
+    job = create_render_job(execution, video_id=123)
+
+    assert job["brain_decision_id"] == "brain-test-001"
+    assert job["execution_id"] == "execution-test-001"
+    assert job["authorized_action"] == "EXECUTION"
 
 
 def test_render_job_contains_scenes():
