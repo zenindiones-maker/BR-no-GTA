@@ -251,8 +251,8 @@ jobs:
           done
 
       - name: Download source media
-          id: media-ingestion
-          shell: bash
+        id: media-ingestion
+        shell: bash
         env:
           SOURCE_URL: ${{ github.event.inputs.source_url }}
           MEDIA_OUTPUT_PATH: workspace/input/${{ github.event.inputs.source_name }}.mp4
@@ -291,15 +291,15 @@ jobs:
 
           status="$(
             python -c '
-import json
-from pathlib import Path
+            import json
+            from pathlib import Path
 
-payload = json.loads(
-    Path("runtime/media-worker/ingestion-result.json").read_text()
-)
+            payload = json.loads(
+                Path("runtime/media-worker/ingestion-result.json").read_text()
+            )
 
-print(payload["status"])
-'
+            print(payload["status"])
+            '
           )"
 
           echo "INGESTION_STATUS=$status"
@@ -320,7 +320,7 @@ print(payload["status"])
             -printf '%p\n'
 
       - name: Locate downloaded media
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         id: media
         run: |
           set -euo pipefail
@@ -348,7 +348,7 @@ print(payload["status"])
           echo "$MEDIA_FILE"
 
       - name: Validate media with ffprobe
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
         env:
           MEDIA_FILE: ${{ steps.media.outputs.media_file }}
         run: |
@@ -380,13 +380,15 @@ print(payload["status"])
           print("streams:", len(streams))
           PY
 
-        - name: Run MediaKnowledge + WhisperX analysis
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
-          env:
-            MEDIA_FILE: ${{ steps.media.outputs.media_file }}
-            HF_TOKEN: ${{ secrets.HF_TOKEN }}
-            PYTHONPATH: .
-          run: |
+      - name: Run MediaKnowledge + WhisperX analysis
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
+        env:
+          SOURCE_URL: ${{ github.event.inputs.source_url }}
+          SOURCE_NAME: ${{ github.event.inputs.source_name }}
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PYTHONPATH: .
+        run: |
             set -euo pipefail
             python - <<'PY'
             import json
@@ -480,12 +482,14 @@ print(payload["status"])
                 print(f"{name}: {path}")
             PY
 
-        - name: Create smoke-test MediaKnowledge artifact
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only == 'true' }}
-          env:
-            MEDIA_FILE: ${{ steps.media.outputs.media_file }}
-            PYTHONPATH: .
-          run: |
+      - name: Create smoke-test MediaKnowledge artifact
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only == 'true' }}
+        env:
+          SOURCE_URL: ${{ github.event.inputs.source_url }}
+          SOURCE_NAME: ${{ github.event.inputs.source_name }}
+          MEDIA_FILE: ${{ steps.media.outputs.media_file }}
+          PYTHONPATH: .
+        run: |
             set -euo pipefail
 
             python - <<'PY'
@@ -522,9 +526,9 @@ print(payload["status"])
             )
             PY
 
-        - name: Validate final artifact
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
-          run: |
+      - name: Validate final artifact
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        run: |
             set -euo pipefail
 
             test -s runtime/media-worker/artifact/media_knowledge.json
@@ -658,10 +662,10 @@ print(payload["status"])
               -printf '%f %s bytes\n' \
               | sort
 
-        - name: Upload MediaKnowledge artifact
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
-          uses: actions/upload-artifact@v4
-          with:
+      - name: Upload MediaKnowledge artifact
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
             name: media-knowledge
             path: |
               runtime/media-worker/artifact/media_knowledge.json
@@ -670,10 +674,10 @@ print(payload["status"])
             if-no-files-found: error
             retention-days: 3
 
-        - name: Upload SpeechAnalysis artifact
-          if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
-          uses: actions/upload-artifact@v4
-          with:
+      - name: Upload SpeechAnalysis artifact
+        if: ${{ steps.media-ingestion.outputs.ingestion_succeeded == 'true' && github.event.inputs.test_only != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
             name: speech-analysis
             path: |
               runtime/media-worker/artifact/speech_analysis.json
