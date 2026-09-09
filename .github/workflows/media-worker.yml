@@ -289,18 +289,7 @@ jobs:
             exit 2
           fi
 
-          status="$(
-            python -c '
-            import json
-            from pathlib import Path
-
-            payload = json.loads(
-                Path("runtime/media-worker/ingestion-result.json").read_text()
-            )
-
-            print(payload["status"])
-            '
-          )"
+          status="$(python -c 'import json; from pathlib import Path; print(json.loads(Path("runtime/media-worker/ingestion-result.json").read_text())["status"])')"
 
           echo "INGESTION_STATUS=$status"
           echo "ingestion_status=$status" >> "$GITHUB_OUTPUT"
