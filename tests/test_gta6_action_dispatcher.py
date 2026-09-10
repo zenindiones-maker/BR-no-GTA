@@ -10,7 +10,7 @@ from app.services.gta6_brain import BrainDecision
 
 def make_dispatcher(calls: list[str]) -> GTA6ActionDispatcher:
     return GTA6ActionDispatcher(
-        monitor=lambda: calls.append("monitor") or {"ok": "monitor"},
+        monitor=lambda *, execution_id: calls.append("monitor") or {"ok": "monitor"},
         research=lambda: calls.append("research") or {"ok": "research"},
         editorial=lambda context: calls.append("editorial") or {"ok": "editorial"},
         execution=lambda context: calls.append("execution") or {"ok": "execution"},

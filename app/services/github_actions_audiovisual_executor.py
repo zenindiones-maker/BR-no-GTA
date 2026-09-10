@@ -12,8 +12,8 @@ from app.services.github_actions_dispatcher import (
 from app.services.github_actions_run_watcher import (
     GitHubActionsRunWatcher,
 )
-from app.services.mpt_render_request_service import (
-    build_mpt_render_request,
+from app.services.audiovisual_render_request_service import (
+    build_audiovisual_render_request,
 )
 from app.services.render_artifact_validator import (
     RenderArtifactValidator,
@@ -24,7 +24,7 @@ from app.services.render_executor_service import (
 )
 
 
-class GitHubActionsMptExecutor(AbstractRenderExecutor):
+class GitHubActionsAudiovisualExecutor(AbstractRenderExecutor):
     """
     Executor de renderização baseado em GitHub Actions.
 
@@ -162,13 +162,13 @@ class GitHubActionsMptExecutor(AbstractRenderExecutor):
         self,
         render_job: dict[str, Any],
     ) -> dict[str, Any]:
-        mpt_request = build_mpt_render_request(render_job)
+        request = build_audiovisual_render_request(render_job)
 
         dispatch_result = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=self.workflow,
             ref=self.ref,
-            inputs=mpt_request,
+            inputs=request,
         )
 
         return {

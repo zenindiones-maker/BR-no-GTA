@@ -58,7 +58,7 @@ def test_monitor_run_persists_gta6_knowledge_brain(monkeypatch):
         lambda content: [item],
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert result.baseline is True
     assert result.items_found == 1

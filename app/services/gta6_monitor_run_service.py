@@ -156,6 +156,7 @@ class GTA6MonitorRunResult:
 
 def run_gta6_monitor_once(
     *,
+    execution_id: str,
     timeout: float = 15.0,
 ) -> GTA6MonitorExecutionResult:
     """Executa um ciclo real do monitor Rockstar Newswire."""
@@ -166,6 +167,7 @@ def run_gta6_monitor_once(
 
     run_id = run["id"]
     execution_context = GTA6MonitorExecutionContext.create(
+        execution_id=execution_id,
         job_id="gta6-monitor",
         run_id=run_id,
     )

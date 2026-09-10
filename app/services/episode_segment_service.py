@@ -79,7 +79,7 @@ def create_episode_segment(
 
     Não altera o Content Segment original.
     Não renderiza.
-    Não executa FFmpeg/MPT.
+    Não executa processamento audiovisual.
     """
     segment = EpisodeSegment(
         episode_id=episode_id,
@@ -170,7 +170,7 @@ def create_and_persist_episode_segment(
     - renderiza;
     - corta vídeo;
     - chama FFmpeg;
-    - chama MoneyPrinterTurbo;
+    - entrega a execução ao worker audiovisual;
     - publica no YouTube.
     """
     segment = create_episode_segment(

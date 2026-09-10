@@ -128,15 +128,5 @@ def create_video_execution_spec(
         if field in video_spec:
             result[field] = video_spec[field]
 
-    # O EditPlan produzido pelo VEDIT é um contrato obrigatório
-    # da execução audiovisual. Ele deve atravessar esta camada
-    # intacto até o Render Job / MPT.
-    edit_plan = video_spec.get("edit_plan")
-    if not isinstance(edit_plan, dict) or not edit_plan:
-        raise ValueError(
-            "Video Spec não possui EditPlan produzido pelo VEDIT."
-        )
-
-    result["edit_plan"] = dict(edit_plan)
 
     return result

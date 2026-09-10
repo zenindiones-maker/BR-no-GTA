@@ -1,11 +1,6 @@
 from typing import Any
 
 from app.database.video_repository import insert_video
-from app.services.vedit_service import (
-    apply_edit_plan_to_video_spec,
-    build_brain_context,
-    create_edit_plan,
-)
 
 
 def create_video_spec(
@@ -70,39 +65,36 @@ def create_video_spec(
         ),
     }
 
-    decision = brain_decision or {}
+    if not isinstance(brain_decision, dict):
+        raise ValueError(
+            "Video Spec exige contexto de autorização do Dispatcher."
+        )
 
-    # Contexto de execução: atravessa o Video Spec intacto
-    # até o Render Job / MPT. Não pertence ao Brain nem ao VEDIT.
-    for field in (
+    required_authorization = (
         "brain_decision_id",
         "execution_id",
         "authorized_action",
-    ):
-        if field in decision:
-            video_spec[field] = decision[field]
-
-    normalized_brain_context = build_brain_context(
-        action=decision.get("action", "EXECUTION"),
-        reason=decision.get(
-            "reason",
-            "Execução audiovisual autorizada pelo GTA6 Brain.",
-        ),
-        priority=decision.get("priority", "MEDIUM"),
-        confidence=float(
-            decision.get("confidence", 1.0)
-        ),
     )
 
-    edit_plan = create_edit_plan(
-        production_plan=production_plan,
-        brain_decision=normalized_brain_context,
-    )
+    for field in required_authorization:
+        value = brain_decision.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                "Video Spec exige autorização completa: "
+                f"{field}."
+            )
 
-    return apply_edit_plan_to_video_spec(
-        video_spec=video_spec,
-        edit_plan=edit_plan,
-    )
+    if brain_decision["authorized_action"] != "EXECUTION":
+        raise ValueError(
+            "Video Spec só pode ser criado para a ação autorizada EXECUTION."
+        )
+
+    # Contexto de execução: atravessa o Video Spec intacto
+    # até o Render Job. O Dispatcher é a autoridade desses campos.
+    for field in required_authorization:
+        video_spec[field] = brain_decision[field]
+
+    return video_spec
 
 
 def _build_video_title(

@@ -10,9 +10,7 @@ from app.services.google_youtube_publication_service import (
     make_youtube_publication_public_with_google,
     process_next_youtube_publication,
 )
-from app.services.gta6_monitor_worker_service import (
-    execute_gta6_monitor,
-)
+from app.services.gta6_master_agent import GTA6MasterAgent
 from app.services.ai_provider_factory import create_ai_provider
 
 
@@ -126,15 +124,11 @@ def main() -> None:
         args.command == "gta6-monitor"
         and args.gta6_monitor_command == "run-once"
     ):
-        monitor_result = execute_gta6_monitor()
-
+        master_result = GTA6MasterAgent().run_once()
         print(
-            "Monitor GTA6 executado: "
-            f"status={monitor_result.status_code} "
-            f"changed={monitor_result.change.changed} "
-            f"items_found={monitor_result.items_found} "
-            f"items_ingested={monitor_result.items_ingested} "
-            f"items_duplicated={monitor_result.items_duplicated}"
+            "GTA6 Master Agent executado: "
+            f"action={master_result.action.action} "
+            f"success={master_result.action.success}"
         )
         return
 

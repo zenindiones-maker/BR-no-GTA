@@ -3,31 +3,28 @@ name: Render Worker
 on:
   workflow_dispatch:
     inputs:
-      video_subject:
-        description: "Tema do vídeo"
+      render_job:
+        description: "Render Job autorizado pelo DeepSeek Harness"
         required: true
         type: string
-
-      video_script:
-        description: "Roteiro completo do vídeo"
+      brain_decision_id:
+        description: "ID da decisão do Brain"
         required: true
         type: string
-
-      task_id:
-        description: "ID único da tarefa de renderização"
+      execution_id:
+        description: "ID da execução"
+        required: true
+        type: string
+      authorized_action:
+        description: "Ação autorizada"
         required: true
         type: string
 
 jobs:
-  render:
-    name: MoneyPrinterTurbo Render
+  audiovisual:
+    name: Audiovisual Worker
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
-    env:
-      MPT_DIR: ${{ github.workspace }}/MoneyPrinterTurbo
-      RENDER_ROOT: ${{ github.workspace }}/runtime/render
-      RENDER_OUTPUT: ${{ github.workspace }}/runtime/render/output
 
     steps:
       - name: Checkout BR-no-GTA
@@ -36,132 +33,87 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Clone MoneyPrinterTurbo
+      - name: Install Python dependencies
         run: |
-          git clone --depth 1 \
-            https://github.com/harry0703/MoneyPrinterTurbo.git \
-            "$MPT_DIR"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Install MoneyPrinterTurbo dependencies
-        working-directory: ${{ env.MPT_DIR }}
-        run: |
-          uv sync --frozen
-
-      - name: Prepare render directories
-        run: |
-          mkdir -p "$RENDER_ROOT"
-          mkdir -p "$RENDER_OUTPUT"
-
-      - name: Configure MoneyPrinterTurbo
-        working-directory: ${{ env.MPT_DIR }}
+      - name: Validate authorization
         env:
-          MPT_CONFIG_TOML: ${{ secrets.MPT_CONFIG_TOML }}
+          AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
         run: |
-          if [ -z "$MPT_CONFIG_TOML" ]; then
-            echo "::error::Secret MPT_CONFIG_TOML não configurado."
-            exit 1
-          fi
+          test "$AUTHORIZED_ACTION" = "EXECUTION"
 
-          printf '%s' "$MPT_CONFIG_TOML" > config.toml
+      - name: Write Render Job
+        env:
+          RENDER_JOB: ${{ inputs.render_job }}
+        run: |
+          mkdir -p runtime/render
+          printf '%s' "$RENDER_JOB" > runtime/render/render-job.json
 
-      - name: Verify MoneyPrinterTurbo configuration
-        working-directory: ${{ env.MPT_DIR }}
+      - name: Validate Render Job
         run: |
           python - <<'PY'
-          import tomllib
+          import json
           from pathlib import Path
 
-          config_path = Path("config.toml")
-          data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+          path = Path("runtime/render/render-job.json")
+          job = json.loads(path.read_text(encoding="utf-8"))
 
-          app_config = data.get("app", {})
-          if not isinstance(app_config, dict):
-              raise SystemExit("Configuração inválida: seção [app] ausente.")
-
-          provider = app_config.get("llm_provider")
-          video_source = app_config.get("video_source")
-          gemini_key = app_config.get("gemini_api_key")
-          pexels_keys = app_config.get("pexels_api_keys")
-
-          print(f"Effective llm_provider: {provider!r}")
-          print(f"Effective video_source: {video_source!r}")
-          print(f"Gemini API key present: {bool(gemini_key)}")
-          print(
-              "Pexels API keys present: "
-              f"{isinstance(pexels_keys, list) and len(pexels_keys) > 0}"
+          required = (
+              "content_item_id",
+              "script_id",
+              "idea_id",
+              "objective",
+              "estimated_duration_seconds",
+              "scenes",
+              "brain_decision_id",
+              "execution_id",
+              "authorized_action",
           )
 
-          if provider != "gemini":
+          missing = [field for field in required if field not in job]
+          if missing:
               raise SystemExit(
-                  f"Configuração inválida: llm_provider={provider!r}"
+                  f"Render Job incompleto. Campos ausentes: {missing}"
               )
 
-          if not gemini_key:
-              raise SystemExit("Configuração inválida: Gemini API key ausente.")
+          if job["authorized_action"] != "EXECUTION":
+              raise SystemExit("Execução não autorizada.")
 
-          if video_source != "pexels":
-              raise SystemExit(
-                  f"Configuração inválida: video_source={video_source!r}"
-              )
+          if not job["scenes"]:
+              raise SystemExit("Render Job sem cenas.")
 
-          if not isinstance(pexels_keys, list) or not pexels_keys:
-              raise SystemExit("Configuração inválida: Pexels API key ausente.")
-
-          print("MoneyPrinterTurbo configuration: OK")
+          print("Render Job autorizado e válido.")
+          print(f"execution_id={job['execution_id']}")
+          print(f"brain_decision_id={job['brain_decision_id']}")
+          print(f"scenes={len(job['scenes'])}")
           PY
 
-      - name: Execute MoneyPrinterTurbo CLI
-        working-directory: ${{ env.MPT_DIR }}
-        env:
-          VIDEO_SUBJECT: ${{ inputs.video_subject }}
-          VIDEO_SCRIPT: ${{ inputs.video_script }}
-          TASK_ID: ${{ inputs.task_id }}
+      - name: Prepare audiovisual workspace
         run: |
-          uv run python cli.py \
-            --video-subject "$VIDEO_SUBJECT" \
-            --video-script "$VIDEO_SCRIPT" \
-            --task-id "$TASK_ID" \
-            --stop-at video
+          mkdir -p runtime/render/input
+          mkdir -p runtime/render/output
+          mkdir -p runtime/render/work
 
-      - name: Locate rendered MP4
+      - name: Execute audiovisual worker
         env:
-          TASK_ID: ${{ inputs.task_id }}
+          RENDER_JOB_PATH: runtime/render/render-job.json
         run: |
-          TASK_DIR="$MPT_DIR/storage/tasks/$TASK_ID"
-          if [ ! -d "$TASK_DIR" ]; then
-            echo "::error::Diretório da tarefa não encontrado: $TASK_DIR"
-            exit 1
-          fi
-          mapfile -t VIDEOS < <(
-            find "$TASK_DIR"               -type f               -name 'final-*.mp4'               -print
-          )
-          if [ "${#VIDEOS[@]}" -eq 0 ]; then
-            echo "::error::Nenhum vídeo final final-*.mp4 foi produzido."
-            exit 1
-          fi
-          if [ "${#VIDEOS[@]}" -gt 1 ]; then
-            echo "::error::Mais de um vídeo final final-*.mp4 foi produzido:"
-            printf '%s\n' "${VIDEOS[@]}"
-            exit 1
-          fi
-          echo "Vídeo final selecionado: ${VIDEOS[0]}"
-          cp "${VIDEOS[0]}" "$RENDER_OUTPUT/video.mp4"
+          python -m app.workers.audiovisual_worker \
+            --render-job "$RENDER_JOB_PATH" \
+            --output-dir runtime/render/output
 
-      - name: Validate rendered MP4
+      - name: Validate master video
         run: |
-          VIDEO_PATH="$RENDER_OUTPUT/video.mp4"
+          VIDEO_PATH="runtime/render/output/master_50min.mp4"
 
           test -f "$VIDEO_PATH"
           test -s "$VIDEO_PATH"
@@ -172,67 +124,39 @@ jobs:
             -show_entries format=duration \
             -of json \
             "$VIDEO_PATH" \
-            > "$RENDER_ROOT/video-probe.json"
-
-          python - <<'PY'
-          import json
-          import math
-          import sys
-
-          probe_path = "runtime/render/video-probe.json"
-
-          with open(probe_path, "r", encoding="utf-8") as handle:
-              data = json.load(handle)
-
-          streams = data.get("streams")
-
-          if not isinstance(streams, list):
-              print("::error::ffprobe não retornou streams válidos.")
-              sys.exit(1)
-
-          video_streams = [
-              stream
-              for stream in streams
-              if stream.get("codec_type") == "video"
-          ]
-
-          if not video_streams:
-              print("::error::O MP4 não possui stream de vídeo.")
-              sys.exit(1)
-
-          duration_raw = data.get("format", {}).get("duration")
-
-          try:
-              duration = float(duration_raw)
-          except (TypeError, ValueError):
-              print("::error::Duração do vídeo inválida.")
-              sys.exit(1)
-
-          if not math.isfinite(duration) or duration <= 0:
-              print("::error::Duração do vídeo deve ser maior que zero.")
-              sys.exit(1)
-
-          print(f"Video streams: {len(video_streams)}")
-          print(f"Duration: {duration:.3f}s")
-          PY
+            > runtime/render/video-probe.json
 
       - name: Write render manifest
         env:
-          TASK_ID: ${{ inputs.task_id }}
-          VIDEO_SUBJECT: ${{ inputs.video_subject }}
+          BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
+          EXECUTION_ID: ${{ inputs.execution_id }}
+          AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          output = Path("runtime/render/output/video.mp4")
+          output = Path("runtime/render/output/master_50min.mp4")
+          probe = json.loads(
+              Path("runtime/render/video-probe.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          duration = float(
+              probe["format"]["duration"]
+          )
 
           manifest = {
-              "task_id": os.environ["TASK_ID"],
-              "video_subject": os.environ["VIDEO_SUBJECT"],
+              "schema_version": "1",
+              "artifact_type": "audiovisual-render",
               "filename": output.name,
               "size_bytes": output.stat().st_size,
+              "duration_seconds": duration,
+              "brain_decision_id": os.environ["BRAIN_DECISION_ID"],
+              "execution_id": os.environ["EXECUTION_ID"],
+              "authorized_action": os.environ["AUTHORIZED_ACTION"],
           }
 
           Path("runtime/render/render-manifest.json").write_text(
@@ -250,8 +174,9 @@ jobs:
         with:
           name: render-output
           path: |
-            runtime/render/output/video.mp4
+            runtime/render/output/master_50min.mp4
             runtime/render/video-probe.json
             runtime/render/render-manifest.json
+            runtime/render/render-job.json
           if-no-files-found: error
           retention-days: 3

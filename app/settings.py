@@ -61,78 +61,41 @@ class Settings:
         "https://www.rockstargames.com/VI/media/videos"
     )
 
-    # MoneyPrinterTurbo
-#
-# O MPT é executado exclusivamente pelo worker remoto via GitHub Actions.
-# O BR controla a execução e recebe o artifact produzido pelo worker.
-
-GITHUB_ACTIONS_POLL_INTERVAL = float(
-    os.getenv("BR_GITHUB_ACTIONS_POLL_INTERVAL", "5")
-)
-
-GITHUB_ACTIONS_REPOSITORY = os.getenv(
-    "BR_GITHUB_ACTIONS_REPOSITORY",
-    "",
-)
-
-GITHUB_ACTIONS_RENDER_WORKFLOW = os.getenv(
-    "BR_GITHUB_ACTIONS_RENDER_WORKFLOW",
-    "render-worker.yml",
-)
-
-GITHUB_ACTIONS_RENDER_REF = os.getenv(
-    "BR_GITHUB_ACTIONS_RENDER_REF",
-    "main",
-)
-
-GITHUB_ACTIONS_ARTIFACT_NAME = os.getenv(
-    "BR_GITHUB_ACTIONS_ARTIFACT_NAME",
-    "render-output",
-)
-
-GITHUB_ACTIONS_ARTIFACT_ROOT = os.getenv(
-    "BR_GITHUB_ACTIONS_ARTIFACT_ROOT",
-    "runtime/github-actions-artifacts",
-)
-
-GITHUB_ACTIONS_RUN_TIMEOUT = float(
-    os.getenv("BR_GITHUB_ACTIONS_RUN_TIMEOUT", "3600")
-)
-
-# O MPT é opcional no ambiente do BR.
-# Quando essas variáveis não existem, o sistema
-# continua funcionando normalmente sem MPT.
-
-MPT_BASE_URL = os.getenv(
-    "BR_MPT_BASE_URL",
-    "",
-)
-
-MPT_API_KEY = os.getenv(
-    "BR_MPT_API_KEY",
-    "",
-)
-
-MPT_TIMEOUT = float(
-    os.getenv(
-        "BR_MPT_TIMEOUT",
-        "30",
+    # GitHub Actions: executor audiovisual oficial.
+    GITHUB_ACTIONS_REPOSITORY = os.getenv(
+        "GITHUB_ACTIONS_REPOSITORY",
+        "",
     )
-)
-
-MPT_POLL_INTERVAL = float(
-    os.getenv(
-        "BR_MPT_POLL_INTERVAL",
-        "5",
+    GITHUB_ACTIONS_POLL_INTERVAL = float(
+        os.getenv("GITHUB_ACTIONS_POLL_INTERVAL", "5")
     )
-)
-
-MPT_MAX_POLLS = int(
-    os.getenv(
-        "BR_MPT_MAX_POLLS",
-        "120",
+    GITHUB_ACTIONS_RUN_TIMEOUT = float(
+        os.getenv("GITHUB_ACTIONS_RUN_TIMEOUT", "3600")
     )
-)
-
+    GITHUB_ACTIONS_RENDER_WORKFLOW = os.getenv(
+        "GITHUB_ACTIONS_RENDER_WORKFLOW",
+        "render-worker.yml",
+    )
+    GITHUB_ACTIONS_RENDER_REF = os.getenv(
+        "GITHUB_ACTIONS_RENDER_REF",
+        "main",
+    )
+    GITHUB_ACTIONS_ARTIFACT_NAME = os.getenv(
+        "GITHUB_ACTIONS_ARTIFACT_NAME",
+        "render-output",
+    )
+    GITHUB_ACTIONS_ARTIFACT_ROOT = os.getenv(
+        "GITHUB_ACTIONS_ARTIFACT_ROOT",
+        "runtime/render/artifacts",
+    )
 
 settings = Settings()
+
+# Compatibilidade de módulo para consumidores que importam `app.settings`.
+GITHUB_ACTIONS_REPOSITORY = settings.GITHUB_ACTIONS_REPOSITORY
+GITHUB_ACTIONS_POLL_INTERVAL = settings.GITHUB_ACTIONS_POLL_INTERVAL
+GITHUB_ACTIONS_RUN_TIMEOUT = settings.GITHUB_ACTIONS_RUN_TIMEOUT
+GITHUB_ACTIONS_RENDER_WORKFLOW = settings.GITHUB_ACTIONS_RENDER_WORKFLOW
+GITHUB_ACTIONS_RENDER_REF = settings.GITHUB_ACTIONS_RENDER_REF
+GITHUB_ACTIONS_ARTIFACT_NAME = settings.GITHUB_ACTIONS_ARTIFACT_NAME
+GITHUB_ACTIONS_ARTIFACT_ROOT = settings.GITHUB_ACTIONS_ARTIFACT_ROOT

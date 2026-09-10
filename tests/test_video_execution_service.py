@@ -10,7 +10,7 @@ from app.services.video_service import create_video_spec
 from app.services.video_execution_service import create_video_execution_spec
 
 
-def _create_video_spec():
+def _create_video_spec(tmp_path):
     initialize_schema()
 
     idea_id = insert_idea(
@@ -24,12 +24,29 @@ def _create_video_spec():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
+    print("TEST PLAN DURATION:", plan["estimated_duration_seconds"])
+    print("TEST SCENE DURATIONS:", [scene["duration_seconds"] for scene in plan["scenes"]])
 
-    return create_video_spec(plan)
+    media_path = tmp_path / "sample.mp4"
+    media_path.write_bytes(b"test-media")
+
+    for scene in plan["scenes"]:
+        scene["file_path"] = str(media_path)
+        scene["source_start_seconds"] = 0.0
+        scene["source_end_seconds"] = float(scene["duration_seconds"])
+
+    return create_video_spec(
+        plan,
+        brain_decision={
+            "brain_decision_id": "test-brain-decision",
+            "execution_id": "test-execution",
+            "authorized_action": "EXECUTION",
+        },
+    )
 
 
-def test_create_video_execution_spec():
-    video = _create_video_spec()
+def test_create_video_execution_spec(tmp_path):
+    video = _create_video_spec(tmp_path)
 
     execution = create_video_execution_spec(video)
 
@@ -42,8 +59,8 @@ def test_create_video_execution_spec():
     assert execution["status"] == "ready"
 
 
-def test_video_execution_contains_scenes():
-    video = _create_video_spec()
+def test_video_execution_contains_scenes(tmp_path):
+    video = _create_video_spec(tmp_path)
 
     execution = create_video_execution_spec(video)
 
@@ -68,24 +85,24 @@ def test_video_execution_contains_scenes():
         assert isinstance(scene["execution_requirements"], list)
 
 
-def test_video_execution_preserves_audio_requirements():
-    video = _create_video_spec()
+def test_video_execution_preserves_audio_requirements(tmp_path):
+    video = _create_video_spec(tmp_path)
 
     execution = create_video_execution_spec(video)
 
     assert execution["audio_requirements"] == video["audio_requirements"]
 
 
-def test_video_execution_preserves_visual_requirements():
-    video = _create_video_spec()
+def test_video_execution_preserves_visual_requirements(tmp_path):
+    video = _create_video_spec(tmp_path)
 
     execution = create_video_execution_spec(video)
 
     assert execution["visual_requirements"] == video["visual_requirements"]
 
 
-def test_video_execution_contains_render_configuration():
-    video = _create_video_spec()
+def test_video_execution_contains_render_configuration(tmp_path):
+    video = _create_video_spec(tmp_path)
 
     execution = create_video_execution_spec(video)
 
@@ -104,8 +121,8 @@ def test_video_execution_rejects_invalid_video_spec():
         create_video_execution_spec({})
 
 
-def test_video_execution_rejects_missing_scenes():
-    video = _create_video_spec()
+def test_video_execution_rejects_missing_scenes(tmp_path):
+    video = _create_video_spec(tmp_path)
     video["scenes"] = []
 
     with pytest.raises(ValueError, match="cenas"):

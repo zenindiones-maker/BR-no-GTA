@@ -37,17 +37,30 @@ def create_production_plan(
             "O content item precisa possuir blocos narrativos."
         )
 
+    # Uma execução de produção gera um único master de 50 minutos.
+    # A divisão em duas publicações de 25 minutos acontece depois,
+    # na camada de publicação, sem duplicar a renderização.
+    production_duration_seconds = 50 * 60
+
+    valid_blocks = [
+        block
+        for block in narrative_blocks
+        if str(block.get("heading", "")).strip()
+        and str(block.get("content", "")).strip()
+    ]
+
+    if not valid_blocks:
+        raise ValueError(
+            "Não existem blocos narrativos válidos para criar cenas."
+        )
+
+    scene_count = len(valid_blocks)
+    base_duration = production_duration_seconds // scene_count
+    duration_remainder = production_duration_seconds % scene_count
+
     scenes = []
 
-    base_duration = max(
-        1,
-        int(
-            content_item["estimated_duration_seconds"]
-            / len(narrative_blocks)
-        ),
-    )
-
-    for index, block in enumerate(narrative_blocks, start=1):
+    for index, block in enumerate(valid_blocks, start=1):
         heading = str(block.get("heading", "")).strip()
         narration = str(block.get("content", "")).strip()
         purpose = str(block.get("purpose", "")).strip()
@@ -76,7 +89,14 @@ def create_production_plan(
                     f"Visual relacionado diretamente ao tema "
                     f"do bloco '{heading}', reforçando a narração."
                 ),
-                "duration_seconds": base_duration,
+                "duration_seconds": (
+                    base_duration
+                    + (
+                        duration_remainder
+                        if index == scene_count
+                        else 0
+                    )
+                ),
                 "requirements": requirements,
             }
         )
@@ -102,9 +122,7 @@ def create_production_plan(
         "idea_id": content_item["idea_id"],
         "objective": content_item["objective"],
         "format": content_item["format"],
-        "estimated_duration_seconds": (
-            content_item["estimated_duration_seconds"]
-        ),
+        "estimated_duration_seconds": production_duration_seconds,
         "status": "ready",
         "scenes": scenes,
         "audio_requirements": audio_requirements,

@@ -78,23 +78,27 @@ def test_context_preserves_execution_identity():
 
 def test_context_can_be_created_with_factory():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="execution-123",
         job_id="gta6-monitor",
         run_id=42,
     )
 
-    assert context.execution_id
+    assert context.execution_id == "execution-123"
     assert context.job_id == "gta6-monitor"
     assert context.run_id == 42
 
 
-def test_context_factory_generates_unique_execution_ids():
+def test_context_factory_preserves_execution_id():
     first = GTA6MonitorExecutionContext.create(
+        execution_id="execution-123",
         job_id="gta6-monitor",
         run_id=42,
     )
     second = GTA6MonitorExecutionContext.create(
+        execution_id="execution-456",
         job_id="gta6-monitor",
         run_id=42,
     )
 
-    assert first.execution_id != second.execution_id
+    assert first.execution_id == "execution-123"
+    assert second.execution_id == "execution-456"

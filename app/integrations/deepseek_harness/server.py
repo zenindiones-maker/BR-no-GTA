@@ -10,7 +10,6 @@ from app.services.ai_provider_factory import create_ai_provider
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
-from app.services.gta6_monitor_worker_service import execute_gta6_monitor
 from app.services.gta6_master_agent import GTA6MasterAgent
 from app.services.google_youtube_publication_service import (
     make_youtube_publication_public_with_google,
@@ -140,9 +139,10 @@ def br_editorial_process_next() -> str:
 @mcp.tool()
 def br_gta6_monitor_run_once() -> str:
     """
-    Execute one GTA6 monitor cycle.
+    Execute one GTA6 Master Agent control cycle.
     """
-    result = execute_gta6_monitor()
+    agent = GTA6MasterAgent()
+    result = agent.run_once()
 
     return _json_result(
         operation="br_gta6_monitor_run_once",

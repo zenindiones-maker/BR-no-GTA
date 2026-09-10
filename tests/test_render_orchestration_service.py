@@ -20,7 +20,7 @@ from app.services.render_executor_service import (
     AbstractRenderExecutor,
     RenderExecutionResult,
 )
-from app.services.github_actions_mpt_executor import GitHubActionsMptExecutor
+from app.services.github_actions_audiovisual_executor import GitHubActionsAudiovisualExecutor
 from app.services.render_orchestration_service import (
     _execute_running_render_job,
     execute_render_job,
@@ -413,7 +413,7 @@ def test_orchestration_passes_dispatch_callback_only_to_github_executor(monkeypa
         lambda job_id: running_job,
     )
 
-    class FakeGitHubExecutor(GitHubActionsMptExecutor):
+    class FakeGitHubExecutor(GitHubActionsAudiovisualExecutor):
         def execute(self, render_job, *, on_dispatch=None):
             assert render_job is running_job
             assert on_dispatch is not None

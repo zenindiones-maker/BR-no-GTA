@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -40,11 +39,12 @@ class GTA6MonitorExecutionContext:
     def create(
         cls,
         *,
+        execution_id: str,
         job_id: str,
         run_id: int,
     ) -> "GTA6MonitorExecutionContext":
         return cls(
-            execution_id=str(uuid4()),
+            execution_id=execution_id,
             job_id=job_id,
             run_id=run_id,
         )

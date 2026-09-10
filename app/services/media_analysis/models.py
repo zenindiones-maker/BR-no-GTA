@@ -73,9 +73,10 @@ class Beat:
 @dataclass(frozen=True)
 class VisualSample:
     time_seconds: float
-    path: str
+    path: str | None
     width: int | None = None
     height: int | None = None
+    frame_ref: str | None = None
 
 
 @dataclass(frozen=True)

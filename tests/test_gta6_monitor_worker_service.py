@@ -20,12 +20,14 @@ def test_execute_gta6_monitor_delegates_to_monitor_run_service(
     )
 
     result = execute_gta6_monitor(
+        execution_id="test-execution",
         timeout=30.0,
     )
 
     assert result is expected
 
     orchestration.assert_called_once_with(
+        execution_id="test-execution",
         timeout=30.0,
     )
 
@@ -40,9 +42,10 @@ def test_execute_gta6_monitor_uses_default_timeout(
         orchestration,
     )
 
-    execute_gta6_monitor()
+    execute_gta6_monitor(execution_id="test-execution")
 
     orchestration.assert_called_once_with(
+        execution_id="test-execution",
         timeout=15.0,
     )
 
@@ -58,10 +61,12 @@ def test_execute_gta6_monitor_normalizes_integer_timeout(
     )
 
     execute_gta6_monitor(
+        execution_id="test-execution",
         timeout=20,
     )
 
     orchestration.assert_called_once_with(
+        execution_id="test-execution",
         timeout=20.0,
     )
 
@@ -82,6 +87,7 @@ def test_execute_gta6_monitor_rejects_non_positive_timeout(
         match="timeout",
     ):
         execute_gta6_monitor(
+            execution_id="test-execution",
             timeout=timeout,
         )
 
@@ -103,5 +109,6 @@ def test_execute_gta6_monitor_rejects_invalid_timeout(
         match="timeout",
     ):
         execute_gta6_monitor(
+            execution_id="test-execution",
             timeout=timeout,
         )

@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.database.production_plan_repository import insert_production_plan
 from app.database.queue_repository import (
     claim_next_queue_item,
     mark_queue_item_completed,
@@ -7,6 +8,7 @@ from app.database.queue_repository import (
 from app.database.scripts_repository import get_script
 from app.services.ai_provider import AIProvider
 from app.services.content_item_service import create_content_item
+from app.services.production_plan_service import create_production_plan
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
 
@@ -80,6 +82,12 @@ def process_next_editorial_queue_item(
     script_spec = generate_script_spec(script_id)
     content_item = create_content_item(script_spec)
 
+    production_plan = create_production_plan(content_item)
+    production_plan_id = insert_production_plan(
+        content_item_id=content_item["id"],
+        production_plan=production_plan,
+    )
+
     completed = mark_queue_item_completed(queue_id)
 
     if not completed:
@@ -92,5 +100,7 @@ def process_next_editorial_queue_item(
         "script": script,
         "script_spec": script_spec,
         "content_item": content_item,
+        "production_plan_id": production_plan_id,
+        "production_plan": production_plan,
         "status": "completed",
     }

@@ -35,7 +35,7 @@ class GitHubActionsDispatcher:
     Não conhece:
     - banco de dados;
     - render queue;
-    - MoneyPrinterTurbo;
+    - executor audiovisual;
     - YouTube;
     - regras editoriais.
     """

@@ -14,7 +14,7 @@ class RenderArtifactValidationResult:
     Resultado da validação de um artifact de renderização.
 
     O resultado é deliberadamente independente de GitHub,
-    MoneyPrinterTurbo, banco de dados e render queue.
+    banco de dados e render queue.
     """
 
     valid: bool
@@ -66,7 +66,7 @@ class RenderArtifactValidator:
 
     Não conhece:
     - GitHub Actions;
-    - MoneyPrinterTurbo;
+    - executor audiovisual;
     - render queue;
     - banco de dados;
     - YouTube;

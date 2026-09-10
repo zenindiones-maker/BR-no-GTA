@@ -63,7 +63,7 @@ class VEditBrainContext:
 
 @dataclass(frozen=True)
 class VEditPolicy:
-    max_scene_duration_seconds: float = 8.0
+    max_scene_duration_seconds: float = 3000.0
     default_transition_seconds: float = 0.18
     hook_duration_seconds: float = 4.0
     caption_font_size: int = 52
@@ -88,14 +88,14 @@ class VEditPolicy:
     ) -> "VEditPolicy":
         if brain.priority == "CRITICAL":
             return cls(
-                max_scene_duration_seconds=5.0,
+                max_scene_duration_seconds=3000.0,
                 default_transition_seconds=0.12,
                 hook_duration_seconds=3.0,
             )
 
         if brain.priority == "HIGH":
             return cls(
-                max_scene_duration_seconds=6.0,
+                max_scene_duration_seconds=3000.0,
                 default_transition_seconds=0.15,
                 hook_duration_seconds=3.5,
             )
@@ -866,12 +866,6 @@ def create_edit_plan(
             ),
             max_duration,
         )
-
-        if narrative_role == "hook":
-            target_scene_duration = min(
-                target_scene_duration,
-                policy.hook_duration_seconds,
-            )
 
         rhythm = _call_core(
             build_rhythm,

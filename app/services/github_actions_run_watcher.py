@@ -67,7 +67,7 @@ class GitHubActionsRunWatcher:
 
     Não conhece:
     - render queue;
-    - MoneyPrinterTurbo;
+    - executor audiovisual;
     - banco de dados;
     - artifact;
     - MP4;

@@ -55,6 +55,14 @@ def test_process_next_editorial_queue_item_runs_editorial_chain():
             return_value=content_item,
         ) as create_content,
         patch(
+            "app.services.editorial_queue_consumer.create_production_plan",
+            return_value={"content_item_id": 404, "status": "ready"},
+        ) as create_production,
+        patch(
+            "app.services.editorial_queue_consumer.insert_production_plan",
+            return_value=505,
+        ) as insert_production,
+        patch(
             "app.services.editorial_queue_consumer.mark_queue_item_completed",
             return_value=True,
         ) as complete,
@@ -73,6 +81,11 @@ def test_process_next_editorial_queue_item_runs_editorial_chain():
         "script": script,
         "script_spec": script_spec,
         "content_item": content_item,
+        "production_plan_id": 505,
+        "production_plan": {
+            "content_item_id": 404,
+            "status": "ready",
+        },
         "status": "completed",
     }
 
@@ -238,6 +251,14 @@ def test_process_next_editorial_queue_item_propagates_ai_provider():
             return_value={"id": 404},
         ),
         patch(
+            "app.services.editorial_queue_consumer.create_production_plan",
+            return_value={"content_item_id": 404, "status": "ready"},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.insert_production_plan",
+            return_value=505,
+        ),
+        patch(
             "app.services.editorial_queue_consumer.mark_queue_item_completed",
             return_value=True,
         ),
@@ -289,6 +310,14 @@ def test_process_next_editorial_queue_item_does_not_create_production_or_render(
             return_value={"id": 404},
         ),
         patch(
+            "app.services.editorial_queue_consumer.create_production_plan",
+            return_value={"content_item_id": 404, "status": "ready"},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.insert_production_plan",
+            return_value=505,
+        ),
+        patch(
             "app.services.editorial_queue_consumer.mark_queue_item_completed",
             return_value=True,
         ),
@@ -296,6 +325,7 @@ def test_process_next_editorial_queue_item_does_not_create_production_or_render(
         result = process_next_editorial_queue_item()
 
     assert result is not None
-    assert "production_plan" not in result
+    assert "production_plan" in result
+    assert result["production_plan"]["content_item_id"] == 404
     assert "video_spec" not in result
     assert "render_result" not in result

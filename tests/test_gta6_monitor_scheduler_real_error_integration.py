@@ -61,7 +61,7 @@ def test_real_scheduler_propagates_monitor_execution_identity(
 
     def executor():
         try:
-            return run_gta6_monitor_once()
+            return run_gta6_monitor_once(execution_id="test-execution")
         except GTA6MonitorExecutionError as exc:
             captured_error["error"] = exc
             raise

@@ -80,7 +80,7 @@ def test_first_run_ingests_changed_content(monkeypatch):
     monkeypatch.setattr(
         gta6_monitor_run_service,
         "_process_gta6_knowledge_brain",
-        lambda **kwargs: None,
+        lambda **kwargs: {"intelligence": []},
     )
 
     monkeypatch.setattr(
@@ -96,7 +96,7 @@ def test_first_run_ingests_changed_content(monkeypatch):
         lambda **kwargs: events.append(kwargs),
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert result.baseline is True
     assert result.change.changed is True
@@ -166,7 +166,7 @@ def test_unchanged_run_does_not_ingest(monkeypatch):
         ),
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert result.baseline is False
     assert result.change.changed is False
@@ -242,7 +242,7 @@ def test_changed_run_counts_duplicates(monkeypatch):
     monkeypatch.setattr(
         gta6_monitor_run_service,
         "_process_gta6_knowledge_brain",
-        lambda **kwargs: None,
+        lambda **kwargs: {"intelligence": []},
     )
 
     monkeypatch.setattr(
@@ -253,7 +253,7 @@ def test_changed_run_counts_duplicates(monkeypatch):
         ),
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert result.baseline is False
     assert result.change.changed is True
@@ -320,7 +320,7 @@ def test_ingestion_failure_does_not_update_monitor_state(monkeypatch):
         GTA6MonitorExecutionError,
         match="ingestion failed",
     ) as exc_info:
-        gta6_monitor_run_service.run_gta6_monitor_once()
+        gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert isinstance(exc_info.value.cause, RuntimeError)
     assert str(exc_info.value.cause) == "ingestion failed"
@@ -368,7 +368,7 @@ def test_previous_hash_is_loaded_for_same_url(monkeypatch):
         lambda url, content_hash: None,
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert captured["url"] == result.url
     assert result.change.previous_hash == previous_hash

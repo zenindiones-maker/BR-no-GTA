@@ -31,7 +31,7 @@ def test_run_monitor_wraps_real_execution_error_with_identity(
     )
 
     with pytest.raises(GTA6MonitorExecutionError) as exc_info:
-        run_gta6_monitor_once()
+        run_gta6_monitor_once(execution_id="test-execution")
 
     error = exc_info.value
 

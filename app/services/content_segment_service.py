@@ -115,7 +115,7 @@ def create_content_segment(
     Não renderiza.
     Não corta vídeo.
     Não chama FFmpeg.
-    Não chama MPT.
+    Não executa processamento audiovisual.
 
     O Segment apenas descreve o trecho que deverá existir
     em uma futura timeline de produção.
@@ -263,7 +263,7 @@ def create_and_persist_content_segment(
     - renderiza;
     - corta vídeo;
     - chama FFmpeg;
-    - chama MPT;
+    - entrega o segmento para a execução audiovisual;
     - publica no YouTube.
     """
     segment = create_content_segment(

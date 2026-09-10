@@ -152,7 +152,7 @@ def compose_episode(
     - renderiza;
     - corta arquivos;
     - chama FFmpeg;
-    - chama MoneyPrinterTurbo;
+    - entrega a execução ao worker audiovisual;
     - publica no YouTube.
     """
     if not isinstance(content_segment_ids, list):

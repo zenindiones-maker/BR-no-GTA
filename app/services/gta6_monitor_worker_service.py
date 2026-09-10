@@ -7,6 +7,7 @@ from app.services.gta6_monitor_run_service import (
 
 def execute_gta6_monitor(
     *,
+    execution_id: str,
     timeout: float = 15.0,
 ):
     """Executa exatamente um ciclo do monitor GTA6.
@@ -22,5 +23,6 @@ def execute_gta6_monitor(
         raise ValueError("timeout must be a positive number")
 
     return run_gta6_monitor_once(
+        execution_id=execution_id,
         timeout=float(timeout),
     )

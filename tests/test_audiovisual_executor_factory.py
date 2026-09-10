@@ -7,8 +7,8 @@ from app.services.github_actions_artifact_service import (
 from app.services.github_actions_dispatcher import (
     GitHubActionsDispatcher,
 )
-from app.services.github_actions_mpt_executor import (
-    GitHubActionsMptExecutor,
+from app.services.github_actions_audiovisual_executor import (
+    GitHubActionsAudiovisualExecutor,
 )
 from app.services.github_actions_run_tracker import (
     GitHubActionsRunTracker,
@@ -16,14 +16,14 @@ from app.services.github_actions_run_tracker import (
 from app.services.github_actions_run_watcher import (
     GitHubActionsRunWatcher,
 )
-from app.services.money_printer_turbo_factory import (
-    create_money_printer_turbo_executor,
+from app.services.audiovisual_executor_factory import (
+    create_audiovisual_executor,
 )
 
 
 def test_factory_returns_none_without_github_repository(monkeypatch):
     monkeypatch.setenv(
-        "BR_MPT_EXECUTOR",
+        "BR_RENDER_EXECUTOR",
         "github_actions",
     )
 
@@ -33,12 +33,12 @@ def test_factory_returns_none_without_github_repository(monkeypatch):
         "",
     )
 
-    assert create_money_printer_turbo_executor() is None
+    assert create_audiovisual_executor() is None
 
 
 def test_factory_builds_github_actions_executor(monkeypatch):
     monkeypatch.setenv(
-        "BR_MPT_EXECUTOR",
+        "BR_RENDER_EXECUTOR",
         "github_actions",
     )
 
@@ -66,11 +66,11 @@ def test_factory_builds_github_actions_executor(monkeypatch):
         "render-output",
     )
 
-    executor = create_money_printer_turbo_executor()
+    executor = create_audiovisual_executor()
 
     assert isinstance(
         executor,
-        GitHubActionsMptExecutor,
+        GitHubActionsAudiovisualExecutor,
     )
 
     assert executor.repository == (
@@ -104,12 +104,12 @@ def test_factory_builds_github_actions_executor(monkeypatch):
 
 def test_factory_rejects_unknown_backend(monkeypatch):
     monkeypatch.setenv(
-        "BR_MPT_EXECUTOR",
+        "BR_RENDER_EXECUTOR",
         "backend-inexistente",
     )
 
     with pytest.raises(
         ValueError,
-        match="Backend MPT não suportado",
+        match="Backend audiovisual não suportado",
     ):
-        create_money_printer_turbo_executor()
+        create_audiovisual_executor()

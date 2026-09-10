@@ -1035,6 +1035,25 @@ def _migrate_gta6_goals(connection) -> None:
         """
     )
 
+def _migrate_production_plans(connection) -> None:
+    """Cria a persistência do Production Plan por Content Item."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS production_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_item_id INTEGER NOT NULL UNIQUE,
+            payload TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ready',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (content_item_id)
+                REFERENCES content_items(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1059,6 +1078,7 @@ def initialize_schema() -> None:
         _migrate_gta6_master_agent_runs(connection)
         _migrate_gta6_scheduler_events(connection)
         _migrate_gta6_goals(connection)
+        _migrate_production_plans(connection)
         _migrate_gta6_media_intelligence(connection)
         connection.commit()
     finally:

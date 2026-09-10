@@ -74,15 +74,15 @@ def test_worker_preserves_explicit_executor(monkeypatch):
     )
 
 
-def test_worker_uses_mpt_factory_when_executor_is_not_provided(
+def test_worker_uses_audiovisual_factory_when_executor_is_not_provided(
     monkeypatch,
 ):
-    mpt_executor = object()
-    factory = Mock(return_value=mpt_executor)
+    audiovisual_executor = object()
+    factory = Mock(return_value=audiovisual_executor)
     orchestration = Mock()
 
     monkeypatch.setattr(
-        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        "app.services.render_worker_service.create_audiovisual_executor",
         factory,
     )
     monkeypatch.setattr(
@@ -94,18 +94,18 @@ def test_worker_uses_mpt_factory_when_executor_is_not_provided(
 
     factory.assert_called_once_with()
     orchestration.assert_called_once_with(
-        executor=mpt_executor,
+        executor=audiovisual_executor,
     )
 
 
-def test_worker_passes_none_when_mpt_is_not_configured(
+def test_worker_passes_none_when_audiovisual_is_not_configured(
     monkeypatch,
 ):
     factory = Mock(return_value=None)
     orchestration = Mock()
 
     monkeypatch.setattr(
-        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        "app.services.render_worker_service.create_audiovisual_executor",
         factory,
     )
     monkeypatch.setattr(
@@ -121,21 +121,21 @@ def test_worker_passes_none_when_mpt_is_not_configured(
     )
 
 
-def test_worker_executes_queued_job_with_mpt_executor(
+def test_worker_executes_queued_job_with_audiovisual_executor(
     monkeypatch,
 ):
     job_id = _create_queued_render_job()
 
-    mpt_executor = Mock(spec=AbstractRenderExecutor)
-    mpt_executor.execute.return_value = RenderExecutionResult(
+    audiovisual_executor = Mock(spec=AbstractRenderExecutor)
+    audiovisual_executor.execute.return_value = RenderExecutionResult(
         success=True,
         output_path="http://127.0.0.1:8080/tasks/video.mp4",
     )
 
-    factory = Mock(return_value=mpt_executor)
+    factory = Mock(return_value=audiovisual_executor)
 
     monkeypatch.setattr(
-        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        "app.services.render_worker_service.create_audiovisual_executor",
         factory,
     )
 
@@ -148,7 +148,7 @@ def test_worker_executes_queued_job_with_mpt_executor(
     )
 
     factory.assert_called_once_with()
-    mpt_executor.execute.assert_called_once()
+    audiovisual_executor.execute.assert_called_once()
 
     persisted_job = get_render_job(job_id)
 
@@ -263,13 +263,13 @@ def test_worker_uses_factory_executor_without_network(
     job_id = _create_queued_render_job()
 
     executor = FakeRenderExecutor(
-        "/tmp/mpt-rendered-video.mp4",
+        "/tmp/audiovisual-rendered-video.mp4",
     )
 
     factory = Mock(return_value=executor)
 
     monkeypatch.setattr(
-        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        "app.services.render_worker_service.create_audiovisual_executor",
         factory,
     )
 
@@ -277,7 +277,7 @@ def test_worker_uses_factory_executor_without_network(
 
     assert result is not None
     assert result.success is True
-    assert result.output_path == "/tmp/mpt-rendered-video.mp4"
+    assert result.output_path == "/tmp/audiovisual-rendered-video.mp4"
 
     factory.assert_called_once_with()
 
@@ -292,7 +292,7 @@ def test_worker_uses_factory_executor_without_network(
     assert persisted_job["status"] == "completed"
     assert persisted_job["attempt"] == 1
     assert persisted_job["output_path"] == (
-        "/tmp/mpt-rendered-video.mp4"
+        "/tmp/audiovisual-rendered-video.mp4"
     )
     assert persisted_job["error"] is None
 
@@ -390,13 +390,13 @@ def test_worker_preserves_editorial_content_for_executor(
     job_id = enqueue_render_job(job)
 
     executor = FakeRenderExecutor(
-        "/tmp/mpt-rendered-video.mp4",
+        "/tmp/audiovisual-rendered-video.mp4",
     )
 
     factory = Mock(return_value=executor)
 
     monkeypatch.setattr(
-        "app.services.render_worker_service.create_money_printer_turbo_executor",
+        "app.services.render_worker_service.create_audiovisual_executor",
         factory,
     )
 
@@ -454,7 +454,7 @@ def test_worker_preserves_editorial_content_for_executor(
     assert persisted_job["video_id"] == video_id
     assert persisted_job["attempt"] == 1
     assert persisted_job["output_path"] == (
-        "/tmp/mpt-rendered-video.mp4"
+        "/tmp/audiovisual-rendered-video.mp4"
     )
     assert persisted_job["error"] is None
 
@@ -463,5 +463,5 @@ def test_worker_preserves_editorial_content_for_executor(
     assert persisted_video is not None
     assert persisted_video["status"] == "ready"
     assert persisted_video["file_path"] == (
-        "/tmp/mpt-rendered-video.mp4"
+        "/tmp/audiovisual-rendered-video.mp4"
     )

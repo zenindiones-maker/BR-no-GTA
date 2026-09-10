@@ -89,7 +89,11 @@ class GTA6ActionDispatcher:
         tool_name, operation = handler
 
         try:
-            if action in {"EDITORIAL", "EXECUTION"}:
+            if action == "MONITOR":
+                result = operation(
+                    execution_id=execution_id,
+                )
+            elif action in {"EDITORIAL", "EXECUTION"}:
                 result = operation(
                     {
                         "brain_decision_id": brain_decision_id,

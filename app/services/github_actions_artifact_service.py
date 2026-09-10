@@ -32,7 +32,7 @@ class GitHubActionsArtifactService:
 
     Não conhece:
     - render queue;
-    - MoneyPrinterTurbo;
+    - executor audiovisual;
     - MP4;
     - banco de dados;
     - YouTube;

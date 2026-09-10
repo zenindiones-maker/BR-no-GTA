@@ -86,7 +86,7 @@ def test_run_once_creates_running_and_completes_successfully(
         },
     )
 
-    result = gta6_monitor_run_service.run_gta6_monitor_once()
+    result = gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert result.change.changed is False
 
@@ -160,7 +160,7 @@ def test_run_once_marks_error_when_execution_fails(
         GTA6MonitorExecutionError,
         match="change detection failed",
     ) as exc_info:
-        gta6_monitor_run_service.run_gta6_monitor_once()
+        gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert isinstance(exc_info.value.cause, RuntimeError)
     assert str(exc_info.value.cause) == "change detection failed"
@@ -236,6 +236,6 @@ def test_run_once_does_not_mark_error_after_success(
         lambda **kwargs: failed.append(kwargs),
     )
 
-    gta6_monitor_run_service.run_gta6_monitor_once()
+    gta6_monitor_run_service.run_gta6_monitor_once(execution_id="test-execution")
 
     assert failed == []

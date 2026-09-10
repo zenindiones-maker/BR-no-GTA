@@ -12,10 +12,10 @@ from app.services.github_actions_dispatcher import (
 from app.services.github_actions_run_watcher import (
     GitHubActionsRunWatchResult,
 )
-from app.services.github_actions_mpt_executor import (
-    GitHubActionsMptExecutor,
+from app.services.github_actions_audiovisual_executor import (
+    GitHubActionsAudiovisualExecutor,
 )
-from app.services.mpt_render_request_service import build_mpt_task_id
+from app.services.audiovisual_render_request_service import build_audiovisual_render_request
 from app.services.render_artifact_validator import (
     RenderArtifactValidationResult,
 )
@@ -32,12 +32,12 @@ class FakeCommandRunner:
 
 def test_executor_requires_repository():
     with pytest.raises(ValueError, match="repositório GitHub"):
-        GitHubActionsMptExecutor(repository="")
+        GitHubActionsAudiovisualExecutor(repository="")
 
 
 def test_executor_requires_workflow():
     with pytest.raises(ValueError, match="workflow GitHub"):
-        GitHubActionsMptExecutor(
+        GitHubActionsAudiovisualExecutor(
             repository="zenindiones-maker/BR-no-GTA",
             workflow="",
         )
@@ -45,7 +45,7 @@ def test_executor_requires_workflow():
 
 def test_executor_requires_ref():
     with pytest.raises(ValueError, match="referência Git"):
-        GitHubActionsMptExecutor(
+        GitHubActionsAudiovisualExecutor(
             repository="zenindiones-maker/BR-no-GTA",
             ref="",
         )
@@ -55,7 +55,7 @@ def test_executor_rejects_invalid_render_job():
     runner = FakeCommandRunner()
     dispatcher = GitHubActionsDispatcher(runner)
 
-    executor = GitHubActionsMptExecutor(
+    executor = GitHubActionsAudiovisualExecutor(
         repository="zenindiones-maker/BR-no-GTA",
         dispatcher=dispatcher,
     )
@@ -65,7 +65,7 @@ def test_executor_rejects_invalid_render_job():
 
 
 def test_executor_requires_dispatcher():
-    executor = GitHubActionsMptExecutor(
+    executor = GitHubActionsAudiovisualExecutor(
         repository="zenindiones-maker/BR-no-GTA",
     )
 
@@ -113,7 +113,7 @@ def test_executor_dispatches_render_job(tmp_path):
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            mp4_path = output_dir / "video.mp4"
+            mp4_path = output_dir / "master_50min.mp4"
             mp4_path.write_bytes(b"fake-mp4")
 
             self.calls.append(
@@ -142,7 +142,7 @@ def test_executor_dispatches_render_job(tmp_path):
             return RenderArtifactValidationResult(
                 valid=True,
                 output_path=str(output_path),
-                duration_seconds=42.0,
+                duration_seconds=3000.0,
                 video_stream_count=1,
             )
 
@@ -150,7 +150,7 @@ def test_executor_dispatches_render_job(tmp_path):
     artifact_service = FakeArtifactService()
     validator = FakeValidator()
 
-    executor = GitHubActionsMptExecutor(
+    executor = GitHubActionsAudiovisualExecutor(
         repository="zenindiones-maker/BR-no-GTA",
         workflow="render-worker.yml",
         ref="main",
@@ -165,52 +165,55 @@ def test_executor_dispatches_render_job(tmp_path):
     render_job = {
         "id": 123,
         "attempt": 1,
+        "content_item_id": 10,
         "script_id": 20,
+        "idea_id": 30,
         "objective": "GTA 6 novidades",
+        "format": "youtube_long",
+        "estimated_duration_seconds": 3000,
+        "brain_decision_id": "brain-123",
+        "execution_id": "execution-123",
+        "authorized_action": "EXECUTION",
+        "scenes": [
+            {
+                "order": 1,
+                "duration_seconds": 3000,
+                "segment_id": "segment-123",
+                "content_unit_id": 456,
+                "source_start_seconds": 0.0,
+                "source_end_seconds": 3000.0,
+            }
+        ],
     }
 
-    expected_mpt_request = {
-        "video_subject": "GTA 6 novidades",
-        "video_script": "Este é o roteiro do vídeo.",
-        "task_id": build_mpt_task_id(123, 1),
+    expected_audiovisual_request = {
+        "render_job": "serialized-render-job",
+        "brain_decision_id": "brain-123",
+        "execution_id": "execution-123",
+        "authorized_action": "EXECUTION",
     }
 
     with patch(
-        "app.services.github_actions_mpt_executor.build_mpt_render_request",
-        return_value=expected_mpt_request,
+        "app.services.github_actions_audiovisual_executor.build_audiovisual_render_request",
+        return_value=expected_audiovisual_request,
     ) as build_request:
         result = executor.execute(render_job)
 
     build_request.assert_called_once_with(render_job)
 
     assert result.success is True
-    assert result.error is None
     assert result.output_path is not None
-
-    output_path = Path(result.output_path)
-
-    assert output_path.name == "video.mp4"
-    assert output_path.exists()
-    assert output_path.is_file()
-    assert output_path.stat().st_size > 0
+    assert result.output_path.endswith("master_50min.mp4")
+    assert result.error is None
 
     assert watcher.calls == [
-        (
-            "zenindiones-maker/BR-no-GTA",
-            123456789,
-        )
+        ("zenindiones-maker/BR-no-GTA", result.github_execution["run_id"])
     ]
 
-    assert len(artifact_service.calls) == 1
-    assert artifact_service.calls[0][0] == (
-        "zenindiones-maker/BR-no-GTA"
-    )
-    assert artifact_service.calls[0][1] == 123456789
+    assert artifact_service.calls[0][0] == "zenindiones-maker/BR-no-GTA"
     assert artifact_service.calls[0][2] == "render-output"
 
-    assert validator.calls == [
-        Path(result.output_path)
-    ]
+    assert validator.calls == [Path(result.output_path)]
 
     assert runner.commands == [
         [
@@ -223,10 +226,12 @@ def test_executor_dispatches_render_job(tmp_path):
             "--ref",
             "main",
             "--field",
-            "video_subject=GTA 6 novidades",
+            "render_job=serialized-render-job",
             "--field",
-            "video_script=Este é o roteiro do vídeo.",
+            "brain_decision_id=brain-123",
             "--field",
-            f"task_id={build_mpt_task_id(123, 1)}",
+            "execution_id=execution-123",
+            "--field",
+            "authorized_action=EXECUTION",
         ]
     ]

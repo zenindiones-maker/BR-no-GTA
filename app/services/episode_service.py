@@ -199,7 +199,7 @@ def create_and_persist_episode(
     Esta função não:
     - renderiza;
     - chama FFmpeg;
-    - chama MoneyPrinterTurbo;
+    - entrega a execução ao worker audiovisual;
     - cria vídeos;
     - publica no YouTube.
     """

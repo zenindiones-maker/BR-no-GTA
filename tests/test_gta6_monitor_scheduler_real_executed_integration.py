@@ -60,7 +60,7 @@ def test_real_scheduler_propagates_monitor_execution_identity_on_success(
             observed_records.append(record)
 
     def executor():
-        result = fake_run_gta6_monitor_once()
+        result = fake_run_gta6_monitor_once(execution_id="test-execution")
 
         execution_result = GTA6MonitorExecutionResult(
             context=__import__(
