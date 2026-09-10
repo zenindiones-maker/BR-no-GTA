@@ -62,53 +62,9 @@ class Settings:
     )
 
     # MoneyPrinterTurbo
-
-# MoneyPrinterTurbo SSH / rsync
 #
-# O MPT roda exclusivamente na máquina de produção.
-# O BR apenas controla a execução através de SSH/rsync.
-#
-# Não inicia API HTTP do MoneyPrinterTurbo.
-
-MPT_SSH_HOST = os.getenv(
-    "BR_MPT_SSH_HOST",
-    "",
-)
-
-MPT_SSH_USER = os.getenv(
-    "BR_MPT_SSH_USER",
-    "",
-)
-
-MPT_SSH_PORT = int(
-    os.getenv(
-        "BR_MPT_SSH_PORT",
-        "22",
-    )
-)
-
-MPT_SSH_KEY = os.getenv(
-    "BR_MPT_SSH_KEY",
-    "",
-)
-
-MPT_REMOTE_ROOT = os.getenv(
-    "BR_MPT_REMOTE_ROOT",
-    "/opt/money-printer-turbo",
-)
-
-MPT_REMOTE_RUNNER = os.getenv(
-    "BR_MPT_REMOTE_RUNNER",
-    "/opt/money-printer-turbo/"
-    "money_printer_turbo_remote_runner.py",
-)
-
-MPT_SSH_CONNECT_TIMEOUT = float(
-    os.getenv(
-        "BR_MPT_SSH_CONNECT_TIMEOUT",
-        "30",
-    )
-)
+# O MPT é executado exclusivamente pelo worker remoto via GitHub Actions.
+# O BR controla a execução e recebe o artifact produzido pelo worker.
 
 GITHUB_ACTIONS_POLL_INTERVAL = float(
     os.getenv("BR_GITHUB_ACTIONS_POLL_INTERVAL", "5")
@@ -143,19 +99,6 @@ GITHUB_ACTIONS_RUN_TIMEOUT = float(
     os.getenv("BR_GITHUB_ACTIONS_RUN_TIMEOUT", "3600")
 )
 
-MPT_SSH_COMMAND_TIMEOUT = float(
-    os.getenv(
-        "BR_MPT_SSH_COMMAND_TIMEOUT",
-        "3600",
-    )
-)
-
-MPT_LOCAL_INPUT_ROOT = os.getenv(
-    "BR_MPT_LOCAL_INPUT_ROOT",
-    "storage/money_printer_turbo",
-)
-
-#
 # O MPT é opcional no ambiente do BR.
 # Quando essas variáveis não existem, o sistema
 # continua funcionando normalmente sem MPT.

@@ -113,18 +113,3 @@ def test_factory_rejects_unknown_backend(monkeypatch):
         match="Backend MPT não suportado",
     ):
         create_money_printer_turbo_executor()
-
-
-def test_factory_keeps_ssh_backend(monkeypatch):
-    monkeypatch.setenv(
-        "BR_MPT_EXECUTOR",
-        "ssh",
-    )
-
-    monkeypatch.setattr(
-        settings,
-        "MPT_SSH_HOST",
-        "",
-    )
-
-    assert create_money_printer_turbo_executor() is None
