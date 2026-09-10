@@ -62,7 +62,14 @@ def _enqueue_job():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video = create_video_spec(plan)
+    video = create_video_spec(
+        plan,
+        brain_decision={
+            "brain_decision_id": "test-brain-decision",
+            "execution_id": "test-execution",
+            "authorized_action": "EXECUTION",
+        },
+    )
     execution = create_video_execution_spec(video)
 
     return enqueue_video_render(execution)
@@ -230,7 +237,14 @@ def test_execute_render_job_success_completes_associated_video():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video_spec = create_video_spec(plan)
+    video_spec = create_video_spec(
+        plan,
+        brain_decision={
+            "brain_decision_id": "test-brain-decision",
+            "execution_id": "test-execution",
+            "authorized_action": "EXECUTION",
+        },
+    )
 
     from app.services.video_service import create_video
 
@@ -275,7 +289,14 @@ def test_execute_render_job_failure_does_not_complete_associated_video():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video_spec = create_video_spec(plan)
+    video_spec = create_video_spec(
+        plan,
+        brain_decision={
+            "brain_decision_id": "test-brain-decision",
+            "execution_id": "test-execution",
+            "authorized_action": "EXECUTION",
+        },
+    )
 
     from app.services.video_service import create_video
 
@@ -323,7 +344,14 @@ def test_execute_next_render_job_success_completes_associated_video():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video_spec = create_video_spec(plan)
+    video_spec = create_video_spec(
+        plan,
+        brain_decision={
+            "brain_decision_id": "test-brain-decision",
+            "execution_id": "test-execution",
+            "authorized_action": "EXECUTION",
+        },
+    )
 
     from app.services.video_service import create_video
 

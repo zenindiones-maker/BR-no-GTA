@@ -128,12 +128,6 @@ def create_render_job(
                 f"o campo obrigatório: {field}."
             )
 
-    edit_plan = video_execution_spec.get("edit_plan")
-
-    if not isinstance(edit_plan, dict) or not edit_plan:
-        raise ValueError(
-            "Video Execution Spec não possui EditPlan produzido pelo VEDIT."
-        )
 
     render_job = {
         "content_item_id": video_execution_spec["content_item_id"],
@@ -156,7 +150,6 @@ def create_render_job(
             video_execution_spec.get("visual_requirements") or []
         ),
         "render": dict(render),
-        "edit_plan": dict(edit_plan),
     }
 
     # Contexto de autorização/correlação do BR.
