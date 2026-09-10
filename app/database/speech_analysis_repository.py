@@ -90,39 +90,6 @@ class SpeechAnalysisRepository:
             raise
         finally:
             connection.close()
-        try:
-            cursor = connection.execute(
-                """
-                INSERT INTO speech_analysis (
-                    media_knowledge_id,
-                    source_path,
-                    source_language,
-                    language_probability,
-                    analysis_version,
-                    provider,
-                    model,
-                    model_version,
-                    payload
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    media_knowledge_id,
-                    analysis.source_path,
-                    analysis.source_language,
-                    analysis.language_probability,
-                    analysis.analysis_version,
-                    analysis.engine.provider,
-                    analysis.engine.model,
-                    analysis.engine.version,
-                    payload,
-                ),
-            )
-            connection.commit()
-            return int(cursor.lastrowid)
-        finally:
-            connection.close()
-
     def get_payload(
         self,
         analysis_id: int,
