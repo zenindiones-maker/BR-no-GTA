@@ -12,8 +12,8 @@ def make_dispatcher(calls: list[str]) -> GTA6ActionDispatcher:
     return GTA6ActionDispatcher(
         monitor=lambda: calls.append("monitor") or {"ok": "monitor"},
         research=lambda: calls.append("research") or {"ok": "research"},
-        editorial=lambda: calls.append("editorial") or {"ok": "editorial"},
-        execution=lambda: calls.append("execution") or {"ok": "execution"},
+        editorial=lambda context: calls.append("editorial") or {"ok": "editorial"},
+        execution=lambda context: calls.append("execution") or {"ok": "execution"},
         youtube=lambda: calls.append("youtube") or {"ok": "youtube"},
     )
 
@@ -114,6 +114,35 @@ def test_action_failure_is_returned_as_result():
     assert result.result["error"] == "research failed"
 
 
+def test_dispatch_propagates_execution_context():
+    captured = {}
+
+    dispatcher = GTA6ActionDispatcher(
+        monitor=lambda: None,
+        research=lambda: None,
+        editorial=lambda context: None,
+        execution=lambda context: captured.update(context) or {"ok": "execution"},
+        youtube=lambda: None,
+    )
+
+    decision = BrainDecision(
+        action="EXECUTION",
+        reason="test",
+        priority="HIGH",
+        confidence=0.9,
+    )
+
+    result = dispatcher.dispatch(
+        decision,
+        execution_id="execution-test-001",
+    )
+
+    assert result.success is True
+    assert captured["execution_id"] == "execution-test-001"
+    assert captured["authorized_action"] == "EXECUTION"
+    assert captured["brain_decision_id"] == result.brain_decision_id
+
+
 def test_unsupported_action_is_rejected():
     dispatcher = make_dispatcher([])
 
@@ -144,9 +173,10 @@ def test_result_can_be_serialized_to_dict():
     result = dispatcher.dispatch(decision)
     payload = dispatcher.to_dict(result)
 
-    assert payload == {
-        "action": "MONITOR",
-        "tool": "br_gta6_monitor_run_once",
-        "success": True,
-        "result": {"ok": "monitor"},
-    }
+    assert payload["action"] == "MONITOR"
+    assert payload["tool"] == "br_gta6_monitor_run_once"
+    assert payload["success"] is True
+    assert payload["result"] == {"ok": "monitor"}
+    assert isinstance(payload["brain_decision_id"], str)
+    assert payload["brain_decision_id"] == result.brain_decision_id
+    assert payload["execution_id"] is None

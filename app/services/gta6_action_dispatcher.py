@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
+from uuid import uuid4
 
 from app.services.gta6_brain import BrainDecision
 
@@ -12,6 +13,8 @@ class ActionResult:
     tool: str | None
     success: bool
     result: Any
+    brain_decision_id: str | None = None
+    execution_id: str | None = None
 
 
 class GTA6ActionDispatcher:
@@ -57,8 +60,14 @@ class GTA6ActionDispatcher:
             ),
         }
 
-    def dispatch(self, decision: BrainDecision) -> ActionResult:
+    def dispatch(
+        self,
+        decision: BrainDecision,
+        *,
+        execution_id: str | None = None,
+    ) -> ActionResult:
         action = decision.action
+        brain_decision_id = str(uuid4())
 
         if action == "WAIT":
             return ActionResult(
@@ -66,6 +75,8 @@ class GTA6ActionDispatcher:
                 tool=None,
                 success=True,
                 result=None,
+                brain_decision_id=brain_decision_id,
+                execution_id=execution_id,
             )
 
         handler = self._actions.get(action)
@@ -78,7 +89,16 @@ class GTA6ActionDispatcher:
         tool_name, operation = handler
 
         try:
-            result = operation()
+            if action in {"EDITORIAL", "EXECUTION"}:
+                result = operation(
+                    {
+                        "brain_decision_id": brain_decision_id,
+                        "execution_id": execution_id,
+                        "authorized_action": action,
+                    }
+                )
+            else:
+                result = operation()
         except Exception as exc:
             return ActionResult(
                 action=action,
@@ -88,6 +108,8 @@ class GTA6ActionDispatcher:
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                 },
+                brain_decision_id=brain_decision_id,
+                execution_id=execution_id,
             )
 
         return ActionResult(
@@ -95,6 +117,8 @@ class GTA6ActionDispatcher:
             tool=tool_name,
             success=True,
             result=result,
+            brain_decision_id=brain_decision_id,
+            execution_id=execution_id,
         )
 
     @staticmethod
