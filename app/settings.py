@@ -1,8 +1,16 @@
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Carrega a configuração local antes de qualquer os.getenv().
+# Variáveis já presentes no ambiente têm prioridade.
+load_dotenv(BASE_DIR / ".env", override=False)
+load_dotenv(BASE_DIR / ".env.local", override=False)
+
 
 
 class Settings:
