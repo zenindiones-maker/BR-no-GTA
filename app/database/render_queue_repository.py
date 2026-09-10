@@ -356,6 +356,90 @@ def claim_next_render_job(
         connection.close()
 
 
+def update_render_job_payload(
+    job_id: int,
+    *,
+    github_execution: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Atualiza dados de execução no payload de um Render Job running.
+
+    Não altera status, attempt, output_path ou error.
+    O payload continua sendo a fonte persistida de rastreabilidade.
+    """
+    if not isinstance(github_execution, dict) or not github_execution:
+        raise ValueError(
+            "github_execution deve ser um objeto não vazio."
+        )
+
+    connection = get_connection()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                status,
+                payload,
+                attempt
+            FROM render_jobs
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (job_id,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError(
+                f"Render job não encontrado: {job_id}"
+            )
+
+        if row["status"] != "running":
+            raise ValueError(
+                f"Render job {job_id} não está em estado running: "
+                f"{row['status']}"
+            )
+
+        job = json.loads(row["payload"])
+        job["github_execution"] = dict(github_execution)
+
+        cursor = connection.execute(
+            """
+            UPDATE render_jobs
+            SET
+                payload = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'running'
+            """,
+            (
+                json.dumps(job, ensure_ascii=False),
+                job_id,
+            ),
+        )
+
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"Render job {job_id} sofreu alteração concorrente."
+            )
+
+        connection.commit()
+
+        job["id"] = row["id"]
+        job["status"] = row["status"]
+        job["attempt"] = row["attempt"]
+        return job
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
 def transition_render_job(
     job_id: int,
     target_status: str,

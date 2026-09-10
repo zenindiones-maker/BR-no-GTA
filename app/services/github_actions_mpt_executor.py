@@ -148,16 +148,125 @@ class GitHubActionsMptExecutor(AbstractRenderExecutor):
     @staticmethod
     def _build_error_result(
         error: str,
+        *,
+        github_execution: dict[str, Any] | None = None,
     ) -> RenderExecutionResult:
         return RenderExecutionResult(
             success=False,
             output_path=None,
             error=error,
+            github_execution=github_execution,
+        )
+
+    def _dispatch(
+        self,
+        render_job: dict[str, Any],
+    ) -> dict[str, Any]:
+        mpt_request = build_mpt_render_request(render_job)
+
+        dispatch_result = self.dispatcher.dispatch(
+            repository=self.repository,
+            workflow=self.workflow,
+            ref=self.ref,
+            inputs=mpt_request,
+        )
+
+        return {
+            "run_id": dispatch_result.run_id,
+            "repository": self.repository,
+            "workflow": self.workflow,
+            "ref": self.ref,
+            "artifact_name": self.artifact_name,
+        }
+
+    def _wait_and_collect(
+        self,
+        github_execution: dict[str, Any],
+    ) -> RenderExecutionResult:
+        run_id = int(github_execution["run_id"])
+
+        watch_result = self.watcher.wait_for_completion(
+            repository=self.repository,
+            run_id=run_id,
+        )
+
+        if watch_result.timed_out:
+            return self._build_error_result(
+                "O workflow GitHub Actions excedeu o timeout "
+                f"de acompanhamento. run_id={run_id}",
+                github_execution=github_execution,
+            )
+
+        if watch_result.cancelled:
+            return self._build_error_result(
+                "O workflow GitHub Actions foi cancelado. "
+                f"run_id={run_id}",
+                github_execution=github_execution,
+            )
+
+        if watch_result.failed:
+            return self._build_error_result(
+                "O workflow GitHub Actions terminou com falha. "
+                f"run_id={run_id}; "
+                f"conclusion={watch_result.conclusion}",
+                github_execution=github_execution,
+            )
+
+        if not watch_result.succeeded:
+            return self._build_error_result(
+                "O workflow GitHub Actions terminou em estado "
+                "não reconhecido como sucesso. "
+                f"run_id={run_id}; "
+                f"status={watch_result.status}; "
+                f"conclusion={watch_result.conclusion}",
+                github_execution=github_execution,
+            )
+
+        output_dir = self.artifact_root / str(run_id)
+
+        try:
+            self.artifact_service.download(
+                repository=self.repository,
+                run_id=run_id,
+                artifact_name=self.artifact_name,
+                output_dir=output_dir,
+            )
+        except Exception as exc:
+            return self._build_error_result(
+                "Não foi possível baixar o artifact do GitHub Actions: "
+                f"{exc}",
+                github_execution=github_execution,
+            )
+
+        try:
+            mp4_path = self._locate_mp4(output_dir)
+        except RuntimeError as exc:
+            return self._build_error_result(
+                str(exc),
+                github_execution=github_execution,
+            )
+
+        validation = self.validator.validate(mp4_path)
+
+        if not validation.valid:
+            return self._build_error_result(
+                "O artifact MP4 foi rejeitado pela validação: "
+                f"{validation.error}",
+                github_execution=github_execution,
+            )
+
+        return RenderExecutionResult(
+            success=True,
+            output_path=str(mp4_path),
+            error=None,
+            github_execution=github_execution,
         )
 
     def execute(
         self,
         render_job: dict[str, Any],
+        *,
+        on_dispatch=None,
     ) -> RenderExecutionResult:
         """
         Executa o render remotamente através do GitHub Actions.
@@ -198,89 +307,9 @@ class GitHubActionsMptExecutor(AbstractRenderExecutor):
                 "não está configurado."
             )
 
-        mpt_request = build_mpt_render_request(
-            render_job
-        )
+        github_execution = self._dispatch(render_job)
 
-        dispatch_result = self.dispatcher.dispatch(
-            repository=self.repository,
-            workflow=self.workflow,
-            ref=self.ref,
-            inputs=mpt_request,
-        )
+        if on_dispatch is not None:
+            on_dispatch(dict(github_execution))
 
-        watch_result = self.watcher.wait_for_completion(
-            repository=self.repository,
-            run_id=dispatch_result.run_id,
-        )
-
-        if watch_result.timed_out:
-            return self._build_error_result(
-                "O workflow GitHub Actions excedeu o timeout "
-                f"de acompanhamento. run_id={dispatch_result.run_id}"
-            )
-
-        if watch_result.cancelled:
-            return self._build_error_result(
-                "O workflow GitHub Actions foi cancelado. "
-                f"run_id={dispatch_result.run_id}"
-            )
-
-        if watch_result.failed:
-            return self._build_error_result(
-                "O workflow GitHub Actions terminou com falha. "
-                f"run_id={dispatch_result.run_id}; "
-                f"conclusion={watch_result.conclusion}"
-            )
-
-        if not watch_result.succeeded:
-            return self._build_error_result(
-                "O workflow GitHub Actions terminou em estado "
-                "não reconhecido como sucesso. "
-                f"run_id={dispatch_result.run_id}; "
-                f"status={watch_result.status}; "
-                f"conclusion={watch_result.conclusion}"
-            )
-
-        output_dir = (
-            self.artifact_root
-            / str(dispatch_result.run_id)
-        )
-
-        try:
-            self.artifact_service.download(
-                repository=self.repository,
-                run_id=dispatch_result.run_id,
-                artifact_name=self.artifact_name,
-                output_dir=output_dir,
-            )
-        except Exception as exc:
-            return self._build_error_result(
-                "Não foi possível baixar o artifact do GitHub Actions: "
-                f"{exc}"
-            )
-
-        try:
-            mp4_path = self._locate_mp4(
-                output_dir,
-            )
-        except RuntimeError as exc:
-            return self._build_error_result(
-                str(exc)
-            )
-
-        validation = self.validator.validate(
-            mp4_path,
-        )
-
-        if not validation.valid:
-            return self._build_error_result(
-                "O artifact MP4 foi rejeitado pela validação: "
-                f"{validation.error}"
-            )
-
-        return RenderExecutionResult(
-            success=True,
-            output_path=validation.output_path,
-            error=None,
-        )
+        return self._wait_and_collect(github_execution)

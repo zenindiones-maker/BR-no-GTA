@@ -162,3 +162,81 @@ def test_claim_next_render_job_persists_execution_context():
     assert stored["brain_decision_id"] == "brain-test-001"
     assert stored["execution_id"] == "execution-test-001"
     assert stored["authorized_action"] == "EXECUTION"
+
+
+def test_update_render_job_payload_persists_github_execution_without_changing_state():
+    from app.database.render_queue_repository import (
+        claim_next_render_job,
+        enqueue_render_job,
+        get_render_job,
+        update_render_job_payload,
+    )
+
+    job_id = enqueue_render_job(
+        {
+            "content_item_id": 1,
+            "script_id": 2,
+            "idea_id": 3,
+            "objective": "GTA 6 novidades",
+            "format": "short",
+            "estimated_duration_seconds": 30,
+            "status": "queued",
+            "scenes": [
+                {
+                    "scene_id": "scene-001",
+                    "file_path": "/tmp/input.mp4",
+                }
+            ],
+            "audio_requirements": {},
+            "visual_requirements": {},
+            "render": {},
+            "job_type": "video",
+            "queue": "default",
+            "attempt": 0,
+            "custom_context": {
+                "preserve": True,
+            },
+        }
+    )
+
+    running_job = claim_next_render_job(
+        execution_context={
+            "execution_id": "exec-001",
+            "brain_decision_id": "decision-001",
+            "authorized_action": "EXECUTION",
+        }
+    )
+
+    assert running_job is not None
+    assert running_job["id"] == job_id
+    assert running_job["status"] == "running"
+    assert running_job["attempt"] == 1
+
+    updated = update_render_job_payload(
+        job_id,
+        github_execution={
+            "run_id": 123456789,
+            "repository": "zenindiones-maker/BR-no-GTA",
+            "workflow": "render-worker.yml",
+            "ref": "main",
+            "artifact_name": "render-output",
+        },
+    )
+
+    assert updated["status"] == "running"
+    assert updated["attempt"] == 1
+    assert updated["custom_context"] == {"preserve": True}
+    assert updated["execution_id"] == "exec-001"
+    assert updated["brain_decision_id"] == "decision-001"
+    assert updated["authorized_action"] == "EXECUTION"
+    assert updated["github_execution"]["run_id"] == 123456789
+
+    persisted = get_render_job(job_id)
+
+    assert persisted is not None
+    assert persisted["status"] == "running"
+    assert persisted["attempt"] == 1
+    assert persisted["custom_context"] == {"preserve": True}
+    assert persisted["github_execution"]["repository"] == (
+        "zenindiones-maker/BR-no-GTA"
+    )

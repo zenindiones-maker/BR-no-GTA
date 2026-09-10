@@ -8,6 +8,7 @@ class RenderExecutionResult:
     success: bool
     output_path: str | None = None
     error: str | None = None
+    github_execution: dict[str, Any] | None = None
 
 
 class AbstractRenderExecutor(ABC):
@@ -17,6 +18,8 @@ class AbstractRenderExecutor(ABC):
     def execute(
         self,
         render_job: dict[str, Any],
+        *,
+        on_dispatch=None,
     ) -> RenderExecutionResult:
         """
         Executa um Render Job.

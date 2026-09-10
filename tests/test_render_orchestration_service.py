@@ -20,7 +20,9 @@ from app.services.render_executor_service import (
     AbstractRenderExecutor,
     RenderExecutionResult,
 )
+from app.services.github_actions_mpt_executor import GitHubActionsMptExecutor
 from app.services.render_orchestration_service import (
+    _execute_running_render_job,
     execute_render_job,
     execute_next_render_job,
 )
@@ -356,3 +358,73 @@ def test_execute_next_render_job_success_completes_associated_video():
     assert persisted_video is not None
     assert persisted_video["status"] == "ready"
     assert persisted_video["file_path"] == "/tmp/rendered-video.mp4"
+
+def test_orchestration_passes_dispatch_callback_only_to_github_executor(monkeypatch):
+    running_job = {
+        "id": 901,
+        "status": "running",
+        "video_id": None,
+    }
+
+    persisted = []
+
+    def fake_update_render_job_payload(job_id, *, github_execution):
+        persisted.append((job_id, github_execution))
+        return running_job
+
+    monkeypatch.setattr(
+        "app.services.render_orchestration_service.update_render_job_payload",
+        fake_update_render_job_payload,
+    )
+    monkeypatch.setattr(
+        "app.services.render_orchestration_service.transition_render_job",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.render_orchestration_service.get_render_job",
+        lambda job_id: running_job,
+    )
+
+    class FakeGitHubExecutor(GitHubActionsMptExecutor):
+        def execute(self, render_job, *, on_dispatch=None):
+            assert render_job is running_job
+            assert on_dispatch is not None
+
+            github_execution = {
+                "run_id": 123456789,
+                "repository": "zenindiones-maker/BR-no-GTA",
+                "workflow": "render-worker.yml",
+                "ref": "main",
+                "artifact_name": "render-output",
+            }
+
+            on_dispatch(github_execution)
+
+            return RenderExecutionResult(
+                success=True,
+                output_path="/tmp/rendered-video.mp4",
+                github_execution=github_execution,
+            )
+
+    executor = FakeGitHubExecutor(
+        repository="zenindiones-maker/BR-no-GTA",
+    )
+
+    result = _execute_running_render_job(
+        running_job,
+        executor=executor,
+    )
+
+    assert result.success is True
+    assert persisted == [
+        (
+            901,
+            {
+                "run_id": 123456789,
+                "repository": "zenindiones-maker/BR-no-GTA",
+                "workflow": "render-worker.yml",
+                "ref": "main",
+                "artifact_name": "render-output",
+            },
+        )
+    ]
