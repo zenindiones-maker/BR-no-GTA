@@ -676,6 +676,48 @@ def _migrate_gta6_monitor_state(connection) -> None:
 
 
 
+def _migrate_speech_analysis(connection) -> None:
+    """Cria a persistência das análises especializadas de fala."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS speech_analysis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_knowledge_id INTEGER NOT NULL,
+            source_path TEXT NOT NULL,
+            source_language TEXT NOT NULL,
+            language_probability REAL NOT NULL,
+            analysis_version TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            model_version TEXT,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (media_knowledge_id)
+                REFERENCES media_knowledge(id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_speech_analysis_media_knowledge
+        ON speech_analysis(media_knowledge_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_speech_analysis_source_language
+        ON speech_analysis(source_language)
+        """
+    )
+
+
 def _migrate_gta6_knowledge_source_name(connection) -> None:
     columns = {
         row["name"]
@@ -783,6 +825,216 @@ def _migrate_gta6_scheduler_events(connection) -> None:
         """
     )
 
+
+def _migrate_gta6_media_intelligence(connection) -> None:
+    """Persiste os sinais calculados pelo GTA6 Media Intelligence no catálogo."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(gta6_media_catalog)"
+        ).fetchall()
+    }
+
+    additions = {
+        "topic_relevance": "REAL NOT NULL DEFAULT 0",
+        "trend_relevance": "REAL NOT NULL DEFAULT 0",
+        "opportunity_score": "REAL NOT NULL DEFAULT 0",
+        "evidence_score": "REAL NOT NULL DEFAULT 0",
+        "authority_score": "REAL NOT NULL DEFAULT 0",
+        "freshness_score": "REAL NOT NULL DEFAULT 0",
+        "visual_value": "REAL NOT NULL DEFAULT 0",
+        "information_value": "REAL NOT NULL DEFAULT 0",
+        "editorial_relevance": "REAL NOT NULL DEFAULT 0",
+        "intelligence_score": "REAL NOT NULL DEFAULT 0",
+        "editorial_role": "TEXT NOT NULL DEFAULT 'unknown'",
+        "intelligence_reasons": "TEXT NOT NULL DEFAULT '[]'",
+    }
+
+    for column_name, definition in additions.items():
+        if column_name not in columns:
+            connection.execute(
+                f"ALTER TABLE gta6_media_catalog "
+                f"ADD COLUMN {column_name} {definition}"
+            )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_media_catalog_intelligence_score
+        ON gta6_media_catalog(intelligence_score)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_media_catalog_opportunity_score
+        ON gta6_media_catalog(opportunity_score)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_gta6_media_catalog_evidence_score
+        ON gta6_media_catalog(evidence_score)
+        """
+    )
+
+
+def _migrate_gta6_goals(connection) -> None:
+    """Cria a persistência do Goal Engine do GTA6."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_goals (
+            goal_id TEXT PRIMARY KEY,
+            goal_type TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'DISCOVERED',
+            priority TEXT NOT NULL DEFAULT 'MEDIUM',
+            opportunity_score REAL NOT NULL DEFAULT 0,
+            target_duration TEXT,
+            current_stage TEXT NOT NULL DEFAULT 'DISCOVERY',
+            last_published_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goals_status
+        ON gta6_goals(status)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goals_type
+        ON gta6_goals(goal_type)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goals_topic
+        ON gta6_goals(topic)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goals_priority
+        ON gta6_goals(priority)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_goal_claims (
+            goal_id TEXT NOT NULL,
+            claim_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (goal_id, claim_id),
+            FOREIGN KEY (goal_id)
+                REFERENCES gta6_goals(goal_id)
+                ON DELETE CASCADE,
+            FOREIGN KEY (claim_id)
+                REFERENCES memory_claims(id)
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_claims_claim
+        ON gta6_goal_claims(claim_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_goal_artifacts (
+            goal_id TEXT PRIMARY KEY,
+            idea_id INTEGER,
+            script_id INTEGER,
+            content_item_id INTEGER,
+            video_id INTEGER,
+            render_job_id INTEGER,
+            youtube_publication_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (goal_id)
+                REFERENCES gta6_goals(goal_id)
+                ON DELETE CASCADE,
+            FOREIGN KEY (idea_id)
+                REFERENCES ideas(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (script_id)
+                REFERENCES scripts(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (content_item_id)
+                REFERENCES content_items(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (video_id)
+                REFERENCES videos(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (render_job_id)
+                REFERENCES render_jobs(id)
+                ON DELETE SET NULL,
+            FOREIGN KEY (youtube_publication_id)
+                REFERENCES youtube_publications(id)
+                ON DELETE SET NULL
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_idea
+        ON gta6_goal_artifacts(idea_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_script
+        ON gta6_goal_artifacts(script_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_content
+        ON gta6_goal_artifacts(content_item_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_video
+        ON gta6_goal_artifacts(video_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_render
+        ON gta6_goal_artifacts(render_job_id)
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_gta6_goal_artifacts_youtube
+        ON gta6_goal_artifacts(youtube_publication_id)
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -799,12 +1051,15 @@ def initialize_schema() -> None:
         _migrate_youtube_publication_file_path(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
+        _migrate_speech_analysis(connection)
         _migrate_gta6_knowledge_source_name(connection)
         _migrate_gta6_monitor_state(connection)
         _migrate_gta6_monitor_events(connection)
         _migrate_gta6_monitor_runs(connection)
         _migrate_gta6_master_agent_runs(connection)
         _migrate_gta6_scheduler_events(connection)
+        _migrate_gta6_goals(connection)
+        _migrate_gta6_media_intelligence(connection)
         connection.commit()
     finally:
         connection.close()

@@ -205,8 +205,33 @@ Regras:
         return result
 
     def _parse_decision(self, text: str) -> BrainDecision:
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(
+                "GTA6 Brain returned invalid JSON."
+            )
+
+        normalized = text.strip()
+
+        if normalized.startswith("```") and normalized.endswith("```"):
+            lines = normalized.splitlines()
+
+            if len(lines) < 3:
+                raise ValueError(
+                    "GTA6 Brain returned invalid JSON."
+                )
+
+            fence = lines[0].strip().lower()
+            closing_fence = lines[-1].strip()
+
+            if fence not in {"```", "```json"} or closing_fence != "```":
+                raise ValueError(
+                    "GTA6 Brain returned invalid JSON."
+                )
+
+            normalized = "\n".join(lines[1:-1]).strip()
+
         try:
-            data = json.loads(text)
+            data = json.loads(normalized)
         except json.JSONDecodeError as exc:
             raise ValueError(
                 "GTA6 Brain returned invalid JSON."

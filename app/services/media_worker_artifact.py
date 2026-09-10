@@ -7,11 +7,15 @@ from typing import Any
 
 from app.services.media_analysis.models import MediaKnowledge
 from app.services.media_analysis.serialization import serialize_media_knowledge
+from app.services.speech.models import SpeechAnalysis
+from app.services.speech.qa import SpeechQAResult
 
 
 MEDIA_KNOWLEDGE_FILENAME = "media_knowledge.json"
 MEDIA_MANIFEST_FILENAME = "manifest.json"
 MEDIA_PROBE_FILENAME = "media_probe.json"
+SPEECH_ANALYSIS_FILENAME = "speech_analysis.json"
+SPEECH_QA_FILENAME = "speech_qa.json"
 
 ARTIFACT_TYPE = "media-worker"
 ARTIFACT_SCHEMA_VERSION = "3"
@@ -171,6 +175,8 @@ def package_media_worker_artifact(
     source_url: str | None = None,
     source_name: str = "gta6-media",
     media_probe: dict[str, Any] | None = None,
+    speech_analysis: SpeechAnalysis | None = None,
+    speech_qa: SpeechQAResult | None = None,
     extra_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Path]:
     """
@@ -182,6 +188,11 @@ def package_media_worker_artifact(
     - O transporte entre GitHub Actions e A15 é JSON-only.
     """
     source = Path(source_path)
+
+    if (speech_analysis is None) != (speech_qa is None):
+        raise ValueError(
+            "speech_analysis e speech_qa devem ser fornecidos juntos."
+        )
 
     if not source.is_file():
         raise FileNotFoundError(
@@ -241,6 +252,33 @@ def package_media_worker_artifact(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    speech_analysis_output: Path | None = None
+    speech_qa_output: Path | None = None
+
+    if speech_analysis is not None and speech_qa is not None:
+        speech_analysis_output = directory / SPEECH_ANALYSIS_FILENAME
+        speech_analysis_output.write_text(
+            json.dumps(
+                speech_analysis.to_dict(),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        speech_qa_output = directory / SPEECH_QA_FILENAME
+        speech_qa_output.write_text(
+            json.dumps(
+                speech_qa.to_dict(),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        files["speech_analysis"] = SPEECH_ANALYSIS_FILENAME
+        files["speech_qa"] = SPEECH_QA_FILENAME
+
     if extra_manifest:
         manifest.update(extra_manifest)
 
@@ -254,15 +292,21 @@ def package_media_worker_artifact(
         encoding="utf-8",
     )
 
-    return {
+    result: dict[str, Path] = {
         "knowledge": knowledge_output,
         "manifest": manifest_output,
-        **(
-            {"probe": directory / MEDIA_PROBE_FILENAME}
-            if media_probe is not None
-            else {}
-        ),
     }
+
+    if media_probe is not None:
+        result["probe"] = directory / MEDIA_PROBE_FILENAME
+
+    if speech_analysis_output is not None:
+        result["speech_analysis"] = speech_analysis_output
+
+    if speech_qa_output is not None:
+        result["speech_qa"] = speech_qa_output
+
+    return result
 
 
 def read_media_worker_manifest(

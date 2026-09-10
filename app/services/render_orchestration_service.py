@@ -3,6 +3,7 @@ from app.database.render_queue_repository import (
     claim_render_job,
     get_render_job,
     transition_render_job,
+    update_render_job_payload,
 )
 from app.services.render_executor_service import (
     AbstractRenderExecutor,
@@ -30,7 +31,20 @@ def _execute_running_render_job(
     selected_executor = executor or NullRenderExecutor()
 
     try:
-        result = selected_executor.execute(running_job)
+        from app.services.github_actions_mpt_executor import (
+            GitHubActionsMptExecutor,
+        )
+
+        if isinstance(selected_executor, GitHubActionsMptExecutor):
+            result = selected_executor.execute(
+                running_job,
+                on_dispatch=lambda github_execution: update_render_job_payload(
+                    int(job_id),
+                    github_execution=github_execution,
+                ),
+            )
+        else:
+            result = selected_executor.execute(running_job)
 
         if not isinstance(result, RenderExecutionResult):
             raise TypeError(

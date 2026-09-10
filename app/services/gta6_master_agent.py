@@ -56,12 +56,12 @@ class GTA6MasterAgent:
         self.dispatcher = GTA6ActionDispatcher(
             monitor=execute_gta6_monitor,
             research=run_gta6_research,
-            editorial=lambda: self._run_editorial_with_brain_context(),
+            editorial=lambda context: self._run_editorial_with_brain_context(context),
             execution=process_next_render_job,
             youtube=process_next_youtube_publication,
         )
 
-    def _run_editorial_with_brain_context(self):
+    def _run_editorial_with_brain_context(self, execution_context):
         decision = self._current_brain_decision
 
         return process_next_editorial_queue_item(
@@ -71,6 +71,7 @@ class GTA6MasterAgent:
                 "reason": decision.reason,
                 "priority": decision.priority,
                 "confidence": decision.confidence,
+                **execution_context,
             },
         )
 
@@ -92,7 +93,10 @@ class GTA6MasterAgent:
         decision = self.brain.decide()
         self._current_brain_decision = decision
 
-        action_result = self.dispatcher.dispatch(decision)
+        action_result = self.dispatcher.dispatch(
+            decision,
+            execution_id=execution_id,
+        )
 
         completed_at = datetime.now(timezone.utc).isoformat()
 

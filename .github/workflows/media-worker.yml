@@ -259,11 +259,22 @@ jobs:
           YTDLP_PLAYER_CLIENT: mweb
           YTDLP_JS_RUNTIME: deno
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
           PYTHONPATH: .
         run: |
           set -uo pipefail
 
           result_file="runtime/media-worker/ingestion-result.json"
+          cookies_file="runtime/media-worker/youtube-cookies.txt"
+
+          if [ -n "${YOUTUBE_COOKIES:-}" ]; then
+            printf '%s\n' "$YOUTUBE_COOKIES" > "$cookies_file"
+            chmod 600 "$cookies_file"
+            export YTDLP_COOKIES_FILE="$cookies_file"
+            echo "YouTube cookies: configured"
+          else
+            echo "YouTube cookies: not configured"
+          fi
 
           set +e
           python -m app.services.media_ingestion_cli \
@@ -294,13 +305,22 @@ jobs:
           echo "INGESTION_STATUS=$status"
           echo "ingestion_status=$status" >> "$GITHUB_OUTPUT"
 
-          if [ "$status" = "DOWNLOAD_OK" ]; then
-            echo "Ingestion succeeded."
-            echo "ingestion_succeeded=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Ingestion completed with domain status: $status"
-            echo "ingestion_succeeded=false" >> "$GITHUB_OUTPUT"
-          fi
+          case "$status" in
+            DOWNLOAD_OK)
+              echo "Ingestion succeeded."
+              echo "ingestion_succeeded=true" >> "$GITHUB_OUTPUT"
+              ;;
+
+            DOWNLOAD_BLOCKED)
+              echo "Ingestion blocked by a known external/domain condition."
+              echo "ingestion_succeeded=false" >> "$GITHUB_OUTPUT"
+              ;;
+
+            *)
+              echo "Ingestion returned unexpected domain status: $status"
+              echo "ingestion_succeeded=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
           echo "Downloaded files:"
           find workspace/input \

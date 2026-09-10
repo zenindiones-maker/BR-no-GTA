@@ -64,6 +64,28 @@ def test_brain_parses_valid_decision(monkeypatch):
     assert len(provider.prompts) == 1
 
 
+def test_brain_parses_markdown_json_block():
+    provider = FakeAIProvider(
+        """```json
+{
+  "action": "MONITOR",
+  "reason": "Verificar as fontes monitoradas.",
+  "priority": "MEDIUM",
+  "confidence": 0.95
+}
+```"""
+    )
+
+    brain = GTA6Brain(provider)
+
+    decision = brain._parse_decision(provider.response)
+
+    assert decision.action == "MONITOR"
+    assert decision.reason == "Verificar as fontes monitoradas."
+    assert decision.priority == "MEDIUM"
+    assert decision.confidence == 0.95
+
+
 def test_brain_rejects_invalid_action():
     provider = FakeAIProvider(
         json.dumps(

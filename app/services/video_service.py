@@ -1,10 +1,17 @@
 from typing import Any
 
 from app.database.video_repository import insert_video
+from app.services.vedit_service import (
+    apply_edit_plan_to_video_spec,
+    build_brain_context,
+    create_edit_plan,
+)
 
 
 def create_video_spec(
     production_plan: dict[str, Any],
+    *,
+    brain_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Transforma um Production Plan em uma especificação estruturada de vídeo.
@@ -43,7 +50,7 @@ def create_video_spec(
             "O production plan precisa possuir cenas."
         )
 
-    return {
+    video_spec = {
         "content_item_id": production_plan["content_item_id"],
         "script_id": production_plan["script_id"],
         "idea_id": production_plan["idea_id"],
@@ -53,6 +60,7 @@ def create_video_spec(
             production_plan["estimated_duration_seconds"]
         ),
         "status": "ready",
+        "title": production_plan.get("title"),
         "scenes": scenes,
         "audio_requirements": list(
             production_plan.get("audio_requirements") or []
@@ -61,6 +69,40 @@ def create_video_spec(
             production_plan.get("visual_requirements") or []
         ),
     }
+
+    decision = brain_decision or {}
+
+    # Contexto de execução: atravessa o Video Spec intacto
+    # até o Render Job / MPT. Não pertence ao Brain nem ao VEDIT.
+    for field in (
+        "brain_decision_id",
+        "execution_id",
+        "authorized_action",
+    ):
+        if field in decision:
+            video_spec[field] = decision[field]
+
+    normalized_brain_context = build_brain_context(
+        action=decision.get("action", "EXECUTION"),
+        reason=decision.get(
+            "reason",
+            "Execução audiovisual autorizada pelo GTA6 Brain.",
+        ),
+        priority=decision.get("priority", "MEDIUM"),
+        confidence=float(
+            decision.get("confidence", 1.0)
+        ),
+    )
+
+    edit_plan = create_edit_plan(
+        production_plan=production_plan,
+        brain_decision=normalized_brain_context,
+    )
+
+    return apply_edit_plan_to_video_spec(
+        video_spec=video_spec,
+        edit_plan=edit_plan,
+    )
 
 
 def _build_video_title(

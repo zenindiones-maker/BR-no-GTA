@@ -188,17 +188,18 @@ def test_master_agent_persistence_does_not_change_returned_result():
     result = agent.run_once()
     payload = agent.to_dict(result)
 
-    assert payload == {
-        "decision": {
-            "action": "RESEARCH",
-            "reason": "research needed",
-            "priority": "HIGH",
-            "confidence": 0.9,
-        },
-        "action": {
-            "action": "RESEARCH",
-            "tool": "br_research_run",
-            "success": True,
-            "result": {"items": 7},
-        },
+    assert payload["decision"] == {
+        "action": "RESEARCH",
+        "reason": "research needed",
+        "priority": "HIGH",
+        "confidence": 0.9,
     }
+
+    assert payload["action"]["action"] == "RESEARCH"
+    assert payload["action"]["tool"] == "br_research_run"
+    assert payload["action"]["success"] is True
+    assert payload["action"]["result"] == {"items": 7}
+    assert isinstance(payload["action"]["brain_decision_id"], str)
+    assert payload["action"]["brain_decision_id"]
+    assert isinstance(payload["action"]["execution_id"], str)
+    assert payload["action"]["execution_id"]

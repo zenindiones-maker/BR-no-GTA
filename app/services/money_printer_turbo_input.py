@@ -23,6 +23,7 @@ class MoneyPrinterTurboInputPackage:
     job_file: Path
     script_file: Path
     scenes_file: Path
+    edit_plan_file: Path
 
 
 def create_money_printer_turbo_input_package(
@@ -52,20 +53,29 @@ def create_money_printer_turbo_input_package(
     job_file = output_dir / "job.json"
     script_file = output_dir / "script.txt"
     scenes_file = output_dir / "scenes.json"
+    edit_plan_file = output_dir / "edit_plan.json"
 
     script = _build_script(render_job)
     scenes = _build_scenes(render_job)
     job = _build_job_metadata(render_job)
+    edit_plan = render_job.get("edit_plan")
+
+    if not isinstance(edit_plan, dict) or not edit_plan:
+        raise ValueError(
+            "Render job não possui EditPlan produzido pelo VEDIT."
+        )
 
     _write_json(job_file, job)
     _write_text(script_file, script)
     _write_json(scenes_file, scenes)
+    _write_json(edit_plan_file, edit_plan)
 
     return MoneyPrinterTurboInputPackage(
         directory=output_dir,
         job_file=job_file,
         script_file=script_file,
         scenes_file=scenes_file,
+        edit_plan_file=edit_plan_file,
     )
 
 

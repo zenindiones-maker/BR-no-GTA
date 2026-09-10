@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
@@ -17,8 +18,9 @@ from app.services.ytdlp_infrastructure import (
 class YtDlpMediaIngestion:
     """Media ingestion adapter backed by yt-dlp.
 
-    Credentials, cookies and authenticated browser sessions are deliberately
-    not supported by this adapter.
+    Authentication cookies are consumed only through the
+    YTDLP_COOKIES_FILE environment variable and are never persisted
+    in source code or infrastructure configuration.
     """
 
     def __init__(
@@ -44,6 +46,18 @@ class YtDlpMediaIngestion:
             "outtmpl": str(output_path.with_suffix(".%(ext)s")),
             "merge_output_format": "mp4",
         }
+
+        cookies_file = os.environ.get("YTDLP_COOKIES_FILE")
+        if cookies_file:
+            cookie_path = Path(cookies_file)
+
+            if not cookie_path.is_file():
+                raise RuntimeError(
+                    "YTDLP_COOKIES_FILE configurado, "
+                    f"mas o arquivo não existe: {cookie_path}"
+                )
+
+            options["cookiefile"] = str(cookie_path)
 
         infrastructure = self._infrastructure
 

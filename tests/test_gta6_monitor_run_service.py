@@ -72,10 +72,17 @@ def test_first_run_ingests_changed_content(monkeypatch):
                         "title": items[0].title,
                     },
                     "duplicate": False,
+                    "memory_event_id": 30,
                 }
             ]
         ),
     )
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda **kwargs: None,
+    )
+
     monkeypatch.setattr(
         gta6_monitor_run_service,
         "save_gta6_monitor_state",
@@ -185,6 +192,12 @@ def test_changed_run_counts_duplicates(monkeypatch):
 
     fake_item = SimpleNamespace(
         title="GTA VI",
+        summary="GTA VI updated",
+        source_name="Rockstar Newswire",
+        url="https://www.rockstargames.com/newswire/test",
+        fact_type="news",
+        confidence="confirmed",
+        published_at=None,
     )
 
     saved_states = []
@@ -216,6 +229,7 @@ def test_changed_run_counts_duplicates(monkeypatch):
                 "knowledge_id": 11,
                 "knowledge": {"title": "new"},
                 "duplicate": False,
+                "memory_event_id": 31,
             },
             {
                 "research_item_id": 2,
@@ -225,6 +239,12 @@ def test_changed_run_counts_duplicates(monkeypatch):
             },
         ],
     )
+    monkeypatch.setattr(
+        gta6_monitor_run_service,
+        "_process_gta6_knowledge_brain",
+        lambda **kwargs: None,
+    )
+
     monkeypatch.setattr(
         gta6_monitor_run_service,
         "save_gta6_monitor_state",

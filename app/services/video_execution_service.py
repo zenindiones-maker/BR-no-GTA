@@ -64,21 +64,34 @@ def create_video_execution_spec(
                     f"A cena não possui o campo obrigatório: {field}."
                 )
 
-        execution_scenes.append(
-            {
-                "order": scene["order"],
-                "narrative_block": scene["narrative_block"],
-                "narration": scene["narration"],
-                "visual_type": scene["visual_type"],
-                "visual_description": scene["visual_description"],
-                "duration_seconds": scene["duration_seconds"],
-                "execution_requirements": list(
-                    scene.get("requirements") or []
-                ),
-            }
-        )
+        execution_scene = {
+            "order": scene["order"],
+            "narrative_block": scene["narrative_block"],
+            "narration": scene["narration"],
+            "visual_type": scene["visual_type"],
+            "visual_description": scene["visual_description"],
+            "duration_seconds": scene["duration_seconds"],
+            "execution_requirements": list(
+                scene.get("requirements") or []
+            ),
+        }
 
-    return {
+        # Identidade estável do BR: nunca depender da posição
+        # da cena na timeline do editor.
+        for field in (
+            "segment_id",
+            "content_unit_id",
+            "file_path",
+            "source_start_seconds",
+            "source_end_seconds",
+            "role",
+        ):
+            if field in scene:
+                execution_scene[field] = scene[field]
+
+        execution_scenes.append(execution_scene)
+
+    result = {
         "content_item_id": video_spec["content_item_id"],
         "script_id": video_spec["script_id"],
         "idea_id": video_spec["idea_id"],
@@ -104,3 +117,26 @@ def create_video_execution_spec(
             "audio_codec": "aac",
         },
     }
+
+    # Contexto de autorização/correlação do BR.
+    # Deve atravessar Video Spec -> Video Execution Spec -> Render Job.
+    for field in (
+        "brain_decision_id",
+        "execution_id",
+        "authorized_action",
+    ):
+        if field in video_spec:
+            result[field] = video_spec[field]
+
+    # O EditPlan produzido pelo VEDIT é um contrato obrigatório
+    # da execução audiovisual. Ele deve atravessar esta camada
+    # intacto até o Render Job / MPT.
+    edit_plan = video_spec.get("edit_plan")
+    if not isinstance(edit_plan, dict) or not edit_plan:
+        raise ValueError(
+            "Video Spec não possui EditPlan produzido pelo VEDIT."
+        )
+
+    result["edit_plan"] = dict(edit_plan)
+
+    return result
