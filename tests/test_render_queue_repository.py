@@ -6,6 +6,7 @@ from app.database.render_queue_repository import (
     get_render_job,
     list_render_jobs,
     update_render_job_status,
+    claim_next_render_job,
 )
 
 
@@ -130,3 +131,34 @@ def test_render_job_persists_video_id():
 
     assert stored is not None
     assert stored["video_id"] == 123
+
+def test_claim_next_render_job_persists_execution_context():
+    job = _create_job()
+    job_id = enqueue_render_job(job)
+
+    execution_context = {
+        "brain_decision_id": "brain-test-001",
+        "execution_id": "execution-test-001",
+        "authorized_action": "EXECUTION",
+    }
+
+    claimed = claim_next_render_job(
+        execution_context=execution_context,
+    )
+
+    assert claimed is not None
+    assert claimed["id"] == job_id
+    assert claimed["status"] == "running"
+    assert claimed["attempt"] == 1
+    assert claimed["brain_decision_id"] == "brain-test-001"
+    assert claimed["execution_id"] == "execution-test-001"
+    assert claimed["authorized_action"] == "EXECUTION"
+
+    stored = get_render_job(job_id)
+
+    assert stored is not None
+    assert stored["status"] == "running"
+    assert stored["attempt"] == 1
+    assert stored["brain_decision_id"] == "brain-test-001"
+    assert stored["execution_id"] == "execution-test-001"
+    assert stored["authorized_action"] == "EXECUTION"

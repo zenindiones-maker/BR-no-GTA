@@ -79,19 +79,30 @@ def create_render_job(
                     f"A cena não possui o campo obrigatório: {field}."
                 )
 
-        execution_scenes.append(
-            {
-                "order": scene["order"],
-                "narrative_block": scene["narrative_block"],
-                "narration": scene["narration"],
-                "visual_type": scene["visual_type"],
-                "visual_description": scene["visual_description"],
-                "duration_seconds": scene["duration_seconds"],
-                "execution_requirements": list(
-                    scene.get("execution_requirements") or []
-                ),
-            }
-        )
+        execution_scene = {
+            "order": scene["order"],
+            "narrative_block": scene["narrative_block"],
+            "narration": scene["narration"],
+            "visual_type": scene["visual_type"],
+            "visual_description": scene["visual_description"],
+            "duration_seconds": scene["duration_seconds"],
+            "execution_requirements": list(
+                scene.get("execution_requirements") or []
+            ),
+        }
+
+        for field in (
+            "segment_id",
+            "content_unit_id",
+            "file_path",
+            "source_start_seconds",
+            "source_end_seconds",
+            "role",
+        ):
+            if field in scene:
+                execution_scene[field] = scene[field]
+
+        execution_scenes.append(execution_scene)
 
     render = video_execution_spec.get("render")
 
@@ -117,6 +128,13 @@ def create_render_job(
                 f"o campo obrigatório: {field}."
             )
 
+    edit_plan = video_execution_spec.get("edit_plan")
+
+    if not isinstance(edit_plan, dict) or not edit_plan:
+        raise ValueError(
+            "Video Execution Spec não possui EditPlan produzido pelo VEDIT."
+        )
+
     render_job = {
         "content_item_id": video_execution_spec["content_item_id"],
         "script_id": video_execution_spec["script_id"],
@@ -138,7 +156,18 @@ def create_render_job(
             video_execution_spec.get("visual_requirements") or []
         ),
         "render": dict(render),
+        "edit_plan": dict(edit_plan),
     }
+
+    # Contexto de autorização/correlação do BR.
+    # Deve atravessar Video Execution Spec -> Render Job.
+    for field in (
+        "brain_decision_id",
+        "execution_id",
+        "authorized_action",
+    ):
+        if field in video_execution_spec:
+            render_job[field] = video_execution_spec[field]
 
     if video_id is not None:
         render_job["video_id"] = video_id

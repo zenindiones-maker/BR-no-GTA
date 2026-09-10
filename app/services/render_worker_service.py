@@ -9,6 +9,7 @@ from app.services.render_orchestration_service import (
 
 def process_next_render_job(
     executor: AbstractRenderExecutor | None = None,
+    execution_context: dict | None = None,
 ):
     """
     Processa exatamente um Render Job.
@@ -30,4 +31,5 @@ def process_next_render_job(
 
     return execute_next_render_job(
         executor=selected_executor,
+        execution_context=execution_context,
     )

@@ -265,7 +265,9 @@ def claim_render_job(job_id: int) -> dict[str, Any]:
         connection.close()
 
 
-def claim_next_render_job() -> dict[str, Any] | None:
+def claim_next_render_job(
+    execution_context: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """
     Reserva atomicamente o próximo Render Job queued.
 
@@ -307,6 +309,17 @@ def claim_next_render_job() -> dict[str, Any] | None:
         job["attempt"] = new_attempt
         job["output_path"] = None
         job["error"] = None
+
+        if execution_context is not None:
+            if not isinstance(execution_context, dict):
+                raise ValueError("execution_context deve ser um objeto.")
+            for field in (
+                "brain_decision_id",
+                "execution_id",
+                "authorized_action",
+            ):
+                if field in execution_context:
+                    job[field] = execution_context[field]
 
         cursor = connection.execute(
             """

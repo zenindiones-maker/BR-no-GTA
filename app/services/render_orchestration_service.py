@@ -151,6 +151,7 @@ def execute_render_job(
 
 def execute_next_render_job(
     executor: AbstractRenderExecutor | None = None,
+    execution_context: dict | None = None,
 ) -> RenderExecutionResult | None:
     """
     Executa exatamente um Render Job queued.
@@ -169,7 +170,9 @@ def execute_next_render_job(
         completed | failed
     """
 
-    running_job = claim_next_render_job()
+    running_job = claim_next_render_job(
+        execution_context=execution_context,
+    )
 
     if running_job is None:
         return None
