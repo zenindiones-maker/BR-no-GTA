@@ -186,14 +186,14 @@ jobs:
           ).read_text(encoding="utf-8")
 
           with Codex() as codex:
-              thread = codex.start_thread(cwd=".")
+              thread = codex.thread_start(cwd=".")
               result = thread.run(prompt)
 
           print("")
           print("==========================================")
           print("CODEX FINAL RESPONSE")
           print("==========================================")
-          print(result.output_text)
+          print(result.final_response)
           PY
 
       - name: Repository status
