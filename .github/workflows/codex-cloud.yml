@@ -1,0 +1,64 @@
+name: Codex Cloud Runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  codex:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR #4 branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/run-001-app
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Codex SDK
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai-codex
+
+      - name: Verify Codex runtime
+        run: |
+          python - <<'PY'
+          import openai_codex
+          print("openai_codex:", openai_codex.__version__)
+
+          from openai_codex import Codex
+
+          with Codex() as codex:
+              print("Codex SDK initialized successfully")
+          PY
+
+      - name: Start ChatGPT device login
+        run: |
+          python - <<'PY'
+          from openai_codex import Codex
+
+          with Codex() as codex:
+              login = codex.login_chatgpt_device_code()
+
+              print("")
+              print("========================================")
+              print("CHATGPT DEVICE LOGIN")
+              print("URL:", login.verification_url)
+              print("CODE:", login.user_code)
+              print("========================================")
+              print("")
+              print("Abra a URL, informe o código e autorize.")
+              print("O runner aguardará a autenticação.")
+
+              result = login.wait()
+              print("LOGIN RESULT:", result)
+          PY
