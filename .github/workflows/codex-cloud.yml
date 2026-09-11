@@ -64,9 +64,7 @@ jobs:
           rm -rf .codex-device-auth
           mkdir -p .codex-device-auth
 
-          RUNNER_TRACKING_ID="" nohup python - <<'PY' \
-            >.codex-device-auth/login.log 2>&1 </dev/null &
-
+          cat > /tmp/codex_device_login.py <<'PYCODE'
           from pathlib import Path
           from openai_codex import Codex
 
@@ -104,15 +102,29 @@ jobs:
                   encoding="utf-8",
               )
               raise
-          PY
+          PYCODE
 
-          echo $! > .codex-device-auth/pid
+          env RUNNER_TRACKING_ID= \
+            nohup python /tmp/codex_device_login.py \
+            > .codex-device-auth/login.log 2>&1 < /dev/null &
+
+          LOGIN_PID=$!
+          echo "$LOGIN_PID" > .codex-device-auth/pid
+
+          echo "Background login PID: $LOGIN_PID"
 
           for i in $(seq 1 60); do
             if [ -s .codex-device-auth/device.txt ]; then
               echo "Device authorization request generated."
               exit 0
             fi
+
+            if ! kill -0 "$LOGIN_PID" 2>/dev/null; then
+              echo "Background login process terminated unexpectedly."
+              cat .codex-device-auth/login.log || true
+              exit 1
+            fi
+
             sleep 1
           done
 
