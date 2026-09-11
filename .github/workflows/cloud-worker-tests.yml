@@ -66,8 +66,8 @@ jobs:
               qa = json.loads((folder / 'render-qa.json').read_text())
               probe = json.loads((folder / 'video-probe.json').read_text())
               assert manifest['qa_status'] == qa['status'] == 'PASS'
-              for field in ('render_job_id', 'video_id', 'execution_id'):
-                  assert manifest[field] == job[field] == qa[field]
+              for field in ('render_job_id', 'video_id', 'execution_id', 'content_item_id', 'script_id', 'idea_id', 'brain_decision_id', 'authorized_action'):
+                  assert manifest[field] == job[field] == qa[field] == probe['lineage'][field]
               identity = (manifest['execution_id'], manifest['render_job_id'], manifest['video_id'])
               assert identity not in identities
               identities.add(identity)

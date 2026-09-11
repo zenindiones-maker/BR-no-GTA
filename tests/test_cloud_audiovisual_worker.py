@@ -117,6 +117,12 @@ class AdapterTests(unittest.TestCase):
                 self.assertNotEqual(a, b)
                 self.assertEqual(len(list(a.glob("*.mp4"))), 1)
                 self.assertEqual(json.loads((a / "render-manifest.json").read_text())["video_id"], 2)
+                for filename in ("render-manifest.json", "render-qa.json", "video-probe.json"):
+                    evidence = json.loads((a / filename).read_text())
+                    if filename == "video-probe.json":
+                        evidence = evidence["lineage"]
+                    self.assertEqual(evidence["authorized_action"], "EXECUTION")
+                    self.assertEqual(evidence["brain_decision_id"], job()["brain_decision_id"])
                 with self.assertRaises(FileExistsError):
                     execute(job(), root, root / "out")
                 other["render_job_id"] = 10
@@ -126,6 +132,41 @@ class AdapterTests(unittest.TestCase):
                 failed = root / "out" / other["execution_id"] / "10"
                 self.assertFalse((failed / "render-manifest.json").exists())
                 self.assertEqual(json.loads((failed / "render-qa.json").read_text())["status"], "FAIL")
+
+    def test_failed_stages_leave_qa_without_success_manifest(self):
+        import json
+        probe = {"format": {"duration": "40", "format_name": "mp4"},
+                 "streams": [{"codec_type": "video"}]}
+        def partial_render(project, options):
+            Path(options.output).write_bytes(b"partial")
+            raise RuntimeError("engine failed")
+        def rendered(project, options):
+            Path(options.output).write_bytes(b"mock output")
+        cases = (
+            ("timeline", None, None),
+            ("render", partial_render, None),
+            ("probe", rendered, WorkerError("ffprobe failed")),
+            ("probe", rendered, probe),
+        )
+        for stage, render_effect, probe_result in cases:
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                timeline_error = WorkerError("Missing cloud asset") if stage == "timeline" else None
+                with patch("app.workers.audiovisual_worker.build_timeline", side_effect=timeline_error), \
+                     patch("vedit.render.render", side_effect=render_effect), \
+                     patch("app.workers.audiovisual_worker.probe_video") as probe_mock:
+                    if isinstance(probe_result, Exception):
+                        probe_mock.side_effect = probe_result
+                    else:
+                        probe_mock.return_value = probe_result
+                    with self.assertRaises((WorkerError, RuntimeError)):
+                        execute(job(), root, root / "out")
+                folder = root / "out" / "execution-test" / "1"
+                qa = json.loads((folder / "render-qa.json").read_text())
+                self.assertEqual(qa["status"], "FAIL")
+                self.assertEqual(qa["stage"], stage)
+                self.assertEqual(qa["authorized_action"], "EXECUTION")
+                self.assertFalse((folder / "render-manifest.json").exists())
 
 
 if __name__ == "__main__":

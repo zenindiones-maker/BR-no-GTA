@@ -74,3 +74,28 @@ retrieve and verify its artifact, then repeat for A and B. Keep #3/#5 open.
 - Next revision retains test bundles and verifies their download on a separate
   GitHub-hosted job, including SHA-256, sizes, stream metadata and matching lineage.
   Recovery validation remains pending its own Actions run.
+
+## Recovery evidence and final review
+
+Run 34641514457 at ac78e637db2c696b990a60a80728f863162f287f passed both
+worker-integration (103402123440) and recover-test-artifact (103402269461).
+Artifact 10280540842, synthetic-worker-test-34641514457-1, 240305 bytes,
+was recovered and verified on a separate runner. Retention ends 2026-09-18.
+Ledger: https://github.com/zenindiones-maker/BR-no-GTA/pull/5#issuecomment-5639925507
+
+Final review found incomplete lineage in QA/probe. The follow-up preserves all
+eight existing identity/authorization fields in QA and probe.lineage and checks
+them after artifact recovery. Unit tests cover timeline failure, partial engine
+failure, probe failure and missing-audio QA failure: each leaves FAIL evidence
+and no success manifest. Cloud verification of this follow-up remains pending.
+
+No workflow references master_50min.mp4. Existing output directories are rejected
+without overwrite; a GitHub Actions rerun uses a fresh checkout and failure
+artifacts are distinguished by run ID / attempt. Worker determinism means
+executing supplied plans without editorial choices, not bit-identical encoding
+across different FFmpeg/OS versions.
+
+Once this follow-up passes: READY FOR CANARY INPUT. Required from #2/#4 only:
+authorized 30–60-second RenderJob, full existing edit_plan propagated in that job,
+and official cloud-to-cloud video/audio asset references plus retrieval mapping.
+No successful synthetic test is an authorized canary or a long-video acceptance.

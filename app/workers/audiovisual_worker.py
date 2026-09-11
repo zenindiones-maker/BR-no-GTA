@@ -21,6 +21,12 @@ class WorkerError(ValueError):
     pass
 
 
+LINEAGE_FIELDS = (
+    "render_job_id", "video_id", "content_item_id", "script_id", "idea_id",
+    "execution_id", "brain_decision_id", "authorized_action",
+)
+
+
 def finite(value, label, minimum=0):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise WorkerError(f"{label}: expected finite number")
@@ -234,6 +240,7 @@ def execute(job, asset_root, output_root):
             raise WorkerError("Expected exactly one final MP4")
         qa["stage"] = "probe"
         probe = probe_video(output)
+        probe["lineage"] = {key: job[key] for key in LINEAGE_FIELDS}
         write_json(folder / "video-probe.json", probe)
         qa = evaluate_probe(probe, plan.duration_seconds, plan.qa)
         qa["stage"] = "probe"
@@ -250,7 +257,7 @@ def execute(job, asset_root, output_root):
         qa["checks"]["full_decode"] = True
         qa["stage"] = "complete"
         write_json(folder / "render-job.json", job)
-        manifest = {key: job[key] for key in ("render_job_id", "video_id", "content_item_id", "script_id", "idea_id", "execution_id", "brain_decision_id", "authorized_action")}
+        manifest = {key: job[key] for key in LINEAGE_FIELDS}
         manifest.update(filename=output.name, size_bytes=output.stat().st_size, duration_seconds=qa["duration_seconds"], qa_status="PASS")
         with output.open("rb") as stream:
             manifest["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
@@ -260,7 +267,7 @@ def execute(job, asset_root, output_root):
         qa["status"] = "FAIL"
         raise
     finally:
-        qa.update({key: job[key] for key in ("render_job_id", "video_id", "execution_id")})
+        qa.update({key: job[key] for key in LINEAGE_FIELDS})
         write_json(folder / "render-qa.json", qa)
 
 
