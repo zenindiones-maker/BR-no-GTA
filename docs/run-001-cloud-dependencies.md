@@ -59,3 +59,18 @@ retrieve and verify its artifact, then repeat for A and B. Keep #3/#5 open.
 - Added cloud-only synthetic integration test: two short independent renders through
   the same execute() / VEdit / FFmpeg / ffprobe / decode path. This is technical test
   coverage, never authorized canary evidence. Its Actions result is still pending.
+
+## Evidence ledger — synthetic technical integration
+
+- Commit: 093796ac6e212b0bda92a814c74d33df4441d115.
+- Workflow: cloud-worker-tests.yml; run: 34641276302; job: 103401249622.
+- Link: https://github.com/zenindiones-maker/BR-no-GTA/actions/runs/34641276302
+- Result: SUCCESS, eight tests executed, including two synthetic 2-second renders
+  through execute(), VEdit, FFmpeg, ffprobe and full-decode QA.
+- Test identities: synthetic-test-1 / render_job_id 1 / video_id 1 and
+  synthetic-test-2 / render_job_id 2 / video_id 2.
+- No artifacts uploaded by that revision; sizes/hashes not retained in its logs.
+  This proves technical rendering only, NOT artifact recovery or a real canary.
+- Next revision retains test bundles and verifies their download on a separate
+  GitHub-hosted job, including SHA-256, sizes, stream metadata and matching lineage.
+  Recovery validation remains pending its own Actions run.
