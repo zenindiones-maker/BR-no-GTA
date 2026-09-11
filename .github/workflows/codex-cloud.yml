@@ -4,11 +4,15 @@ on:
   push:
     branches:
       - codex/run-001-app
+    paths:
+      - ".github/workflows/codex-cloud.yml"
+      - ".github/codex/run-001.txt"
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read
 
 concurrency:
   group: codex-run-001-app
@@ -41,44 +45,120 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install openai-codex
 
-      - name: Login to Codex with ChatGPT device code
+      - name: Verify Codex installation
+        run: |
+          python - <<'PY'
+          import openai_codex
+          from openai_codex import Codex
+
+          print("openai_codex imported successfully")
+
+          with Codex():
+              print("Codex runtime initialized successfully")
+          PY
+
+      - name: Start ChatGPT device authentication
         env:
           PYTHONUNBUFFERED: "1"
         run: |
-          python - <<'PY'
+          rm -rf .codex-device-auth
+          mkdir -p .codex-device-auth
+
+          RUNNER_TRACKING_ID="" nohup python - <<'PY' \
+            >.codex-device-auth/login.log 2>&1 </dev/null &
+
+          from pathlib import Path
           from openai_codex import Codex
 
-          with Codex() as codex:
-              login = codex.login_chatgpt_device_code()
+          directory = Path(".codex-device-auth")
+          directory.mkdir(exist_ok=True)
 
-              print("")
-              print("==========================================")
-              print("CODEX CHATGPT DEVICE AUTH")
-              print("==========================================")
-              print("URL:", login.verification_url)
-              print("CODE:", login.user_code)
-              print("==========================================")
-              print("")
-              print("Autorize esta sessão no navegador.")
-              print("Aguardando autorização...", flush=True)
+          try:
+              with Codex() as codex:
+                  login = codex.login_chatgpt_device_code()
 
-              result = login.wait()
+                  (directory / "device.txt").write_text(
+                      "Open this URL:\n"
+                      f"{login.verification_url}\n\n"
+                      "Enter this code:\n"
+                      f"{login.user_code}\n",
+                      encoding="utf-8",
+                  )
 
-              print("")
-              print("LOGIN SUCCESS:", result.success, flush=True)
+                  result = login.wait()
 
-              if not result.success:
-                  raise SystemExit("Codex ChatGPT authentication failed")
+                  if result.success:
+                      (directory / "result.txt").write_text(
+                          "SUCCESS\n",
+                          encoding="utf-8",
+                      )
+                  else:
+                      (directory / "result.txt").write_text(
+                          "FAILED\n",
+                          encoding="utf-8",
+                      )
+
+          except Exception as exc:
+              (directory / "result.txt").write_text(
+                  f"ERROR: {type(exc).__name__}: {exc}\n",
+                  encoding="utf-8",
+              )
+              raise
           PY
 
-      - name: Verify Codex account
+          echo $! > .codex-device-auth/pid
+
+          for i in $(seq 1 60); do
+            if [ -s .codex-device-auth/device.txt ]; then
+              echo "Device authorization request generated."
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Device authorization request was not generated."
+          cat .codex-device-auth/login.log || true
+          exit 1
+
+      - name: Upload temporary device authorization
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-device-auth
+          path: .codex-device-auth/device.txt
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Wait for ChatGPT authorization
+        run: |
+          echo "Waiting for ChatGPT device authorization..."
+
+          for i in $(seq 1 180); do
+            if [ -s .codex-device-auth/result.txt ]; then
+              cat .codex-device-auth/result.txt
+
+              grep -qx "SUCCESS" .codex-device-auth/result.txt
+              exit $?
+            fi
+
+            sleep 5
+          done
+
+          echo "Timed out waiting for ChatGPT authorization."
+          cat .codex-device-auth/login.log || true
+          exit 1
+
+      - name: Verify authenticated Codex account
         run: |
           python - <<'PY'
           from openai_codex import Codex
 
           with Codex() as codex:
               account = codex.account()
-              print("Codex account available:", bool(account))
+
+          if not account:
+              raise SystemExit("Authenticated Codex account unavailable")
+
+          print("Codex account authentication: PASS")
           PY
 
       - name: Run RUN-001 Codex task
@@ -89,33 +169,35 @@ jobs:
           from pathlib import Path
           from openai_codex import Codex
 
-          prompt = Path(".github/codex/run-001.txt").read_text()
+          prompt = Path(
+              ".github/codex/run-001.txt"
+          ).read_text(encoding="utf-8")
 
           with Codex() as codex:
-              thread = codex.start_thread(
-                  cwd=".",
-              )
-
+              thread = codex.start_thread(cwd=".")
               result = thread.run(prompt)
 
-              print("")
-              print("==========================================")
-              print("CODEX FINAL RESPONSE")
-              print("==========================================")
-              print(result.output_text)
+          print("")
+          print("==========================================")
+          print("CODEX FINAL RESPONSE")
+          print("==========================================")
+          print(result.output_text)
           PY
 
-      - name: Run repository status
+      - name: Repository status
         if: always()
         run: |
           echo "=== STATUS ==="
           git status --short
+
           echo
           echo "=== DIFF STAT ==="
           git diff --stat || true
 
       - name: Commit Codex changes
         run: |
+          rm -rf .codex-device-auth
+
           if [ -z "$(git status --porcelain)" ]; then
             echo "Codex produced no repository changes."
             exit 1
@@ -123,7 +205,8 @@ jobs:
 
           git add -A
 
-          git commit -m "feat(run-001): close Codex canary input contracts (#2)"
+          git commit \
+            -m "feat(run-001): close Codex canary input contracts (#2)"
 
           git push origin HEAD:codex/run-001-app
 
@@ -133,4 +216,4 @@ jobs:
         run: |
           gh pr comment 4 \
             --repo "${{ github.repository }}" \
-            --body "Codex cloud runner completed a RUN-001 application pass at commit $(git rev-parse HEAD). Review the new application/contracts changes and test evidence before handing CANARY INPUT to PR #5."
+            --body "Codex cloud runner completed RUN-001 application work at commit $(git rev-parse HEAD). Review test evidence and CANARY INPUT handoff."
