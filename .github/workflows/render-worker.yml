@@ -4,179 +4,94 @@ on:
   workflow_dispatch:
     inputs:
       render_job:
-        description: "Render Job autorizado pelo DeepSeek Harness"
+        description: "RenderJob completo autorizado pelo Harness (#2/#4)"
         required: true
         type: string
       brain_decision_id:
-        description: "ID da decisão do Brain"
         required: true
         type: string
       execution_id:
-        description: "ID da execução"
         required: true
         type: string
       authorized_action:
-        description: "Ação autorizada"
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   audiovisual:
-    name: Audiovisual Worker
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: video-engine/backend:.
     steps:
-      - name: Checkout BR-no-GTA
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Validate authorization
-        env:
-          AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
-        run: |
-          test "$AUTHORIZED_ACTION" = "EXECUTION"
-
-      - name: Write Render Job
+      - name: Validate job before media processing
         env:
           RENDER_JOB: ${{ inputs.render_job }}
+          EXPECTED_BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
+          EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
+          EXPECTED_AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
         run: |
-          mkdir -p runtime/render
-          printf '%s' "$RENDER_JOB" > runtime/render/render-job.json
-
-      - name: Validate Render Job
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("runtime/render/render-job.json")
-          job = json.loads(path.read_text(encoding="utf-8"))
-
-          required = (
-              "content_item_id",
-              "script_id",
-              "idea_id",
-              "objective",
-              "estimated_duration_seconds",
-              "scenes",
-              "brain_decision_id",
-              "execution_id",
-              "authorized_action",
-          )
-
-          missing = [field for field in required if field not in job]
-          if missing:
-              raise SystemExit(
-                  f"Render Job incompleto. Campos ausentes: {missing}"
-              )
-
-          if job["authorized_action"] != "EXECUTION":
-              raise SystemExit("Execução não autorizada.")
-
-          if not job["scenes"]:
-              raise SystemExit("Render Job sem cenas.")
-
-          print("Render Job autorizado e válido.")
-          print(f"execution_id={job['execution_id']}")
-          print(f"brain_decision_id={job['brain_decision_id']}")
-          print(f"scenes={len(job['scenes'])}")
-          PY
-
-      - name: Prepare audiovisual workspace
-        run: |
-          mkdir -p runtime/render/input
-          mkdir -p runtime/render/output
-          mkdir -p runtime/render/work
-
-      - name: Execute audiovisual worker
-        env:
-          RENDER_JOB_PATH: runtime/render/render-job.json
-        run: |
-          python -m app.workers.audiovisual_worker \
-            --render-job "$RENDER_JOB_PATH" \
-            --output-dir runtime/render/output
-
-      - name: Validate master video
-        run: |
-          VIDEO_PATH="runtime/render/output/master_50min.mp4"
-
-          test -f "$VIDEO_PATH"
-          test -s "$VIDEO_PATH"
-
-          ffprobe \
-            -v error \
-            -show_entries stream=codec_type \
-            -show_entries format=duration \
-            -of json \
-            "$VIDEO_PATH" \
-            > runtime/render/video-probe.json
-
-      - name: Write render manifest
-        env:
-          BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
-          EXECUTION_ID: ${{ inputs.execution_id }}
-          AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
-        run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           import os
           from pathlib import Path
-
-          output = Path("runtime/render/output/master_50min.mp4")
-          probe = json.loads(
-              Path("runtime/render/video-probe.json").read_text(
-                  encoding="utf-8"
-              )
-          )
-
-          duration = float(
-              probe["format"]["duration"]
-          )
-
-          manifest = {
-              "schema_version": "1",
-              "artifact_type": "audiovisual-render",
-              "filename": output.name,
-              "size_bytes": output.stat().st_size,
-              "duration_seconds": duration,
-              "brain_decision_id": os.environ["BRAIN_DECISION_ID"],
-              "execution_id": os.environ["EXECUTION_ID"],
-              "authorized_action": os.environ["AUTHORIZED_ACTION"],
-          }
-
-          Path("runtime/render/render-manifest.json").write_text(
-              json.dumps(
-                  manifest,
-                  ensure_ascii=False,
-                  indent=2,
-              ),
-              encoding="utf-8",
-          )
+          from app.workers.audiovisual_worker import WorkerError, validate_job
+          try:
+              job = json.loads(os.environ["RENDER_JOB"])
+              validate_job(job)
+          except WorkerError as exc:
+              raise SystemExit(str(exc)) from None
+          except Exception:
+              raise SystemExit("Invalid RenderJob or authorization envelope; see #2/#4.") from None
+          path = Path("runtime/render/render-job.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(job, allow_nan=False), encoding="utf-8")
           PY
-
-      - name: Upload render artifact
+      - name: Install FFmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
+      - name: Validate vendored execution adapter
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch video-engine/backend/vedit/render.py
+          python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
+      # BLOCKED #2/#4: artifact identity and media_path mapping not defined yet.
+      # Add retrieval from that contract here. Never assume a Termux path exists
+      # on the runner or generate substitute media.
+      - name: Execute authorized EditPlan
+        run: |
+          set -euo pipefail
+          python -m app.workers.audiovisual_worker \
+            --render-job runtime/render/render-job.json \
+            --asset-root runtime/media-worker/artifact \
+            --output-dir runtime/render/output
+      - name: Upload QA-passed render
         uses: actions/upload-artifact@v4
         with:
+          # Identity is repository/run_id/name. Preserve current consumer name.
           name: render-output
-          path: |
-            runtime/render/output/master_50min.mp4
-            runtime/render/video-probe.json
-            runtime/render/render-manifest.json
-            runtime/render/render-job.json
+          path: runtime/render/output/
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 30
+      - name: Upload failure QA only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/render/output/**/render-qa.json
+          if-no-files-found: ignore
+          retention-days: 30
