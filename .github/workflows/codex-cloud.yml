@@ -1,23 +1,35 @@
-name: Codex Cloud Runner
+name: Codex Cloud RUN-001
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - codex/run-001-app
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
 
+concurrency:
+  group: codex-run-001-app
+  cancel-in-progress: false
+
 jobs:
   codex:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout PR #4 branch
+      - name: Checkout Codex branch
         uses: actions/checkout@v4
         with:
           ref: codex/run-001-app
           fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -27,21 +39,11 @@ jobs:
       - name: Install Codex SDK
         run: |
           python -m pip install --upgrade pip
-          pip install openai-codex
+          python -m pip install openai-codex
 
-      - name: Verify Codex runtime
-        run: |
-          python - <<'PY'
-          import openai_codex
-          print("openai_codex:", openai_codex.__version__)
-
-          from openai_codex import Codex
-
-          with Codex() as codex:
-              print("Codex SDK initialized successfully")
-          PY
-
-      - name: Start ChatGPT device login
+      - name: Login to Codex with ChatGPT device code
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           python - <<'PY'
           from openai_codex import Codex
@@ -50,15 +52,85 @@ jobs:
               login = codex.login_chatgpt_device_code()
 
               print("")
-              print("========================================")
-              print("CHATGPT DEVICE LOGIN")
+              print("==========================================")
+              print("CODEX CHATGPT DEVICE AUTH")
+              print("==========================================")
               print("URL:", login.verification_url)
               print("CODE:", login.user_code)
-              print("========================================")
+              print("==========================================")
               print("")
-              print("Abra a URL, informe o código e autorize.")
-              print("O runner aguardará a autenticação.")
+              print("Autorize esta sessão no navegador.")
+              print("Aguardando autorização...", flush=True)
 
               result = login.wait()
-              print("LOGIN RESULT:", result)
+
+              print("")
+              print("LOGIN SUCCESS:", result.success, flush=True)
+
+              if not result.success:
+                  raise SystemExit("Codex ChatGPT authentication failed")
           PY
+
+      - name: Verify Codex account
+        run: |
+          python - <<'PY'
+          from openai_codex import Codex
+
+          with Codex() as codex:
+              account = codex.account()
+              print("Codex account available:", bool(account))
+          PY
+
+      - name: Run RUN-001 Codex task
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from openai_codex import Codex
+
+          prompt = Path(".github/codex/run-001.txt").read_text()
+
+          with Codex() as codex:
+              thread = codex.start_thread(
+                  cwd=".",
+              )
+
+              result = thread.run(prompt)
+
+              print("")
+              print("==========================================")
+              print("CODEX FINAL RESPONSE")
+              print("==========================================")
+              print(result.output_text)
+          PY
+
+      - name: Run repository status
+        if: always()
+        run: |
+          echo "=== STATUS ==="
+          git status --short
+          echo
+          echo "=== DIFF STAT ==="
+          git diff --stat || true
+
+      - name: Commit Codex changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Codex produced no repository changes."
+            exit 1
+          fi
+
+          git add -A
+
+          git commit -m "feat(run-001): close Codex canary input contracts (#2)"
+
+          git push origin HEAD:codex/run-001-app
+
+      - name: Report PR state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 4 \
+            --repo "${{ github.repository }}" \
+            --body "Codex cloud runner completed a RUN-001 application pass at commit $(git rev-parse HEAD). Review the new application/contracts changes and test evidence before handing CANARY INPUT to PR #5."
