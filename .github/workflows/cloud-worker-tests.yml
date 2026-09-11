@@ -1,0 +1,31 @@
+name: Cloud worker technical tests (not RUN-001 canary)
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/run-001-cloud]
+    paths:
+      - app/workers/**
+      - tests/test_cloud_*.py
+      - .github/workflows/cloud-worker-tests.yml
+permissions:
+  contents: read
+jobs:
+  worker-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: video-engine/backend:.
+      CLOUD_RENDER_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Provision FFmpeg for integration test
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Worker unit and real engine integration tests
+        run: python -m unittest discover -s tests -p 'test_cloud_*.py' -v
+      - name: Evidence classification
+        run: echo 'Synthetic technical integration only. No authorized canary or RUN-001 production evidence.' >> "$GITHUB_STEP_SUMMARY"

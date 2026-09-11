@@ -6,6 +6,7 @@ must be supplied by the application contract (#2/#4), not guessed by this worker
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -75,6 +76,8 @@ def reject_secrets(value):
 
 
 def resolve_asset(media_path, root):
+    if not isinstance(media_path, str) or not media_path.strip():
+        raise WorkerError("Missing EditPlan media_path; producer: #2/#4; consumer: asset resolver")
     path = Path(media_path)
     if path.is_absolute() or ".." in path.parts:
         raise WorkerError("Cloud media_path must be relative to the provisioned asset root (#2/#4)")
@@ -84,7 +87,7 @@ def resolve_asset(media_path, root):
     return resolved
 
 
-def build_timeline(plan, asset_root, render_config):
+def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_asset):
     from vedit.store import Store
 
     if not isinstance(render_config, dict):
@@ -117,7 +120,7 @@ def build_timeline(plan, asset_root, render_config):
         finite(duration, "clip.duration_seconds", .001)
         if start + duration > plan.duration_seconds + .001:
             raise WorkerError("Clip exceeds EditPlan duration")
-        media = store.import_media([str(resolve_asset(media_path, asset_root))])[0]
+        media = store.import_media([str(asset_resolver(media_path, asset_root))])[0]
         if kind == "video":
             if not media.has_video:
                 raise WorkerError("Video track references media without video")
@@ -191,7 +194,11 @@ def probe_video(path):
 
 
 def evaluate_probe(probe, expected, qa):
-    duration = float(probe.get("format", {}).get("duration", "nan"))
+    try:
+        raw_duration = probe.get("format", {}).get("duration")
+        duration = float(raw_duration) if not isinstance(raw_duration, bool) else math.nan
+    except (TypeError, ValueError):
+        duration = math.nan
     kinds = {s.get("codec_type") for s in probe.get("streams", [])}
     formats = probe.get("format", {}).get("format_name", "").split(",")
     checks = {
@@ -223,26 +230,37 @@ def execute(job, asset_root, output_root):
         render(project, RenderOptions(output=str(output), prefer_hw=False, hwaccel_decode=False))
         if not output.is_file() or output.stat().st_size <= 0:
             raise WorkerError("Missing or empty output")
+        if len(list(folder.glob("*.mp4"))) != 1:
+            raise WorkerError("Expected exactly one final MP4")
         qa["stage"] = "probe"
         probe = probe_video(output)
         write_json(folder / "video-probe.json", probe)
         qa = evaluate_probe(probe, plan.duration_seconds, plan.qa)
+        qa["stage"] = "probe"
+        qa["checks"]["nonempty_file"] = True
+        qa["checks"]["exactly_one_mp4"] = True
         if qa["status"] != "PASS":
             raise WorkerError("Audiovisual QA failed")
-        decode = subprocess.run(["ffmpeg", "-v", "error", "-xerror", "-i", str(output), "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], capture_output=True, timeout=3600)
+        qa["stage"] = "decode"
+        qa["checks"]["full_decode"] = False
+        decode = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", str(output), "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], capture_output=True, timeout=3600)
         if decode.returncode or decode.stderr.strip():
             qa["status"] = "FAIL"
             raise WorkerError("Full decode QA failed")
         qa["checks"]["full_decode"] = True
+        qa["stage"] = "complete"
         write_json(folder / "render-job.json", job)
         manifest = {key: job[key] for key in ("render_job_id", "video_id", "content_item_id", "script_id", "idea_id", "execution_id", "brain_decision_id", "authorized_action")}
         manifest.update(filename=output.name, size_bytes=output.stat().st_size, duration_seconds=qa["duration_seconds"], qa_status="PASS")
+        with output.open("rb") as stream:
+            manifest["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
         write_json(folder / "render-manifest.json", manifest)
         return folder
     except Exception:
         qa["status"] = "FAIL"
         raise
     finally:
+        qa.update({key: job[key] for key in ("render_job_id", "video_id", "execution_id")})
         write_json(folder / "render-qa.json", qa)
 
 

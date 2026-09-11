@@ -67,7 +67,7 @@ class ContractTests(unittest.TestCase):
             root = Path(tmp)
             (root / "source.mp4").write_bytes(b"fixture")
             self.assertEqual(resolve_asset("source.mp4", root), root / "source.mp4")
-            for invalid in ("../source.mp4", "/etc/passwd", "missing.mp4"):
+            for invalid in (None, "", "../source.mp4", "/etc/passwd", "missing.mp4"):
                 with self.assertRaises(WorkerError):
                     resolve_asset(invalid, root)
 
@@ -77,7 +77,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(evaluate_probe(probe, 1500, EditQA())["status"], "FAIL")
         probe["streams"].pop()
         self.assertEqual(evaluate_probe(probe, 40, EditQA())["status"], "FAIL")
-        for duration in ("nan", "inf", "0", "-1"):
+        for duration in ("nan", "inf", "0", "-1", None, "invalid", True):
             probe["format"]["duration"] = duration
             self.assertEqual(evaluate_probe(probe, 40, EditQA())["status"], "FAIL")
 

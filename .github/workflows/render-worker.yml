@@ -46,13 +46,21 @@ jobs:
           import os
           from pathlib import Path
           from app.workers.audiovisual_worker import WorkerError, validate_job
+          failure_path = Path("runtime/render/validation-qa.json")
+          failure_path.parent.mkdir(parents=True, exist_ok=True)
           try:
               job = json.loads(os.environ["RENDER_JOB"])
               validate_job(job)
           except WorkerError as exc:
+              failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": str(exc)}))
               raise SystemExit(str(exc)) from None
           except Exception:
+              failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": "Invalid RenderJob; see #2/#4"}))
               raise SystemExit("Invalid RenderJob or authorization envelope; see #2/#4.") from None
+          if not Path("runtime/media-worker/artifact").is_dir():
+              reason = "Cloud asset provisioning unavailable: #2/#4 must supply official artifact identity and EditPlan media_path mapping. JSON-only Media Worker artifacts do not include source media."
+              failure_path.write_text(json.dumps({"status": "FAIL", "stage": "asset_provisioning", "reason": reason}))
+              raise SystemExit(reason)
           path = Path("runtime/render/render-job.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(job, allow_nan=False), encoding="utf-8")
@@ -92,6 +100,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: render-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: runtime/render/output/**/render-qa.json
+          path: |
+            runtime/render/validation-qa.json
+            runtime/render/output/**/render-qa.json
           if-no-files-found: ignore
           retention-days: 30

@@ -45,3 +45,17 @@ independent outputs and decode failure. Media operations are mocked; no real can
 Engine workflow 34615698838 at ee36abb succeeded; this is not new worker/RUN-001 proof.
 Before completion: finalize #2/#4, integrate retrieval, execute authorized real canary,
 retrieve and verify its artifact, then repeat for A and B. Keep #3/#5 open.
+
+## Worker hardening after 48e321b
+
+- Malformed probe durations produce structured FAIL; decode failure is an explicit check.
+- QA carries execution/video/job identities; MP4 count and size are checked.
+- Successful manifests include a streaming SHA-256 digest for artifact verification.
+- Asset resolution is injectable in the adapter; default remains confined, provisioned
+  files only. No cloud transport or contract fields were invented.
+- Dispatch validation and absent provisioning produce recoverable failure QA before
+  installing FFmpeg. The provisioning check must follow the official retrieval step
+  once #4 defines it; it is intentionally blocking today.
+- Added cloud-only synthetic integration test: two short independent renders through
+  the same execute() / VEdit / FFmpeg / ffprobe / decode path. This is technical test
+  coverage, never authorized canary evidence. Its Actions result is still pending.
