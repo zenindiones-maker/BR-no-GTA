@@ -82,6 +82,7 @@ def select_media_segments(
     unit_type: str = "segment",
     target_duration_seconds: float = 30.0,
     max_segments: int = 8,
+    source_cursor_seconds: float | None = None,
 ) -> dict[str, Any]:
     """
     Transforma MediaKnowledge em Content Units + Content Segments.
@@ -125,6 +126,18 @@ def select_media_segments(
             "max_segments deve ser positivo."
         )
 
+    if source_cursor_seconds is not None:
+        if (
+            not isinstance(source_cursor_seconds, (int, float))
+            or isinstance(source_cursor_seconds, bool)
+            or source_cursor_seconds < 0
+        ):
+            raise MediaSelectionError(
+                "source_cursor_seconds deve ser não negativo."
+            )
+
+        source_cursor_seconds = float(source_cursor_seconds)
+
     source_path = knowledge.get("source_path")
     if not isinstance(source_path, str) or not source_path.strip():
         raise MediaSelectionError(
@@ -163,13 +176,36 @@ def select_media_segments(
         if len(selected) >= max_segments:
             break
 
-        duration = candidate["duration_seconds"]
-
         if remaining <= 0:
             break
 
+        candidate_start = candidate["start_seconds"]
+        candidate_end = candidate["end_seconds"]
+
+        if source_cursor_seconds is not None:
+            if candidate_end <= source_cursor_seconds:
+                continue
+
+            candidate_start = max(
+                candidate_start,
+                source_cursor_seconds,
+            )
+
+        available_duration = (
+            candidate_end - candidate_start
+        )
+
+        if available_duration <= 0:
+            continue
+
+        if (
+            max_segments == 1
+            and available_duration + 0.001 < remaining
+        ):
+            continue
+
         selected_duration = min(
-            duration,
+            available_duration,
             remaining,
         )
 
@@ -178,9 +214,9 @@ def select_media_segments(
 
         selected.append(
             {
-                "start_seconds": candidate["start_seconds"],
+                "start_seconds": candidate_start,
                 "end_seconds": (
-                    candidate["start_seconds"]
+                    candidate_start
                     + selected_duration
                 ),
                 "duration_seconds": selected_duration,
@@ -192,6 +228,12 @@ def select_media_segments(
     if not selected:
         raise MediaSelectionError(
             "Nenhum trecho pôde ser selecionado."
+        )
+
+    if remaining > 0.001:
+        raise MediaSelectionError(
+            "Mídia disponível insuficiente para atingir "
+            "target_duration_seconds sem reutilização."
         )
 
     unit = create_and_persist_content_unit(
