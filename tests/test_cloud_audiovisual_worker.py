@@ -166,6 +166,10 @@ class AdapterTests(unittest.TestCase):
                 self.assertEqual(qa["status"], "FAIL")
                 self.assertEqual(qa["stage"], stage)
                 self.assertEqual(qa["authorized_action"], "EXECUTION")
+                self.assertEqual(json.loads((folder / "render-job.json").read_text()), job())
+                if isinstance(probe_result, dict):
+                    saved_probe = json.loads((folder / "video-probe.json").read_text())
+                    self.assertEqual(saved_probe["lineage"]["execution_id"], job()["execution_id"])
                 self.assertFalse((folder / "render-manifest.json").exists())
 
 

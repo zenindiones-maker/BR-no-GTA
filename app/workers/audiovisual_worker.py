@@ -230,6 +230,8 @@ def execute(job, asset_root, output_root):
     output = folder / f"{job['video_id']}.mp4"
     qa = {"status": "FAIL", "stage": "timeline"}
     try:
+        # Preserve the validated input unchanged before any operation can fail.
+        write_json(folder / "render-job.json", job)
         project = build_timeline(plan, asset_root, job.get("render"))
         from vedit.render import RenderOptions, render
         qa["stage"] = "render"
@@ -256,7 +258,6 @@ def execute(job, asset_root, output_root):
             raise WorkerError("Full decode QA failed")
         qa["checks"]["full_decode"] = True
         qa["stage"] = "complete"
-        write_json(folder / "render-job.json", job)
         manifest = {key: job[key] for key in LINEAGE_FIELDS}
         manifest.update(filename=output.name, size_bytes=output.stat().st_size, duration_seconds=qa["duration_seconds"], qa_status="PASS")
         with output.open("rb") as stream:

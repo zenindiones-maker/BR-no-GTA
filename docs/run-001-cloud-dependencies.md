@@ -99,3 +99,12 @@ Once this follow-up passes: READY FOR CANARY INPUT. Required from #2/#4 only:
 authorized 30–60-second RenderJob, full existing edit_plan propagated in that job,
 and official cloud-to-cloud video/audio asset references plus retrieval mapping.
 No successful synthetic test is an authorized canary or a long-video acceptance.
+
+## Failure evidence retention
+
+The worker saves the complete validated RenderJob before timeline construction.
+Failures retain that input, structured QA and the probe when probing succeeded.
+The failure artifact upload includes only these diagnostic JSONs; failed MP4s,
+unvalidated inputs and raw engine logs are not uploaded. Tests verify preservation
+for missing assets, engine failure, probe failure and failed audiovisual QA.
+Missing official asset transport remains a blocking #2/#4 dependency.
