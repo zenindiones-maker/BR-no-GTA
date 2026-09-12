@@ -46,6 +46,12 @@ class YtDlpMediaIngestion:
             "noplaylist": True,
             "outtmpl": str(output_path.with_suffix(".%(ext)s")),
             "merge_output_format": "mp4",
+            "format": (
+                "bv*[ext=mp4]+ba[ext=m4a]/"
+                "b[ext=mp4]/"
+                "bv*+ba/"
+                "b"
+            ),
         }
 
         cookies_file = os.environ.get("YTDLP_COOKIES_FILE")
