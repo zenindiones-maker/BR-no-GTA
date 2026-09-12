@@ -10,6 +10,16 @@ HIGGSFIELD_AUTH_BOUNDARY = (
 )
 
 
+class CapabilityExecutionBlocked(RuntimeError):
+    """Safe prerequisite block that must return to the Harness without execution."""
+
+    def __init__(self, safe_message: str, *, stage: str, boundary: str):
+        super().__init__(safe_message)
+        self.safe_message = safe_message
+        self.stage = stage
+        self.boundary = boundary
+
+
 @dataclass(frozen=True)
 class CapabilityDefinition:
     capability_id: str
@@ -253,6 +263,22 @@ def execute_capability(
 
     try:
         result = executor(capability, payload)
+    except CapabilityExecutionBlocked as exc:
+        return CapabilityEvidence(
+            capability_id=capability.capability_id,
+            provider=capability.provider,
+            status="BLOCKED",
+            active=False,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={
+                "stage": exc.stage,
+                "error": exc.safe_message,
+            },
+            boundary=exc.boundary,
+        )
     except Exception as exc:
         safe_error = getattr(
             exc,

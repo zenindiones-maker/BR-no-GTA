@@ -7,7 +7,10 @@ import subprocess
 import tempfile
 from typing import Any, Callable
 
-from app.services.harness_capability_service import CapabilityDefinition
+from app.services.harness_capability_service import (
+    CapabilityDefinition,
+    CapabilityExecutionBlocked,
+)
 
 
 MAX_TASK_CHARS = 12_000
@@ -131,6 +134,30 @@ def execute_codex_addy_capability(
     skill_name = capability.capability_id.removeprefix("addy:")
     prompt = _payload_prompt(skill_name=skill_name, payload=payload)
     source_root = (repository_root or _repository_root()).resolve()
+
+    # Authentication is a prerequisite, not an execution failure. Check it before
+    # creating a model turn so an unauthenticated ephemeral runner fails closed.
+    try:
+        auth = runner(
+            ["codex", "login", "status"],
+            cwd=source_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise CapabilityExecutionBlocked(
+            "Codex CLI is unavailable in the capability runner",
+            stage="installation",
+            boundary="Codex prerequisite unavailable; no model turn started",
+        ) from None
+
+    if auth.returncode != 0:
+        raise CapabilityExecutionBlocked(
+            "Codex authentication is not available in the ephemeral runner",
+            stage="authentication",
+            boundary="Codex authentication prerequisite missing; no model turn started",
+        )
 
     with tempfile.TemporaryDirectory(prefix="br-codex-capability-") as temp_dir:
         snapshot = Path(temp_dir) / "workspace"
