@@ -50,6 +50,11 @@ def build_audiovisual_render_request(
                     f"Cena do Render Job não possui o campo obrigatório: {field}."
                 )
 
+    render_job = dict(render_job)
+    if "render_job_id" not in render_job:
+        render_job["render_job_id"] = render_job.get("id")
+    if type(render_job.get("render_job_id")) is not int or render_job["render_job_id"] <= 0:
+        raise ValueError("Persisted render_job_id is required")
     return {
         "render_job": json.dumps(
             render_job,

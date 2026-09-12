@@ -86,6 +86,11 @@ def process_next_production_execution(
                 "EXECUTION exige contexto de autorização."
             )
 
+        from app.services.production_media_bridge import bind_selected_segments
+        production_plan = bind_selected_segments(
+            production_plan, [scene.get("segment_id") for scene in production_plan["scenes"]]
+        )
+
         video_spec = create_video_spec(
             production_plan,
             brain_decision=execution_context,

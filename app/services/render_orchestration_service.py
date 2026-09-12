@@ -52,6 +52,11 @@ def _execute_running_render_job(
                 "O executor deve retornar RenderExecutionResult."
             )
 
+        if result.pending:
+            if not result.github_execution or result.success or result.error:
+                raise ValueError("Invalid pending cloud execution")
+            return result
+
         if result.success:
             if not result.output_path:
                 raise ValueError(
@@ -196,3 +201,11 @@ def execute_next_render_job(
         running_job,
         executor=executor,
     )
+
+
+def resume_cloud_render_job(job_id, executor):
+    """Resume collection from the existing backend, without another dispatch."""
+    job = get_render_job(job_id)
+    if not job or job.get("status") != "running" or not job.get("github_execution"):
+        raise ValueError("No recoverable running cloud execution")
+    return _execute_running_render_job(job, executor)
