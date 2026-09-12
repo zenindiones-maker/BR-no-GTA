@@ -1,0 +1,39 @@
+name: Higgsfield Tooling Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-higgsfield-cli:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Show environment
+        run: |
+          uname -a
+          node --version
+          npm --version
+
+      - name: Install Higgsfield CLI
+        run: |
+          npm install -g @higgsfield/cli
+          higgsfield version
+
+      - name: Validate Higgsfield skills catalog
+        run: |
+          npx -y skills@1.5.26 add higgsfield-ai/skills --list
+
+      - name: Validate Agent Skills catalog
+        run: |
+          npx -y skills@1.5.26 add addyosmani/agent-skills --list
