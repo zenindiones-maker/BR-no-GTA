@@ -1,0 +1,171 @@
+name: yt-dlp authenticated format diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m yt_dlp --version
+          deno --version
+
+      - name: Prepare YouTube cookies
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          set -euo pipefail
+
+          test -n "$YOUTUBE_COOKIES"
+
+          mkdir -p runtime/secrets
+          printf '%s' "$YOUTUBE_COOKIES" > runtime/secrets/youtube-cookies.txt
+          chmod 600 runtime/secrets/youtube-cookies.txt
+
+      - name: List authenticated mweb formats
+        env:
+          YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
+        run: |
+          set -euo pipefail
+
+          URL='https://www.youtube.com/watch?v=VQRLujxTm3c'
+
+          python - <<'PY'
+          import os
+
+          from yt_dlp import YoutubeDL
+
+          url = "https://www.youtube.com/watch?v=VQRLujxTm3c"
+
+          options = {
+              "quiet": False,
+              "no_warnings": False,
+              "noplaylist": True,
+              "cookiefile": os.environ["YTDLP_COOKIES_FILE"],
+              "js_runtimes": {
+                  "deno": {},
+              },
+              "extractor_args": {
+                  "youtube": {
+                      "player_client": ["mweb"],
+                  },
+              },
+          }
+
+          with YoutubeDL(options) as ydl:
+              info = ydl.extract_info(url, download=False)
+
+          formats = info.get("formats") or []
+
+          print()
+          print("=== VIDEO ===")
+          print("id:", info.get("id"))
+          print("title:", info.get("title"))
+          print("duration:", info.get("duration"))
+          print("format_count:", len(formats))
+
+          print()
+          print("=== AVAILABLE FORMATS ===")
+
+          for fmt in formats:
+              print(
+                  "format_id={format_id!r} "
+                  "ext={ext!r} "
+                  "protocol={protocol!r} "
+                  "vcodec={vcodec!r} "
+                  "acodec={acodec!r} "
+                  "width={width!r} "
+                  "height={height!r} "
+                  "fps={fps!r} "
+                  "abr={abr!r} "
+                  "tbr={tbr!r} "
+                  "format_note={format_note!r}".format(
+                      format_id=fmt.get("format_id"),
+                      ext=fmt.get("ext"),
+                      protocol=fmt.get("protocol"),
+                      vcodec=fmt.get("vcodec"),
+                      acodec=fmt.get("acodec"),
+                      width=fmt.get("width"),
+                      height=fmt.get("height"),
+                      fps=fmt.get("fps"),
+                      abr=fmt.get("abr"),
+                      tbr=fmt.get("tbr"),
+                      format_note=fmt.get("format_note"),
+                  )
+              )
+
+          print()
+          print("=== TARGET IDS 616 / 234 ===")
+
+          for target in ("616", "234"):
+              matches = [
+                  fmt
+                  for fmt in formats
+                  if str(fmt.get("format_id")) == target
+              ]
+
+              print(target, "FOUND" if matches else "MISSING")
+
+              for fmt in matches:
+                  print(
+                      {
+                          key: fmt.get(key)
+                          for key in (
+                              "format_id",
+                              "ext",
+                              "protocol",
+                              "vcodec",
+                              "acodec",
+                              "width",
+                              "height",
+                              "fps",
+                              "abr",
+                              "tbr",
+                              "format_note",
+                          )
+                      }
+                  )
+          PY
+
+      - name: Show yt-dlp default selection without download
+        env:
+          YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
+        run: |
+          set -euo pipefail
+
+          URL='https://www.youtube.com/watch?v=VQRLujxTm3c'
+
+          python -m yt_dlp \
+            --cookies "$YTDLP_COOKIES_FILE" \
+            --extractor-args "youtube:player_client=mweb" \
+            --js-runtimes "deno" \
+            --no-playlist \
+            --simulate \
+            --print "selected_format=%(format_id)s" \
+            --print "selected_ext=%(ext)s" \
+            --print "selected_resolution=%(resolution)s" \
+            "$URL"
