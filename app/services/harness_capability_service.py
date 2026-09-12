@@ -251,7 +251,30 @@ def execute_capability(
             boundary="No capability executor bound by the DeepSeek Harness",
         )
 
-    result = executor(capability, payload)
+    try:
+        result = executor(capability, payload)
+    except Exception as exc:
+        safe_error = getattr(
+            exc,
+            "safe_message",
+            "Capability executor failed",
+        )
+        return CapabilityEvidence(
+            capability_id=capability.capability_id,
+            provider=capability.provider,
+            status="FAILED",
+            active=False,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={
+                "error_type": type(exc).__name__,
+                "error": safe_error,
+            },
+            boundary="Capability executor failed; no fallback executed",
+        )
+
     return CapabilityEvidence(
         capability_id=capability.capability_id,
         provider=capability.provider,
