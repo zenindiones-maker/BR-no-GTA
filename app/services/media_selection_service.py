@@ -227,6 +227,8 @@ def select_media_segments(
             role="content",
             status="ready",
             file_path=source_path.strip(),
+            asset_ref=asset_ref,
+            source_url=source_url,
         )
 
         segment = dict(segment)

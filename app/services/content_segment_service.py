@@ -250,6 +250,8 @@ def create_and_persist_content_segment(
     role: str = "content",
     status: str = "ready",
     file_path: str | None = None,
+    asset_ref: str | None = None,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """
     Cria um Content Segment, valida o domínio e persiste o registro.
@@ -286,6 +288,8 @@ def create_and_persist_content_segment(
         role=segment["role"],
         status=status,
         file_path=file_path,
+        asset_ref=asset_ref,
+        source_url=source_url,
     )
 
     persisted = get_content_segment(segment_id)

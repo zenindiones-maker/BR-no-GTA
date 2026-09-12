@@ -213,3 +213,49 @@ def test_segment_remains_declarative(
     assert segment["file_path"] is None
     assert "render_job_id" not in segment
     assert "youtube_video_id" not in segment
+
+
+
+def test_segment_persists_remote_asset_identity(
+    content_unit_id,
+):
+    segment = create_and_persist_content_segment(
+        content_unit_id=content_unit_id,
+        order=7,
+        duration_seconds=15,
+        media_format="16:9",
+        source_start_seconds=30,
+        source_end_seconds=45,
+        file_path="remote://media-worker/gta6-trailer",
+        asset_ref="remote://media-worker/gta6-trailer",
+        source_url="https://example.test/gta6-trailer",
+    )
+
+    assert segment["file_path"] == (
+        "remote://media-worker/gta6-trailer"
+    )
+    assert segment["asset_ref"] == (
+        "remote://media-worker/gta6-trailer"
+    )
+    assert segment["source_url"] == (
+        "https://example.test/gta6-trailer"
+    )
+
+    connection = get_connection()
+
+    row = connection.execute(
+        """
+        SELECT asset_ref, source_url
+        FROM content_segments
+        WHERE id = ?
+        """,
+        (segment["id"],),
+    ).fetchone()
+
+    assert row is not None
+    assert row["asset_ref"] == (
+        "remote://media-worker/gta6-trailer"
+    )
+    assert row["source_url"] == (
+        "https://example.test/gta6-trailer"
+    )

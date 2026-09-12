@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS content_segments (
     role TEXT NOT NULL DEFAULT 'content',
     status TEXT NOT NULL DEFAULT 'ready',
     file_path TEXT,
+    asset_ref TEXT,
+    source_url TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (content_unit_id)
@@ -580,6 +582,27 @@ def _migrate_ideas_research_item_id(connection) -> None:
         """
     )
 
+
+
+def _migrate_content_segment_asset_identity(connection) -> None:
+    """Adiciona identidade estável de asset aos segmentos existentes."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(content_segments)"
+        ).fetchall()
+    }
+
+    if "asset_ref" not in columns:
+        connection.execute(
+            "ALTER TABLE content_segments ADD COLUMN asset_ref TEXT"
+        )
+
+    if "source_url" not in columns:
+        connection.execute(
+            "ALTER TABLE content_segments ADD COLUMN source_url TEXT"
+        )
 
 
 def _migrate_youtube_publication_file_path(connection) -> None:
@@ -1068,6 +1091,7 @@ def initialize_schema() -> None:
         _migrate_memory_claim_evidence(connection)
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
+        _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
         _migrate_speech_analysis(connection)
