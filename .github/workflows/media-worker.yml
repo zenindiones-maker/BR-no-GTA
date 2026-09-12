@@ -410,7 +410,7 @@ jobs:
             )
             from app.services.speech.service import analyze_speech
             from app.services.speech.whisperx_provider import (
-                WhisperXSpeechProvider,
+                WhisperXProvider,
             )
 
             source_path = Path(os.environ["MEDIA_FILE"])
@@ -439,7 +439,7 @@ jobs:
             print("==========================================")
             print(f"Speech source: {source_path}")
 
-            provider = WhisperXSpeechProvider()
+            provider = WhisperXProvider()
 
             speech_analysis, speech_qa = analyze_speech(
                 source_path,
