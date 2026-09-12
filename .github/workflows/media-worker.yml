@@ -589,7 +589,7 @@ jobs:
                     f"MediaKnowledge incompleto: {sorted(missing)}"
                 )
 
-            if manifest.get("worker") != "media-worker":
+            if manifest.get("artifact_type") != "media-worker":
                 raise SystemExit("Manifest inválido.")
 
             if manifest.get("source_local_file_included") is not False:
