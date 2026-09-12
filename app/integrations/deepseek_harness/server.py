@@ -11,6 +11,9 @@ from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
 from app.services.gta6_master_agent import GTA6MasterAgent
+from app.services.codex_addy_capability_executor import (
+    execute_codex_addy_capability,
+)
 from app.services.harness_capability_service import (
     CapabilityAuthorization,
     discover_capabilities,
@@ -207,9 +210,9 @@ def br_capability_execute(
     """
     Apply Harness capability policy and return execution evidence.
 
-    External executors are deliberately not bound at the MCP boundary. Addy
-    therefore reports READY until a Harness-owned executor is composed, while
-    Higgsfield remains BLOCKED until its authentication boundary is resolved.
+    The Harness binds exactly one bounded Codex/Addy executor after policy
+    validation. Higgsfield remains BLOCKED before any executor call until its
+    authentication boundary is resolved.
     """
     payload = json.loads(payload_json)
     if not isinstance(payload, dict):
@@ -224,6 +227,7 @@ def br_capability_execute(
             execution_id=execution_id,
         ),
         payload=payload,
+        executor=execute_codex_addy_capability,
     )
     return _json_result(
         operation="br_capability_execute",

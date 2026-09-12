@@ -198,3 +198,41 @@ def test_capability_execute_returns_harness_lineage_without_running_higgsfield()
     assert evidence["authority"] == "deepseek_harness"
     assert evidence["harness_decision_id"] == "decision-42"
     assert evidence["execution_id"] == "execution-42"
+
+
+def test_capability_execute_binds_harness_owned_addy_executor(monkeypatch):
+    calls = []
+
+    def fake_executor(capability, payload):
+        calls.append((capability.capability_id, payload))
+        return {"output": "review complete"}
+
+    monkeypatch.setattr(
+        server,
+        "execute_codex_addy_capability",
+        fake_executor,
+    )
+
+    payload = json.loads(
+        server.br_capability_execute(
+            capability_id="addy:code-review-and-quality",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id="decision-43",
+            execution_id="execution-43",
+            payload_json='{"task": "Review the selected change."}',
+        )
+    )
+
+    evidence = payload["result"]
+    assert calls == [
+        (
+            "addy:code-review-and-quality",
+            {"task": "Review the selected change."},
+        )
+    ]
+    assert evidence["status"] == "EXECUTED"
+    assert evidence["active"] is True
+    assert evidence["provider"] == "addy-agent-skills"
+    assert evidence["harness_decision_id"] == "decision-43"
+    assert evidence["execution_id"] == "execution-43"
+    assert evidence["result"] == {"output": "review complete"}
