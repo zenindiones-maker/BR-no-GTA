@@ -2,6 +2,11 @@ name: yt-dlp authenticated format diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/run-001-app
+    paths:
+      - ".github/workflows/ytdlp-format-diagnostic.yml"
 
 permissions:
   contents: read
