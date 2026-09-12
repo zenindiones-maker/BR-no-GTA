@@ -79,7 +79,19 @@ jobs:
           deno-version: v2.x
       - name: Install existing ingestion adapter
         run: python -m pip install -r requirements.txt
+      - name: Prepare YouTube cookies
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          set -euo pipefail
+          test -n "$YOUTUBE_COOKIES"
+          mkdir -p runtime/secrets
+          printf '%s' "$YOUTUBE_COOKIES" > runtime/secrets/youtube-cookies.txt
+          chmod 600 runtime/secrets/youtube-cookies.txt
+
       - name: Execute authorized EditPlan
+        env:
+          YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
         run: |
           set -euo pipefail
           python -m app.workers.audiovisual_worker \
