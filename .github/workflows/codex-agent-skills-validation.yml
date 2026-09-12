@@ -24,13 +24,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install Codex CLI
-        run: |
-          npm install -g @openai/codex@latest
-          codex --version
+      - name: Restore pinned development tooling
+        run: bash scripts/agent-tooling/bootstrap.sh codex
 
-      - name: Validate native Agent Skills plugin
-        run: |
-          codex plugin marketplace add addyosmani/agent-skills
-          codex plugin add agent-skills@agent-skills
-          codex plugin list
+      - name: Verify native Codex discovery without model calls
+        run: python3 scripts/agent-tooling/check_discovery.py codex

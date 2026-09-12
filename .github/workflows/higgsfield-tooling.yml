@@ -24,21 +24,5 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Show environment
-        run: |
-          uname -a
-          node --version
-          npm --version
-
-      - name: Install Higgsfield CLI
-        run: |
-          npm install -g @higgsfield/cli
-          higgsfield version
-
-      - name: Validate Higgsfield skills catalog
-        run: |
-          npx -y skills@1.5.26 add higgsfield-ai/skills --list
-
-      - name: Validate Agent Skills catalog
-        run: |
-          npx -y skills@1.5.26 add addyosmani/agent-skills --list
+      - name: Restore pinned development tooling
+        run: bash scripts/agent-tooling/bootstrap.sh higgsfield
