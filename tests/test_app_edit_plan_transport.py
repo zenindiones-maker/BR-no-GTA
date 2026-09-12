@@ -12,6 +12,8 @@ class EditPlanTransportTests(unittest.TestCase):
                      visual_type="video", visual_description="test",
                      duration_seconds=30, requirements=[], segment_id=7,
                      content_unit_id=8, media_path="source.mp4",
+                     asset_ref="remote://media-worker/gta6-trailer",
+                     source_url="https://example.test/gta6-trailer",
                      source_start_seconds=2, source_end_seconds=32,
                      transcript_words=[dict(word="test", start=2, end=3)])
         plan = dict(version="1", content_item_id=1, script_id=2, title="test",
@@ -34,8 +36,33 @@ class EditPlanTransportTests(unittest.TestCase):
             self.assertEqual(output["edit_plan"], plan)
             for key, value in auth.items():
                 self.assertEqual(output[key], value)
-            for key in ("segment_id", "content_unit_id", "media_path", "source_start_seconds", "source_end_seconds", "transcript_words"):
-                self.assertEqual(output["scenes"][0][key], scene[key])
+            for key in (
+                "segment_id",
+                "content_unit_id",
+                "media_path",
+                "asset_ref",
+                "source_url",
+                "source_start_seconds",
+                "source_end_seconds",
+                "transcript_words",
+            ):
+                self.assertEqual(
+                    output["scenes"][0][key],
+                    scene[key],
+                )
+
+            self.assertEqual(
+                output["scenes"][0]["media_path"],
+                "source.mp4",
+            )
+            self.assertEqual(
+                output["scenes"][0]["asset_ref"],
+                "remote://media-worker/gta6-trailer",
+            )
+            self.assertNotEqual(
+                output["scenes"][0]["media_path"],
+                output["scenes"][0]["asset_ref"],
+            )
         job["edit_plan"]["tracks"][0]["clips"][0]["media_path"] = "changed"
         job["scenes"][0]["transcript_words"][0]["word"] = "changed"
         self.assertEqual(production, original)

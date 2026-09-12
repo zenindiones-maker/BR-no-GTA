@@ -87,6 +87,8 @@ def create_video_execution_spec(
             "source_end_seconds",
             "role",
             "media_path",
+            "asset_ref",
+            "source_url",
             "transcript_words",
         ):
             if field in scene:
