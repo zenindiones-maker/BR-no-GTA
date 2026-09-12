@@ -18,6 +18,8 @@ def test_operational_mcp_tools_are_registered():
         "br_gta6_monitor_run_once",
         "br_master_run_once",
         "br_youtube_pode_postar",
+        "br_capabilities_discover",
+        "br_capability_execute",
     }
 
 def test_editorial_process_next_reports_no_work(monkeypatch):
@@ -152,3 +154,47 @@ def test_youtube_pode_postar_uses_existing_publication_authorization(
             "status": "published",
         },
     }
+
+
+def test_capabilities_discover_delegates_progressively(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        server,
+        "discover_capabilities",
+        lambda *, intent, authorized_action: (
+            calls.append((intent, authorized_action))
+            or [{"capability_id": "addy:code-review-and-quality"}]
+        ),
+    )
+
+    payload = json.loads(
+        server.br_capabilities_discover(
+            intent="code review",
+            authorized_action="DEVELOPMENT",
+        )
+    )
+
+    assert calls == [("code review", "DEVELOPMENT")]
+    assert payload["result"]["capabilities"] == [
+        {"capability_id": "addy:code-review-and-quality"}
+    ]
+
+
+def test_capability_execute_returns_harness_lineage_without_running_higgsfield():
+    payload = json.loads(
+        server.br_capability_execute(
+            capability_id="higgsfield-generate",
+            authorized_action="EXECUTION",
+            harness_decision_id="decision-42",
+            execution_id="execution-42",
+            payload_json='{"prompt": "must not generate"}',
+        )
+    )
+
+    evidence = payload["result"]
+    assert evidence["status"] == "BLOCKED"
+    assert evidence["active"] is False
+    assert evidence["authority"] == "deepseek_harness"
+    assert evidence["harness_decision_id"] == "decision-42"
+    assert evidence["execution_id"] == "execution-42"
