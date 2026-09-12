@@ -42,6 +42,7 @@ class YtDlpMediaIngestion:
         options = {
             "quiet": True,
             "no_warnings": True,
+            "noprogress": True,
             "noplaylist": True,
             "outtmpl": str(output_path.with_suffix(".%(ext)s")),
             "merge_output_format": "mp4",
