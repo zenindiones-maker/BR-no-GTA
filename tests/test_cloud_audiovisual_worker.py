@@ -83,6 +83,40 @@ class AdapterTests(unittest.TestCase):
             with patch("vedit.store.probe_mod.probe", return_value=media), self.assertRaises(WorkerError):
                 build_timeline(plan, root, data["render"])
 
+    def test_graphic_descriptor_never_reaches_native_vedit_filter_catalog(self):
+        from vedit.model import Media
+        data = job()
+        data["edit_plan"]["effects"] = [{
+            "segment_id": 6,
+            "name": "vedit_graphic:title",
+            "params": {
+                "kind": "title",
+                "payload": {"text": "GTA 6"},
+            },
+        }]
+        plan = validate_job(data)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "source.mp4").write_bytes(b"probe is mocked")
+            media = Media(
+                id="media-test",
+                path=str(root / "source.mp4"),
+                duration=50,
+                has_audio=True,
+            )
+            with patch(
+                "vedit.store.probe_mod.probe",
+                return_value=media,
+            ), patch(
+                "vedit.store.Store.add_effect"
+            ) as native_effect, self.assertRaisesRegex(
+                WorkerError,
+                "Graphic descriptor reached native VEdit effect boundary",
+            ):
+                build_timeline(plan, root, data["render"])
+
+            native_effect.assert_not_called()
+
     def test_outputs_manifest_and_failure_gate(self):
         import json
         def render_fixture(project, options):
