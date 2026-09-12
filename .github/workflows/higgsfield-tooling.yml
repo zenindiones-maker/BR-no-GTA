@@ -2,6 +2,11 @@ name: Higgsfield Tooling Validation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex/run-001-app
+    paths:
+      - '.github/workflows/higgsfield-tooling.yml'
 
 permissions:
   contents: read
