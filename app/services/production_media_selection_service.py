@@ -178,9 +178,11 @@ def select_production_media(
             objective=objective.strip(),
             hook=narration.strip(),
             narration=narration.strip(),
+            media_format="landscape_16_9",
             target_duration_seconds=float(duration),
             max_segments=1,
             source_cursor_seconds=source_cursor_seconds,
+            continuous_window=True,
         )
 
         segments = selection.get("segments")

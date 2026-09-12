@@ -83,6 +83,7 @@ def select_media_segments(
     target_duration_seconds: float = 30.0,
     max_segments: int = 8,
     source_cursor_seconds: float | None = None,
+    continuous_window: bool = False,
 ) -> dict[str, Any]:
     """
     Transforma MediaKnowledge em Content Units + Content Segments.
@@ -172,58 +173,110 @@ def select_media_segments(
     selected: list[dict[str, float]] = []
     remaining = float(target_duration_seconds)
 
-    for candidate in candidates:
-        if len(selected) >= max_segments:
-            break
-
-        if remaining <= 0:
-            break
-
-        candidate_start = candidate["start_seconds"]
-        candidate_end = candidate["end_seconds"]
-
-        if source_cursor_seconds is not None:
-            if candidate_end <= source_cursor_seconds:
-                continue
-
-            candidate_start = max(
-                candidate_start,
-                source_cursor_seconds,
+    if continuous_window:
+        if not isinstance(continuous_window, bool):
+            raise MediaSelectionError(
+                "continuous_window deve ser booleano."
             )
 
-        available_duration = (
-            candidate_end - candidate_start
+        cursor = (
+            float(source_cursor_seconds)
+            if source_cursor_seconds is not None
+            else candidates[0]["start_seconds"]
         )
+        window_start = cursor
+        window_end = window_start + float(target_duration_seconds)
 
-        if available_duration <= 0:
-            continue
+        coverage_cursor = window_start
 
-        if (
-            max_segments == 1
-            and available_duration + 0.001 < remaining
-        ):
-            continue
+        for candidate in candidates:
+            candidate_start = candidate["start_seconds"]
+            candidate_end = candidate["end_seconds"]
 
-        selected_duration = min(
-            available_duration,
-            remaining,
-        )
+            if candidate_end <= coverage_cursor:
+                continue
 
-        if selected_duration <= 0:
-            continue
+            if candidate_start > coverage_cursor + 0.001:
+                break
 
-        selected.append(
+            coverage_cursor = max(
+                coverage_cursor,
+                candidate_end,
+            )
+
+            if coverage_cursor + 0.001 >= window_end:
+                break
+
+        if coverage_cursor + 0.001 < window_end:
+            raise MediaSelectionError(
+                "Mídia disponível insuficiente para atingir "
+                "target_duration_seconds sem reutilização."
+            )
+
+        selected = [
             {
-                "start_seconds": candidate_start,
-                "end_seconds": (
-                    candidate_start
-                    + selected_duration
+                "start_seconds": window_start,
+                "end_seconds": window_end,
+                "duration_seconds": float(
+                    target_duration_seconds
                 ),
-                "duration_seconds": selected_duration,
             }
-        )
+        ]
+        remaining = 0.0
 
-        remaining -= selected_duration
+    else:
+        for candidate in candidates:
+            if len(selected) >= max_segments:
+                break
+
+            if remaining <= 0:
+                break
+
+            candidate_start = candidate["start_seconds"]
+            candidate_end = candidate["end_seconds"]
+
+            if source_cursor_seconds is not None:
+                if candidate_end <= source_cursor_seconds:
+                    continue
+
+                candidate_start = max(
+                    candidate_start,
+                    source_cursor_seconds,
+                )
+
+            available_duration = (
+                candidate_end - candidate_start
+            )
+
+            if available_duration <= 0:
+                continue
+
+            if (
+                max_segments == 1
+                and available_duration + 0.001 < remaining
+            ):
+                continue
+
+            selected_duration = min(
+                available_duration,
+                remaining,
+            )
+
+            if selected_duration <= 0:
+                continue
+
+            selected.append(
+                {
+                    "start_seconds": candidate_start,
+                    "end_seconds": (
+                        candidate_start
+                        + selected_duration
+                    ),
+                    "duration_seconds": selected_duration,
+                }
+            )
+
+            remaining -= selected_duration
 
     if not selected:
         raise MediaSelectionError(
