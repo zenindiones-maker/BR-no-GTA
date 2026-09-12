@@ -1,0 +1,36 @@
+name: Codex Agent Skills Validation
+
+on:
+  push:
+    branches:
+      - codex/run-001-app
+    paths:
+      - '.github/workflows/codex-agent-skills-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-codex-agent-skills:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Codex CLI
+        run: |
+          npm install -g @openai/codex@latest
+          codex --version
+
+      - name: Validate native Agent Skills plugin
+        run: |
+          codex plugin marketplace add addyosmani/agent-skills
+          codex plugin add agent-skills@agent-skills
+          codex plugin list
