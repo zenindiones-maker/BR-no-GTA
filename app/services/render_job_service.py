@@ -1,4 +1,5 @@
 from typing import Any
+from copy import deepcopy
 
 def create_render_job(
     video_execution_spec: dict[str, Any],
@@ -98,9 +99,11 @@ def create_render_job(
             "source_start_seconds",
             "source_end_seconds",
             "role",
+            "media_path",
+            "transcript_words",
         ):
             if field in scene:
-                execution_scene[field] = scene[field]
+                execution_scene[field] = deepcopy(scene[field])
 
         execution_scenes.append(execution_scene)
 
@@ -165,4 +168,6 @@ def create_render_job(
     if video_id is not None:
         render_job["video_id"] = video_id
 
+    if "edit_plan" in video_execution_spec:
+        render_job["edit_plan"] = deepcopy(video_execution_spec["edit_plan"])
     return render_job

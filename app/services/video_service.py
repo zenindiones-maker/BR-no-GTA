@@ -1,4 +1,5 @@
 from typing import Any
+from copy import deepcopy
 
 from app.database.video_repository import insert_video
 
@@ -94,6 +95,8 @@ def create_video_spec(
     for field in required_authorization:
         video_spec[field] = brain_decision[field]
 
+    if "edit_plan" in production_plan:
+        video_spec["edit_plan"] = deepcopy(production_plan["edit_plan"])
     return video_spec
 
 

@@ -1,4 +1,5 @@
 from typing import Any
+from copy import deepcopy
 
 
 def create_video_execution_spec(
@@ -85,9 +86,11 @@ def create_video_execution_spec(
             "source_start_seconds",
             "source_end_seconds",
             "role",
+            "media_path",
+            "transcript_words",
         ):
             if field in scene:
-                execution_scene[field] = scene[field]
+                execution_scene[field] = deepcopy(scene[field])
 
         execution_scenes.append(execution_scene)
 
@@ -129,4 +132,6 @@ def create_video_execution_spec(
             result[field] = video_spec[field]
 
 
+    if "edit_plan" in video_spec:
+        result["edit_plan"] = deepcopy(video_spec["edit_plan"])
     return result
