@@ -1071,13 +1071,11 @@ def create_edit_plan(
 
         # Graphics Director.
         #
-        # build_graphics_plan() retorna uma coleção de
-        # GraphicDecision. Cada decisão gráfica deve ser
-        # materializada como um EditEffect associado ao
-        # segmento correspondente.
-        #
-        # Não reduzimos o resultado para um único dict:
-        # um segmento pode possuir múltiplas decisões gráficas.
+        # GraphicDecision is semantic overlay intent, not a native
+        # VEdit filter. Text-bearing graphics are materialized through
+        # EditText, the EditPlan v1 overlay contract consumed by the
+        # worker. Never encode a graphic descriptor as EditEffect:
+        # effects are passed verbatim to VEdit's native filter catalog.
         graphics_decisions = (
             graphics
             if isinstance(graphics, (tuple, list))
@@ -1097,20 +1095,50 @@ def create_edit_plan(
                 )
             ).strip()
 
-            if (
-                graphic_kind
-                and segment_id is not None
-            ):
-                effects.append(
-                    EditEffect(
-                        segment_id=segment_id,
-                        name=(
-                            "vedit_graphic:"
-                            + graphic_kind
-                        ),
-                        params=graphics_data,
-                    )
+            if not graphic_kind:
+                continue
+
+            payload = graphics_data.get("payload")
+
+            if not isinstance(payload, dict):
+                payload = {}
+
+            graphic_text = str(
+                payload.get("text") or ""
+            ).strip()
+
+            if not graphic_text:
+                raise VEditError(
+                    "Graphic descriptor cannot be represented "
+                    "by EditPlan v1: "
+                    f"{graphic_kind!r}"
                 )
+
+            texts.append(
+                EditText(
+                    text=graphic_text,
+                    start_seconds=float(
+                        graphics_data.get(
+                            "start_seconds",
+                            current_time,
+                        )
+                    ),
+                    duration_seconds=min(
+                        duration,
+                        float(
+                            graphics_data.get(
+                                "duration_seconds",
+                                duration,
+                            )
+                        ),
+                    ),
+                    track="T2",
+                    font_size=policy.caption_font_size,
+                    color="white",
+                    align="center",
+                    box=True,
+                )
+            )
 
         # Transition Director.
         if (

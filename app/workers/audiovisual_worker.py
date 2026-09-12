@@ -195,6 +195,10 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
     for effect in plan.effects:
         if effect.segment_id not in segment_clips:
             raise WorkerError("Effect references missing segment")
+        if effect.name.startswith("vedit_graphic:"):
+            raise WorkerError(
+                "Graphic descriptor reached native VEdit effect boundary"
+            )
         store.add_effect(segment_clips[effect.segment_id].id, effect.name, effect.params)
     for transition in plan.transitions:
         a = segment_clips.get(transition.from_segment_id)
