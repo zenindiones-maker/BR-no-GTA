@@ -10,6 +10,7 @@ on:
       - "app/integrations/deepseek_harness/server.py"
       - "tests/test_harness_capability_service.py"
       - "tests/test_codex_addy_capability_executor.py"
+      - "tests/test_codex_auth_boundary.py"
       - "tests/test_deepseek_harness.py"
       - ".github/workflows/harness-capability-boundary.yml"
   pull_request:
@@ -19,6 +20,7 @@ on:
       - "app/integrations/deepseek_harness/server.py"
       - "tests/test_harness_capability_service.py"
       - "tests/test_codex_addy_capability_executor.py"
+      - "tests/test_codex_auth_boundary.py"
       - "tests/test_deepseek_harness.py"
       - ".github/workflows/harness-capability-boundary.yml"
   workflow_dispatch:
@@ -31,6 +33,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -42,6 +49,42 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest
+
+      - name: Restore pinned Codex and Addy tooling
+        run: bash scripts/agent-tooling/bootstrap.sh codex
+
+      - name: Verify selected Addy skill without model calls
+        run: python3 scripts/agent-tooling/check_discovery.py codex
+
+      - name: Prove unauthenticated Harness canary fails closed
+        run: |
+          test -z "${OPENAI_API_KEY:-}"
+          test -z "${CODEX_ACCESS_TOKEN:-}"
+          python - <<'PY'
+          import json
+          from app.integrations.deepseek_harness import server
+
+          payload = json.loads(server.br_capability_execute(
+              capability_id="addy:code-review-and-quality",
+              authorized_action="DEVELOPMENT",
+              harness_decision_id="gha-auth-boundary",
+              execution_id="gha-auth-boundary-1",
+              payload_json=json.dumps({
+                  "task": "Review tracked Python files read-only; do not modify anything."
+              }),
+          ))
+
+          evidence = payload["result"]
+          assert evidence["status"] == "BLOCKED", evidence
+          assert evidence["active"] is False
+          assert evidence["authority"] == "deepseek_harness"
+          assert evidence["capability_id"] == "addy:code-review-and-quality"
+          assert evidence["result"]["stage"] == "authentication"
+          assert "no model turn started" in evidence["boundary"]
+
+          print(json.dumps(evidence, ensure_ascii=False))
+          PY
+          test -z "$(git status --porcelain)"
 
       - name: Compile capability boundary
         run: |
