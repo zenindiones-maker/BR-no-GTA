@@ -131,6 +131,22 @@ def select_media_segments(
             "MediaKnowledge não possui um source_path válido."
         )
 
+    metadata = knowledge.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise MediaSelectionError(
+            "MediaKnowledge possui metadata inválido."
+        )
+
+    source_url = metadata.get("source_url")
+    if source_url is not None:
+        if not isinstance(source_url, str) or not source_url.strip():
+            raise MediaSelectionError(
+                "MediaKnowledge possui source_url inválido."
+            )
+        source_url = source_url.strip()
+
+    asset_ref = source_path.strip()
+
     candidates = _extract_candidate_windows(
         knowledge
     )
@@ -213,6 +229,10 @@ def select_media_segments(
             file_path=source_path.strip(),
         )
 
+        segment = dict(segment)
+        segment["asset_ref"] = asset_ref
+        segment["source_url"] = source_url
+
         segments.append(segment)
 
     return {
@@ -224,4 +244,6 @@ def select_media_segments(
             for segment in segments
         ),
         "source": "MediaKnowledge",
+        "asset_ref": asset_ref,
+        "source_url": source_url,
     }
