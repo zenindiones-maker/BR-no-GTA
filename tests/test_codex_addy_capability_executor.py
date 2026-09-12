@@ -40,6 +40,10 @@ def test_executor_invokes_only_selected_skill_in_disposable_snapshot(tmp_path):
 
     def runner(command, **kwargs):
         calls.append((command, kwargs))
+
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
         snapshot = Path(kwargs["cwd"])
         assert snapshot != repository
         assert (snapshot / "sample.py").read_text() == "VALUE = 1\n"
@@ -62,7 +66,8 @@ def test_executor_invokes_only_selected_skill_in_disposable_snapshot(tmp_path):
         repository_root=repository,
     )
 
-    command, kwargs = calls[0]
+    assert calls[0][0] == ["codex", "login", "status"]
+    command, kwargs = calls[1]
     assert command[:2] == ["codex", "exec"]
     assert "--ephemeral" in command
     assert command[command.index("--sandbox") + 1] == "read-only"
@@ -100,6 +105,9 @@ def test_executor_failure_does_not_expose_stderr(tmp_path):
     repository = _repository(tmp_path)
 
     def runner(command, **kwargs):
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
         return subprocess.CompletedProcess(
             command,
             7,
