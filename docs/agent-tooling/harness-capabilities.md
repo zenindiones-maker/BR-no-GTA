@@ -43,7 +43,7 @@ Evidence returned to the Harness contains:
 
 - `capability_id`
 - `provider`
-- `status` (`READY`, `BLOCKED`, or `EXECUTED`)
+- `status` (`READY`, `BLOCKED`, `EXECUTED`, or `FAILED`)
 - `active`
 - `authority`
 - `authorized_action`
@@ -52,9 +52,17 @@ Evidence returned to the Harness contains:
 - `result` when execution occurred
 - `boundary` when execution did not occur
 
-The MCP boundary exposes progressive discovery and the policy/evidence path. It
-does not bind external executors itself; composition of an executor remains a
-Harness-owned decision.
+The MCP boundary exposes progressive discovery and the policy/evidence path.
+For Addy capabilities, it now binds one Harness-owned Codex executor only after
+the policy gate accepts the selected capability and lineage. The executor invokes
+exactly that native Addy skill with `@<skill-name>` in an ephemeral, read-only
+Codex session over a disposable snapshot of tracked repository files. It does not
+select another capability, persist repository changes, publish, deploy, or
+authenticate to external services.
+
+Executor failures are normalized to `FAILED` evidence with the same Harness
+lineage and a sanitized error. There is no autonomous fallback or secondary
+router. Higgsfield is still rejected as `BLOCKED` before the executor is called.
 
 ## Higgsfield authentication boundary
 
@@ -73,3 +81,16 @@ This capability integration does not modify RenderJob, audiovisual workers,
 YouTube publication, or Job16. The preserved run `34717863409` remains diagnosed
 at the existing `vedit_graphic:title` engine boundary. No Job17 is created and
 Job16 is not redispatched by this work.
+
+
+## Boundary CI
+
+`harness-capability-boundary.yml` is intentionally narrow and cheap. Pushes to
+`codex/run-001-app` trigger it only when the capability service, Codex/Addy
+executor, Harness MCP boundary, their focused tests, or the workflow itself
+changes. The existing full CI remains scoped to `main`, and the heavier DeepSeek
+Harness workflow remains manually dispatched.
+
+The boundary workflow compiles the three runtime modules and runs only the
+capability/Harness contract tests. It does not authenticate Codex, invoke an LLM,
+run Higgsfield generation, render media, publish YouTube, or touch RUN-001.

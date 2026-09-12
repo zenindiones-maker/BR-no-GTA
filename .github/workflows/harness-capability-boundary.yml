@@ -1,0 +1,58 @@
+name: Harness Capability Boundary
+
+on:
+  push:
+    branches:
+      - codex/run-001-app
+    paths:
+      - "app/services/harness_capability_service.py"
+      - "app/services/codex_addy_capability_executor.py"
+      - "app/integrations/deepseek_harness/server.py"
+      - "tests/test_harness_capability_service.py"
+      - "tests/test_codex_addy_capability_executor.py"
+      - "tests/test_deepseek_harness.py"
+      - ".github/workflows/harness-capability-boundary.yml"
+  pull_request:
+    paths:
+      - "app/services/harness_capability_service.py"
+      - "app/services/codex_addy_capability_executor.py"
+      - "app/integrations/deepseek_harness/server.py"
+      - "tests/test_harness_capability_service.py"
+      - "tests/test_codex_addy_capability_executor.py"
+      - "tests/test_deepseek_harness.py"
+      - ".github/workflows/harness-capability-boundary.yml"
+  workflow_dispatch:
+
+jobs:
+  capability-boundary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Compile capability boundary
+        run: |
+          python -m py_compile \
+            app/services/harness_capability_service.py \
+            app/services/codex_addy_capability_executor.py \
+            app/integrations/deepseek_harness/server.py
+
+      - name: Test capability boundary
+        run: |
+          python -m pytest -q \
+            tests/test_harness_capability_service.py \
+            tests/test_codex_addy_capability_executor.py \
+            tests/test_deepseek_harness.py
