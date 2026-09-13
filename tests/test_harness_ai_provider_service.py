@@ -2,6 +2,7 @@ import pytest
 
 from app.services.ai_provider import AIResponse, AIUsage
 from app.services.harness_ai_provider_service import execute_harness_ai_generation, select_harness_ai_provider
+from app.services.harness_routing_policy_service import HarnessRoutingDecision
 from app.services.harness_authorization_service import issue_harness_authorization
 
 
@@ -47,12 +48,71 @@ def test_nvidia_selection_is_lazy_policy_owned_and_model_bound(monkeypatch):
     assert calls == [{"model": "nvidia/nemotron-3-super-120b-a12b"}]
 
 
-def test_tuxevil_selection_does_not_construct_nvidia(monkeypatch):
+def test_tuxevil_selection_requires_governed_concrete_model(monkeypatch):
     import app.services.harness_ai_provider_service as service
-    monkeypatch.setattr(service, "NvidiaNIMProvider", lambda **kwargs: (_ for _ in ()).throw(AssertionError("NVIDIA must not be touched")))
-    expected = object(); monkeypatch.setattr(service, "create_ai_provider", lambda: expected)
-    provider_name, provider = service.select_harness_ai_provider(provider_name="tuxevil", authorization=auth("tuxevil"))
-    assert provider_name == "tuxevil" and provider is expected
+
+    monkeypatch.setattr(
+        service,
+        "NvidiaNIMProvider",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("NVIDIA must not be touched")
+        ),
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="requires an explicit selected model",
+    ):
+        service.select_harness_ai_provider(
+            provider_name="tuxevil",
+            authorization=auth("tuxevil"),
+        )
+
+
+def test_tuxevil_unregistered_concrete_model_is_rejected(monkeypatch):
+    import app.services.harness_ai_provider_service as service
+
+    selected_model = "unproven-tuxevil-model"
+
+    monkeypatch.setattr(
+        service,
+        "NvidiaNIMProvider",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("NVIDIA must not be touched")
+        ),
+    )
+
+    decision = HarnessRoutingDecision(
+        routing_id="routing-tuxevil-unproven-model",
+        intent="ai reasoning text provider selection",
+        authorized_action="EDITORIAL",
+        candidate_capability_ids=("ai.reasoning.text",),
+        selected_capability_id="ai.reasoning.text",
+        selected_provider="tuxevil",
+        selected_model=selected_model,
+        selected_executor_binding="harness_ai_provider_service",
+        selected_provider_executor_binding=(
+            "app.services.ai_provider_factory.create_ai_provider"
+        ),
+        primary_provider="tuxevil",
+        fallback_allowed=False,
+        fallback_candidates=(),
+        fallback_occurred=False,
+        evidence_expectations=("HarnessAIProviderEvidence",),
+        rationale=("unproven model must fail closed",),
+        rejected_candidates=(),
+        policy_metadata={},
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="model does not match Registry metadata",
+    ):
+        service.select_harness_ai_provider(
+            provider_name="tuxevil",
+            authorization=auth("tuxevil"),
+            routing_decision=decision,
+        )
 
 
 def test_provider_failure_does_not_trigger_silent_fallback():

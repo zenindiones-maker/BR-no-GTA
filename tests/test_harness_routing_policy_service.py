@@ -221,3 +221,53 @@ def test_master_agent_cannot_choose_provider_sovereignly():
 
     with pytest.raises(PermissionError, match="Harness-routed AI provider"):
         GTA6MasterAgent()
+
+def test_runtime_unavailable_tuxevil_is_excluded_while_nvidia_remains_eligible():
+    decision = route_harness_request(
+        _request(
+            preferred_providers=("nvidia_nim", "tuxevil"),
+            unavailable_provider_ids=("tuxevil",),
+            fallback_allowed=False,
+        ),
+        registry=_fallback_registry(),
+    )
+    assert decision.selected_provider == "nvidia_nim"
+    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.fallback_occurred is False
+    assert any(
+        rejection.candidate_id == "ai.provider.tuxevil"
+        and "provider_runtime_unavailable" in rejection.reasons
+        for rejection in decision.rejected_candidates
+    )
+
+
+def test_runtime_unavailable_tuxevil_without_fallback_fails_closed():
+    with pytest.raises(
+        RoutingPolicyError,
+        match="fallback is not permitted",
+    ):
+        route_harness_request(
+            _request(
+                preferred_providers=("tuxevil", "nvidia_nim"),
+                unavailable_provider_ids=("tuxevil",),
+                fallback_allowed=False,
+            ),
+            registry=_fallback_registry(),
+        )
+
+
+def test_runtime_unavailable_tuxevil_can_fallback_only_when_policy_explicitly_allows():
+    decision = route_harness_request(
+        _request(
+            preferred_providers=("tuxevil", "nvidia_nim"),
+            unavailable_provider_ids=("tuxevil",),
+            fallback_allowed=True,
+        ),
+        registry=_fallback_registry(),
+    )
+    assert decision.primary_provider == "tuxevil"
+    assert decision.selected_provider == "nvidia_nim"
+    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.fallback_allowed is True
+    assert decision.fallback_occurred is True
+    assert any("explicit fallback" in item for item in decision.rationale)
