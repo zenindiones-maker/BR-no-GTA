@@ -13,6 +13,7 @@ from app.services.harness_authorization_service import (
     resolve_harness_authorization,
     validate_harness_authorization,
 )
+from app.services.harness_routing_policy_service import HarnessRoutingDecision
 
 
 class CapabilityExecutionBlocked(RuntimeError):
@@ -133,12 +134,28 @@ def execute_capability(
     capability_id: str,
     authorization: CapabilityAuthorization,
     payload: dict[str, Any],
+    routing_decision: HarnessRoutingDecision | None = None,
     executor: Callable[[CapabilityDefinition, dict[str, Any]], Any] | None = None,
 ) -> CapabilityEvidence:
-    """Execute only after Harness authorization and return lineage-bearing evidence."""
+    """Execute after Harness authorization; verify routing when supplied by the Harness boundary."""
+    authorization = resolve_harness_authorization(authorization)
     capability = authorize_capability(capability_id, authorization)
 
     record = _REGISTRY_BY_ID[capability_id]
+    if routing_decision is not None:
+        if routing_decision.selected_capability_id != capability_id:
+            raise PermissionError("Harness routing capability mismatch")
+        if routing_decision.authorized_action != authorization.authorized_action:
+            raise PermissionError("Harness routing action mismatch")
+        if routing_decision.selected_executor_binding != record.executor_binding:
+            raise PermissionError("Harness routing executor mismatch")
+        selected = routing_decision.policy_metadata.get("selected_implementation")
+        if not isinstance(selected, dict):
+            raise PermissionError("Harness routing implementation metadata is required")
+        if selected.get("agent_id") != record.agent_id:
+            raise PermissionError("Harness routing agent mismatch")
+        if selected.get("skill_id") != record.skill_id:
+            raise PermissionError("Harness routing skill mismatch")
     if record.availability == BLOCKED:
         return CapabilityEvidence(
             capability_id=capability.capability_id,

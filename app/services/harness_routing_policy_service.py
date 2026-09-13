@@ -350,6 +350,23 @@ def route_harness_request(
         registry,
     )
     if not capability_candidates:
+        required_record = (
+            registry.get(request.required_capability_id)
+            if request.required_capability_id
+            else None
+        )
+        required_state = (
+            {
+                "capability_id": required_record.capability_id,
+                "availability": required_record.availability,
+                "maturity": required_record.maturity,
+                "status": required_record.status,
+                "security_boundary": required_record.security_boundary,
+                "executor_binding": required_record.executor_binding,
+            }
+            if required_record is not None
+            else None
+        )
         raise RoutingPolicyError(
             "No executable capability satisfies Harness routing policy",
             evidence={
@@ -357,6 +374,7 @@ def route_harness_request(
                 "authorized_action": action,
                 "candidate_capability_ids": list(discovered_ids),
                 "rejected_candidates": [asdict(item) for item in rejected],
+                "required_capability_state": required_state,
             },
         )
 
@@ -385,6 +403,12 @@ def route_harness_request(
         f"authorized_action policy matched: {action}",
         "non-AVAILABLE Registry records were excluded",
     ]
+    if capability.agent_id or capability.skill_id:
+        implementation_identity = capability.skill_id or capability.agent_id or capability.capability_id
+        rationale.append(
+            "agent/skill implementation selected by Harness policy: "
+            f"{capability.capability_type}:{implementation_identity}"
+        )
     if provider is not None:
         rationale.append(
             f"provider selected by Harness policy: {selected_provider}"
@@ -405,6 +429,16 @@ def route_harness_request(
         "latency_constraint": request.latency_constraint,
         "cost_constraint": request.cost_constraint,
         "quota_constraint": request.quota_constraint,
+        "selected_implementation": {
+            "type": capability.capability_type,
+            "implementation": capability.implementation,
+            "agent_id": capability.agent_id,
+            "skill_id": capability.skill_id,
+            "executor_binding": capability.executor_binding,
+            "evidence_contract": capability.evidence_contract,
+            "side_effects": list(capability.side_effects),
+            "instruction_path": capability.instruction_path,
+        },
     }
     fingerprint_payload = {
         "request": asdict(request),

@@ -10,6 +10,7 @@ from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
 from app.services.gta6_master_agent import GTA6MasterAgent
+from app.services.global_capability_registry import BLOCKED, UNKNOWN
 from app.services.codex_addy_capability_executor import (
     execute_codex_addy_capability,
 )
@@ -21,10 +22,12 @@ from app.services.harness_capability_service import (
     execute_capability,
 )
 from app.services.harness_authorization_service import (
+    HARNESS_ISSUER,
     issue_harness_authorization,
 )
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
+    RoutingPolicyError,
     route_harness_request,
 )
 from app.services.google_youtube_publication_service import (
@@ -329,20 +332,92 @@ def br_capability_execute(
     # Legacy caller-supplied IDs are accepted for wire compatibility only.
     # They are deliberately not trusted as authorization provenance.
     _ = (harness_decision_id, execution_id)
+
+    try:
+        routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent=f"execute selected capability {capability_id}",
+                authorized_action=authorized_action,
+                required_capability_id=capability_id,
+                fallback_allowed=False,
+            )
+        )
+    except RoutingPolicyError as exc:
+        required_state = exc.evidence.get("required_capability_state")
+        availability = (
+            required_state.get("availability")
+            if isinstance(required_state, dict)
+            else None
+        )
+        result_status = (
+            availability
+            if availability in {BLOCKED, UNKNOWN}
+            else "UNAVAILABLE"
+        )
+        return _json_result(
+            operation="br_capability_execute",
+            result={
+                "capability_id": capability_id,
+                "status": result_status,
+                "active": False,
+                "authority": HARNESS_ISSUER,
+                "authorized_action": authorized_action.strip().upper(),
+                "authorization_id": None,
+                "harness_decision_id": None,
+                "execution_id": None,
+                "result": {
+                    "stage": "routing",
+                    "error": str(exc),
+                    "routing_evidence": exc.evidence,
+                },
+                "boundary": (
+                    "Harness Routing/Policy rejected the implementation before "
+                    "authorization or execution"
+                ),
+            },
+        )
+
+    implementation = routing.policy_metadata.get("selected_implementation")
+    if not isinstance(implementation, dict):
+        raise RuntimeError("Harness routing did not bind implementation metadata")
+    if implementation.get("type") != "SKILL" or not implementation.get("skill_id"):
+        raise PermissionError(
+            "Generic agent/skill execution is restricted to a selected SKILL implementation"
+        )
+
     authorization = issue_harness_authorization(
-        authorized_action=authorized_action,
-        subject=f"capability:{capability_id}",
-        lineage={"capability_id": capability_id},
+        authorized_action=routing.authorized_action,
+        subject=f"capability:{routing.selected_capability_id}",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_agent_id": implementation.get("agent_id"),
+            "selected_skill_id": implementation.get("skill_id"),
+            "selected_executor_binding": routing.selected_executor_binding,
+            "fallback_occurred": routing.fallback_occurred,
+        },
     )
     evidence = execute_capability(
-        capability_id=capability_id,
+        capability_id=routing.selected_capability_id,
         authorization=authorization,
         payload=payload,
+        routing_decision=routing,
         executor=execute_codex_addy_capability,
     )
+    result = evidence.to_dict()
+    result["authorization_id"] = authorization.authorization_id
+    result["harness_routing"] = {
+        "routing_id": routing.routing_id,
+        "requested_capability_id": capability_id,
+        "selected_capability_id": routing.selected_capability_id,
+        "selected_implementation": implementation,
+        "selected_executor": routing.selected_executor_binding,
+        "policy_reason": list(routing.rationale),
+        "fallback_occurred": routing.fallback_occurred,
+    }
     return _json_result(
         operation="br_capability_execute",
-        result=evidence,
+        result=result,
     )
 
 
