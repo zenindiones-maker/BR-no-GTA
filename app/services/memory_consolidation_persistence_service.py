@@ -34,6 +34,7 @@ def _build_memory_claim(
     """Reconstrói o domínio MemoryClaim a partir do SQLite."""
 
     return MemoryClaim(
+        canonical_key=claim_data["canonical_key"],
         claim=claim_data["claim"],
         claim_type=claim_data["claim_type"],
         confidence=float(claim_data["confidence"]),

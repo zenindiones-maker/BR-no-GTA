@@ -10,6 +10,7 @@ from app.services.gta6_monitor_execution_error import (
 
 def create_context():
     return GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )

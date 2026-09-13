@@ -20,6 +20,7 @@ def test_execution_result_requires_context():
 
 def test_execution_result_requires_result():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )
@@ -33,6 +34,7 @@ def test_execution_result_requires_result():
 
 def test_execution_result_preserves_context_and_result():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )
@@ -52,6 +54,7 @@ def test_execution_result_preserves_context_and_result():
 
 def test_execution_result_exposes_execution_id():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )
@@ -66,6 +69,7 @@ def test_execution_result_exposes_execution_id():
 
 def test_execution_result_exposes_run_id():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )
@@ -80,6 +84,7 @@ def test_execution_result_exposes_run_id():
 
 def test_execution_result_is_immutable():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )
