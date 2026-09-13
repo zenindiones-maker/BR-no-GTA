@@ -6,7 +6,6 @@ from typing import Any
 
 from app.database.gta6_master_agent_repository import create_gta6_master_agent_run
 from app.services.ai_provider import AIProvider
-from app.services.ai_provider_factory import create_ai_provider
 from app.services.gta6_action_dispatcher import GTA6ActionDispatcher, ActionResult
 from app.services.gta6_brain import BrainDecision, GTA6Brain
 from app.services.gta6_monitor_worker_service import execute_gta6_monitor
@@ -29,7 +28,11 @@ class GTA6MasterAgent:
     """Subordinate decision/execution agent. DeepSeek Harness remains authority."""
 
     def __init__(self, *, ai_provider: AIProvider | None = None):
-        self.ai_provider = ai_provider or create_ai_provider()
+        if ai_provider is None:
+            raise PermissionError(
+                "GTA6MasterAgent requires a Harness-routed AI provider"
+            )
+        self.ai_provider = ai_provider
         self.brain = GTA6Brain(ai_provider=self.ai_provider)
         self._current_brain_decision = BrainDecision(
             action="WAIT", reason="Nenhuma decisão executada ainda.", priority="LOW", confidence=0.0
