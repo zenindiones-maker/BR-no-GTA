@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS content_segments (
     role TEXT NOT NULL DEFAULT 'content',
     status TEXT NOT NULL DEFAULT 'ready',
     file_path TEXT,
+    asset_ref TEXT,
+    source_url TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (content_unit_id)
@@ -582,6 +584,27 @@ def _migrate_ideas_research_item_id(connection) -> None:
 
 
 
+def _migrate_content_segment_asset_identity(connection) -> None:
+    """Adiciona identidade estável de asset aos segmentos existentes."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(content_segments)"
+        ).fetchall()
+    }
+
+    if "asset_ref" not in columns:
+        connection.execute(
+            "ALTER TABLE content_segments ADD COLUMN asset_ref TEXT"
+        )
+
+    if "source_url" not in columns:
+        connection.execute(
+            "ALTER TABLE content_segments ADD COLUMN source_url TEXT"
+        )
+
+
 def _migrate_youtube_publication_file_path(connection) -> None:
     """Adiciona o caminho do arquivo à intenção de publicação no YouTube."""
 
@@ -1054,6 +1077,38 @@ def _migrate_production_plans(connection) -> None:
     )
 
 
+def _migrate_harness_authorizations(connection) -> None:
+    """Persist Harness-issued authorization provenance in the central SQLite DB."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS harness_authorizations (
+            authorization_id TEXT PRIMARY KEY,
+            harness_decision_id TEXT NOT NULL,
+            execution_id TEXT NOT NULL,
+            authorized_action TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            issued_by TEXT NOT NULL,
+            issued_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            lineage TEXT NOT NULL DEFAULT '{}',
+            consumed_at TEXT,
+            revoked_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_execution ON harness_authorizations(execution_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_decision ON harness_authorizations(harness_decision_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_subject_status ON harness_authorizations(subject, status)"
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1068,6 +1123,7 @@ def initialize_schema() -> None:
         _migrate_memory_claim_evidence(connection)
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
+        _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
         _migrate_speech_analysis(connection)
@@ -1080,6 +1136,7 @@ def initialize_schema() -> None:
         _migrate_gta6_goals(connection)
         _migrate_production_plans(connection)
         _migrate_gta6_media_intelligence(connection)
+        _migrate_harness_authorizations(connection)
         connection.commit()
     finally:
         connection.close()

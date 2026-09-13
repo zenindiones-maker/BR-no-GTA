@@ -58,6 +58,7 @@ class GitHubActionsAudiovisualExecutor(AbstractRenderExecutor):
         artifact_name: str = "render-output",
         artifact_root: str | Path = "runtime/github-actions-artifacts",
         validator: RenderArtifactValidator | None = None,
+        wait_for_completion: bool = True,
     ) -> None:
         if not repository:
             raise ValueError(
@@ -84,6 +85,7 @@ class GitHubActionsAudiovisualExecutor(AbstractRenderExecutor):
                 "O diretório raiz dos artifacts é obrigatório."
             )
 
+        self.wait_for_completion = wait_for_completion
         self.repository = repository
         self.workflow = workflow
         self.ref = ref
@@ -307,9 +309,18 @@ class GitHubActionsAudiovisualExecutor(AbstractRenderExecutor):
                 "não está configurado."
             )
 
+        existing = render_job.get("github_execution")
+        if existing:
+            if existing.get("repository") != self.repository or existing.get("workflow") != self.workflow:
+                raise ValueError("Persisted GitHub execution does not match executor")
+            return self._wait_and_collect(existing)
+        if not self.wait_for_completion and on_dispatch is None:
+            raise ValueError("Async dispatch requires durable on_dispatch callback")
         github_execution = self._dispatch(render_job)
 
         if on_dispatch is not None:
             on_dispatch(dict(github_execution))
 
+        if not self.wait_for_completion:
+            return RenderExecutionResult(success=False, pending=True, github_execution=github_execution)
         return self._wait_and_collect(github_execution)

@@ -1,6 +1,9 @@
 from typing import Any
 
 from app.database.production_plan_repository import insert_production_plan
+from app.database.gta6_goal_repository import (
+    get_gta6_goal_artifacts_by_idea_id,
+)
 from app.database.queue_repository import (
     claim_next_queue_item,
     mark_queue_item_completed,
@@ -9,6 +12,7 @@ from app.database.scripts_repository import get_script
 from app.services.ai_provider import AIProvider
 from app.services.content_item_service import create_content_item
 from app.services.production_plan_service import create_production_plan
+from app.services.gta6_goal_service import update_artifacts
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
 
@@ -87,6 +91,24 @@ def process_next_editorial_queue_item(
         content_item_id=content_item["id"],
         production_plan=production_plan,
     )
+
+    goal_artifacts = get_gta6_goal_artifacts_by_idea_id(
+        idea_id
+    )
+
+    if goal_artifacts is not None:
+        goal_id = goal_artifacts.get("goal_id")
+
+        if not isinstance(goal_id, str) or not goal_id.strip():
+            raise RuntimeError(
+                "Goal associado à Idea possui goal_id inválido."
+            )
+
+        update_artifacts(
+            goal_id=goal_id,
+            script_id=script_id,
+            content_item_id=content_item["id"],
+        )
 
     completed = mark_queue_item_completed(queue_id)
 

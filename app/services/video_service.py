@@ -1,6 +1,11 @@
 from typing import Any
+from copy import deepcopy
 
 from app.database.video_repository import insert_video
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 
 
 def create_video_spec(
@@ -65,35 +70,15 @@ def create_video_spec(
         ),
     }
 
-    if not isinstance(brain_decision, dict):
-        raise ValueError(
-            "Video Spec exige contexto de autorização do Dispatcher."
-        )
-
-    required_authorization = (
-        "brain_decision_id",
-        "execution_id",
-        "authorized_action",
+    authorization = validate_harness_authorization(
+        brain_decision or {},
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
     )
+    video_spec.update(authorization_to_context(authorization))
 
-    for field in required_authorization:
-        value = brain_decision.get(field)
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(
-                "Video Spec exige autorização completa: "
-                f"{field}."
-            )
-
-    if brain_decision["authorized_action"] != "EXECUTION":
-        raise ValueError(
-            "Video Spec só pode ser criado para a ação autorizada EXECUTION."
-        )
-
-    # Contexto de execução: atravessa o Video Spec intacto
-    # até o Render Job. O Dispatcher é a autoridade desses campos.
-    for field in required_authorization:
-        video_spec[field] = brain_decision[field]
-
+    if "edit_plan" in production_plan:
+        video_spec["edit_plan"] = deepcopy(production_plan["edit_plan"])
     return video_spec
 
 

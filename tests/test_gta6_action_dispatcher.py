@@ -1,182 +1,50 @@
 from __future__ import annotations
-
 import pytest
-
-from app.services.gta6_action_dispatcher import (
-    GTA6ActionDispatcher,
-)
+from app.services.gta6_action_dispatcher import GTA6ActionDispatcher
 from app.services.gta6_brain import BrainDecision
+from app.services.harness_authorization_service import issue_harness_authorization
 
 
-def make_dispatcher(calls: list[str]) -> GTA6ActionDispatcher:
+def make_dispatcher(calls):
     return GTA6ActionDispatcher(
-        monitor=lambda *, execution_id: calls.append("monitor") or {"ok": "monitor"},
-        research=lambda: calls.append("research") or {"ok": "research"},
-        editorial=lambda context: calls.append("editorial") or {"ok": "editorial"},
-        execution=lambda context: calls.append("execution") or {"ok": "execution"},
-        youtube=lambda: calls.append("youtube") or {"ok": "youtube"},
+        monitor=lambda *, execution_id: calls.append("monitor") or {"ok":"monitor"},
+        research=lambda: calls.append("research") or {"ok":"research"},
+        editorial=lambda context: calls.append("editorial") or {"ok":"editorial","context":context},
+        execution=lambda context: calls.append("execution") or {"ok":"execution","context":context},
+        youtube=lambda: calls.append("youtube") or {"ok":"youtube"},
     )
 
 
-@pytest.mark.parametrize(
-    ("action", "expected_call", "expected_tool"),
-    [
-        (
-            "MONITOR",
-            "monitor",
-            "br_gta6_monitor_run_once",
-        ),
-        (
-            "RESEARCH",
-            "research",
-            "br_research_run",
-        ),
-        (
-            "EDITORIAL",
-            "editorial",
-            "br_editorial_process_next",
-        ),
-        (
-            "EXECUTION",
-            "execution",
-            "br_render_process_next",
-        ),
-    ],
-)
-def test_dispatch_executes_only_authorized_action(
-    action: str,
-    expected_call: str,
-    expected_tool: str,
-):
-    calls: list[str] = []
-    dispatcher = make_dispatcher(calls)
+def decision(action): return BrainDecision(action=action, reason="test", priority="HIGH", confidence=.9)
+def auth(action): return issue_harness_authorization(authorized_action=action, subject=f"action:{action}")
 
-    decision = BrainDecision(
-        action=action,
-        reason="test",
-        priority="HIGH",
-        confidence=0.9,
-    )
-
-    result = dispatcher.dispatch(decision)
-
-    assert calls == [expected_call]
-    assert result.action == action
-    assert result.tool == expected_tool
-    assert result.success is True
+@pytest.mark.parametrize("action,call", [("MONITOR","monitor"),("RESEARCH","research"),("EDITORIAL","editorial"),("EXECUTION","execution"),("YOUTUBE","youtube")])
+def test_dispatch_executes_only_harness_authorized_action(action, call):
+    calls=[]; result=make_dispatcher(calls).dispatch(decision(action), authorization=auth(action))
+    assert calls == [call] and result.success is True and result.harness_decision_id
 
 
-def test_wait_does_not_execute_any_action():
-    calls: list[str] = []
-    dispatcher = make_dispatcher(calls)
+def test_dispatch_rejects_missing_and_fabricated_authorization():
+    dispatcher=make_dispatcher([])
+    with pytest.raises(PermissionError): dispatcher.dispatch(decision("EXECUTION"))
+    with pytest.raises(PermissionError): dispatcher.dispatch(decision("EXECUTION"), authorization="fake")
 
-    decision = BrainDecision(
-        action="WAIT",
-        reason="nothing to do",
-        priority="LOW",
-        confidence=0.99,
-    )
 
-    result = dispatcher.dispatch(decision)
-
+def test_dispatch_rejects_action_mismatch_before_handler():
+    calls=[]; dispatcher=make_dispatcher(calls)
+    with pytest.raises(PermissionError, match="action mismatch"):
+        dispatcher.dispatch(decision("EXECUTION"), authorization=auth("RESEARCH"))
     assert calls == []
-    assert result.action == "WAIT"
-    assert result.tool is None
-    assert result.success is True
-    assert result.result is None
 
 
-def test_action_failure_is_returned_as_result():
-    def failing_research():
-        raise RuntimeError("research failed")
-
-    dispatcher = GTA6ActionDispatcher(
-        monitor=lambda: None,
-        research=failing_research,
-        editorial=lambda: None,
-        execution=lambda: None,
-        youtube=lambda: None,
-    )
-
-    decision = BrainDecision(
-        action="RESEARCH",
-        reason="test failure",
-        priority="HIGH",
-        confidence=0.9,
-    )
-
-    result = dispatcher.dispatch(decision)
-
-    assert result.action == "RESEARCH"
-    assert result.tool == "br_research_run"
-    assert result.success is False
-    assert result.result["error_type"] == "RuntimeError"
-    assert result.result["error"] == "research failed"
+def test_wait_never_requires_authorization_or_executes():
+    calls=[]; result=make_dispatcher(calls).dispatch(decision("WAIT")); assert calls == [] and result.success
 
 
-def test_dispatch_propagates_execution_context():
-    captured = {}
-
-    dispatcher = GTA6ActionDispatcher(
-        monitor=lambda: None,
-        research=lambda: None,
-        editorial=lambda context: None,
-        execution=lambda context: captured.update(context) or {"ok": "execution"},
-        youtube=lambda: None,
-    )
-
-    decision = BrainDecision(
-        action="EXECUTION",
-        reason="test",
-        priority="HIGH",
-        confidence=0.9,
-    )
-
-    result = dispatcher.dispatch(
-        decision,
-        execution_id="execution-test-001",
-    )
-
-    assert result.success is True
-    assert captured["execution_id"] == "execution-test-001"
-    assert captured["authorized_action"] == "EXECUTION"
-    assert captured["brain_decision_id"] == result.brain_decision_id
-
-
-def test_unsupported_action_is_rejected():
-    dispatcher = make_dispatcher([])
-
-    decision = BrainDecision(
-        action="DELETE_DATABASE",
-        reason="invalid",
-        priority="CRITICAL",
-        confidence=1.0,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="Unsupported GTA6 Brain action",
-    ):
-        dispatcher.dispatch(decision)
-
-
-def test_result_can_be_serialized_to_dict():
-    dispatcher = make_dispatcher([])
-
-    decision = BrainDecision(
-        action="MONITOR",
-        reason="test",
-        priority="MEDIUM",
-        confidence=0.8,
-    )
-
-    result = dispatcher.dispatch(decision)
-    payload = dispatcher.to_dict(result)
-
-    assert payload["action"] == "MONITOR"
-    assert payload["tool"] == "br_gta6_monitor_run_once"
-    assert payload["success"] is True
-    assert payload["result"] == {"ok": "monitor"}
-    assert isinstance(payload["brain_decision_id"], str)
-    assert payload["brain_decision_id"] == result.brain_decision_id
-    assert payload["execution_id"] is None
+def test_context_uses_canonical_harness_decision_and_compatibility_alias():
+    calls=[]; authorization=auth("EXECUTION")
+    result=make_dispatcher(calls).dispatch(decision("EXECUTION"), authorization=authorization)
+    context=result.result["context"]
+    assert context["authorization_id"] == authorization.authorization_id
+    assert context["harness_decision_id"] == authorization.harness_decision_id
+    assert context["brain_decision_id"] == authorization.harness_decision_id

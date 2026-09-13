@@ -1,4 +1,5 @@
 from typing import Any
+from copy import deepcopy
 
 
 def create_video_execution_spec(
@@ -85,9 +86,13 @@ def create_video_execution_spec(
             "source_start_seconds",
             "source_end_seconds",
             "role",
+            "media_path",
+            "asset_ref",
+            "source_url",
+            "transcript_words",
         ):
             if field in scene:
-                execution_scene[field] = scene[field]
+                execution_scene[field] = deepcopy(scene[field])
 
         execution_scenes.append(execution_scene)
 
@@ -121,12 +126,19 @@ def create_video_execution_spec(
     # Contexto de autorização/correlação do BR.
     # Deve atravessar Video Spec -> Video Execution Spec -> Render Job.
     for field in (
+        "authorization_id",
+        "harness_decision_id",
         "brain_decision_id",
         "execution_id",
         "authorized_action",
+        "authorization_subject",
+        "issued_by",
+        "lineage",
     ):
         if field in video_spec:
             result[field] = video_spec[field]
 
 
+    if "edit_plan" in video_spec:
+        result["edit_plan"] = deepcopy(video_spec["edit_plan"])
     return result

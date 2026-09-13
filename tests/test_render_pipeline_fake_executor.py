@@ -16,6 +16,7 @@ from app.services.render_job_service import create_render_job
 from app.services.render_queue_service import enqueue_video_render
 from app.services.render_orchestration_service import execute_render_job
 from app.services.fake_render_executor_service import FakeRenderExecutor
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
 
 
 def _create_queued_render_job():
@@ -32,20 +33,25 @@ def _create_queued_render_job():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video = create_video_spec(plan)
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    )
+    execution_context = authorization_to_context(authorization)
+    video = create_video_spec(plan, brain_decision=execution_context)
     execution = create_video_execution_spec(video)
 
     render_job = create_render_job(execution)
 
-    return enqueue_video_render(render_job)
+    return enqueue_video_render(render_job), execution_context
 
 
 def test_fake_executor_success_completes_pipeline():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     result = execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=True),
+        execution_context=execution_context,
     )
 
     assert result.success is True
@@ -61,11 +67,12 @@ def test_fake_executor_success_completes_pipeline():
 
 
 def test_fake_executor_failure_fails_pipeline():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     result = execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=False),
+        execution_context=execution_context,
     )
 
     assert result.success is False
@@ -80,11 +87,12 @@ def test_fake_executor_failure_fails_pipeline():
 
 
 def test_fake_executor_success_does_not_leave_running_job():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=True),
+        execution_context=execution_context,
     )
 
     job = get_render_job(job_id)
@@ -94,11 +102,12 @@ def test_fake_executor_success_does_not_leave_running_job():
 
 
 def test_fake_executor_failure_does_not_leave_running_job():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=False),
+        execution_context=execution_context,
     )
 
     job = get_render_job(job_id)
@@ -108,11 +117,12 @@ def test_fake_executor_failure_does_not_leave_running_job():
 
 
 def test_successful_pipeline_increments_attempt_once():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=True),
+        execution_context=execution_context,
     )
 
     job = get_render_job(job_id)
@@ -121,11 +131,12 @@ def test_successful_pipeline_increments_attempt_once():
 
 
 def test_failed_pipeline_increments_attempt_once():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=False),
+        execution_context=execution_context,
     )
 
     job = get_render_job(job_id)
@@ -134,11 +145,12 @@ def test_failed_pipeline_increments_attempt_once():
 
 
 def test_completed_job_cannot_be_executed_again():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     first_result = execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=True),
+        execution_context=execution_context,
     )
 
     assert first_result.success is True
@@ -150,11 +162,12 @@ def test_completed_job_cannot_be_executed_again():
         )
 
 def test_failed_job_cannot_be_reexecuted_without_requeue():
-    job_id = _create_queued_render_job()
+    job_id, execution_context = _create_queued_render_job()
 
     first_result = execute_render_job(
         job_id,
         executor=FakeRenderExecutor(success=False),
+        execution_context=execution_context,
     )
 
     assert first_result.success is False

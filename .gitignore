@@ -53,3 +53,9 @@ cache/
 runtime/
 
 .env.local
+
+# Agent installation/cache and authentication (not project source)
+.agents/skills/
+.codex-device-auth/
+.codex/auth.json
+.higgsfield/

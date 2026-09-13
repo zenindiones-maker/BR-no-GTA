@@ -1,0 +1,98 @@
+name: Cloud worker technical tests (not RUN-001 canary)
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/run-001-cloud, codex/run-001-app]
+    paths:
+      - app/workers/**
+      - tests/test_cloud_*.py
+      - pytest.ini
+      - tests/cloud_worker_fixtures.py
+      - tests/test_remote_media_boundary.py
+      - tests/test_codex_recovery.py
+      - app/services/render_media_materializer.py
+      - app/services/production_media_bridge.py
+      - .github/workflows/cloud-worker-tests.yml
+permissions:
+  contents: read
+jobs:
+  worker-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: video-engine/backend:.
+      CLOUD_RENDER_INTEGRATION: '1'
+      CLOUD_TEST_EVIDENCE_DIR: runtime/cloud-test-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Provision FFmpeg for integration test
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install focused test dependencies
+        run: python -m pip install pytest==9.1.1 python-dotenv==1.2.3
+      - name: Worker unit and real engine integration tests
+        run: |
+          python -m pytest -q \
+            tests/test_remote_media_boundary.py \
+            tests/test_cloud_audiovisual_worker.py \
+            tests/test_cloud_render_integration.py \
+            tests/test_codex_recovery.py
+      - name: Upload synthetic test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-worker-test-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/cloud-test-evidence/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Evidence classification
+        run: echo 'Synthetic technical integration only. No authorized canary or RUN-001 production evidence.' >> "$GITHUB_STEP_SUMMARY"
+  recover-test-artifact:
+    needs: worker-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-worker-test-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovered
+      - name: Verify recovered bytes and identities
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          root = Path('recovered')
+          assert (root / 'TEST_ONLY.txt').is_file()
+          manifests = sorted(root.glob('*/*/render-manifest.json'))
+          assert len(manifests) == 2
+          identities = set()
+          rows = []
+          for path in manifests:
+              manifest = json.loads(path.read_text())
+              folder = path.parent
+              job = json.loads((folder / 'render-job.json').read_text())
+              qa = json.loads((folder / 'render-qa.json').read_text())
+              probe = json.loads((folder / 'video-probe.json').read_text())
+              assert manifest['qa_status'] == qa['status'] == 'PASS'
+              for field in ('render_job_id', 'video_id', 'execution_id', 'content_item_id', 'script_id', 'idea_id', 'brain_decision_id', 'authorized_action'):
+                  assert manifest[field] == job[field] == qa[field] == probe['lineage'][field]
+              identity = (manifest['execution_id'], manifest['render_job_id'], manifest['video_id'])
+              assert identity not in identities
+              identities.add(identity)
+              files = list(folder.glob('*.mp4'))
+              assert len(files) == 1 and files[0].name == manifest['filename']
+              assert files[0].stat().st_size == manifest['size_bytes'] > 0
+              with files[0].open('rb') as stream:
+                  assert hashlib.file_digest(stream, 'sha256').hexdigest() == manifest['sha256']
+              streams = {stream['codec_type'] for stream in probe['streams']}
+              assert {'video', 'audio'} <= streams
+              assert qa['checks']['full_decode']
+              rows.append(f"{identity}: {manifest['filename']}, {manifest['size_bytes']} bytes, {manifest['duration_seconds']} s, SHA-256 verified, QA PASS")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('SYNTHETIC TEST ONLY — recovered artifact verified\n\n' + '\n\n'.join(rows))
+          PY

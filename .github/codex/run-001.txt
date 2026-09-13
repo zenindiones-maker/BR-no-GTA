@@ -1,0 +1,173 @@
+CODEX — retome imediatamente o RUN-001 na issue #2 / PR #4.
+
+O Work chegou a READY FOR CANARY INPUT no PR #5.
+
+Checkpoint do Work:
+ac78e63
+
+NÃO reinicie a investigação.
+NÃO redesenhe a arquitetura.
+NÃO crie contrato paralelo.
+
+O PR #5 já comprovou:
+- execução cloud;
+- VEdit disponível;
+- Whisper/WhisperX disponível;
+- FFmpeg disponível;
+- renderização técnica;
+- QA técnico;
+- recuperação cloud de artifacts;
+- A15/Termux fora da execução pesada.
+
+O Work está bloqueado esperando EXATAMENTE três entregas do #2/#4:
+
+1. edit_plan completo propagado até o RenderJob.
+
+Feche o caminho existente:
+
+ProductionPlan
+-> MediaSelection
+-> EditPlan
+-> VideoSpec
+-> VideoExecutionSpec
+-> RenderJob
+
+Use o EditPlan existente.
+Não crie EditPlan v2 ou schema concorrente.
+
+Preserve os campos necessários para execução real, incluindo quando aplicáveis:
+
+segment_id
+content_unit_id
+media_path ou asset reference oficial
+source_start_seconds
+source_end_seconds
+duration_seconds
+tracks
+clips
+audio
+brain_decision_id
+execution_id
+authorized_action
+
+2. Gere um RenderJob REAL e autorizado para um canário de 30–60 segundos.
+
+Ele deve ser produzido pelo caminho oficial da aplicação.
+
+NÃO escreva simplesmente um JSON fake manual.
+
+Preserve:
+
+brain_decision_id
+execution_id
+authorized_action=EXECUTION
+lineage completa disponível
+
+3. Defina e implemente a referência oficial cloud-to-cloud para recuperação dos assets reais de vídeo e áudio.
+
+O MediaKnowledge não substitui os bytes da mídia.
+
+Precisamos conseguir fazer:
+
+RenderJob
+-> asset reference
+-> GitHub Actions recupera asset
+-> valida asset
+-> VEdit
+-> FFmpeg
+
+NÃO use o Samsung A15 como transporte.
+NÃO dependa de paths do Termux.
+NÃO crie segundo banco.
+NÃO crie segundo sistema de mídia.
+
+Use a arquitetura já existente.
+
+Conecte o media_selection_service.py existente como ponte entre MediaKnowledge/WhisperX e ProductionPlan/EditPlan.
+
+Não crie outro MediaSelection.
+
+ARQUITETURA OBRIGATÓRIA:
+
+DeepSeek
+-> Harness
+-> GTA6 Brain
+-> Capability
+-> Worker
+-> Evidence/Result
+
+Harness continua sendo a autoridade.
+
+Não transforme MasterAgent em segundo control plane.
+
+Teste obrigatoriamente a propagação:
+
+EditPlan
+-> VideoSpec
+-> VideoExecutionSpec
+-> RenderJob
+
+Nenhum dado necessário ao render pode desaparecer.
+
+Adicione testes para:
+- autorização ausente;
+- edit_plan ausente;
+- asset reference ausente;
+- propagação correta;
+- lineage correta;
+- RenderJob autorizado válido.
+
+Rode os testes relevantes.
+Depois rode a regressão disponível.
+
+Faça commits pequenos.
+Faça push na branch do PR #4.
+Mantenha o Git limpo.
+
+NÃO pare somente depois de editar o código.
+
+Definition of Done desta etapa:
+
+RenderJob autorizado REAL de 30–60s
++
+edit_plan completo propagado
++
+referências cloud-to-cloud reais para vídeo e áudio
++
+lineage
++
+testes PASS
++
+commit pushed no PR #4
+
+Quando estiver pronto, responda exatamente neste formato:
+
+CANARY INPUT READY
+commit: <sha>
+RenderJob: <referência>
+assets: <referências>
+authorization: PASS
+edit_plan propagation: PASS
+
+Depois disso o PR #5 continuará automaticamente com:
+
+RenderJob real
+-> assets reais
+-> EditPlan
+-> VEdit
+-> FFmpeg
+-> MP4 30–60s
+-> ffprobe
+-> QA PASS
+-> artifact recuperável
+
+NÃO implemente o renderizador do Work no PR #4.
+NÃO duplique VEdit.
+NÃO duplique FFmpeg.
+NÃO duplique Harness.
+NÃO duplique GTA6 Brain.
+NÃO crie DB paralelo.
+NÃO crie scheduler paralelo.
+NÃO mexa no publisher do YouTube nesta etapa.
+
+Continue trabalhando autonomamente até entregar CANARY INPUT READY ou até existir um bloqueio externo absoluto.

@@ -82,6 +82,8 @@ def select_media_segments(
     unit_type: str = "segment",
     target_duration_seconds: float = 30.0,
     max_segments: int = 8,
+    source_cursor_seconds: float | None = None,
+    continuous_window: bool = False,
 ) -> dict[str, Any]:
     """
     Transforma MediaKnowledge em Content Units + Content Segments.
@@ -125,11 +127,39 @@ def select_media_segments(
             "max_segments deve ser positivo."
         )
 
+    if source_cursor_seconds is not None:
+        if (
+            not isinstance(source_cursor_seconds, (int, float))
+            or isinstance(source_cursor_seconds, bool)
+            or source_cursor_seconds < 0
+        ):
+            raise MediaSelectionError(
+                "source_cursor_seconds deve ser não negativo."
+            )
+
+        source_cursor_seconds = float(source_cursor_seconds)
+
     source_path = knowledge.get("source_path")
     if not isinstance(source_path, str) or not source_path.strip():
         raise MediaSelectionError(
             "MediaKnowledge não possui um source_path válido."
         )
+
+    metadata = knowledge.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise MediaSelectionError(
+            "MediaKnowledge possui metadata inválido."
+        )
+
+    source_url = metadata.get("source_url")
+    if source_url is not None:
+        if not isinstance(source_url, str) or not source_url.strip():
+            raise MediaSelectionError(
+                "MediaKnowledge possui source_url inválido."
+            )
+        source_url = source_url.strip()
+
+    asset_ref = source_path.strip()
 
     candidates = _extract_candidate_windows(
         knowledge
@@ -143,39 +173,120 @@ def select_media_segments(
     selected: list[dict[str, float]] = []
     remaining = float(target_duration_seconds)
 
-    for candidate in candidates:
-        if len(selected) >= max_segments:
-            break
+    if continuous_window:
+        if not isinstance(continuous_window, bool):
+            raise MediaSelectionError(
+                "continuous_window deve ser booleano."
+            )
 
-        duration = candidate["duration_seconds"]
-
-        if remaining <= 0:
-            break
-
-        selected_duration = min(
-            duration,
-            remaining,
+        cursor = (
+            float(source_cursor_seconds)
+            if source_cursor_seconds is not None
+            else candidates[0]["start_seconds"]
         )
+        window_start = cursor
+        window_end = window_start + float(target_duration_seconds)
 
-        if selected_duration <= 0:
-            continue
+        coverage_cursor = window_start
 
-        selected.append(
+        for candidate in candidates:
+            candidate_start = candidate["start_seconds"]
+            candidate_end = candidate["end_seconds"]
+
+            if candidate_end <= coverage_cursor:
+                continue
+
+            if candidate_start > coverage_cursor + 0.001:
+                break
+
+            coverage_cursor = max(
+                coverage_cursor,
+                candidate_end,
+            )
+
+            if coverage_cursor + 0.001 >= window_end:
+                break
+
+        if coverage_cursor + 0.001 < window_end:
+            raise MediaSelectionError(
+                "Mídia disponível insuficiente para atingir "
+                "target_duration_seconds sem reutilização."
+            )
+
+        selected = [
             {
-                "start_seconds": candidate["start_seconds"],
-                "end_seconds": (
-                    candidate["start_seconds"]
-                    + selected_duration
+                "start_seconds": window_start,
+                "end_seconds": window_end,
+                "duration_seconds": float(
+                    target_duration_seconds
                 ),
-                "duration_seconds": selected_duration,
             }
-        )
+        ]
+        remaining = 0.0
 
-        remaining -= selected_duration
+    else:
+        for candidate in candidates:
+            if len(selected) >= max_segments:
+                break
+
+            if remaining <= 0:
+                break
+
+            candidate_start = candidate["start_seconds"]
+            candidate_end = candidate["end_seconds"]
+
+            if source_cursor_seconds is not None:
+                if candidate_end <= source_cursor_seconds:
+                    continue
+
+                candidate_start = max(
+                    candidate_start,
+                    source_cursor_seconds,
+                )
+
+            available_duration = (
+                candidate_end - candidate_start
+            )
+
+            if available_duration <= 0:
+                continue
+
+            if (
+                max_segments == 1
+                and available_duration + 0.001 < remaining
+            ):
+                continue
+
+            selected_duration = min(
+                available_duration,
+                remaining,
+            )
+
+            if selected_duration <= 0:
+                continue
+
+            selected.append(
+                {
+                    "start_seconds": candidate_start,
+                    "end_seconds": (
+                        candidate_start
+                        + selected_duration
+                    ),
+                    "duration_seconds": selected_duration,
+                }
+            )
+
+            remaining -= selected_duration
 
     if not selected:
         raise MediaSelectionError(
             "Nenhum trecho pôde ser selecionado."
+        )
+
+    if remaining > 0.001:
+        raise MediaSelectionError(
+            "Mídia disponível insuficiente para atingir "
+            "target_duration_seconds sem reutilização."
         )
 
     unit = create_and_persist_content_unit(
@@ -211,7 +322,13 @@ def select_media_segments(
             role="content",
             status="ready",
             file_path=source_path.strip(),
+            asset_ref=asset_ref,
+            source_url=source_url,
         )
+
+        segment = dict(segment)
+        segment["asset_ref"] = asset_ref
+        segment["source_url"] = source_url
 
         segments.append(segment)
 
@@ -224,4 +341,6 @@ def select_media_segments(
             for segment in segments
         ),
         "source": "MediaKnowledge",
+        "asset_ref": asset_ref,
+        "source_url": source_url,
     }

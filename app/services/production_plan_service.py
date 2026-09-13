@@ -1,4 +1,5 @@
 from typing import Any
+import math
 
 
 def create_production_plan(
@@ -37,10 +38,12 @@ def create_production_plan(
             "O content item precisa possuir blocos narrativos."
         )
 
-    # Uma execução de produção gera um único master de 50 minutos.
-    # A divisão em duas publicações de 25 minutos acontece depois,
-    # na camada de publicação, sem duplicar a renderização.
-    production_duration_seconds = 50 * 60
+    production_duration_seconds = content_item["estimated_duration_seconds"]
+    if (isinstance(production_duration_seconds, bool)
+            or not isinstance(production_duration_seconds, (int, float))
+            or not math.isfinite(production_duration_seconds)
+            or production_duration_seconds <= 0):
+        raise ValueError("estimated_duration_seconds deve ser finito e positivo.")
 
     valid_blocks = [
         block
@@ -55,8 +58,8 @@ def create_production_plan(
         )
 
     scene_count = len(valid_blocks)
-    base_duration = production_duration_seconds // scene_count
-    duration_remainder = production_duration_seconds % scene_count
+    base_duration = production_duration_seconds / scene_count
+    last_duration = production_duration_seconds - base_duration * (scene_count - 1)
 
     scenes = []
 
@@ -90,12 +93,7 @@ def create_production_plan(
                     f"do bloco '{heading}', reforçando a narração."
                 ),
                 "duration_seconds": (
-                    base_duration
-                    + (
-                        duration_remainder
-                        if index == scene_count
-                        else 0
-                    )
+                    last_duration if index == scene_count else base_duration
                 ),
                 "requirements": requirements,
             }

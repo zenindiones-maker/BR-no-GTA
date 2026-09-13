@@ -5,6 +5,11 @@ from app.database import research_repository
 from app.services import idea_service
 from app.services.editorial_scorer import evaluate_idea
 from app.services.editorial_queue_service import sync_idea_queue
+from app.services.gta6_goal_service import (
+    get_or_create_goal,
+    set_goal_status,
+    update_artifacts,
+)
 
 
 DECISION_TO_STATUS = {
@@ -117,6 +122,38 @@ def evaluate_research_item(
         click_potential=click_potential,
         video_potential=video_potential,
     )
+
+    if decision == "approve":
+        queue_id = queue_result.get("queue_id")
+
+        if not isinstance(queue_id, int) or queue_id <= 0:
+            raise RuntimeError(
+                "Idea aprovada não foi vinculada a uma fila editorial válida."
+            )
+
+        goal = get_or_create_goal(
+            goal_type="NEWS",
+            topic=research_item["title"],
+            priority="MEDIUM",
+            opportunity_score=min(10.0, max(0.0, float(score))),
+        )
+
+        goal_id = goal.get("goal_id")
+
+        if not isinstance(goal_id, str) or not goal_id.strip():
+            raise RuntimeError(
+                "Goal criado para Idea aprovada possui goal_id inválido."
+            )
+
+        update_artifacts(
+            goal_id=goal_id,
+            idea_id=idea_id,
+        )
+
+        set_goal_status(
+            goal_id=goal_id,
+            status="SELECTED",
+        )
 
     priority_score = queue_result["priority_score"]
     priority_label = queue_result["priority"]

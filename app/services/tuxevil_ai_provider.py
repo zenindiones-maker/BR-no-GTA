@@ -103,4 +103,8 @@ class TuxevilAIProvider:
                 "Tuxevil AI gateway returned an empty response."
             )
 
-        return AIResponse(text=text)
+        return AIResponse(
+            text=text,
+            provider="tuxevil",
+            model=self.model,
+        )

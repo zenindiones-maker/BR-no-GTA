@@ -16,6 +16,13 @@ from app.services.render_executor_service import (
 from app.services.render_worker_service import (
     process_next_render_job,
 )
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
+
+def _execution_context():
+    return authorization_to_context(issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    ))
 
 
 def _create_queued_render_job() -> int:
@@ -139,7 +146,9 @@ def test_worker_executes_queued_job_with_audiovisual_executor(
         factory,
     )
 
-    result = process_next_render_job()
+    result = process_next_render_job(
+        execution_context=_execution_context(),
+    )
 
     assert result is not None
     assert result.success is True
@@ -221,6 +230,7 @@ def test_process_next_render_job_completes_associated_video():
 
     result = process_next_render_job(
         executor=executor,
+        execution_context=_execution_context(),
     )
 
     assert result is not None
@@ -273,7 +283,9 @@ def test_worker_uses_factory_executor_without_network(
         factory,
     )
 
-    result = process_next_render_job()
+    result = process_next_render_job(
+        execution_context=_execution_context(),
+    )
 
     assert result is not None
     assert result.success is True
@@ -400,7 +412,9 @@ def test_worker_preserves_editorial_content_for_executor(
         factory,
     )
 
-    result = process_next_render_job()
+    result = process_next_render_job(
+        execution_context=_execution_context(),
+    )
 
     assert result is not None
     assert result.success is True

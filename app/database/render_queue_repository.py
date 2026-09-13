@@ -2,6 +2,10 @@ import json
 from typing import Any
 
 from app.database.connection import get_connection
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 
 
 VALID_STATUSES = (
@@ -178,7 +182,10 @@ def list_render_jobs() -> list[dict[str, Any]]:
         connection.close()
 
 
-def claim_render_job(job_id: int) -> dict[str, Any]:
+def claim_render_job(
+    job_id: int,
+    execution_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Reserva atomicamente um Render Job específico.
 
@@ -190,6 +197,12 @@ def claim_render_job(job_id: int) -> dict[str, Any]:
     Diferentemente de claim_next_render_job(), esta função
     reserva exclusivamente o job identificado por job_id.
     """
+    auth = validate_harness_authorization(
+        execution_context or {},
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
+    )
+    execution_context = authorization_to_context(auth)
     connection = get_connection()
 
     try:
@@ -229,6 +242,7 @@ def claim_render_job(job_id: int) -> dict[str, Any]:
         job["attempt"] = new_attempt
         job["output_path"] = None
         job["error"] = None
+        job.update(execution_context)
 
         cursor = connection.execute(
             """
@@ -253,6 +267,14 @@ def claim_render_job(job_id: int) -> dict[str, Any]:
                 f"Render job {job_id} sofreu alteração concorrente."
             )
 
+        authorization_cursor = connection.execute(
+            """UPDATE harness_authorizations
+               SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               WHERE authorization_id = ? AND status = 'active'""",
+            (auth.authorization_id,),
+        )
+        if authorization_cursor.rowcount != 1:
+            raise PermissionError("Harness authorization was already consumed")
         connection.commit()
 
         return job
@@ -276,6 +298,13 @@ def claim_next_render_job(
 
     O attempt é incrementado exatamente uma vez.
     """
+
+    auth = validate_harness_authorization(
+        execution_context or {},
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
+    )
+    execution_context = authorization_to_context(auth)
 
     connection = get_connection()
 
@@ -310,16 +339,7 @@ def claim_next_render_job(
         job["output_path"] = None
         job["error"] = None
 
-        if execution_context is not None:
-            if not isinstance(execution_context, dict):
-                raise ValueError("execution_context deve ser um objeto.")
-            for field in (
-                "brain_decision_id",
-                "execution_id",
-                "authorized_action",
-            ):
-                if field in execution_context:
-                    job[field] = execution_context[field]
+        job.update(execution_context)
 
         cursor = connection.execute(
             """
@@ -344,6 +364,14 @@ def claim_next_render_job(
                 f"Render job {row['id']} sofreu alteração concorrente."
             )
 
+        authorization_cursor = connection.execute(
+            """UPDATE harness_authorizations
+               SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               WHERE authorization_id = ? AND status = 'active'""",
+            (auth.authorization_id,),
+        )
+        if authorization_cursor.rowcount != 1:
+            raise PermissionError("Harness authorization was already consumed")
         connection.commit()
 
         return job
@@ -446,6 +474,7 @@ def transition_render_job(
     *,
     output_path: str | None = None,
     error: str | None = None,
+    execution_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Executa uma transição válida de estado.
@@ -462,6 +491,15 @@ def transition_render_job(
         raise ValueError(
             f"Status inválido para render job: {target_status}."
         )
+
+    running_context = None
+    if target_status == "running":
+        auth = validate_harness_authorization(
+            execution_context or {},
+            expected_action="EXECUTION",
+            expected_subject="action:EXECUTION",
+        )
+        running_context = authorization_to_context(auth)
 
     connection = get_connection()
 
@@ -503,6 +541,7 @@ def transition_render_job(
             job["attempt"] = int(row["attempt"]) + 1
             job["output_path"] = None
             job["error"] = None
+            job.update(running_context or {})
 
         elif target_status == "completed":
             if not output_path:
@@ -553,6 +592,15 @@ def transition_render_job(
                 f"Render job {job_id} sofreu alteração concorrente."
             )
 
+        if target_status == "running" and running_context is not None:
+            authorization_cursor = connection.execute(
+                """UPDATE harness_authorizations
+                   SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                   WHERE authorization_id = ? AND status = 'active'""",
+                (auth.authorization_id,),
+            )
+            if authorization_cursor.rowcount != 1:
+                raise PermissionError("Harness authorization was already consumed")
         connection.commit()
 
         job["id"] = job_id
@@ -566,6 +614,8 @@ def transition_render_job(
 def update_render_job_status(
     job_id: int,
     status: str,
+    *,
+    execution_context: dict[str, Any] | None = None,
 ) -> bool:
     """
     Compatibilidade controlada.
@@ -576,6 +626,7 @@ def update_render_job_status(
     transition_render_job(
         job_id,
         status,
+        execution_context=execution_context,
     )
 
     return True

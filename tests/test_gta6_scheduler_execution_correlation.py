@@ -15,6 +15,7 @@ from app.services.gta6_scheduler_observability import (
 
 def test_executed_event_correlates_execution_identity_from_result():
     context = GTA6MonitorExecutionContext.create(
+        execution_id="test-execution-42",
         job_id="gta6-monitor",
         run_id=42,
     )

@@ -1,5 +1,7 @@
 import pytest
 
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
 from app.database.schema import initialize_schema
 from app.database.render_queue_repository import (
     enqueue_render_job,
@@ -8,6 +10,10 @@ from app.database.render_queue_repository import (
     update_render_job_status,
     claim_next_render_job,
 )
+
+
+def _execution_context():
+    return authorization_to_context(issue_harness_authorization(authorized_action="EXECUTION", subject="action:EXECUTION"))
 
 
 def _create_job():
@@ -85,7 +91,7 @@ def test_update_render_job_status():
 
     job_id = enqueue_render_job(job)
 
-    updated = update_render_job_status(job_id, "running")
+    updated = update_render_job_status(job_id, "running", execution_context=_execution_context())
 
     assert updated is True
 
@@ -136,11 +142,7 @@ def test_claim_next_render_job_persists_execution_context():
     job = _create_job()
     job_id = enqueue_render_job(job)
 
-    execution_context = {
-        "brain_decision_id": "brain-test-001",
-        "execution_id": "execution-test-001",
-        "authorized_action": "EXECUTION",
-    }
+    execution_context = _execution_context()
 
     claimed = claim_next_render_job(
         execution_context=execution_context,
@@ -150,8 +152,8 @@ def test_claim_next_render_job_persists_execution_context():
     assert claimed["id"] == job_id
     assert claimed["status"] == "running"
     assert claimed["attempt"] == 1
-    assert claimed["brain_decision_id"] == "brain-test-001"
-    assert claimed["execution_id"] == "execution-test-001"
+    assert claimed["brain_decision_id"] == execution_context["harness_decision_id"]
+    assert claimed["execution_id"] == execution_context["execution_id"]
     assert claimed["authorized_action"] == "EXECUTION"
 
     stored = get_render_job(job_id)
@@ -159,8 +161,8 @@ def test_claim_next_render_job_persists_execution_context():
     assert stored is not None
     assert stored["status"] == "running"
     assert stored["attempt"] == 1
-    assert stored["brain_decision_id"] == "brain-test-001"
-    assert stored["execution_id"] == "execution-test-001"
+    assert stored["brain_decision_id"] == execution_context["harness_decision_id"]
+    assert stored["execution_id"] == execution_context["execution_id"]
     assert stored["authorized_action"] == "EXECUTION"
 
 
@@ -199,12 +201,9 @@ def test_update_render_job_payload_persists_github_execution_without_changing_st
         }
     )
 
+    execution_context = _execution_context()
     running_job = claim_next_render_job(
-        execution_context={
-            "execution_id": "exec-001",
-            "brain_decision_id": "decision-001",
-            "authorized_action": "EXECUTION",
-        }
+        execution_context=execution_context
     )
 
     assert running_job is not None
@@ -226,8 +225,8 @@ def test_update_render_job_payload_persists_github_execution_without_changing_st
     assert updated["status"] == "running"
     assert updated["attempt"] == 1
     assert updated["custom_context"] == {"preserve": True}
-    assert updated["execution_id"] == "exec-001"
-    assert updated["brain_decision_id"] == "decision-001"
+    assert updated["execution_id"] == execution_context["execution_id"]
+    assert updated["brain_decision_id"] == execution_context["harness_decision_id"]
     assert updated["authorized_action"] == "EXECUTION"
     assert updated["github_execution"]["run_id"] == 123456789
 
@@ -240,3 +239,17 @@ def test_update_render_job_payload_persists_github_execution_without_changing_st
     assert persisted["github_execution"]["repository"] == (
         "zenindiones-maker/BR-no-GTA"
     )
+
+
+def test_claim_next_render_job_fails_closed_without_harness_authorization():
+    job_id = enqueue_render_job(_create_job())
+    with pytest.raises(PermissionError):
+        claim_next_render_job(execution_context=None)
+    assert get_render_job(job_id)["status"] == "queued"
+
+
+def test_running_transition_rejects_fabricated_context_without_mutation():
+    job_id = enqueue_render_job(_create_job())
+    with pytest.raises(PermissionError):
+        update_render_job_status(job_id, "running", execution_context={"authorization_id": "fake"})
+    assert get_render_job(job_id)["status"] == "queued"
