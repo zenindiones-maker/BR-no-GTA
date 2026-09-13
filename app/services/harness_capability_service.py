@@ -3,16 +3,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
+from app.services.global_capability_registry import (
+    BLOCKED,
+    GLOBAL_CAPABILITY_REGISTRY,
+    UNKNOWN,
+)
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
-    validate_harness_authorization,
     resolve_harness_authorization,
-)
-
-
-HIGGSFIELD_AUTH_BOUNDARY = (
-    "interactive_browser_only_confirmed; unattended ephemeral-runner auth "
-    "not officially confirmed"
+    validate_harness_authorization,
 )
 
 
@@ -58,91 +57,36 @@ class CapabilityEvidence:
         return asdict(self)
 
 
-ADDY_SKILLS = (
-    "api-and-interface-design",
-    "ci-cd-and-automation",
-    "code-review-and-quality",
-    "code-simplification",
-    "constraint-driven-development",
-    "context-engineering",
-    "debugging-and-error-recovery",
-    "deprecation-and-migration",
-    "documentation-and-adrs",
-    "doubt-driven-development",
-    "frontend-ui-engineering",
-    "git-workflow-and-versioning",
-    "idea-refine",
-    "incremental-implementation",
-    "interview-me",
-    "observability-and-instrumentation",
-    "performance-optimization",
-    "planning-and-task-breakdown",
-    "security-and-hardening",
-    "shipping-and-launch",
-    "source-driven-development",
-    "spec-driven-development",
-    "test-driven-development",
-    "using-agent-skills",
-)
-
-
-HIGGSFIELD_CAPABILITIES = (
-    CapabilityDefinition(
-        capability_id="higgsfield-generate",
-        provider="higgsfield",
-        execution_kind="higgsfield_cli",
-        allowed_actions=("EXECUTION",),
-        tags=("image", "video", "creative", "generation"),
-        execution_enabled=False,
-        boundary=HIGGSFIELD_AUTH_BOUNDARY,
-    ),
-    CapabilityDefinition(
-        capability_id="higgsfield-youtube-thumbnail",
-        provider="higgsfield",
-        execution_kind="higgsfield_cli",
-        allowed_actions=("YOUTUBE",),
-        tags=("youtube", "thumbnail", "image"),
-        execution_enabled=False,
-        boundary=HIGGSFIELD_AUTH_BOUNDARY,
-    ),
-    CapabilityDefinition(
-        capability_id="higgsfield-brandkit",
-        provider="higgsfield",
-        execution_kind="higgsfield_cli",
-        allowed_actions=("EDITORIAL", "EXECUTION"),
-        tags=("brand", "creative", "design"),
-        execution_enabled=False,
-        boundary=HIGGSFIELD_AUTH_BOUNDARY,
-    ),
-    CapabilityDefinition(
-        capability_id="higgsfield-video-explainer",
-        provider="higgsfield",
-        execution_kind="higgsfield_cli",
-        allowed_actions=("EXECUTION",),
-        tags=("video", "explainer", "creative"),
-        execution_enabled=False,
-        boundary=HIGGSFIELD_AUTH_BOUNDARY,
-    ),
-)
-
-
-def _addy_capabilities() -> tuple[CapabilityDefinition, ...]:
-    return tuple(
-        CapabilityDefinition(
-            capability_id=f"addy:{name}",
-            provider="addy-agent-skills",
-            execution_kind="codex_native_skill",
-            allowed_actions=("DEVELOPMENT",),
-            tags=tuple(name.split("-")),
-        )
-        for name in ADDY_SKILLS
+def _to_definition(record) -> CapabilityDefinition:
+    return CapabilityDefinition(
+        capability_id=record.capability_id,
+        provider=record.provider,
+        execution_kind=record.execution_kind,
+        allowed_actions=record.allowed_actions,
+        tags=record.tags,
+        available=record.available,
+        execution_enabled=record.execution_enabled,
+        boundary=record.boundary,
     )
 
 
-CAPABILITY_CATALOG = _addy_capabilities() + HIGGSFIELD_CAPABILITIES
+# Compatibility surface for existing bounded capability callers. The global
+# registry is the source of truth; execution still uses the established contract.
+CAPABILITY_CATALOG = tuple(
+    _to_definition(record)
+    for record in GLOBAL_CAPABILITY_REGISTRY.all()
+    if (
+        record.capability_id.startswith("addy:")
+        or record.provider_id == "higgsfield"
+    )
+)
 _CAPABILITY_BY_ID = {
     capability.capability_id: capability
     for capability in CAPABILITY_CATALOG
+}
+_REGISTRY_BY_ID = {
+    record.capability_id: record
+    for record in GLOBAL_CAPABILITY_REGISTRY.all()
 }
 
 
@@ -152,55 +96,12 @@ def discover_capabilities(
     authorized_action: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Return relevant AVAILABLE metadata; never inject skill bodies."""
-    if limit < 1:
-        raise ValueError("limit must be positive")
-
-    terms = {
-        term
-        for term in intent.lower().replace("_", "-").split()
-        if term
-    }
-    if not terms:
-        return []
-
-    candidates: list[dict[str, Any]] = []
-    for capability in CAPABILITY_CATALOG:
-        if not capability.available:
-            continue
-        if (
-            authorized_action
-            and authorized_action not in capability.allowed_actions
-        ):
-            continue
-
-        haystack = (
-            capability.capability_id.lower(),
-            capability.provider.lower(),
-            *capability.tags,
-        )
-        if not any(
-            term in value
-            for term in terms
-            for value in haystack
-        ):
-            continue
-
-        candidates.append(
-            {
-                "capability_id": capability.capability_id,
-                "provider": capability.provider,
-                "execution_kind": capability.execution_kind,
-                "allowed_actions": list(capability.allowed_actions),
-                "available": capability.available,
-                "execution_enabled": capability.execution_enabled,
-                "boundary": capability.boundary,
-            }
-        )
-        if len(candidates) >= limit:
-            break
-
-    return candidates
+    """Return compact AVAILABLE registry metadata; never inject skill bodies."""
+    return GLOBAL_CAPABILITY_REGISTRY.discover(
+        intent=intent,
+        authorized_action=authorized_action,
+        limit=limit,
+    )
 
 
 def authorize_capability(
@@ -216,7 +117,8 @@ def authorize_capability(
     )
 
     capability = _CAPABILITY_BY_ID.get(capability_id)
-    if capability is None or not capability.available:
+    record = _REGISTRY_BY_ID.get(capability_id)
+    if capability is None or record is None or record.availability == UNKNOWN:
         raise ValueError(f"Capability is not AVAILABLE: {capability_id}")
     if authorization.authorized_action not in capability.allowed_actions:
         raise PermissionError(
@@ -233,10 +135,11 @@ def execute_capability(
     payload: dict[str, Any],
     executor: Callable[[CapabilityDefinition, dict[str, Any]], Any] | None = None,
 ) -> CapabilityEvidence:
-    """Execute only after policy validation and return lineage-bearing evidence."""
+    """Execute only after Harness authorization and return lineage-bearing evidence."""
     capability = authorize_capability(capability_id, authorization)
 
-    if not capability.execution_enabled:
+    record = _REGISTRY_BY_ID[capability_id]
+    if record.availability == BLOCKED:
         return CapabilityEvidence(
             capability_id=capability.capability_id,
             provider=capability.provider,
