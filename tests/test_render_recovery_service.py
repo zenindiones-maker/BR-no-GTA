@@ -1,5 +1,7 @@
 import pytest
 
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
 from app.database.ideas_repository import insert_idea
 from app.database.render_queue_repository import (
     enqueue_render_job,
@@ -180,12 +182,11 @@ def _failed_render_job(
     }
 
 
-def _authorization():
-    return {
-        "brain_decision_id": "new-decision",
-        "execution_id": "new-execution",
-        "authorized_action": "EXECUTION",
-    }
+def _authorization(*, action="EXECUTION", execution_id="new-execution"):
+    return authorization_to_context(issue_harness_authorization(
+        authorized_action=action, subject=f"action:{action}",
+        harness_decision_id="new-decision", execution_id=execution_id,
+    ))
 
 
 def _prepare(
@@ -421,11 +422,7 @@ def test_recovery_requires_new_execution_identity(
         recover_failed_render_job(
             goal_id=GOAL_ID,
             failed_render_job_id=prepared["old_job_id"],
-            execution_context={
-                "brain_decision_id": "new-decision",
-                "execution_id": "old-execution",
-                "authorized_action": "EXECUTION",
-            },
+            execution_context=_authorization(execution_id="old-execution"),
         )
 
 
@@ -437,15 +434,11 @@ def test_recovery_requires_execution_authorization(
     )
 
     with pytest.raises(
-        ValueError,
-        match="authorized_action=EXECUTION",
+        PermissionError,
+        match="action mismatch",
     ):
         recover_failed_render_job(
             goal_id=GOAL_ID,
             failed_render_job_id=prepared["old_job_id"],
-            execution_context={
-                "brain_decision_id": "new-decision",
-                "execution_id": "new-execution",
-                "authorized_action": "RESEARCH",
-            },
+            execution_context=_authorization(action="RESEARCH"),
         )

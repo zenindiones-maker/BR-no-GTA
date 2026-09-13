@@ -49,15 +49,15 @@ class VEditBrainContext:
         value = value or {}
 
         return cls(
-            action=str(value.get("action", "EXECUTION")),
+            action=str(value.get("action", "UNAUTHORIZED")),
             reason=str(
                 value.get(
                     "reason",
-                    "Execução audiovisual autorizada pelo GTA6 Brain.",
+                    "Nenhuma autorização operacional do Harness foi fornecida.",
                 )
             ),
-            priority=str(value.get("priority", "MEDIUM")),
-            confidence=float(value.get("confidence", 1.0)),
+            priority=str(value.get("priority", "LOW")),
+            confidence=float(value.get("confidence", 0.0)),
         )
 
 

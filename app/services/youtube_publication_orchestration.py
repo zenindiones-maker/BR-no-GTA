@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.services.harness_authorization_service import consume_harness_authorization, validate_harness_authorization
+
 from app.database.youtube_repository import (
     get_youtube_publication,
     mark_youtube_uploaded,
@@ -90,7 +92,14 @@ def upload_youtube_publication(
 def make_youtube_publication_public(
     publication_id: int,
     publisher: YouTubePublisher,
+    *,
+    authorization: object | None = None,
 ) -> dict[str, Any]:
+    harness_authorization = validate_harness_authorization(
+        authorization or {},
+        expected_action="PUBLICATION",
+        expected_subject=f"youtube:publication:{publication_id}",
+    )
     publication = get_youtube_publication(publication_id)
 
     if publication is None:
@@ -161,4 +170,5 @@ def make_youtube_publication_public(
         f"{publication_id}"
         )
 
+    consume_harness_authorization(harness_authorization)
     return persisted_publication

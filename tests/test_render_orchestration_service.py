@@ -5,14 +5,14 @@ from app.database.schema import initialize_schema
 from app.database.ideas_repository import insert_idea
 from app.database.render_queue_repository import (
     get_render_job,
-    transition_render_job,
+    transition_render_job as _transition_render_job,
     claim_next_render_job,
 )
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
 from app.services.content_item_service import create_content_item
 from app.services.production_plan_service import create_production_plan
-from app.services.video_service import create_video_spec
+from app.services.video_service import create_video_spec as _create_video_spec
 from app.services.video_execution_service import create_video_execution_spec
 from app.services.render_job_service import create_render_job
 from app.services.render_queue_service import enqueue_video_render
@@ -23,9 +23,29 @@ from app.services.render_executor_service import (
 from app.services.github_actions_audiovisual_executor import GitHubActionsAudiovisualExecutor
 from app.services.render_orchestration_service import (
     _execute_running_render_job,
-    execute_render_job,
-    execute_next_render_job,
+    execute_render_job as _execute_render_job,
+    execute_next_render_job as _execute_next_render_job,
 )
+
+
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
+def _execution_context():
+    return authorization_to_context(issue_harness_authorization(authorized_action="EXECUTION", subject="action:EXECUTION"))
+
+def create_video_spec(plan, *, brain_decision=None):
+    return _create_video_spec(plan, brain_decision=_execution_context())
+
+def execute_render_job(job_id, executor=None, execution_context=None):
+    return _execute_render_job(job_id, executor=executor, execution_context=execution_context or _execution_context())
+
+def execute_next_render_job(executor=None, execution_context=None):
+    return _execute_next_render_job(executor=executor, execution_context=execution_context or _execution_context())
+
+def transition_render_job(job_id, target_status, **kwargs):
+    if target_status == "running":
+        kwargs.setdefault("execution_context", _execution_context())
+    return _transition_render_job(job_id, target_status, **kwargs)
 
 
 class SuccessfulExecutor(AbstractRenderExecutor):

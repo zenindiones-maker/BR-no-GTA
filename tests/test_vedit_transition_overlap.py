@@ -290,3 +290,10 @@ def test_create_edit_plan_preserves_contiguous_canary_timeline(
         ("cut", 0.0),
         ("cut", 0.0),
     ]
+
+
+def test_vedit_missing_brain_context_is_not_semantically_authorized():
+    from app.services.vedit_service import VEditBrainContext
+    context = VEditBrainContext.from_dict(None)
+    assert context.action == "UNAUTHORIZED"
+    assert context.confidence == 0.0

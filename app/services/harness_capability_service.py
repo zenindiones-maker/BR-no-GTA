@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
+from app.services.harness_authorization_service import (
+    HarnessAuthorization,
+    validate_harness_authorization,
+    resolve_harness_authorization,
+)
+
 
 HIGGSFIELD_AUTH_BOUNDARY = (
     "interactive_browser_only_confirmed; unattended ephemeral-runner auth "
@@ -32,12 +38,7 @@ class CapabilityDefinition:
     boundary: str | None = None
 
 
-@dataclass(frozen=True)
-class CapabilityAuthorization:
-    authority: str
-    authorized_action: str
-    harness_decision_id: str
-    execution_id: str
+CapabilityAuthorization = HarnessAuthorization
 
 
 @dataclass(frozen=True)
@@ -207,12 +208,12 @@ def authorize_capability(
     authorization: CapabilityAuthorization,
 ) -> CapabilityDefinition:
     """Validate Harness authority and action policy before any adapter runs."""
-    if authorization.authority != "deepseek_harness":
-        raise PermissionError("DeepSeek Harness is the sole capability authority")
-    if not authorization.harness_decision_id:
-        raise ValueError("harness_decision_id is required")
-    if not authorization.execution_id:
-        raise ValueError("execution_id is required")
+    authorization = resolve_harness_authorization(authorization)
+    authorization = validate_harness_authorization(
+        authorization,
+        expected_action=authorization.authorized_action,
+        expected_subject=f"capability:{capability_id}",
+    )
 
     capability = _CAPABILITY_BY_ID.get(capability_id)
     if capability is None or not capability.available:

@@ -124,6 +124,7 @@ def _execute_running_render_job(
 def execute_render_job(
     job_id: int,
     executor: AbstractRenderExecutor | None = None,
+    execution_context: dict | None = None,
 ) -> RenderExecutionResult:
     """
     Executa um Render Job específico.
@@ -161,7 +162,7 @@ def execute_render_job(
             f"{current_status}"
         )
 
-    running_job = claim_render_job(job_id)
+    running_job = claim_render_job(job_id, execution_context=execution_context)
 
     return _execute_running_render_job(
         running_job,

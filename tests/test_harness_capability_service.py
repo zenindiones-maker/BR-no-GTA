@@ -4,19 +4,14 @@ import pytest
 
 from app.services.harness_capability_service import (
     CAPABILITY_CATALOG,
-    CapabilityAuthorization,
     discover_capabilities,
     execute_capability,
 )
+from app.services.harness_authorization_service import issue_harness_authorization
 
 
-def _authorization(action: str = "DEVELOPMENT") -> CapabilityAuthorization:
-    return CapabilityAuthorization(
-        authority="deepseek_harness",
-        authorized_action=action,
-        harness_decision_id="decision-1",
-        execution_id="execution-1",
-    )
+def _authorization(action: str = "DEVELOPMENT", capability_id: str = "addy:code-review-and-quality"):
+    return issue_harness_authorization(authorized_action=action, subject=f"capability:{capability_id}", harness_decision_id="decision-1", execution_id="execution-1")
 
 
 def test_catalog_contains_expected_available_capabilities():
@@ -42,18 +37,11 @@ def test_discovery_is_progressive_and_does_not_return_entire_catalog():
     assert len(results) <= 5
 
 
-def test_execution_rejects_non_harness_authority():
-    authorization = CapabilityAuthorization(
-        authority="gta6_brain",
-        authorized_action="DEVELOPMENT",
-        harness_decision_id="decision-1",
-        execution_id="execution-1",
-    )
-
-    with pytest.raises(PermissionError, match="sole capability authority"):
+def test_execution_rejects_fabricated_authorization():
+    with pytest.raises(PermissionError, match="not found"):
         execute_capability(
             capability_id="addy:code-review-and-quality",
-            authorization=authorization,
+            authorization="fabricated",
             payload={},
         )
 
@@ -62,7 +50,7 @@ def test_execution_rejects_action_outside_capability_policy():
     with pytest.raises(PermissionError, match="not authorized"):
         execute_capability(
             capability_id="higgsfield-youtube-thumbnail",
-            authorization=_authorization("EXECUTION"),
+            authorization=_authorization("EXECUTION", "higgsfield-youtube-thumbnail"),
             payload={},
         )
 
@@ -77,7 +65,7 @@ def test_higgsfield_is_available_but_blocked_before_adapter_execution():
 
     evidence = execute_capability(
         capability_id="higgsfield-generate",
-        authorization=_authorization("EXECUTION"),
+        authorization=_authorization("EXECUTION", "higgsfield-generate"),
         payload={"prompt": "do not generate"},
         executor=executor,
     )

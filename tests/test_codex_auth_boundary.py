@@ -2,8 +2,8 @@ from pathlib import Path
 import subprocess
 
 from app.services.codex_addy_capability_executor import execute_codex_addy_capability
+from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_capability_service import (
-    CapabilityAuthorization,
     CapabilityDefinition,
     execute_capability,
 )
@@ -28,7 +28,12 @@ def repo(tmp_path: Path):
 
 
 def auth():
-    return CapabilityAuthorization('deepseek_harness','DEVELOPMENT','decision-canary','execution-canary')
+    return issue_harness_authorization(
+        authorized_action='DEVELOPMENT',
+        subject='capability:addy:code-review-and-quality',
+        harness_decision_id='decision-canary',
+        execution_id='execution-canary',
+    )
 
 
 def test_missing_codex_auth_is_blocked_before_model_turn(tmp_path):

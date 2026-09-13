@@ -1077,6 +1077,38 @@ def _migrate_production_plans(connection) -> None:
     )
 
 
+def _migrate_harness_authorizations(connection) -> None:
+    """Persist Harness-issued authorization provenance in the central SQLite DB."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS harness_authorizations (
+            authorization_id TEXT PRIMARY KEY,
+            harness_decision_id TEXT NOT NULL,
+            execution_id TEXT NOT NULL,
+            authorized_action TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            issued_by TEXT NOT NULL,
+            issued_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            lineage TEXT NOT NULL DEFAULT '{}',
+            consumed_at TEXT,
+            revoked_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_execution ON harness_authorizations(execution_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_decision ON harness_authorizations(harness_decision_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_harness_authorizations_subject_status ON harness_authorizations(subject, status)"
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1104,6 +1136,7 @@ def initialize_schema() -> None:
         _migrate_gta6_goals(connection)
         _migrate_production_plans(connection)
         _migrate_gta6_media_intelligence(connection)
+        _migrate_harness_authorizations(connection)
         connection.commit()
     finally:
         connection.close()

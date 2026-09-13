@@ -3,6 +3,13 @@ import pytest
 from app.database.render_queue_repository import get_render_job
 from app.services.fake_render_executor_service import FakeRenderExecutor
 from app.services.render_worker_service import process_next_render_job
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
+
+def _execution_context():
+    return authorization_to_context(issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    ))
 
 
 def _create_queued_render_job():
@@ -55,7 +62,8 @@ def test_worker_executes_queued_job_through_orchestrator():
         executor=FakeRenderExecutor(
             success=True,
             output_path="/tmp/fake-render.mp4",
-        )
+        ),
+        execution_context=_execution_context(),
     )
 
     assert result.success is True
@@ -76,7 +84,8 @@ def test_worker_executes_failure_through_orchestrator():
         executor=FakeRenderExecutor(
             success=False,
             error="Falha simulada no render.",
-        )
+        ),
+        execution_context=_execution_context(),
     )
 
     assert result.success is False
@@ -97,7 +106,8 @@ def test_worker_does_not_execute_terminal_job_again():
         executor=FakeRenderExecutor(
             success=True,
             output_path="/tmp/fake-render.mp4",
-        )
+        ),
+        execution_context=_execution_context(),
     )
 
     assert first_result.success is True
@@ -106,7 +116,8 @@ def test_worker_does_not_execute_terminal_job_again():
         executor=FakeRenderExecutor(
             success=True,
             output_path="/tmp/second-render.mp4",
-        )
+        ),
+        execution_context=_execution_context(),
     )
 
     assert second_result is None

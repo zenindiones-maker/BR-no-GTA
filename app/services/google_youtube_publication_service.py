@@ -11,6 +11,9 @@ from app.services.google_youtube_configuration import (
 from app.services.google_youtube_publisher_factory import (
     create_google_youtube_publisher,
 )
+from app.services.harness_authorization_service import (
+    validate_harness_authorization,
+)
 from app.services.youtube_publication_orchestration import (
     make_youtube_publication_public,
     upload_youtube_publication,
@@ -93,6 +96,7 @@ def upload_youtube_publication_with_google(
 def make_youtube_publication_public_with_google(
     *,
     publication_id: int,
+    authorization: object | None = None,
     token_file: str | None = None,
     client_secrets_file: str | None = None,
     authorization_runner: Callable[[Any], Any] | None = None,
@@ -108,6 +112,12 @@ def make_youtube_publication_public_with_google(
         raise ValueError(
             "publication_id must be a positive integer"
         )
+
+    harness_authorization = validate_harness_authorization(
+        authorization or {},
+        expected_action="PUBLICATION",
+        expected_subject=f"youtube:publication:{publication_id}",
+    )
 
     publication = get_youtube_publication(publication_id)
 
@@ -132,6 +142,7 @@ def make_youtube_publication_public_with_google(
     return make_youtube_publication_public(
         publication_id=publication_id,
         publisher=publisher,
+        authorization=harness_authorization,
     )
 
 

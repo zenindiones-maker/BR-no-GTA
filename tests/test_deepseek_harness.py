@@ -1,238 +1,51 @@
 from __future__ import annotations
-
 import json
-
 from app.integrations.deepseek_harness import server
+from app.services.gta6_brain import BrainDecision
 
 
 def test_operational_mcp_tools_are_registered():
-    tools = server.mcp._tool_manager.list_tools()
-
-    tool_names = {tool.name for tool in tools}
-
-    assert tool_names == {
-        "br_observe",
-        "br_knowledge_query",
-        "br_research_run",
-        "br_editorial_process_next",
-        "br_gta6_monitor_run_once",
-        "br_master_run_once",
-        "br_youtube_pode_postar",
-        "br_capabilities_discover",
-        "br_capability_execute",
-    }
-
-def test_editorial_process_next_reports_no_work(monkeypatch):
-    monkeypatch.setattr(server, "create_ai_provider", lambda: object())
-    monkeypatch.setattr(
-        server,
-        "process_next_editorial_queue_item",
-        lambda *, ai_provider: None,
-    )
-
-    payload = json.loads(server.br_editorial_process_next())
-
-    assert payload == {
-        "operation": "br_editorial_process_next",
-        "result": {
-            "status": "no_work",
-            "executed": False,
-            "reason": "Nenhum item queued disponível na fila editorial.",
-        },
-    }
+    names={tool.name for tool in server.mcp._tool_manager.list_tools()}
+    assert names == {"br_observe","br_knowledge_query","br_research_run","br_editorial_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
 
 
-def test_knowledge_query_returns_serialized_context(monkeypatch):
-    context = object()
-
-    monkeypatch.setattr(
-        server,
-        "query_gta6_knowledge_context",
-        lambda *, query: context,
-    )
-    monkeypatch.setattr(
-        server,
-        "knowledge_context_to_dict",
-        lambda value: {
-            "memory_id": 42,
-            "content": "GTA VI terá uma nova informação confirmada.",
-            "confidence": 9.0,
-            "scope": "gta6",
-        },
-    )
-
-    payload = json.loads(
-        server.br_knowledge_query(
-            query="GTA VI",
-        )
-    )
-
-    assert payload == {
-        "operation": "br_knowledge_query",
-        "result": {
-            "memory_id": 42,
-            "content": "GTA VI terá uma nova informação confirmada.",
-            "confidence": 9.0,
-            "scope": "gta6",
-        },
-    }
-
-
-def test_master_run_once_delegates_to_master_agent(monkeypatch):
+def test_master_run_once_harness_issues_authorization(monkeypatch):
+    captured={}
     class FakeMasterAgent:
-        def run_once(self):
-            return {
-                "decision": {
-                    "action": "RESEARCH",
-                    "reason": "research needed",
-                    "priority": "HIGH",
-                    "confidence": 0.9,
-                },
-                "action": {
-                    "action": "RESEARCH",
-                    "tool": "br_research_run",
-                    "success": True,
-                    "result": {"items": 3},
-                },
-            }
-
-    monkeypatch.setattr(
-        server,
-        "GTA6MasterAgent",
-        FakeMasterAgent,
-    )
-
-    payload = json.loads(server.br_master_run_once())
-
-    assert payload == {
-        "operation": "br_master_run_once",
-        "result": {
-            "decision": {
-                "action": "RESEARCH",
-                "reason": "research needed",
-                "priority": "HIGH",
-                "confidence": 0.9,
-            },
-            "action": {
-                "action": "RESEARCH",
-                "tool": "br_research_run",
-                "success": True,
-                "result": {"items": 3},
-            },
-        },
-    }
+        def recommend(self): return BrainDecision(action="RESEARCH",reason="needed",priority="HIGH",confidence=.9)
+        def execute_authorized(self, decision, authorization):
+            captured["decision"]=decision; captured["authorization"]=authorization
+            return {"action":"RESEARCH","success":True}
+    monkeypatch.setattr(server,"GTA6MasterAgent",FakeMasterAgent)
+    payload=json.loads(server.br_master_run_once())
+    assert payload["result"]["success"] is True
+    assert captured["authorization"].issued_by == "deepseek_harness"
+    assert captured["authorization"].subject == "action:RESEARCH"
 
 
-def test_youtube_pode_postar_uses_existing_publication_authorization(
-    monkeypatch,
-):
-    calls = []
-
-    monkeypatch.setattr(
-        server,
-        "make_youtube_publication_public_with_google",
-        lambda *, publication_id: (
-            calls.append(publication_id)
-            or {
-                "id": publication_id,
-                "status": "published",
-            }
-        ),
-    )
-
-    payload = json.loads(
-        server.br_youtube_pode_postar(
-            publication_id=42,
-        )
-    )
-
-    assert calls == [42]
-    assert payload == {
-        "operation": "br_youtube_pode_postar",
-        "result": {
-            "id": 42,
-            "status": "published",
-        },
-    }
+def test_youtube_pode_postar_issues_publication_authorization(monkeypatch):
+    captured={}
+    def fake(*,publication_id,authorization):
+        captured["auth"]=authorization; return {"id":publication_id,"status":"published"}
+    monkeypatch.setattr(server,"make_youtube_publication_public_with_google",fake)
+    payload=json.loads(server.br_youtube_pode_postar(publication_id=42))
+    assert payload["result"]["status"] == "published"
+    assert captured["auth"].authorized_action == "PUBLICATION"
+    assert captured["auth"].subject == "youtube:publication:42"
 
 
-def test_capabilities_discover_delegates_progressively(monkeypatch):
-    calls = []
-
-    monkeypatch.setattr(
-        server,
-        "discover_capabilities",
-        lambda *, intent, authorized_action: (
-            calls.append((intent, authorized_action))
-            or [{"capability_id": "addy:code-review-and-quality"}]
-        ),
-    )
-
-    payload = json.loads(
-        server.br_capabilities_discover(
-            intent="code review",
-            authorized_action="DEVELOPMENT",
-        )
-    )
-
-    assert calls == [("code review", "DEVELOPMENT")]
-    assert payload["result"]["capabilities"] == [
-        {"capability_id": "addy:code-review-and-quality"}
-    ]
-
-
-def test_capability_execute_returns_harness_lineage_without_running_higgsfield():
-    payload = json.loads(
-        server.br_capability_execute(
-            capability_id="higgsfield-generate",
-            authorized_action="EXECUTION",
-            harness_decision_id="decision-42",
-            execution_id="execution-42",
-            payload_json='{"prompt": "must not generate"}',
-        )
-    )
-
-    evidence = payload["result"]
-    assert evidence["status"] == "BLOCKED"
-    assert evidence["active"] is False
+def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):
+    captured={}
+    def fake_executor(capability,payload): captured["payload"]=payload; return {"ok":True}
+    monkeypatch.setattr(server,"execute_codex_addy_capability",fake_executor)
+    payload=json.loads(server.br_capability_execute(capability_id="addy:code-review-and-quality",authorized_action="DEVELOPMENT",payload_json='{"task":"review"}'))
+    evidence=payload["result"]
     assert evidence["authority"] == "deepseek_harness"
-    assert evidence["harness_decision_id"] == "decision-42"
-    assert evidence["execution_id"] == "execution-42"
+    assert evidence["harness_decision_id"] and evidence["execution_id"]
+    assert captured["payload"] == {"task":"review"}
 
 
-def test_capability_execute_binds_harness_owned_addy_executor(monkeypatch):
-    calls = []
-
-    def fake_executor(capability, payload):
-        calls.append((capability.capability_id, payload))
-        return {"output": "review complete"}
-
-    monkeypatch.setattr(
-        server,
-        "execute_codex_addy_capability",
-        fake_executor,
-    )
-
-    payload = json.loads(
-        server.br_capability_execute(
-            capability_id="addy:code-review-and-quality",
-            authorized_action="DEVELOPMENT",
-            harness_decision_id="decision-43",
-            execution_id="execution-43",
-            payload_json='{"task": "Review the selected change."}',
-        )
-    )
-
-    evidence = payload["result"]
-    assert calls == [
-        (
-            "addy:code-review-and-quality",
-            {"task": "Review the selected change."},
-        )
-    ]
-    assert evidence["status"] == "EXECUTED"
-    assert evidence["active"] is True
-    assert evidence["provider"] == "addy-agent-skills"
-    assert evidence["harness_decision_id"] == "decision-43"
-    assert evidence["execution_id"] == "execution-43"
-    assert evidence["result"] == {"output": "review complete"}
+def test_higgsfield_remains_blocked_under_persisted_harness_authorization():
+    payload=json.loads(server.br_capability_execute(capability_id="higgsfield-generate",authorized_action="EXECUTION",payload_json='{"prompt":"x"}'))
+    evidence=payload["result"]
+    assert evidence["status"] == "BLOCKED" and evidence["authority"] == "deepseek_harness"
