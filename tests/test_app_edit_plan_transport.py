@@ -2,6 +2,7 @@
 import copy
 import unittest
 from app.services.video_service import create_video_spec
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
 from app.services.video_execution_service import create_video_execution_spec
 from app.services.render_job_service import create_render_job
 
@@ -27,8 +28,10 @@ class EditPlanTransportTests(unittest.TestCase):
                           scenes=[scene], audio_requirements=[], visual_requirements=[],
                           edit_plan=plan)
         original = copy.deepcopy(production)
-        auth = dict(brain_decision_id="test-decision", execution_id="test-execution",
-                    authorized_action="EXECUTION")
+        auth = authorization_to_context(issue_harness_authorization(
+            authorized_action="EXECUTION", subject="action:EXECUTION",
+            harness_decision_id="test-decision", execution_id="test-execution"
+        ))
         video = create_video_spec(production, brain_decision=auth)
         execution = create_video_execution_spec(video)
         job = create_render_job(execution, video_id=9)
@@ -69,7 +72,7 @@ class EditPlanTransportTests(unittest.TestCase):
         self.assertEqual(execution["edit_plan"], plan)
 
     def test_video_spec_rejects_missing_authority(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(PermissionError):
             create_video_spec(dict(content_item_id=1, script_id=2, idea_id=3,
                                   objective="test", format="video", estimated_duration_seconds=30,
                                   scenes=[{}], audio_requirements=[], visual_requirements=[]))

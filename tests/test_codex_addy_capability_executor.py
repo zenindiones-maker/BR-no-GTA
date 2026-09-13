@@ -8,8 +8,8 @@ from app.services.codex_addy_capability_executor import (
     CodexCapabilityExecutionError,
     execute_codex_addy_capability,
 )
+from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_capability_service import (
-    CapabilityAuthorization,
     CapabilityDefinition,
     execute_capability,
 )
@@ -138,9 +138,9 @@ def test_harness_returns_failed_evidence_without_fallback():
 
     evidence = execute_capability(
         capability_id="addy:code-review-and-quality",
-        authorization=CapabilityAuthorization(
-            authority="deepseek_harness",
+        authorization=issue_harness_authorization(
             authorized_action="DEVELOPMENT",
+            subject="capability:addy:code-review-and-quality",
             harness_decision_id="decision-99",
             execution_id="execution-99",
         ),

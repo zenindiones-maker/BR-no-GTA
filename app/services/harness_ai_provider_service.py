@@ -6,14 +6,14 @@ from typing import Any, Callable
 from app.services.ai_provider import AIProvider, AIProviderError
 from app.services.ai_provider_factory import create_ai_provider
 from app.services.nvidia_nim_provider import NvidiaNIMProvider
+from app.services.harness_authorization_service import (
+    HarnessAuthorization,
+    validate_harness_authorization,
+    resolve_harness_authorization,
+)
 
 
-@dataclass(frozen=True)
-class HarnessAIProviderAuthorization:
-    authority: str
-    authorized_action: str
-    harness_decision_id: str
-    execution_id: str
+HarnessAIProviderAuthorization = HarnessAuthorization
 
 
 @dataclass(frozen=True)
@@ -48,16 +48,15 @@ def _validate_authorization(
     provider_name: str,
     authorization: HarnessAIProviderAuthorization,
 ) -> str:
-    if authorization.authority != "deepseek_harness":
-        raise PermissionError("DeepSeek Harness is the sole AI provider authority")
-    if not authorization.harness_decision_id:
-        raise ValueError("harness_decision_id is required")
-    if not authorization.execution_id:
-        raise ValueError("execution_id is required")
-
     normalized_provider = _PROVIDER_ALIASES.get(provider_name.strip().lower())
     if normalized_provider is None:
         raise ValueError(f"AI provider is not allowed by Harness policy: {provider_name}")
+    authorization = resolve_harness_authorization(authorization)
+    authorization = validate_harness_authorization(
+        authorization,
+        expected_action=authorization.authorized_action,
+        expected_subject=f"provider:{normalized_provider}",
+    )
     if authorization.authorized_action not in _PROVIDER_POLICY[normalized_provider]:
         raise PermissionError(
             "AI provider is not authorized for action "
@@ -86,10 +85,13 @@ def execute_harness_ai_generation(
     selector: Callable[..., tuple[str, AIProvider]] = select_harness_ai_provider,
 ) -> HarnessAIProviderEvidence:
     """Harness-owned provider selection, execution, and normalized evidence."""
+    expected_provider = _validate_authorization(provider_name, authorization)
     normalized_provider, provider = selector(
         provider_name=provider_name,
         authorization=authorization,
     )
+    if normalized_provider != expected_provider:
+        raise PermissionError("AI provider selector escaped Harness policy")
 
     try:
         response = provider.generate(prompt)

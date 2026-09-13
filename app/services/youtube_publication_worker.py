@@ -42,6 +42,7 @@ def execute_youtube_publication(
     *,
     publication_id: int,
     publisher: Any,
+    authorization: object | None = None,
 ) -> dict[str, Any]:
     """
     Torna público um vídeo que já foi enviado ao YouTube.
@@ -61,4 +62,5 @@ def execute_youtube_publication(
     return make_youtube_publication_public(
         publication_id=publication_id,
         publisher=publisher,
+        authorization=authorization,
     )

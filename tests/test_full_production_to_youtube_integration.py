@@ -18,6 +18,7 @@ from app.services.video_render_service import (
     create_video_and_enqueue_render,
 )
 from app.services.video_service import create_video_spec
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
 from app.services.youtube_publication_orchestration import (
     make_youtube_publication_public,
     upload_youtube_publication,
@@ -71,7 +72,13 @@ def test_full_production_to_youtube_pipeline():
     assert production_plan["scenes"]
 
     # 6. PRODUCTION PLAN -> VIDEO SPEC
-    video_spec = create_video_spec(production_plan)
+    render_authorization = issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    )
+    execution_context = authorization_to_context(render_authorization)
+    video_spec = create_video_spec(
+        production_plan, brain_decision=execution_context
+    )
 
     assert (
         video_spec["content_item_id"]
@@ -125,6 +132,7 @@ def test_full_production_to_youtube_pipeline():
     render_result = execute_render_job(
         render_job["id"],
         executor=executor,
+        execution_context=execution_context,
     )
 
     assert render_result.success is True
@@ -244,9 +252,14 @@ def test_full_production_to_youtube_pipeline():
     )
 
     # 13. UPLOADED -> PUBLISHED
+    publication_authorization = issue_harness_authorization(
+        authorized_action="PUBLICATION",
+        subject=f"youtube:publication:{publication['id']}",
+    )
     published = make_youtube_publication_public(
         publication["id"],
         publisher,
+        authorization=publication_authorization,
     )
 
     assert published["id"] == publication["id"]

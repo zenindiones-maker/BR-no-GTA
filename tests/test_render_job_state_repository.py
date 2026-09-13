@@ -2,12 +2,28 @@ import pytest
 
 from app.database.schema import initialize_schema
 from app.database.render_queue_repository import (
-    claim_next_render_job,
-    claim_render_job,
+    claim_next_render_job as _claim_next_render_job,
+    claim_render_job as _claim_render_job,
     enqueue_render_job,
     get_render_job,
-    transition_render_job,
+    transition_render_job as _transition_render_job,
 )
+
+
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
+
+def _execution_context():
+    return authorization_to_context(issue_harness_authorization(authorized_action="EXECUTION", subject="action:EXECUTION"))
+
+def claim_next_render_job(execution_context=None):
+    return _claim_next_render_job(execution_context=execution_context or _execution_context())
+
+def claim_render_job(job_id, execution_context=None):
+    return _claim_render_job(job_id, execution_context=execution_context or _execution_context())
+
+def transition_render_job(job_id, target_status, **kwargs):
+    if target_status == "running": kwargs.setdefault("execution_context", _execution_context())
+    return _transition_render_job(job_id, target_status, **kwargs)
 
 
 def _create_render_job():

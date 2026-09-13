@@ -1,5 +1,7 @@
 import pytest
 
+from app.services.harness_authorization_service import issue_harness_authorization
+
 from app.database.youtube_repository import (
     get_youtube_publication,
     insert_youtube_publication,
@@ -10,6 +12,10 @@ from app.services.youtube_publication_worker import (
     execute_youtube_upload,
 )
 from tests.test_youtube_repository import _create_video
+
+
+def _authorization(publication_id):
+    return issue_harness_authorization(authorized_action="PUBLICATION", subject=f"youtube:publication:{publication_id}")
 
 
 def _create_publication() -> int:
@@ -64,6 +70,7 @@ def test_execute_youtube_publication_delegates_visibility():
     result = execute_youtube_publication(
         publication_id=publication_id,
         publisher=publisher,
+        authorization=_authorization(publication_id),
     )
 
     assert result["status"] == "published"
@@ -92,6 +99,7 @@ def test_execute_youtube_publication_keeps_uploaded_on_visibility_failure():
     result = execute_youtube_publication(
         publication_id=publication_id,
         publisher=publisher,
+        authorization=_authorization(publication_id),
     )
 
     assert result["status"] == "uploaded"

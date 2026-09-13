@@ -15,12 +15,15 @@ from app.services.codex_addy_capability_executor import (
     execute_codex_addy_capability,
 )
 from app.services.harness_capability_service import (
-    CapabilityAuthorization,
     discover_capabilities,
     execute_capability,
 )
+from app.services.harness_authorization_service import (
+    issue_harness_authorization,
+)
 from app.services.google_youtube_publication_service import (
     make_youtube_publication_public_with_google,
+    process_next_youtube_publication,
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_knowledge_query_service import (
@@ -144,14 +147,26 @@ def br_editorial_process_next() -> str:
     )
 
 
+def _execute_master_cycle_under_harness() -> Any:
+    """Issue provenance inside the Harness before any MasterAgent dispatch."""
+    agent = GTA6MasterAgent()
+    decision = agent.recommend()
+    authorization = issue_harness_authorization(
+        authorized_action=decision.action,
+        subject=f"action:{decision.action}",
+        lineage={
+            "reason": decision.reason,
+            "priority": decision.priority,
+            "confidence": decision.confidence,
+        },
+    )
+    return agent.execute_authorized(decision, authorization)
+
+
 @mcp.tool()
 def br_gta6_monitor_run_once() -> str:
-    """
-    Execute one GTA6 Master Agent control cycle.
-    """
-    agent = GTA6MasterAgent()
-    result = agent.run_once()
-
+    """Execute one Harness-authorized GTA6 control cycle."""
+    result = _execute_master_cycle_under_harness()
     return _json_result(
         operation="br_gta6_monitor_run_once",
         result=result,
@@ -160,14 +175,8 @@ def br_gta6_monitor_run_once() -> str:
 
 @mcp.tool()
 def br_master_run_once() -> str:
-    """
-    Execute one official GTA6 Master Agent control cycle.
-
-    The GTA6 Brain decides the authorized action and the Master Agent
-    dispatches only that action through the existing BR services.
-    """
-    agent = GTA6MasterAgent()
-    result = agent.run_once()
+    """Execute one official GTA6 control cycle under Harness authority."""
+    result = _execute_master_cycle_under_harness()
     return _json_result(
         operation="br_master_run_once",
         result=result,
@@ -203,8 +212,8 @@ def br_capabilities_discover(
 def br_capability_execute(
     capability_id: str,
     authorized_action: str,
-    harness_decision_id: str,
-    execution_id: str,
+    harness_decision_id: str | None = None,
+    execution_id: str | None = None,
     payload_json: str = "{}",
 ) -> str:
     """
@@ -218,14 +227,17 @@ def br_capability_execute(
     if not isinstance(payload, dict):
         raise ValueError("payload_json must decode to an object")
 
+    # Legacy caller-supplied IDs are accepted for wire compatibility only.
+    # They are deliberately not trusted as authorization provenance.
+    _ = (harness_decision_id, execution_id)
+    authorization = issue_harness_authorization(
+        authorized_action=authorized_action,
+        subject=f"capability:{capability_id}",
+        lineage={"capability_id": capability_id},
+    )
     evidence = execute_capability(
         capability_id=capability_id,
-        authorization=CapabilityAuthorization(
-            authority="deepseek_harness",
-            authorized_action=authorized_action,
-            harness_decision_id=harness_decision_id,
-            execution_id=execution_id,
-        ),
+        authorization=authorization,
         payload=payload,
         executor=execute_codex_addy_capability,
     )
@@ -244,11 +256,27 @@ def br_youtube_pode_postar(publication_id: int) -> str:
     action. YOUTUBE may upload pending content, while this operation
     authorizes the existing uploaded -> published transition.
     """
+    authorization = issue_harness_authorization(
+        authorized_action="PUBLICATION",
+        subject=f"youtube:publication:{publication_id}",
+        lineage={"publication_id": publication_id},
+    )
     result = make_youtube_publication_public_with_google(
         publication_id=publication_id,
+        authorization=authorization,
     )
     return _json_result(
         operation="br_youtube_pode_postar",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_youtube_publish_next() -> str:
+    """Run the next private YouTube upload from the Harness boundary."""
+    result = process_next_youtube_publication()
+    return _json_result(
+        operation="br_youtube_publish_next",
         result=result,
     )
 

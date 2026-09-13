@@ -2,6 +2,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.services.harness_authorization_service import issue_harness_authorization
+
 from app.database.youtube_repository import (
     get_youtube_publication,
     insert_youtube_publication,
@@ -16,6 +18,10 @@ from app.services.youtube_publisher import (
     YouTubeVisibilityResult,
 )
 from tests.test_youtube_repository import _create_video
+
+
+def _publication_authorization(publication_id):
+    return issue_harness_authorization(authorized_action="PUBLICATION", subject=f"youtube:publication:{publication_id}")
 
 
 def _create_publication() -> int:
@@ -220,6 +226,7 @@ def test_make_public_with_google_delegates_to_visibility_orchestration(
 
     result = make_youtube_publication_public_with_google(
         publication_id=publication_id,
+        authorization=_publication_authorization(publication_id),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -258,6 +265,7 @@ def test_make_public_with_google_keeps_uploaded_on_failure(
 
     result = make_youtube_publication_public_with_google(
         publication_id=publication_id,
+        authorization=_publication_authorization(publication_id),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -286,6 +294,7 @@ def test_make_public_with_google_requires_uploaded_status(
     ):
         make_youtube_publication_public_with_google(
             publication_id=publication_id,
+            authorization=_publication_authorization(publication_id),
             token_file="/tmp/token.json",
             client_secrets_file="/tmp/client.json",
         )

@@ -1,5 +1,7 @@
 import pytest
 
+from app.services.harness_authorization_service import issue_harness_authorization, validate_harness_authorization
+
 from app.database.youtube_repository import (
     get_youtube_publication,
     insert_youtube_publication,
@@ -17,6 +19,10 @@ from app.services.youtube_publisher import (
 from tests.test_youtube_repository import (
     _create_video,
 )
+
+
+def _publication_authorization(publication_id: int):
+    return issue_harness_authorization(authorized_action="PUBLICATION", subject=f"youtube:publication:{publication_id}")
 
 
 def _create_publication() -> int:
@@ -72,9 +78,11 @@ def test_make_youtube_publication_public_success():
 
     publisher = FakeYouTubePublisher()
 
+    authorization = _publication_authorization(publication_id)
     result = make_youtube_publication_public(
         publication_id,
         publisher,
+        authorization=authorization,
     )
 
     assert result["status"] == "published"
@@ -101,9 +109,11 @@ def test_make_youtube_publication_public_failure_keeps_uploaded():
         visibility_error="Falha de visibilidade",
     )
 
+    authorization = _publication_authorization(publication_id)
     result = make_youtube_publication_public(
         publication_id,
         publisher,
+        authorization=authorization,
     )
 
     assert result["status"] == "uploaded"
@@ -161,6 +171,7 @@ def test_make_public_requires_uploaded_status():
         make_youtube_publication_public(
             publication_id,
             publisher,
+            authorization=_publication_authorization(publication_id),
         )
 
 
@@ -215,4 +226,14 @@ def test_invalid_visibility_result_is_rejected():
         make_youtube_publication_public(
             publication_id,
             InvalidPublisher(),
+            authorization=_publication_authorization(publication_id),
         )
+
+
+def test_make_public_rejects_missing_authorization_before_side_effect():
+    publication_id = _create_publication()
+    upload_youtube_publication(publication_id, FakeYouTubePublisher(upload_video_id="youtube123", upload_url="https://www.youtube.com/watch?v=youtube123"))
+    publisher = FakeYouTubePublisher()
+    with pytest.raises(PermissionError):
+        make_youtube_publication_public(publication_id, publisher)
+    assert publisher.made_public_video_ids == []

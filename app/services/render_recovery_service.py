@@ -29,43 +29,16 @@ from app.services.video_execution_service import (
 from app.services.video_service import (
     create_video_spec,
 )
+from app.services.harness_authorization_service import authorization_to_context, validate_harness_authorization
 
 
-_REQUIRED_EXECUTION_FIELDS = (
-    "brain_decision_id",
-    "execution_id",
-    "authorized_action",
-)
-
-
-def _validate_execution_context(
-    execution_context: dict[str, Any] | None,
-) -> dict[str, str]:
-    if not isinstance(execution_context, dict):
-        raise ValueError(
-            "Render recovery exige contexto de autorização do Harness."
-        )
-
-    normalized: dict[str, str] = {}
-
-    for field in _REQUIRED_EXECUTION_FIELDS:
-        value = execution_context.get(field)
-
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(
-                "Render recovery exige autorização completa: "
-                f"{field}."
-            )
-
-        normalized[field] = value.strip()
-
-    if normalized["authorized_action"] != "EXECUTION":
-        raise ValueError(
-            "Render recovery só pode ser criada para "
-            "authorized_action=EXECUTION."
-        )
-
-    return normalized
+def _validate_execution_context(execution_context: dict[str, Any] | None) -> dict[str, Any]:
+    authorization = validate_harness_authorization(
+        execution_context or {},
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
+    )
+    return authorization_to_context(authorization)
 
 
 def recover_failed_render_job(

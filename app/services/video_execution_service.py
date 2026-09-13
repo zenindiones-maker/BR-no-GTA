@@ -126,9 +126,14 @@ def create_video_execution_spec(
     # Contexto de autorização/correlação do BR.
     # Deve atravessar Video Spec -> Video Execution Spec -> Render Job.
     for field in (
+        "authorization_id",
+        "harness_decision_id",
         "brain_decision_id",
         "execution_id",
         "authorized_action",
+        "authorization_subject",
+        "issued_by",
+        "lineage",
     ):
         if field in video_spec:
             result[field] = video_spec[field]

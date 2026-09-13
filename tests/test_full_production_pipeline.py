@@ -11,6 +11,7 @@ from app.services.production_plan_service import create_production_plan
 from app.services.video_service import create_video_spec
 from app.services.video_execution_service import create_video_execution_spec
 from app.services.video_render_service import create_video_and_enqueue_render
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
 
 
 def test_full_production_pipeline_from_approved_idea_to_render_queue():
@@ -51,7 +52,13 @@ def test_full_production_pipeline_from_approved_idea_to_render_queue():
     assert production_plan["scenes"]
 
     # 5. PRODUCTION PLAN -> VIDEO SPEC
-    video_spec = create_video_spec(production_plan)
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    )
+    execution_context = authorization_to_context(authorization)
+    video_spec = create_video_spec(
+        production_plan, brain_decision=execution_context
+    )
 
     assert video_spec["content_item_id"] == content_item["id"]
     assert video_spec["scenes"]

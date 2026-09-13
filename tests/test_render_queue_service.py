@@ -9,6 +9,7 @@ from app.services.production_plan_service import create_production_plan
 from app.services.video_service import create_video_spec
 from app.services.video_execution_service import create_video_execution_spec
 from app.services.render_queue_service import enqueue_video_render
+from app.services.harness_authorization_service import authorization_to_context, issue_harness_authorization
 
 
 def _create_video_execution_spec():
@@ -27,7 +28,12 @@ def _create_video_execution_spec():
     spec = generate_script_spec(script_id)
     item = create_content_item(spec)
     plan = create_production_plan(item)
-    video = create_video_spec(plan)
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION", subject="action:EXECUTION"
+    )
+    video = create_video_spec(
+        plan, brain_decision=authorization_to_context(authorization)
+    )
 
     return create_video_execution_spec(video)
 
