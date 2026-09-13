@@ -26,6 +26,7 @@ def test_harness_boundary_returns_normalized_lineage_evidence():
     assert evidence.provider == "nvidia_nim"
     assert evidence.authority == "deepseek_harness"
     assert evidence.result["usage"]["total_tokens"] == 3
+    assert evidence.routing["selected_model"] == "nvidia/nemotron-3-super-120b-a12b"
 
 
 def test_fabricated_authorization_is_rejected_before_provider_selection():
@@ -33,18 +34,38 @@ def test_fabricated_authorization_is_rejected_before_provider_selection():
         select_harness_ai_provider(provider_name="nvidia", authorization="fabricated")
 
 
-def test_nvidia_selection_is_lazy_and_policy_owned(monkeypatch):
+def test_nvidia_selection_is_lazy_policy_owned_and_model_bound(monkeypatch):
     import app.services.harness_ai_provider_service as service
     calls = []
     class SelectedProvider: pass
-    monkeypatch.setattr(service, "NvidiaNIMProvider", lambda: calls.append("nvidia") or SelectedProvider())
+    def construct(**kwargs):
+        calls.append(kwargs)
+        return SelectedProvider()
+    monkeypatch.setattr(service, "NvidiaNIMProvider", construct)
     provider_name, provider = service.select_harness_ai_provider(provider_name="nvidia", authorization=auth())
-    assert provider_name == "nvidia_nim" and isinstance(provider, SelectedProvider) and calls == ["nvidia"]
+    assert provider_name == "nvidia_nim" and isinstance(provider, SelectedProvider)
+    assert calls == [{"model": "nvidia/nemotron-3-super-120b-a12b"}]
 
 
 def test_tuxevil_selection_does_not_construct_nvidia(monkeypatch):
     import app.services.harness_ai_provider_service as service
-    monkeypatch.setattr(service, "NvidiaNIMProvider", lambda: (_ for _ in ()).throw(AssertionError("NVIDIA must not be touched")))
+    monkeypatch.setattr(service, "NvidiaNIMProvider", lambda **kwargs: (_ for _ in ()).throw(AssertionError("NVIDIA must not be touched")))
     expected = object(); monkeypatch.setattr(service, "create_ai_provider", lambda: expected)
     provider_name, provider = service.select_harness_ai_provider(provider_name="tuxevil", authorization=auth("tuxevil"))
     assert provider_name == "tuxevil" and provider is expected
+
+
+def test_provider_failure_does_not_trigger_silent_fallback():
+    from app.services.ai_provider import AIProviderError
+    calls=[]
+    class FailingProvider:
+        def generate(self, prompt):
+            calls.append(prompt)
+            raise AIProviderError("primary failed")
+    def selector(*, provider_name, authorization):
+        calls.append(provider_name)
+        return "nvidia_nim", FailingProvider()
+    evidence=execute_harness_ai_generation(provider_name="nvidia",prompt="Teste",authorization=auth(),selector=selector)
+    assert evidence.status == "FAILED"
+    assert calls == ["nvidia", "Teste"]
+    assert evidence.routing["fallback_occurred"] is False

@@ -6,7 +6,6 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from app.services.ai_provider_factory import create_ai_provider
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
@@ -14,12 +13,19 @@ from app.services.gta6_master_agent import GTA6MasterAgent
 from app.services.codex_addy_capability_executor import (
     execute_codex_addy_capability,
 )
+from app.services.harness_ai_provider_service import (
+    select_harness_ai_provider,
+)
 from app.services.harness_capability_service import (
     discover_capabilities,
     execute_capability,
 )
 from app.services.harness_authorization_service import (
     issue_harness_authorization,
+)
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
 )
 from app.services.google_youtube_publication_service import (
     make_youtube_publication_public_with_google,
@@ -61,7 +67,6 @@ def _json_result(
     )
 
 
-
 @mcp.tool()
 def br_observe() -> str:
     """
@@ -75,7 +80,6 @@ def br_observe() -> str:
         operation="br_observe",
         result=result,
     )
-
 
 
 @mcp.tool()
@@ -122,13 +126,71 @@ def br_research_run() -> str:
 
 
 @mcp.tool()
-def br_editorial_process_next() -> str:
-    """
-    Process the next editorial queue item using the official BR AI provider.
+def br_route(
+    intent: str,
+    authorized_action: str,
+    required_capability_id: str | None = None,
+    domain: str | None = None,
+    preferred_provider: str | None = None,
+    fallback_allowed: bool = False,
+) -> str:
+    """Return Harness routing metadata only; never authorize or execute."""
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent=intent,
+            authorized_action=authorized_action,
+            domain=domain,
+            required_capability_id=required_capability_id,
+            provider_required=preferred_provider is not None,
+            preferred_providers=(preferred_provider,) if preferred_provider else (),
+            fallback_allowed=fallback_allowed,
+        )
+    )
+    return _json_result(
+        operation="br_route",
+        result=decision,
+    )
 
-    AI credentials and provider routing remain inside the BR provider layer.
-    """
-    ai_provider = create_ai_provider()
+
+def _route_editorial_provider():
+    """Route editorial AI under Harness policy before provider construction."""
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="process next GTA6 editorial queue item with AI reasoning",
+            authorized_action="EDITORIAL",
+            domain="editorial",
+            required_capability_id="editorial.process",
+            provider_required=True,
+            provider_domain="ai",
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+        )
+    )
+    if not decision.selected_provider:
+        raise RuntimeError("Harness routing did not select the editorial AI provider")
+
+    authorization = issue_harness_authorization(
+        authorized_action="EDITORIAL",
+        subject=f"provider:{decision.selected_provider}",
+        lineage={
+            "routing_id": decision.routing_id,
+            "selected_capability_id": decision.selected_capability_id,
+            "selected_provider": decision.selected_provider,
+            "selected_model": decision.selected_model,
+            "selected_executor_binding": decision.selected_executor_binding,
+        },
+    )
+    _, provider = select_harness_ai_provider(
+        routing_decision=decision,
+        authorization=authorization,
+    )
+    return decision, authorization, provider
+
+
+@mcp.tool()
+def br_editorial_process_next() -> str:
+    """Process the next editorial queue item through Harness routing/policy."""
+    routing, authorization, ai_provider = _route_editorial_provider()
 
     result = process_next_editorial_queue_item(
         ai_provider=ai_provider,
@@ -140,6 +202,13 @@ def br_editorial_process_next() -> str:
             "executed": False,
             "reason": "Nenhum item queued disponível na fila editorial.",
         }
+    else:
+        result = dict(result)
+
+    result["harness_routing"] = {
+        "decision": routing.to_dict(),
+        "authorization_id": authorization.authorization_id,
+    }
 
     return _json_result(
         operation="br_editorial_process_next",
@@ -148,8 +217,36 @@ def br_editorial_process_next() -> str:
 
 
 def _execute_master_cycle_under_harness() -> Any:
-    """Issue provenance inside the Harness before any MasterAgent dispatch."""
-    agent = GTA6MasterAgent()
+    """Route Brain inference first, then authorize exactly one recommended action."""
+    provider_routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="decide the next GTA6 operational action",
+            authorized_action="DECISION",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            provider_domain="ai",
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+        )
+    )
+    if not provider_routing.selected_provider:
+        raise RuntimeError("Harness routing did not select the Brain AI provider")
+
+    provider_authorization = issue_harness_authorization(
+        authorized_action="DECISION",
+        subject=f"provider:{provider_routing.selected_provider}",
+        lineage={
+            "routing_id": provider_routing.routing_id,
+            "selected_capability_id": provider_routing.selected_capability_id,
+            "selected_provider": provider_routing.selected_provider,
+            "selected_model": provider_routing.selected_model,
+        },
+    )
+    _, provider = select_harness_ai_provider(
+        routing_decision=provider_routing,
+        authorization=provider_authorization,
+    )
+    agent = GTA6MasterAgent(ai_provider=provider)
     decision = agent.recommend()
     authorization = issue_harness_authorization(
         authorized_action=decision.action,
@@ -158,6 +255,8 @@ def _execute_master_cycle_under_harness() -> Any:
             "reason": decision.reason,
             "priority": decision.priority,
             "confidence": decision.confidence,
+            "provider_routing_id": provider_routing.routing_id,
+            "provider_authorization_id": provider_authorization.authorization_id,
         },
     )
     return agent.execute_authorized(decision, authorization)

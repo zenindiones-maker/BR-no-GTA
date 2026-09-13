@@ -388,7 +388,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("persisted HarnessAuthorization", "allowed provider"),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=("ai", "provider", "gateway", "policy"),
             security_boundary=(
                 "Harness provider subject/action binding; selector cannot escape policy"
@@ -414,7 +414,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("Harness provider policy", "provider prerequisites"),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=("ai", "reasoning", "text", "provider-gateway"),
             security_boundary=(
                 "Provider/model execution remains behind Harness authorization "
@@ -441,7 +441,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("Tuxevil Rotator",),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=("ai", "provider", "tuxevil", "text"),
             security_boundary="Official BR AI provider factory boundary",
             executor_binding="app.services.ai_provider_factory.create_ai_provider",
@@ -462,7 +462,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("NVIDIA_API_KEY", "NVIDIA NIM endpoint"),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=("ai", "provider", "nvidia", "nim", "reasoning", "text"),
             security_boundary="HarnessAuthorization + provider subject binding",
             executor_binding=(
