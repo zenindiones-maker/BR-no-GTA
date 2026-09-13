@@ -42,3 +42,33 @@ def test_consumed_and_revoked_authorizations_fail_closed():
     revoke_harness_authorization(revoked)
     with pytest.raises(PermissionError, match="revoked"):
         validate_harness_authorization(revoked, expected_action="EXECUTION", expected_subject="action:EXECUTION")
+
+
+def test_explicit_schema_bootstrap_supports_clean_sqlite(tmp_path, monkeypatch):
+    database_path = tmp_path / "clean-harness.db"
+    monkeypatch.setenv("BR_TEST_DATABASE", str(database_path))
+
+    from app.database.connection import get_connection
+    from app.database.schema import initialize_schema
+
+    with get_connection() as connection:
+        before = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'harness_authorizations'"
+        ).fetchone()
+    assert before is None
+
+    initialize_schema()
+
+    auth = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject="capability:addy:code-review-and-quality",
+        lineage={"source_ref": "clean-sqlite-canary"},
+    )
+
+    resolved = validate_harness_authorization(
+        auth.authorization_id,
+        expected_action="DEVELOPMENT",
+        expected_subject="capability:addy:code-review-and-quality",
+        expected_execution_id=auth.execution_id,
+    )
+    assert resolved.authorization_id == auth.authorization_id
