@@ -85,6 +85,10 @@ def _resolve_routing(
         raise PermissionError("AI provider selection requires ai.reasoning.text routing")
     if not routing_decision.selected_provider:
         raise PermissionError("Routing decision did not select an AI provider")
+    if not routing_decision.selected_model:
+        raise PermissionError(
+            "Harness-governed AI provider execution requires an explicit selected model"
+        )
 
     normalized_provider = normalize_provider_id(routing_decision.selected_provider)
     if provider_name and normalize_provider_id(provider_name) != normalized_provider:
@@ -142,7 +146,9 @@ def select_harness_ai_provider(
             decision.selected_provider_executor_binding or ""
         ):
             raise PermissionError("Tuxevil executor escaped registered Harness binding")
-        return normalized_provider, create_ai_provider()
+        return normalized_provider, create_ai_provider(
+            model=decision.selected_model,
+        )
 
     raise ValueError(
         f"AI provider has no bounded Harness constructor: {normalized_provider}"

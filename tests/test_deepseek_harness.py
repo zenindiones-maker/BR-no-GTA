@@ -33,8 +33,12 @@ def test_editorial_process_next_routes_provider_under_harness(monkeypatch):
     payload=json.loads(server.br_editorial_process_next())
     result=payload["result"]
     assert captured["routing"].selected_capability_id == "editorial.process"
-    assert captured["routing"].selected_provider == "tuxevil"
-    assert captured["authorization"].subject == "provider:tuxevil"
+    assert captured["routing"].selected_provider == "nvidia_nim"
+    assert (
+        captured["routing"].selected_model
+        == "nvidia/nemotron-3-super-120b-a12b"
+    )
+    assert captured["authorization"].subject == "provider:nvidia_nim"
     assert result["harness_routing"]["decision"]["routing_id"]
     assert result["harness_routing"]["authorization_id"] == captured["authorization"].authorization_id
 

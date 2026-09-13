@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services.ai_provider import AIProviderError, AIResponse
+from app.services.ai_provider_factory import create_ai_provider
 from app.services.tuxevil_ai_provider import TuxevilAIProvider
 
 
@@ -46,6 +47,8 @@ def test_generate_returns_ai_response():
 
     assert isinstance(response, AIResponse)
     assert response.text == "BR PROVIDER OK"
+    assert response.provider == "tuxevil"
+    assert response.model == "gemini-3-flash"
 
     request = mock_urlopen.call_args.args[0]
     body = json.loads(request.data.decode("utf-8"))
@@ -122,3 +125,10 @@ def test_generate_rejects_empty_response():
             match="empty response",
         ):
             provider.generate("Teste")
+
+
+def test_factory_forwards_explicit_model_without_selecting_it():
+    provider = create_ai_provider(model="policy-selected-model")
+
+    assert isinstance(provider, TuxevilAIProvider)
+    assert provider.model == "policy-selected-model"

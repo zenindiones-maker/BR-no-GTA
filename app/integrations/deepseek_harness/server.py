@@ -165,7 +165,6 @@ def _route_editorial_provider():
             required_capability_id="editorial.process",
             provider_required=True,
             provider_domain="ai",
-            preferred_providers=("tuxevil",),
             fallback_allowed=False,
         )
     )
@@ -228,7 +227,6 @@ def _execute_master_cycle_under_harness() -> Any:
             required_capability_id="ai.reasoning.text",
             provider_required=True,
             provider_domain="ai",
-            preferred_providers=("tuxevil",),
             fallback_allowed=False,
         )
     )
