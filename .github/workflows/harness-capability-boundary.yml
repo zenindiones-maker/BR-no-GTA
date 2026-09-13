@@ -23,6 +23,7 @@ on:
       - "tests/test_codex_auth_boundary.py"
       - "tests/test_deepseek_harness.py"
       - "tests/test_harness_authorization_service.py"
+      - "tests/test_gate4_agent_skill_integration.py"
       - ".github/workflows/harness-capability-boundary.yml"
   pull_request:
     paths:
@@ -44,6 +45,7 @@ on:
       - "tests/test_codex_auth_boundary.py"
       - "tests/test_deepseek_harness.py"
       - "tests/test_harness_authorization_service.py"
+      - "tests/test_gate4_agent_skill_integration.py"
       - ".github/workflows/harness-capability-boundary.yml"
   workflow_dispatch:
 
@@ -136,4 +138,5 @@ jobs:
             tests/test_gta6_master_agent.py \
             tests/test_harness_capability_service.py \
             tests/test_codex_addy_capability_executor.py \
-            tests/test_deepseek_harness.py
+            tests/test_deepseek_harness.py \
+            tests/test_gate4_agent_skill_integration.py
