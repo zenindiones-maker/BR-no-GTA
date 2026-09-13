@@ -163,6 +163,47 @@ def _clamp(value: Any) -> float:
     return max(0.0, min(1.0, number))
 
 
+def _resolve_transition_timing(
+    *,
+    transition_type: str,
+    requested_duration_seconds: float,
+    previous_clip: EditClip,
+    current_clip: EditClip,
+) -> tuple[str, float]:
+    """Materializa somente transições suportadas pela timeline real."""
+    normalized_type = str(
+        transition_type or "cut"
+    ).strip()
+
+    if normalized_type.lower() == "cut":
+        return "cut", 0.0
+
+    previous_clip_end = (
+        previous_clip.start_seconds
+        + previous_clip.duration_seconds
+    )
+
+    available_overlap = max(
+        0.0,
+        previous_clip_end
+        - current_clip.start_seconds,
+    )
+
+    transition_duration = max(
+        0.0,
+        min(
+            float(requested_duration_seconds),
+            current_clip.duration_seconds / 2,
+            available_overlap,
+        ),
+    )
+
+    if transition_duration <= 0:
+        return "cut", 0.0
+
+    return normalized_type, transition_duration
+
+
 def _candidate_from_scene(
     scene: dict[str, Any],
     index: int,
@@ -1185,9 +1226,16 @@ def create_edit_plan(
                 or 0.0
             )
 
-            transition_duration = min(
+            previous_clip = video_clips[-2]
+
+            (
+                transition_type,
                 transition_duration,
-                duration / 2,
+            ) = _resolve_transition_timing(
+                transition_type=transition_type,
+                requested_duration_seconds=transition_duration,
+                previous_clip=previous_clip,
+                current_clip=clip,
             )
 
             transitions.append(
