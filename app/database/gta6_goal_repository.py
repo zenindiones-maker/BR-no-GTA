@@ -630,3 +630,45 @@ def get_gta6_goal_artifacts(
         return dict(row) if row else None
     finally:
         connection.close()
+
+
+def get_gta6_goal_artifacts_by_idea_id(
+    idea_id: int,
+) -> dict[str, Any] | None:
+    """Retorna a linhagem de Goal associada a uma Idea."""
+
+    if (
+        not isinstance(idea_id, int)
+        or isinstance(idea_id, bool)
+        or idea_id <= 0
+    ):
+        raise ValueError(
+            "idea_id must be a positive integer"
+        )
+
+    connection = get_connection()
+
+    try:
+        row = connection.execute(
+            """
+            SELECT
+                goal_id,
+                idea_id,
+                script_id,
+                content_item_id,
+                video_id,
+                render_job_id,
+                youtube_publication_id,
+                created_at,
+                updated_at
+            FROM gta6_goal_artifacts
+            WHERE idea_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (idea_id,),
+        ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        connection.close()

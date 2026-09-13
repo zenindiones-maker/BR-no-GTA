@@ -16,6 +16,8 @@ def insert_content_segment(
     role: str = "content",
     status: str = "ready",
     file_path: str | None = None,
+    asset_ref: str | None = None,
+    source_url: str | None = None,
 ) -> int:
     connection = get_connection()
 
@@ -30,9 +32,11 @@ def insert_content_segment(
             source_end_seconds,
             role,
             status,
-            file_path
+            file_path,
+            asset_ref,
+            source_url
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             content_unit_id,
@@ -44,6 +48,8 @@ def insert_content_segment(
             role,
             status,
             file_path,
+            asset_ref,
+            source_url,
         ),
     )
 

@@ -20,7 +20,9 @@ from app.services.gta6_research_pipeline import run_gta6_research
 from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
-from app.services.render_worker_service import process_next_render_job
+from app.services.production_execution_service import (
+    process_next_production_execution,
+)
 from app.services.google_youtube_publication_service import (
     process_next_youtube_publication,
 )
@@ -57,7 +59,7 @@ class GTA6MasterAgent:
             monitor=execute_gta6_monitor,
             research=run_gta6_research,
             editorial=lambda context: self._run_editorial_with_brain_context(context),
-            execution=process_next_render_job,
+            execution=process_next_production_execution,
             youtube=process_next_youtube_publication,
         )
 

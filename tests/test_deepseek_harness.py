@@ -18,6 +18,8 @@ def test_operational_mcp_tools_are_registered():
         "br_gta6_monitor_run_once",
         "br_master_run_once",
         "br_youtube_pode_postar",
+        "br_capabilities_discover",
+        "br_capability_execute",
     }
 
 def test_editorial_process_next_reports_no_work(monkeypatch):
@@ -152,3 +154,85 @@ def test_youtube_pode_postar_uses_existing_publication_authorization(
             "status": "published",
         },
     }
+
+
+def test_capabilities_discover_delegates_progressively(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        server,
+        "discover_capabilities",
+        lambda *, intent, authorized_action: (
+            calls.append((intent, authorized_action))
+            or [{"capability_id": "addy:code-review-and-quality"}]
+        ),
+    )
+
+    payload = json.loads(
+        server.br_capabilities_discover(
+            intent="code review",
+            authorized_action="DEVELOPMENT",
+        )
+    )
+
+    assert calls == [("code review", "DEVELOPMENT")]
+    assert payload["result"]["capabilities"] == [
+        {"capability_id": "addy:code-review-and-quality"}
+    ]
+
+
+def test_capability_execute_returns_harness_lineage_without_running_higgsfield():
+    payload = json.loads(
+        server.br_capability_execute(
+            capability_id="higgsfield-generate",
+            authorized_action="EXECUTION",
+            harness_decision_id="decision-42",
+            execution_id="execution-42",
+            payload_json='{"prompt": "must not generate"}',
+        )
+    )
+
+    evidence = payload["result"]
+    assert evidence["status"] == "BLOCKED"
+    assert evidence["active"] is False
+    assert evidence["authority"] == "deepseek_harness"
+    assert evidence["harness_decision_id"] == "decision-42"
+    assert evidence["execution_id"] == "execution-42"
+
+
+def test_capability_execute_binds_harness_owned_addy_executor(monkeypatch):
+    calls = []
+
+    def fake_executor(capability, payload):
+        calls.append((capability.capability_id, payload))
+        return {"output": "review complete"}
+
+    monkeypatch.setattr(
+        server,
+        "execute_codex_addy_capability",
+        fake_executor,
+    )
+
+    payload = json.loads(
+        server.br_capability_execute(
+            capability_id="addy:code-review-and-quality",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id="decision-43",
+            execution_id="execution-43",
+            payload_json='{"task": "Review the selected change."}',
+        )
+    )
+
+    evidence = payload["result"]
+    assert calls == [
+        (
+            "addy:code-review-and-quality",
+            {"task": "Review the selected change."},
+        )
+    ]
+    assert evidence["status"] == "EXECUTED"
+    assert evidence["active"] is True
+    assert evidence["provider"] == "addy-agent-skills"
+    assert evidence["harness_decision_id"] == "decision-43"
+    assert evidence["execution_id"] == "execution-43"
+    assert evidence["result"] == {"output": "review complete"}

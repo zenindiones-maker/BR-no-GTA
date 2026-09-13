@@ -11,6 +11,14 @@ from app.services.editorial_queue_consumer import (
     process_next_editorial_queue_item,
 )
 from app.services.gta6_master_agent import GTA6MasterAgent
+from app.services.codex_addy_capability_executor import (
+    execute_codex_addy_capability,
+)
+from app.services.harness_capability_service import (
+    CapabilityAuthorization,
+    discover_capabilities,
+    execute_capability,
+)
 from app.services.google_youtube_publication_service import (
     make_youtube_publication_public_with_google,
 )
@@ -163,6 +171,67 @@ def br_master_run_once() -> str:
     return _json_result(
         operation="br_master_run_once",
         result=result,
+    )
+
+
+@mcp.tool()
+def br_capabilities_discover(
+    intent: str,
+    authorized_action: str,
+) -> str:
+    """
+    Discover a small set of AVAILABLE capabilities relevant to Harness intent.
+
+    This returns metadata only. It never injects every skill body and never
+    authorizes execution by itself.
+    """
+    result = {
+        "intent": intent,
+        "authorized_action": authorized_action,
+        "capabilities": discover_capabilities(
+            intent=intent,
+            authorized_action=authorized_action,
+        ),
+    }
+    return _json_result(
+        operation="br_capabilities_discover",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_capability_execute(
+    capability_id: str,
+    authorized_action: str,
+    harness_decision_id: str,
+    execution_id: str,
+    payload_json: str = "{}",
+) -> str:
+    """
+    Apply Harness capability policy and return execution evidence.
+
+    The Harness binds exactly one bounded Codex/Addy executor after policy
+    validation. Higgsfield remains BLOCKED before any executor call until its
+    authentication boundary is resolved.
+    """
+    payload = json.loads(payload_json)
+    if not isinstance(payload, dict):
+        raise ValueError("payload_json must decode to an object")
+
+    evidence = execute_capability(
+        capability_id=capability_id,
+        authorization=CapabilityAuthorization(
+            authority="deepseek_harness",
+            authorized_action=authorized_action,
+            harness_decision_id=harness_decision_id,
+            execution_id=execution_id,
+        ),
+        payload=payload,
+        executor=execute_codex_addy_capability,
+    )
+    return _json_result(
+        operation="br_capability_execute",
+        result=evidence,
     )
 
 

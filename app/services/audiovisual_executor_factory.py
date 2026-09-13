@@ -62,4 +62,5 @@ def create_audiovisual_executor():
             app_settings.GITHUB_ACTIONS_ARTIFACT_ROOT,
         ),
         validator=validator,
+        wait_for_completion=False,
     )

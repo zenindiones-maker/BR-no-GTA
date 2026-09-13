@@ -110,3 +110,23 @@ def test_production_plan_rejects_missing_narrative_blocks():
 
     with pytest.raises(ValueError, match="blocos narrativos"):
         create_production_plan(item)
+
+
+@pytest.mark.parametrize("duration", [30, 45.5, 60, 1500, 0.5])
+def test_production_duration_comes_from_content(duration):
+    item = dict(id=1, script_id=2, idea_id=3, objective="test", format="video",
+                estimated_duration_seconds=duration, visual_requirements=[],
+                narrative_blocks=[dict(heading=str(i), content="test") for i in range(3)])
+    plan = create_production_plan(item)
+    assert plan["estimated_duration_seconds"] == duration
+    assert sum(s["duration_seconds"] for s in plan["scenes"]) == pytest.approx(duration)
+    assert all(s["duration_seconds"] > 0 for s in plan["scenes"])
+
+
+@pytest.mark.parametrize("duration", [0, -1, True, None, "30", float("nan"), float("inf")])
+def test_invalid_duration_does_not_get_a_default(duration):
+    item = dict(id=1, script_id=2, idea_id=3, objective="test", format="video",
+                estimated_duration_seconds=duration, visual_requirements=[],
+                narrative_blocks=[dict(heading="test", content="test")])
+    with pytest.raises(ValueError, match="estimated_duration_seconds"):
+        create_production_plan(item)

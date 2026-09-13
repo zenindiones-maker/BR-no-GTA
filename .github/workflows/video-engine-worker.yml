@@ -52,11 +52,16 @@ jobs:
           ffmpeg -version | head -1
           ffprobe -version | head -1
 
-      - name: Clone Vedit
+      - name: Verify repository-pinned Vedit
         run: |
-          git clone --depth 1 \
-            https://github.com/metiu1/editorvideo-ai.git \
-            video-engine
+          set -euo pipefail
+          git ls-files --error-unmatch \
+            video-engine/pyproject.toml \
+            video-engine/backend/vedit/render.py
+          test -s video-engine/pyproject.toml
+          test -s video-engine/backend/vedit/render.py
+          git rev-parse HEAD
+          git rev-parse HEAD:video-engine
 
       - name: Install Vedit with development and transcription support
         working-directory: video-engine

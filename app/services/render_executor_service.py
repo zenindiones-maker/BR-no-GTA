@@ -9,6 +9,7 @@ class RenderExecutionResult:
     output_path: str | None = None
     error: str | None = None
     github_execution: dict[str, Any] | None = None
+    pending: bool = False
 
 
 class AbstractRenderExecutor(ABC):
