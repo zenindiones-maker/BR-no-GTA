@@ -2,7 +2,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.services.harness_authorization_service import issue_harness_authorization
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    issue_harness_authorization,
+)
 
 from app.database.youtube_repository import (
     get_youtube_publication,
@@ -21,7 +24,21 @@ from tests.test_youtube_repository import _create_video
 
 
 def _publication_authorization(publication_id):
-    return issue_harness_authorization(authorized_action="PUBLICATION", subject=f"youtube:publication:{publication_id}")
+    return issue_harness_authorization(
+        authorized_action="PUBLICATION",
+        subject=f"youtube:publication:{publication_id}",
+    )
+
+
+def _youtube_authorization():
+    return issue_harness_authorization(
+        authorized_action="YOUTUBE",
+        subject="action:YOUTUBE",
+    )
+
+
+def _youtube_context():
+    return authorization_to_context(_youtube_authorization())
 
 
 def _create_publication() -> int:
@@ -66,6 +83,7 @@ def test_upload_with_google_composes_factory_and_delegates(
 
     result = upload_youtube_publication_with_google(
         publication_id=publication_id,
+        authorization=_youtube_authorization(),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -115,6 +133,7 @@ def test_upload_with_google_resolves_default_configuration(
 
     result = upload_youtube_publication_with_google(
         publication_id=publication_id,
+        authorization=_youtube_authorization(),
     )
 
     assert result["status"] == "uploaded"
@@ -161,6 +180,7 @@ def test_upload_with_google_requires_token_file(monkeypatch):
     ):
         upload_youtube_publication_with_google(
             publication_id=publication_id,
+            authorization=_youtube_authorization(),
             client_secrets_file="/tmp/client.json",
         )
 
@@ -182,6 +202,7 @@ def test_upload_with_google_requires_client_secrets_file(
     ):
         upload_youtube_publication_with_google(
             publication_id=publication_id,
+            authorization=_youtube_authorization(),
             token_file="/tmp/token.json",
         )
 
@@ -216,6 +237,7 @@ def test_make_public_with_google_delegates_to_visibility_orchestration(
 
     upload_youtube_publication_with_google(
         publication_id=publication_id,
+        authorization=_youtube_authorization(),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -259,6 +281,7 @@ def test_make_public_with_google_keeps_uploaded_on_failure(
 
     upload_youtube_publication_with_google(
         publication_id=publication_id,
+        authorization=_youtube_authorization(),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -345,6 +368,7 @@ def test_process_next_youtube_publication_uploads_only_pending(
     )
 
     result = process_next_youtube_publication(
+        _youtube_context(),
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
@@ -360,7 +384,7 @@ def test_process_next_youtube_publication_uploads_only_pending(
 
 
 def test_process_next_youtube_publication_returns_none_when_empty():
-    result = process_next_youtube_publication()
+    result = process_next_youtube_publication(_youtube_context())
 
     assert result is None
 
@@ -383,6 +407,75 @@ def test_factory_error_propagates(monkeypatch):
     ):
         upload_youtube_publication_with_google(
             publication_id=publication_id,
+            authorization=_youtube_authorization(),
             token_file="/tmp/token.json",
             client_secrets_file="/tmp/client.json",
         )
+
+
+def test_private_upload_requires_harness_authorization_before_factory(monkeypatch):
+    publication_id = _create_publication()
+    factory = Mock()
+
+    monkeypatch.setattr(
+        "app.services.google_youtube_publication_service."
+        "create_google_youtube_publisher",
+        factory,
+    )
+
+    with pytest.raises(PermissionError):
+        upload_youtube_publication_with_google(
+            publication_id=publication_id,
+            token_file="/tmp/token.json",
+            client_secrets_file="/tmp/client.json",
+        )
+
+    factory.assert_not_called()
+
+
+def test_private_upload_rejects_wrong_harness_action_before_factory(monkeypatch):
+    publication_id = _create_publication()
+    factory = Mock()
+
+    monkeypatch.setattr(
+        "app.services.google_youtube_publication_service."
+        "create_google_youtube_publisher",
+        factory,
+    )
+
+    wrong = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="action:EXECUTION",
+    )
+
+    with pytest.raises(PermissionError, match="action mismatch"):
+        upload_youtube_publication_with_google(
+            publication_id=publication_id,
+            authorization=wrong,
+            token_file="/tmp/token.json",
+            client_secrets_file="/tmp/client.json",
+        )
+
+    factory.assert_not_called()
+
+
+def test_process_next_youtube_rejects_execution_id_mismatch(monkeypatch):
+    factory = Mock()
+
+    monkeypatch.setattr(
+        "app.services.google_youtube_publication_service."
+        "create_google_youtube_publisher",
+        factory,
+    )
+
+    context = _youtube_context()
+    context["execution_id"] = "wrong-execution-id"
+
+    with pytest.raises(PermissionError, match="execution_id mismatch"):
+        process_next_youtube_publication(
+            context,
+            token_file="/tmp/token.json",
+            client_secrets_file="/tmp/client.json",
+        )
+
+    factory.assert_not_called()

@@ -62,7 +62,7 @@ class GTA6ActionDispatcher:
         try:
             if action == "MONITOR":
                 result = operation(execution_id=auth.execution_id)
-            elif action in {"EDITORIAL", "EXECUTION"}:
+            elif action in {"RESEARCH", "EDITORIAL", "EXECUTION", "YOUTUBE"}:
                 result = operation(context)
             else:
                 result = operation()

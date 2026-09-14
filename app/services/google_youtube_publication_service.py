@@ -62,6 +62,7 @@ def _create_google_publisher(
 def upload_youtube_publication_with_google(
     *,
     publication_id: int,
+    authorization: object | None = None,
     token_file: str | None = None,
     client_secrets_file: str | None = None,
     authorization_runner: Callable[[Any], Any] | None = None,
@@ -79,6 +80,12 @@ def upload_youtube_publication_with_google(
         raise ValueError(
             "publication_id must be a positive integer"
         )
+
+    harness_authorization = validate_harness_authorization(
+        authorization or {},
+        expected_action="YOUTUBE",
+        expected_subject="action:YOUTUBE",
+    )
 
     publisher = _create_google_publisher(
         token_file=token_file,
@@ -147,6 +154,7 @@ def make_youtube_publication_public_with_google(
 
 
 def process_next_youtube_publication(
+    execution_context: dict[str, Any] | None = None,
     *,
     token_file: str | None = None,
     client_secrets_file: str | None = None,
@@ -160,6 +168,18 @@ def process_next_youtube_publication(
 
     Retorna None quando não há publicação pendente.
     """
+
+    context = execution_context or {}
+    execution_id = context.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        raise PermissionError("Harness execution_id is required for YOUTUBE")
+
+    harness_authorization = validate_harness_authorization(
+        context,
+        expected_action="YOUTUBE",
+        expected_subject="action:YOUTUBE",
+        expected_execution_id=execution_id,
+    )
 
     publication = get_next_pending_youtube_publication()
 
@@ -175,6 +195,7 @@ def process_next_youtube_publication(
 
     return upload_youtube_publication_with_google(
         publication_id=publication_id,
+        authorization=harness_authorization,
         token_file=token_file,
         client_secrets_file=client_secrets_file,
         authorization_runner=authorization_runner,

@@ -14,10 +14,29 @@ from app.services.gta6_editorial_pipeline import (
     process_gta6_research_results,
 )
 from app.settings import settings
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 
 
-def run_gta6_research() -> dict[str, Any]:
-    """Executa a pesquisa GTA 6 e encaminha os resultados ao editorial."""
+def run_gta6_research(
+    execution_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Executa pesquisa GTA6 somente sob autorização persistida do Harness."""
+
+    context = execution_context or {}
+    execution_id = context.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        raise PermissionError("Harness execution_id is required for RESEARCH")
+
+    authorization = validate_harness_authorization(
+        context,
+        expected_action="RESEARCH",
+        expected_subject="action:RESEARCH",
+        expected_execution_id=execution_id,
+    )
+    execution_context = authorization_to_context(authorization)
 
     rockstar_monitor = monitor_rockstar_newswire()
 

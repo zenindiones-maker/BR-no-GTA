@@ -14,6 +14,10 @@ from app.services.gta6_goal_service import (
 from app.services.render_worker_service import process_next_render_job
 from app.services.video_render_service import create_video_and_enqueue_render
 from app.services.video_service import create_video_spec
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 
 
 def process_next_production_execution(
@@ -30,6 +34,19 @@ def process_next_production_execution(
 
     Não executa pesquisa, editorial ou publicação.
     """
+
+    context = execution_context or {}
+    execution_id = context.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        raise PermissionError("Harness execution_id is required for EXECUTION")
+
+    authorization = validate_harness_authorization(
+        context,
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
+        expected_execution_id=execution_id,
+    )
+    execution_context = authorization_to_context(authorization)
 
     goal = get_active_gta6_goal()
 
@@ -79,11 +96,6 @@ def process_next_production_execution(
         if not isinstance(production_plan, dict):
             raise RuntimeError(
                 "Production Plan persistido é inválido."
-            )
-
-        if not isinstance(execution_context, dict):
-            raise RuntimeError(
-                "EXECUTION exige contexto de autorização."
             )
 
         from app.services.production_media_bridge import bind_selected_segments

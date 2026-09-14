@@ -23,6 +23,7 @@ from app.services.harness_capability_service import (
 )
 from app.services.harness_authorization_service import (
     HARNESS_ISSUER,
+    authorization_to_context,
     issue_harness_authorization,
 )
 from app.services.harness_routing_policy_service import (
@@ -114,13 +115,26 @@ def br_knowledge_query(query: str) -> str:
 
 @mcp.tool()
 def br_research_run() -> str:
-    """
-    Execute the official GTA6 research pipeline.
-
-    This delegates entirely to the existing BR research service.
-    The MCP layer does not access SQLite directly.
-    """
-    result = run_gta6_research()
+    """Execute the official GTA6 research pipeline under Harness authority."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute official GTA6 research pipeline",
+            authorized_action="RESEARCH",
+            fallback_allowed=False,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject="action:RESEARCH",
+        lineage={
+            "routing_id": routing.routing_id,
+            "selected_capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+        },
+    )
+    result = run_gta6_research(
+        authorization_to_context(authorization),
+    )
 
     return _json_result(
         operation="br_research_run",
@@ -445,8 +459,26 @@ def br_youtube_pode_postar(publication_id: int) -> str:
 
 @mcp.tool()
 def br_youtube_publish_next() -> str:
-    """Run the next private YouTube upload from the Harness boundary."""
-    result = process_next_youtube_publication()
+    """Run the next private YouTube upload under Harness authority."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="upload next pending YouTube publication as private",
+            authorized_action="YOUTUBE",
+            fallback_allowed=False,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="YOUTUBE",
+        subject="action:YOUTUBE",
+        lineage={
+            "routing_id": routing.routing_id,
+            "selected_capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+        },
+    )
+    result = process_next_youtube_publication(
+        authorization_to_context(authorization),
+    )
     return _json_result(
         operation="br_youtube_publish_next",
         result=result,

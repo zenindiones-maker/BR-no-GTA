@@ -1,4 +1,17 @@
 from app.services import gta6_research_pipeline as module
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    issue_harness_authorization,
+)
+
+
+def _research_context():
+    return authorization_to_context(
+        issue_harness_authorization(
+            authorized_action="RESEARCH",
+            subject="action:RESEARCH",
+        )
+    )
 
 
 def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
@@ -73,7 +86,7 @@ def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
         fake_editorial_processing,
     )
 
-    result = module.run_gta6_research()
+    result = module.run_gta6_research(_research_context())
 
     assert calls == ["test-query-hash"]
 
@@ -137,9 +150,40 @@ def test_run_gta6_research_does_not_call_graph_without_query_hash(
         lambda results: editorial_calls.append(results) or [],
     )
 
-    result = module.run_gta6_research()
+    result = module.run_gta6_research(_research_context())
 
     assert result["rockstar_newswire"] == []
     assert result["total"] == 0
     assert editorial_calls == [[]]
     assert result["editorial"] == []
+
+
+def test_run_gta6_research_requires_persisted_harness_authorization():
+    import pytest
+
+    with pytest.raises(PermissionError):
+        module.run_gta6_research()
+
+
+def test_run_gta6_research_rejects_wrong_action():
+    import pytest
+
+    context = authorization_to_context(
+        issue_harness_authorization(
+            authorized_action="EXECUTION",
+            subject="action:EXECUTION",
+        )
+    )
+
+    with pytest.raises(PermissionError):
+        module.run_gta6_research(context)
+
+
+def test_run_gta6_research_rejects_execution_id_mismatch():
+    import pytest
+
+    context = _research_context()
+    context["execution_id"] = "mismatched-execution-id"
+
+    with pytest.raises(PermissionError, match="execution_id mismatch"):
+        module.run_gta6_research(context)

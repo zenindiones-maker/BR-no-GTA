@@ -17,7 +17,7 @@ def auth(action="RESEARCH"):
 
 def test_master_agent_recommends_without_side_effect():
     calls=[]; agent=GTA6MasterAgent(ai_provider=FakeAIProvider())
-    agent.dispatcher._actions["RESEARCH"]=("br_research_run", lambda: calls.append("research"))
+    agent.dispatcher._actions["RESEARCH"]=("br_research_run", lambda context: calls.append("research"))
     decision=agent.recommend(); assert decision.action == "RESEARCH" and calls == []
 
 def test_master_agent_requires_harness_authorization_for_side_effect():
@@ -27,7 +27,7 @@ def test_master_agent_requires_harness_authorization_for_side_effect():
 
 def test_master_agent_executes_exact_authorized_action_and_persists_lineage():
     calls=[]; agent=GTA6MasterAgent(ai_provider=FakeAIProvider())
-    agent.dispatcher._actions["RESEARCH"]=("br_research_run", lambda: calls.append("research") or {"ok":True})
+    agent.dispatcher._actions["RESEARCH"]=("br_research_run", lambda context: calls.append("research") or {"ok":True, "context":context})
     authorization=auth(); decision=agent.recommend(); result=agent.execute_authorized(decision, authorization)
     assert calls == ["research"] and result.action.execution_id == authorization.execution_id
     runs=list_gta6_master_agent_runs(); assert any(r["execution_id"] == authorization.execution_id for r in runs)
