@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           trap 'rc=$?; if [ "$rc" -ne 0 ]; then cat /tmp/omniroute.log || true; fi' EXIT
-          HOSTNAME=127.0.0.1 HOST=127.0.0.1 nohup omniroute serve > /tmp/omniroute.log 2>&1 &
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve > /tmp/omniroute.log 2>&1 &
           pid=$!
           echo "$pid" > /tmp/omniroute.pid
           for i in {1..30}; do
