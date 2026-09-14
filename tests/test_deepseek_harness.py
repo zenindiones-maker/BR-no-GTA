@@ -22,11 +22,13 @@ def test_editorial_process_next_routes_provider_under_harness(monkeypatch):
     selected_provider=object()
     def fake_select(*,provider_name=None,authorization,routing_decision=None):
         captured["authorization"]=authorization
+        captured["provider_authorization"]=authorization
         captured["routing"]=routing_decision
         assert provider_name is None
         return routing_decision.selected_provider, selected_provider
-    def fake_process(*,ai_provider,brain_decision=None):
+    def fake_process(*,ai_provider,brain_decision=None,execution_context=None):
         assert ai_provider is selected_provider
+        captured["execution_context"]=execution_context
         return {"status":"completed"}
     monkeypatch.setattr(server,"select_harness_ai_provider",fake_select)
     monkeypatch.setattr(server,"process_next_editorial_queue_item",fake_process)
@@ -39,8 +41,13 @@ def test_editorial_process_next_routes_provider_under_harness(monkeypatch):
         == "nvidia/nemotron-3-super-120b-a12b"
     )
     assert captured["authorization"].subject == "provider:nvidia_nim"
+    assert captured["execution_context"]["authorized_action"] == "EDITORIAL"
+    assert captured["execution_context"]["authorization_subject"] == "action:EDITORIAL"
+    assert captured["execution_context"]["execution_id"]
+    assert captured["execution_context"]["issued_by"] == "deepseek_harness"
     assert result["harness_routing"]["decision"]["routing_id"]
-    assert result["harness_routing"]["authorization_id"] == captured["authorization"].authorization_id
+    assert result["harness_routing"]["authorization_id"] == captured["execution_context"]["authorization_id"]
+    assert result["harness_routing"]["provider_authorization_id"] == captured["provider_authorization"].authorization_id
 
 
 def test_master_run_once_harness_issues_authorization(monkeypatch):

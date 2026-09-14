@@ -207,3 +207,18 @@ def test_native_skills_are_mapped_to_real_capabilities():
         assert record is not None
         assert record.skill_id == skill_id
         assert record.instruction_path == f".dsh/skills/{skill_id}/SKILL.md"
+
+
+def test_production_plan_is_allowed_from_editorial_and_execution():
+    record=GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
+    assert record is not None
+    assert set(record.allowed_actions) == {"EDITORIAL", "EXECUTION"}
+    editorial=GLOBAL_CAPABILITY_REGISTRY.discover(intent="production plan", authorized_action="EDITORIAL", limit=20)
+    assert "production.plan" in {item["capability_id"] for item in editorial}
+
+def test_production_plan_rejects_unrelated_actions():
+    record=GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
+    assert record is not None
+    assert "RESEARCH" not in record.allowed_actions
+    assert "YOUTUBE" not in record.allowed_actions
+    assert "PUBLICATION" not in record.allowed_actions

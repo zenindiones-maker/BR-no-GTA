@@ -657,7 +657,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("content item", "script"),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
-            allowed_actions=("EXECUTION",),
+            allowed_actions=("EDITORIAL", "EXECUTION"),
             policy_tags=("production", "plan", "scenes"),
             security_boundary="official production-plan service boundary",
             executor_binding="app.services.production_plan_service",

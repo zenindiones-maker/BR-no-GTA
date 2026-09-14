@@ -1,8 +1,27 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.services.editorial_queue_consumer import (
-    process_next_editorial_queue_item,
+    process_next_editorial_queue_item as _process_next_editorial_queue_item,
 )
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    issue_harness_authorization,
+)
+
+def _editorial_context(**overrides):
+    authorization = issue_harness_authorization(
+        authorized_action=overrides.pop("authorized_action", "EDITORIAL"),
+        subject=overrides.pop("subject", "action:EDITORIAL"),
+    )
+    context = authorization_to_context(authorization)
+    context.update(overrides)
+    return context
+
+def process_next_editorial_queue_item(*args, **kwargs):
+    kwargs.setdefault("execution_context", _editorial_context())
+    return _process_next_editorial_queue_item(*args, **kwargs)
 
 
 def test_process_next_editorial_queue_item_runs_editorial_chain():
@@ -76,7 +95,13 @@ def test_process_next_editorial_queue_item_runs_editorial_chain():
     create_content.assert_called_once_with(script_spec)
     complete.assert_called_once_with(101)
 
-    assert result == {
+    harness_context = result["harness_context"]
+
+    assert {
+        key: value
+        for key, value in result.items()
+        if key != "harness_context"
+    } == {
         "queue_item": queue_item,
         "script": script,
         "script_spec": script_spec,
@@ -88,6 +113,11 @@ def test_process_next_editorial_queue_item_runs_editorial_chain():
         },
         "status": "completed",
     }
+
+    assert harness_context["authorized_action"] == "EDITORIAL"
+    assert harness_context["authorization_subject"] == "action:EDITORIAL"
+    assert harness_context["execution_id"]
+    assert harness_context["authorization_id"]
 
 
 def test_process_next_editorial_queue_item_returns_none_when_queue_is_empty():
@@ -329,3 +359,35 @@ def test_process_next_editorial_queue_item_does_not_create_production_or_render(
     assert result["production_plan"]["content_item_id"] == 404
     assert "video_spec" not in result
     assert "render_result" not in result
+
+
+def test_editorial_without_authorization_is_rejected_before_queue_mutation():
+    with patch("app.services.editorial_queue_consumer.claim_next_queue_item") as claim:
+        with pytest.raises(PermissionError):
+            _process_next_editorial_queue_item()
+    claim.assert_not_called()
+
+def test_editorial_wrong_action_is_rejected_before_queue_mutation():
+    context=_editorial_context(authorized_action="EXECUTION", subject="action:EXECUTION")
+    with patch("app.services.editorial_queue_consumer.claim_next_queue_item") as claim:
+        with pytest.raises(PermissionError, match="action mismatch"):
+            _process_next_editorial_queue_item(execution_context=context)
+    claim.assert_not_called()
+
+def test_editorial_execution_id_mismatch_is_rejected_before_mutation():
+    context=_editorial_context(); context["execution_id"]="different-execution-id"
+    with patch("app.services.editorial_queue_consumer.claim_next_queue_item") as claim:
+        with pytest.raises(PermissionError, match="execution_id mismatch"):
+            _process_next_editorial_queue_item(execution_context=context)
+    claim.assert_not_called()
+
+def test_editorial_rejection_has_no_persistent_mutation():
+    targets=("claim_next_queue_item","generate_and_save_script","generate_script_spec","create_content_item","create_production_plan","insert_production_plan","mark_queue_item_completed")
+    patches=[patch(f"app.services.editorial_queue_consumer.{x}") for x in targets]
+    mocks=[x.start() for x in patches]
+    try:
+        with pytest.raises(PermissionError):
+            _process_next_editorial_queue_item(execution_context={})
+    finally:
+        for x in reversed(patches): x.stop()
+    assert all(x.call_count == 0 for x in mocks)

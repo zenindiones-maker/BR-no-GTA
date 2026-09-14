@@ -49,6 +49,7 @@ class GTA6MasterAgent:
         decision = self._current_brain_decision
         return process_next_editorial_queue_item(
             ai_provider=self.ai_provider,
+            execution_context=execution_context,
             brain_decision={"action": decision.action, "reason": decision.reason,
                             "priority": decision.priority, "confidence": decision.confidence,
                             **execution_context},

@@ -15,12 +15,17 @@ from app.services.production_plan_service import create_production_plan
 from app.services.gta6_goal_service import update_artifacts
 from app.services.script_generator_service import generate_and_save_script
 from app.services.script_spec_service import generate_script_spec
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 
 
 def process_next_editorial_queue_item(
     *,
     ai_provider: AIProvider | None = None,
     brain_decision: dict[str, Any] | None = None,
+    execution_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """
     Consome uma única entrada da fila editorial.
@@ -44,6 +49,18 @@ def process_next_editorial_queue_item(
     A produção audiovisual é uma ação posterior, autorizada pelo
     GTA6 Master Agent através do Dispatcher.
     """
+
+    context = execution_context or {}
+    execution_id = context.get("execution_id")
+    if not isinstance(execution_id, str) or not execution_id:
+        raise PermissionError("Harness execution_id is required for EDITORIAL")
+    authorization = validate_harness_authorization(
+        context,
+        expected_action="EDITORIAL",
+        expected_subject="action:EDITORIAL",
+        expected_execution_id=execution_id,
+    )
+    execution_context = authorization_to_context(authorization)
 
     queue_item = claim_next_queue_item()
 
@@ -125,4 +142,5 @@ def process_next_editorial_queue_item(
         "production_plan_id": production_plan_id,
         "production_plan": production_plan,
         "status": "completed",
+        "harness_context": execution_context,
     }

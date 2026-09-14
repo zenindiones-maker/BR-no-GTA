@@ -206,10 +206,24 @@ def _route_editorial_provider():
 @mcp.tool()
 def br_editorial_process_next() -> str:
     """Process the next editorial queue item through Harness routing/policy."""
-    routing, authorization, ai_provider = _route_editorial_provider()
+    routing, provider_authorization, ai_provider = _route_editorial_provider()
+
+    authorization = issue_harness_authorization(
+        authorized_action="EDITORIAL",
+        subject="action:EDITORIAL",
+        lineage={
+            "routing_id": routing.routing_id,
+            "selected_capability_id": routing.selected_capability_id,
+            "selected_provider": routing.selected_provider,
+            "selected_model": routing.selected_model,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "provider_authorization_id": provider_authorization.authorization_id,
+        },
+    )
 
     result = process_next_editorial_queue_item(
         ai_provider=ai_provider,
+        execution_context=authorization_to_context(authorization),
     )
 
     if result is None:
@@ -224,6 +238,7 @@ def br_editorial_process_next() -> str:
     result["harness_routing"] = {
         "decision": routing.to_dict(),
         "authorization_id": authorization.authorization_id,
+        "provider_authorization_id": provider_authorization.authorization_id,
     }
 
     return _json_result(
