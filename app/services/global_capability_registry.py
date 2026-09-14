@@ -5,8 +5,7 @@ from app.services.global_capability_registry_base import (
     AVAILABLE,
     PARTIAL,
     CapabilityRecord,
-    GlobalCapabilityRegistry,
-    GLOBAL_CAPABILITY_REGISTRY as _BASE_REGISTRY,
+    GLOBAL_CAPABILITY_REGISTRY as _REGISTRY,
 )
 
 
@@ -45,6 +44,13 @@ PHONE_CONTROL_RECORD = CapabilityRecord(
 )
 
 
-GLOBAL_CAPABILITY_REGISTRY = GlobalCapabilityRegistry(
-    (*_BASE_REGISTRY.all(), PHONE_CONTROL_RECORD)
+if PHONE_CONTROL_RECORD.capability_id in _REGISTRY._by_id:
+    raise ValueError(f"Duplicate capability_id: {PHONE_CONTROL_RECORD.capability_id}")
+_REGISTRY._by_id[PHONE_CONTROL_RECORD.capability_id] = PHONE_CONTROL_RECORD
+_REGISTRY._records = tuple(
+    sorted((*_REGISTRY._records, PHONE_CONTROL_RECORD), key=lambda item: item.capability_id)
 )
+
+# Keep one deterministic registry instance. The phone capability extends the
+# existing registry; it does not create a second catalog or authority surface.
+GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
