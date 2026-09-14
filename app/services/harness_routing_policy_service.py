@@ -58,6 +58,8 @@ class HarnessRoutingRequest:
     cost_constraint: str | None = None
     quota_constraint: str | None = None
     fallback_allowed: bool = False
+    zero_cost_operation: bool = False
+    exhausted_free_quota_provider_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -200,6 +202,10 @@ def _provider_records(
         normalize_provider_id(provider_id)
         for provider_id in request.unavailable_provider_ids
     }
+    exhausted_free_quota = {
+        normalize_provider_id(provider_id)
+        for provider_id in request.exhausted_free_quota_provider_ids
+    }
 
     eligible: list[CapabilityRecord] = []
     rejected: list[RoutingRejection] = []
@@ -224,6 +230,14 @@ def _provider_records(
             reasons.append("model_not_allowed_by_request")
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
+        if request.zero_cost_operation:
+            from app.services.zero_cost_policy_service import assess_zero_cost
+            assessment = assess_zero_cost(
+                record.cost_class,
+                quota_available=(provider_id not in exhausted_free_quota),
+            )
+            if not assessment.eligible:
+                reasons.append(assessment.reason.value if assessment.reason else "ZERO_COST_POLICY_BLOCKED")
 
         if reasons:
             rejected.append(
@@ -429,6 +443,8 @@ def route_harness_request(
         "latency_constraint": request.latency_constraint,
         "cost_constraint": request.cost_constraint,
         "quota_constraint": request.quota_constraint,
+        "zero_cost_operation": request.zero_cost_operation,
+        "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "selected_implementation": {
             "type": capability.capability_type,
             "implementation": capability.implementation,
