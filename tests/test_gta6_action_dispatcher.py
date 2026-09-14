@@ -66,3 +66,33 @@ def test_side_effecting_actions_receive_canonical_persisted_harness_context(acti
     assert context["authorized_action"] == action
     assert context["authorization_subject"] == f"action:{action}"
     assert context["issued_by"] == "deepseek_harness"
+
+
+def test_action_tool_mapping_matches_registered_mcp_surfaces():
+    from app.integrations.deepseek_harness import server
+
+    expected = {
+        "MONITOR": "br_gta6_monitor_run_once",
+        "RESEARCH": "br_research_run",
+        "EDITORIAL": "br_editorial_process_next",
+        "EXECUTION": "br_execution_process_next",
+        "YOUTUBE": "br_youtube_publish_next",
+    }
+    registered = {tool.name for tool in server.mcp._tool_manager.list_tools()}
+    assert GTA6ActionDispatcher.ACTION_TO_TOOL == expected
+    assert set(expected.values()) <= registered
+    assert "br_youtube_pode_postar" in registered
+    assert "br_youtube_pode_postar" not in expected.values()
+
+
+@pytest.mark.parametrize("action", ["EXECUTION", "YOUTUBE"])
+def test_dispatch_result_reports_canonical_mcp_tool(action):
+    calls = []
+    result = make_dispatcher(calls).dispatch(decision(action), authorization=auth(action))
+    expected = {
+        "EXECUTION": "br_execution_process_next",
+        "YOUTUBE": "br_youtube_publish_next",
+    }
+    assert result.success is True
+    assert result.tool == expected[action]
+    assert calls == [action.lower()]

@@ -30,8 +30,8 @@ class GTA6ActionDispatcher:
 
     ACTION_TO_TOOL = {
         "MONITOR": "br_gta6_monitor_run_once", "RESEARCH": "br_research_run",
-        "EDITORIAL": "br_editorial_process_next", "EXECUTION": "br_render_process_next",
-        "YOUTUBE": "br_youtube_publication_run_once",
+        "EDITORIAL": "br_editorial_process_next", "EXECUTION": "br_execution_process_next",
+        "YOUTUBE": "br_youtube_publish_next",
     }
 
     def __init__(self, *, monitor: Callable[..., Any], research: Callable[..., Any],

@@ -1,12 +1,19 @@
 from __future__ import annotations
 import json
+
+import pytest
+
+from app.services.harness_authorization_service import (
+    authorization_to_context,
+    validate_harness_authorization,
+)
 from app.integrations.deepseek_harness import server
 from app.services.gta6_brain import BrainDecision
 
 
 def test_operational_mcp_tools_are_registered():
     names={tool.name for tool in server.mcp._tool_manager.list_tools()}
-    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
+    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_execution_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
 
 
 def test_route_tool_returns_metadata_without_authorization():
@@ -98,3 +105,65 @@ def test_higgsfield_remains_blocked_under_persisted_harness_authorization():
     payload=json.loads(server.br_capability_execute(capability_id="higgsfield-generate",authorized_action="EXECUTION",payload_json='{"prompt":"x"}'))
     evidence=payload["result"]
     assert evidence["status"] == "BLOCKED" and evidence["authority"] == "deepseek_harness"
+
+
+@pytest.mark.parametrize("operation_result", [{"status": "completed"}, None])
+def test_execution_process_next_persists_routed_authorization_before_executor(
+    monkeypatch, operation_result,
+):
+    captured = {}
+    real_route = server.route_harness_request
+
+    def route(request):
+        assert request.authorized_action == "EXECUTION"
+        assert request.fallback_allowed is False
+        captured["routing"] = real_route(request)
+        return captured["routing"]
+
+    def execute(execution_context):
+        authorization = validate_harness_authorization(
+            execution_context,
+            expected_action="EXECUTION",
+            expected_subject="action:EXECUTION",
+            expected_execution_id=execution_context["execution_id"],
+        )
+        assert execution_context == authorization_to_context(authorization)
+        assert authorization.issued_by == "deepseek_harness"
+        assert authorization.harness_decision_id
+        assert execution_context["brain_decision_id"] == authorization.harness_decision_id
+        routing = captured["routing"]
+        assert authorization.lineage == {
+            "routing_id": routing.routing_id,
+            "selected_capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+        }
+        captured["executed"] = True
+        return operation_result
+
+    monkeypatch.setattr(server, "route_harness_request", route)
+    monkeypatch.setattr(server, "process_next_production_execution", execute)
+
+    assert json.loads(server.br_execution_process_next()) == {
+        "operation": "br_execution_process_next",
+        "result": operation_result,
+    }
+    assert captured["executed"] is True
+
+
+@pytest.mark.parametrize("failed_boundary", ["routing", "authorization"])
+def test_execution_process_next_fails_closed_before_production(monkeypatch, failed_boundary):
+    def blocked(*args, **kwargs):
+        raise PermissionError("Harness boundary rejected")
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Production must not run after Harness rejection")
+
+    monkeypatch.setattr(server, "process_next_production_execution", unexpected)
+    if failed_boundary == "routing":
+        monkeypatch.setattr(server, "route_harness_request", blocked)
+        monkeypatch.setattr(server, "issue_harness_authorization", unexpected)
+    else:
+        monkeypatch.setattr(server, "issue_harness_authorization", blocked)
+
+    with pytest.raises(PermissionError, match="Harness boundary rejected"):
+        server.br_execution_process_next()

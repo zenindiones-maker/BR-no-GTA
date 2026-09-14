@@ -41,6 +41,9 @@ from app.services.gta6_knowledge_query_service import (
     query_gta6_knowledge_context,
 )
 from app.services.gta6_research_pipeline import run_gta6_research
+from app.services.production_execution_service import (
+    process_next_production_execution,
+)
 from app.main import initialize_application
 
 
@@ -138,6 +141,34 @@ def br_research_run() -> str:
 
     return _json_result(
         operation="br_research_run",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_execution_process_next() -> str:
+    """Advance one official production step under persisted Harness authority."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute next official production video render step",
+            authorized_action="EXECUTION",
+            fallback_allowed=False,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="action:EXECUTION",
+        lineage={
+            "routing_id": routing.routing_id,
+            "selected_capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+        },
+    )
+    result = process_next_production_execution(
+        authorization_to_context(authorization),
+    )
+    return _json_result(
+        operation="br_execution_process_next",
         result=result,
     )
 
