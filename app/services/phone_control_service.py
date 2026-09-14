@@ -149,7 +149,6 @@ def _artifact_path(execution_id: str | None = None) -> Path:
     root = Path(settings.PHONE_CONTROL_ARTIFACT_DIR)
     if not root.is_absolute():
         root = settings.BASE_DIR / root
-    root.mkdir(parents=True, exist_ok=True)
     suffix = re.sub(r"[^A-Za-z0-9_.-]", "-", execution_id or "phone")
     return root / f"{suffix}-screenshot.png"
 
