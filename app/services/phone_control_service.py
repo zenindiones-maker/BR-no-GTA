@@ -70,6 +70,12 @@ def _number(payload: dict[str, Any], key: str) -> float:
 def _validate_payload(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if not isinstance(payload, dict):
         raise _blocked("phone.control payload must be an object", stage="payload")
+    top_level_extras = set(payload) - {"operation", "params"}
+    if top_level_extras:
+        raise _blocked(
+            f"phone.control payload contains unsupported top-level fields: {sorted(top_level_extras)!r}",
+            stage="payload",
+        )
     operation = payload.get("operation")
     if not isinstance(operation, str) or not operation.strip():
         raise _blocked("phone.control operation is required", stage="payload")
