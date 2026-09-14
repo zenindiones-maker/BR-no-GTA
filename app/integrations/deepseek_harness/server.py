@@ -26,6 +26,10 @@ from app.services.harness_authorization_service import (
     authorization_to_context,
     issue_harness_authorization,
 )
+from app.services.harness_execution_result import (
+    CanonicalExecutionResult,
+    canonical_execution_result,
+)
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     RoutingPolicyError,
@@ -56,19 +60,23 @@ def _json_result(
     *,
     operation: str,
     result: Any,
+    evidence: CanonicalExecutionResult | None = None,
 ) -> str:
-    """Serialize a BR operation result for MCP."""
+    """Serialize a BR operation result for MCP with optional canonical evidence."""
     serialized_result = (
         asdict(result)
         if is_dataclass(result)
         else result
     )
+    payload = {
+        "operation": operation,
+        "result": serialized_result,
+    }
+    if evidence is not None:
+        payload["evidence"] = evidence.to_dict()
 
     return json.dumps(
-        {
-            "operation": operation,
-            "result": serialized_result,
-        },
+        payload,
         ensure_ascii=False,
         default=str,
     )
@@ -167,9 +175,27 @@ def br_execution_process_next() -> str:
     result = process_next_production_execution(
         authorization_to_context(authorization),
     )
+    evidence = canonical_execution_result(
+        authority=authorization.authority,
+        authorized_action=authorization.authorized_action,
+        execution_id=authorization.execution_id,
+        routing_id=routing.routing_id,
+        authorization_id=authorization.authorization_id,
+        harness_decision_id=authorization.harness_decision_id,
+        capability_id=routing.selected_capability_id,
+        tool="br_execution_process_next",
+        operation="br_execution_process_next",
+        provider=routing.selected_provider,
+        model=routing.selected_model,
+        executor=routing.selected_executor_binding,
+        status="SUCCEEDED",
+        success=True,
+        result=result,
+    )
     return _json_result(
         operation="br_execution_process_next",
         result=result,
+        evidence=evidence,
     )
 
 
@@ -412,27 +438,42 @@ def br_capability_execute(
             if availability in {BLOCKED, UNKNOWN}
             else "UNAVAILABLE"
         )
+        result = {
+            "capability_id": capability_id,
+            "status": result_status,
+            "active": False,
+            "authority": HARNESS_ISSUER,
+            "authorized_action": authorized_action.strip().upper(),
+            "authorization_id": None,
+            "harness_decision_id": None,
+            "execution_id": None,
+            "result": {
+                "stage": "routing",
+                "error": str(exc),
+                "routing_evidence": exc.evidence,
+            },
+            "boundary": (
+                "Harness Routing/Policy rejected the implementation before "
+                "authorization or execution"
+            ),
+        }
+        canonical = canonical_execution_result(
+            authority=HARNESS_ISSUER,
+            authorized_action=authorized_action.strip().upper(),
+            execution_id=None,
+            capability_id=capability_id,
+            tool="br_capability_execute",
+            operation="br_capability_execute",
+            status=result_status,
+            success=False,
+            result=result["result"],
+            evidence={"routing": exc.evidence},
+            error={"error": str(exc)},
+        )
         return _json_result(
             operation="br_capability_execute",
-            result={
-                "capability_id": capability_id,
-                "status": result_status,
-                "active": False,
-                "authority": HARNESS_ISSUER,
-                "authorized_action": authorized_action.strip().upper(),
-                "authorization_id": None,
-                "harness_decision_id": None,
-                "execution_id": None,
-                "result": {
-                    "stage": "routing",
-                    "error": str(exc),
-                    "routing_evidence": exc.evidence,
-                },
-                "boundary": (
-                    "Harness Routing/Policy rejected the implementation before "
-                    "authorization or execution"
-                ),
-            },
+            result=result,
+            evidence=canonical,
         )
 
     implementation = routing.policy_metadata.get("selected_implementation")
@@ -455,14 +496,14 @@ def br_capability_execute(
             "fallback_occurred": routing.fallback_occurred,
         },
     )
-    evidence = execute_capability(
+    capability_evidence = execute_capability(
         capability_id=routing.selected_capability_id,
         authorization=authorization,
         payload=payload,
         routing_decision=routing,
         executor=execute_codex_addy_capability,
     )
-    result = evidence.to_dict()
+    result = capability_evidence.to_dict()
     result["authorization_id"] = authorization.authorization_id
     result["harness_routing"] = {
         "routing_id": routing.routing_id,
@@ -473,9 +514,18 @@ def br_capability_execute(
         "policy_reason": list(routing.rationale),
         "fallback_occurred": routing.fallback_occurred,
     }
+    canonical = capability_evidence.to_canonical_result(
+        authorization_id=authorization.authorization_id,
+        routing_id=routing.routing_id,
+        tool="br_capability_execute",
+        operation="br_capability_execute",
+        model=routing.selected_model,
+        executor=routing.selected_executor_binding,
+    )
     return _json_result(
         operation="br_capability_execute",
         result=result,
+        evidence=canonical,
     )
 
 

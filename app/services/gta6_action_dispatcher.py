@@ -9,6 +9,10 @@ from app.services.harness_authorization_service import (
     authorization_to_context,
     validate_harness_authorization,
 )
+from app.services.harness_execution_result import (
+    CanonicalExecutionResult,
+    canonical_execution_result,
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +23,7 @@ class ActionResult:
     result: Any
     harness_decision_id: str | None = None
     execution_id: str | None = None
+    evidence: CanonicalExecutionResult | None = None
 
     @property
     def brain_decision_id(self) -> str | None:
@@ -59,6 +64,12 @@ class GTA6ActionDispatcher:
         )
         context = authorization_to_context(auth)
         tool_name, operation = handler
+        routing_id = auth.lineage.get("routing_id")
+        capability_id = (
+            auth.lineage.get("selected_capability_id")
+            or auth.lineage.get("capability_id")
+        )
+        executor = auth.lineage.get("selected_executor_binding")
         try:
             if action == "MONITOR":
                 result = operation(execution_id=auth.execution_id)
@@ -67,13 +78,45 @@ class GTA6ActionDispatcher:
             else:
                 result = operation()
         except Exception as exc:
+            error = {"error_type": type(exc).__name__, "error": str(exc)}
+            evidence = canonical_execution_result(
+                authority=auth.authority,
+                authorized_action=auth.authorized_action,
+                execution_id=auth.execution_id,
+                routing_id=routing_id,
+                authorization_id=auth.authorization_id,
+                harness_decision_id=auth.harness_decision_id,
+                capability_id=capability_id,
+                tool=tool_name,
+                executor=executor,
+                status="FAILED",
+                success=False,
+                result=error,
+                error=error,
+            )
             return ActionResult(action=action, tool=tool_name, success=False,
-                                result={"error_type": type(exc).__name__, "error": str(exc)},
+                                result=error,
                                 harness_decision_id=auth.harness_decision_id,
-                                execution_id=auth.execution_id)
+                                execution_id=auth.execution_id,
+                                evidence=evidence)
+        evidence = canonical_execution_result(
+            authority=auth.authority,
+            authorized_action=auth.authorized_action,
+            execution_id=auth.execution_id,
+            routing_id=routing_id,
+            authorization_id=auth.authorization_id,
+            harness_decision_id=auth.harness_decision_id,
+            capability_id=capability_id,
+            tool=tool_name,
+            executor=executor,
+            status="SUCCEEDED",
+            success=True,
+            result=result,
+        )
         return ActionResult(action=action, tool=tool_name, success=True, result=result,
                             harness_decision_id=auth.harness_decision_id,
-                            execution_id=auth.execution_id)
+                            execution_id=auth.execution_id,
+                            evidence=evidence)
 
     @staticmethod
     def to_dict(result: ActionResult) -> dict[str, Any]:

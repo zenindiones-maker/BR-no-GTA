@@ -13,6 +13,10 @@ from app.services.harness_authorization_service import (
     resolve_harness_authorization,
     validate_harness_authorization,
 )
+from app.services.harness_execution_result import (
+    CanonicalExecutionResult,
+    canonical_execution_result,
+)
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
 
 
@@ -56,6 +60,47 @@ class CapabilityEvidence:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def to_canonical_result(
+        self,
+        *,
+        authorization_id: str | None = None,
+        routing_id: str | None = None,
+        tool: str | None = None,
+        operation: str | None = None,
+        model: str | None = None,
+        executor: str | None = None,
+        artifacts: tuple[Any, ...] | list[Any] | None = None,
+    ) -> CanonicalExecutionResult:
+        """Project capability evidence into the single Harness result envelope."""
+        success = self.status == "EXECUTED"
+        error = None
+        if not success and isinstance(self.result, dict) and self.result.get("error"):
+            error = {
+                key: self.result[key]
+                for key in ("error_type", "error")
+                if key in self.result
+            }
+        return canonical_execution_result(
+            authority=self.authority,
+            authorized_action=self.authorized_action,
+            execution_id=self.execution_id,
+            routing_id=routing_id,
+            authorization_id=authorization_id,
+            harness_decision_id=self.harness_decision_id,
+            capability_id=self.capability_id,
+            tool=tool,
+            operation=operation,
+            provider=self.provider,
+            model=model,
+            executor=executor,
+            status=self.status,
+            success=success,
+            result=self.result,
+            evidence={"boundary": self.boundary} if self.boundary else {},
+            artifacts=artifacts,
+            error=error,
+        )
 
 
 def _to_definition(record) -> CapabilityDefinition:

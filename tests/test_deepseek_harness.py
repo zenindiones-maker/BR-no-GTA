@@ -96,15 +96,26 @@ def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):
     monkeypatch.setattr(server,"execute_codex_addy_capability",fake_executor)
     payload=json.loads(server.br_capability_execute(capability_id="addy:code-review-and-quality",authorized_action="DEVELOPMENT",payload_json='{"task":"review"}'))
     evidence=payload["result"]
+    canonical=payload["evidence"]
     assert evidence["authority"] == "deepseek_harness"
     assert evidence["harness_decision_id"] and evidence["execution_id"]
+    assert canonical["authority"] == "deepseek_harness"
+    assert canonical["execution_id"] == evidence["execution_id"]
+    assert canonical["authorization_id"] == evidence["authorization_id"]
+    assert canonical["routing_id"] == evidence["harness_routing"]["routing_id"]
+    assert canonical["capability_id"] == "addy:code-review-and-quality"
+    assert canonical["result"] == {"ok": True}
     assert captured["payload"] == {"task":"review"}
 
 
 def test_higgsfield_remains_blocked_under_persisted_harness_authorization():
     payload=json.loads(server.br_capability_execute(capability_id="higgsfield-generate",authorized_action="EXECUTION",payload_json='{"prompt":"x"}'))
     evidence=payload["result"]
+    canonical=payload["evidence"]
     assert evidence["status"] == "BLOCKED" and evidence["authority"] == "deepseek_harness"
+    assert canonical["success"] is False
+    assert canonical["status"] == "BLOCKED"
+    assert canonical["authority"] == "deepseek_harness"
 
 
 @pytest.mark.parametrize("operation_result", [{"status": "completed"}, None])
@@ -137,16 +148,28 @@ def test_execution_process_next_persists_routed_authorization_before_executor(
             "selected_capability_id": routing.selected_capability_id,
             "selected_executor_binding": routing.selected_executor_binding,
         }
+        captured["authorization"] = authorization
         captured["executed"] = True
         return operation_result
 
     monkeypatch.setattr(server, "route_harness_request", route)
     monkeypatch.setattr(server, "process_next_production_execution", execute)
 
-    assert json.loads(server.br_execution_process_next()) == {
-        "operation": "br_execution_process_next",
-        "result": operation_result,
-    }
+    payload = json.loads(server.br_execution_process_next())
+    assert payload["operation"] == "br_execution_process_next"
+    assert payload["result"] == operation_result
+    evidence = payload["evidence"]
+    authorization = captured["authorization"]
+    routing = captured["routing"]
+    assert evidence["authority"] == "deepseek_harness"
+    assert evidence["authorized_action"] == "EXECUTION"
+    assert evidence["execution_id"] == authorization.execution_id
+    assert evidence["routing_id"] == routing.routing_id
+    assert evidence["authorization_id"] == authorization.authorization_id
+    assert evidence["harness_decision_id"] == authorization.harness_decision_id
+    assert evidence["capability_id"] == routing.selected_capability_id
+    assert evidence["result"] == operation_result
+    assert evidence["success"] is True
     assert captured["executed"] is True
 
 
