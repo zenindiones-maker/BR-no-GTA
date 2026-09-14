@@ -47,13 +47,34 @@ jobs:
       - name: Start OmniRoute
         run: |
           set -euo pipefail
-          nohup omniroute serve > /tmp/omniroute.log 2>&1 &
-          echo $! > /tmp/omniroute.pid
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then cat /tmp/omniroute.log || true; fi' EXIT
+          HOSTNAME=127.0.0.1 HOST=127.0.0.1 nohup omniroute serve > /tmp/omniroute.log 2>&1 &
+          pid=$!
+          echo "$pid" > /tmp/omniroute.pid
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:20128/health >/tmp/omniroute-health.json 2>/dev/null; then cat /tmp/omniroute-health.json; exit 0; fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'OmniRoute exited before readiness'
+              exit 1
+            fi
+            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/omniroute-health.json 2>/dev/null; then
+              kill -0 "$pid"
+              # Refuse readiness if the gateway listens outside loopback.
+              python - <<'PY_BIND'
+          import subprocess
+          rows = subprocess.check_output(
+              ["ss", "-H", "-ltn", "sport = :20128"], text=True
+          ).splitlines()
+          assert rows, "No gateway listener found"
+          addresses = [row.split()[3] for row in rows]
+          assert all(address in {"127.0.0.1:20128", "[::1]:20128"} for address in addresses), addresses
+          PY_BIND
+              cat /tmp/omniroute-health.json
+              echo 'OMNIROUTE_HEALTH_ENDPOINT=/api/monitoring/health'
+              exit 0
+            fi
             sleep 2
           done
-          cat /tmp/omniroute.log
+          echo 'OmniRoute readiness timed out'
           exit 1
       - name: Execute explicit free provider/model
         if: ${{ inputs.mode == 'execute' }}
