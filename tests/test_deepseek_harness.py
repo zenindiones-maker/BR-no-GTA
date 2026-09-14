@@ -9,6 +9,7 @@ from app.services.harness_authorization_service import (
 )
 from app.integrations.deepseek_harness import server
 from app.services.gta6_brain import BrainDecision
+from app.services.harness_routing_policy_service import RoutingPolicyError
 
 
 def test_operational_mcp_tools_are_registered():
@@ -21,62 +22,46 @@ def test_route_tool_returns_metadata_without_authorization():
     decision=payload["result"]
     assert decision["selected_capability_id"] == "addy:code-review-and-quality"
     assert decision["selected_provider"] is None
+    assert decision["policy_metadata"]["zero_cost_operation"] is True
     assert "authorization_id" not in decision
 
 
-def test_editorial_process_next_routes_provider_under_harness(monkeypatch):
-    captured={}
-    selected_provider=object()
-    def fake_select(*,provider_name=None,authorization,routing_decision=None):
-        captured["authorization"]=authorization
-        captured["provider_authorization"]=authorization
-        captured["routing"]=routing_decision
-        assert provider_name is None
-        return routing_decision.selected_provider, selected_provider
-    def fake_process(*,ai_provider,brain_decision=None,execution_context=None):
-        assert ai_provider is selected_provider
-        captured["execution_context"]=execution_context
-        return {"status":"completed"}
-    monkeypatch.setattr(server,"select_harness_ai_provider",fake_select)
-    monkeypatch.setattr(server,"process_next_editorial_queue_item",fake_process)
-    payload=json.loads(server.br_editorial_process_next())
-    result=payload["result"]
-    assert captured["routing"].selected_capability_id == "editorial.process"
-    assert captured["routing"].selected_provider == "nvidia_nim"
-    assert (
-        captured["routing"].selected_model
-        == "nvidia/nemotron-3-super-120b-a12b"
+def test_editorial_process_next_fails_closed_when_provider_cost_is_unknown(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unknown-cost provider must not be selected or executed")
+
+    monkeypatch.setattr(server, "select_harness_ai_provider", unexpected)
+    monkeypatch.setattr(server, "process_next_editorial_queue_item", unexpected)
+
+    with pytest.raises(RoutingPolicyError) as exc_info:
+        server.br_editorial_process_next()
+
+    assert exc_info.value.evidence["zero_cost_operation"] is True
+    rejected = exc_info.value.evidence["rejected_candidates"]
+    assert any(
+        item["candidate_id"] == "ai.provider.nvidia-nim"
+        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item["reasons"]
+        for item in rejected
     )
-    assert captured["authorization"].subject == "provider:nvidia_nim"
-    assert captured["execution_context"]["authorized_action"] == "EDITORIAL"
-    assert captured["execution_context"]["authorization_subject"] == "action:EDITORIAL"
-    assert captured["execution_context"]["execution_id"]
-    assert captured["execution_context"]["issued_by"] == "deepseek_harness"
-    assert result["harness_routing"]["decision"]["routing_id"]
-    assert result["harness_routing"]["authorization_id"] == captured["execution_context"]["authorization_id"]
-    assert result["harness_routing"]["provider_authorization_id"] == captured["provider_authorization"].authorization_id
 
 
-def test_master_run_once_harness_issues_authorization(monkeypatch):
-    captured={}
-    class FakeMasterAgent:
-        def __init__(self, ai_provider=None):
-            captured["provider"] = ai_provider
-        def recommend(self): return BrainDecision(action="RESEARCH",reason="needed",priority="HIGH",confidence=.9)
-        def execute_authorized(self, decision, authorization):
-            captured["decision"]=decision; captured["authorization"]=authorization
-            return {"action":"RESEARCH","success":True}
-    monkeypatch.setattr(server,"GTA6MasterAgent",FakeMasterAgent)
-    def fake_select(*,provider_name=None,authorization,routing_decision=None):
-        captured["provider_authorization"] = authorization
-        return routing_decision.selected_provider, object()
-    monkeypatch.setattr(server,"select_harness_ai_provider",fake_select)
-    payload=json.loads(server.br_master_run_once())
-    assert payload["result"]["success"] is True
-    assert captured["provider"] is not None
-    assert captured["provider_authorization"].authorized_action == "DECISION"
-    assert captured["authorization"].issued_by == "deepseek_harness"
-    assert captured["authorization"].subject == "action:RESEARCH"
+def test_master_run_once_fails_closed_when_decision_provider_cost_is_unknown(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("MasterAgent/provider construction must not run after cost rejection")
+
+    monkeypatch.setattr(server, "GTA6MasterAgent", unexpected)
+    monkeypatch.setattr(server, "select_harness_ai_provider", unexpected)
+
+    with pytest.raises(RoutingPolicyError) as exc_info:
+        server.br_master_run_once()
+
+    assert exc_info.value.evidence["zero_cost_operation"] is True
+    rejected = exc_info.value.evidence["rejected_candidates"]
+    assert any(
+        item["candidate_id"] == "ai.provider.nvidia-nim"
+        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item["reasons"]
+        for item in rejected
+    )
 
 
 def test_youtube_pode_postar_issues_publication_authorization(monkeypatch):

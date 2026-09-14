@@ -14,6 +14,10 @@ from app.services.global_capability_registry import (
     CapabilityRecord,
     GlobalCapabilityRegistry,
 )
+from app.services.zero_cost_policy_service import (
+    ZERO_COST_OPERATION,
+    assess_zero_cost,
+)
 
 
 _MATURITY_RANK = {
@@ -231,13 +235,16 @@ def _provider_records(
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
         if request.zero_cost_operation:
-            from app.services.zero_cost_policy_service import assess_zero_cost
             assessment = assess_zero_cost(
                 record.cost_class,
                 quota_available=(provider_id not in exhausted_free_quota),
             )
             if not assessment.eligible:
-                reasons.append(assessment.reason.value if assessment.reason else "ZERO_COST_POLICY_BLOCKED")
+                reasons.append(
+                    assessment.reason.value
+                    if assessment.reason
+                    else "ZERO_COST_POLICY_BLOCKED"
+                )
 
         if reasons:
             rejected.append(
@@ -301,6 +308,7 @@ def _select_provider(
             evidence={
                 "primary_provider": primary_provider,
                 "fallback_allowed": False,
+                "zero_cost_operation": request.zero_cost_operation,
                 "rejected_candidates": [asdict(item) for item in rejected],
             },
         )
@@ -317,6 +325,7 @@ def _select_provider(
             evidence={
                 "primary_provider": primary_provider,
                 "fallback_allowed": True,
+                "zero_cost_operation": request.zero_cost_operation,
                 "rejected_candidates": [asdict(item) for item in rejected],
             },
         )
@@ -340,6 +349,21 @@ def _routing_id(payload: dict[str, Any]) -> str:
     return f"route-{sha256(canonical.encode('utf-8')).hexdigest()[:20]}"
 
 
+def _apply_global_zero_cost_policy(
+    request: HarnessRoutingRequest,
+    *,
+    authorized_action: str,
+) -> HarnessRoutingRequest:
+    values = asdict(request)
+    values["authorized_action"] = authorized_action
+    values["zero_cost_operation"] = bool(
+        ZERO_COST_OPERATION or request.zero_cost_operation
+    )
+    if values == asdict(request):
+        return request
+    return HarnessRoutingRequest(**values)
+
+
 def route_harness_request(
     request: HarnessRoutingRequest,
     *,
@@ -351,13 +375,10 @@ def route_harness_request(
     action = request.authorized_action.strip().upper()
     if not action:
         raise ValueError("authorized_action is required")
-    if action != request.authorized_action:
-        request = HarnessRoutingRequest(
-            **{
-                **asdict(request),
-                "authorized_action": action,
-            }
-        )
+    request = _apply_global_zero_cost_policy(
+        request,
+        authorized_action=action,
+    )
 
     capability_candidates, rejected, discovered_ids = _capability_candidates(
         request,
@@ -377,6 +398,7 @@ def route_harness_request(
                 "status": required_record.status,
                 "security_boundary": required_record.security_boundary,
                 "executor_binding": required_record.executor_binding,
+                "cost_class": required_record.cost_class,
             }
             if required_record is not None
             else None
@@ -386,6 +408,7 @@ def route_harness_request(
             evidence={
                 "intent": request.intent,
                 "authorized_action": action,
+                "zero_cost_operation": request.zero_cost_operation,
                 "candidate_capability_ids": list(discovered_ids),
                 "rejected_candidates": [asdict(item) for item in rejected],
                 "required_capability_state": required_state,
@@ -417,6 +440,8 @@ def route_harness_request(
         f"authorized_action policy matched: {action}",
         "non-AVAILABLE Registry records were excluded",
     ]
+    if request.zero_cost_operation:
+        rationale.append("global ZERO_COST_OPERATION policy enforced")
     if capability.agent_id or capability.skill_id:
         implementation_identity = capability.skill_id or capability.agent_id or capability.capability_id
         rationale.append(
@@ -444,6 +469,8 @@ def route_harness_request(
         "cost_constraint": request.cost_constraint,
         "quota_constraint": request.quota_constraint,
         "zero_cost_operation": request.zero_cost_operation,
+        "global_zero_cost_operation": ZERO_COST_OPERATION,
+        "selected_provider_cost_class": provider.cost_class if provider is not None else None,
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "selected_implementation": {
             "type": capability.capability_type,
