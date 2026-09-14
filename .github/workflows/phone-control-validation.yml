@@ -56,13 +56,13 @@ jobs:
             tests/test_harness_capability_service.py \
             tests/test_deepseek_harness.py
 
-      - name: Canonical full application suite
-        run: .venv/bin/python -m pytest -q tests/
-
       - name: Diff and secret guard
         env:
           BASE_SHA: 5412ed0b63a3ea577734e00b78a7f9c6dabd65f5
         run: |
           git diff --check "${BASE_SHA}..HEAD"
           test -z "$(git diff --name-only "${BASE_SHA}..HEAD" | grep -Ei 'job.?18' || true)"
-          ! git diff "${BASE_SHA}..HEAD" -- . ':!tests/test_phone_control_service.py' | grep -E 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^"'"'"']+' 
+          ! git diff "${BASE_SHA}..HEAD" -- . ':!tests/test_phone_control_service.py' | grep -E 'BR_PHONE_PORTAL_TOKEN[[:space:]]*=[[:space:]]*[^"'"'"']+'
+
+      - name: Canonical full application suite
+        run: .venv/bin/python -m pytest -q tests/
