@@ -416,9 +416,40 @@ def route_harness_request(
         )
 
     capability = capability_candidates[0]
-    provider, primary_provider, fallback_candidates, fallback_occurred, provider_rejections = (
-        _select_provider(request, registry)
+
+    # A provider_id attached to an executable capability identifies the provider
+    # of that concrete implementation. It is not, by itself, a request for an
+    # ai.provider.* model provider. When the caller's preferred provider is the
+    # capability's own bound provider, the Registry executor is sufficient and
+    # AI provider/model selection must not be manufactured. Explicit AI-backed
+    # capabilities (which do not own that preferred provider identity) continue
+    # through _select_provider unchanged.
+    capability_provider = (
+        normalize_provider_id(capability.provider_id)
+        if capability.provider_id
+        else None
     )
+    preferred_provider_ids = tuple(
+        normalize_provider_id(item) for item in request.preferred_providers
+    )
+    implementation_provider_satisfies_request = bool(
+        request.provider_required
+        and capability.capability_type in {"EXECUTOR", "CAPABILITY"}
+        and capability_provider
+        and preferred_provider_ids
+        and capability_provider in preferred_provider_ids
+    )
+
+    if implementation_provider_satisfies_request:
+        provider = None
+        primary_provider = None
+        fallback_candidates = ()
+        fallback_occurred = False
+        provider_rejections = []
+    else:
+        provider, primary_provider, fallback_candidates, fallback_occurred, provider_rejections = (
+            _select_provider(request, registry)
+        )
     rejected.extend(provider_rejections)
 
     selected_provider = (
@@ -461,7 +492,13 @@ def route_harness_request(
 
     policy_metadata = {
         "domain": request.domain,
-        "provider_domain": request.provider_domain if request.provider_required else None,
+        "provider_domain": (
+            request.provider_domain
+            if request.provider_required and not implementation_provider_satisfies_request
+            else None
+        ),
+        "capability_provider_id": capability.provider_id,
+        "implementation_provider_satisfies_request": implementation_provider_satisfies_request,
         "required_policy_tags": list(request.required_policy_tags),
         "required_security_terms": list(request.required_security_terms),
         "quality_requirement": request.quality_requirement,
