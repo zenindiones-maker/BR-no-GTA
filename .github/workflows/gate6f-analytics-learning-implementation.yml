@@ -1,0 +1,121 @@
+name: Gate6F Analytics Learning Implementation
+on: [push]
+permissions:
+  contents: write
+jobs:
+  implement-validate:
+    if: github.ref == 'refs/heads/work/gate6f-analytics-learning'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Implement analytics learning link
+        shell: bash
+        run: |
+          cat > app/services/youtube_analytics_learning_service.py <<'PY'
+          from __future__ import annotations
+          import hashlib, json
+          from typing import Any
+          from app.database.memory_event_repository import insert_memory_event, list_memory_events_by_source
+          from app.models.memory_event import create_memory_event
+          from app.services.global_capability_registry import get_capability_registry
+          from app.services.harness_authorization_service import validate_persisted_harness_authorization
+          from app.services.harness_capability_service import CapabilityEvidence, CapabilityExecutionBlocked
+          from app.services.harness_execution_result import canonical_execution_result
+          CAPABILITY_ID="knowledge.learn.youtube-analytics"
+          EXECUTOR_BINDING="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability"
+          SOURCE_CAPABILITY_ID="youtube.analytics.read"
+          METRICS=("views","estimatedMinutesWatched","averageViewDuration","averageViewPercentage","likes","comments","shares")
+          def _blocked(message,stage): return CapabilityExecutionBlocked(message,stage=stage,boundary="analytics learning failed closed")
+          def _validate_source(source: dict[str,Any]):
+              if not isinstance(source,dict) or source.get("source")!="youtube_analytics" or source.get("capability_id")!=SOURCE_CAPABILITY_ID: raise _blocked("analytics evidence provenance is invalid","evidence")
+              pub=source.get("publication_id"); vid=source.get("youtube_video_id"); window=source.get("metric_window"); metrics=source.get("metrics")
+              if isinstance(pub,bool) or not isinstance(pub,int) or pub<=0: raise _blocked("persisted publication_id is required","evidence")
+              if not isinstance(vid,str) or not vid.strip(): raise _blocked("persisted youtube_video_id is required","evidence")
+              if not isinstance(window,dict) or not window.get("start") or not window.get("end"): raise _blocked("analytics metric window is required","evidence")
+              if not isinstance(metrics,dict): raise _blocked("normalized analytics metrics are required","evidence")
+              normalized={}
+              for name in METRICS:
+                  item=metrics.get(name)
+                  if not isinstance(item,dict) or item.get("status") not in {"VALUE","MISSING"}: raise _blocked(f"metric {name} is not normalized","evidence")
+                  if item["status"]=="MISSING" and item.get("value") is not None: raise _blocked(f"metric {name} MISSING must remain null","evidence")
+                  normalized[name]={"status":item["status"],"value":item.get("value")}
+              out=dict(source); out["metrics"]=normalized; return out
+          def _key(source):
+              identity={"publication_id":source["publication_id"],"youtube_video_id":source["youtube_video_id"],"metric_window":source["metric_window"],"metrics":source["metrics"]}
+              return hashlib.sha256(json.dumps(identity,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+          def _validate_boundary(*,authorization,routing_decision,execution_id):
+              auth=validate_persisted_harness_authorization(authorization,expected_action="EXECUTION",expected_subject=f"capability:{CAPABILITY_ID}",expected_execution_id=execution_id)
+              cap=get_capability_registry().get(CAPABILITY_ID)
+              if cap is None or cap.executor_binding!=EXECUTOR_BINDING: raise _blocked("analytics learning Registry binding is invalid","binding")
+              if routing_decision.selected_capability_id!=CAPABILITY_ID or routing_decision.selected_executor_binding!=EXECUTOR_BINDING: raise _blocked("analytics learning routing binding is invalid","routing")
+              lineage=auth.lineage or {}
+              if lineage.get("routing_id")!=routing_decision.routing_id or lineage.get("capability_id")!=CAPABILITY_ID or lineage.get("selected_executor_binding")!=EXECUTOR_BINDING: raise _blocked("analytics learning authorization lineage is invalid","authorization")
+              return auth,cap
+          def execute_youtube_analytics_learning_capability(capability,payload):
+              if getattr(capability,"capability_id",None)!=CAPABILITY_ID or getattr(capability,"executor_binding",None)!=EXECUTOR_BINDING: raise _blocked("analytics learning executor binding mismatch","binding")
+              source=_validate_source(payload); key=_key(source); source_id=f"publication:{source['publication_id']}:window:{key}"
+              existing=list_memory_events_by_source(source_type="youtube_analytics",source_id=source_id)
+              if existing: return {"status":"ALREADY_LEARNED","idempotency_key":key,"memory_event_id":existing[0].get("id"),"learning":source}
+              event=create_memory_event(event_type="youtube_analytics_observed",source_type="youtube_analytics",source_id=source_id,scope="gta6",content=f"YouTube Analytics observation for persisted publication {source['publication_id']}.",provenance="youtube_analytics_learning",metadata={"idempotency_key":key,"publication_id":source["publication_id"],"youtube_video_id":source["youtube_video_id"],"metric_window":source["metric_window"],"retrieved_at":source.get("retrieved_at"),"metrics":source["metrics"],"source_execution_id":source.get("execution_id"),"source_authorization_id":source.get("authorization_id"),"source_capability_id":SOURCE_CAPABILITY_ID})
+              event_id=insert_memory_event(event); return {"status":"LEARNED","idempotency_key":key,"memory_event_id":event_id,"learning":source}
+          def learn_from_youtube_analytics(*,analytics_evidence,authorization,routing_decision,execution_id):
+              auth,cap=_validate_boundary(authorization=authorization,routing_decision=routing_decision,execution_id=execution_id); result=execute_youtube_analytics_learning_capability(cap,analytics_evidence)
+              evidence=CapabilityEvidence(capability_id=CAPABILITY_ID,status="EXECUTED",authority=auth.authority,authorized_action=auth.authorized_action,authorization_id=auth.authorization_id,harness_decision_id=auth.harness_decision_id,execution_id=auth.execution_id,result=result)
+              canonical=canonical_execution_result(authority=auth.authority,authorized_action=auth.authorized_action,execution_id=auth.execution_id,routing_id=routing_decision.routing_id,authorization_id=auth.authorization_id,harness_decision_id=auth.harness_decision_id,capability_id=CAPABILITY_ID,tool="youtube_analytics_learning_service",operation="learn_from_youtube_analytics",executor=EXECUTOR_BINDING,status="SUCCEEDED",success=True,result=result,evidence={"source_capability_id":SOURCE_CAPABILITY_ID,"idempotency_key":result["idempotency_key"]})
+              return {"result":result,"capability_evidence":evidence.to_dict(),"canonical_execution_result":canonical.to_dict()}
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app/services/global_capability_registry.py'); s=p.read_text(); marker='MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord('; i=s.index(marker)
+          rec='''YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(\n    capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning", provider_id="internal", availability=AVAILABLE, maturity=FUNCTIONAL, cost_class=FREE_NO_BILLING, fallback_eligibility=False, executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability", authorized_actions=("EXECUTION",), metadata={"authority":"deepseek_harness","source_capability_id":"youtube.analytics.read","persistence":"existing_memory_event_log"},\n)\n\n'''
+          s=s[:i]+rec+s[i:]; needle='YOUTUBE_ANALYTICS_READ_RECORD,'; assert needle in s; s=s.replace(needle,needle+'\n        YOUTUBE_ANALYTICS_LEARNING_RECORD,',1); p.write_text(s)
+          PY
+      - name: Add tests
+        run: |
+          cat > tests/test_youtube_analytics_learning_service.py <<'PY'
+          from types import SimpleNamespace
+          import pytest
+          from app.services import youtube_analytics_learning_service as svc
+          from app.services.harness_capability_service import CapabilityExecutionBlocked
+          def source(): return {"source":"youtube_analytics","capability_id":"youtube.analytics.read","publication_id":7,"youtube_video_id":"persisted-video","metric_window":{"start":"2026-09-01","end":"2026-09-02"},"retrieved_at":"2026-09-03T00:00:00Z","execution_id":"source-exec","authorization_id":"source-auth","metrics":{name:{"status":"MISSING","value":None} for name in svc.METRICS}}
+          def cap(): return SimpleNamespace(capability_id=svc.CAPABILITY_ID,executor_binding=svc.EXECUTOR_BINDING)
+          def test_zero_missing_and_idempotency(monkeypatch):
+              x=source(); x["metrics"]["views"]={"status":"VALUE","value":0}; stored=[]
+              monkeypatch.setattr(svc,"list_memory_events_by_source",lambda **kw: stored); monkeypatch.setattr(svc,"insert_memory_event",lambda event: stored.append({"id":11,**event}) or 11)
+              assert svc.execute_youtube_analytics_learning_capability(cap(),x)["status"]=="LEARNED"; assert svc.execute_youtube_analytics_learning_capability(cap(),x)["status"]=="ALREADY_LEARNED"; assert len(stored)==1
+              assert stored[0]["metadata"]["metrics"]["views"]=={"status":"VALUE","value":0}; assert stored[0]["metadata"]["metrics"]["likes"]=={"status":"MISSING","value":None}
+          def test_requires_persisted_video():
+              x=source(); x["youtube_video_id"]=""
+              with pytest.raises(CapabilityExecutionBlocked): svc.execute_youtube_analytics_learning_capability(cap(),x)
+          def test_wrong_binding_fails_closed():
+              with pytest.raises(CapabilityExecutionBlocked): svc.execute_youtube_analytics_learning_capability(SimpleNamespace(capability_id=svc.CAPABILITY_ID,executor_binding="evil"),source())
+          PY
+      - name: Setup test environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -U pip
+          .venv/bin/python -m pip install -r requirements.txt
+      - name: Compile
+        run: .venv/bin/python -m compileall -q app tests
+      - name: Focused tests
+        run: .venv/bin/python -m pytest -q tests/test_youtube_analytics_learning_service.py tests/test_youtube_analytics_service.py tests/test_global_capability_registry.py tests/test_harness_authorization_service.py tests/test_harness_routing_policy_service.py
+      - name: Full suite
+        run: .venv/bin/python -m pytest -q tests/
+      - name: Guards
+        run: |
+          git diff --check
+          ! git diff --name-only | grep -Ei 'job.?18|ZERO_COST_OPERATION'
+      - name: Commit validated implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/services/youtube_analytics_learning_service.py app/services/global_capability_registry.py tests/test_youtube_analytics_learning_service.py
+          git commit -m 'feat(analytics): persist governed learning observations'
+          git push origin HEAD:work/gate6f-analytics-learning
