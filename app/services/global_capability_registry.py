@@ -55,7 +55,22 @@ YOUTUBE_ANALYTICS_READ_RECORD = CapabilityRecord(
     version="1", provider_id="google-youtube-analytics", side_effects=(),
 )
 
-for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD):
+MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(
+    capability_id="content.normalize.markdown", capability_type="EXECUTOR", domain="content-ingestion",
+    implementation="Harness-authorized Microsoft MarkItDown 0.1.7 normalization adapter",
+    input_contract="allowlisted public http/https source URI",
+    output_contract="normalized Markdown + source provenance + CapabilityEvidence/CanonicalExecutionResult",
+    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "markitdown 0.1.7"),
+    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
+    policy_tags=("ingestion", "normalization", "markdown", "evidence", "zero-cost"),
+    security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; only http/https allowlisted document formats or YouTube; plugins disabled; no shell, local-file, arbitrary executor, LLM, Azure, publication, or editorial authority",
+    cost_class="FREE_NO_BILLING", quota_class="REMOTE_SOURCE", latency_class="REMOTE_IO", quality_class="PINNED_DETERMINISTIC_ADAPTER",
+    evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False,
+    executor_binding="app.services.markitdown_ingestion_service.execute_markitdown_normalization_capability",
+    version="1", provider_id="microsoft-markitdown", side_effects=(),
+)
+
+for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, MARKITDOWN_NORMALIZE_RECORD):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
     _REGISTRY._by_id[_record.capability_id] = _record
