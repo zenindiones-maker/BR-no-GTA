@@ -49,91 +49,92 @@ jobs:
           assert os.environ['ZERO_COST_OPERATION'] == 'TRUE'
           space = os.environ['HF_SPACE']
           client = Client(space, verbose=False)
-          # Short instrumental smoke: one sample, turbo model, small inference budget.
-          # The official public Space supplies the ZeroGPU executor; no paid HF Job is created.
           args = [
-              'acestep-v15-turbo',          # selected_model
-              'simple',                     # generation_mode
+              'acestep-v15-turbo', 'simple',
               'Instrumental cinematic urban tension bed, modern open-world game documentary, no vocals',
-              'unknown',                    # simple vocal language
+              'unknown',
               'cinematic urban tension, dark electronic pulse, subtle percussion, instrumental',
-              '',                           # lyrics
-              0,                            # bpm
-              '',                           # key
-              '',                           # time signature
-              'unknown',                    # vocal language
-              4,                            # inference steps
-              5.0,                          # guidance
-              True,                         # random seed
-              '-1',                         # seed
-              None,                         # reference audio
-              10,                           # duration seconds
-              1,                            # batch size
-              None,                         # source audio
-              '',                           # text2music audio codes
-              0.0,                          # repaint start
-              -1,                           # repaint end
+              '', 0, '', '', 'unknown', 4, 5.0, True, '-1', None, 10, 1, None, '',
+              0.0, -1,
               'Fill the audio semantic mask based on the given conditions:',
-              1.0,                          # cover strength
-              'text2music',                 # task type
-              False,                        # use ADG
-              0.0,                          # cfg start
-              1.0,                          # cfg end
-              3.0,                          # shift
-              'ode',                        # inference method
-              '',                           # custom timesteps
-              'mp3',                        # format
-              0.85,                         # LM temperature
-              False,                        # thinking
-              2.0,                          # LM cfg
-              0,                            # LM top-k
-              0.9,                          # LM top-p
-              'NO USER INPUT',              # LM negative prompt
-              True,                         # cot metas
-              True,                         # cot caption
-              True,                         # cot language
-              False,                        # constrained debug
-              False,                        # allow LM batch
-              False,                        # auto score
-              False,                        # auto lrc
-              0.5,                          # score scale
-              4,                            # LM batch chunk
-              'synth',                      # track name
-              [],                           # complete track classes
-              True,                         # instrumental
+              1.0, 'text2music', False, 0.0, 1.0, 3.0, 'ode', '', 'mp3', 0.85,
+              False, 2.0, 0, 0.9, 'NO USER INPUT', True, True, True, False, False,
+              False, False, 0.5, 4, 'synth', [], True,
           ]
           result = client.predict(*args, api_name='/generation_wrapper')
-          if not isinstance(result, (tuple, list)) or not result:
-              raise RuntimeError(f'ACE-Step returned unexpected result: {type(result)!r}')
+
+          def collect_files(value, out):
+              if value is None:
+                  return
+              if isinstance(value, (list, tuple)):
+                  for child in value:
+                      collect_files(child, out)
+                  return
+              if isinstance(value, dict):
+                  for key in ('path', 'name'):
+                      raw = value.get(key)
+                      if raw:
+                          p = Path(str(raw))
+                          if p.exists() and p.is_file():
+                              out.append(p)
+                  for child in value.values():
+                      if isinstance(child, (list, tuple, dict)):
+                          collect_files(child, out)
+                  return
+              raw_path = getattr(value, 'path', None) or getattr(value, 'name', None)
+              if raw_path:
+                  p = Path(str(raw_path))
+                  if p.exists() and p.is_file():
+                      out.append(p)
+                  return
+              if isinstance(value, str):
+                  p = Path(value)
+                  if p.exists() and p.is_file():
+                      out.append(p)
 
           candidates = []
-          for item in result[:8]:
-              if item is None:
-                  continue
-              if isinstance(item, str):
-                  p = Path(item)
-                  if p.exists() and p.is_file():
-                      candidates.append(p)
-              elif isinstance(item, dict):
-                  p = Path(str(item.get('path') or item.get('name') or ''))
-                  if p.exists() and p.is_file():
-                      candidates.append(p)
+          collect_files(result, candidates)
+          # Gradio may return the same file through both output and gallery fields.
+          unique = []
+          seen = set()
+          for p in candidates:
+              resolved = str(p.resolve())
+              if resolved not in seen:
+                  seen.add(resolved)
+                  unique.append(p)
+          candidates = unique
           if not candidates:
-              raise RuntimeError('ACE-Step generation returned no local audio artifact')
+              def shape(value, depth=0):
+                  if depth > 2:
+                      return type(value).__name__
+                  if isinstance(value, (list, tuple)):
+                      return [shape(v, depth + 1) for v in value[:8]]
+                  if isinstance(value, dict):
+                      return {str(k): shape(v, depth + 1) for k, v in list(value.items())[:12]}
+                  return type(value).__name__
+              raise RuntimeError('ACE-Step generation returned no local audio artifact; shape=' + json.dumps(shape(result)))
 
-          src = candidates[0]
+          audio_candidates = []
+          for p in candidates:
+              try:
+                  probe = json.loads(subprocess.check_output([
+                      'ffprobe', '-v', 'error', '-show_entries',
+                      'format=duration,size,format_name:stream=codec_type,codec_name',
+                      '-of', 'json', str(p),
+                  ], text=True))
+              except Exception:
+                  continue
+              if any(s.get('codec_type') == 'audio' for s in (probe.get('streams') or [])):
+                  audio_candidates.append((p, probe))
+          if not audio_candidates:
+              raise RuntimeError('ACE-Step returned files, but none contains an audio stream')
+
+          src, probe = audio_candidates[0]
           suffix = src.suffix.lower() or '.mp3'
           dst = Path('runtime/hf-ace-step/output/ace-step-zero-real' + suffix)
           shutil.copy2(src, dst)
           if dst.stat().st_size <= 0:
               raise RuntimeError('ACE-Step audio artifact is empty')
-
-          probe_raw = subprocess.check_output([
-              'ffprobe', '-v', 'error', '-show_entries',
-              'format=duration,size,format_name:stream=codec_type,codec_name',
-              '-of', 'json', str(dst),
-          ], text=True)
-          probe = json.loads(probe_raw)
           duration = float(probe.get('format', {}).get('duration') or 0)
           streams = probe.get('streams') or []
           if duration <= 0 or not any(s.get('codec_type') == 'audio' for s in streams):
