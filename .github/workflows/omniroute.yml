@@ -58,7 +58,6 @@ jobs:
             fi
             if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/omniroute-health.json 2>/dev/null; then
               kill -0 "$pid"
-              # Refuse readiness if the gateway listens outside loopback.
               python - <<'PY_BIND'
           import subprocess
           rows = subprocess.check_output(
@@ -87,7 +86,6 @@ jobs:
           test -n "$PROVIDER"; test -n "$MODEL"; test -n "$PROMPT_B64"
           test "$PROVIDER" != "auto"
           case "$MODEL" in auto|auto/*) echo 'autonomous routing forbidden'; exit 3;; esac
-          # Narrow allowlist: additions require separate cost proof.
           test "$PROVIDER" = "opencode"
           case "$MODEL" in oc/*) ;; *) echo 'model must be explicit OpenCode Free oc/*'; exit 4;; esac
           python - <<'PY'
@@ -96,11 +94,16 @@ jobs:
           started=time.monotonic()
           req=urllib.request.Request(f'http://127.0.0.1:20128/v1/providers/{provider}/chat/completions',data=json.dumps({'model':model,'messages':[{'role':'user','content':prompt}],'stream':False}).encode(),headers={'Content-Type':'application/json'},method='POST')
           with urllib.request.urlopen(req,timeout=180) as resp: payload=json.loads(resp.read().decode())
-          actual_model=payload.get('model')
-          if actual_model != model: raise SystemExit(f'model mismatch expected={model!r} actual={actual_model!r}')
+          reported_model=str(payload.get('model') or '')
+          valid_reported_model = reported_model == model or (
+              provider == 'opencode' and model.startswith('oc/') and reported_model == model.removeprefix('oc/')
+          )
+          if not valid_reported_model: raise SystemExit(f'model mismatch expected={model!r} reported={reported_model!r}')
           choices=payload.get('choices') or []; text=str((choices[0].get('message') or {}).get('content') or '') if choices else ''
           if not text: raise SystemExit('empty result')
-          out={'status':'EXECUTED','provider':provider,'model':actual_model,'text':text,'omniroute_version':'3.8.50','runtime_identity':'github-actions:ubuntu-latest:node24','elapsed_seconds':time.monotonic()-started,'fallback_occurred':False,'retry_count':0,'warnings':[],'errors':[]}
+          warnings=[]
+          if reported_model != model: warnings.append(f'provider_reported_model_alias:{reported_model}')
+          out={'status':'EXECUTED','provider':provider,'model':model,'reported_model':reported_model,'text':text,'omniroute_version':'3.8.50','runtime_identity':'github-actions:ubuntu-latest:node24','elapsed_seconds':time.monotonic()-started,'fallback_occurred':False,'retry_count':0,'warnings':warnings,'errors':[]}
           p=pathlib.Path('runtime/omniroute-result'); p.mkdir(parents=True,exist_ok=True); (p/'result.json').write_text(json.dumps(out,sort_keys=True))
           PY
       - if: ${{ inputs.mode == 'execute' }}
