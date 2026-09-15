@@ -227,6 +227,64 @@ def claim_next_queue_item() -> dict[str, Any] | None:
         connection.close()
 
 
+def claim_queue_item_by_id(queue_id: int) -> dict[str, Any] | None:
+    """Reivindica somente o queue_id informado, de queued para processing."""
+    if (
+        not isinstance(queue_id, int)
+        or isinstance(queue_id, bool)
+        or queue_id <= 0
+    ):
+        raise ValueError("queue_id must be a positive integer")
+
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            """
+            UPDATE editorial_queue
+            SET
+                status = 'processing',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'queued'
+            """,
+            (queue_id,),
+        )
+
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return None
+
+        claimed = connection.execute(
+            """
+            SELECT
+                id,
+                idea_id,
+                priority_score,
+                priority,
+                status,
+                queued_at,
+                updated_at,
+                completed_at
+            FROM editorial_queue
+            WHERE id = ?
+            """,
+            (queue_id,),
+        ).fetchone()
+
+        if claimed is None:
+            connection.rollback()
+            return None
+
+        connection.commit()
+        return dict(claimed)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 def update_queue_status(
     queue_id: int,
     status: str,
