@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 
@@ -9,6 +10,38 @@ REQUIRED_AUTHORIZATION_FIELDS = (
     "execution_id",
     "authorized_action",
 )
+
+# These are Harness provenance identifiers, not credentials. They remain in the
+# canonical persisted RenderJob, but are intentionally omitted from the cloud
+# worker payload because the worker only needs the bounded execution envelope
+# above and rejects credential-shaped fields before archiving inputs.
+WORKER_REDACTED_GOVERNANCE_FIELDS = {
+    "authorization_id",
+    "authorization_subject",
+    "parent_authorization_id",
+}
+
+_CREDENTIAL_KEY_PATTERN = re.compile(
+    r"token|password|secret|api[_-]?key|authorization",
+    re.I,
+)
+
+
+def _worker_safe_value(value: Any) -> Any:
+    """Return a worker payload that minimizes authority metadata and rejects secrets."""
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, child in value.items():
+            key_text = str(key)
+            if key_text in WORKER_REDACTED_GOVERNANCE_FIELDS:
+                continue
+            if _CREDENTIAL_KEY_PATTERN.search(key_text):
+                raise ValueError("Credential-bearing fields do not belong in RenderJob dispatch")
+            result[key_text] = _worker_safe_value(child)
+        return result
+    if isinstance(value, list):
+        return [_worker_safe_value(item) for item in value]
+    return value
 
 
 def build_audiovisual_render_request(
@@ -55,9 +88,11 @@ def build_audiovisual_render_request(
         render_job["render_job_id"] = render_job.get("id")
     if type(render_job.get("render_job_id")) is not int or render_job["render_job_id"] <= 0:
         raise ValueError("Persisted render_job_id is required")
+
+    worker_job = _worker_safe_value(render_job)
     return {
         "render_job": json.dumps(
-            render_job,
+            worker_job,
             ensure_ascii=False,
             separators=(",", ":"),
         ),
