@@ -9,7 +9,24 @@ from app.services.harness_authorization_service import (
 )
 from app.integrations.deepseek_harness import server
 from app.services.gta6_brain import BrainDecision
-from app.services.harness_routing_policy_service import RoutingPolicyError
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    RoutingPolicyError,
+    route_harness_request,
+)
+
+
+def _assert_zero_cost_opencode_primary(routing):
+    assert routing.selected_provider == "opencode"
+    assert routing.selected_model == "oc/big-pickle"
+    assert routing.fallback_allowed is False
+    assert routing.fallback_occurred is False
+    assert routing.policy_metadata["zero_cost_operation"] is True
+    assert any(
+        item.candidate_id == "ai.provider.nvidia-nim"
+        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item.reasons
+        for item in routing.rejected_candidates
+    )
 
 
 def test_operational_mcp_tools_are_registered():
@@ -26,17 +43,23 @@ def test_route_tool_returns_metadata_without_authorization():
     assert "authorization_id" not in decision
 
 
-def test_editorial_process_next_fails_closed_when_provider_cost_is_unknown(monkeypatch):
-    def unexpected(*args, **kwargs):
-        pytest.fail("Unknown-cost provider must not be selected or executed")
-
-    monkeypatch.setattr(server, "select_harness_ai_provider", unexpected)
-    monkeypatch.setattr(server, "process_next_editorial_queue_item", unexpected)
-
+def test_zero_cost_routing_fails_closed_when_unknown_cost_nvidia_is_pinned():
     with pytest.raises(RoutingPolicyError) as exc_info:
-        server.br_editorial_process_next()
+        route_harness_request(
+            HarnessRoutingRequest(
+                intent="process next GTA6 editorial queue item with AI reasoning",
+                authorized_action="EDITORIAL",
+                domain="editorial",
+                required_capability_id="editorial.process",
+                provider_required=True,
+                provider_domain="ai",
+                preferred_providers=("nvidia_nim",),
+                fallback_allowed=False,
+            )
+        )
 
     assert exc_info.value.evidence["zero_cost_operation"] is True
+    assert exc_info.value.evidence["fallback_allowed"] is False
     rejected = exc_info.value.evidence["rejected_candidates"]
     assert any(
         item["candidate_id"] == "ai.provider.nvidia-nim"
@@ -45,23 +68,78 @@ def test_editorial_process_next_fails_closed_when_provider_cost_is_unknown(monke
     )
 
 
-def test_master_run_once_fails_closed_when_decision_provider_cost_is_unknown(monkeypatch):
-    def unexpected(*args, **kwargs):
-        pytest.fail("MasterAgent/provider construction must not run after cost rejection")
+def test_editorial_process_next_selects_primary_zero_cost_provider(monkeypatch):
+    captured = {}
 
-    monkeypatch.setattr(server, "GTA6MasterAgent", unexpected)
-    monkeypatch.setattr(server, "select_harness_ai_provider", unexpected)
+    def select(*, routing_decision, authorization, **kwargs):
+        captured["routing"] = routing_decision
+        captured["provider_authorization"] = authorization
+        return "opencode", object()
 
-    with pytest.raises(RoutingPolicyError) as exc_info:
-        server.br_master_run_once()
+    def process(*, ai_provider, execution_context, goal_id=None):
+        captured["ai_provider"] = ai_provider
+        captured["execution_context"] = execution_context
+        captured["goal_id"] = goal_id
+        return {"status": "completed"}
 
-    assert exc_info.value.evidence["zero_cost_operation"] is True
-    rejected = exc_info.value.evidence["rejected_candidates"]
-    assert any(
-        item["candidate_id"] == "ai.provider.nvidia-nim"
-        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item["reasons"]
-        for item in rejected
-    )
+    monkeypatch.setattr(server, "select_harness_ai_provider", select)
+    monkeypatch.setattr(server, "process_next_editorial_queue_item", process)
+
+    payload = json.loads(server.br_editorial_process_next())
+    routing = captured["routing"]
+    _assert_zero_cost_opencode_primary(routing)
+    assert captured["provider_authorization"].issued_by == "deepseek_harness"
+    assert captured["provider_authorization"].authorized_action == "EDITORIAL"
+    assert captured["provider_authorization"].subject == "provider:opencode"
+    assert captured["execution_context"]["issued_by"] == "deepseek_harness"
+    assert captured["execution_context"]["authorized_action"] == "EDITORIAL"
+    assert captured["goal_id"] is None
+    assert payload["result"]["status"] == "completed"
+    assert payload["result"]["harness_routing"]["decision"]["selected_provider"] == "opencode"
+    assert payload["result"]["harness_routing"]["decision"]["fallback_occurred"] is False
+
+
+def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
+    captured = {}
+
+    def select(*, routing_decision, authorization, **kwargs):
+        captured["routing"] = routing_decision
+        captured["provider_authorization"] = authorization
+        captured["provider"] = object()
+        return "opencode", captured["provider"]
+
+    class FakeMasterAgent:
+        def __init__(self, *, ai_provider):
+            assert ai_provider is captured["provider"]
+
+        def recommend(self):
+            return BrainDecision(
+                action="WAIT",
+                reason="zero-cost routing regression proof",
+                priority="LOW",
+                confidence=1.0,
+            )
+
+        def execute_authorized(self, decision, authorization):
+            captured["decision"] = decision
+            captured["action_authorization"] = authorization
+            return {"status": "completed"}
+
+    monkeypatch.setattr(server, "select_harness_ai_provider", select)
+    monkeypatch.setattr(server, "GTA6MasterAgent", FakeMasterAgent)
+
+    payload = json.loads(server.br_master_run_once())
+    routing = captured["routing"]
+    _assert_zero_cost_opencode_primary(routing)
+    assert routing.authorized_action == "DECISION"
+    assert captured["provider_authorization"].issued_by == "deepseek_harness"
+    assert captured["provider_authorization"].authorized_action == "DECISION"
+    assert captured["provider_authorization"].subject == "provider:opencode"
+    assert captured["decision"].action == "WAIT"
+    assert captured["action_authorization"].issued_by == "deepseek_harness"
+    assert captured["action_authorization"].authorized_action == "WAIT"
+    assert captured["action_authorization"].subject == "action:WAIT"
+    assert payload["result"] == {"status": "completed"}
 
 
 def test_youtube_pode_postar_issues_publication_authorization(monkeypatch):
