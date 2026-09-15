@@ -5,7 +5,7 @@ from typing import Any
 from app.database.gta6_goal_repository import get_active_gta6_goal, get_gta6_goal
 from app.database.production_plan_repository import get_production_plan_by_content_item_id
 from app.services.gta6_goal_service import get_artifacts, resolve_next_stage, update_artifacts
-from app.services.render_worker_service import process_next_render_job
+from app.services.render_worker_service import process_next_render_job, process_render_job
 from app.services.video_render_service import create_video_and_enqueue_render
 from app.services.video_service import create_video_spec
 from app.services.harness_authorization_service import (
@@ -159,7 +159,17 @@ def process_next_production_execution(
         }
 
     if next_stage == "RENDER":
-        result = process_next_render_job(execution_context=execution_context)
+        if goal_id is None:
+            result = process_next_render_job(execution_context=execution_context)
+        else:
+            artifacts = get_artifacts(goal_id=resolved_goal_id)
+            render_job_id = artifacts.get("render_job_id")
+            if not isinstance(render_job_id, int) or render_job_id <= 0:
+                raise RuntimeError("Targeted Goal em RENDER não possui render_job_id válido.")
+            result = process_render_job(
+                render_job_id,
+                execution_context=execution_context,
+            )
         return {"goal_id": resolved_goal_id, "stage": "RENDER", "result": result}
 
     return {"goal_id": resolved_goal_id, "stage": next_stage, "status": "nothing_to_execute"}
