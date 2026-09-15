@@ -29,6 +29,20 @@ jobs:
       - name: Apply deterministic patch
         run: python scripts/apply_run001_ab_duration_patch.py
 
+      - name: Preserve legacy editorial call shape
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/services/editorial_queue_consumer.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''    if ai_provider is None:\n        script_id = generate_and_save_script(\n            idea_id,\n            target_duration_seconds=target_duration_seconds,\n        )\n    else:\n        script_id = generate_and_save_script(\n            idea_id,\n            ai_provider=ai_provider,\n            target_duration_seconds=target_duration_seconds,\n        )\n'''
+          new = '''    if ai_provider is None:\n        if target_duration_seconds is None:\n            script_id = generate_and_save_script(idea_id)\n        else:\n            script_id = generate_and_save_script(\n                idea_id,\n                target_duration_seconds=target_duration_seconds,\n            )\n    else:\n        if target_duration_seconds is None:\n            script_id = generate_and_save_script(\n                idea_id,\n                ai_provider=ai_provider,\n            )\n        else:\n            script_id = generate_and_save_script(\n                idea_id,\n                ai_provider=ai_provider,\n                target_duration_seconds=target_duration_seconds,\n            )\n'''
+          if old not in s:
+              raise SystemExit('editorial compatibility anchor changed')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
