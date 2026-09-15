@@ -1,4 +1,5 @@
 from typing import Any
+import math
 
 from app.database.production_plan_repository import (
     get_production_plan_by_content_item_id,
@@ -114,6 +115,17 @@ def process_next_editorial_queue_item(
     )
     execution_context = authorization_to_context(authorization)
 
+    target_duration_seconds = authorization.lineage.get("target_duration_seconds")
+    if target_duration_seconds is not None:
+        if (
+            isinstance(target_duration_seconds, bool)
+            or not isinstance(target_duration_seconds, (int, float))
+            or not math.isfinite(float(target_duration_seconds))
+            or float(target_duration_seconds) <= 0
+        ):
+            raise PermissionError("Harness target_duration_seconds must be finite and positive")
+        target_duration_seconds = float(target_duration_seconds)
+
     lineage_goal_id = authorization.lineage.get("goal_id")
     targeted_artifacts: dict[str, Any] | None = None
     if goal_id is None:
@@ -166,12 +178,25 @@ def process_next_editorial_queue_item(
         raise PermissionError("Targeted editorial claim resolved a different Idea")
 
     if ai_provider is None:
-        script_id = generate_and_save_script(idea_id)
+        if target_duration_seconds is None:
+            script_id = generate_and_save_script(idea_id)
+        else:
+            script_id = generate_and_save_script(
+                idea_id,
+                target_duration_seconds=target_duration_seconds,
+            )
     else:
-        script_id = generate_and_save_script(
-            idea_id,
-            ai_provider=ai_provider,
-        )
+        if target_duration_seconds is None:
+            script_id = generate_and_save_script(
+                idea_id,
+                ai_provider=ai_provider,
+            )
+        else:
+            script_id = generate_and_save_script(
+                idea_id,
+                ai_provider=ai_provider,
+                target_duration_seconds=target_duration_seconds,
+            )
 
     if not _positive_int(script_id):
         raise RuntimeError(
@@ -186,6 +211,9 @@ def process_next_editorial_queue_item(
         )
 
     script_spec = generate_script_spec(script_id)
+    if target_duration_seconds is not None:
+        script_spec = dict(script_spec)
+        script_spec["estimated_duration_seconds"] = target_duration_seconds
     content_item = create_content_item(script_spec)
 
     production_plan = create_production_plan(content_item)

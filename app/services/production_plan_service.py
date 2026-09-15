@@ -1,6 +1,8 @@
 from typing import Any
 import math
 
+MAX_SCENE_DURATION_SECONDS = 30.0
+
 
 def create_production_plan(
     content_item: dict[str, Any],
@@ -103,6 +105,36 @@ def create_production_plan(
         raise ValueError(
             "Não foi possível criar cenas a partir dos blocos narrativos."
         )
+
+    expanded_scenes: list[dict[str, Any]] = []
+    scene_order = 0
+    for scene in scenes:
+        duration = float(scene["duration_seconds"])
+        part_count = max(1, int(math.ceil(duration / MAX_SCENE_DURATION_SECONDS)))
+        part_duration = duration / part_count
+        narration = str(scene["narration"])
+        words = narration.split()
+        for part_index in range(part_count):
+            scene_order += 1
+            start = round(part_index * len(words) / part_count) if words else 0
+            end = round((part_index + 1) * len(words) / part_count) if words else 0
+            chunk = " ".join(words[start:end]).strip() if words else narration
+            if not chunk:
+                chunk = narration
+            part = dict(scene)
+            part["order"] = scene_order
+            if part_count > 1:
+                part["narrative_block"] = (
+                    f"{scene['narrative_block']} — parte {part_index + 1}/{part_count}"
+                )
+            part["narration"] = chunk
+            part["duration_seconds"] = (
+                duration - part_duration * (part_count - 1)
+                if part_index == part_count - 1
+                else part_duration
+            )
+            expanded_scenes.append(part)
+    scenes = expanded_scenes
 
     audio_requirements = [
         "Utilizar narração clara e inteligível.",

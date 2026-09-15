@@ -14,6 +14,7 @@ def _build_ai_prompt(
     title: str,
     description: str,
     research_context: dict[str, Any] | None,
+    target_duration_seconds: float | None = None,
 ) -> str:
     research_text = "Nenhuma fonte de pesquisa adicional disponível."
 
@@ -22,6 +23,18 @@ def _build_ai_prompt(
             f"Título da pesquisa: {research_context.get('title', '')}\n"
             f"Conteúdo da pesquisa: {research_context.get('content', '')}\n"
             f"URL: {research_context.get('url', '')}"
+        )
+
+    duration_instruction = ""
+    if target_duration_seconds is not None:
+        target_words = max(300, int(round(float(target_duration_seconds) * 2.0)))
+        target_minutes = float(target_duration_seconds) / 60.0
+        duration_instruction = (
+            "\nDURAÇÃO ALVO\n"
+            f"- Aproximadamente {target_minutes:.1f} minutos de narração.\n"
+            f"- Mire aproximadamente {target_words} palavras no roteiro completo.\n"
+            "- Distribua o desenvolvimento em blocos suficientes para sustentar a duração "
+            "sem repetição artificial de frases.\n"
         )
 
     return f"""
@@ -37,6 +50,7 @@ Descrição:
 
 CONTEXTO DE PESQUISA
 {research_text}
+{duration_instruction}
 
 REGRAS
 - Não invente fatos.
@@ -149,11 +163,13 @@ def _generate_ai_structure(
     description: str,
     research_context: dict[str, Any] | None,
     ai_provider: AIProvider,
+    target_duration_seconds: float | None = None,
 ) -> dict[str, Any]:
     prompt = _build_ai_prompt(
         title=title,
         description=description,
         research_context=research_context,
+        target_duration_seconds=target_duration_seconds,
     )
 
     response = ai_provider.generate(prompt)
@@ -177,6 +193,7 @@ def generate_script_structure(
     idea_id: int,
     *,
     ai_provider: AIProvider | None = None,
+    target_duration_seconds: float | None = None,
 ) -> dict[str, Any]:
     """
     Gera uma estrutura editorial de roteiro a partir de uma ideia aprovada.
@@ -222,6 +239,7 @@ def generate_script_structure(
             description=normalized_description,
             research_context=research_context,
             ai_provider=ai_provider,
+            target_duration_seconds=target_duration_seconds,
         )
 
         return {
@@ -319,6 +337,7 @@ def generate_and_save_script(
     idea_id: int,
     *,
     ai_provider: AIProvider | None = None,
+    target_duration_seconds: float | None = None,
 ) -> int:
     """
     Gera a estrutura editorial e persiste uma nova versão como draft.
@@ -329,6 +348,7 @@ def generate_and_save_script(
     structure = generate_script_structure(
         idea_id,
         ai_provider=ai_provider,
+        target_duration_seconds=target_duration_seconds,
     )
 
     content = _structure_to_content(structure)

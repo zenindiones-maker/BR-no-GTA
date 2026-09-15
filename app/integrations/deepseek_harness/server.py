@@ -88,6 +88,21 @@ def _normalize_optional_goal_id(goal_id: str | None) -> str | None:
     return goal_id.strip()
 
 
+def _normalize_optional_target_duration_seconds(
+    target_duration_seconds: float | None,
+) -> float | None:
+    if target_duration_seconds is None:
+        return None
+    if isinstance(target_duration_seconds, bool) or not isinstance(
+        target_duration_seconds, (int, float)
+    ):
+        raise ValueError("target_duration_seconds must be numeric or None")
+    value = float(target_duration_seconds)
+    if value <= 0 or value > 7200:
+        raise ValueError("target_duration_seconds must be in (0, 7200]")
+    return value
+
+
 @mcp.tool()
 def br_observe() -> str:
     """
@@ -241,9 +256,15 @@ def br_route(
     )
 
 
-def _route_editorial_provider(goal_id: str | None = None):
+def _route_editorial_provider(
+    goal_id: str | None = None,
+    target_duration_seconds: float | None = None,
+):
     """Route editorial AI under Harness policy before provider construction."""
     goal_id = _normalize_optional_goal_id(goal_id)
+    target_duration_seconds = _normalize_optional_target_duration_seconds(
+        target_duration_seconds
+    )
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="process next GTA6 editorial queue item with AI reasoning",
@@ -267,6 +288,8 @@ def _route_editorial_provider(goal_id: str | None = None):
     }
     if goal_id is not None:
         lineage["goal_id"] = goal_id
+    if target_duration_seconds is not None:
+        lineage["target_duration_seconds"] = target_duration_seconds
     authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
         subject=f"provider:{decision.selected_provider}",
@@ -280,10 +303,19 @@ def _route_editorial_provider(goal_id: str | None = None):
 
 
 @mcp.tool()
-def br_editorial_process_next(goal_id: str | None = None) -> str:
+def br_editorial_process_next(
+    goal_id: str | None = None,
+    target_duration_seconds: float | None = None,
+) -> str:
     """Process the next editorial queue item through Harness routing/policy."""
     goal_id = _normalize_optional_goal_id(goal_id)
-    routing, provider_authorization, ai_provider = _route_editorial_provider(goal_id)
+    target_duration_seconds = _normalize_optional_target_duration_seconds(
+        target_duration_seconds
+    )
+    routing, provider_authorization, ai_provider = _route_editorial_provider(
+        goal_id,
+        target_duration_seconds,
+    )
 
     lineage = {
         "routing_id": routing.routing_id,
@@ -295,6 +327,8 @@ def br_editorial_process_next(goal_id: str | None = None) -> str:
     }
     if goal_id is not None:
         lineage["goal_id"] = goal_id
+    if target_duration_seconds is not None:
+        lineage["target_duration_seconds"] = target_duration_seconds
     authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
         subject="action:EDITORIAL",
