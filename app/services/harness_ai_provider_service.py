@@ -21,6 +21,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.nvidia_nim_provider import NvidiaNIMProvider
+from app.services.omniroute_ai_provider import OmniRouteAIProvider
 
 
 HarnessAIProviderAuthorization = HarnessAuthorization
@@ -128,7 +129,7 @@ def select_harness_ai_provider(
     routing_decision: HarnessRoutingDecision | None = None,
 ) -> tuple[str, AIProvider]:
     """Construct exactly the AI provider selected by Harness routing/policy."""
-    decision, _, normalized_provider = _resolve_routing(
+    decision, resolved_authorization, normalized_provider = _resolve_routing(
         provider_name=provider_name,
         authorization=authorization,
         routing_decision=routing_decision,
@@ -148,6 +149,16 @@ def select_harness_ai_provider(
             raise PermissionError("Tuxevil executor escaped registered Harness binding")
         return normalized_provider, create_ai_provider(
             model=decision.selected_model,
+        )
+
+    if normalized_provider == "opencode":
+        if "omniroute_gateway_service.execute_omniroute_gateway" not in (
+            decision.selected_provider_executor_binding or ""
+        ):
+            raise PermissionError("OpenCode executor escaped registered OmniRoute binding")
+        return normalized_provider, OmniRouteAIProvider(
+            routing_decision=decision,
+            authorization=resolved_authorization,
         )
 
     raise ValueError(
