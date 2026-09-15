@@ -80,6 +80,14 @@ def _json_result(
     )
 
 
+def _normalize_optional_goal_id(goal_id: str | None) -> str | None:
+    if goal_id is None:
+        return None
+    if not isinstance(goal_id, str) or not goal_id.strip():
+        raise ValueError("goal_id must be a non-empty string or None")
+    return goal_id.strip()
+
+
 @mcp.tool()
 def br_observe() -> str:
     """
@@ -152,8 +160,9 @@ def br_research_run() -> str:
 
 
 @mcp.tool()
-def br_execution_process_next() -> str:
+def br_execution_process_next(goal_id: str | None = None) -> str:
     """Advance one official production step under persisted Harness authority."""
+    goal_id = _normalize_optional_goal_id(goal_id)
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent="execute next official production video render step",
@@ -161,17 +170,21 @@ def br_execution_process_next() -> str:
             fallback_allowed=False,
         )
     )
+    lineage = {
+        "routing_id": routing.routing_id,
+        "selected_capability_id": routing.selected_capability_id,
+        "selected_executor_binding": routing.selected_executor_binding,
+    }
+    if goal_id is not None:
+        lineage["goal_id"] = goal_id
     authorization = issue_harness_authorization(
         authorized_action="EXECUTION",
         subject="action:EXECUTION",
-        lineage={
-            "routing_id": routing.routing_id,
-            "selected_capability_id": routing.selected_capability_id,
-            "selected_executor_binding": routing.selected_executor_binding,
-        },
+        lineage=lineage,
     )
     result = process_next_production_execution(
         authorization_to_context(authorization),
+        goal_id=goal_id,
     )
     evidence = canonical_execution_result(
         authority=authorization.authority,
@@ -224,8 +237,9 @@ def br_route(
     )
 
 
-def _route_editorial_provider():
+def _route_editorial_provider(goal_id: str | None = None):
     """Route editorial AI under Harness policy before provider construction."""
+    goal_id = _normalize_optional_goal_id(goal_id)
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="process next GTA6 editorial queue item with AI reasoning",
@@ -240,16 +254,19 @@ def _route_editorial_provider():
     if not decision.selected_provider:
         raise RuntimeError("Harness routing did not select the editorial AI provider")
 
+    lineage = {
+        "routing_id": decision.routing_id,
+        "selected_capability_id": decision.selected_capability_id,
+        "selected_provider": decision.selected_provider,
+        "selected_model": decision.selected_model,
+        "selected_executor_binding": decision.selected_executor_binding,
+    }
+    if goal_id is not None:
+        lineage["goal_id"] = goal_id
     authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
         subject=f"provider:{decision.selected_provider}",
-        lineage={
-            "routing_id": decision.routing_id,
-            "selected_capability_id": decision.selected_capability_id,
-            "selected_provider": decision.selected_provider,
-            "selected_model": decision.selected_model,
-            "selected_executor_binding": decision.selected_executor_binding,
-        },
+        lineage=lineage,
     )
     _, provider = select_harness_ai_provider(
         routing_decision=decision,
@@ -259,26 +276,31 @@ def _route_editorial_provider():
 
 
 @mcp.tool()
-def br_editorial_process_next() -> str:
+def br_editorial_process_next(goal_id: str | None = None) -> str:
     """Process the next editorial queue item through Harness routing/policy."""
-    routing, provider_authorization, ai_provider = _route_editorial_provider()
+    goal_id = _normalize_optional_goal_id(goal_id)
+    routing, provider_authorization, ai_provider = _route_editorial_provider(goal_id)
 
+    lineage = {
+        "routing_id": routing.routing_id,
+        "selected_capability_id": routing.selected_capability_id,
+        "selected_provider": routing.selected_provider,
+        "selected_model": routing.selected_model,
+        "selected_executor_binding": routing.selected_executor_binding,
+        "provider_authorization_id": provider_authorization.authorization_id,
+    }
+    if goal_id is not None:
+        lineage["goal_id"] = goal_id
     authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
         subject="action:EDITORIAL",
-        lineage={
-            "routing_id": routing.routing_id,
-            "selected_capability_id": routing.selected_capability_id,
-            "selected_provider": routing.selected_provider,
-            "selected_model": routing.selected_model,
-            "selected_executor_binding": routing.selected_executor_binding,
-            "provider_authorization_id": provider_authorization.authorization_id,
-        },
+        lineage=lineage,
     )
 
     result = process_next_editorial_queue_item(
         ai_provider=ai_provider,
         execution_context=authorization_to_context(authorization),
+        goal_id=goal_id,
     )
 
     if result is None:
