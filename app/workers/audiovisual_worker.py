@@ -206,9 +206,16 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
         if a is None or b is None:
             raise WorkerError("Transition references missing segment")
         duration = finite(transition.duration_seconds, "transition.duration")
+        transition_type = str(transition.type).strip().lower()
+        # CUT is the absence of a native transition. The VEdit Store only
+        # accepts effect transitions, so forwarding "cut" raises EditError.
+        if transition_type == "cut":
+            if duration > .001:
+                raise WorkerError("CUT transition must have zero duration")
+            continue
         if duration and (abs(a.end - b.start - duration) > .001 or duration > min(a.duration, b.duration)):
             raise WorkerError("Transition requires explicit overlapping clips; worker cannot retime editorial plan")
-        store.set_transition(a.id, type=transition.type, duration=duration)
+        store.set_transition(a.id, type=transition_type, duration=duration)
     return store.project
 
 
