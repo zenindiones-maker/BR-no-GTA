@@ -1,5 +1,6 @@
 import pytest
 
+import app.services.production_execution_service as execution_service
 from app.database.gta6_goal_repository import get_gta6_goal
 from app.services.gta6_goal_service import create_goal, set_goal_status
 from app.services.harness_authorization_service import (
@@ -69,3 +70,44 @@ def test_untargeted_execution_rejects_goal_scoped_authorization():
 
     with pytest.raises(PermissionError, match="did not target"):
         process_next_production_execution(context)
+
+
+def test_targeted_render_executes_only_render_job_attached_to_goal(monkeypatch):
+    frozen = _active_goal("frozen-job18-goal-render-boundary")
+    target = _active_goal("independent-run001-target-render")
+    frozen_before = get_gta6_goal(frozen["goal_id"])
+    _, context = _execution_context(target["goal_id"])
+    calls = []
+
+    monkeypatch.setattr(
+        execution_service,
+        "resolve_next_stage",
+        lambda **_: {"next_stage": "RENDER"},
+    )
+    monkeypatch.setattr(
+        execution_service,
+        "get_artifacts",
+        lambda **_: {"render_job_id": 222},
+    )
+
+    def exact_render(job_id, *, execution_context=None):
+        calls.append((job_id, execution_context))
+        return {"success": True, "job_id": job_id}
+
+    monkeypatch.setattr(execution_service, "process_render_job", exact_render)
+    monkeypatch.setattr(
+        execution_service,
+        "process_next_render_job",
+        lambda **_: pytest.fail("targeted execution must not claim the global next RenderJob"),
+    )
+
+    result = process_next_production_execution(
+        context,
+        goal_id=target["goal_id"],
+    )
+
+    assert result["goal_id"] == target["goal_id"]
+    assert result["stage"] == "RENDER"
+    assert result["result"]["job_id"] == 222
+    assert calls == [(222, context)]
+    assert get_gta6_goal(frozen["goal_id"]) == frozen_before
