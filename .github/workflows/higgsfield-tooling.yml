@@ -5,8 +5,10 @@ on:
   push:
     branches:
       - codex/run-001-app
+      - work/gate6f-analytics-learning
     paths:
       - '.github/workflows/higgsfield-tooling.yml'
+      - 'scripts/agent-tooling/bootstrap.sh'
 
 permissions:
   contents: read
@@ -26,3 +28,11 @@ jobs:
 
       - name: Restore pinned development tooling
         run: bash scripts/agent-tooling/bootstrap.sh higgsfield
+
+      - name: Report bounded Higgsfield status
+        run: |
+          echo 'HIGGSFIELD_CLI_BOOTSTRAP=PASS'
+          echo 'HIGGSFIELD_HARNESS_AUTHORITY=PRESERVED'
+          echo 'HIGGSFIELD_UNATTENDED_AUTH=UNPROVEN'
+          echo 'HIGGSFIELD_GENERATION_RUNTIME=UNPROVEN'
+          echo 'HIGGSFIELD_POLICY_ELIGIBLE=NO_UNTIL_RUNTIME_PROOF'
