@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -16,7 +18,7 @@ jobs:
       - name: Focused tests
         run: python -m pytest -q tests/test_gate6e_production_media_registry.py tests/test_global_capability_registry.py tests/test_harness_routing_policy_service.py tests/test_harness_authorization_service.py tests/test_harness_execution_result.py tests/test_phone_control_mcp_boundary.py
       - name: Diff check
-        run: git diff --check ${{ github.event.before }} ${{ github.sha }}
+        run: git diff --check b4285dcd5c63b78144bcd75463a19b7dde9e73ff HEAD
       - name: Compile
         run: python -m compileall -q app
       - name: Full suite
