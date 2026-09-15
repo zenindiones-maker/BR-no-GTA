@@ -81,14 +81,22 @@ def get_youtube_credentials(*, token_file: str, client_secrets_file: str,
         raise ValueError("token_file is required")
     token_path = Path(token_file)
     if token_path.is_file():
+        if scopes is None:
+            return load_youtube_credentials(token_file=token_file, request=request)
         return load_youtube_credentials(token_file=token_file, request=request, scopes=scopes)
     if not isinstance(client_secrets_file, str) or not client_secrets_file.strip():
         raise ValueError("client_secrets_file is required")
-    credentials = authorize_youtube(
-        client_secrets_file=client_secrets_file,
-        authorization_runner=authorization_runner,
-        scopes=scopes,
-    )
+    if scopes is None:
+        credentials = authorize_youtube(
+            client_secrets_file=client_secrets_file,
+            authorization_runner=authorization_runner,
+        )
+    else:
+        credentials = authorize_youtube(
+            client_secrets_file=client_secrets_file,
+            authorization_runner=authorization_runner,
+            scopes=scopes,
+        )
     if scopes and not credentials.has_scopes(list(scopes)):
         missing = ", ".join(scope for scope in scopes if not credentials.has_scopes([scope]))
         raise PermissionError(f"YouTube OAuth authorization did not grant required scope(s): {missing}")
