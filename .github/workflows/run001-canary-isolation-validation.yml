@@ -1,0 +1,46 @@
+name: RUN-001 Canary Isolation Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ZERO_COST_OPERATION: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Focused fail-closed tests
+        run: |
+          pytest -q tests/test_production_execution_goal_targeting.py tests/test_harness_authorization_service.py tests/test_gate6e_production_media_registry.py tests/test_render_worker_service.py
+      - name: Full suite
+        run: pytest -q tests/
+      - name: Zero-cost and Job18 guards
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          assert os.environ["ZERO_COST_OPERATION"] == "TRUE"
+          changed = Path("app/services/production_execution_service.py").read_text()
+          assert "claim_render_job(18" not in changed
+          assert "transition_render_job(18" not in changed
+          assert "update_render_job_status(18" not in changed
+          assert "zero_cost_operation=True" in changed
+          print("ZERO_COST_GUARD=PASS")
+          print("JOB18_GUARD=PASS")
+          PY
