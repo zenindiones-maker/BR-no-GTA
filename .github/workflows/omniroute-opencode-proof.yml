@@ -57,17 +57,21 @@ jobs:
           }).then(async response => {
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
             const payload = await response.json();
-            if (payload.model !== model) throw new Error(`model mismatch ${payload.model}`);
+            const reportedModel = String(payload.model || '');
+            const aliasOk = reportedModel === model || (provider === 'opencode' && model.startsWith('oc/') && reportedModel === model.slice(3));
+            if (!aliasOk) throw new Error(`model mismatch expected=${model} reported=${reportedModel}`);
             const text = payload.choices?.[0]?.message?.content || '';
             if (!text.trim()) throw new Error('empty result');
+            const warnings = reportedModel === model ? [] : [`provider_reported_model_alias:${reportedModel}`];
             const out = {
-              status:'EXECUTED', provider, model:payload.model, text,
+              status:'EXECUTED', provider, model, reported_model:reportedModel, text,
               omniroute_version:'3.8.50', runtime_identity:'github-actions:ubuntu-latest:node24',
               cost_class:'FREE_NO_BILLING', credential_required:false,
-              fallback_occurred:false, elapsed_seconds:(Date.now()-started)/1000
+              fallback_occurred:false, retry_count:0, warnings, errors:[],
+              elapsed_seconds:(Date.now()-started)/1000
             };
             fs.writeFileSync('runtime/omniroute-opencode-proof/result.json', JSON.stringify(out));
-            console.log(JSON.stringify({status:out.status,provider:out.provider,model:out.model,cost_class:out.cost_class,credential_required:out.credential_required,fallback_occurred:out.fallback_occurred}));
+            console.log(JSON.stringify({status:out.status,provider:out.provider,model:out.model,reported_model:out.reported_model,cost_class:out.cost_class,credential_required:out.credential_required,fallback_occurred:out.fallback_occurred}));
           }).catch(err => { console.error(err); process.exit(1); });
           NODE
 
