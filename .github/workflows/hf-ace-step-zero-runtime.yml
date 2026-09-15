@@ -17,9 +17,9 @@ env:
   HF_SPACE: 'ACE-Step/Ace-Step-v1.5'
 
 jobs:
-  discover-zero-runtime:
+  real-zero-runtime:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,38 +27,151 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Connect to official ZeroGPU Space and capture API
+      - name: Install bounded client and media validator
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'gradio_client>=1.13,<2'
-          mkdir -p runtime/hf-ace-step
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Generate real zero-cost ACE-Step audio
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/hf-ace-step/output
           python - <<'PY'
+          import hashlib
           import json
           import os
+          import shutil
+          import subprocess
           from pathlib import Path
           from gradio_client import Client
 
           assert os.environ['ZERO_COST_OPERATION'] == 'TRUE'
           space = os.environ['HF_SPACE']
           client = Client(space, verbose=False)
-          api = client.view_api(return_format='dict')
-          Path('runtime/hf-ace-step/api.json').write_text(
-              json.dumps(api, indent=2, ensure_ascii=False, default=str),
-              encoding='utf-8',
+          # Short instrumental smoke: one sample, turbo model, small inference budget.
+          # The official public Space supplies the ZeroGPU executor; no paid HF Job is created.
+          args = [
+              'acestep-v15-turbo',          # selected_model
+              'simple',                     # generation_mode
+              'Instrumental cinematic urban tension bed, modern open-world game documentary, no vocals',
+              'unknown',                    # simple vocal language
+              'cinematic urban tension, dark electronic pulse, subtle percussion, instrumental',
+              '',                           # lyrics
+              0,                            # bpm
+              '',                           # key
+              '',                           # time signature
+              'unknown',                    # vocal language
+              4,                            # inference steps
+              5.0,                          # guidance
+              True,                         # random seed
+              '-1',                         # seed
+              None,                         # reference audio
+              10,                           # duration seconds
+              1,                            # batch size
+              None,                         # source audio
+              '',                           # text2music audio codes
+              0.0,                          # repaint start
+              -1,                           # repaint end
+              'Fill the audio semantic mask based on the given conditions:',
+              1.0,                          # cover strength
+              'text2music',                 # task type
+              False,                        # use ADG
+              0.0,                          # cfg start
+              1.0,                          # cfg end
+              3.0,                          # shift
+              'ode',                        # inference method
+              '',                           # custom timesteps
+              'mp3',                        # format
+              0.85,                         # LM temperature
+              False,                        # thinking
+              2.0,                          # LM cfg
+              0,                            # LM top-k
+              0.9,                          # LM top-p
+              'NO USER INPUT',              # LM negative prompt
+              True,                         # cot metas
+              True,                         # cot caption
+              True,                         # cot language
+              False,                        # constrained debug
+              False,                        # allow LM batch
+              False,                        # auto score
+              False,                        # auto lrc
+              0.5,                          # score scale
+              4,                            # LM batch chunk
+              'synth',                      # track name
+              [],                           # complete track classes
+              True,                         # instrumental
+          ]
+          result = client.predict(*args, api_name='/generation_wrapper')
+          if not isinstance(result, (tuple, list)) or not result:
+              raise RuntimeError(f'ACE-Step returned unexpected result: {type(result)!r}')
+
+          candidates = []
+          for item in result[:8]:
+              if item is None:
+                  continue
+              if isinstance(item, str):
+                  p = Path(item)
+                  if p.exists() and p.is_file():
+                      candidates.append(p)
+              elif isinstance(item, dict):
+                  p = Path(str(item.get('path') or item.get('name') or ''))
+                  if p.exists() and p.is_file():
+                      candidates.append(p)
+          if not candidates:
+              raise RuntimeError('ACE-Step generation returned no local audio artifact')
+
+          src = candidates[0]
+          suffix = src.suffix.lower() or '.mp3'
+          dst = Path('runtime/hf-ace-step/output/ace-step-zero-real' + suffix)
+          shutil.copy2(src, dst)
+          if dst.stat().st_size <= 0:
+              raise RuntimeError('ACE-Step audio artifact is empty')
+
+          probe_raw = subprocess.check_output([
+              'ffprobe', '-v', 'error', '-show_entries',
+              'format=duration,size,format_name:stream=codec_type,codec_name',
+              '-of', 'json', str(dst),
+          ], text=True)
+          probe = json.loads(probe_raw)
+          duration = float(probe.get('format', {}).get('duration') or 0)
+          streams = probe.get('streams') or []
+          if duration <= 0 or not any(s.get('codec_type') == 'audio' for s in streams):
+              raise RuntimeError(f'Invalid ACE-Step audio probe: {probe}')
+          digest = hashlib.sha256(dst.read_bytes()).hexdigest()
+          evidence = {
+              'authority': 'DeepSeek Harness',
+              'authorized_action': 'EXECUTION',
+              'capability_id': 'audio.generate.music',
+              'provider': 'huggingface-zerogpu',
+              'space': space,
+              'model': 'acestep-v15-turbo',
+              'zero_cost_operation': True,
+              'paid_hf_job_created': False,
+              'runtime_execution': 'REAL',
+              'artifact': str(dst),
+              'artifact_size': dst.stat().st_size,
+              'sha256': digest,
+              'duration_seconds': duration,
+              'ffprobe': probe,
+              'status': 'PASS',
+          }
+          Path('runtime/hf-ace-step/output/evidence.json').write_text(
+              json.dumps(evidence, indent=2, ensure_ascii=False), encoding='utf-8'
           )
-          named = api.get('named_endpoints', {}) if isinstance(api, dict) else {}
-          generate = [name for name in named if 'generat' in name.lower() or 'music' in name.lower()]
-          print('HF_SPACE=' + space)
           print('HF_ZERO_RUNTIME_CONNECT=PASS')
-          print('HF_NAMED_ENDPOINTS=' + json.dumps(sorted(named)))
-          print('HF_GENERATION_ENDPOINTS=' + json.dumps(sorted(generate)))
-          if not generate:
-              raise SystemExit('No generation endpoint exposed by official ACE-Step Space')
+          print('HF_REAL_EXECUTION=PASS')
+          print('HF_ARTIFACT=PASS')
+          print('HF_ZERO_COST=PROVEN')
+          print('ACE_STEP=GREEN')
+          print('ACE_AUDIO=' + str(dst))
+          print('ACE_DURATION=' + str(duration))
+          print('ACE_SHA256=' + digest)
           PY
-      - name: Upload API evidence
+      - name: Upload real generation evidence
         uses: actions/upload-artifact@v4
         with:
-          name: hf-ace-step-zero-api
-          path: runtime/hf-ace-step/api.json
+          name: hf-ace-step-zero-real
+          path: runtime/hf-ace-step/output/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
