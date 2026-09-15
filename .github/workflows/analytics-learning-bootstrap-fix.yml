@@ -1,0 +1,33 @@
+name: Analytics Learning Bootstrap Fix
+on: [push]
+permissions:
+  contents: write
+jobs:
+  fix-bootstrap:
+    if: github.ref == 'refs/heads/work/gate6f-analytics-learning' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+      - name: Patch only pytest bootstrap and remove one-shot fixer
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/gate6f-analytics-learning-implementation.yml')
+          s=p.read_text()
+          old='.venv/bin/python -m pip install -r requirements.txt\n'
+          new='.venv/bin/python -m pip install -r requirements.txt pytest\n'
+          assert s.count(old)==1, 'expected exactly one bootstrap command'
+          p.write_text(s.replace(old,new,1))
+          PY
+          git rm .github/workflows/analytics-learning-bootstrap-fix.yml
+          git diff --check
+          git diff -- .github/workflows/gate6f-analytics-learning-implementation.yml | grep -F '+          .venv/bin/python -m pip install -r requirements.txt pytest'
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/gate6f-analytics-learning-implementation.yml
+          git commit -m 'ci(analytics): install pytest for learning validation'
+          git push origin HEAD:work/gate6f-analytics-learning
