@@ -1,0 +1,64 @@
+name: HF ACE-Step ZeroGPU Runtime
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/hf-ace-step-zero-runtime.yml'
+      - 'app/services/huggingface_ace_step_service.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ZERO_COST_OPERATION: 'TRUE'
+  HF_SPACE: 'ACE-Step/Ace-Step-v1.5'
+
+jobs:
+  discover-zero-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Connect to official ZeroGPU Space and capture API
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'gradio_client>=1.13,<2'
+          mkdir -p runtime/hf-ace-step
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from gradio_client import Client
+
+          assert os.environ['ZERO_COST_OPERATION'] == 'TRUE'
+          space = os.environ['HF_SPACE']
+          client = Client(space, verbose=False)
+          api = client.view_api(return_format='dict')
+          Path('runtime/hf-ace-step/api.json').write_text(
+              json.dumps(api, indent=2, ensure_ascii=False, default=str),
+              encoding='utf-8',
+          )
+          named = api.get('named_endpoints', {}) if isinstance(api, dict) else {}
+          generate = [name for name in named if 'generat' in name.lower() or 'music' in name.lower()]
+          print('HF_SPACE=' + space)
+          print('HF_ZERO_RUNTIME_CONNECT=PASS')
+          print('HF_NAMED_ENDPOINTS=' + json.dumps(sorted(named)))
+          print('HF_GENERATION_ENDPOINTS=' + json.dumps(sorted(generate)))
+          if not generate:
+              raise SystemExit('No generation endpoint exposed by official ACE-Step Space')
+          PY
+      - name: Upload API evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hf-ace-step-zero-api
+          path: runtime/hf-ace-step/api.json
+          if-no-files-found: error
+          retention-days: 7
