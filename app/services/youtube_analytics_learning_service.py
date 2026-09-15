@@ -6,7 +6,7 @@ from typing import Any
 
 from app.database.memory_event_repository import insert_memory_event, list_memory_events_by_source
 from app.services.memory_event_service import create_memory_event
-from app.services.global_capability_registry import get_capability_registry
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import validate_persisted_harness_authorization
 from app.services.harness_capability_service import CapabilityEvidence, CapabilityExecutionBlocked
 from app.services.harness_execution_result import canonical_execution_result
@@ -50,23 +50,13 @@ def _validate_source(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _key(source: dict[str, Any]) -> str:
-    identity = {
-        "publication_id": source["publication_id"],
-        "youtube_video_id": source["youtube_video_id"],
-        "metric_window": source["metric_window"],
-        "metrics": source["metrics"],
-    }
+    identity = {"publication_id": source["publication_id"], "youtube_video_id": source["youtube_video_id"], "metric_window": source["metric_window"], "metrics": source["metrics"]}
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
 def _validate_boundary(*, authorization: Any, routing_decision: Any, execution_id: str):
-    auth = validate_persisted_harness_authorization(
-        authorization,
-        expected_action="EXECUTION",
-        expected_subject=f"capability:{CAPABILITY_ID}",
-        expected_execution_id=execution_id,
-    )
-    capability = get_capability_registry().get(CAPABILITY_ID)
+    auth = validate_persisted_harness_authorization(authorization, expected_action="EXECUTION", expected_subject=f"capability:{CAPABILITY_ID}", expected_execution_id=execution_id)
+    capability = GLOBAL_CAPABILITY_REGISTRY.get(CAPABILITY_ID)
     if capability is None or capability.executor_binding != EXECUTOR_BINDING:
         raise _blocked("analytics learning Registry binding is invalid", "binding")
     if routing_decision.selected_capability_id != CAPABILITY_ID or routing_decision.selected_executor_binding != EXECUTOR_BINDING:
@@ -86,25 +76,7 @@ def execute_youtube_analytics_learning_capability(capability: Any, payload: dict
     existing = list_memory_events_by_source(source_type="youtube_analytics", source_id=source_id)
     if existing:
         return {"status": "ALREADY_LEARNED", "idempotency_key": key, "memory_event_id": existing[0].get("id"), "learning": source}
-    event = create_memory_event(
-        event_type="youtube_analytics_observed",
-        source_type="youtube_analytics",
-        source_id=source_id,
-        scope="gta6",
-        content=f"YouTube Analytics observation for persisted publication {source['publication_id']}.",
-        provenance="youtube_analytics_learning",
-        metadata={
-            "idempotency_key": key,
-            "publication_id": source["publication_id"],
-            "youtube_video_id": source["youtube_video_id"],
-            "metric_window": source["metric_window"],
-            "retrieved_at": source.get("retrieved_at"),
-            "metrics": source["metrics"],
-            "source_execution_id": source.get("execution_id"),
-            "source_authorization_id": source.get("authorization_id"),
-            "source_capability_id": SOURCE_CAPABILITY_ID,
-        },
-    )
+    event = create_memory_event(event_type="youtube_analytics_observed", source_type="youtube_analytics", source_id=source_id, scope="gta6", content=f"YouTube Analytics observation for persisted publication {source['publication_id']}.", provenance="youtube_analytics_learning", metadata={"idempotency_key": key, "publication_id": source["publication_id"], "youtube_video_id": source["youtube_video_id"], "metric_window": source["metric_window"], "retrieved_at": source.get("retrieved_at"), "metrics": source["metrics"], "source_execution_id": source.get("execution_id"), "source_authorization_id": source.get("authorization_id"), "source_capability_id": SOURCE_CAPABILITY_ID})
     event_id = insert_memory_event(event)
     return {"status": "LEARNED", "idempotency_key": key, "memory_event_id": event_id, "learning": source}
 
@@ -112,30 +84,6 @@ def execute_youtube_analytics_learning_capability(capability: Any, payload: dict
 def learn_from_youtube_analytics(*, analytics_evidence: dict[str, Any], authorization: Any, routing_decision: Any, execution_id: str) -> dict[str, Any]:
     auth, capability = _validate_boundary(authorization=authorization, routing_decision=routing_decision, execution_id=execution_id)
     result = execute_youtube_analytics_learning_capability(capability, analytics_evidence)
-    evidence = CapabilityEvidence(
-        capability_id=CAPABILITY_ID,
-        status="EXECUTED",
-        authority=auth.authority,
-        authorized_action=auth.authorized_action,
-        authorization_id=auth.authorization_id,
-        harness_decision_id=auth.harness_decision_id,
-        execution_id=auth.execution_id,
-        result=result,
-    )
-    canonical = canonical_execution_result(
-        authority=auth.authority,
-        authorized_action=auth.authorized_action,
-        execution_id=auth.execution_id,
-        routing_id=routing_decision.routing_id,
-        authorization_id=auth.authorization_id,
-        harness_decision_id=auth.harness_decision_id,
-        capability_id=CAPABILITY_ID,
-        tool="youtube_analytics_learning_service",
-        operation="learn_from_youtube_analytics",
-        executor=EXECUTOR_BINDING,
-        status="SUCCEEDED",
-        success=True,
-        result=result,
-        evidence={"source_capability_id": SOURCE_CAPABILITY_ID, "idempotency_key": result["idempotency_key"]},
-    )
+    evidence = CapabilityEvidence(capability_id=CAPABILITY_ID, status="EXECUTED", authority=auth.authority, authorized_action=auth.authorized_action, authorization_id=auth.authorization_id, harness_decision_id=auth.harness_decision_id, execution_id=auth.execution_id, result=result)
+    canonical = canonical_execution_result(authority=auth.authority, authorized_action=auth.authorized_action, execution_id=auth.execution_id, routing_id=routing_decision.routing_id, authorization_id=auth.authorization_id, harness_decision_id=auth.harness_decision_id, capability_id=CAPABILITY_ID, tool="youtube_analytics_learning_service", operation="learn_from_youtube_analytics", executor=EXECUTOR_BINDING, status="SUCCEEDED", success=True, result=result, evidence={"source_capability_id": SOURCE_CAPABILITY_ID, "idempotency_key": result["idempotency_key"]})
     return {"result": result, "capability_evidence": evidence.to_dict(), "canonical_execution_result": canonical.to_dict()}
