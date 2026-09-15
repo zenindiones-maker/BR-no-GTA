@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.services.global_capability_registry_base import *  # noqa: F401,F403
 from app.services.global_capability_registry_base import (
     AVAILABLE,
     FUNCTIONAL,
     PARTIAL,
+    PROVEN,
     CapabilityRecord,
     GLOBAL_CAPABILITY_REGISTRY as _REGISTRY,
 )
@@ -24,5 +27,27 @@ for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_A
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
     _REGISTRY._by_id[_record.capability_id] = _record
     _REGISTRY._records = tuple(sorted((*_REGISTRY._records, _record), key=lambda item: item.capability_id))
+
+# Real runtime proof: GitHub Actions run 35033861020 executed the explicit
+# OpenCode Free model through OmniRoute 3.8.50 on a standard public runner,
+# with no credentials, no fallback and cost_class FREE_NO_BILLING. Promotion
+# is metadata only; the Harness still selects and authorizes every execution.
+for _capability_id in ("ai.provider.opencode-free", "executor.omniroute-gateway"):
+    _existing = _REGISTRY._by_id.get(_capability_id)
+    if _existing is None:
+        raise ValueError(f"Missing proven OmniRoute Registry record: {_capability_id}")
+    _promoted = replace(
+        _existing,
+        maturity=PROVEN,
+        availability=AVAILABLE,
+        quality_class="PROVEN_ZERO_COST_RUNTIME_RUN_35033861020",
+    )
+    _REGISTRY._by_id[_capability_id] = _promoted
+    _REGISTRY._records = tuple(
+        sorted(
+            (_promoted if record.capability_id == _capability_id else record for record in _REGISTRY._records),
+            key=lambda item: item.capability_id,
+        )
+    )
 
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
