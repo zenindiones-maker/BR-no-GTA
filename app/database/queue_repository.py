@@ -228,7 +228,7 @@ def claim_next_queue_item() -> dict[str, Any] | None:
 
 
 def claim_queue_item_by_id(queue_id: int) -> dict[str, Any] | None:
-    """Reivindica somente o queue_id informado, de queued para processing."""
+    """Reivindica o queue_id alvo de queued/scheduled para processing."""
     if (
         not isinstance(queue_id, int)
         or isinstance(queue_id, bool)
@@ -246,7 +246,7 @@ def claim_queue_item_by_id(queue_id: int) -> dict[str, Any] | None:
                 status = 'processing',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-              AND status = 'queued'
+              AND status IN ('queued', 'scheduled')
             """,
             (queue_id,),
         )
@@ -278,6 +278,47 @@ def claim_queue_item_by_id(queue_id: int) -> dict[str, Any] | None:
 
         connection.commit()
         return dict(claimed)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def requeue_processing_queue_item_by_id(
+    queue_id: int,
+    *,
+    expected_idea_id: int,
+) -> bool:
+    """Recupera somente um claim processing conhecido e vinculado à Idea esperada."""
+    for name, value in (("queue_id", queue_id), ("expected_idea_id", expected_idea_id)):
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+        ):
+            raise ValueError(f"{name} must be a positive integer")
+
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            """
+            UPDATE editorial_queue
+            SET
+                status = 'queued',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND idea_id = ?
+              AND status = 'processing'
+            """,
+            (queue_id, expected_idea_id),
+        )
+        if cursor.rowcount != 1:
+            connection.rollback()
+            return False
+        connection.commit()
+        return True
     except Exception:
         connection.rollback()
         raise
