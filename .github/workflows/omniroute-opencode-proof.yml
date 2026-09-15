@@ -1,0 +1,102 @@
+name: OmniRoute OpenCode Zero-Cost Runtime Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: read
+
+jobs:
+  prove-opencode-zero-cost:
+    if: github.event.head_commit.message == 'chore(runtime): prove opencode zero-cost editorial provider'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pinned OmniRoute
+        run: |
+          set -euo pipefail
+          npm install -g omniroute@3.8.50
+          test "$(omniroute --version | tr -d '\r')" = "3.8.50"
+
+      - name: Start loopback-only gateway
+        run: |
+          set -euo pipefail
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve >/tmp/omniroute.log 2>&1 &
+          echo $! >/tmp/omniroute.pid
+          for i in {1..40}; do
+            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/health.json 2>/dev/null; then
+              python - <<'PY'
+          import subprocess
+          rows=subprocess.check_output(['ss','-H','-ltn','sport = :20128'],text=True).splitlines()
+          assert rows
+          addresses=[row.split()[3] for row in rows]
+          assert all(a in {'127.0.0.1:20128','[::1]:20128'} for a in addresses), addresses
+          PY
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/omniroute.log || true
+          exit 1
+
+      - name: Execute exact free provider/model
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pathlib, time, urllib.request
+          provider='opencode'
+          model='oc/big-pickle'
+          prompt='Return only this valid JSON object: {"status":"ok","provider_proof":"opencode"}'
+          started=time.monotonic()
+          req=urllib.request.Request(
+              f'http://127.0.0.1:20128/v1/providers/{provider}/chat/completions',
+              data=json.dumps({'model':model,'messages':[{'role':'user','content':prompt}],'stream':False}).encode(),
+              headers={'Content-Type':'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(req,timeout=180) as resp:
+              payload=json.loads(resp.read().decode())
+          actual_model=payload.get('model')
+          if actual_model != model:
+              raise SystemExit(f'model mismatch expected={model!r} actual={actual_model!r}')
+          choices=payload.get('choices') or []
+          text=str((choices[0].get('message') or {}).get('content') or '') if choices else ''
+          if not text.strip():
+              raise SystemExit('empty result')
+          out={
+              'status':'EXECUTED',
+              'provider':provider,
+              'model':actual_model,
+              'text':text,
+              'omniroute_version':'3.8.50',
+              'runtime_identity':'github-actions:ubuntu-latest:node24',
+              'cost_class':'FREE_NO_BILLING',
+              'credential_required':False,
+              'fallback_occurred':False,
+              'elapsed_seconds':time.monotonic()-started,
+          }
+          p=pathlib.Path('runtime/omniroute-opencode-proof')
+          p.mkdir(parents=True,exist_ok=True)
+          (p/'result.json').write_text(json.dumps(out,sort_keys=True))
+          print(json.dumps({k:out[k] for k in ('status','provider','model','cost_class','credential_required','fallback_occurred')},sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omniroute-opencode-zero-cost-proof
+          path: runtime/omniroute-opencode-proof/result.json
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Shutdown gateway
+        if: always()
+        run: |
+          if [ -f /tmp/omniroute.pid ]; then kill "$(cat /tmp/omniroute.pid)" 2>/dev/null || true; fi
