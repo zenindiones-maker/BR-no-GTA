@@ -11,7 +11,7 @@ def _registry_for(capability_id,provider_id,model_revision):
     records=[]
     for record in GLOBAL_CAPABILITY_REGISTRY.all():
         if record.capability_id==capability_id: record=replace(record,availability=AVAILABLE,maturity=FUNCTIONAL)
-        elif record.provider_id==provider_id: record=replace(record,availability=AVAILABLE,maturity=FUNCTIONAL,model_id=model_revision)
+        elif record.provider_id==provider_id: record=replace(record,availability=AVAILABLE,maturity=FUNCTIONAL,model_id=model_revision,cost_class="FREE_NO_BILLING")
         records.append(record)
     return GlobalCapabilityRegistry(records)
 
