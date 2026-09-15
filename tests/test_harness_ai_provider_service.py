@@ -1,6 +1,13 @@
 import pytest
+from dataclasses import replace
 
 from app.services.ai_provider import AIResponse, AIUsage
+from app.services.global_capability_registry import (
+    AVAILABLE,
+    FUNCTIONAL,
+    GLOBAL_CAPABILITY_REGISTRY,
+    GlobalCapabilityRegistry,
+)
 from app.services.harness_ai_provider_service import execute_harness_ai_generation, select_harness_ai_provider
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
 from app.services.harness_authorization_service import issue_harness_authorization
@@ -10,13 +17,49 @@ def auth(provider="nvidia_nim"):
     return issue_harness_authorization(authorized_action="EDITORIAL", subject=f"provider:{provider}", harness_decision_id="decision-1", execution_id="execution-1")
 
 
+def _install_free_test_provider(monkeypatch, provider_id, *, model_id=None):
+    import app.services.harness_ai_provider_service as ai_service
+    import app.services.harness_routing_policy_service as routing_service
+
+    records = []
+    for record in GLOBAL_CAPABILITY_REGISTRY.all():
+        if record.provider_id == provider_id:
+            changes = {
+                "availability": AVAILABLE,
+                "maturity": FUNCTIONAL,
+                "cost_class": "FREE_NO_BILLING",
+            }
+            if model_id is not None:
+                changes["model_id"] = model_id
+            record = replace(record, **changes)
+        records.append(record)
+
+    registry = GlobalCapabilityRegistry(records)
+    monkeypatch.setattr(ai_service, "GLOBAL_CAPABILITY_REGISTRY", registry)
+    monkeypatch.setattr(routing_service, "GLOBAL_CAPABILITY_REGISTRY", registry)
+    monkeypatch.setattr(
+        ai_service,
+        "route_harness_request",
+        lambda request: routing_service.route_harness_request(
+            request,
+            registry=registry,
+        ),
+    )
+    return registry
+
+
 class FakeProvider:
     def generate(self, prompt):
         assert prompt == "Teste"
         return AIResponse(text="OK", provider="nvidia_nim", model="nvidia/nemotron-3-super-120b-a12b", reasoning_content="reasoning", usage=AIUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3), finish_reason="stop")
 
 
-def test_harness_boundary_returns_normalized_lineage_evidence():
+def test_harness_boundary_returns_normalized_lineage_evidence(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
     authorization = auth()
     def selector(*, provider_name, authorization):
         assert provider_name == "nvidia"
@@ -36,6 +79,11 @@ def test_fabricated_authorization_is_rejected_before_provider_selection():
 
 
 def test_nvidia_selection_is_lazy_policy_owned_and_model_bound(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
     import app.services.harness_ai_provider_service as service
     calls = []
     class SelectedProvider: pass
@@ -49,6 +97,7 @@ def test_nvidia_selection_is_lazy_policy_owned_and_model_bound(monkeypatch):
 
 
 def test_tuxevil_selection_requires_governed_concrete_model(monkeypatch):
+    _install_free_test_provider(monkeypatch, "tuxevil")
     import app.services.harness_ai_provider_service as service
 
     monkeypatch.setattr(
@@ -115,7 +164,12 @@ def test_tuxevil_unregistered_concrete_model_is_rejected(monkeypatch):
         )
 
 
-def test_provider_failure_does_not_trigger_silent_fallback():
+def test_provider_failure_does_not_trigger_silent_fallback(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
     from app.services.ai_provider import AIProviderError
     calls=[]
     class FailingProvider:

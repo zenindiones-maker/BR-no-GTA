@@ -17,10 +17,8 @@ from app.services.codex_addy_capability_executor import (
 from app.services.harness_ai_provider_service import (
     select_harness_ai_provider,
 )
-from app.services.harness_capability_service import (
-    discover_capabilities,
-    execute_capability,
-)
+from app.services.harness_capability_service import discover_capabilities
+from app.services.harness_mcp_capability_execution import execute_mcp_capability
 from app.services.harness_authorization_service import (
     HARNESS_ISSUER,
     authorization_to_context,
@@ -405,9 +403,9 @@ def br_capability_execute(
     """
     Apply Harness capability policy and return execution evidence.
 
-    The Harness binds exactly one bounded Codex/Addy executor after policy
-    validation. Higgsfield remains BLOCKED before any executor call until its
-    authentication boundary is resolved.
+    The Harness binds either the existing selected SKILL executor or one
+    explicitly allowlisted bounded EXECUTOR adapter. Generic EXECUTOR dispatch
+    remains fail closed.
     """
     payload = json.loads(payload_json)
     if not isinstance(payload, dict):
@@ -479,10 +477,6 @@ def br_capability_execute(
     implementation = routing.policy_metadata.get("selected_implementation")
     if not isinstance(implementation, dict):
         raise RuntimeError("Harness routing did not bind implementation metadata")
-    if implementation.get("type") != "SKILL" or not implementation.get("skill_id"):
-        raise PermissionError(
-            "Generic agent/skill execution is restricted to a selected SKILL implementation"
-        )
 
     authorization = issue_harness_authorization(
         authorized_action=routing.authorized_action,
@@ -496,12 +490,12 @@ def br_capability_execute(
             "fallback_occurred": routing.fallback_occurred,
         },
     )
-    capability_evidence = execute_capability(
-        capability_id=routing.selected_capability_id,
+    capability_evidence = execute_mcp_capability(
+        routing_decision=routing,
         authorization=authorization,
         payload=payload,
-        routing_decision=routing,
-        executor=execute_codex_addy_capability,
+        implementation=implementation,
+        skill_executor=execute_codex_addy_capability,
     )
     result = capability_evidence.to_dict()
     result["authorization_id"] = authorization.authorization_id

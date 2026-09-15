@@ -50,6 +50,31 @@ class Settings:
         "BR_ROCKSTAR_QUERY_HASH",
     )
 
+    # Local Samsung A15 control. The Portal token is a runtime-only secret.
+    PHONE_CONTROL_BACKEND = os.getenv(
+        "BR_PHONE_CONTROL_BACKEND",
+        "local-android-http",
+    )
+    PHONE_CONTROL_PORTAL_URL = os.getenv(
+        "BR_PHONE_CONTROL_PORTAL_URL",
+        "http://127.0.0.1:8080",
+    )
+    PHONE_CONTROL_PORTAL_TOKEN = os.getenv(
+        "BR_PHONE_PORTAL_TOKEN",
+        "",
+    )
+    PHONE_CONTROL_EXECUTOR_COMMAND = os.getenv(
+        "BR_PHONE_CONTROL_EXECUTOR_COMMAND",
+        "",
+    )
+    PHONE_CONTROL_TIMEOUT_SECONDS = float(
+        os.getenv("BR_PHONE_CONTROL_TIMEOUT_SECONDS", "20")
+    )
+    PHONE_CONTROL_ARTIFACT_DIR = os.getenv(
+        "BR_PHONE_CONTROL_ARTIFACT_DIR",
+        "runtime/phone-control/artifacts",
+    )
+
     # Fontes oficiais de mídia GTA6.
     # O Brain usa essas fontes como prioridade para descoberta
     # audiovisual antes de ampliar a pesquisa para terceiros.
