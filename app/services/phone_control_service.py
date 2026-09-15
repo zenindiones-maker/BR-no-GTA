@@ -151,6 +151,20 @@ def _executor_command() -> list[str]:
     return command
 
 
+def _bridge_runtime_secret(command: list[str], token: str) -> tuple[list[str], bool]:
+    """Bridge a runtime-only secret across a proot login environment boundary."""
+    if not command:
+        raise _blocked("Isolated phone control executor command is invalid", stage="runtime")
+    if Path(command[0]).name != "proot-distro":
+        return list(command), False
+    if "login" not in command or "--" not in command:
+        raise _blocked("proot-distro phone executor must use a login -- boundary", stage="runtime")
+    boundary = command.index("--")
+    if boundary + 1 >= len(command):
+        raise _blocked("proot-distro phone executor has no isolated command", stage="runtime")
+    return [*command[:boundary + 1], "env", f"MOBILERUN_PORTAL_TOKEN={token}", *command[boundary + 1:]], True
+
+
 def _artifact_path(execution_id: str | None = None) -> Path:
     root = Path(settings.PHONE_CONTROL_ARTIFACT_DIR)
     if not root.is_absolute():
@@ -189,7 +203,7 @@ def execute_phone_control_capability(capability, payload: dict[str, Any]) -> dic
 
     operation, params = _validate_payload(payload)
     token = _secret()
-    command = _executor_command()
+    command, secret_bridged = _bridge_runtime_secret(_executor_command(), token)
 
     request: dict[str, Any] = {
         "operation": operation,
@@ -205,7 +219,8 @@ def execute_phone_control_capability(capability, payload: dict[str, Any]) -> dic
         for key, value in os.environ.items()
         if key in {"PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "PROOT_TMP_DIR"}
     }
-    child_env["MOBILERUN_PORTAL_TOKEN"] = token
+    if not secret_bridged:
+        child_env["MOBILERUN_PORTAL_TOKEN"] = token
 
     runtime_script = settings.BASE_DIR / "app" / "services" / "phone_control_runtime.py"
     try:

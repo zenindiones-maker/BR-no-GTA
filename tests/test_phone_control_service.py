@@ -166,6 +166,43 @@ def _runtime_ready(monkeypatch, token="secret-runtime-token"):
     return token
 
 
+def test_proot_executor_bridges_secret_after_boundary_without_outer_env(monkeypatch):
+    token = _runtime_ready(monkeypatch)
+    monkeypatch.setattr(phone_control_service.settings, "PHONE_CONTROL_EXECUTOR_COMMAND", "proot-distro login ubuntu -- /root/mobile-harness/.venv/bin/python")
+    captured = {}
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"success": True, "result": {"ui_nonempty": True}}), stderr="")
+    monkeypatch.setattr(phone_control_service.subprocess, "run", fake_run)
+    record = GLOBAL_CAPABILITY_REGISTRY.get("phone.control")
+    result = phone_control_service.execute_phone_control_capability(record, {"operation": "ui"})
+    boundary = captured["command"].index("--")
+    assert captured["command"][boundary + 1:boundary + 3] == ["env", f"MOBILERUN_PORTAL_TOKEN={token}"]
+    assert "MOBILERUN_PORTAL_TOKEN" not in captured["env"]
+    assert result["success"] is True
+
+
+def test_non_proot_executor_preserves_minimal_child_env_secret(monkeypatch):
+    token = _runtime_ready(monkeypatch)
+    captured = {}
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return SimpleNamespace(returncode=0, stdout=json.dumps({"success": True, "result": {}}), stderr="")
+    monkeypatch.setattr(phone_control_service.subprocess, "run", fake_run)
+    record = GLOBAL_CAPABILITY_REGISTRY.get("phone.control")
+    phone_control_service.execute_phone_control_capability(record, {"operation": "ui"})
+    assert captured["env"]["MOBILERUN_PORTAL_TOKEN"] == token
+    assert captured["command"][0] == "python3"
+
+
+def test_malformed_proot_boundary_fails_closed(monkeypatch):
+    token = _runtime_ready(monkeypatch)
+    with pytest.raises(CapabilityExecutionBlocked, match="login -- boundary"):
+        phone_control_service._bridge_runtime_secret(["proot-distro", "login", "ubuntu", "python3"], token)
+
+
 def test_portal_unavailable_returns_sanitized_error(monkeypatch):
     token = _runtime_ready(monkeypatch)
     monkeypatch.setattr(
