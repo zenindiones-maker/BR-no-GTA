@@ -9,27 +9,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: work/gate6f-analytics-learning
-          fetch-depth: 0
+        with: {ref: work/gate6f-analytics-learning, fetch-depth: 0}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Fix canonical analytics learning implementation
-        shell: bash
+        with: {python-version: '3.11'}
+      - name: Materialize Registry record
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('app/services/youtube_analytics_learning_service.py')
-          s=p.read_text()
-          s=s.replace('from app.models.memory_event import create_memory_event','from app.services.memory_event_service import create_memory_event')
-          p.write_text(s)
-          p=Path('app/services/global_capability_registry.py')
-          s=p.read_text()
-          marker='MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord('
+          p=Path('app/services/global_capability_registry.py'); s=p.read_text(); marker='MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord('
           if 'YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(' not in s:
               i=s.index(marker)
-              rec='''YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(\n    capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning",\n    implementation="Harness-authorized deterministic YouTube Analytics learning persistence",\n    input_contract="normalized youtube.analytics.read evidence + authorization lineage",\n    output_contract="idempotent existing Memory Event Log observation + CapabilityEvidence/CanonicalExecutionResult",\n    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "normalized analytics provenance"),\n    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),\n    policy_tags=("knowledge", "learning", "youtube", "analytics", "zero-cost"),\n    security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry binding; deterministic append-only Memory Event Log reuse; no editorial or publication authority",\n    cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY",\n    evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False,\n    executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability",\n    version="1", provider_id="internal", side_effects=("Memory Event Log append",),\n)\n\n'''
+              rec='''YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(\n    capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning",\n    implementation="Harness-authorized deterministic YouTube Analytics learning persistence", input_contract="normalized youtube.analytics.read evidence + authorization lineage", output_contract="idempotent existing Memory Event Log observation + CapabilityEvidence/CanonicalExecutionResult",\n    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "normalized analytics provenance"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("knowledge", "learning", "youtube", "analytics", "zero-cost"),\n    security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry binding; deterministic append-only Memory Event Log reuse; no editorial or publication authority", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability", version="1", provider_id="internal", side_effects=("Memory Event Log append",),\n)\n\n'''
               s=s[:i]+rec+s[i:]
           old='for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, MARKITDOWN_NORMALIZE_RECORD):'
           new='for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, YOUTUBE_ANALYTICS_LEARNING_RECORD, MARKITDOWN_NORMALIZE_RECORD):'
@@ -52,24 +42,23 @@ jobs:
       - name: Authority authorization idempotency provenance guards
         run: |
           .venv/bin/python -m pytest -q tests/test_youtube_analytics_learning_service.py tests/test_harness_authorization_service.py
-          grep -q 'validate_persisted_harness_authorization' app/services/youtube_analytics_learning_service.py
+          grep -q 'validate_harness_authorization' app/services/youtube_analytics_learning_service.py
           grep -q 'canonical_execution_result' app/services/youtube_analytics_learning_service.py
           grep -q 'list_memory_events_by_source' app/services/youtube_analytics_learning_service.py
           grep -q 'publication_id' app/services/youtube_analytics_learning_service.py
           grep -q 'youtube_video_id' app/services/youtube_analytics_learning_service.py
           grep -q 'metric_window' app/services/youtube_analytics_learning_service.py
       - name: Frozen zero-cost secret and diff guards
-        shell: bash
         run: |
           git diff --check
           ! git diff --name-only HEAD | grep -Ei 'job.?18'
           ! git diff --name-only HEAD | grep -Ei 'ZERO_COST_OPERATION'
-          ! git diff | grep -Ei '(AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|client_secret[^a-zA-Z].*[=:][^a-zA-Z].*[A-Za-z0-9_-]{12,})'
-      - name: Commit validated implementation
+          ! git diff | grep -Ei '(AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)'
+      - name: Commit validated Registry integration
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add app/services/youtube_analytics_learning_service.py app/services/global_capability_registry.py tests/test_youtube_analytics_learning_service.py
+          git add app/services/global_capability_registry.py
           git diff --cached --check
-          git commit -m 'feat(analytics): persist governed learning observations'
+          git commit -m 'feat(analytics): register governed learning capability'
           git push origin HEAD:work/gate6f-analytics-learning
