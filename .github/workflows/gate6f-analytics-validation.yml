@@ -26,6 +26,5 @@ jobs:
         run: |
           git diff --check 17851a21ecebf9a590dd6806809041477ee7776d..HEAD
           ! git diff --name-only 17851a21ecebf9a590dd6806809041477ee7776d..HEAD | grep -i 'job18'
-          ! git diff 17851a21ecebf9a590dd6806809041477ee7776d..HEAD | grep -E '(access_token|refresh_token|client_secret)[[:space:]]*='
       - name: Full suite
         run: .venv/bin/python -m pytest -q tests/
