@@ -29,10 +29,21 @@ jobs:
       - name: Restore pinned development tooling
         run: bash scripts/agent-tooling/bootstrap.sh higgsfield
 
-      - name: Report bounded Higgsfield status
+      - name: Probe unattended authentication without exposing account data
+        shell: bash
         run: |
+          set +e
+          export PATH="$HOME/.local/share/br-agent-tooling/bin:$PATH"
+          higgsfield account status >/tmp/higgsfield-account-status.txt 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'HIGGSFIELD_UNATTENDED_AUTH=PASS'
+            echo 'HIGGSFIELD_POLICY_ELIGIBLE=YES_FOR_BOUNDED_RUNTIME_PROOF'
+          else
+            echo 'HIGGSFIELD_UNATTENDED_AUTH=BLOCKED_INTERACTIVE_LOGIN_REQUIRED'
+            echo 'HIGGSFIELD_POLICY_ELIGIBLE=NO'
+          fi
           echo 'HIGGSFIELD_CLI_BOOTSTRAP=PASS'
           echo 'HIGGSFIELD_HARNESS_AUTHORITY=PRESERVED'
-          echo 'HIGGSFIELD_UNATTENDED_AUTH=UNPROVEN'
-          echo 'HIGGSFIELD_GENERATION_RUNTIME=UNPROVEN'
-          echo 'HIGGSFIELD_POLICY_ELIGIBLE=NO_UNTIL_RUNTIME_PROOF'
+          # Do not print account-status output: it may contain user identity/session detail.
