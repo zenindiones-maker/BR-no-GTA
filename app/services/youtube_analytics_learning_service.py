@@ -7,7 +7,7 @@ from typing import Any
 from app.database.memory_event_repository import insert_memory_event, list_memory_events_by_source
 from app.services.memory_event_service import create_memory_event
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.harness_authorization_service import validate_persisted_harness_authorization
+from app.services.harness_authorization_service import validate_harness_authorization
 from app.services.harness_capability_service import CapabilityEvidence, CapabilityExecutionBlocked
 from app.services.harness_execution_result import canonical_execution_result
 
@@ -55,7 +55,10 @@ def _key(source: dict[str, Any]) -> str:
 
 
 def _validate_boundary(*, authorization: Any, routing_decision: Any, execution_id: str):
-    auth = validate_persisted_harness_authorization(authorization, expected_action="EXECUTION", expected_subject=f"capability:{CAPABILITY_ID}", expected_execution_id=execution_id)
+    try:
+        auth = validate_harness_authorization(authorization, expected_action="EXECUTION", expected_subject=f"capability:{CAPABILITY_ID}", expected_execution_id=execution_id)
+    except PermissionError as exc:
+        raise _blocked(str(exc), "authorization") from exc
     capability = GLOBAL_CAPABILITY_REGISTRY.get(CAPABILITY_ID)
     if capability is None or capability.executor_binding != EXECUTOR_BINDING:
         raise _blocked("analytics learning Registry binding is invalid", "binding")
