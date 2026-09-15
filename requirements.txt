@@ -10,3 +10,4 @@ google-genai==2.21.0
 yt-dlp==2026.08.19
 
 mcp==1.29.1
+markitdown[pdf,docx,pptx,xlsx,youtube-transcription]==0.1.7
