@@ -1,207 +1,96 @@
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
+YOUTUBE_ANALYTICS_READ_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
 
 
-def create_oauth_flow(
-    *,
-    client_secrets_file: str,
-) -> Any:
-    """
-    Cria o fluxo OAuth do Google para acesso ao YouTube.
+def _resolved_scopes(scopes: Iterable[str] | None) -> list[str]:
+    requested = list(scopes or ())
+    return list(dict.fromkeys([*YOUTUBE_SCOPES, *requested]))
 
-    Esta função apenas prepara o fluxo.
-    Não executa autorização.
-    """
-    if not isinstance(client_secrets_file, str):
+
+def create_oauth_flow(*, client_secrets_file: str, scopes: Iterable[str] | None = None) -> Any:
+    if not isinstance(client_secrets_file, str) or not client_secrets_file.strip():
         raise ValueError("client_secrets_file is required")
-
-    if not client_secrets_file.strip():
-        raise ValueError("client_secrets_file is required")
-
     path = Path(client_secrets_file)
-
     if not path.is_file():
-        raise ValueError(
-            f"client secrets file not found: {client_secrets_file}"
-        )
+        raise ValueError(f"client secrets file not found: {client_secrets_file}")
+    return InstalledAppFlow.from_client_secrets_file(str(path), scopes=_resolved_scopes(scopes))
 
-    return InstalledAppFlow.from_client_secrets_file(
-        str(path),
-        scopes=YOUTUBE_SCOPES,
+
+def authorize_youtube(*, client_secrets_file: str,
+                      authorization_runner: Callable[[Any], Any] | None = None,
+                      scopes: Iterable[str] | None = None) -> Any:
+    flow = create_oauth_flow(client_secrets_file=client_secrets_file, scopes=scopes)
+    credentials = authorization_runner(flow) if authorization_runner is not None else flow.run_local_server(
+        port=0, access_type="offline", prompt="consent", open_browser=False
     )
-
-
-def authorize_youtube(
-    *,
-    client_secrets_file: str,
-    authorization_runner: Callable[[Any], Any] | None = None,
-) -> Any:
-    """
-    Executa a autorização OAuth e retorna as credenciais.
-
-    O executor de autorização é injetável para permitir testes
-    sem navegador, rede ou interação humana.
-    """
-    flow = create_oauth_flow(
-        client_secrets_file=client_secrets_file,
-    )
-
-    if authorization_runner is not None:
-        credentials = authorization_runner(flow)
-    else:
-        credentials = flow.run_local_server(
-            port=0,
-            access_type="offline",
-            prompt="consent",
-            open_browser=False,
-        )
-
     if credentials is None:
-        raise RuntimeError(
-            "OAuth authorization did not return credentials"
-        )
-
+        raise RuntimeError("OAuth authorization did not return credentials")
     return credentials
 
 
-def save_youtube_credentials(
-    *,
-    credentials: Any,
-    token_file: str,
-) -> None:
-    """
-    Persiste as credenciais OAuth em um arquivo JSON.
-
-    O arquivo deve estar fora do versionamento do Git.
-    """
+def save_youtube_credentials(*, credentials: Any, token_file: str) -> None:
     if credentials is None:
         raise ValueError("credentials are required")
-
     if not isinstance(token_file, str) or not token_file.strip():
         raise ValueError("token_file is required")
-
     path = Path(token_file)
-
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    path.write_text(
-        credentials.to_json(),
-        encoding="utf-8",
-    )
+    path.write_text(credentials.to_json(), encoding="utf-8")
 
 
-def load_youtube_credentials(
-    *,
-    token_file: str,
-    request: Any | None = None,
-) -> Credentials:
-    """
-    Carrega credenciais OAuth persistidas.
-
-    Se o access token estiver expirado e existir refresh token,
-    renova as credenciais sem nova autorização do usuário.
-
-    Não executa OAuth interativo.
-    """
+def load_youtube_credentials(*, token_file: str, request: Any | None = None,
+                             scopes: Iterable[str] | None = None) -> Credentials:
     if not isinstance(token_file, str) or not token_file.strip():
         raise ValueError("token_file is required")
-
     path = Path(token_file)
-
     if not path.is_file():
-        raise ValueError(
-            f"token file not found: {token_file}"
-        )
-
-    credentials = Credentials.from_authorized_user_file(
-        str(path),
-        scopes=YOUTUBE_SCOPES,
-    )
-
+        raise ValueError(f"token file not found: {token_file}")
+    required_scopes = _resolved_scopes(scopes)
+    credentials = Credentials.from_authorized_user_file(str(path), scopes=required_scopes)
+    if scopes and not credentials.has_scopes(list(scopes)):
+        missing = ", ".join(scope for scope in scopes if not credentials.has_scopes([scope]))
+        raise PermissionError(f"Persisted YouTube OAuth credentials are missing required scope(s): {missing}")
     if credentials.valid:
         return credentials
-
     if credentials.expired and credentials.refresh_token:
-        refresh_request = (
-            request if request is not None else Request()
-        )
-
+        refresh_request = request if request is not None else Request()
         credentials.refresh(refresh_request)
-
-        save_youtube_credentials(
-            credentials=credentials,
-            token_file=str(path),
-        )
-
+        if scopes and not credentials.has_scopes(list(scopes)):
+            missing = ", ".join(scope for scope in scopes if not credentials.has_scopes([scope]))
+            raise PermissionError(f"Refreshed YouTube OAuth credentials are missing required scope(s): {missing}")
+        save_youtube_credentials(credentials=credentials, token_file=str(path))
         return credentials
-
-    raise RuntimeError(
-        "YouTube OAuth credentials are invalid or cannot be refreshed"
-    )
+    raise RuntimeError("YouTube OAuth credentials are invalid or cannot be refreshed")
 
 
-def get_youtube_credentials(
-    *,
-    token_file: str,
-    client_secrets_file: str,
-    authorization_runner: Callable[[Any], Any] | None = None,
-    request: Any | None = None,
-) -> Any:
-    """
-    Obtém credenciais OAuth do YouTube.
-
-    Estratégia:
-
-    1. Tenta carregar as credenciais persistidas.
-    2. Se o token existir e estiver válido, reutiliza.
-    3. Se estiver expirado e puder ser renovado, o carregamento
-       executa o refresh automaticamente.
-    4. Se o token ainda não existir, executa a autorização OAuth.
-    5. Persiste as credenciais obtidas pela autorização.
-    6. Retorna as credenciais.
-
-    A autorização permanece delegada a authorize_youtube().
-    O carregamento e refresh permanecem delegados a
-    load_youtube_credentials().
-
-    O authorization_runner e o request existem para permitir
-    testes determinísticos sem navegador, rede ou interação humana.
-    """
+def get_youtube_credentials(*, token_file: str, client_secrets_file: str,
+                            authorization_runner: Callable[[Any], Any] | None = None,
+                            request: Any | None = None,
+                            scopes: Iterable[str] | None = None) -> Any:
     if not isinstance(token_file, str) or not token_file.strip():
         raise ValueError("token_file is required")
-
     token_path = Path(token_file)
-
     if token_path.is_file():
-        return load_youtube_credentials(
-            token_file=token_file,
-            request=request,
-        )
-
-    if (
-        not isinstance(client_secrets_file, str)
-        or not client_secrets_file.strip()
-    ):
+        return load_youtube_credentials(token_file=token_file, request=request, scopes=scopes)
+    if not isinstance(client_secrets_file, str) or not client_secrets_file.strip():
         raise ValueError("client_secrets_file is required")
-
     credentials = authorize_youtube(
         client_secrets_file=client_secrets_file,
         authorization_runner=authorization_runner,
+        scopes=scopes,
     )
-
-    save_youtube_credentials(
-        credentials=credentials,
-        token_file=token_file,
-    )
-
+    if scopes and not credentials.has_scopes(list(scopes)):
+        missing = ", ".join(scope for scope in scopes if not credentials.has_scopes([scope]))
+        raise PermissionError(f"YouTube OAuth authorization did not grant required scope(s): {missing}")
+    save_youtube_credentials(credentials=credentials, token_file=token_file)
     return credentials
