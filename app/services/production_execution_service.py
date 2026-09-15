@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.database.gta6_goal_repository import get_active_gta6_goal
+from app.database.gta6_goal_repository import get_active_gta6_goal, get_gta6_goal
 from app.database.production_plan_repository import get_production_plan_by_content_item_id
 from app.services.gta6_goal_service import get_artifacts, resolve_next_stage, update_artifacts
 from app.services.render_worker_service import process_next_render_job
@@ -73,10 +73,31 @@ def _govern_production_media_binding(
     )
 
 
+def _resolve_execution_goal(*, authorization, requested_goal_id: str | None) -> dict[str, Any] | None:
+    """Resolve the exact Harness-targeted Goal, falling back only for legacy untargeted calls."""
+    lineage_goal_id = authorization.lineage.get("goal_id")
+    if requested_goal_id is not None:
+        if not isinstance(requested_goal_id, str) or not requested_goal_id.strip():
+            raise PermissionError("Harness goal_id must be a non-empty string")
+        requested_goal_id = requested_goal_id.strip()
+        if lineage_goal_id != requested_goal_id:
+            raise PermissionError("Harness authorization goal_id lineage mismatch")
+        goal = get_gta6_goal(requested_goal_id)
+        if goal is None:
+            raise RuntimeError(f"Harness-targeted Goal not found: {requested_goal_id}")
+        return goal
+
+    if lineage_goal_id is not None:
+        raise PermissionError("Harness authorization contains goal_id but execution did not target it")
+    return get_active_gta6_goal()
+
+
 def process_next_production_execution(
     execution_context: dict[str, Any] | None = None,
+    *,
+    goal_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Advance one Harness-authorized production execution step."""
+    """Advance one Harness-authorized production execution step for an exact Goal when targeted."""
     context = execution_context or {}
     execution_id = context.get("execution_id")
     if not isinstance(execution_id, str) or not execution_id:
@@ -89,16 +110,19 @@ def process_next_production_execution(
         expected_execution_id=execution_id,
     )
     execution_context = authorization_to_context(authorization)
-    goal = get_active_gta6_goal()
+    goal = _resolve_execution_goal(
+        authorization=authorization,
+        requested_goal_id=goal_id,
+    )
     if goal is None:
         return None
 
-    goal_id = goal["goal_id"]
-    resolution = resolve_next_stage(goal_id=goal_id)
+    resolved_goal_id = goal["goal_id"]
+    resolution = resolve_next_stage(goal_id=resolved_goal_id)
     next_stage = resolution.get("next_stage")
 
     if next_stage == "VIDEO":
-        artifacts = get_artifacts(goal_id=goal_id)
+        artifacts = get_artifacts(goal_id=resolved_goal_id)
         content_item_id = artifacts.get("content_item_id")
         if not isinstance(content_item_id, int) or content_item_id <= 0:
             raise RuntimeError("Goal em VIDEO não possui content_item_id válido.")
@@ -125,9 +149,9 @@ def process_next_production_execution(
             raise RuntimeError("Video criado não possui id válido.")
         if not isinstance(render_job_id, int) or render_job_id <= 0:
             raise RuntimeError("Render Job criado não possui id válido.")
-        update_artifacts(goal_id=goal_id, video_id=video_id, render_job_id=render_job_id)
+        update_artifacts(goal_id=resolved_goal_id, video_id=video_id, render_job_id=render_job_id)
         return {
-            "goal_id": goal_id,
+            "goal_id": resolved_goal_id,
             "stage": "VIDEO",
             "video": video,
             "render_job": render_job,
@@ -136,6 +160,6 @@ def process_next_production_execution(
 
     if next_stage == "RENDER":
         result = process_next_render_job(execution_context=execution_context)
-        return {"goal_id": goal_id, "stage": "RENDER", "result": result}
+        return {"goal_id": resolved_goal_id, "stage": "RENDER", "result": result}
 
-    return {"goal_id": goal_id, "stage": next_stage, "status": "nothing_to_execute"}
+    return {"goal_id": resolved_goal_id, "stage": next_stage, "status": "nothing_to_execute"}
