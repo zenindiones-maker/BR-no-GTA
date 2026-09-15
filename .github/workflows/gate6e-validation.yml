@@ -1,0 +1,23 @@
+name: Gate 6E Validation
+on:
+  push:
+    branches:
+      - work/gate6e-production-media-registry
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Focused tests
+        run: python -m pytest -q tests/test_gate6e_production_media_registry.py tests/test_global_capability_registry.py tests/test_harness_routing_policy_service.py tests/test_harness_authorization_service.py tests/test_harness_execution_result.py tests/test_phone_control_mcp_boundary.py
+      - name: Diff check
+        run: git diff --check ${{ github.event.before }} ${{ github.sha }}
+      - name: Compile
+        run: python -m compileall -q app
+      - name: Full suite
+        run: python -m pytest -q tests/
