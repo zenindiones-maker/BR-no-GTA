@@ -223,7 +223,7 @@ def process_next_editorial_queue_item(
             "Não foi possível marcar o item da fila como completed."
         )
 
-    return {
+    result = {
         "queue_item": queue_item,
         "script": script,
         "script_spec": script_spec,
@@ -231,7 +231,9 @@ def process_next_editorial_queue_item(
         "production_plan_id": production_plan_id,
         "production_plan": production_plan,
         "status": "completed",
-        "goal_id": resolved_goal_id,
-        "idempotent": False,
         "harness_context": execution_context,
     }
+    if targeted_artifacts is not None:
+        result["goal_id"] = resolved_goal_id
+        result["idempotent"] = False
+    return result
