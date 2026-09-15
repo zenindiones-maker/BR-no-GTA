@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+
+# RUN-001 A/B keeps the A15 as control-plane only. Editorial AI is executed by
+# the bounded zero-cost OmniRoute GitHub Actions transport selected by Harness.
+os.environ.setdefault("ZERO_COST_OPERATION", "TRUE")
+os.environ.setdefault("GITHUB_ACTIONS_REPOSITORY", "zenindiones-maker/BR-no-GTA")
+os.environ.setdefault("BR_OMNIROUTE_REPOSITORY", "zenindiones-maker/BR-no-GTA")
+os.environ.setdefault("BR_OMNIROUTE_REF", "work/gate6f-analytics-learning")
+os.environ.setdefault("GITHUB_ACTIONS_RENDER_REF", "work/gate6f-analytics-learning")
 
 from app.database.render_queue_repository import get_render_job
 from app.integrations.deepseek_harness.server import br_editorial_process_next
