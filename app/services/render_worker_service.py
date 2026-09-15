@@ -4,7 +4,32 @@ from app.services.audiovisual_executor_factory import (
 from app.services.render_executor_service import AbstractRenderExecutor
 from app.services.render_orchestration_service import (
     execute_next_render_job,
+    execute_render_job,
 )
+
+
+def process_render_job(
+    job_id: int,
+    executor: AbstractRenderExecutor | None = None,
+    execution_context: dict | None = None,
+):
+    """Process exactly one explicitly targeted RenderJob."""
+    selected_executor = executor
+
+    if selected_executor is None:
+        selected_executor = create_audiovisual_executor()
+
+    if execution_context is None:
+        return execute_render_job(
+            job_id,
+            executor=selected_executor,
+        )
+
+    return execute_render_job(
+        job_id,
+        executor=selected_executor,
+        execution_context=execution_context,
+    )
 
 
 def process_next_render_job(
