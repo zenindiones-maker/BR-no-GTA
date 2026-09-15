@@ -182,10 +182,14 @@ def br_execution_process_next(goal_id: str | None = None) -> str:
         subject="action:EXECUTION",
         lineage=lineage,
     )
-    result = process_next_production_execution(
-        authorization_to_context(authorization),
-        goal_id=goal_id,
-    )
+    execution_context = authorization_to_context(authorization)
+    if goal_id is None:
+        result = process_next_production_execution(execution_context)
+    else:
+        result = process_next_production_execution(
+            execution_context,
+            goal_id=goal_id,
+        )
     evidence = canonical_execution_result(
         authority=authorization.authority,
         authorized_action=authorization.authorized_action,
