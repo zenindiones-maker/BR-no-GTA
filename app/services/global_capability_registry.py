@@ -9,68 +9,17 @@ from app.services.global_capability_registry_base import (
     GLOBAL_CAPABILITY_REGISTRY as _REGISTRY,
 )
 
+PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control", implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP", input_contract="allowlisted phone operation + deterministic parameters", output_contract="sanitized phone control result + Harness evidence", requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE", quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability", version="1", provider_id="mobilerun-local", side_effects=("device UI state change",))
 
-PHONE_CONTROL_RECORD = CapabilityRecord(
-    capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control",
-    implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP",
-    input_contract="allowlisted phone operation + deterministic parameters",
-    output_contract="sanitized phone control result + Harness evidence",
-    requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"),
-    maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
-    policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"),
-    security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script",
-    cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE",
-    quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
-    fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability",
-    version="1", provider_id="mobilerun-local", side_effects=("device UI state change",),
-)
+PRODUCTION_MEDIA_BINDING_RECORD = CapabilityRecord(capability_id="production.media.bind-selected-segments", capability_type="CAPABILITY", domain="production-media", implementation="Harness-governed bounded binding of selected Media segments into ProductionPlan", input_contract="persisted ProductionPlan + selected segment ids + authorization lineage", output_contract="persisted composed ProductionPlan + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "matching production lineage and execution_id"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("production", "media", "selection", "binding", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry capability and executor binding; caller cannot select executor; bind_selected_segments is reachable only after all gates", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.production_media_composition_service.execute_production_media_binding_capability", version="1", side_effects=("ProductionPlan media binding persistence",))
 
-PRODUCTION_MEDIA_BINDING_RECORD = CapabilityRecord(
-    capability_id="production.media.bind-selected-segments", capability_type="CAPABILITY", domain="production-media",
-    implementation="Harness-governed bounded binding of selected Media segments into ProductionPlan",
-    input_contract="persisted ProductionPlan + selected segment ids + authorization lineage",
-    output_contract="persisted composed ProductionPlan + CapabilityEvidence/CanonicalExecutionResult",
-    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "matching production lineage and execution_id"),
-    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
-    policy_tags=("production", "media", "selection", "binding", "zero-cost"),
-    security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry capability and executor binding; caller cannot select executor; bind_selected_segments is reachable only after all gates",
-    cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY",
-    evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False,
-    executor_binding="app.services.production_media_composition_service.execute_production_media_binding_capability",
-    version="1", side_effects=("ProductionPlan media binding persistence",),
-)
+YOUTUBE_ANALYTICS_READ_RECORD = CapabilityRecord(capability_id="youtube.analytics.read", capability_type="EXECUTOR", domain="youtube-analytics", implementation="Harness-authorized read-only YouTube Analytics API v2 executor", input_contract="persisted publication_id + governed date window", output_contract="normalized metrics/provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "persisted youtube_video_id", "Google OAuth yt-analytics.readonly scope"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("youtube", "analytics", "read-only", "metrics", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; publication identity resolves youtube_video_id; read-only analytics; no caller-selected executor or video override", cost_class="FREE_NO_BILLING", quota_class="GOOGLE_API_QUOTA", latency_class="REMOTE_API", quality_class="STRUCTURALLY_VALIDATED_RUNTIME_UNPROVEN", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_service.execute_youtube_analytics_read_capability", version="1", provider_id="google-youtube-analytics", side_effects=())
 
-YOUTUBE_ANALYTICS_READ_RECORD = CapabilityRecord(
-    capability_id="youtube.analytics.read", capability_type="EXECUTOR", domain="youtube-analytics",
-    implementation="Harness-authorized read-only YouTube Analytics API v2 executor",
-    input_contract="persisted publication_id + governed date window",
-    output_contract="normalized metrics/provenance + CapabilityEvidence/CanonicalExecutionResult",
-    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "persisted youtube_video_id", "Google OAuth yt-analytics.readonly scope"),
-    maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
-    policy_tags=("youtube", "analytics", "read-only", "metrics", "zero-cost"),
-    security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; publication identity resolves youtube_video_id; read-only analytics; no caller-selected executor or video override",
-    cost_class="FREE_NO_BILLING", quota_class="GOOGLE_API_QUOTA", latency_class="REMOTE_API", quality_class="STRUCTURALLY_VALIDATED_RUNTIME_UNPROVEN",
-    evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False,
-    executor_binding="app.services.youtube_analytics_service.execute_youtube_analytics_read_capability",
-    version="1", provider_id="google-youtube-analytics", side_effects=(),
-)
+YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning", implementation="Harness-authorized deterministic YouTube Analytics learning persistence", input_contract="normalized youtube.analytics.read evidence + authorization lineage", output_contract="idempotent existing Memory Event Log observation + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "normalized analytics provenance"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("knowledge", "learning", "youtube", "analytics", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry binding; deterministic append-only Memory Event Log reuse; no editorial or publication authority", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability", version="1", provider_id="internal", side_effects=("Memory Event Log append",))
 
-MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(
-    capability_id="content.normalize.markdown", capability_type="EXECUTOR", domain="content-ingestion",
-    implementation="Harness-authorized Microsoft MarkItDown 0.1.7 normalization adapter",
-    input_contract="allowlisted public http/https source URI",
-    output_contract="normalized Markdown + source provenance + CapabilityEvidence/CanonicalExecutionResult",
-    requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "markitdown 0.1.7"),
-    maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
-    policy_tags=("ingestion", "normalization", "markdown", "evidence", "zero-cost"),
-    security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; only http/https allowlisted document formats or YouTube; plugins disabled; no shell, local-file, arbitrary executor, LLM, Azure, publication, or editorial authority",
-    cost_class="FREE_NO_BILLING", quota_class="REMOTE_SOURCE", latency_class="REMOTE_IO", quality_class="PINNED_DETERMINISTIC_ADAPTER",
-    evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False,
-    executor_binding="app.services.markitdown_ingestion_service.execute_markitdown_normalization_capability",
-    version="1", provider_id="microsoft-markitdown", side_effects=(),
-)
+MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(capability_id="content.normalize.markdown", capability_type="EXECUTOR", domain="content-ingestion", implementation="Harness-authorized Microsoft MarkItDown 0.1.7 normalization adapter", input_contract="allowlisted public http/https source URI", output_contract="normalized Markdown + source provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "markitdown 0.1.7"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("ingestion", "normalization", "markdown", "evidence", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; only http/https allowlisted document formats or YouTube; plugins disabled; no shell, local-file, arbitrary executor, LLM, Azure, publication, or editorial authority", cost_class="FREE_NO_BILLING", quota_class="REMOTE_SOURCE", latency_class="REMOTE_IO", quality_class="PINNED_DETERMINISTIC_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.markitdown_ingestion_service.execute_markitdown_normalization_capability", version="1", provider_id="microsoft-markitdown", side_effects=())
 
-for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, MARKITDOWN_NORMALIZE_RECORD):
+for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, YOUTUBE_ANALYTICS_LEARNING_RECORD, MARKITDOWN_NORMALIZE_RECORD):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
     _REGISTRY._by_id[_record.capability_id] = _record
