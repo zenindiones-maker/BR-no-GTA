@@ -122,6 +122,15 @@ jobs:
           printf '%s' "$YOUTUBE_COOKIES" > runtime/secrets/youtube-cookies.txt
           chmod 600 runtime/secrets/youtube-cookies.txt
 
+      - name: Materialize governed Telegram brand assets in cloud
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m app.workers.brand_asset_worker prepare \
+            --render-job runtime/render/render-job.json \
+            --runtime-root runtime/render
+
       - name: Execute authorized EditPlan
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
@@ -132,6 +141,15 @@ jobs:
             --render-job runtime/render/render-job.json \
             --asset-root runtime/render/input \
             --output-dir runtime/render/output
+
+      - name: Apply governed intro and watermark
+        run: |
+          set -euo pipefail
+          python -m app.workers.brand_asset_worker apply \
+            --render-job runtime/render/render-job.json \
+            --runtime-root runtime/render \
+            --output-dir runtime/render/output
+
       - name: Upload QA-passed render
         uses: actions/upload-artifact@v4
         with:
@@ -148,6 +166,8 @@ jobs:
           path: |
             runtime/render/validation-qa.json
             runtime/render/materialization/**/*.json
+            runtime/render/branding/**/brand-assets.json
+            runtime/render/output/**/brand-assets.json
             runtime/render/output/**/render-qa.json
             runtime/render/output/**/render-job.json
             runtime/render/output/**/video-probe.json
