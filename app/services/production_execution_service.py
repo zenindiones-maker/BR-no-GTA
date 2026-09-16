@@ -22,6 +22,11 @@ from app.services.production_media_composition_service import (
     PRODUCTION_MEDIA_EXECUTOR_BINDING,
     compose_and_persist_production_media,
 )
+from app.services.production_brand_asset_service import (
+    PRODUCTION_BRAND_ASSET_CAPABILITY_ID,
+    PRODUCTION_BRAND_ASSET_EXECUTOR_BINDING,
+    bind_active_brand_assets,
+)
 
 
 def _govern_production_media_binding(
@@ -67,6 +72,50 @@ def _govern_production_media_binding(
     return compose_and_persist_production_media(
         content_item_id=production_plan["content_item_id"],
         segment_ids=segment_ids,
+        authorization=capability_authorization,
+        routing_decision=routing,
+        execution_id=parent_authorization.execution_id,
+    )
+
+
+def _govern_brand_asset_binding(
+    *,
+    parent_authorization,
+    content_item_id: int,
+) -> dict[str, Any]:
+    """Snapshot the currently active verified intro/watermark for one new production execution."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="production branding bind active intro watermark assets",
+            authorized_action="EXECUTION",
+            domain="production-branding",
+            required_capability_id=PRODUCTION_BRAND_ASSET_CAPABILITY_ID,
+            required_policy_tags=("production", "branding", "binding"),
+            provider_required=False,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+        )
+    )
+    if routing.selected_capability_id != PRODUCTION_BRAND_ASSET_CAPABILITY_ID:
+        raise PermissionError("Harness selected an unexpected brand asset capability")
+    if routing.selected_executor_binding != PRODUCTION_BRAND_ASSET_EXECUTOR_BINDING:
+        raise PermissionError("Harness selected an unexpected brand asset executor")
+
+    capability_authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{PRODUCTION_BRAND_ASSET_CAPABILITY_ID}",
+        harness_decision_id=parent_authorization.harness_decision_id,
+        execution_id=parent_authorization.execution_id,
+        lineage={
+            "parent_authorization_id": parent_authorization.authorization_id,
+            "routing_id": routing.routing_id,
+            "capability_id": PRODUCTION_BRAND_ASSET_CAPABILITY_ID,
+            "selected_executor_binding": PRODUCTION_BRAND_ASSET_EXECUTOR_BINDING,
+            "content_item_id": content_item_id,
+        },
+    )
+    return bind_active_brand_assets(
+        content_item_id=content_item_id,
         authorization=capability_authorization,
         routing_decision=routing,
         execution_id=parent_authorization.execution_id,
@@ -139,7 +188,15 @@ def process_next_production_execution(
             production_plan=production_plan,
         )
         production_plan = media_result["production_plan"]
+        brand_result = _govern_brand_asset_binding(
+            parent_authorization=authorization,
+            content_item_id=content_item_id,
+        )
+
         video_spec = create_video_spec(production_plan, brain_decision=execution_context)
+        # Snapshot only into this newly created execution contract. Existing
+        # RenderJobs are never retroactively mutated by a Telegram asset change.
+        video_spec["brand_assets"] = list(brand_result["brand_assets"])
         composed = create_video_and_enqueue_render(video_spec)
         video = composed["video"]
         render_job = composed["render_job"]
@@ -156,6 +213,8 @@ def process_next_production_execution(
             "video": video,
             "render_job": render_job,
             "media_execution": media_result["canonical_execution_result"],
+            "brand_asset_execution": brand_result["canonical_execution_result"],
+            "brand_asset_count": brand_result["asset_count"],
         }
 
     if next_stage == "RENDER":
