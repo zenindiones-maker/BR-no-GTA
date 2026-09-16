@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services import youtube_analytics_learning_service as learning_svc
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
@@ -84,6 +85,26 @@ def test_valid_route_resolves_persisted_publication_identity_and_canonical_resul
     assert result["metric_window"] == {"start_date": "2026-09-01", "end_date": "2026-09-07"}
     assert result["canonical_execution_result"]["capability_id"] == ANALYTICS_CAPABILITY_ID
     assert result["canonical_execution_result"]["execution_id"] == "exec-analytics-1"
+
+
+def test_analytics_read_output_is_direct_learning_input(monkeypatch):
+    analytics_result, _ = _call(monkeypatch)
+    learning_capability = GLOBAL_CAPABILITY_REGISTRY.get(learning_svc.CAPABILITY_ID)
+    assert learning_capability is not None
+
+    monkeypatch.setattr(learning_svc, "list_memory_events_by_source", lambda **kwargs: [])
+    monkeypatch.setattr(learning_svc, "insert_memory_event", lambda event: 91)
+
+    learning_result = learning_svc.execute_youtube_analytics_learning_capability(
+        learning_capability,
+        analytics_result,
+    )
+
+    assert learning_result["status"] == "LEARNED"
+    assert learning_result["memory_event_id"] == 91
+    assert learning_result["learning"]["metric_window"] == analytics_result["metric_window"]
+    assert learning_result["learning"]["publication_id"] == analytics_result["publication_id"]
+    assert learning_result["learning"]["youtube_video_id"] == analytics_result["youtube_video_id"]
 
 
 def test_missing_and_fabricated_authorization_fail_closed(monkeypatch):
