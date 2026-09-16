@@ -31,7 +31,7 @@ def _assert_zero_cost_opencode_primary(routing):
 
 def test_operational_mcp_tools_are_registered():
     names={tool.name for tool in server.mcp._tool_manager.list_tools()}
-    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_execution_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
+    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_execution_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish","br_youtube_publish_reconcile","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
 
 
 def test_route_tool_returns_metadata_without_authorization():
@@ -149,24 +149,42 @@ def test_youtube_pode_postar_uses_targeted_harness_publication_boundary(monkeypa
     assert payload["result"]["canonical_execution_result"]["success"] is True
 
 
-def test_youtube_publish_uses_targeted_harness_private_upload_boundary(monkeypatch):
+def test_youtube_publish_dispatches_exact_cloud_target(monkeypatch):
     captured = {}
 
     def fake(publication_id):
         captured["publication_id"] = publication_id
         return {
-            "publication": {"id": publication_id, "status": "uploaded"},
-            "routing": {"selected_capability_id": "youtube.upload-private"},
-            "authorization_id": "auth-youtube-43",
+            "status": "IN_PROGRESS",
+            "publication_id": publication_id,
+            "upload_run_id": 35050000001,
             "canonical_execution_result": {"success": True},
         }
 
-    monkeypatch.setattr(server, "upload_targeted_publication", fake)
+    monkeypatch.setattr(server, "dispatch_targeted_private_upload", fake)
     payload = json.loads(server.br_youtube_publish(publication_id=43))
     assert captured["publication_id"] == 43
-    assert payload["result"]["publication"]["status"] == "uploaded"
-    assert payload["result"]["routing"]["selected_capability_id"] == "youtube.upload-private"
+    assert payload["result"]["status"] == "IN_PROGRESS"
+    assert payload["result"]["upload_run_id"] == 35050000001
     assert payload["result"]["canonical_execution_result"]["success"] is True
+
+
+def test_youtube_publish_reconcile_targets_exact_publication(monkeypatch):
+    captured = {}
+
+    def fake(publication_id):
+        captured["publication_id"] = publication_id
+        return {
+            "status": "UPLOADED",
+            "publication": {"id": publication_id, "status": "uploaded"},
+            "upload_run_id": 35050000001,
+        }
+
+    monkeypatch.setattr(server, "reconcile_targeted_private_upload", fake)
+    payload = json.loads(server.br_youtube_publish_reconcile(publication_id=43))
+    assert captured["publication_id"] == 43
+    assert payload["result"]["status"] == "UPLOADED"
+    assert payload["result"]["publication"]["id"] == 43
 
 
 def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):

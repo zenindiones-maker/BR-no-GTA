@@ -38,7 +38,10 @@ from app.services.google_youtube_publication_service import (
 )
 from app.services.harness_youtube_publication_service import (
     publish_targeted_publication,
-    upload_targeted_publication,
+)
+from app.services.youtube_cloud_upload_service import (
+    dispatch_targeted_private_upload,
+    reconcile_targeted_private_upload,
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_knowledge_query_service import (
@@ -598,10 +601,20 @@ def br_youtube_pode_postar(publication_id: int) -> str:
 
 @mcp.tool()
 def br_youtube_publish(publication_id: int) -> str:
-    """Route and upload one exact persisted YouTube Publication as private."""
-    result = upload_targeted_publication(publication_id)
+    """Dispatch one exact Publication to the Harness-governed cloud uploader."""
+    result = dispatch_targeted_private_upload(publication_id)
     return _json_result(
         operation="br_youtube_publish",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_youtube_publish_reconcile(publication_id: int) -> str:
+    """Reconcile one exact private-upload cloud run into canonical state."""
+    result = reconcile_targeted_private_upload(publication_id)
+    return _json_result(
+        operation="br_youtube_publish_reconcile",
         result=result,
     )
 
