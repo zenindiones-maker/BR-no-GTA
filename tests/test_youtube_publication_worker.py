@@ -12,6 +12,7 @@ from app.services.youtube_publication_worker import (
     execute_youtube_upload,
 )
 from tests.test_youtube_repository import _create_video
+from tests.youtube_publication_security_fixtures import prove_private_upload_for_test
 
 
 def _authorization(publication_id):
@@ -75,6 +76,7 @@ def test_execute_youtube_publication_delegates_visibility():
         publication_id=publication_id,
         publisher=upload_publisher,
     )
+    prove_private_upload_for_test(publication_id)
 
     publisher = FakeYouTubePublisher()
 
@@ -101,6 +103,7 @@ def test_execute_youtube_publication_keeps_uploaded_on_visibility_failure():
         publication_id=publication_id,
         publisher=upload_publisher,
     )
+    prove_private_upload_for_test(publication_id)
 
     publisher = FakeYouTubePublisher(
         visibility_success=False,

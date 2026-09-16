@@ -21,6 +21,7 @@ from app.services.youtube_publisher import (
     YouTubeVisibilityResult,
 )
 from tests.test_youtube_repository import _create_video
+from tests.youtube_publication_security_fixtures import prove_private_upload_for_test
 
 
 def _publication_authorization(publication_id):
@@ -249,6 +250,7 @@ def test_make_public_with_google_delegates_to_visibility_orchestration(
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
+    prove_private_upload_for_test(publication_id)
 
     publisher.make_public.return_value = YouTubeVisibilityResult(
         success=True,
@@ -293,6 +295,7 @@ def test_make_public_with_google_keeps_uploaded_on_failure(
         token_file="/tmp/token.json",
         client_secrets_file="/tmp/client.json",
     )
+    prove_private_upload_for_test(publication_id)
 
     result = make_youtube_publication_public_with_google(
         publication_id=publication_id,

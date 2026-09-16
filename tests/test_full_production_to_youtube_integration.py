@@ -27,6 +27,7 @@ from app.services.youtube_service import (
     create_youtube_publish_spec,
     create_youtube_publication,
 )
+from tests.youtube_publication_security_fixtures import prove_private_upload_for_test
 
 
 def test_full_production_to_youtube_pipeline():
@@ -219,7 +220,8 @@ def test_full_production_to_youtube_pipeline():
         == "output/full_production_to_youtube.mp4"
     )
 
-    # 12. PENDING -> UPLOADED
+    # 12. PENDING -> UPLOADED (fake transport), then attach the cloud proof that
+    # the hardened public-transition boundary requires in production.
     publisher = FakeYouTubePublisher(
         upload_video_id="full-integration-video-id",
         upload_url=(
@@ -232,6 +234,7 @@ def test_full_production_to_youtube_pipeline():
         publication["id"],
         publisher,
     )
+    prove_private_upload_for_test(publication["id"])
 
     assert uploaded["id"] == publication["id"]
     assert (

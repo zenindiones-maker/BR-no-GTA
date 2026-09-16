@@ -90,6 +90,17 @@ def _prepare_ready_publication():
         "duration_seconds": 1500.0,
         "qa_status": "PASS",
     }
+    telegram_review = {
+        "status": "DELIVERED",
+        "publication_id": publication_id,
+        "video_id": video_id,
+        "telegram_message_id": 4242,
+        "proxy": {
+            "sha256": "b" * 64,
+            "size_bytes": 12345678,
+            "duration_seconds": 1500.0,
+        },
+    }
     cloud_execution = {
         "status": "SUCCEEDED",
         "run_id": 35050000002,
@@ -104,6 +115,7 @@ def _prepare_ready_publication():
             "youtube_video_id": "youtube-preview-1",
             "youtube_url": "https://www.youtube.com/watch?v=youtube-preview-1",
             "artifact_evidence": artifact_evidence,
+            "telegram_review": telegram_review,
         },
     }
     connection = get_connection()
@@ -161,7 +173,10 @@ def test_preview_proves_exact_uploaded_private_lineage_without_mutation():
     assert preview["render_job_id"] == render_job_id
     assert preview["qa_status"] == "PASS"
     assert preview["artifact_identity"]["artifact_id"] == 987654
-    assert preview["reasons"] == ["uploaded_private_and_lineage_verified"]
+    assert preview["telegram_review_status"] == "DELIVERED"
+    assert preview["reasons"] == [
+        "uploaded_private_review_delivered_and_lineage_verified"
+    ]
     assert before == after
     assert get_youtube_cloud_execution(publication_id) == cloud_execution
 
