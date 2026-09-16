@@ -16,6 +16,39 @@ PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capabilit
 
 PRODUCTION_MEDIA_BINDING_RECORD = CapabilityRecord(capability_id="production.media.bind-selected-segments", capability_type="CAPABILITY", domain="production-media", implementation="Harness-governed bounded binding of selected Media segments into ProductionPlan", input_contract="persisted ProductionPlan + selected segment ids + authorization lineage", output_contract="persisted composed ProductionPlan + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "matching production lineage and execution_id"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("production", "media", "selection", "binding", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry capability and executor binding; caller cannot select executor; bind_selected_segments is reachable only after all gates", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.production_media_composition_service.execute_production_media_binding_capability", version="1", side_effects=("ProductionPlan media binding persistence",))
 
+PRODUCTION_BRAND_ASSET_BINDING_RECORD = CapabilityRecord(
+    capability_id="production.brand-assets.bind",
+    capability_type="CAPABILITY",
+    domain="production-branding",
+    implementation="Harness-governed deterministic binding of active Telegram intro/watermark identities into one new RenderJob snapshot",
+    input_contract="content_item_id + active canonical Telegram brand asset records + Harness EXECUTION lineage",
+    output_contract="brand asset snapshot + CapabilityEvidence/CanonicalExecutionResult",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "Harness Routing/Policy decision",
+        "exact Global Capability Registry executor binding",
+        "remotely verified active Telegram asset identity",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("production", "branding", "asset", "intro", "watermark", "binding", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness exact capability/routing/authorization boundary. Reads active canonical asset metadata only; "
+        "does not download media on the control device, does not mutate existing RenderJobs, and grants no publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_BOUNDARY",
+    evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
+    fallback_eligibility=False,
+    executor_binding="app.services.production_brand_asset_service.execute_production_brand_asset_binding_capability",
+    version="1",
+    provider_id="internal",
+    side_effects=(),
+)
+
 YOUTUBE_ANALYTICS_READ_RECORD = CapabilityRecord(capability_id="youtube.analytics.read", capability_type="EXECUTOR", domain="youtube-analytics", implementation="Harness-authorized read-only YouTube Analytics API v2 executor", input_contract="persisted publication_id + governed date window", output_contract="normalized metrics/provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "persisted youtube_video_id", "Google OAuth yt-analytics.readonly scope"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("youtube", "analytics", "read-only", "metrics", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; publication identity resolves youtube_video_id; read-only analytics; no caller-selected executor or video override", cost_class="FREE_NO_BILLING", quota_class="GOOGLE_API_QUOTA", latency_class="REMOTE_API", quality_class="STRUCTURALLY_VALIDATED_RUNTIME_UNPROVEN", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_service.execute_youtube_analytics_read_capability", version="1", provider_id="google-youtube-analytics", side_effects=())
 
 YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning", implementation="Harness-authorized deterministic YouTube Analytics learning persistence", input_contract="normalized youtube.analytics.read evidence + authorization lineage", output_contract="idempotent existing Memory Event Log observation + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "normalized analytics provenance"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("knowledge", "learning", "youtube", "analytics", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry binding; deterministic append-only Memory Event Log reuse; no editorial or publication authority", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability", version="1", provider_id="internal", side_effects=("Memory Event Log append",))
@@ -58,6 +91,7 @@ TELEGRAM_BRAND_ASSET_RECORD = CapabilityRecord(
 for _record in (
     PHONE_CONTROL_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
+    PRODUCTION_BRAND_ASSET_BINDING_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
     MARKITDOWN_NORMALIZE_RECORD,
