@@ -5,7 +5,7 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
-      - .run001/final-products-bootstrap.b64
+      - .run001/final-products-bootstrap.ready
 
 permissions:
   contents: write
@@ -30,10 +30,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_REF"
-          base64 -d .run001/final-products-bootstrap.b64 > /tmp/run001-final-products.tar.gz
+          cat .run001/final-products-bootstrap.part.* > /tmp/run001-final-products.b64
+          base64 -d /tmp/run001-final-products.b64 > /tmp/run001-final-products.tar.gz
           echo "df5cb1a05373ab091fee99fa326fd2d59dd2af278d672eb9350eabb56b981f81  /tmp/run001-final-products.tar.gz" | sha256sum -c -
           tar -xzf /tmp/run001-final-products.tar.gz
-          rm -f .run001/final-products-bootstrap.b64 .github/workflows/run001-bootstrap.yml
+          rm -f .run001/final-products-bootstrap.b64 .run001/final-products-bootstrap.part.* .run001/final-products-bootstrap.ready .github/workflows/run001-bootstrap.yml
           python -m py_compile \
             app/workers/audiovisual_worker.py \
             app/workers/professional_audiovisual_worker.py \
