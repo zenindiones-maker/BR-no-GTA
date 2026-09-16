@@ -16,21 +16,47 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="$(command -v python)"
 fi
 
+read_telegram_token_from_env_file() {
+  local env_file="$1"
+  [[ -r "${env_file}" ]] || return 0
+  "${PYTHON_BIN}" - "${env_file}" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+pattern = re.compile(r"^\s*(?:export\s+)?TELEGRAM_BOT_TOKEN\s*=\s*(.*?)\s*$")
+for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    match = pattern.match(raw_line)
+    if not match:
+        continue
+    value = match.group(1).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', "'"}:
+        value = value[1:-1]
+    if value:
+        print(value, end="")
+    break
+PY
+}
+
 load_token() {
   if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
     return 0
   fi
 
   if [[ -r "${SECRET_FILE}" ]]; then
+    # This file is created by this script with shell-safe %q formatting.
     # shellcheck disable=SC1090
     source "${SECRET_FILE}"
   fi
 
+  # Do not source the project's .env.local. It may contain unrelated or
+  # malformed credentials. Read only the exact Telegram variable as data.
   if [[ -z "${TELEGRAM_BOT_TOKEN:-}" && -r "${ROOT}/.env.local" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "${ROOT}/.env.local"
-    set +a
+    TELEGRAM_BOT_TOKEN="$(read_telegram_token_from_env_file "${ROOT}/.env.local")"
+    export TELEGRAM_BOT_TOKEN
   fi
 
   if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
