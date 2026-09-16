@@ -8,6 +8,7 @@ BOOT_DIR="${HOME}/.termux/boot"
 SUPERVISOR="${CONFIG_DIR}/telegram-supervisor.sh"
 SUPERVISOR_PID="${STATE_DIR}/telegram-supervisor.pid"
 SUPERVISOR_LOG="${STATE_DIR}/telegram-supervisor.log"
+MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 BOOT_SCRIPT="${BOOT_DIR}/br-no-gta-telegram.sh"
 CONTROL="${ROOT}/scripts/telegram_termux_control.sh"
 
@@ -28,6 +29,7 @@ CONTROL_Q="$(shell_quote "${CONTROL}")"
 STATE_DIR_Q="$(shell_quote "${STATE_DIR}")"
 SUPERVISOR_PID_Q="$(shell_quote "${SUPERVISOR_PID}")"
 SUPERVISOR_LOG_Q="$(shell_quote "${SUPERVISOR_LOG}")"
+MAINTENANCE_FILE_Q="$(shell_quote "${MAINTENANCE_FILE}")"
 SUPERVISOR_Q="$(shell_quote "${SUPERVISOR}")"
 
 cat >"${SUPERVISOR}" <<EOF
@@ -38,6 +40,7 @@ CONTROL=${CONTROL_Q}
 STATE_DIR=${STATE_DIR_Q}
 PID_FILE=${SUPERVISOR_PID_Q}
 LOG_FILE=${SUPERVISOR_LOG_Q}
+MAINTENANCE_FILE=${MAINTENANCE_FILE_Q}
 mkdir -p "\${STATE_DIR}"
 printf '%s\n' "\$\$" > "\${PID_FILE}"
 trap 'rm -f "\${PID_FILE}"' EXIT INT TERM
@@ -47,6 +50,10 @@ if command -v termux-wake-lock >/dev/null 2>&1; then
 fi
 
 while true; do
+  if [[ -e "\${MAINTENANCE_FILE}" ]]; then
+    sleep 1
+    continue
+  fi
   if ! bash "\${CONTROL}" status >/dev/null 2>&1; then
     printf '%s TELEGRAM_SUPERVISOR=RESTARTING_GATEWAY\n' "\$(date -Iseconds 2>/dev/null || date)" >>"\${LOG_FILE}"
     bash "\${CONTROL}" start >>"\${LOG_FILE}" 2>&1 || true
@@ -86,11 +93,15 @@ if [[ -s "${SUPERVISOR_PID}" ]]; then
   fi
 fi
 
-if [[ "${supervisor_running}" != true ]]; then
-  rm -f "${SUPERVISOR_PID}"
-  nohup bash "${SUPERVISOR}" >>"${SUPERVISOR_LOG}" 2>&1 </dev/null &
+# Regenerate and restart the supervisor so changes to its control contract
+# (including the maintenance lock) take effect immediately.
+if [[ "${supervisor_running}" == true ]]; then
+  kill "$(cat "${SUPERVISOR_PID}")" 2>/dev/null || true
   sleep 1
 fi
+rm -f "${SUPERVISOR_PID}"
+nohup bash "${SUPERVISOR}" >>"${SUPERVISOR_LOG}" 2>&1 </dev/null &
+sleep 1
 
 if bash "${CONTROL}" status >/dev/null 2>&1; then
   gateway_state="RUNNING"
