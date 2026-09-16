@@ -8,6 +8,7 @@ SECRET_FILE="${CONFIG_DIR}/telegram.env"
 PID_FILE="${STATE_DIR}/telegram-gateway.pid"
 LOG_FILE="${STATE_DIR}/telegram-gateway.log"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
+START_LOCK_DIR="${STATE_DIR}/telegram-gateway.start.lock"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 
 mkdir -p "${STATE_DIR}" "${CONFIG_DIR}"
@@ -96,18 +97,162 @@ configure_cloud_routing() {
   fi
 }
 
+gateway_pids() {
+  "${PYTHON_BIN}" - <<'PY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+TARGETS = (
+    "scripts/telegram_harness_gateway_v2.py",
+    "scripts/telegram_harness_gateway.py",
+)
+
+for entry in Path("/proc").iterdir():
+    if not entry.name.isdigit():
+        continue
+    pid = int(entry.name)
+    if pid == os.getpid():
+        continue
+    try:
+        raw = (entry / "cmdline").read_bytes()
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        continue
+    argv = [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
+    if any(any(arg.endswith(target) for target in TARGETS) for arg in argv):
+        print(pid)
+PY
+}
+
+current_gateway_pids() {
+  "${PYTHON_BIN}" - <<'PY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+TARGET = "scripts/telegram_harness_gateway_v2.py"
+for entry in Path("/proc").iterdir():
+    if not entry.name.isdigit():
+        continue
+    pid = int(entry.name)
+    if pid == os.getpid():
+        continue
+    try:
+        raw = (entry / "cmdline").read_bytes()
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        continue
+    argv = [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
+    if any(arg.endswith(TARGET) for arg in argv):
+        print(pid)
+PY
+}
+
+pid_is_current_gateway() {
+  local wanted="$1"
+  local pid
+  while IFS= read -r pid; do
+    [[ "${pid}" == "${wanted}" ]] && return 0
+  done < <(current_gateway_pids)
+  return 1
+}
+
+acquire_start_lock() {
+  local owner=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if mkdir "${START_LOCK_DIR}" 2>/dev/null; then
+      printf '%s\n' "$$" > "${START_LOCK_DIR}/owner.pid"
+      return 0
+    fi
+    owner="$(cat "${START_LOCK_DIR}/owner.pid" 2>/dev/null || true)"
+    if [[ ! "${owner}" =~ ^[0-9]+$ ]] || ! kill -0 "${owner}" 2>/dev/null; then
+      rm -rf "${START_LOCK_DIR}" 2>/dev/null || true
+      continue
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+release_start_lock() {
+  rm -rf "${START_LOCK_DIR}" 2>/dev/null || true
+}
+
+terminate_gateway_pids() {
+  local -a pids=("$@")
+  local pid
+  [[ ${#pids[@]} -gt 0 ]] || return 0
+
+  for pid in "${pids[@]}"; do
+    [[ "${pid}" =~ ^[0-9]+$ ]] || continue
+    kill "${pid}" 2>/dev/null || true
+  done
+
+  for _ in 1 2 3 4 5; do
+    local alive=0
+    for pid in "${pids[@]}"; do
+      if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
+        alive=1
+      fi
+    done
+    [[ "${alive}" -eq 0 ]] && break
+    sleep 1
+  done
+
+  for pid in "${pids[@]}"; do
+    if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
+      kill -9 "${pid}" 2>/dev/null || true
+    fi
+  done
+}
+
 is_running() {
   [[ -s "${PID_FILE}" ]] || return 1
   local pid
   pid="$(cat "${PID_FILE}")"
   [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "${pid}" 2>/dev/null
+  kill -0 "${pid}" 2>/dev/null || return 1
+  pid_is_current_gateway "${pid}"
 }
 
 start_gateway() {
   if is_running; then
     echo "TELEGRAM_GATEWAY=ALREADY_RUNNING PID=$(cat "${PID_FILE}")"
     return 0
+  fi
+
+  if ! acquire_start_lock; then
+    if is_running; then
+      echo "TELEGRAM_GATEWAY=ALREADY_RUNNING PID=$(cat "${PID_FILE}")"
+      return 0
+    fi
+    echo "TELEGRAM_GATEWAY=FAIL could not acquire singleton start lock" >&2
+    return 1
+  fi
+
+  if is_running; then
+    echo "TELEGRAM_GATEWAY=ALREADY_RUNNING PID=$(cat "${PID_FILE}")"
+    release_start_lock
+    return 0
+  fi
+
+  local -a all_pids=()
+  local -a current_pids=()
+  mapfile -t all_pids < <(gateway_pids)
+  mapfile -t current_pids < <(current_gateway_pids)
+
+  if [[ ${#all_pids[@]} -eq 1 && ${#current_pids[@]} -eq 1 && "${all_pids[0]}" == "${current_pids[0]}" ]]; then
+    printf '%s\n' "${current_pids[0]}" > "${PID_FILE}"
+    echo "TELEGRAM_GATEWAY=ADOPTED_EXISTING PID=${current_pids[0]}"
+    release_start_lock
+    return 0
+  fi
+
+  if [[ ${#all_pids[@]} -gt 0 ]]; then
+    echo "TELEGRAM_GATEWAY_SINGLETON=RECONCILING STALE_OR_DUPLICATE_COUNT=${#all_pids[@]}"
+    terminate_gateway_pids "${all_pids[@]}"
+    rm -f "${PID_FILE}"
   fi
 
   load_token
@@ -126,54 +271,69 @@ start_gateway() {
   printf '%s\n' "${pid}" > "${PID_FILE}"
   sleep 2
 
-  if kill -0 "${pid}" 2>/dev/null; then
+  if kill -0 "${pid}" 2>/dev/null && pid_is_current_gateway "${pid}"; then
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
     echo "TELEGRAM_LOG=${LOG_FILE}"
     echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
+    release_start_lock
     tail -n 20 "${LOG_FILE}" || true
   else
     echo "TELEGRAM_GATEWAY=FAIL"
     tail -n 80 "${LOG_FILE}" || true
     rm -f "${PID_FILE}"
+    release_start_lock
     return 1
   fi
 }
 
 stop_gateway() {
-  if ! is_running; then
+  local -a pids=()
+  mapfile -t pids < <(gateway_pids)
+
+  if [[ ${#pids[@]} -eq 0 ]]; then
     rm -f "${PID_FILE}"
+    release_start_lock
     echo "TELEGRAM_GATEWAY=STOPPED"
     return 0
   fi
-  local pid
-  pid="$(cat "${PID_FILE}")"
-  kill "${pid}" 2>/dev/null || true
-  for _ in 1 2 3 4 5; do
-    if ! kill -0 "${pid}" 2>/dev/null; then
-      break
-    fi
-    sleep 1
-  done
-  if kill -0 "${pid}" 2>/dev/null; then
-    kill -9 "${pid}" 2>/dev/null || true
-  fi
+
+  terminate_gateway_pids "${pids[@]}"
   rm -f "${PID_FILE}"
+  release_start_lock
   if command -v termux-wake-unlock >/dev/null 2>&1; then
     termux-wake-unlock >/dev/null 2>&1 || true
   fi
-  echo "TELEGRAM_GATEWAY=STOPPED"
+  echo "TELEGRAM_GATEWAY=STOPPED KILLED_INSTANCES=${#pids[@]}"
 }
 
 status_gateway() {
   if is_running; then
-    echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}")"
+    local -a pids=()
+    mapfile -t pids < <(gateway_pids)
+    if [[ ${#pids[@]} -ne 1 ]]; then
+      echo "TELEGRAM_GATEWAY=CONFLICT INSTANCES=${#pids[@]} TRACKED_PID=$(cat "${PID_FILE}")"
+      return 2
+    fi
+    echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}") INSTANCES=1"
   else
+    local -a pids=()
+    mapfile -t pids < <(gateway_pids)
+    if [[ ${#pids[@]} -gt 0 ]]; then
+      echo "TELEGRAM_GATEWAY=UNTRACKED INSTANCES=${#pids[@]} PIDS=${pids[*]}"
+      return 2
+    fi
     echo "TELEGRAM_GATEWAY=NOT_RUNNING"
     return 1
   fi
 }
 
 foreground_gateway() {
+  local -a pids=()
+  mapfile -t pids < <(gateway_pids)
+  if [[ ${#pids[@]} -gt 0 ]]; then
+    echo "TELEGRAM_GATEWAY=FAIL foreground refused while another gateway instance exists: ${pids[*]}" >&2
+    return 1
+  fi
   load_token
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -185,7 +345,7 @@ foreground_gateway() {
 restart_gateway() {
   # Prevent the persistence supervisor from racing the intentional stop/start.
   : > "${MAINTENANCE_FILE}"
-  trap 'rm -f "${MAINTENANCE_FILE}"' EXIT INT TERM
+  trap 'rm -f "${MAINTENANCE_FILE}" "${START_LOCK_DIR}"' EXIT INT TERM
   stop_gateway
   start_gateway
   rm -f "${MAINTENANCE_FILE}"
