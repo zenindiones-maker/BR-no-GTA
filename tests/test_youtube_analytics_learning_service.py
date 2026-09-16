@@ -12,7 +12,7 @@ def source():
         "capability_id": "youtube.analytics.read",
         "publication_id": 7,
         "youtube_video_id": "persisted-video",
-        "metric_window": {"start": "2026-09-01", "end": "2026-09-02"},
+        "metric_window": {"start_date": "2026-09-01", "end_date": "2026-09-02"},
         "retrieved_at": "2026-09-03T00:00:00Z",
         "execution_id": "source-exec",
         "authorization_id": "source-auth",
@@ -38,7 +38,34 @@ def test_zero_missing_and_idempotency(monkeypatch):
     assert metadata["metrics"]["likes"] == {"status": "MISSING", "value": None}
     assert metadata["publication_id"] == 7
     assert metadata["youtube_video_id"] == "persisted-video"
-    assert metadata["metric_window"] == {"start": "2026-09-01", "end": "2026-09-02"}
+    assert metadata["metric_window"] == {"start_date": "2026-09-01", "end_date": "2026-09-02"}
+
+
+def test_accepts_exact_metric_window_emitted_by_analytics_service(monkeypatch):
+    evidence = source()
+    stored = []
+    monkeypatch.setattr(svc, "list_memory_events_by_source", lambda **kw: stored)
+    monkeypatch.setattr(svc, "insert_memory_event", lambda event: 17)
+
+    result = svc.execute_youtube_analytics_learning_capability(cap(), evidence)
+
+    assert result["status"] == "LEARNED"
+    assert result["learning"]["metric_window"] == {
+        "start_date": "2026-09-01",
+        "end_date": "2026-09-02",
+    }
+
+
+def test_legacy_or_ambiguous_metric_window_fails_closed():
+    evidence = source()
+    evidence["metric_window"] = {"start": "2026-09-01", "end": "2026-09-02"}
+    with pytest.raises(CapabilityExecutionBlocked):
+        svc.execute_youtube_analytics_learning_capability(cap(), evidence)
+
+    evidence = source()
+    evidence["metric_window"]["start"] = evidence["metric_window"]["start_date"]
+    with pytest.raises(CapabilityExecutionBlocked):
+        svc.execute_youtube_analytics_learning_capability(cap(), evidence)
 
 
 def test_requires_persisted_video():
