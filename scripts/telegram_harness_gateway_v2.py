@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import unicodedata
 from typing import Any
 
 from app.main import initialize_application
@@ -10,6 +11,7 @@ from app.services.channel_branding_standard_service import (
     get_channel_branding_readiness,
     synchronize_channel_branding_standard_after_registration,
 )
+from app.services.telegram_fresh_research_service import requires_fresh_research
 from app.services.telegram_harness_service import (
     chat_under_harness,
     list_governed_brand_assets,
@@ -99,6 +101,53 @@ def _learning_evidence(result: dict[str, Any]) -> str:
     )
 
 
+def _grounding_evidence(result: dict[str, Any]) -> str:
+    if not result.get("fresh_research_required"):
+        return "FRESH_RESEARCH=NOT_REQUIRED"
+    return (
+        "--- Fresh GTA6 research evidence ---\n"
+        f"FRESH_RESEARCH={result.get('fresh_research_status')}\n"
+        f"CHECKED_AT={result.get('fresh_research_checked_at')}\n"
+        f"RESEARCH_ROUTING_ID={result.get('fresh_research_routing_id')}\n"
+        f"RESEARCH_EXECUTION={result.get('fresh_research_execution_ref')}\n"
+        f"OFFICIAL_SOURCES={result.get('official_source_count', 0)}\n"
+        f"SECONDARY_SOURCES={result.get('secondary_source_count', 0)}"
+    )
+
+
+def _chat_reply_v2(result: dict[str, Any]) -> str:
+    return _chat_reply(result) + "\n\n" + _grounding_evidence(result)
+
+
+def _fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
+
+
+def _conversation_classification_override(text: str) -> str | None:
+    """Questions must be captured, not accidentally learned as editorial facts/ideas."""
+    normalized = _fold(text).strip()
+    if requires_fresh_research(text):
+        return "question"
+    if normalized.endswith("?") or normalized.startswith(
+        (
+            "me diga",
+            "explique",
+            "quero que voce me diga",
+            "quero saber",
+            "qual ",
+            "quais ",
+            "como ",
+            "quando ",
+            "onde ",
+            "quem ",
+            "o que ",
+        )
+    ):
+        return "question"
+    return None
+
+
 def _attachment_reply(result: dict[str, Any]) -> str:
     item = result.get("input") or {}
     lines = [
@@ -161,6 +210,7 @@ def _execute_v2_command(text: str) -> str:
             + "/aprendeu <consulta> — prova o que entrou no Knowledge Brain\n"
             + "/assets — mostra intro/marca d'água e o padrão obrigatório do canal\n"
             + "Mensagens comuns são capturadas com proveniência antes do raciocínio. "
+            + "Perguntas atuais sobre GTA 6 acionam pesquisa fresca obrigatória antes da IA. "
             + "Ideias, temas, padrões, notas e notícias são aprendidos de forma tipada; notícias ficam marcadas como incertas até verificação. "
             + "Quando intro e marca d'água oficiais estiverem ambas verificadas, o padrão BR_NO_GTA_VIDEO_BRANDING_V1 é ativado e passa a ser obrigatório para novos vídeos."
         )
@@ -201,6 +251,7 @@ def main() -> int:
     print("TELEGRAM_TOTAL_INGRESS=ENABLED", flush=True)
     print("TELEGRAM_GTA6_LEARNING=ENABLED", flush=True)
     print("TELEGRAM_CHANNEL_BRANDING_STANDARD=ENABLED", flush=True)
+    print("TELEGRAM_FRESH_GTA6_RESEARCH=ENABLED", flush=True)
     if allowed_user_id is None:
         print(f"TELEGRAM_PAIRING=WAITING_TEXT:{PAIR_TEXT}", flush=True)
     else:
@@ -332,12 +383,25 @@ def main() -> int:
                             message=message,
                             update_id=update_id,
                             text=text,
+                            classification_override=_conversation_classification_override(text),
                         )
                         api.send(
                             chat_id,
-                            "🧠 DeepSeek Harness capturou sua mensagem com proveniência. Roteando raciocínio governado no cloud...",
+                            "🧠 DeepSeek Harness capturou sua mensagem com proveniência. Classificando necessidade de pesquisa e raciocínio...",
                         )
-                        reply = _chat_reply(chat_under_harness(text)) + "\n\n" + _learning_evidence(learned)
+
+                        def progress(stage: str, message_text: str) -> None:
+                            api.send(chat_id, message_text)
+                            print(
+                                f"TELEGRAM_PROGRESS=PASS USER_ID={user_id} STAGE={stage}",
+                                flush=True,
+                            )
+
+                        chat_result = chat_under_harness(
+                            text,
+                            progress_callback=progress,
+                        )
+                        reply = _chat_reply_v2(chat_result) + "\n\n" + _learning_evidence(learned)
                         command_name = "natural-language"
                 except Exception as exc:
                     reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
