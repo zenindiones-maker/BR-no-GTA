@@ -1,0 +1,143 @@
+name: RUN-001 Job20 Retry Dispatcher
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/job20-retry-request.json
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch-job20-retry:
+    if: github.event.head_commit.message == 'ops(run001): trigger Job20 retry'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_RUN_ID: '35125183151'
+      SOURCE_JOB_ID: '104892370801'
+      SOURCE_HEAD_SHA: 'b2a0213859d2b1f5040bfa06851de259082aef38'
+      FIX_COMMIT: 'ad30c2cfecebf04e2c8f23027ad31735b3297cba'
+      TARGET_REF: 'work/gate6f-analytics-learning'
+      EXPECTED_RENDER_JOB_ID: '20'
+      EXPECTED_VIDEO_ID: '5'
+      EXPECTED_EXECUTION_ID: 'acc83783-a9d2-4d38-8e17-b081c2a3eb97'
+      EXPECTED_BRAIN_DECISION_ID: '827f0c32-0945-49ce-a38f-a0fe21e31910'
+      EXPECTED_GOAL_ID: '93f99ddc-09c7-474b-8849-6981aa78d60c'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify bounded retry request and corrected ancestry
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$FIX_COMMIT" HEAD
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          request = json.loads(Path('.run001/job20-retry-request.json').read_text(encoding='utf-8'))
+          expected = {
+              'schema': 'run001-job20-retry-request/v1',
+              'render_job_id': int(os.environ['EXPECTED_RENDER_JOB_ID']),
+              'video_id': int(os.environ['EXPECTED_VIDEO_ID']),
+              'execution_id': os.environ['EXPECTED_EXECUTION_ID'],
+              'previous_run_id': int(os.environ['SOURCE_RUN_ID']),
+              'goal_id': os.environ['EXPECTED_GOAL_ID'],
+          }
+          if request != expected:
+              raise SystemExit(f'Bounded retry request mismatch: {request!r}')
+          print('RUN001_JOB20_RETRY_REQUEST=PASS')
+          print('JOB18_UNCHANGED=BY_DESIGN_NO_DATABASE_ACCESS')
+          PY
+
+      - name: Recover and validate exact Job20 envelope from failed run
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > /tmp/source-run.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${SOURCE_JOB_ID}/logs" > /tmp/source-job.log
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source_run = json.loads(Path('/tmp/source-run.json').read_text(encoding='utf-8-sig'))
+          if source_run.get('id') != int(os.environ['SOURCE_RUN_ID']):
+              raise SystemExit('Source run identity mismatch')
+          if source_run.get('head_sha') != os.environ['SOURCE_HEAD_SHA']:
+              raise SystemExit('Source run SHA mismatch')
+          if source_run.get('event') != 'workflow_dispatch':
+              raise SystemExit('Source run was not workflow_dispatch')
+          if source_run.get('status') != 'completed' or source_run.get('conclusion') != 'failure':
+              raise SystemExit('Source run is not a completed failure')
+
+          text = Path('/tmp/source-job.log').read_text(encoding='utf-8-sig', errors='strict')
+
+          def extract(label: str) -> str:
+              marker = f'{label}: '
+              matches = [line.split(marker, 1)[1] for line in text.splitlines() if marker in line]
+              if len(matches) != 1:
+                  raise SystemExit(f'Expected exactly one {label} in source logs; got {len(matches)}')
+              return matches[0].strip()
+
+          render_job_raw = extract('RENDER_JOB')
+          brain_decision_id = extract('EXPECTED_BRAIN_DECISION_ID')
+          execution_id = extract('EXPECTED_EXECUTION_ID')
+          authorized_action = extract('EXPECTED_AUTHORIZED_ACTION')
+          render_job = json.loads(render_job_raw)
+
+          checks = {
+              'render_job_id': (render_job.get('id'), int(os.environ['EXPECTED_RENDER_JOB_ID'])),
+              'video_id': (render_job.get('video_id'), int(os.environ['EXPECTED_VIDEO_ID'])),
+              'execution_id': (render_job.get('execution_id'), os.environ['EXPECTED_EXECUTION_ID']),
+              'brain_decision_id': (render_job.get('brain_decision_id'), os.environ['EXPECTED_BRAIN_DECISION_ID']),
+              'authorized_action': (render_job.get('authorized_action'), 'EXECUTION'),
+              'goal_id': ((render_job.get('lineage') or {}).get('goal_id'), os.environ['EXPECTED_GOAL_ID']),
+              'status': (render_job.get('status'), 'running'),
+          }
+          for name, (actual, expected) in checks.items():
+              if actual != expected:
+                  raise SystemExit(f'{name} mismatch: expected={expected!r} actual={actual!r}')
+          if brain_decision_id != os.environ['EXPECTED_BRAIN_DECISION_ID']:
+              raise SystemExit('Workflow brain_decision_id mismatch')
+          if execution_id != os.environ['EXPECTED_EXECUTION_ID']:
+              raise SystemExit('Workflow execution_id mismatch')
+          if authorized_action != 'EXECUTION':
+              raise SystemExit('Workflow authorized_action mismatch')
+
+          dispatch = {
+              'ref': os.environ['TARGET_REF'],
+              'inputs': {
+                  'render_job': render_job_raw,
+                  'brain_decision_id': brain_decision_id,
+                  'execution_id': execution_id,
+                  'authorized_action': authorized_action,
+              },
+          }
+          Path('/tmp/dispatch.json').write_text(
+              json.dumps(dispatch, ensure_ascii=False, separators=(',', ':')),
+              encoding='utf-8',
+          )
+          print('RUN001_JOB20_SOURCE_ENVELOPE=PASS')
+          print(f"SOURCE_RUN_ID={os.environ['SOURCE_RUN_ID']}")
+          print(f"RENDER_JOB_ID={render_job['id']}")
+          print(f"VIDEO_ID={render_job['video_id']}")
+          PY
+
+      - name: Dispatch corrected Job20 retry
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/dispatches" \
+            --input /tmp/dispatch.json
+          echo 'RUN001_JOB20_RETRY_DISPATCH=ACCEPTED'
+          echo "TARGET_REF=${TARGET_REF}"
+          echo "RETRY_OF_RUN_ID=${SOURCE_RUN_ID}"
