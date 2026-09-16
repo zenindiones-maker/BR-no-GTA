@@ -1,6 +1,7 @@
 import json
 
 from app.database.connection import get_connection
+from app.database.youtube_cloud_execution_repository import get_youtube_cloud_execution
 from app.database.gta6_goal_repository import (
     create_gta6_goal,
     upsert_gta6_goal_artifacts,
@@ -162,7 +163,7 @@ def test_preview_proves_exact_uploaded_private_lineage_without_mutation():
     assert preview["artifact_identity"]["artifact_id"] == 987654
     assert preview["reasons"] == ["uploaded_private_and_lineage_verified"]
     assert before == after
-    assert json.loads(after["cloud_execution"]) == cloud_execution
+    assert get_youtube_cloud_execution(publication_id) == cloud_execution
 
 
 def test_preview_fails_closed_on_artifact_identity_mismatch():

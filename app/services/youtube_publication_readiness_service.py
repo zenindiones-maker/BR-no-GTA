@@ -92,9 +92,6 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
             raise ValueError("Goal-linked Video is not ready")
         if video.get("content_item_id") != content_item_id:
             raise ValueError("Video/Publication content_item_id mismatch")
-        if video.get("render_job_id") != render_job_id:
-            raise ValueError("Video/Goal render_job_id mismatch")
-
         render_job = get_render_job(render_job_id)
         if render_job is None or render_job.get("status") != "completed":
             raise ValueError("Goal-linked RenderJob is not completed")
