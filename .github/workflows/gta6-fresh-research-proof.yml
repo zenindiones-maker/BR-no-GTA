@@ -1,0 +1,67 @@
+name: GTA6 Fresh Research Runtime Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/gate6f-analytics-learning]
+    paths:
+      - scripts/gta6_fresh_research_worker.py
+      - .github/workflows/gta6-fresh-research-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Collect official current evidence
+        run: |
+          QUERY_B64="$(printf '%s' 'Qual é a data oficial atual de GTA VI e qual fonte comprova isso?' | base64 -w0)"
+          python scripts/gta6_fresh_research_worker.py \
+            --query-b64 "$QUERY_B64" \
+            --execution-id runtime-proof-current-release \
+            --output runtime/gta6-fresh-research/result.json
+
+      - name: Assert current Rockstar release evidence
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          data = json.loads(Path('runtime/gta6-fresh-research/result.json').read_text())
+          assert data['status'] == 'PASS', data
+          assert data['official_source_count'] >= 1, data
+          official_text = ' '.join(
+              str(item.get('content_excerpt') or '')
+              for item in data['official_sources']
+          )
+          normalized = re.sub(r'\s+', ' ', official_text).casefold()
+          expected = (
+              'november 19, 2026',
+              'november 19 2026',
+              '19 de novembro de 2026',
+              '19/11/2026',
+          )
+          assert any(value in normalized for value in expected), official_text[:4000]
+          print('CURRENT_RELEASE_DATE_GROUNDED=PASS')
+          print(f"CHECKED_AT={data['checked_at']}")
+          print(f"OFFICIAL_SOURCE_COUNT={data['official_source_count']}")
+          PY
+
+      - name: Upload proof packet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gta6-fresh-research-runtime-proof
+          path: runtime/gta6-fresh-research/result.json
+          if-no-files-found: warn
+          retention-days: 7
