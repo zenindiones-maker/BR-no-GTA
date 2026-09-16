@@ -78,6 +78,23 @@ load_token() {
   fi
 }
 
+configure_cloud_routing() {
+  local current_branch
+  current_branch="$(git -C "${ROOT}" branch --show-current 2>/dev/null || true)"
+  if [[ -z "${BR_OMNIROUTE_REF:-}" && -n "${current_branch}" ]]; then
+    export BR_OMNIROUTE_REF="${current_branch}"
+  fi
+  if [[ -z "${GITHUB_ACTIONS_RENDER_REF:-}" && -n "${current_branch}" ]]; then
+    export GITHUB_ACTIONS_RENDER_REF="${current_branch}"
+  fi
+  export GITHUB_ACTIONS_REPOSITORY="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
+
+  if [[ -z "${BR_OMNIROUTE_REF:-}" ]]; then
+    echo "TELEGRAM_CONTROL=FAIL não foi possível resolver BR_OMNIROUTE_REF" >&2
+    return 1
+  fi
+}
+
 is_running() {
   [[ -s "${PID_FILE}" ]] || return 1
   local pid
@@ -93,6 +110,7 @@ start_gateway() {
   fi
 
   load_token
+  configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
 
@@ -110,6 +128,7 @@ start_gateway() {
   if kill -0 "${pid}" 2>/dev/null; then
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
     echo "TELEGRAM_LOG=${LOG_FILE}"
+    echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
     tail -n 20 "${LOG_FILE}" || true
   else
     echo "TELEGRAM_GATEWAY=FAIL"
@@ -155,6 +174,7 @@ status_gateway() {
 
 foreground_gateway() {
   load_token
+  configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   cd "${ROOT}"
