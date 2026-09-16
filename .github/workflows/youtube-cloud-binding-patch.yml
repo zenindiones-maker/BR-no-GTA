@@ -35,7 +35,8 @@ jobs:
       - name: Run focused Harness YouTube tests
         run: |
           python -m pip install -r requirements.txt
-          pytest -q tests/test_deepseek_harness.py -k 'youtube_publish or youtube_pode_postar'
+          python -m pip install pytest
+          python -m pytest -q tests/test_deepseek_harness.py -k 'youtube_publish or youtube_pode_postar'
 
       - name: Remove one-shot patch infrastructure
         run: |
