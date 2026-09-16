@@ -7,6 +7,7 @@ CONFIG_DIR="${HOME}/.config/br-no-gta"
 SECRET_FILE="${CONFIG_DIR}/telegram.env"
 PID_FILE="${STATE_DIR}/telegram-gateway.pid"
 LOG_FILE="${STATE_DIR}/telegram-gateway.log"
+MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 
 mkdir -p "${STATE_DIR}" "${CONFIG_DIR}"
@@ -181,6 +182,16 @@ foreground_gateway() {
   exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
 
+restart_gateway() {
+  # Prevent the persistence supervisor from racing the intentional stop/start.
+  : > "${MAINTENANCE_FILE}"
+  trap 'rm -f "${MAINTENANCE_FILE}"' EXIT INT TERM
+  stop_gateway
+  start_gateway
+  rm -f "${MAINTENANCE_FILE}"
+  trap - EXIT INT TERM
+}
+
 case "${1:-start}" in
   start)
     start_gateway
@@ -189,8 +200,7 @@ case "${1:-start}" in
     stop_gateway
     ;;
   restart)
-    stop_gateway
-    start_gateway
+    restart_gateway
     ;;
   status)
     status_gateway
