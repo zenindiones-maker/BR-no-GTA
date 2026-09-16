@@ -136,11 +136,22 @@ def test_metadata_reconciliation_enriches_durable_remote_locator_without_downloa
 
     assert result.success is True
     assert result.pending is False
-    assert result.output_path == artifact.remote_uri
     assert result.github_execution["artifact_id"] == 55
     assert result.github_execution["artifact_size_in_bytes"] == 987654
     assert result.github_execution["artifact_remote_uri"] == artifact.remote_uri
     assert result.github_execution["artifact_expired"] is False
+    locator = result.github_execution["artifact_locator"]
+    assert locator["workflow_run_id"] == 123456789
+    assert locator["artifact_id"] == 55
+    assert locator["render_job_id"] == 901
+    assert locator["video_id"] == 77
+    assert locator["execution_id"] == "render-exec-77"
+    assert locator["media_relative_path"] == "render-exec-77/901/77.mp4"
+    assert locator["manifest_relative_path"] == "render-exec-77/901/render-manifest.json"
+    assert locator["probe_relative_path"] == "render-exec-77/901/video-probe.json"
+    assert locator["qa_relative_path"] == "render-exec-77/901/render-qa.json"
+    assert result.output_path == locator["media_uri"]
+    assert result.output_path.startswith(artifact.remote_uri + "/")
 
 
 @pytest.mark.parametrize(
