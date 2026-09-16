@@ -22,7 +22,47 @@ YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(capability_id="knowledge.le
 
 MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(capability_id="content.normalize.markdown", capability_type="EXECUTOR", domain="content-ingestion", implementation="Harness-authorized Microsoft MarkItDown 0.1.7 normalization adapter", input_contract="allowlisted public http/https source URI", output_contract="normalized Markdown + source provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "markitdown 0.1.7"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("ingestion", "normalization", "markdown", "evidence", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; only http/https allowlisted document formats or YouTube; plugins disabled; no shell, local-file, arbitrary executor, LLM, Azure, publication, or editorial authority", cost_class="FREE_NO_BILLING", quota_class="REMOTE_SOURCE", latency_class="REMOTE_IO", quality_class="PINNED_DETERMINISTIC_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.markitdown_ingestion_service.execute_markitdown_normalization_capability", version="1", provider_id="microsoft-markitdown", side_effects=())
 
-for _record in (PHONE_CONTROL_RECORD, PRODUCTION_MEDIA_BINDING_RECORD, YOUTUBE_ANALYTICS_READ_RECORD, YOUTUBE_ANALYTICS_LEARNING_RECORD, MARKITDOWN_NORMALIZE_RECORD):
+TELEGRAM_BRAND_ASSET_RECORD = CapabilityRecord(
+    capability_id="telegram.asset.register",
+    capability_type="EXECUTOR",
+    domain="telegram-ingress",
+    implementation="Harness-governed registration of verified Telegram intro/watermark file identity and provenance",
+    input_contract="paired Telegram user/chat/message + verified getFile identity + intro|watermark classification",
+    output_contract="active canonical brand asset record + Harness routing/authorization evidence",
+    requirements=(
+        "paired Telegram ingress",
+        "Telegram getFile verification",
+        "persisted Harness EXECUTION authorization",
+        "exact Global Capability Registry executor binding",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("telegram", "asset", "branding", "intro", "watermark", "zero-cost"),
+    security_boundary=(
+        "Telegram authentication is ingress identity only; DeepSeek Harness remains sole authority. "
+        "The capability persists file identity/provenance only, never bot token bytes and never publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="TELEGRAM_API",
+    latency_class="REMOTE_API",
+    quality_class="DETERMINISTIC_METADATA_BOUNDARY",
+    evidence_contract="app.services.harness_execution_result.CanonicalExecutionResult",
+    fallback_eligibility=False,
+    executor_binding="app.services.telegram_harness_service.execute_telegram_asset_registration_capability",
+    version="1",
+    provider_id="telegram-bot-api",
+    side_effects=("canonical brand asset metadata persistence",),
+)
+
+for _record in (
+    PHONE_CONTROL_RECORD,
+    PRODUCTION_MEDIA_BINDING_RECORD,
+    YOUTUBE_ANALYTICS_READ_RECORD,
+    YOUTUBE_ANALYTICS_LEARNING_RECORD,
+    MARKITDOWN_NORMALIZE_RECORD,
+    TELEGRAM_BRAND_ASSET_RECORD,
+):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
     _REGISTRY._by_id[_record.capability_id] = _record
