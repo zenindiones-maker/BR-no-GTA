@@ -1,0 +1,168 @@
+name: YouTube Private Upload Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      publication_id:
+        description: "Persisted YouTube Publication id"
+        required: true
+        type: string
+      execution_id:
+        description: "Harness YOUTUBE execution id"
+        required: true
+        type: string
+      render_run_id:
+        description: "GitHub Actions run containing the QA-passed render artifact"
+        required: true
+        type: string
+      render_artifact_name:
+        description: "Exact render artifact name"
+        required: true
+        default: "render-output"
+        type: string
+      upload_job_b64:
+        description: "Base64 encoded Harness-authorized private-upload job"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: youtube-private-upload-${{ inputs.publication_id }}
+  cancel-in-progress: false
+
+env:
+  ZERO_COST_OPERATION: "TRUE"
+
+jobs:
+  upload-private:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact control-plane ref
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Decode and validate dispatch envelope
+        env:
+          UPLOAD_JOB_B64: ${{ inputs.upload_job_b64 }}
+          EXPECTED_PUBLICATION_ID: ${{ inputs.publication_id }}
+          EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
+          EXPECTED_RENDER_RUN_ID: ${{ inputs.render_run_id }}
+          EXPECTED_ARTIFACT_NAME: ${{ inputs.render_artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/youtube-upload/result runtime/youtube-upload/oauth
+          python - <<'PY'
+          import base64, json, os
+          from pathlib import Path
+          raw = base64.b64decode(os.environ["UPLOAD_JOB_B64"], validate=True)
+          job = json.loads(raw.decode("utf-8"))
+          if not isinstance(job, dict):
+              raise SystemExit("upload job must be an object")
+          if str(job.get("publication_id")) != os.environ["EXPECTED_PUBLICATION_ID"]:
+              raise SystemExit("publication_id dispatch envelope mismatch")
+          if job.get("execution_id") != os.environ["EXPECTED_EXECUTION_ID"]:
+              raise SystemExit("execution_id dispatch envelope mismatch")
+          locator = job.get("artifact_locator")
+          if not isinstance(locator, dict):
+              raise SystemExit("artifact locator missing")
+          if str(locator.get("workflow_run_id")) != os.environ["EXPECTED_RENDER_RUN_ID"]:
+              raise SystemExit("render_run_id dispatch envelope mismatch")
+          if locator.get("artifact_name") != os.environ["EXPECTED_ARTIFACT_NAME"]:
+              raise SystemExit("artifact_name dispatch envelope mismatch")
+          if job.get("authorized_action") != "YOUTUBE" or job.get("capability_id") != "youtube.upload-private":
+              raise SystemExit("Harness authorization envelope mismatch")
+          Path("runtime/youtube-upload/upload-job.json").write_text(
+              json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print("UPLOAD_ENVELOPE=PASS")
+          PY
+
+      - name: Download exact render artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.render_artifact_name }}
+          path: runtime/youtube-upload/render-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.render_run_id }}
+
+      - name: Materialize OAuth credentials from secrets
+        env:
+          TOKEN_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}
+          CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_OAUTH_CLIENT_SECRET_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN_JSON:-}" ]; then
+            echo "YOUTUBE_OAUTH_TOKEN_JSON secret is not configured" >&2
+            exit 1
+          fi
+          if [ -z "${CLIENT_SECRET_JSON:-}" ]; then
+            echo "YOUTUBE_OAUTH_CLIENT_SECRET_JSON secret is not configured" >&2
+            exit 1
+          fi
+          printf '%s' "$TOKEN_JSON" > runtime/youtube-upload/oauth/youtube_token.json
+          printf '%s' "$CLIENT_SECRET_JSON" > runtime/youtube-upload/oauth/client_secret.json
+          chmod 600 runtime/youtube-upload/oauth/*.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in (
+              Path("runtime/youtube-upload/oauth/youtube_token.json"),
+              Path("runtime/youtube-upload/oauth/client_secret.json"),
+          ):
+              value = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(value, dict) or not value:
+                  raise SystemExit(f"invalid OAuth JSON: {path.name}")
+          print("YOUTUBE_OAUTH_FILES=PASS")
+          PY
+
+      - name: Execute deterministic private upload
+        env:
+          PYTHONPATH: .
+          YOUTUBE_UPLOAD_JOB_FILE: runtime/youtube-upload/upload-job.json
+          YOUTUBE_ARTIFACT_ROOT: runtime/youtube-upload/render-artifact
+          YOUTUBE_UPLOAD_RESULT_FILE: runtime/youtube-upload/result/youtube-upload-result.json
+          YOUTUBE_TOKEN_FILE: runtime/youtube-upload/oauth/youtube_token.json
+          YOUTUBE_CLIENT_SECRETS_FILE: runtime/youtube-upload/oauth/client_secret.json
+        run: |
+          set -euo pipefail
+          python -m app.workers.youtube_private_upload_worker
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("runtime/youtube-upload/result/youtube-upload-result.json").read_text())
+          if result.get("status") != "UPLOADED":
+              raise SystemExit("private upload did not return UPLOADED")
+          if not result.get("youtube_video_id") or not result.get("youtube_url"):
+              raise SystemExit("private upload result lacks YouTube identity")
+          if result.get("artifact_evidence", {}).get("qa_status") != "PASS":
+              raise SystemExit("private upload result lacks QA-passed artifact evidence")
+          print("PRIVATE_UPLOAD=PASS")
+          PY
+
+      - name: Remove OAuth files before artifact handling
+        if: always()
+        run: rm -rf runtime/youtube-upload/oauth
+
+      - name: Upload lightweight execution result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-private-upload-result-${{ inputs.publication_id }}-${{ inputs.execution_id }}
+          path: runtime/youtube-upload/result/
+          if-no-files-found: warn
+          retention-days: 30
