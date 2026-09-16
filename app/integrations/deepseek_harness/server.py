@@ -185,7 +185,10 @@ def br_research_run() -> str:
 
 
 @mcp.tool()
-def br_execution_process_next(goal_id: str | None = None) -> str:
+def br_execution_process_next(
+    goal_id: str | None = None,
+    knowledge_id: int | None = None,
+) -> str:
     """Advance one official production step under persisted Harness authority."""
     goal_id = _normalize_optional_goal_id(goal_id)
     routing = route_harness_request(
@@ -202,6 +205,10 @@ def br_execution_process_next(goal_id: str | None = None) -> str:
     }
     if goal_id is not None:
         lineage["goal_id"] = goal_id
+    if knowledge_id is not None:
+        if not isinstance(knowledge_id, int) or isinstance(knowledge_id, bool) or knowledge_id <= 0:
+            raise ValueError("knowledge_id must be a positive integer or None")
+        lineage["knowledge_id"] = knowledge_id
     authorization = issue_harness_authorization(
         authorized_action="EXECUTION",
         subject="action:EXECUTION",
@@ -214,6 +221,7 @@ def br_execution_process_next(goal_id: str | None = None) -> str:
         result = process_next_production_execution(
             execution_context,
             goal_id=goal_id,
+            knowledge_id=knowledge_id,
         )
     evidence = canonical_execution_result(
         authority=authorization.authority,

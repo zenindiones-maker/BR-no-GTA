@@ -111,3 +111,95 @@ def test_targeted_render_executes_only_render_job_attached_to_goal(monkeypatch):
     assert result["result"]["job_id"] == 222
     assert calls == [(222, context)]
     assert get_gta6_goal(frozen["goal_id"]) == frozen_before
+
+
+def test_video_stage_selects_missing_segments_from_explicit_knowledge_before_binding(monkeypatch):
+    target = _active_goal("run001-explicit-media-selection")
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="action:EXECUTION",
+        lineage={"goal_id": target["goal_id"], "knowledge_id": 7},
+    )
+    context = authorization_to_context(authorization)
+    plan = {
+        "content_item_id": 4,
+        "script_id": 8,
+        "idea_id": 2,
+        "scenes": [{"order": 1}, {"order": 2}],
+    }
+    calls = []
+    monkeypatch.setattr(execution_service, "resolve_next_stage", lambda **_: {"next_stage": "VIDEO"})
+    monkeypatch.setattr(execution_service, "get_artifacts", lambda **_: {"content_item_id": 4})
+    monkeypatch.setattr(
+        execution_service,
+        "get_production_plan_by_content_item_id",
+        lambda _id: {"production_plan": plan},
+    )
+    monkeypatch.setattr(
+        execution_service,
+        "_govern_production_media_selection",
+        lambda **kwargs: calls.append(("select", kwargs)) or {
+            "segment_ids": [101, 102],
+            "canonical_execution_result": {"success": True},
+        },
+    )
+    monkeypatch.setattr(
+        execution_service,
+        "_govern_production_media_binding",
+        lambda **kwargs: calls.append(("bind", kwargs)) or {
+            "production_plan": {
+                **plan,
+                "scenes": [{"order": 1, "segment_id": 101}, {"order": 2, "segment_id": 102}],
+            },
+            "canonical_execution_result": {"success": True},
+        },
+    )
+    monkeypatch.setattr(
+        execution_service,
+        "_govern_brand_asset_binding",
+        lambda **_: {
+            "brand_assets": [],
+            "asset_count": 0,
+            "canonical_execution_result": {"success": True},
+        },
+    )
+    monkeypatch.setattr(execution_service, "create_video_spec", lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        execution_service,
+        "create_video_and_enqueue_render",
+        lambda _spec: {"video": {"id": 31}, "render_job": {"id": 41}},
+    )
+    monkeypatch.setattr(execution_service, "update_artifacts", lambda **_: None)
+
+    result = process_next_production_execution(
+        context,
+        goal_id=target["goal_id"],
+        knowledge_id=7,
+    )
+
+    assert [name for name, _ in calls] == ["select", "bind"]
+    assert calls[0][1]["knowledge_id"] == 7
+    assert calls[1][1]["production_plan"]["scenes"][0]["segment_id"] == 101
+    assert result["media_selection_execution"]["success"] is True
+
+
+def test_video_stage_without_selected_segments_requires_explicit_knowledge(monkeypatch):
+    target = _active_goal("run001-missing-explicit-media-selection")
+    _, context = _execution_context(target["goal_id"])
+    monkeypatch.setattr(execution_service, "resolve_next_stage", lambda **_: {"next_stage": "VIDEO"})
+    monkeypatch.setattr(execution_service, "get_artifacts", lambda **_: {"content_item_id": 4})
+    monkeypatch.setattr(
+        execution_service,
+        "get_production_plan_by_content_item_id",
+        lambda _id: {
+            "production_plan": {
+                "content_item_id": 4,
+                "script_id": 8,
+                "idea_id": 2,
+                "scenes": [{"order": 1}],
+            }
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="knowledge_id explícito"):
+        process_next_production_execution(context, goal_id=target["goal_id"])

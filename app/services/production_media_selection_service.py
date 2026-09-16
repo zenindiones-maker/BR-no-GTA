@@ -10,8 +10,36 @@ from app.database.production_plan_repository import (
     get_production_plan_by_content_item_id,
 )
 from app.services.media_selection_service import (
+    MediaSelectionError,
+    _extract_candidate_windows,
     select_media_segments,
 )
+
+
+def _preflight_continuous_source(
+    *,
+    knowledge: dict[str, Any],
+    required_duration_seconds: float,
+) -> None:
+    """Prove full continuous coverage before creating the first persistent segment."""
+    candidates = _extract_candidate_windows(knowledge)
+    if not candidates:
+        raise MediaSelectionError("MediaKnowledge não possui nenhuma cena utilizável.")
+    window_start = candidates[0]["start_seconds"]
+    window_end = window_start + required_duration_seconds
+    coverage_cursor = window_start
+    for candidate in candidates:
+        if candidate["end_seconds"] <= coverage_cursor:
+            continue
+        if candidate["start_seconds"] > coverage_cursor + 0.001:
+            break
+        coverage_cursor = max(coverage_cursor, candidate["end_seconds"])
+        if coverage_cursor + 0.001 >= window_end:
+            return
+    raise MediaSelectionError(
+        "Mídia disponível insuficiente para cobrir todo o ProductionPlan sem reutilização; "
+        "nenhum ContentSegment foi criado."
+    )
 
 
 def select_production_media(
@@ -127,6 +155,12 @@ def select_production_media(
         raise RuntimeError(
             f"MediaKnowledge não encontrado: {knowledge_id}."
         )
+
+    required_duration_seconds = sum(float(scene["duration_seconds"]) for scene in scenes)
+    _preflight_continuous_source(
+        knowledge=knowledge,
+        required_duration_seconds=required_duration_seconds,
+    )
 
     segment_ids: list[int] = []
     content_unit_ids: list[int] = []

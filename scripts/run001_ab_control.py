@@ -139,6 +139,7 @@ def main() -> int:
     )
     parser.add_argument("action", choices=("status", "advance"))
     parser.add_argument("--video", choices=("A", "B"))
+    parser.add_argument("--knowledge-id", type=int)
     args = parser.parse_args()
 
     initialize_application()
@@ -161,7 +162,12 @@ def main() -> int:
 
     label = args.video
     before = _state(label)
-    envelope = json.loads(br_execution_process_next(goal_id=GOALS[label]["goal_id"]))
+    envelope = json.loads(
+        br_execution_process_next(
+            goal_id=GOALS[label]["goal_id"],
+            knowledge_id=args.knowledge_id,
+        )
+    )
     result = envelope.get("result")
     after = _state(label)
 

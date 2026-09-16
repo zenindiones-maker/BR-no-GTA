@@ -305,6 +305,35 @@ def test_execution_process_next_persists_routed_authorization_before_executor(
     assert captured["executed"] is True
 
 
+def test_targeted_execution_preserves_explicit_media_knowledge_in_harness_lineage(monkeypatch):
+    captured = {}
+
+    def execute(execution_context, *, goal_id, knowledge_id):
+        authorization = validate_harness_authorization(
+            execution_context,
+            expected_action="EXECUTION",
+            expected_subject="action:EXECUTION",
+            expected_execution_id=execution_context["execution_id"],
+        )
+        captured["lineage"] = authorization.lineage
+        captured["args"] = (goal_id, knowledge_id)
+        return {"status": "selected"}
+
+    monkeypatch.setattr(server, "process_next_production_execution", execute)
+    payload = json.loads(server.br_execution_process_next(goal_id="goal-a", knowledge_id=7))
+
+    assert payload["result"] == {"status": "selected"}
+    assert captured["args"] == ("goal-a", 7)
+    assert captured["lineage"]["goal_id"] == "goal-a"
+    assert captured["lineage"]["knowledge_id"] == 7
+
+
+@pytest.mark.parametrize("knowledge_id", [0, -1, True, "7"])
+def test_execution_rejects_invalid_media_knowledge_identity(knowledge_id):
+    with pytest.raises(ValueError, match="positive integer"):
+        server.br_execution_process_next(goal_id="goal-a", knowledge_id=knowledge_id)
+
+
 @pytest.mark.parametrize("failed_boundary", ["routing", "authorization"])
 def test_execution_process_next_fails_closed_before_production(monkeypatch, failed_boundary):
     def blocked(*args, **kwargs):

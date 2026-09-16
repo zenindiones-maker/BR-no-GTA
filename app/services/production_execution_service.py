@@ -22,6 +22,11 @@ from app.services.production_media_composition_service import (
     PRODUCTION_MEDIA_EXECUTOR_BINDING,
     compose_and_persist_production_media,
 )
+from app.services.production_media_selection_capability_service import (
+    PRODUCTION_MEDIA_SELECTION_CAPABILITY_ID,
+    PRODUCTION_MEDIA_SELECTION_EXECUTOR_BINDING,
+    select_authorized_production_media,
+)
 from app.services.production_brand_asset_service import (
     PRODUCTION_BRAND_ASSET_CAPABILITY_ID,
     PRODUCTION_BRAND_ASSET_EXECUTOR_BINDING,
@@ -72,6 +77,53 @@ def _govern_production_media_binding(
     return compose_and_persist_production_media(
         content_item_id=production_plan["content_item_id"],
         segment_ids=segment_ids,
+        authorization=capability_authorization,
+        routing_decision=routing,
+        execution_id=parent_authorization.execution_id,
+    )
+
+
+def _govern_production_media_selection(
+    *,
+    parent_authorization,
+    content_item_id: int,
+    knowledge_id: int,
+) -> dict[str, Any]:
+    """Select real persisted segments under the same exact Harness execution."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="production media select segments from explicit media knowledge",
+            authorized_action="EXECUTION",
+            domain="production-media-selection",
+            required_capability_id=PRODUCTION_MEDIA_SELECTION_CAPABILITY_ID,
+            required_policy_tags=("production", "media", "selection", "segments"),
+            provider_required=False,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+        )
+    )
+    if routing.selected_capability_id != PRODUCTION_MEDIA_SELECTION_CAPABILITY_ID:
+        raise PermissionError("Harness selected an unexpected production media selection capability")
+    if routing.selected_executor_binding != PRODUCTION_MEDIA_SELECTION_EXECUTOR_BINDING:
+        raise PermissionError("Harness selected an unexpected production media selection executor")
+
+    capability_authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{PRODUCTION_MEDIA_SELECTION_CAPABILITY_ID}",
+        harness_decision_id=parent_authorization.harness_decision_id,
+        execution_id=parent_authorization.execution_id,
+        lineage={
+            "parent_authorization_id": parent_authorization.authorization_id,
+            "routing_id": routing.routing_id,
+            "capability_id": PRODUCTION_MEDIA_SELECTION_CAPABILITY_ID,
+            "selected_executor_binding": PRODUCTION_MEDIA_SELECTION_EXECUTOR_BINDING,
+            "content_item_id": content_item_id,
+            "knowledge_id": knowledge_id,
+        },
+    )
+    return select_authorized_production_media(
+        content_item_id=content_item_id,
+        knowledge_id=knowledge_id,
         authorization=capability_authorization,
         routing_decision=routing,
         execution_id=parent_authorization.execution_id,
@@ -145,6 +197,7 @@ def process_next_production_execution(
     execution_context: dict[str, Any] | None = None,
     *,
     goal_id: str | None = None,
+    knowledge_id: int | None = None,
 ) -> dict[str, Any] | None:
     """Advance one Harness-authorized production execution step for an exact Goal when targeted."""
     context = execution_context or {}
@@ -183,6 +236,37 @@ def process_next_production_execution(
         if not isinstance(production_plan, dict):
             raise RuntimeError("Production Plan persistido é inválido.")
 
+        scenes = production_plan.get("scenes")
+        if not isinstance(scenes, list) or not scenes:
+            raise RuntimeError("Production Plan não possui cenas válidas.")
+        segment_ids = [scene.get("segment_id") for scene in scenes if isinstance(scene, dict)]
+        fully_selected = len(segment_ids) == len(scenes) and all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in segment_ids
+        )
+        media_selection_result = None
+        if not fully_selected:
+            if any(value is not None for value in segment_ids):
+                raise RuntimeError("Production Plan possui seleção de mídia parcial; refusing automatic overwrite.")
+            lineage_knowledge_id = authorization.lineage.get("knowledge_id")
+            if knowledge_id is None or lineage_knowledge_id != knowledge_id:
+                raise RuntimeError(
+                    "Production Plan ainda não possui mídia selecionada; informe knowledge_id explícito sob autoridade Harness."
+                )
+            if not isinstance(knowledge_id, int) or isinstance(knowledge_id, bool) or knowledge_id <= 0:
+                raise ValueError("knowledge_id deve ser um inteiro positivo.")
+            media_selection_result = _govern_production_media_selection(
+                parent_authorization=authorization,
+                content_item_id=content_item_id,
+                knowledge_id=knowledge_id,
+            )
+            segment_ids = list(media_selection_result["segment_ids"])
+            production_plan = dict(production_plan)
+            production_plan["scenes"] = [
+                {**scene, "segment_id": segment_id}
+                for scene, segment_id in zip(scenes, segment_ids)
+            ]
+
         media_result = _govern_production_media_binding(
             parent_authorization=authorization,
             production_plan=production_plan,
@@ -213,6 +297,11 @@ def process_next_production_execution(
             "video": video,
             "render_job": render_job,
             "media_execution": media_result["canonical_execution_result"],
+            "media_selection_execution": (
+                media_selection_result["canonical_execution_result"]
+                if media_selection_result is not None
+                else None
+            ),
             "brand_asset_execution": brand_result["canonical_execution_result"],
             "brand_asset_count": brand_result["asset_count"],
         }

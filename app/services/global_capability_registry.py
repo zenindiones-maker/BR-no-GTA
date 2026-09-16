@@ -16,6 +16,40 @@ PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capabilit
 
 PRODUCTION_MEDIA_BINDING_RECORD = CapabilityRecord(capability_id="production.media.bind-selected-segments", capability_type="CAPABILITY", domain="production-media", implementation="Harness-governed bounded binding of selected Media segments into ProductionPlan", input_contract="persisted ProductionPlan + selected segment ids + authorization lineage", output_contract="persisted composed ProductionPlan + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "matching production lineage and execution_id"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("production", "media", "selection", "binding", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry capability and executor binding; caller cannot select executor; bind_selected_segments is reachable only after all gates", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.production_media_composition_service.execute_production_media_binding_capability", version="1", side_effects=("ProductionPlan media binding persistence",))
 
+PRODUCTION_MEDIA_SELECTION_RECORD = CapabilityRecord(
+    capability_id="production.media.select-segments",
+    capability_type="CAPABILITY",
+    domain="production-media-selection",
+    implementation="Harness-governed production scene selection from an explicit MediaKnowledge identity",
+    input_contract="persisted ProductionPlan + explicit MediaKnowledge id + Harness EXECUTION lineage",
+    output_contract="one persisted ContentSegment per ordered scene + CapabilityEvidence/CanonicalExecutionResult",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "Harness Routing/Policy decision",
+        "exact Global Capability Registry executor binding",
+        "explicit MediaKnowledge identity",
+        "sufficient continuous source duration",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("production", "media", "selection", "segments", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness exact capability/routing/authorization boundary; the caller supplies only a persisted "
+        "MediaKnowledge identity and cannot inject an executor or fabricated segment ids."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_BOUNDARY",
+    evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
+    fallback_eligibility=False,
+    executor_binding="app.services.production_media_selection_capability_service.execute_production_media_selection_capability",
+    version="1",
+    provider_id="internal",
+    side_effects=("ContentUnit persistence", "ContentSegment persistence"),
+)
+
 PRODUCTION_BRAND_ASSET_BINDING_RECORD = CapabilityRecord(
     capability_id="production.brand-assets.bind",
     capability_type="CAPABILITY",
@@ -159,6 +193,7 @@ TELEGRAM_USER_INPUT_RECORD = CapabilityRecord(
 
 for _record in (
     PHONE_CONTROL_RECORD,
+    PRODUCTION_MEDIA_SELECTION_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
     PRODUCTION_BRAND_ASSET_BINDING_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
