@@ -210,6 +210,77 @@ def reconcile_cloud_render_execution(
     return _execute_running_render_job(rebound, executor=executor)
 
 
+def rebind_running_cloud_render_job_metadata(
+    job_id: int,
+    executor: AbstractRenderExecutor,
+    *,
+    expected_previous_run_id: int,
+    proven_github_execution: dict,
+    expected_video_id: int,
+    expected_execution_id: str,
+    execution_context: dict | None,
+) -> RenderExecutionResult:
+    """Rebind a proven retry run and reconcile it without downloading media.
+
+    The RenderJob identity is preserved. Only the persisted GitHub execution is
+    rebound after strict identity checks. Reconciliation then uses the executor's
+    metadata-only surface, so this control-plane path never downloads the MP4.
+    """
+    if execution_context is None:
+        raise PermissionError("Harness execution context is required for retry rebind")
+    validate_harness_authorization(
+        execution_context,
+        expected_action="EXECUTION",
+        expected_subject="action:EXECUTION",
+        expected_execution_id=expected_execution_id,
+    )
+
+    job = get_render_job(job_id)
+    if not job or job.get("status") != "running" or not job.get("github_execution"):
+        raise ValueError("No recoverable running cloud execution")
+    if job.get("video_id") != expected_video_id:
+        raise ValueError("Render job video_id does not match proven retry")
+    if job.get("execution_id") != expected_execution_id:
+        raise ValueError("Render job execution_id does not match proven retry")
+
+    previous = job.get("github_execution") or {}
+    previous_run_id = previous.get("run_id")
+    if not isinstance(previous_run_id, int) or isinstance(previous_run_id, bool):
+        raise ValueError("Persisted GitHub execution does not contain valid run_id")
+    if previous_run_id != int(expected_previous_run_id):
+        raise ValueError("Persisted GitHub execution changed before reconciliation")
+
+    replacement = dict(proven_github_execution or {})
+    replacement_run_id = replacement.get("run_id")
+    if (
+        not isinstance(replacement_run_id, int)
+        or isinstance(replacement_run_id, bool)
+        or replacement_run_id <= 0
+        or replacement_run_id == previous_run_id
+    ):
+        raise ValueError("Proven retry must identify a distinct positive GitHub run")
+
+    for key in ("repository", "workflow", "ref"):
+        if replacement.get(key) != previous.get(key):
+            raise ValueError(f"Proven retry {key} does not match persisted execution")
+    previous_artifact = previous.get("artifact_name")
+    replacement_artifact = replacement.get("artifact_name")
+    if previous_artifact is not None and replacement_artifact != previous_artifact:
+        raise ValueError("Proven retry artifact_name does not match persisted execution")
+
+    rebound = update_render_job_payload(job_id, github_execution=replacement)
+    if not rebound or rebound.get("status") != "running":
+        raise RuntimeError("Retry rebind did not preserve running RenderJob state")
+    if rebound.get("id") != job_id:
+        raise RuntimeError("Retry rebind changed RenderJob identity")
+
+    return reconcile_running_cloud_render_job_metadata(
+        job_id,
+        executor,
+        execution_context=execution_context,
+    )
+
+
 def resume_cloud_render_job(job_id, executor):
     """Resume collection from the existing backend, without another dispatch."""
     job = get_render_job(job_id)
