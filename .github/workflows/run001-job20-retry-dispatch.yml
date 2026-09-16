@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > /tmp/source-run.json
-          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/${SOURCE_JOB_ID}/logs" > /tmp/source-job.log
+          gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/${SOURCE_JOB_ID}/logs" > /tmp/source-job.log
           python - <<'PY'
           import json
           import os
