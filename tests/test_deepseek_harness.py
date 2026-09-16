@@ -31,7 +31,7 @@ def _assert_zero_cost_opencode_primary(routing):
 
 def test_operational_mcp_tools_are_registered():
     names={tool.name for tool in server.mcp._tool_manager.list_tools()}
-    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_execution_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
+    assert names == {"br_observe","br_knowledge_query","br_research_run","br_route","br_editorial_process_next","br_execution_process_next","br_gta6_monitor_run_once","br_master_run_once","br_youtube_pode_postar","br_youtube_publish","br_youtube_publish_next","br_capabilities_discover","br_capability_execute"}
 
 
 def test_route_tool_returns_metadata_without_authorization():
@@ -129,15 +129,44 @@ def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
     assert payload["result"] == {"status": "completed"}
 
 
-def test_youtube_pode_postar_issues_publication_authorization(monkeypatch):
-    captured={}
-    def fake(*,publication_id,authorization):
-        captured["auth"]=authorization; return {"id":publication_id,"status":"published"}
-    monkeypatch.setattr(server,"make_youtube_publication_public_with_google",fake)
-    payload=json.loads(server.br_youtube_pode_postar(publication_id=42))
-    assert payload["result"]["status"] == "published"
-    assert captured["auth"].authorized_action == "PUBLICATION"
-    assert captured["auth"].subject == "youtube:publication:42"
+def test_youtube_pode_postar_uses_targeted_harness_publication_boundary(monkeypatch):
+    captured = {}
+
+    def fake(publication_id):
+        captured["publication_id"] = publication_id
+        return {
+            "publication": {"id": publication_id, "status": "published"},
+            "routing": {"selected_capability_id": "youtube.publish-public"},
+            "authorization_id": "auth-publication-42",
+            "canonical_execution_result": {"success": True},
+        }
+
+    monkeypatch.setattr(server, "publish_targeted_publication", fake)
+    payload = json.loads(server.br_youtube_pode_postar(publication_id=42))
+    assert captured["publication_id"] == 42
+    assert payload["result"]["publication"]["status"] == "published"
+    assert payload["result"]["routing"]["selected_capability_id"] == "youtube.publish-public"
+    assert payload["result"]["canonical_execution_result"]["success"] is True
+
+
+def test_youtube_publish_uses_targeted_harness_private_upload_boundary(monkeypatch):
+    captured = {}
+
+    def fake(publication_id):
+        captured["publication_id"] = publication_id
+        return {
+            "publication": {"id": publication_id, "status": "uploaded"},
+            "routing": {"selected_capability_id": "youtube.upload-private"},
+            "authorization_id": "auth-youtube-43",
+            "canonical_execution_result": {"success": True},
+        }
+
+    monkeypatch.setattr(server, "upload_targeted_publication", fake)
+    payload = json.loads(server.br_youtube_publish(publication_id=43))
+    assert captured["publication_id"] == 43
+    assert payload["result"]["publication"]["status"] == "uploaded"
+    assert payload["result"]["routing"]["selected_capability_id"] == "youtube.upload-private"
+    assert payload["result"]["canonical_execution_result"]["success"] is True
 
 
 def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):

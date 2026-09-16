@@ -34,8 +34,11 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.google_youtube_publication_service import (
-    make_youtube_publication_public_with_google,
     process_next_youtube_publication,
+)
+from app.services.harness_youtube_publication_service import (
+    publish_targeted_publication,
+    upload_targeted_publication,
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_knowledge_query_service import (
@@ -585,24 +588,20 @@ def br_capability_execute(
 
 @mcp.tool()
 def br_youtube_pode_postar(publication_id: int) -> str:
-    """
-    Explicit authorization gate for public YouTube publication.
-
-    This operation is intentionally separate from the GTA6 Brain YOUTUBE
-    action. YOUTUBE may upload pending content, while this operation
-    authorizes the existing uploaded -> published transition.
-    """
-    authorization = issue_harness_authorization(
-        authorized_action="PUBLICATION",
-        subject=f"youtube:publication:{publication_id}",
-        lineage={"publication_id": publication_id},
-    )
-    result = make_youtube_publication_public_with_google(
-        publication_id=publication_id,
-        authorization=authorization,
-    )
+    """Route and authorize one exact uploaded -> public transition."""
+    result = publish_targeted_publication(publication_id)
     return _json_result(
         operation="br_youtube_pode_postar",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_youtube_publish(publication_id: int) -> str:
+    """Route and upload one exact persisted YouTube Publication as private."""
+    result = upload_targeted_publication(publication_id)
+    return _json_result(
+        operation="br_youtube_publish",
         result=result,
     )
 
