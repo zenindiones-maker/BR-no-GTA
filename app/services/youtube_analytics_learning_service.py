@@ -32,8 +32,14 @@ def _validate_source(source: dict[str, Any]) -> dict[str, Any]:
         raise _blocked("persisted publication_id is required", "evidence")
     if not isinstance(youtube_video_id, str) or not youtube_video_id.strip():
         raise _blocked("persisted youtube_video_id is required", "evidence")
-    if not isinstance(window, dict) or not window.get("start") or not window.get("end"):
+    if (
+        not isinstance(window, dict)
+        or not window.get("start_date")
+        or not window.get("end_date")
+    ):
         raise _blocked("analytics metric window is required", "evidence")
+    if set(window) != {"start_date", "end_date"}:
+        raise _blocked("analytics metric window must use canonical start_date/end_date keys", "evidence")
     if not isinstance(metrics, dict):
         raise _blocked("normalized analytics metrics are required", "evidence")
     normalized: dict[str, dict[str, Any]] = {}
