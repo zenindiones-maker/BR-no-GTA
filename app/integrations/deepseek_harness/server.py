@@ -35,6 +35,7 @@ from app.services.harness_routing_policy_service import (
 )
 from app.services.google_youtube_publication_service import (
     process_next_youtube_publication,
+    reconcile_youtube_publication_visibility_with_google,
 )
 from app.services.harness_youtube_publication_service import (
     publish_targeted_publication,
@@ -42,6 +43,9 @@ from app.services.harness_youtube_publication_service import (
 from app.services.youtube_cloud_upload_service import (
     dispatch_targeted_private_upload,
     reconcile_targeted_private_upload,
+)
+from app.services.youtube_publication_readiness_service import (
+    build_youtube_publication_preview,
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.gta6_knowledge_query_service import (
@@ -590,9 +594,35 @@ def br_capability_execute(
 
 
 @mcp.tool()
+def br_youtube_publication_preview(publication_id: int) -> str:
+    """Read exact publication readiness without granting publication authority."""
+    result = build_youtube_publication_preview(publication_id)
+    return _json_result(
+        operation="br_youtube_publication_preview",
+        result=result,
+    )
+
+
+@mcp.tool()
+def br_youtube_publication_reconcile(publication_id: int) -> str:
+    """Safely reconcile an uncertain prior user-approved public transition."""
+    result = reconcile_youtube_publication_visibility_with_google(
+        publication_id=publication_id,
+    )
+    return _json_result(
+        operation="br_youtube_publication_reconcile",
+        result=result,
+    )
+
+
+@mcp.tool()
 def br_youtube_pode_postar(publication_id: int) -> str:
-    """Route and authorize one exact uploaded -> public transition."""
-    result = publish_targeted_publication(publication_id)
+    """Execute explicit user approval for one exact uploaded Publication."""
+    result = publish_targeted_publication(
+        publication_id,
+        approval_source="user",
+        approval_operation="br_youtube_pode_postar",
+    )
     return _json_result(
         operation="br_youtube_pode_postar",
         result=result,

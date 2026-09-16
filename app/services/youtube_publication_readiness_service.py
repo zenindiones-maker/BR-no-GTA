@@ -10,6 +10,9 @@ from app.database.render_queue_repository import get_render_job
 from app.database.video_repository import get_video
 from app.database.youtube_cloud_execution_repository import get_youtube_cloud_execution
 from app.database.youtube_repository import get_youtube_publication
+from app.database.youtube_public_transition_repository import (
+    get_youtube_public_transition,
+)
 from app.services.media_artifact_locator_service import validate_media_artifact_locator
 
 
@@ -58,6 +61,14 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
         reasons.append("youtube_video_id_missing")
     if not isinstance(youtube_url, str) or not youtube_url.strip():
         reasons.append("youtube_url_missing")
+    public_transition = get_youtube_public_transition(publication_id)
+    public_transition_status = (
+        public_transition.get("status")
+        if isinstance(public_transition, dict)
+        else None
+    )
+    if public_transition_status in {"EXECUTING", "REMOTE_STATE_UNCERTAIN"}:
+        reasons.append("public_transition_requires_remote_reconciliation")
 
     goal_id: str | None = None
     render_job_id: int | None = None
@@ -179,6 +190,7 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
         "PUBLICATION_READY": ready,
         "reasons": reasons if reasons else ["uploaded_private_and_lineage_verified"],
         "approval_granted": False,
+        "public_transition_status": public_transition_status,
         "boundary": "READ_ONLY_NO_PUBLICATION_AUTHORITY",
     }
 

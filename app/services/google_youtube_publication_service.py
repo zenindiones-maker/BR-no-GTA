@@ -17,6 +17,7 @@ from app.services.harness_authorization_service import (
 )
 from app.services.youtube_publication_orchestration import (
     make_youtube_publication_public,
+    reconcile_youtube_publication_visibility,
     upload_youtube_publication,
 )
 
@@ -168,6 +169,32 @@ def make_youtube_publication_public_with_google(
         publication_id=publication_id,
         publisher=publisher,
         authorization=harness_authorization,
+    )
+
+
+def reconcile_youtube_publication_visibility_with_google(
+    *,
+    publication_id: int,
+    token_file: str | None = None,
+    client_secrets_file: str | None = None,
+    authorization_runner: Callable[[Any], Any] | None = None,
+    request: Any | None = None,
+) -> dict[str, Any]:
+    """Read remote visibility and reconcile an uncertain public transition."""
+    if not isinstance(publication_id, int) or isinstance(publication_id, bool) or publication_id <= 0:
+        raise ValueError("publication_id must be a positive integer")
+    publication = get_youtube_publication(publication_id)
+    if publication is None:
+        raise ValueError(f"YouTube publication not found: {publication_id}")
+    publisher = _create_google_publisher(
+        token_file=token_file,
+        client_secrets_file=client_secrets_file,
+        authorization_runner=authorization_runner,
+        request=request,
+    )
+    return reconcile_youtube_publication_visibility(
+        publication_id=publication_id,
+        publisher=publisher,
     )
 
 
