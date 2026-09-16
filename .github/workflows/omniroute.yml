@@ -1,49 +1,119 @@
 name: OmniRoute AI Gateway
-
 on:
   workflow_dispatch:
-
+    inputs:
+      mode:
+        required: true
+        default: "health"
+      execution_id:
+        required: false
+        default: ""
+      provider:
+        required: false
+        default: ""
+      model:
+        required: false
+        default: ""
+      prompt_b64:
+        required: false
+        default: ""
+      zero_cost_operation:
+        required: true
+        default: "true"
 permissions:
   contents: read
-
 jobs:
   omniroute:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout BR-no-GTA
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - name: Enforce bounded zero-cost mode
+        env:
+          MODE: ${{ inputs.mode }}
+          ZERO_COST_OPERATION: ${{ inputs.zero_cost_operation }}
+        run: |
+          set -euo pipefail
+          test "$ZERO_COST_OPERATION" = "true"
+          case "$MODE" in health|execute) ;; *) exit 2;; esac
+      - uses: actions/setup-node@v4
         with:
           node-version: "24"
-
-      - name: Install OmniRoute
+      - name: Install pinned OmniRoute
         run: |
+          set -euo pipefail
           npm install -g omniroute@3.8.50
-
-      - name: Verify installation
-        run: |
-          node --version
-          npm --version
           omniroute --version
-
       - name: Start OmniRoute
         run: |
-          nohup omniroute serve > /tmp/omniroute.log 2>&1 &
-          echo $! > /tmp/omniroute.pid
-
+          set -euo pipefail
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then cat /tmp/omniroute.log || true; fi' EXIT
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute serve > /tmp/omniroute.log 2>&1 &
+          pid=$!
+          echo "$pid" > /tmp/omniroute.pid
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:20128/health >/tmp/omniroute-health.json 2>/dev/null; then
-              echo "OMNIROUTE HEALTH OK"
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'OmniRoute exited before readiness'
+              exit 1
+            fi
+            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:20128/api/monitoring/health >/tmp/omniroute-health.json 2>/dev/null; then
+              kill -0 "$pid"
+              python - <<'PY_BIND'
+          import subprocess
+          rows = subprocess.check_output(
+              ["ss", "-H", "-ltn", "sport = :20128"], text=True
+          ).splitlines()
+          assert rows, "No gateway listener found"
+          addresses = [row.split()[3] for row in rows]
+          assert all(address in {"127.0.0.1:20128", "[::1]:20128"} for address in addresses), addresses
+          PY_BIND
               cat /tmp/omniroute-health.json
+              echo 'OMNIROUTE_HEALTH_ENDPOINT=/api/monitoring/health'
               exit 0
             fi
             sleep 2
           done
-
-          echo "OMNIROUTE FAILED TO START"
-          cat /tmp/omniroute.log
+          echo 'OmniRoute readiness timed out'
           exit 1
+      - name: Execute explicit free provider/model
+        if: ${{ inputs.mode == 'execute' }}
+        env:
+          PROVIDER: ${{ inputs.provider }}
+          MODEL: ${{ inputs.model }}
+          PROMPT_B64: ${{ inputs.prompt_b64 }}
+        run: |
+          set -euo pipefail
+          test -n "$PROVIDER"; test -n "$MODEL"; test -n "$PROMPT_B64"
+          test "$PROVIDER" != "auto"
+          case "$MODEL" in auto|auto/*) echo 'autonomous routing forbidden'; exit 3;; esac
+          test "$PROVIDER" = "opencode"
+          case "$MODEL" in oc/*) ;; *) echo 'model must be explicit OpenCode Free oc/*'; exit 4;; esac
+          python - <<'PY'
+          import base64, json, os, pathlib, time, urllib.request
+          provider=os.environ['PROVIDER']; model=os.environ['MODEL']; prompt=base64.b64decode(os.environ['PROMPT_B64']).decode()
+          started=time.monotonic()
+          req=urllib.request.Request(f'http://127.0.0.1:20128/v1/providers/{provider}/chat/completions',data=json.dumps({'model':model,'messages':[{'role':'user','content':prompt}],'stream':False}).encode(),headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=180) as resp: payload=json.loads(resp.read().decode())
+          reported_model=str(payload.get('model') or '')
+          valid_reported_model = reported_model == model or (
+              provider == 'opencode' and model.startswith('oc/') and reported_model == model.removeprefix('oc/')
+          )
+          if not valid_reported_model: raise SystemExit(f'model mismatch expected={model!r} reported={reported_model!r}')
+          choices=payload.get('choices') or []; text=str((choices[0].get('message') or {}).get('content') or '') if choices else ''
+          if not text: raise SystemExit('empty result')
+          warnings=[]
+          if reported_model != model: warnings.append(f'provider_reported_model_alias:{reported_model}')
+          out={'status':'EXECUTED','provider':provider,'model':model,'reported_model':reported_model,'text':text,'omniroute_version':'3.8.50','runtime_identity':'github-actions:ubuntu-latest:node24','elapsed_seconds':time.monotonic()-started,'fallback_occurred':False,'retry_count':0,'warnings':warnings,'errors':[]}
+          p=pathlib.Path('runtime/omniroute-result'); p.mkdir(parents=True,exist_ok=True); (p/'result.json').write_text(json.dumps(out,sort_keys=True))
+          PY
+      - if: ${{ inputs.mode == 'execute' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniroute-result
+          path: runtime/omniroute-result/result.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: Shutdown OmniRoute
+        if: always()
+        run: |
+          if [ -f /tmp/omniroute.pid ]; then kill "$(cat /tmp/omniroute.pid)" 2>/dev/null || true; fi
