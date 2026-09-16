@@ -2,7 +2,7 @@ import inspect
 
 import pytest
 
-from app.services import youtube_private_upload_worker
+from app.workers import youtube_private_upload_worker
 from app.services.fake_youtube_publisher import FakeYouTubePublisher
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.youtube_publication_orchestration import make_youtube_publication_public
