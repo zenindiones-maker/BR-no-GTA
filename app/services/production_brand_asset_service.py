@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.database.channel_branding_standard_repository import (
+    REQUIRED_ASSET_TYPES,
+    get_channel_branding_standard,
+)
 from app.database.telegram_brand_asset_repository import list_active_brand_assets
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
@@ -48,18 +52,35 @@ def execute_production_brand_asset_binding_capability(
     if not isinstance(content_item_id, int) or isinstance(content_item_id, bool) or content_item_id <= 0:
         raise ValueError("content_item_id must be a positive integer")
 
+    standard = get_channel_branding_standard()
     records = list_active_brand_assets()
     snapshots = [_snapshot(record) for record in records]
     if any(not item["remote_verified"] for item in snapshots):
         raise RuntimeError("active Telegram brand asset is not remotely verified")
     known = {item["asset_type"] for item in snapshots}
-    if not known.issubset({"intro", "watermark"}):
+    if not known.issubset(set(REQUIRED_ASSET_TYPES)):
         raise RuntimeError("unexpected active brand asset type")
+
+    if standard["active"]:
+        missing = [asset_type for asset_type in REQUIRED_ASSET_TYPES if asset_type not in known]
+        if missing:
+            raise RuntimeError(
+                "mandatory BR-no-GTA channel branding is incomplete: "
+                + ", ".join(missing)
+            )
+        if len(snapshots) != len(REQUIRED_ASSET_TYPES):
+            raise RuntimeError("mandatory BR-no-GTA channel branding must bind exactly one intro and one watermark")
+        status = "channel_standard_bound"
+    else:
+        status = "bound" if snapshots else "no_active_assets"
+
     return {
         "content_item_id": content_item_id,
         "brand_assets": snapshots,
         "asset_count": len(snapshots),
-        "status": "bound" if snapshots else "no_active_assets",
+        "status": status,
+        "channel_branding_standard_active": bool(standard["active"]),
+        "required_asset_types": list(REQUIRED_ASSET_TYPES),
     }
 
 
@@ -118,6 +139,8 @@ def bind_active_brand_assets(
             "asset_ids": [item["asset_id"] for item in result["brand_assets"]],
             "asset_types": [item["asset_type"] for item in result["brand_assets"]],
             "status": result["status"],
+            "channel_branding_standard_active": result["channel_branding_standard_active"],
+            "required_asset_types": result["required_asset_types"],
         },
         boundary=record.security_boundary,
     )
