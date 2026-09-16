@@ -88,6 +88,40 @@ TELEGRAM_BRAND_ASSET_RECORD = CapabilityRecord(
     side_effects=("canonical brand asset metadata persistence",),
 )
 
+TELEGRAM_USER_INPUT_RECORD = CapabilityRecord(
+    capability_id="telegram.input.ingest",
+    capability_type="EXECUTOR",
+    domain="telegram-ingress",
+    implementation="Harness-governed canonical capture, classification and bounded GTA6 memory learning from paired Telegram user input",
+    input_contract="paired Telegram message plus optional remotely verified attachment identity",
+    output_contract="canonical telegram_user_input + Memory Event + optional Claim/semantic Memory + CapabilityEvidence",
+    requirements=(
+        "paired Telegram ingress",
+        "persisted Harness EXECUTION authorization",
+        "exact Global Capability Registry executor binding",
+        "Telegram getFile verification for attachments",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("telegram", "ingress", "learning", "memory", "gta6", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority. Every paired user input is captured with immutable provenance; "
+        "only bounded classifications are promoted into semantic memory. User-supplied news is marked uncertain; "
+        "attachments persist identity/provenance only on the A15; no publication, editorial, scheduler or arbitrary executor authority is granted."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_PROVENANCE_MEMORY_BOUNDARY",
+    evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
+    fallback_eligibility=False,
+    executor_binding="app.services.telegram_learning_service.execute_telegram_input_ingestion_capability",
+    version="1",
+    provider_id="internal",
+    side_effects=("canonical Telegram ingress persistence", "Memory Event append", "bounded semantic memory learning"),
+)
+
 for _record in (
     PHONE_CONTROL_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
@@ -96,6 +130,7 @@ for _record in (
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
     MARKITDOWN_NORMALIZE_RECORD,
     TELEGRAM_BRAND_ASSET_RECORD,
+    TELEGRAM_USER_INPUT_RECORD,
 ):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
