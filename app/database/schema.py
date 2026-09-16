@@ -621,6 +621,20 @@ def _migrate_youtube_publication_file_path(connection) -> None:
         )
 
 
+def _migrate_youtube_publication_cloud_execution(connection) -> None:
+    """Persist GitHub Actions upload execution metadata on the canonical Publication."""
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(youtube_publications)"
+        ).fetchall()
+    }
+    if "cloud_execution" not in columns:
+        connection.execute(
+            "ALTER TABLE youtube_publications ADD COLUMN cloud_execution TEXT"
+        )
+
+
 def _migrate_media_knowledge(connection) -> None:
     """Cria a persistência dos resultados de análise multimídia."""
 
@@ -1123,6 +1137,7 @@ def initialize_schema() -> None:
         _migrate_memory_claim_evidence(connection)
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
+        _migrate_youtube_publication_cloud_execution(connection)
         _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
