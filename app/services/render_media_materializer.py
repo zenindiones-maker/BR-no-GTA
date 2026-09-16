@@ -11,6 +11,22 @@ class MaterializationError(ValueError):
 
 
 def validate_remote_source(item):
+    """Validate a materializable remote source.
+
+    ``audio_requirements`` is a mixed contract: non-empty strings are editorial
+    requirements, while dictionaries describe concrete media.  The worker calls
+    this validator for both.  Returning ``False`` for editorial text keeps that
+    text out of the media materialization path without weakening validation for
+    actual media objects.
+    """
+    if isinstance(item, str):
+        if not item.strip():
+            raise MaterializationError("Audio requirement text must be non-empty")
+        return False
+    if not isinstance(item, dict):
+        raise MaterializationError(
+            "Remote media entries must be objects or non-empty editorial text"
+        )
     if not isinstance(item.get("asset_ref"), str) or not item["asset_ref"].startswith("remote://media-worker/"):
         raise MaterializationError("Missing official media-worker asset_ref")
     url = item.get("source_url")
@@ -21,6 +37,7 @@ def validate_remote_source(item):
         raise MaterializationError("source_url must be public HTTPS without credentials")
     if any(any(word in key.lower() for word in ("token", "secret", "password", "signature", "credential", "api_key")) for key, _ in parse_qsl(parts.query)):
         raise MaterializationError("Credential-bearing source_url is forbidden")
+    return True
 
 
 def materialize_scenes(job, root, *, ingestion=None, probe=None):
@@ -30,10 +47,28 @@ def materialize_scenes(job, root, *, ingestion=None, probe=None):
         from app.services.ytdlp_media_ingestion import YtDlpMediaIngestion
         ingestion = YtDlpMediaIngestion()
     hydrated = deepcopy(job)
-    items = hydrated["scenes"] + hydrated.get("audio_requirements", [])
+    scenes = hydrated.get("scenes")
+    if not isinstance(scenes, list) or not scenes or not all(isinstance(scene, dict) for scene in scenes):
+        raise MaterializationError("scenes must contain media objects")
+    raw_audio_requirements = hydrated.get("audio_requirements", [])
+    if not isinstance(raw_audio_requirements, list):
+        raise MaterializationError("audio_requirements must be a list")
+
+    # Text entries are editorial requirements, not source-media identities.
+    # Keep the original RenderJob unchanged; only the hydrated runtime copy is
+    # narrowed to concrete media objects because downstream path adaptation
+    # expects dictionaries with asset_ref/media_path.
+    audio_media = []
+    for item in raw_audio_requirements:
+        if validate_remote_source(item):
+            audio_media.append(item)
+    hydrated["audio_requirements"] = audio_media
+
+    items = scenes + audio_media
     identities = {}
-    for item in items:
+    for item in scenes:
         validate_remote_source(item)
+    for item in items:
         previous = identities.setdefault(item["asset_ref"], item["source_url"])
         if previous != item["source_url"]:
             raise MaterializationError("Conflicting source URLs for asset_ref")
@@ -74,7 +109,7 @@ def materialize_scenes(job, root, *, ingestion=None, probe=None):
             end = item["source_end_seconds"]
             if type(end) not in (int, float) or not math.isfinite(end) or end < start + length or end > duration + .001:
                 raise MaterializationError("Invalid source_end_seconds")
-        kind = "video" if any(item is scene for scene in hydrated["scenes"]) else "audio"
+        kind = "video" if any(item is scene for scene in scenes) else "audio"
         if not any(s.get("codec_type") == kind for s in data.get("streams", [])):
             raise MaterializationError("Required source stream missing: " + kind)
         item["media_path"] = str(path)
