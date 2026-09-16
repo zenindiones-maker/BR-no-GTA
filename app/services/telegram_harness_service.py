@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, Callable
 
 from app.database.telegram_brand_asset_repository import (
     list_active_brand_assets,
     upsert_active_brand_asset,
 )
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.gta6_knowledge_query_service import (
     knowledge_context_to_dict,
     query_gta6_knowledge_context,
@@ -23,12 +25,20 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.telegram_fresh_research_service import (
+    FreshResearchError,
+    requires_fresh_research,
+    research_fresh_gta6_under_harness,
+)
 
 
 TELEGRAM_ASSET_CAPABILITY_ID = "telegram.asset.register"
 TELEGRAM_ASSET_EXECUTOR_BINDING = (
     "app.services.telegram_harness_service.execute_telegram_asset_registration_capability"
 )
+
+
+ProgressCallback = Callable[[str, str], None]
 
 
 def _safe_asset(record: dict[str, Any]) -> dict[str, Any]:
@@ -107,7 +117,79 @@ def build_harness_connection_proof() -> dict[str, Any]:
     }
 
 
-def _chat_context(message: str) -> dict[str, Any]:
+def _capability_context() -> list[dict[str, Any]]:
+    prefixes = (
+        "gta6.",
+        "script.",
+        "telegram.",
+        "production.brand-assets",
+        "ai.reasoning.text",
+        "youtube.analytics",
+        "knowledge.learn.youtube-analytics",
+    )
+    rows: list[dict[str, Any]] = []
+    for record in GLOBAL_CAPABILITY_REGISTRY.all():
+        if not any(record.capability_id.startswith(prefix) for prefix in prefixes):
+            continue
+        rows.append(
+            {
+                "capability_id": record.capability_id,
+                "domain": record.domain,
+                "maturity": record.maturity,
+                "availability": record.availability,
+                "quality_class": record.quality_class,
+                "executor_binding": record.executor_binding,
+                "policy_tags": list(record.policy_tags),
+            }
+        )
+    return rows
+
+
+def _compact_fresh_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    official: list[dict[str, Any]] = []
+    for source in (packet.get("official_sources") or [])[:3]:
+        if not isinstance(source, dict):
+            continue
+        official.append(
+            {
+                "source_name": source.get("source_name"),
+                "url": source.get("url"),
+                "authority": "official",
+                "checked_at": source.get("checked_at"),
+                "content_excerpt": str(source.get("content_excerpt") or "")[:6000],
+            }
+        )
+    secondary: list[dict[str, Any]] = []
+    for source in (packet.get("secondary_sources") or [])[:12]:
+        if not isinstance(source, dict):
+            continue
+        secondary.append(
+            {
+                "source_name": source.get("source_name"),
+                "title": source.get("title"),
+                "summary": str(source.get("summary") or "")[:700],
+                "url": source.get("url"),
+                "published_at": source.get("published_at"),
+                "authority": source.get("authority"),
+            }
+        )
+    return {
+        "status": packet.get("status"),
+        "checked_at": packet.get("checked_at"),
+        "official_source_count": packet.get("official_source_count"),
+        "secondary_source_count": packet.get("secondary_source_count"),
+        "official_sources": official,
+        "secondary_sources": secondary,
+        "source_errors": (packet.get("source_errors") or [])[:8],
+        "policy": packet.get("policy") or {},
+    }
+
+
+def _chat_context(
+    message: str,
+    *,
+    fresh_packet: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     observation = build_gta6_observation()
     knowledge = query_gta6_knowledge_context(query=message)
     compact_observation = {
@@ -116,21 +198,70 @@ def _chat_context(message: str) -> dict[str, Any]:
         "monitor": observation.get("monitor"),
     }
     return {
+        "current_utc": datetime.now(timezone.utc).isoformat(),
         "observation": compact_observation,
         "knowledge": knowledge_context_to_dict(knowledge) if knowledge is not None else None,
+        "capabilities": _capability_context(),
+        "fresh_research": _compact_fresh_packet(fresh_packet) if fresh_packet is not None else None,
     }
 
 
-def chat_under_harness(message: str) -> dict[str, Any]:
+def _emit(progress_callback: ProgressCallback | None, stage: str, message: str) -> None:
+    if progress_callback is not None:
+        progress_callback(stage, message)
+
+
+def chat_under_harness(
+    message: str,
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     text = str(message or "").strip()
     if not text:
         raise ValueError("Telegram chat message is empty")
     if len(text) > 8000:
         raise ValueError("Telegram chat message is too long")
 
+    freshness_required = requires_fresh_research(text)
+    fresh = None
+    if freshness_required:
+        _emit(
+            progress_callback,
+            "RESEARCH",
+            "🔎 Pesquisa atual obrigatória: consultando fontes oficiais da Rockstar e fontes configuradas no cloud...",
+        )
+        try:
+            fresh = research_fresh_gta6_under_harness(text)
+        except FreshResearchError as exc:
+            return {
+                "answer": (
+                    "Não consegui verificar fontes oficiais atuais com evidência suficiente agora. "
+                    "Por segurança, não vou completar a resposta usando memória antiga do modelo. "
+                    "Tente novamente quando a pesquisa cloud estiver disponível."
+                ),
+                "authority": HARNESS_ISSUER,
+                "authorized_action": "RESEARCH",
+                "routing_id": None,
+                "authorization_id": None,
+                "execution_id": None,
+                "capability_id": "gta6.research.fresh-cloud",
+                "provider": None,
+                "model": None,
+                "fallback_occurred": False,
+                "zero_cost_operation": True,
+                "fresh_research_required": True,
+                "fresh_research_status": "FAIL_CLOSED",
+                "fresh_research_error": type(exc).__name__,
+            }
+        _emit(
+            progress_callback,
+            "VALIDATION",
+            f"✅ Evidência fresca coletada em {fresh.checked_at}. Validando hierarquia de fontes antes do raciocínio...",
+        )
+
     routing = route_harness_request(
         HarnessRoutingRequest(
-            intent="answer one Telegram user message with governed GTA6 reasoning",
+            intent="answer one Telegram user message with governed grounded GTA6 reasoning",
             authorized_action="DECISION",
             domain="ai",
             required_capability_id="ai.reasoning.text",
@@ -153,21 +284,40 @@ def chat_under_harness(message: str) -> dict[str, Any]:
             "selected_model": routing.selected_model,
             "selected_executor_binding": routing.selected_provider_executor_binding,
             "ingress": "telegram",
+            "fresh_research_required": freshness_required,
+            "fresh_research_execution_id": fresh.execution_id if fresh is not None else None,
+            "fresh_research_routing_id": fresh.routing_id if fresh is not None else None,
         },
     )
 
-    context = _chat_context(text)
+    context = _chat_context(
+        text,
+        fresh_packet=fresh.packet if fresh is not None else None,
+    )
     prompt = (
         "Você é a interface conversacional do BR-no-GTA subordinada ao DeepSeek Harness. "
-        "Responda em português do Brasil, de forma clara e prática. "
-        "Você NÃO é uma autoridade paralela e NÃO deve afirmar que executou, publicou, "
-        "apagou ou alterou algo apenas por conversa. Ações com efeito colateral continuam "
-        "dependendo das capabilities e gates oficiais do Harness. Para publicação pública, "
-        "sempre preserve o gate exato por publication_id. Não invente estado.\n\n"
+        "Responda em português do Brasil, de forma profissional, clara e prática. "
+        "Você NÃO é uma autoridade paralela e NÃO deve afirmar que executou, publicou, apagou ou alterou algo apenas por conversa. "
+        "Ações com efeito colateral dependem das capabilities e gates oficiais do Harness; publicação pública preserva o gate exato por publication_id. "
+        "Não invente estado, fonte, capability ou fato.\n\n"
+        "POLITICA_DE_VERDADE_E_FRESHNESS:\n"
+        "1) Para fatos atuais de GTA VI, EVIDENCIA_FRESCA oficial da Rockstar prevalece sobre memória persistida e sobre conhecimento prévio do modelo.\n"
+        "2) Fontes secundárias podem contextualizar, mas alegações importantes exigem corroboração; Reddit/comunidade é sinal, nunca confirmação.\n"
+        "3) Ideias, temas, notícias e notas enviadas pelo usuário são entradas editoriais com proveniência, não fatos oficiais por si só.\n"
+        "4) Se a pergunta exigir atualidade e EVIDENCIA_FRESCA não contiver confirmação, diga explicitamente que não encontrou confirmação atual; NÃO preencha a lacuna com memória do modelo.\n"
+        "5) Se EVIDENCIA_FRESCA estiver presente e PASS, não diga que você não tem acesso atual às fontes; informe o horário checked_at quando relevante e use URLs reais do pacote.\n"
+        "6) Se houver conflito entre memória antiga e fonte oficial fresca, trate a memória antiga como obsoleta e explique a atualização.\n"
+        "7) Para perguntas sobre o próprio sistema, use apenas CAPABILITIES presentes no contexto; não prometa funções ausentes ou não comprovadas.\n"
+        "8) Diferencie claramente FATO OFICIAL, REPORTAGEM/SECUNDÁRIA, RUMOR/SINAL DA COMUNIDADE e IDEIA DO USUÁRIO.\n\n"
         f"CONTEXTO_CANONICO={json.dumps(context, ensure_ascii=False, default=str)}\n\n"
         f"MENSAGEM_USUARIO={text}"
     )
 
+    _emit(
+        progress_callback,
+        "REASONING",
+        "🧠 Evidências prontas. Roteando raciocínio governado pelo Harness no cloud...",
+    )
     try:
         evidence = execute_harness_ai_generation(
             prompt=prompt,
@@ -194,6 +344,13 @@ def chat_under_harness(message: str) -> dict[str, Any]:
         "model": result.get("model") or routing.selected_model,
         "fallback_occurred": routing.fallback_occurred,
         "zero_cost_operation": bool(routing.policy_metadata.get("zero_cost_operation")),
+        "fresh_research_required": freshness_required,
+        "fresh_research_status": "PASS" if fresh is not None else "NOT_REQUIRED",
+        "fresh_research_checked_at": fresh.checked_at if fresh is not None else None,
+        "fresh_research_routing_id": fresh.routing_id if fresh is not None else None,
+        "fresh_research_execution_ref": fresh.execution_ref if fresh is not None else None,
+        "official_source_count": fresh.official_source_count if fresh is not None else 0,
+        "secondary_source_count": fresh.secondary_source_count if fresh is not None else 0,
     }
 
 
