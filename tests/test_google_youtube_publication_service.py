@@ -27,6 +27,14 @@ def _publication_authorization(publication_id):
     return issue_harness_authorization(
         authorized_action="PUBLICATION",
         subject=f"youtube:publication:{publication_id}",
+        lineage={
+            "routing_id": f"test-publication-route-{publication_id}",
+            "capability_id": "youtube.publish-public",
+            "publication_id": publication_id,
+            "fallback_occurred": False,
+            "approval_source": "user",
+            "approval_operation": "br_youtube_pode_postar",
+        },
     )
 
 
