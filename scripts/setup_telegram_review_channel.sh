@@ -6,6 +6,7 @@ STATE_DIR="${HOME}/.local/state/br-no-gta"
 SECRET_FILE="${HOME}/.config/br-no-gta/telegram.env"
 CONTROL_STATE="${STATE_DIR}/telegram-control.json"
 REVIEW_ENV="${HOME}/.config/br-no-gta/telegram-review.env"
+MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 REPO="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 
@@ -54,11 +55,17 @@ PY
 export TELEGRAM_REVIEW_PAIR_CODE="${PAIR_CODE}"
 
 cd "${ROOT}"
-bash scripts/telegram_termux_control.sh stop >/dev/null 2>&1 || true
-restart_gateway() {
+
+# Pairing temporarily owns Telegram getUpdates. Keep the persistence supervisor
+# from relaunching the normal gateway while this script is listening.
+: > "${MAINTENANCE_FILE}"
+cleanup_pairing() {
+  rm -f "${MAINTENANCE_FILE}" 2>/dev/null || true
   bash scripts/telegram_termux_control.sh start >/dev/null 2>&1 || true
 }
-trap restart_gateway EXIT INT TERM
+trap cleanup_pairing EXIT INT TERM
+
+bash scripts/telegram_termux_control.sh stop >/dev/null 2>&1 || true
 
 cat <<EOF
 TELEGRAM_REVIEW_SETUP=WAITING
@@ -79,6 +86,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -102,20 +110,36 @@ def call(method: str, payload: dict[str, str] | None = None, timeout: int = 40):
         raise RuntimeError(str(body.get("description") or body))
     return body.get("result")
 
+
 me = call("getMe", timeout=20)
 bot_id = int(me["id"])
 start = time.time()
 offset = 0
+conflicts = 0
 while time.time() - start < 180:
-    updates = call(
-        "getUpdates",
-        {
-            "offset": str(offset),
-            "timeout": "20",
-            "allowed_updates": json.dumps(["message", "channel_post"]),
-        },
-        timeout=30,
-    ) or []
+    try:
+        updates = call(
+            "getUpdates",
+            {
+                "offset": str(offset),
+                "timeout": "20",
+                "allowed_updates": json.dumps(["message", "channel_post"]),
+            },
+            timeout=30,
+        ) or []
+    except urllib.error.HTTPError as exc:
+        # A just-killed long poll may remain registered briefly at Telegram.
+        # During maintenance no new local gateway can start, so retrying here
+        # safely drains that stale request instead of aborting the setup.
+        if exc.code == 409:
+            conflicts += 1
+            if conflicts == 1:
+                print("TELEGRAM_REVIEW_SETUP=DRAINING_STALE_GETUPDATES", flush=True)
+            time.sleep(2)
+            continue
+        raise
+
+    conflicts = 0
     for update in updates:
         update_id = int(update.get("update_id") or 0)
         offset = max(offset, update_id + 1)
@@ -167,6 +191,7 @@ chmod 600 "${REVIEW_ENV}"
 
 gh variable set TELEGRAM_REVIEW_CHAT_ID --repo "${REPO}" --body "${REVIEW_CHAT_ID}" >/dev/null
 
+rm -f "${MAINTENANCE_FILE}"
 trap - EXIT INT TERM
 bash scripts/telegram_termux_control.sh start >/dev/null
 
