@@ -109,7 +109,10 @@ def test_worker_uploads_only_after_exact_artifact_evidence_passes(tmp_path):
 
 def test_hash_mismatch_fails_before_youtube_side_effect(tmp_path):
     root, media = _artifact(tmp_path)
-    media.write_bytes(b"tampered")
+    original = media.read_bytes()
+    assert original
+    media.write_bytes(bytes([original[0] ^ 0x01]) + original[1:])
+    assert media.stat().st_size == len(original)
     publisher = _Publisher()
 
     with pytest.raises(YouTubeUploadWorkerError, match="sha256 mismatch"):
