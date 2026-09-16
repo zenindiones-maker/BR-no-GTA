@@ -14,9 +14,19 @@ def run_github_actions_command(
 
     completed = subprocess.run(
         list(command),
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        stdout = (completed.stdout or "").strip()
+        detail = stderr or stdout or "sem detalhe retornado pelo GitHub CLI"
+        if len(detail) > 1200:
+            detail = detail[:1200] + "..."
+        raise RuntimeError(
+            f"GitHub Actions command failed with exit code {completed.returncode}: {detail}"
+        )
 
     return completed.stdout
