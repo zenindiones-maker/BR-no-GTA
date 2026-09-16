@@ -137,14 +137,14 @@ def bind_youtube_cloud_run(
         connection.close()
 
 
-def record_youtube_cloud_result(
+def mark_youtube_cloud_dispatch_uncertain(
     publication_id: int,
     *,
-    expected_run_id: int,
-    result: dict[str, Any],
+    expected_execution_id: str,
+    error: str,
 ) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        raise ValueError("result must be an object")
+    if not isinstance(error, str) or not error.strip():
+        raise ValueError("dispatch error is required")
     connection = get_connection()
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -156,15 +156,138 @@ def record_youtube_cloud_result(
             connection.rollback()
             raise ValueError("publication has no cloud execution")
         current = json.loads(row["cloud_execution"])
-        if current.get("run_id") != expected_run_id:
+        if current.get("status") != "DISPATCHING" or current.get("execution_id") != expected_execution_id:
             connection.rollback()
-            raise ValueError("cloud result run_id mismatch")
-        current["status"] = "SUCCEEDED" if result.get("status") == "UPLOADED" else "FAILED"
-        current["result"] = result
+            raise ValueError("cloud dispatch claim mismatch")
+        current["status"] = "DISPATCH_UNCERTAIN"
+        current["error"] = error.strip()
         connection.execute(
             "UPDATE youtube_publications SET cloud_execution = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (json.dumps(current, ensure_ascii=False, sort_keys=True), publication_id),
         )
+        connection.commit()
+        return current
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def record_youtube_cloud_failure(
+    publication_id: int,
+    *,
+    expected_run_id: int,
+    error: str,
+) -> dict[str, Any]:
+    if not isinstance(error, str) or not error.strip():
+        raise ValueError("cloud execution error is required")
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT status, cloud_execution FROM youtube_publications WHERE id = ?",
+            (publication_id,),
+        ).fetchone()
+        if row is None or not row["cloud_execution"]:
+            connection.rollback()
+            raise ValueError("publication has no cloud execution")
+        if row["status"] != "pending":
+            connection.rollback()
+            raise ValueError("publication must remain pending after cloud execution failure")
+        current = json.loads(row["cloud_execution"])
+        if current.get("run_id") != expected_run_id:
+            connection.rollback()
+            raise ValueError("cloud failure run_id mismatch")
+        current["status"] = "FAILED"
+        current["error"] = error.strip()
+        connection.execute(
+            "UPDATE youtube_publications SET cloud_execution = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(current, ensure_ascii=False, sort_keys=True), publication_id),
+        )
+        connection.commit()
+        return current
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def reconcile_youtube_cloud_upload_success(
+    publication_id: int,
+    *,
+    expected_run_id: int,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(result, dict) or result.get("status") != "UPLOADED":
+        raise ValueError("successful cloud result must be UPLOADED")
+    youtube_video_id = result.get("youtube_video_id")
+    youtube_url = result.get("youtube_url")
+    if not isinstance(youtube_video_id, str) or not youtube_video_id.strip():
+        raise ValueError("cloud result youtube_video_id is required")
+    if not isinstance(youtube_url, str) or not youtube_url.strip():
+        raise ValueError("cloud result youtube_url is required")
+
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT id, video_id, status, cloud_execution FROM youtube_publications WHERE id = ?",
+            (publication_id,),
+        ).fetchone()
+        if row is None or not row["cloud_execution"]:
+            connection.rollback()
+            raise ValueError("publication has no cloud execution")
+        if row["status"] != "pending":
+            connection.rollback()
+            raise ValueError("publication is not pending during cloud reconciliation")
+        current = json.loads(row["cloud_execution"])
+        if current.get("status") != "IN_PROGRESS" or current.get("run_id") != expected_run_id:
+            connection.rollback()
+            raise ValueError("cloud result does not match active upload run")
+        if result.get("publication_id") != publication_id:
+            connection.rollback()
+            raise ValueError("cloud result publication_id mismatch")
+        if result.get("video_id") != row["video_id"]:
+            connection.rollback()
+            raise ValueError("cloud result video_id mismatch")
+        if result.get("execution_id") != current.get("execution_id"):
+            connection.rollback()
+            raise ValueError("cloud result execution_id mismatch")
+        if result.get("routing_id") != current.get("routing_id"):
+            connection.rollback()
+            raise ValueError("cloud result routing_id mismatch")
+        if result.get("authorization_id") != current.get("authorization_id"):
+            connection.rollback()
+            raise ValueError("cloud result authorization_id mismatch")
+        if result.get("capability_id") != "youtube.upload-private" or result.get("authorized_action") != "YOUTUBE":
+            connection.rollback()
+            raise ValueError("cloud result Harness lineage mismatch")
+        evidence = result.get("artifact_evidence")
+        if not isinstance(evidence, dict) or evidence.get("qa_status") != "PASS":
+            connection.rollback()
+            raise ValueError("cloud result lacks QA-passed artifact evidence")
+
+        current["status"] = "SUCCEEDED"
+        current["result"] = result
+        cursor = connection.execute(
+            """
+            UPDATE youtube_publications
+            SET youtube_video_id = ?, youtube_url = ?, status = 'uploaded',
+                error = NULL, cloud_execution = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending'
+            """,
+            (
+                youtube_video_id.strip(),
+                youtube_url.strip(),
+                json.dumps(current, ensure_ascii=False, sort_keys=True),
+                publication_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            connection.rollback()
+            raise RuntimeError("failed to reconcile YouTube cloud upload atomically")
         connection.commit()
         return current
     except Exception:
