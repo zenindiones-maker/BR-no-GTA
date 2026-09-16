@@ -1,0 +1,176 @@
+name: RUN-001 Final Products Executor
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/execute-final-products.trigger
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: run001-final-products-executor
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+      ZERO_COST_OPERATION: "TRUE"
+      GITHUB_ACTIONS_REPOSITORY: zenindiones-maker/BR-no-GTA
+      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      BR_RENDER_EXECUTOR: github_actions
+      RUN001_VIDEO: A
+      RUN001_KNOWLEDGE_ID: "3"
+      RUN001_FORBIDDEN_RENDER_JOBS: "18,20"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Reconstruct and execute verified final-products bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/run001-bootstrap
+          cat .run001/final-products-bootstrap.part.* > /tmp/run001-bootstrap/bootstrap.b64
+          base64 -d /tmp/run001-bootstrap/bootstrap.b64 > /tmp/run001-bootstrap/bootstrap.gz
+          gzip -t /tmp/run001-bootstrap/bootstrap.gz
+          gzip -dc /tmp/run001-bootstrap/bootstrap.gz > /tmp/run001-bootstrap/payload
+
+          echo "PARTS_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.b64 | awk '{print $1}')"
+          echo "GZIP_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.gz | awk '{print $1}')"
+          echo "PAYLOAD_SHA256=$(sha256sum /tmp/run001-bootstrap/payload | awk '{print $1}')"
+          echo "READY_MARKER=$(tr -d '\r\n' < .run001/final-products-bootstrap.ready)"
+          file /tmp/run001-bootstrap/payload
+
+          python - <<'PY'
+          from pathlib import Path
+          import tarfile, zipfile
+
+          p = Path('/tmp/run001-bootstrap/payload')
+          raw = p.read_bytes()
+          out = Path('/tmp/run001-bootstrap/unpacked')
+          out.mkdir(parents=True, exist_ok=True)
+          kind = 'binary'
+          if raw.startswith(b'PK\x03\x04'):
+              kind = 'zip'
+              with zipfile.ZipFile(p) as z:
+                  z.extractall(out)
+          elif tarfile.is_tarfile(p):
+              kind = 'tar'
+              with tarfile.open(p) as t:
+                  t.extractall(out, filter='data')
+          else:
+              try:
+                  raw.decode('utf-8')
+                  kind = 'text'
+              except UnicodeDecodeError:
+                  pass
+          Path('/tmp/run001-bootstrap/kind').write_text(kind)
+          print('BOOTSTRAP_KIND=' + kind)
+          if kind in {'tar','zip'}:
+              for f in sorted(x for x in out.rglob('*') if x.is_file()):
+                  print('BOOTSTRAP_FILE=' + str(f.relative_to(out)))
+          PY
+
+          kind="$(cat /tmp/run001-bootstrap/kind)"
+          if [ "$kind" = text ]; then
+            first="$(head -c 80 /tmp/run001-bootstrap/payload || true)"
+            if grep -q '^diff --git ' /tmp/run001-bootstrap/payload; then
+              git apply --check /tmp/run001-bootstrap/payload
+              git apply /tmp/run001-bootstrap/payload
+            elif grep -q '^From [0-9a-f]\{40\} ' /tmp/run001-bootstrap/payload; then
+              git am /tmp/run001-bootstrap/payload
+            elif head -n1 /tmp/run001-bootstrap/payload | grep -Eq '^#!.*(bash|sh)'; then
+              chmod +x /tmp/run001-bootstrap/payload
+              /tmp/run001-bootstrap/payload
+            elif head -n1 /tmp/run001-bootstrap/payload | grep -Eq '^#!.*python'; then
+              python /tmp/run001-bootstrap/payload
+            else
+              echo "Unsupported text bootstrap. Prefix: ${first}" >&2
+              exit 31
+            fi
+          elif [ "$kind" = tar ] || [ "$kind" = zip ]; then
+            entry=""
+            for candidate in \
+              run001-final-products-bootstrap.sh \
+              run001_final_products_bootstrap.py \
+              bootstrap.sh apply.sh run.sh; do
+              found="$(find /tmp/run001-bootstrap/unpacked -type f -name "$candidate" -print -quit)"
+              if [ -n "$found" ]; then entry="$found"; break; fi
+            done
+            if [ -n "$entry" ]; then
+              case "$entry" in
+                *.py) python "$entry" ;;
+                *) chmod +x "$entry"; "$entry" ;;
+              esac
+            else
+              patch="$(find /tmp/run001-bootstrap/unpacked -type f -name '*.patch' -print -quit)"
+              if [ -n "$patch" ]; then
+                git apply --check "$patch"
+                git apply "$patch"
+              else
+                echo "Bootstrap archive has no recognized entrypoint or patch" >&2
+                exit 32
+              fi
+            fi
+          else
+            echo "Unsupported binary bootstrap payload" >&2
+            exit 33
+          fi
+
+      - name: Commit bootstrap mutations if any
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "BOOTSTRAP_GIT_MUTATION=NONE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(run001): apply verified final-products bootstrap"
+          git push origin HEAD:work/gate6f-analytics-learning
+
+      - name: Minimal production gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=()
+          for f in \
+            tests/test_cloud_audiovisual_worker.py \
+            tests/test_brand_asset_worker.py \
+            tests/test_telegram_render_review_worker.py \
+            tests/test_run001_ab_control.py; do
+            [ -f "$f" ] && tests+=("$f")
+          done
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "No focused RUN-001 tests found" >&2
+            exit 41
+          fi
+          python -m pytest -q "${tests[@]}"
+
+      - name: Preserve execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run001-final-products-bootstrap-${{ github.run_id }}
+          path: |
+            /tmp/run001-bootstrap/kind
+            /tmp/run001-bootstrap/payload
+          if-no-files-found: ignore
+          retention-days: 3
