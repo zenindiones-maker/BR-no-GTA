@@ -85,6 +85,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -134,7 +135,11 @@ while time.time() - start < 180:
         if exc.code == 409:
             conflicts += 1
             if conflicts == 1:
-                print("TELEGRAM_REVIEW_SETUP=DRAINING_STALE_GETUPDATES", flush=True)
+                print(
+                    "TELEGRAM_REVIEW_SETUP=DRAINING_STALE_GETUPDATES",
+                    file=sys.stderr,
+                    flush=True,
+                )
             time.sleep(2)
             continue
         raise
