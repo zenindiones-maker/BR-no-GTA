@@ -1,6 +1,7 @@
 from typing import Any
 from copy import deepcopy
 
+
 def create_render_job(
     video_execution_spec: dict[str, Any],
     *,
@@ -133,7 +134,6 @@ def create_render_job(
                 f"o campo obrigatório: {field}."
             )
 
-
     render_job = {
         "content_item_id": video_execution_spec["content_item_id"],
         "script_id": video_execution_spec["script_id"],
@@ -156,6 +156,12 @@ def create_render_job(
         ),
         "render": dict(render),
     }
+
+    brand_assets = video_execution_spec.get("brand_assets")
+    if brand_assets is not None:
+        if not isinstance(brand_assets, list):
+            raise ValueError("brand_assets must be a list when provided")
+        render_job["brand_assets"] = deepcopy(brand_assets)
 
     # Contexto de autorização/correlação do BR.
     # Deve atravessar Video Execution Spec -> Render Job.
