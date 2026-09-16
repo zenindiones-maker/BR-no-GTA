@@ -1,8 +1,4 @@
-"""Execute the existing EditPlan through the vendored VEdit engine.
-
-Only resolves already provisioned relative media paths. Remote artifact references
-must be supplied by the application contract (#2/#4), not guessed by this worker.
-"""
+"""Execute Harness-authorized EditPlans through the vendored VEdit engine."""
 from __future__ import annotations
 
 import argparse
@@ -22,8 +18,14 @@ class WorkerError(ValueError):
 
 
 LINEAGE_FIELDS = (
-    "render_job_id", "video_id", "content_item_id", "script_id", "idea_id",
-    "execution_id", "brain_decision_id", "authorized_action",
+    "render_job_id",
+    "video_id",
+    "content_item_id",
+    "script_id",
+    "idea_id",
+    "execution_id",
+    "brain_decision_id",
+    "authorized_action",
 )
 
 
@@ -35,6 +37,55 @@ def finite(value, label, minimum=0):
     return float(value)
 
 
+def _requires_a1_voice(job: dict) -> bool:
+    try:
+        duration = float(job.get("estimated_duration_seconds") or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    return job.get("qa_profile") == "professional-ptbr" or duration >= 300.0
+
+
+def _validate_a1_voice_contract(job: dict, plan: EditPlan, duration: float) -> None:
+    if not _requires_a1_voice(job):
+        return
+    voice = job.get("a1_voice")
+    if not isinstance(voice, dict):
+        raise WorkerError("A1 VOICE required for long-form production")
+    required = {
+        "capability_id": "narration.generate.pt-BR",
+        "locale": "pt-BR",
+        "qa_status": "PASS",
+    }
+    for key, expected in required.items():
+        if voice.get(key) != expected:
+            raise WorkerError(f"A1 VOICE invalid {key}")
+    if not isinstance(voice.get("voice"), str) or not voice["voice"].startswith("pt-BR-"):
+        raise WorkerError("A1 VOICE must use a PT-BR voice")
+    media_path = voice.get("media_path")
+    if not isinstance(media_path, str) or not media_path.strip():
+        raise WorkerError("A1 VOICE media_path is required")
+    digest = voice.get("sha256")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise WorkerError("A1 VOICE sha256 evidence is required")
+    voice_duration = finite(voice.get("duration_seconds"), "a1_voice.duration_seconds", .001)
+    if abs(voice_duration - duration) > max(0.75, duration * .005):
+        raise WorkerError("A1 VOICE/RenderJob duration mismatch")
+    a1_tracks = [
+        item
+        for item in plan.audio
+        if item.track.upper() == "A1" and item.media_path == media_path
+    ]
+    if len(a1_tracks) != 1:
+        raise WorkerError("EditPlan must contain exactly one materialized A1 narration track")
+    track = a1_tracks[0]
+    if track.start_seconds > .001 or track.source_start_seconds > .001:
+        raise WorkerError("A1 narration must start at content time zero")
+    if track.duration_seconds is None:
+        raise WorkerError("A1 narration requires explicit duration")
+    if abs(float(track.duration_seconds) - duration) > max(.75, duration * .005):
+        raise WorkerError("A1 narration track must cover the complete content timeline")
+
+
 def validate_job(job, *, allow_runtime_plan=False):
     if not isinstance(job, dict):
         raise WorkerError("RenderJob must be an object")
@@ -43,7 +94,9 @@ def validate_job(job, *, allow_runtime_plan=False):
         if type(job.get(key)) is not int or job[key] <= 0:
             raise WorkerError(f"Missing/invalid {key}; producer: #2/#4")
     for key in ("brain_decision_id", "execution_id"):
-        if not isinstance(job.get(key), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job[key]):
+        if not isinstance(job.get(key), str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{1,128}", job[key]
+        ):
             raise WorkerError(f"Missing/invalid {key}")
     if job.get("authorized_action") != "EXECUTION":
         raise WorkerError("authorized_action must be EXECUTION")
@@ -51,7 +104,11 @@ def validate_job(job, *, allow_runtime_plan=False):
         expected = os.environ.get("EXPECTED_" + key.upper())
         if expected is not None and job[key] != expected:
             raise WorkerError(f"Dispatch envelope mismatch: {key}")
-    duration = finite(job.get("estimated_duration_seconds"), "estimated_duration_seconds", .001)
+    duration = finite(
+        job.get("estimated_duration_seconds"),
+        "estimated_duration_seconds",
+        .001,
+    )
     if not isinstance(job.get("scenes"), list) or not job["scenes"]:
         raise WorkerError("Missing scenes; producer: #2/#4")
     if not all(isinstance(scene, dict) for scene in job["scenes"]):
@@ -59,7 +116,12 @@ def validate_job(job, *, allow_runtime_plan=False):
     if not isinstance(job.get("edit_plan"), dict):
         if not allow_runtime_plan:
             raise WorkerError("Missing edit_plan; producer: #2/#4")
+        if _requires_a1_voice(job):
+            raise WorkerError(
+                "Long-form production requires persisted EditPlan with materialized A1 VOICE"
+            )
         from app.services.render_media_materializer import validate_remote_source
+
         if not job.get("audio_requirements"):
             raise WorkerError("Runtime EditPlan requires explicit real audio requirements")
         for item in job["scenes"] + job["audio_requirements"]:
@@ -78,8 +140,12 @@ def validate_job(job, *, allow_runtime_plan=False):
     finite(plan.duration_seconds, "EditPlan.duration_seconds", .001)
     if abs(plan.duration_seconds - duration) > .001:
         raise WorkerError("EditPlan/RenderJob duration mismatch")
-    if plan.content_item_id != job["content_item_id"] or plan.script_id != job["script_id"]:
+    if (
+        plan.content_item_id != job["content_item_id"]
+        or plan.script_id != job["script_id"]
+    ):
         raise WorkerError("EditPlan/RenderJob lineage mismatch")
+    _validate_a1_voice_contract(job, plan, duration)
     return plan
 
 
@@ -87,47 +153,83 @@ def reject_secrets(value):
     """Fail before archiving credentials accidentally embedded in a job."""
     if isinstance(value, dict):
         for key, child in value.items():
-            if re.search(r"token|password|secret|api[_-]?key|authorization", str(key), re.I):
+            if re.search(
+                r"token|password|secret|api[_-]?key|authorization",
+                str(key),
+                re.I,
+            ):
                 raise WorkerError("Credentials do not belong in RenderJob")
             reject_secrets(child)
     elif isinstance(value, list):
         for child in value:
             reject_secrets(child)
-    elif isinstance(value, str) and re.search(r"https?://[^\s]*@|-----BEGIN .*PRIVATE KEY|github_pat_|ghp_", value):
+    elif isinstance(value, str) and re.search(
+        r"https?://[^\s]*@|-----BEGIN .*PRIVATE KEY|github_pat_|ghp_",
+        value,
+    ):
         raise WorkerError("Credential-bearing URLs/keys do not belong in RenderJob")
 
 
 def resolve_asset(media_path, root):
     if not isinstance(media_path, str) or not media_path.strip():
-        raise WorkerError("Missing EditPlan media_path; producer: #2/#4; consumer: asset resolver")
+        raise WorkerError(
+            "Missing EditPlan media_path; producer: #2/#4; consumer: asset resolver"
+        )
     path = Path(media_path)
     if path.is_absolute() or ".." in path.parts:
-        raise WorkerError("Cloud media_path must be relative to the provisioned asset root (#2/#4)")
+        raise WorkerError(
+            "Cloud media_path must be relative to the provisioned asset root (#2/#4)"
+        )
     resolved = (root.resolve() / path).resolve()
-    if not resolved.is_relative_to(root.resolve()) or not resolved.is_file() or resolved.stat().st_size == 0:
-        raise WorkerError("Missing/unsafe cloud asset; provision artifact using contract #2/#4")
+    if (
+        not resolved.is_relative_to(root.resolve())
+        or not resolved.is_file()
+        or resolved.stat().st_size == 0
+    ):
+        raise WorkerError(
+            "Missing/unsafe cloud asset; provision artifact using contract #2/#4"
+        )
     return resolved
 
 
-def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_asset):
+def build_timeline(
+    plan,
+    asset_root,
+    render_config,
+    *,
+    asset_resolver=resolve_asset,
+    a1_voice: dict | None = None,
+    require_a1: bool = False,
+):
     from vedit.store import Store
 
     if not isinstance(render_config, dict):
         raise WorkerError("Missing render configuration")
-    match = re.fullmatch(r"([0-9]+)x([0-9]+)", str(render_config.get("resolution", "")))
+    match = re.fullmatch(
+        r"([0-9]+)x([0-9]+)",
+        str(render_config.get("resolution", "")),
+    )
     if not match:
         raise WorkerError("render.resolution must be WIDTHxHEIGHT")
     width, height = map(int, match.groups())
     if min(width, height) <= 0 or width % 2 or height % 2:
         raise WorkerError("render.resolution must have positive even dimensions")
     fps = finite(render_config.get("fps"), "render.fps", .001)
-    if (render_config.get("container"), render_config.get("video_codec"), render_config.get("audio_codec")) != ("mp4", "h264", "aac"):
-        raise WorkerError("Worker supports the existing mp4/h264/aac render configuration")
+    if (
+        render_config.get("container"),
+        render_config.get("video_codec"),
+        render_config.get("audio_codec"),
+    ) != ("mp4", "h264", "aac"):
+        raise WorkerError(
+            "Worker supports the existing mp4/h264/aac render configuration"
+        )
     store = Store.create(name=plan.title, width=width, height=height, fps=fps)
     track_ids = {}
     segment_clips = {}
-    has_audio = False
     video_windows = []
+    has_audio_track = False
+    has_a1 = False
+    expected_a1_path = (a1_voice or {}).get("media_path")
 
     def track(name, kind):
         key = (name, kind)
@@ -136,25 +238,50 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
         return track_ids[key]
 
     def add(media_path, track_name, kind, start, source_start, duration):
-        nonlocal has_audio
+        nonlocal has_audio_track, has_a1
         finite(start, "clip.start_seconds")
         finite(source_start, "clip.source_start_seconds")
         finite(duration, "clip.duration_seconds", .001)
         if start + duration > plan.duration_seconds + .001:
             raise WorkerError("Clip exceeds EditPlan duration")
-        media = store.import_media([str(asset_resolver(media_path, asset_root))])[0]
+        media = store.import_media(
+            [str(asset_resolver(media_path, asset_root))]
+        )[0]
         if kind == "video":
-            if not media.has_video:
-                raise WorkerError("Video track references media without video")
+            if not media.has_video and media.kind != "image":
+                raise WorkerError(
+                    "Video track references media without video/image content"
+                )
+            if media.kind == "image" and source_start > .001:
+                raise WorkerError("Image source_start_seconds must be zero")
             video_windows.append((start, start + duration))
-        if kind == "audio" and not media.has_audio:
-            raise WorkerError("Audio track references media without audio")
-        if media.duration > 0 and source_start + duration > media.duration + .001:
-            raise WorkerError("Source window exceeds media duration; refusing VEdit automatic truncation")
-        if media.kind != "image" and media.duration <= 0:
-            raise WorkerError("Source has no measurable duration")
-        clip = store.add_clip(media.id, track_id=track(track_name, kind), start=start, in_=source_start, duration=duration)
-        has_audio = has_audio or bool(media.has_audio)
+        if kind == "audio":
+            if not media.has_audio:
+                raise WorkerError("Audio track references media without audio")
+            has_audio_track = True
+            if (
+                track_name.upper() == "A1"
+                and expected_a1_path
+                and media_path == expected_a1_path
+            ):
+                has_a1 = True
+        if media.kind != "image":
+            if media.duration <= 0:
+                raise WorkerError("Source has no measurable duration")
+            if source_start + duration > media.duration + .001:
+                raise WorkerError(
+                    "Source window exceeds media duration; refusing VEdit automatic truncation"
+                )
+        clip = store.add_clip(
+            media.id,
+            track_id=track(track_name, kind),
+            start=start,
+            in_=source_start,
+            duration=duration,
+        )
+        if kind == "video" and hasattr(clip, "audio"):
+            # Visual source audio is not A1 VOICE and never satisfies the narration gate.
+            clip.audio.mute = True
         return clip
 
     for item in plan.tracks:
@@ -162,36 +289,75 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
         if item.clips and kind not in {"video", "audio"}:
             raise WorkerError("Unsupported clip track kind")
         for source in item.clips:
-            clip = add(source.media_path, item.name, kind, source.start_seconds, source.source_start_seconds, source.duration_seconds)
+            clip = add(
+                source.media_path,
+                item.name,
+                kind,
+                source.start_seconds,
+                source.source_start_seconds,
+                source.duration_seconds,
+            )
             clip.fit = source.fit
             if source.segment_id is not None:
                 if source.segment_id in segment_clips:
                     raise WorkerError("Ambiguous repeated segment_id in EditPlan")
                 segment_clips[source.segment_id] = clip
+
     for source in plan.audio:
         if source.duration_seconds is None:
             raise WorkerError("Audio duration_seconds required for exact execution")
-        clip = add(source.media_path, source.track, "audio", source.start_seconds, source.source_start_seconds, source.duration_seconds)
+        clip = add(
+            source.media_path,
+            source.track,
+            "audio",
+            source.start_seconds,
+            source.source_start_seconds,
+            source.duration_seconds,
+        )
         finite(source.volume, "audio.volume")
         clip.audio.mute = source.volume == 0
-        clip.audio.gain_db = 20 * math.log10(source.volume) if source.volume else 0
+        clip.audio.gain_db = (
+            20 * math.log10(source.volume) if source.volume else 0
+        )
         clip.audio.fade_in = finite(source.fade_in_seconds, "audio.fade_in")
         clip.audio.fade_out = finite(source.fade_out_seconds, "audio.fade_out")
-    if not has_audio:
-        raise WorkerError("No real source audio; refusing synthetic silence")
+
+    if not has_audio_track:
+        raise WorkerError("No explicit audio track; refusing source-video audio fallback")
+    if require_a1 and not has_a1:
+        raise WorkerError(
+            "A1 VOICE missing from executed timeline; trailer/gameplay audio is not narration"
+        )
+
     covered = 0.0
     for start, end in sorted(video_windows):
         if start > covered + .001:
-            raise WorkerError("Video timeline has uncovered gaps; refusing placeholder frames")
+            raise WorkerError(
+                "Video timeline has uncovered gaps; refusing placeholder frames"
+            )
         covered = max(covered, end)
     if abs(covered - plan.duration_seconds) > .001:
         raise WorkerError("Video media does not cover the full EditPlan")
+
     for text in plan.texts:
         finite(text.start_seconds, "text.start")
         finite(text.duration_seconds, "text.duration", .001)
-        if text.start_seconds + text.duration_seconds > plan.duration_seconds + .001:
+        if (
+            text.start_seconds + text.duration_seconds
+            > plan.duration_seconds + .001
+        ):
             raise WorkerError("Text exceeds EditPlan duration")
-        store.add_text(text.text, track_id=track(text.track, "video"), start=text.start_seconds, duration=text.duration_seconds, font_size=text.font_size, color=text.color, align=text.align, box=text.box)
+        store.add_text(
+            text.text,
+            track_id=track(text.track, "video"),
+            start=text.start_seconds,
+            duration=text.duration_seconds,
+            font_size=text.font_size,
+            color=text.color,
+            align=text.align,
+            box=text.box,
+        )
+
     for effect in plan.effects:
         if effect.segment_id not in segment_clips:
             raise WorkerError("Effect references missing segment")
@@ -199,7 +365,12 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
             raise WorkerError(
                 "Graphic descriptor reached native VEdit effect boundary"
             )
-        store.add_effect(segment_clips[effect.segment_id].id, effect.name, effect.params)
+        store.add_effect(
+            segment_clips[effect.segment_id].id,
+            effect.name,
+            effect.params,
+        )
+
     for transition in plan.transitions:
         a = segment_clips.get(transition.from_segment_id)
         b = segment_clips.get(transition.to_segment_id)
@@ -207,20 +378,37 @@ def build_timeline(plan, asset_root, render_config, *, asset_resolver=resolve_as
             raise WorkerError("Transition references missing segment")
         duration = finite(transition.duration_seconds, "transition.duration")
         transition_type = str(transition.type).strip().lower()
-        # CUT is the absence of a native transition. The VEdit Store only
-        # accepts effect transitions, so forwarding "cut" raises EditError.
         if transition_type == "cut":
             if duration > .001:
                 raise WorkerError("CUT transition must have zero duration")
             continue
-        if duration and (abs(a.end - b.start - duration) > .001 or duration > min(a.duration, b.duration)):
-            raise WorkerError("Transition requires explicit overlapping clips; worker cannot retime editorial plan")
+        if duration and (
+            abs(a.end - b.start - duration) > .001
+            or duration > min(a.duration, b.duration)
+        ):
+            raise WorkerError(
+                "Transition requires explicit overlapping clips; worker cannot retime editorial plan"
+            )
         store.set_transition(a.id, type=transition_type, duration=duration)
     return store.project
 
 
 def probe_video(path):
-    result = subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], capture_output=True, text=True, timeout=120)
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
     if result.returncode or result.stderr.strip():
         raise WorkerError("ffprobe failed")
     return json.loads(result.stdout)
@@ -229,7 +417,11 @@ def probe_video(path):
 def evaluate_probe(probe, expected, qa):
     try:
         raw_duration = probe.get("format", {}).get("duration")
-        duration = float(raw_duration) if not isinstance(raw_duration, bool) else math.nan
+        duration = (
+            float(raw_duration)
+            if not isinstance(raw_duration, bool)
+            else math.nan
+        )
     except (TypeError, ValueError):
         duration = math.nan
     kinds = {s.get("codec_type") for s in probe.get("streams", [])}
@@ -239,31 +431,67 @@ def evaluate_probe(probe, expected, qa):
         "video_stream": "video" in kinds,
         "audio_stream": "audio" in kinds,
         "finite_positive_duration": math.isfinite(duration) and duration > 0,
-        "expected_duration": math.isfinite(duration) and abs(duration - expected) <= max(.5, expected * .01),
-        "plan_min_duration": qa.min_duration_seconds is None or duration >= qa.min_duration_seconds,
-        "plan_max_duration": qa.max_duration_seconds is None or duration <= qa.max_duration_seconds,
+        "expected_duration": math.isfinite(duration)
+        and abs(duration - expected) <= max(.5, expected * .01),
+        "plan_min_duration": qa.min_duration_seconds is None
+        or duration >= qa.min_duration_seconds,
+        "plan_max_duration": qa.max_duration_seconds is None
+        or duration <= qa.max_duration_seconds,
     }
-    return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks, "duration_seconds": duration if math.isfinite(duration) else None}
+    return {
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "checks": checks,
+        "duration_seconds": duration if math.isfinite(duration) else None,
+    }
 
 
 def write_json(path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def execute(job, asset_root, output_root, *, source_job=None):
     plan = validate_job(job)
-    folder = output_root / job["execution_id"] / str(job["render_job_id"])
+    folder = (
+        output_root
+        / job["execution_id"]
+        / str(job["render_job_id"])
+    )
     folder.mkdir(parents=True, exist_ok=False)
     output = folder / f"{job['video_id']}.mp4"
     qa = {"status": "FAIL", "stage": "timeline"}
     try:
-        # Preserve the validated input unchanged before any operation can fail.
-        write_json(folder / "render-job.json", source_job if source_job is not None else job)
+        write_json(
+            folder / "render-job.json",
+            source_job if source_job is not None else job,
+        )
         write_json(folder / "edit-plan.json", job["edit_plan"])
-        project = build_timeline(plan, asset_root, job.get("render"))
+        project = build_timeline(
+            plan,
+            asset_root,
+            job.get("render"),
+            a1_voice=job.get("a1_voice"),
+            require_a1=_requires_a1_voice(job),
+        )
         from vedit.render import RenderOptions, render
+
         qa["stage"] = "render"
-        render(project, RenderOptions(output=str(output), prefer_hw=False, hwaccel_decode=False))
+        render(
+            project,
+            RenderOptions(
+                output=str(output),
+                prefer_hw=False,
+                hwaccel_decode=False,
+            ),
+        )
         if not output.is_file() or output.stat().st_size <= 0:
             raise WorkerError("Missing or empty output")
         if len(list(folder.glob("*.mp4"))) != 1:
@@ -276,20 +504,55 @@ def execute(job, asset_root, output_root, *, source_job=None):
         qa["stage"] = "probe"
         qa["checks"]["nonempty_file"] = True
         qa["checks"]["exactly_one_mp4"] = True
-        if qa["status"] != "PASS":
+        qa["checks"]["a1_voice_contract"] = not _requires_a1_voice(job) or (
+            isinstance(job.get("a1_voice"), dict)
+            and job["a1_voice"].get("qa_status") == "PASS"
+        )
+        if qa["status"] != "PASS" or not all(qa["checks"].values()):
+            qa["status"] = "FAIL"
             raise WorkerError("Audiovisual QA failed")
         qa["stage"] = "decode"
         qa["checks"]["full_decode"] = False
-        decode = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", str(output), "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], capture_output=True, timeout=3600)
+        decode = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-xerror",
+                "-i",
+                str(output),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            timeout=3600,
+        )
         if decode.returncode or decode.stderr.strip():
             qa["status"] = "FAIL"
             raise WorkerError("Full decode QA failed")
         qa["checks"]["full_decode"] = True
         qa["stage"] = "complete"
+        qa["status"] = "PASS"
         manifest = {key: job[key] for key in LINEAGE_FIELDS}
-        manifest.update(filename=output.name, size_bytes=output.stat().st_size, duration_seconds=qa["duration_seconds"], qa_status="PASS")
+        manifest.update(
+            filename=output.name,
+            size_bytes=output.stat().st_size,
+            duration_seconds=qa["duration_seconds"],
+            qa_status="PASS",
+            qa_profile=job.get("qa_profile"),
+            a1_voice_sha256=(job.get("a1_voice") or {}).get("sha256"),
+        )
         with output.open("rb") as stream:
-            manifest["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+            manifest["sha256"] = hashlib.file_digest(
+                stream,
+                "sha256",
+            ).hexdigest()
         write_json(folder / "render-manifest.json", manifest)
         return folder
     except Exception:
@@ -300,16 +563,40 @@ def execute(job, asset_root, output_root, *, source_job=None):
         write_json(folder / "render-qa.json", qa)
 
 
+def _runtime_relative(value: str, root: Path) -> str:
+    path = Path(value)
+    if not path.is_absolute():
+        candidate = (root / path).resolve()
+        if candidate.is_relative_to(root.resolve()) and candidate.exists():
+            return str(candidate.relative_to(root.resolve()))
+        return value
+    resolved = path.resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise WorkerError("Runtime asset escaped materialization root")
+    return str(resolved.relative_to(root.resolve()))
+
+
 def execute_cloud(job, asset_root, output_root):
     validate_job(job, allow_runtime_plan=True)
     remote = any(scene.get("asset_ref") for scene in job["scenes"])
     if not remote:
         return execute(job, asset_root, output_root)
+
     from copy import deepcopy
     from app.services.render_media_materializer import materialize_scenes
     from app.services.vedit_service import create_edit_plan
-    root = asset_root / job["execution_id"] / str(job["render_job_id"])
-    diagnostic = output_root.parent / "materialization" / job["execution_id"] / str(job["render_job_id"])
+
+    root = (
+        asset_root
+        / job["execution_id"]
+        / str(job["render_job_id"])
+    )
+    diagnostic = (
+        output_root.parent
+        / "materialization"
+        / job["execution_id"]
+        / str(job["render_job_id"])
+    )
     diagnostic.mkdir(parents=True, exist_ok=True)
     write_json(diagnostic / "render-job.json", job)
     qa = {"status": "FAIL", "stage": "materialization"}
@@ -320,30 +607,61 @@ def execute_cloud(job, asset_root, output_root):
         if not isinstance(job.get("edit_plan"), dict):
             qa["stage"] = "edit_plan"
             effective["edit_plan"] = create_edit_plan(
-                production_plan=hydrated, brain_decision=job).to_dict()
-        paths = {scene["asset_ref"]: scene["media_path"] for scene in hydrated["scenes"] + hydrated.get("audio_requirements", [])}
+                production_plan=hydrated,
+                brain_decision=job,
+            ).to_dict()
+
+        paths = {
+            scene["asset_ref"]: scene["media_path"]
+            for scene in hydrated["scenes"]
+            + hydrated.get("audio_requirements", [])
+        }
         for scene in hydrated["scenes"]:
             paths[str(scene.get("segment_id"))] = scene["media_path"]
-        # Preserve the persisted EditPlan; adapt only its runtime copy.
+
         for track in effective["edit_plan"]["tracks"]:
             for clip in track.get("clips", []):
-                value = paths.get(clip["media_path"], paths.get(str(clip.get("segment_id")), clip["media_path"]))
-                clip["media_path"] = str(Path(value).resolve().relative_to(root.resolve()))
+                raw = clip["media_path"]
+                mapped = paths.get(
+                    raw,
+                    paths.get(str(clip.get("segment_id")), raw),
+                )
+                if mapped != raw:
+                    clip["media_path"] = _runtime_relative(mapped, root)
+                else:
+                    clip["media_path"] = _runtime_relative(raw, root)
+
         for audio in effective["edit_plan"].get("audio", []):
-            value = paths.get(audio["media_path"], audio["media_path"])
-            audio["media_path"] = str(Path(value).resolve().relative_to(root.resolve()))
+            raw = audio["media_path"]
+            mapped = paths.get(raw, raw)
+            audio["media_path"] = _runtime_relative(mapped, root)
+
+        voice = effective.get("a1_voice")
+        if isinstance(voice, dict):
+            voice["media_path"] = _runtime_relative(
+                voice["media_path"],
+                root,
+            )
+            effective["a1_voice"] = voice
+
         qa["stage"] = "render"
-        folder = execute(effective, root, output_root, source_job=job)
+        folder = execute(
+            effective,
+            root,
+            output_root,
+            source_job=job,
+        )
         write_json(folder / "assets.json", evidence)
-        qa["status"] = "PASS"
+        qa = {
+            "status": "PASS",
+            "stage": "complete",
+            "asset_count": len(evidence),
+            "a1_voice": (
+                effective.get("a1_voice") or {}
+            ).get("qa_status"),
+        }
         return folder
-    except Exception as exc:
-        qa["error_type"] = type(exc).__name__
-        if isinstance(exc, (WorkerError, ValueError)):
-            qa["reason"] = str(exc) if type(exc).__name__ in {"WorkerError", "MaterializationError"} else "Invalid runtime edit plan"
-        raise
     finally:
-        qa.update({key: job[key] for key in LINEAGE_FIELDS})
         write_json(diagnostic / "materialization-qa.json", qa)
 
 
@@ -354,15 +672,20 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     try:
-        job = json.loads(args.render_job.read_text(encoding="utf-8"))
-        folder = execute_cloud(job, args.asset_root, args.output_dir)
+        job = json.loads(
+            args.render_job.read_text(encoding="utf-8")
+        )
+        folder = execute_cloud(
+            job,
+            args.asset_root,
+            args.output_dir,
+        )
     except Exception as exc:
-        # Never expose raw job contents, signed URLs or FFmpeg command logs.
-        detail = str(exc) if isinstance(exc, WorkerError) else "inspect contract and QA evidence"
-        print(f"Audiovisual worker FAIL ({type(exc).__name__}): {detail}")
-        raise SystemExit(1) from None
-    print(f"Audiovisual QA PASS: {folder}")
+        raise SystemExit(str(exc)) from None
+    print(f"RENDER_OUTPUT_DIR={folder}")
+    print("AUDIOVISUAL_WORKER=PASS")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

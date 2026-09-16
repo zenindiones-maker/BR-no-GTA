@@ -23,7 +23,7 @@ permissions:
 jobs:
   audiovisual:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       PYTHONPATH: video-engine/backend:.
     steps:
@@ -46,20 +46,28 @@ jobs:
           import os
           from pathlib import Path
           from app.workers.audiovisual_worker import WorkerError, validate_job
+          from app.workers.professional_audiovisual_worker import validate_product_job
           failure_path = Path("runtime/render/validation-qa.json")
           failure_path.parent.mkdir(parents=True, exist_ok=True)
           try:
               job = json.loads(os.environ["RENDER_JOB"])
-              validate_job(job, allow_runtime_plan=True)
+              for key in ("brain_decision_id", "execution_id", "authorized_action"):
+                  expected = os.environ.get("EXPECTED_" + key.upper())
+                  if expected is not None and job.get(key) != expected:
+                      raise WorkerError(f"Dispatch envelope mismatch: {key}")
+              if job.get("product_profile") == "professional_ptbr_v1":
+                  validate_product_job(job)
+              else:
+                  validate_job(job, allow_runtime_plan=True)
           except WorkerError as exc:
               failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": str(exc)}))
               raise SystemExit(str(exc)) from None
-          except Exception:
-              failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": "Invalid RenderJob; see #2/#4"}))
-              raise SystemExit("Invalid RenderJob or authorization envelope; see #2/#4.") from None
+          except Exception as exc:
+              failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": str(exc)[:500]}))
+              raise
           path = Path("runtime/render/render-job.json")
           path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text(json.dumps(job, allow_nan=False), encoding="utf-8")
+          path.write_text(json.dumps(job, ensure_ascii=False, allow_nan=False), encoding="utf-8")
           PY
       - name: Install FFmpeg
         run: |
@@ -73,43 +81,35 @@ jobs:
           set -euo pipefail
           git ls-files --error-unmatch video-engine/backend/vedit/render.py
           python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
+          python -m unittest discover -s tests -p test_professional_audiovisual_worker.py -v
       - name: Setup ingestion JavaScript runtime
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Install existing ingestion adapter
+      - name: Install existing ingestion and professional narration adapters
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
           python -m pip install -U "yt-dlp[default]"
           python -m pip install -U "bgutil-ytdlp-pot-provider==1.3.1"
+          python -m pip install "edge-tts==7.2.8"
 
       - name: Setup YouTube PO Token provider
         run: |
           set -euo pipefail
-
-          git clone             --depth 1             --branch 1.3.1             https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git             runtime/bgutil-ytdlp-pot-provider
-
+          git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
           cd runtime/bgutil-ytdlp-pot-provider/server
-
           deno install --allow-scripts=npm:canvas --frozen
-
           cd node_modules
-
           export DENO_NO_PROMPT=1
-
-          nohup deno run             --no-prompt             --allow-env             --allow-net             --allow-ffi=.             --allow-read=.             ../src/main.ts             --port 4416             > ../provider.log 2>&1 &
-
+          nohup deno run --no-prompt --allow-env --allow-net --allow-ffi=. --allow-read=. ../src/main.ts --port 4416 > ../provider.log 2>&1 &
           echo $! > ../provider.pid
-
           sleep 5
-
           if ! kill -0 "$(cat ../provider.pid)" 2>/dev/null; then
             echo "PO Token provider failed to start"
             cat ../provider.log
             exit 1
           fi
-
           echo "PO Token provider running on 127.0.0.1:4416"
 
       - name: Prepare YouTube cookies
@@ -137,10 +137,23 @@ jobs:
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
         run: |
           set -euo pipefail
-          python -m app.workers.audiovisual_worker \
-            --render-job runtime/render/render-job.json \
-            --asset-root runtime/render/input \
-            --output-dir runtime/render/output
+          if python - <<'PY'
+          import json
+          from pathlib import Path
+          job = json.loads(Path('runtime/render/render-job.json').read_text(encoding='utf-8'))
+          raise SystemExit(0 if job.get('product_profile') == 'professional_ptbr_v1' else 1)
+          PY
+          then
+            python -m app.workers.professional_audiovisual_worker \
+              --render-job runtime/render/render-job.json \
+              --asset-root runtime/render/input \
+              --output-dir runtime/render/output
+          else
+            python -m app.workers.audiovisual_worker \
+              --render-job runtime/render/render-job.json \
+              --asset-root runtime/render/input \
+              --output-dir runtime/render/output
+          fi
 
       - name: Apply governed intro and watermark
         run: |
@@ -149,6 +162,12 @@ jobs:
             --render-job runtime/render/render-job.json \
             --runtime-root runtime/render \
             --output-dir runtime/render/output
+
+      - name: Finalize professional QA gates
+        run: |
+          set -euo pipefail
+          python scripts/run001_professional_finalize_qa.py \
+            --artifact-root runtime/render/output
 
       - name: Deliver full-duration branded review to Telegram
         env:
@@ -164,7 +183,6 @@ jobs:
       - name: Upload QA-passed render
         uses: actions/upload-artifact@v4
         with:
-          # Identity is repository/run_id/name. Preserve current consumer name.
           name: render-output
           path: runtime/render/output/
           if-no-files-found: error
@@ -180,6 +198,14 @@ jobs:
             runtime/render/branding/**/brand-assets.json
             runtime/render/output/**/brand-assets.json
             runtime/render/output/**/render-qa.json
+            runtime/render/output/**/editorial-qa.json
+            runtime/render/output/**/voice-qa.json
+            runtime/render/output/**/edit-qa.json
+            runtime/render/output/**/audiovisual-qa.json
+            runtime/render/output/**/research-evidence.json
+            runtime/render/output/**/fact-check.json
+            runtime/render/output/**/script-ptbr.json
+            runtime/render/output/**/media-selection-evidence.json
             runtime/render/output/**/render-job.json
             runtime/render/output/**/video-probe.json
             runtime/render/output/**/telegram-review.json
