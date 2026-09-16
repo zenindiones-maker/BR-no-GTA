@@ -123,6 +123,14 @@ def create_video_execution_spec(
         },
     }
 
+    # Governed branding is an immutable snapshot selected before RenderJob
+    # creation. Never resolve mutable "current" assets inside the worker.
+    brand_assets = video_spec.get("brand_assets")
+    if brand_assets is not None:
+        if not isinstance(brand_assets, list):
+            raise ValueError("brand_assets must be a list when provided")
+        result["brand_assets"] = deepcopy(brand_assets)
+
     # Contexto de autorização/correlação do BR.
     # Deve atravessar Video Spec -> Video Execution Spec -> Render Job.
     for field in (
@@ -137,7 +145,6 @@ def create_video_execution_spec(
     ):
         if field in video_spec:
             result[field] = video_spec[field]
-
 
     if "edit_plan" in video_spec:
         result["edit_plan"] = deepcopy(video_spec["edit_plan"])
