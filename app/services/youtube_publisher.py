@@ -4,12 +4,7 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class YouTubeUploadResult:
-    """
-    Resultado explícito de uma tentativa de upload para o YouTube.
-
-    O upload bem-sucedido cria um recurso remoto no YouTube,
-    inicialmente com a privacidade controlada pela operação de upload.
-    """
+    """Resultado explícito de uma tentativa de upload para o YouTube."""
 
     success: bool
     youtube_video_id: str | None = None
@@ -19,41 +14,30 @@ class YouTubeUploadResult:
 
 @dataclass(frozen=True)
 class YouTubeVisibilityResult:
-    """
-    Resultado explícito de uma tentativa de alteração de visibilidade
-    de um vídeo que já existe no YouTube.
-    """
+    """Resultado explícito de uma tentativa de alteração de visibilidade."""
 
     success: bool
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class YouTubeVisibilityStateResult:
+    """Observação read-only do estado remoto de visibilidade de um vídeo."""
+
+    success: bool
+    privacy_status: str | None = None
+    error: str | None = None
+
+
 class YouTubePublisher(Protocol):
-    """
-    Contrato para qualquer implementação capaz de operar sobre o YouTube.
+    """Contrato de execução YouTube; não concede autoridade editorial/publicação."""
 
-    A camada superior conhece apenas este contrato.
-
-    Implementações concretas podem utilizar:
-    - Google YouTube Data API;
-    - fake determinístico para testes;
-    - futuras implementações alternativas.
-    """
-
-    def upload(
-        self,
-        publication: Any,
-    ) -> YouTubeUploadResult:
-        """
-        Faz o upload de uma YouTubePublication para o YouTube.
-        """
+    def upload(self, publication: Any) -> YouTubeUploadResult:
         ...
 
-    def make_public(
-        self,
-        youtube_video_id: str,
-    ) -> YouTubeVisibilityResult:
-        """
-        Torna público um vídeo que já existe no YouTube.
-        """
+    def make_public(self, youtube_video_id: str) -> YouTubeVisibilityResult:
+        ...
+
+    def get_visibility(self, youtube_video_id: str) -> YouTubeVisibilityStateResult:
+        """Consulta visibilidade remota sem alterar o vídeo."""
         ...
