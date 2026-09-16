@@ -150,6 +150,17 @@ jobs:
             --runtime-root runtime/render \
             --output-dir runtime/render/output
 
+      - name: Deliver full-duration branded review to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          python scripts/telegram_render_review_worker.py \
+            --artifact-root runtime/render/output
+
       - name: Upload QA-passed render
         uses: actions/upload-artifact@v4
         with:
@@ -171,5 +182,7 @@ jobs:
             runtime/render/output/**/render-qa.json
             runtime/render/output/**/render-job.json
             runtime/render/output/**/video-probe.json
+            runtime/render/output/**/telegram-review.json
+            runtime/render/output/**/*.mp4
           if-no-files-found: ignore
           retention-days: 30

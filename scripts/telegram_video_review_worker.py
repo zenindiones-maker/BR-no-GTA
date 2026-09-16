@@ -103,18 +103,23 @@ def _encode_proxy(source: Path, target: Path, *, duration: float, target_bytes: 
 
 def build_review_proxy(source: Path, output_dir: Path) -> tuple[Path, dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    duration = _duration_seconds(source)
+    source_duration = _duration_seconds(source)
     proxy = output_dir / "telegram-review.mp4"
-    _encode_proxy(source, proxy, duration=duration, target_bytes=TARGET_PROXY_BYTES)
+    _encode_proxy(source, proxy, duration=source_duration, target_bytes=TARGET_PROXY_BYTES)
     if proxy.stat().st_size >= MAX_TELEGRAM_UPLOAD_BYTES:
-        _encode_proxy(source, proxy, duration=duration, target_bytes=FALLBACK_PROXY_BYTES)
+        _encode_proxy(source, proxy, duration=source_duration, target_bytes=FALLBACK_PROXY_BYTES)
     size = proxy.stat().st_size
     if size >= MAX_TELEGRAM_UPLOAD_BYTES:
         raise RuntimeError(
             f"Telegram review proxy is too large after fallback compression: {size} bytes"
         )
+    proxy_duration = _duration_seconds(proxy)
+    duration_tolerance = max(0.5, source_duration * 0.001)
+    if abs(proxy_duration - source_duration) > duration_tolerance:
+        raise RuntimeError("Telegram review proxy duration does not match the master")
     return proxy, {
-        "duration_seconds": duration,
+        "duration_seconds": proxy_duration,
+        "source_duration_seconds": source_duration,
         "size_bytes": size,
         "sha256": _sha256(proxy),
     }

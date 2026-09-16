@@ -9,6 +9,7 @@ from scripts.telegram_video_review_worker import (
     MAX_TELEGRAM_UPLOAD_BYTES,
     _load_upload_result,
     _video_bitrate_kbps,
+    build_review_proxy,
 )
 
 
@@ -49,3 +50,25 @@ def test_review_upload_result_fails_closed(tmp_path: Path, payload: dict):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(RuntimeError):
         _load_upload_result(path)
+
+
+def test_review_proxy_rejects_truncated_full_duration_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    source = tmp_path / "master.mp4"
+    source.write_bytes(b"master")
+
+    def fake_encode(_source, target, **_kwargs):
+        target.write_bytes(b"proxy")
+
+    durations = iter((1500.0, 1490.0))
+    monkeypatch.setattr(
+        "scripts.telegram_video_review_worker._encode_proxy", fake_encode
+    )
+    monkeypatch.setattr(
+        "scripts.telegram_video_review_worker._duration_seconds",
+        lambda _path: next(durations),
+    )
+
+    with pytest.raises(RuntimeError, match="duration does not match"):
+        build_review_proxy(source, tmp_path / "review")
