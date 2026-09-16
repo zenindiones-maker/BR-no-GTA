@@ -5,8 +5,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
-import re
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 import unicodedata
 
 from app.services.github_actions_artifact_service import GitHubActionsArtifactService
@@ -217,10 +216,17 @@ def execute_fresh_gta6_research_capability(
     if not str(query or "").strip():
         raise ValueError("fresh research query is required")
     selected_transport = transport or GitHubActionsFreshResearchTransport()
-    packet, execution_ref = selected_transport.execute(
-        query=query.strip(),
-        execution_id=auth.execution_id,
-    )
+    try:
+        packet, execution_ref = selected_transport.execute(
+            query=query.strip(),
+            execution_id=auth.execution_id,
+        )
+    except FreshResearchError:
+        raise
+    except Exception as exc:
+        raise FreshResearchError(
+            f"fresh research transport failed: {type(exc).__name__}"
+        ) from exc
     _validate_packet(packet, execution_id=auth.execution_id)
     return FreshResearchEvidence(
         status="PASS",
