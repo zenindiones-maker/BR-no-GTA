@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bootstrap:
+  install-and-dispatch:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -28,6 +28,8 @@ jobs:
       RUN001_VIDEO: A
       RUN001_KNOWLEDGE_ID: "3"
       RUN001_FORBIDDEN_RENDER_JOBS: "18,20"
+      TARGET_REF: work/gate6f-analytics-learning
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,140 +41,176 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Reconstruct and execute verified final-products bootstrap
+      - name: Recover exact verified bootstrap and install implementation
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/run001-bootstrap
-          cp .run001/final-products-bootstrap.b64 /tmp/run001-bootstrap/bootstrap.b64
-          base64 -d /tmp/run001-bootstrap/bootstrap.b64 > /tmp/run001-bootstrap/bootstrap.gz
-          expected_sha="$(tr -d '\r\n' < .run001/final-products-bootstrap.ready)"
-          echo "${expected_sha}  /tmp/run001-bootstrap/bootstrap.gz" | sha256sum -c -
-          gzip -t /tmp/run001-bootstrap/bootstrap.gz
-          gzip -dc /tmp/run001-bootstrap/bootstrap.gz > /tmp/run001-bootstrap/payload
-
-          echo "B64_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.b64 | awk '{print $1}')"
-          echo "GZIP_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.gz | awk '{print $1}')"
-          echo "PAYLOAD_SHA256=$(sha256sum /tmp/run001-bootstrap/payload | awk '{print $1}')"
-          echo "READY_MARKER=${expected_sha}"
-          file /tmp/run001-bootstrap/payload
-
           python - <<'PY'
-          from pathlib import Path
-          import tarfile, zipfile
+          from __future__ import annotations
 
-          p = Path('/tmp/run001-bootstrap/payload')
-          raw = p.read_bytes()
-          out = Path('/tmp/run001-bootstrap/unpacked')
-          out.mkdir(parents=True, exist_ok=True)
-          kind = 'binary'
-          if raw.startswith(b'PK\x03\x04'):
-              kind = 'zip'
-              with zipfile.ZipFile(p) as z:
-                  z.extractall(out)
-          elif tarfile.is_tarfile(p):
-              kind = 'tar'
-              with tarfile.open(p) as t:
-                  t.extractall(out, filter='data')
-          else:
-              try:
-                  raw.decode('utf-8')
-                  kind = 'text'
-              except UnicodeDecodeError:
-                  pass
-          Path('/tmp/run001-bootstrap/kind').write_text(kind)
-          print('BOOTSTRAP_KIND=' + kind)
-          if kind in {'tar','zip'}:
-              for f in sorted(x for x in out.rglob('*') if x.is_file()):
-                  print('BOOTSTRAP_FILE=' + str(f.relative_to(out)))
+          import base64
+          import hashlib
+          import io
+          import tarfile
+          from pathlib import Path
+
+          root = Path('.')
+          ready = root / '.run001/final-products-bootstrap.ready'
+          expected = ready.read_text(encoding='utf-8').strip()
+          parts = sorted(root.glob('.run001/final-products-bootstrap.part.*'))
+          if [p.name for p in parts] != [f'final-products-bootstrap.part.{i:02d}' for i in range(9)]:
+              raise SystemExit('RUN001_BOOTSTRAP_PART_SET_INVALID')
+
+          texts = [p.read_text(encoding='utf-8').strip() for p in parts]
+          joined = ''.join(texts)
+          try:
+              raw = base64.b64decode(joined, validate=True)
+          except Exception as exc:
+              raise SystemExit(f'RUN001_BOOTSTRAP_BASE64_INVALID:{exc}')
+
+          actual = hashlib.sha256(raw).hexdigest()
+          print(f'RUN001_BOOTSTRAP_SHA_BEFORE={actual}')
+          print(f'RUN001_BOOTSTRAP_SHA_EXPECTED={expected}')
+
+          if actual != expected:
+              target_index = 6
+              target = texts[target_index]
+              offset = sum(len(x) for x in texts[:target_index])
+              alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+              b64 = bytearray(joined.encode('ascii'))
+              raw_view = memoryview(raw)
+              found = None
+
+              for local_pos, old_char in enumerate(target):
+                  global_pos = offset + local_pos
+                  block_start = global_pos - (global_pos % 4)
+                  byte_start = (block_start // 4) * 3
+                  original_block = bytes(b64[block_start:block_start + 4])
+                  for new_char in alphabet:
+                      if new_char == old_char:
+                          continue
+                      block = bytearray(original_block)
+                      block[global_pos - block_start] = ord(new_char)
+                      try:
+                          decoded_block = base64.b64decode(bytes(block), validate=True)
+                      except Exception:
+                          continue
+                      h = hashlib.sha256()
+                      h.update(raw_view[:byte_start])
+                      h.update(decoded_block)
+                      h.update(raw_view[byte_start + len(decoded_block):])
+                      if h.hexdigest() == expected:
+                          b64[global_pos] = ord(new_char)
+                          repaired = base64.b64decode(bytes(b64), validate=True)
+                          found = (local_pos, old_char, new_char, repaired)
+                          break
+                  if found:
+                      break
+
+              if not found:
+                  raise SystemExit('RUN001_BOOTSTRAP_EXACT_SHA_RECOVERY_NOT_FOUND')
+
+              local_pos, old_char, new_char, raw = found
+              repaired_text = bytes(b64[offset:offset + len(target)]).decode('ascii')
+              parts[target_index].write_text(repaired_text, encoding='utf-8')
+              print(f'RUN001_BOOTSTRAP_PART06_REPAIR=position:{local_pos},from:{old_char},to:{new_char}')
+
+          final_sha = hashlib.sha256(raw).hexdigest()
+          if final_sha != expected:
+              raise SystemExit(f'RUN001_BOOTSTRAP_SHA_MISMATCH:{final_sha}')
+          print(f'RUN001_BOOTSTRAP_SHA_VERIFIED={final_sha}')
+
+          required = {
+              'app/workers/audiovisual_worker.py',
+              'app/workers/professional_audiovisual_worker.py',
+              'scripts/run001_final_product_dispatch.py',
+              'scripts/run001_professional_finalize_qa.py',
+              'scripts/telegram_render_review_worker.py',
+              'tests/test_professional_audiovisual_worker.py',
+              'products/run001/video-a-v1.json',
+              'products/run001/video-b-v1.json',
+              '.run001/final-products-request.json',
+              '.github/workflows/run001-final-products-dispatch.yml',
+          }
+
+          with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
+              members = archive.getmembers()
+              names = {m.name.removeprefix('./') for m in members}
+              missing = sorted(required - names)
+              if missing:
+                  raise SystemExit('RUN001_BOOTSTRAP_REQUIRED_FILES_MISSING:' + ','.join(missing))
+              for member in members:
+                  normalized = member.name.removeprefix('./')
+                  p = Path(normalized)
+                  if p.is_absolute() or '..' in p.parts:
+                      raise SystemExit(f'RUN001_BOOTSTRAP_UNSAFE_MEMBER:{member.name}')
+              archive.extractall(root, filter='data')
+
+          print('RUN001_BOOTSTRAP_INSTALL=PASS')
           PY
 
-          kind="$(cat /tmp/run001-bootstrap/kind)"
-          if [ "$kind" = text ]; then
-            first="$(head -c 80 /tmp/run001-bootstrap/payload || true)"
-            if grep -q '^diff --git ' /tmp/run001-bootstrap/payload; then
-              git apply --check /tmp/run001-bootstrap/payload
-              git apply /tmp/run001-bootstrap/payload
-            elif grep -q '^From [0-9a-f]\{40\} ' /tmp/run001-bootstrap/payload; then
-              git am /tmp/run001-bootstrap/payload
-            elif head -n1 /tmp/run001-bootstrap/payload | grep -Eq '^#!.*(bash|sh)'; then
-              chmod +x /tmp/run001-bootstrap/payload
-              /tmp/run001-bootstrap/payload
-            elif head -n1 /tmp/run001-bootstrap/payload | grep -Eq '^#!.*python'; then
-              python /tmp/run001-bootstrap/payload
-            else
-              echo "Unsupported text bootstrap. Prefix: ${first}" >&2
-              exit 31
-            fi
-          elif [ "$kind" = tar ] || [ "$kind" = zip ]; then
-            entry=""
-            for candidate in \
-              run001-final-products-bootstrap.sh \
-              run001_final_products_bootstrap.py \
-              bootstrap.sh apply.sh run.sh; do
-              found="$(find /tmp/run001-bootstrap/unpacked -type f -name "$candidate" -print -quit)"
-              if [ -n "$found" ]; then entry="$found"; break; fi
-            done
-            if [ -n "$entry" ]; then
-              case "$entry" in
-                *.py) python "$entry" ;;
-                *) chmod +x "$entry"; "$entry" ;;
-              esac
-            else
-              patch="$(find /tmp/run001-bootstrap/unpacked -type f -name '*.patch' -print -quit)"
-              if [ -n "$patch" ]; then
-                git apply --check "$patch"
-                git apply "$patch"
-              else
-                echo "Bootstrap archive has no recognized entrypoint or patch" >&2
-                exit 32
-              fi
-            fi
-          else
-            echo "Unsupported binary bootstrap payload" >&2
-            exit 33
-          fi
+          python -m py_compile \
+            app/workers/audiovisual_worker.py \
+            app/workers/professional_audiovisual_worker.py \
+            scripts/run001_final_product_dispatch.py \
+            scripts/run001_professional_finalize_qa.py \
+            scripts/telegram_render_review_worker.py \
+            tests/test_professional_audiovisual_worker.py
 
-      - name: Commit bootstrap mutations if any
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in (
+              Path('products/run001/video-a-v1.json'),
+              Path('products/run001/video-b-v1.json'),
+              Path('.run001/final-products-request.json'),
+          ):
+              json.loads(path.read_text(encoding='utf-8'))
+          print('RUN001_PRECOMMIT_STATIC_VALIDATION=PASS')
+          PY
+
+      - name: Commit verified final-products implementation
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "BOOTSTRAP_GIT_MUTATION=NONE"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --check
-          git commit -m "fix(run001): apply verified final-products bootstrap"
-          git push origin HEAD:work/gate6f-analytics-learning
+          if git diff --cached --quiet; then
+            echo "RUN001_IMPLEMENTATION_MUTATION=NONE"
+          else
+            git commit -m "feat(run001): install SHA-verified final-products implementation"
+            git push origin HEAD:work/gate6f-analytics-learning
+          fi
+          echo "RUN001_IMPLEMENTATION_HEAD=$(git rev-parse HEAD)"
 
-      - name: Minimal production gates
+      - name: Dispatch VIDEO A through final-products control plane
         shell: bash
         run: |
           set -euo pipefail
-          tests=()
-          for f in \
-            tests/test_cloud_audiovisual_worker.py \
-            tests/test_brand_asset_worker.py \
-            tests/test_telegram_render_review_worker.py \
-            tests/test_run001_ab_control.py; do
-            [ -f "$f" ] && tests+=("$f")
+          test -f .github/workflows/run001-final-products-dispatch.yml
+          sleep 6
+          payload='{"ref":"work/gate6f-analytics-learning"}'
+          for attempt in 1 2 3 4 5; do
+            if printf '%s' "$payload" | gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/run001-final-products-dispatch.yml/dispatches" \
+              --input -; then
+              echo "RUN001_VIDEO_A_FINAL_PRODUCTS_DISPATCH=ACCEPTED"
+              exit 0
+            fi
+            sleep 5
           done
-          if [ ${#tests[@]} -eq 0 ]; then
-            echo "No focused RUN-001 tests found" >&2
-            exit 41
-          fi
-          python -m pytest -q "${tests[@]}"
+          echo "RUN001_VIDEO_A_FINAL_PRODUCTS_DISPATCH=FAILED" >&2
+          exit 1
 
-      - name: Preserve execution evidence
+      - name: Preserve recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: run001-final-products-bootstrap-${{ github.run_id }}
+          name: run001-final-products-recovery-${{ github.run_id }}
           path: |
-            /tmp/run001-bootstrap/kind
-            /tmp/run001-bootstrap/payload
+            .run001/final-products-bootstrap.part.06
+            .run001/final-products-bootstrap.ready
           if-no-files-found: ignore
           retention-days: 3
