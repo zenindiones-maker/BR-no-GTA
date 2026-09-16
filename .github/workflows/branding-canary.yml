@@ -1,0 +1,101 @@
+name: Branding Canary - Do Not Publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - app/workers/brand_asset_worker.py
+      - scripts/run_branding_canary.py
+      - tests/test_branding_canary.py
+      - tests/test_telegram_brand_ffmpeg_integration.py
+      - tests/test_telegram_brand_render_pipeline.py
+      - .github/workflows/branding-canary.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branding-canary-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-branding-canary:
+    if: github.ref == 'refs/heads/work/gate6f-analytics-learning'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: .
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+      TELEGRAM_BRAND_ASSETS_JSON: ${{ secrets.TELEGRAM_BRAND_ASSETS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deterministic runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Verify branding regression suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_branding_canary.py \
+            tests/test_telegram_brand_render_pipeline.py \
+            tests/test_telegram_brand_ffmpeg_integration.py \
+            tests/test_channel_branding_standard.py
+
+      - name: Render real cloud branding canary and deliver review
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          python scripts/run_branding_canary.py | tee runtime-branding-canary.log
+          grep -Fx 'BRANDING_QA=PASS' runtime-branding-canary.log
+          grep -Fx 'TELEGRAM_REVIEW_DELIVERY=PASS' runtime-branding-canary.log
+          grep -Fx 'JOB18_UNCHANGED=YES' runtime-branding-canary.log
+
+      - name: Publish machine-readable evidence summary
+        if: success()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          summary_path = next(Path("runtime/output").glob("branding-canary-*/900001/branding-canary-summary.json"))
+          summary = json.loads(summary_path.read_text(encoding="utf-8"))
+          branding = summary["branding"]
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write("## BRANDING CANARY — NÃO PUBLICAR\n\n")
+              handle.write(f"- INTRO_ASSET_1_MATERIALIZED: PASS\n")
+              handle.write(f"- WATERMARK_ASSET_2_MATERIALIZED: PASS\n")
+              handle.write(f"- INTRO_COMPLETE_FROM_T0: PASS\n")
+              handle.write(f"- INTRO_AUDIO_PRESERVED: PASS\n")
+              handle.write(f"- WATERMARK_ABSENT_DURING_INTRO: PASS\n")
+              handle.write(f"- WATERMARK_BOTTOM_RIGHT_AFTER_INTRO: PASS\n")
+              handle.write(f"- INTRO_MEASURED_DURATION: {branding['intro_duration_seconds']}\n")
+              handle.write(f"- WATERMARK_START: {branding['watermark_start_seconds']}\n")
+              handle.write(f"- HUMAN_VISUAL_APPROVAL: PENDING\n")
+          PY
+
+      - name: Upload master and audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branding-canary-not-publish-${{ github.run_id }}
+          path: runtime/output/branding-canary-${{ github.run_id }}/900001/
+          if-no-files-found: error
+          retention-days: 30
