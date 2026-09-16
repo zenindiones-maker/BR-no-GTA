@@ -68,38 +68,22 @@ def test_zero_cost_routing_fails_closed_when_unknown_cost_nvidia_is_pinned():
     )
 
 
-def test_editorial_process_next_selects_primary_zero_cost_provider(monkeypatch):
-    captured = {}
-    real_route = server.route_harness_request
+def test_editorial_provider_boundary_selects_primary_zero_cost_provider():
+    routing, provider_authorization, ai_provider = server._route_editorial_provider()
 
-    def route(request):
-        captured["routing"] = real_route(request)
-        return captured["routing"]
-
-    def process(*, ai_provider, execution_context, goal_id=None):
-        captured["ai_provider"] = ai_provider
-        captured["execution_context"] = execution_context
-        captured["goal_id"] = goal_id
-        return {"status": "completed"}
-
-    monkeypatch.setattr(server, "route_harness_request", route)
-    monkeypatch.setattr(server, "process_next_editorial_queue_item", process)
-
-    payload = json.loads(server.br_editorial_process_next())
-    routing = captured["routing"]
     _assert_zero_cost_opencode_primary(routing)
-    assert captured["execution_context"]["issued_by"] == "deepseek_harness"
-    assert captured["execution_context"]["authorized_action"] == "EDITORIAL"
-    assert captured["execution_context"]["authorization_subject"] == "action:EDITORIAL"
-    assert captured["goal_id"] is None
-    harness_routing = payload["result"]["harness_routing"]
-    assert payload["result"]["status"] == "completed"
-    assert harness_routing["decision"]["selected_provider"] == "opencode"
-    assert harness_routing["decision"]["selected_model"] == "oc/big-pickle"
-    assert harness_routing["decision"]["fallback_allowed"] is False
-    assert harness_routing["decision"]["fallback_occurred"] is False
-    assert harness_routing["authorization_id"] == captured["execution_context"]["authorization_id"]
-    assert harness_routing["provider_authorization_id"]
+    assert routing.authorized_action == "EDITORIAL"
+    assert provider_authorization.issued_by == "deepseek_harness"
+    assert provider_authorization.authorized_action == "EDITORIAL"
+    assert provider_authorization.subject == "provider:opencode"
+    assert provider_authorization.status == "active"
+    assert provider_authorization.lineage["routing_id"] == routing.routing_id
+    assert provider_authorization.lineage["selected_capability_id"] == routing.selected_capability_id
+    assert provider_authorization.lineage["selected_provider"] == "opencode"
+    assert provider_authorization.lineage["selected_model"] == "oc/big-pickle"
+    assert ai_provider.__class__.__name__ == "OmniRouteAIProvider"
+    assert ai_provider.routing_decision == routing
+    assert ai_provider.authorization.authorization_id == provider_authorization.authorization_id
 
 
 def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
