@@ -251,10 +251,19 @@ def test_full_production_to_youtube_pipeline():
         )
     )
 
-    # 13. UPLOADED -> PUBLISHED
+    # 13. UPLOADED -> PUBLISHED. The test follows the hardened user-approval
+    # contract rather than minting a bare PUBLICATION authorization.
     publication_authorization = issue_harness_authorization(
         authorized_action="PUBLICATION",
         subject=f"youtube:publication:{publication['id']}",
+        lineage={
+            "routing_id": "test-full-production-publication",
+            "capability_id": "youtube.publish-public",
+            "publication_id": publication["id"],
+            "fallback_occurred": False,
+            "approval_source": "user",
+            "approval_operation": "br_youtube_pode_postar",
+        },
     )
     published = make_youtube_publication_public(
         publication["id"],
