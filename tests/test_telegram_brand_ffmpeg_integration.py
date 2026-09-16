@@ -16,6 +16,21 @@ def _run(command: list[str]) -> None:
         raise RuntimeError(completed.stderr or completed.stdout)
 
 
+def _sample_rgb(path: Path, timestamp: float, *, x: int, y: int) -> tuple[float, float, float]:
+    completed = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", str(timestamp),
+            "-i", str(path), "-vf", f"crop=8:8:{x}:{y}", "-frames:v", "1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    pixels = completed.stdout
+    assert len(pixels) == 8 * 8 * 3
+    return tuple(sum(pixels[channel::3]) / 64 for channel in range(3))
+
+
 @pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe required")
 def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tmp_path: Path):
     runtime_root = tmp_path / "runtime"
@@ -79,7 +94,10 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
                 "media_path": str(intro),
                 "mime_type": "video/mp4",
                 "duration_seconds": 1.0,
+                "has_video": True,
                 "has_audio": True,
+                "av_sync_verified": True,
+                "av_sync_delta_seconds": 0.0,
                 "sha256": "a" * 64,
                 "size_bytes": intro.stat().st_size,
             },
@@ -123,7 +141,30 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
     assert manifest["qa_status"] == "PASS"
     assert manifest["brand_asset_ids"] == [1, 2]
     assert manifest["brand_asset_types"] == ["intro", "watermark"]
-    assert manifest["brand_composition"] == "telegram-cloud-ffmpeg"
+    assert manifest["brand_composition"] == "telegram-cloud-ffmpeg-complete-intro-concat"
+    assert manifest["content_duration_semantics"] == "estimated_duration_is_content_base"
+    assert qa["checks"]["intro_present"] is True
+    assert qa["checks"]["intro_start_zero"] is True
+    assert qa["checks"]["intro_duration_measured"] is True
+    assert qa["checks"]["intro_has_video"] is True
+    assert qa["checks"]["intro_has_audio"] is True
+    assert qa["checks"]["intro_complete"] is True
+    assert qa["checks"]["intro_av_sync"] is True
+    assert qa["checks"]["intro_not_trimmed"] is True
+    assert qa["checks"]["intro_not_stretched"] is True
+    assert qa["checks"]["watermark_present"] is True
+    assert qa["checks"]["watermark_absent_during_intro"] is True
+    assert qa["checks"]["watermark_start_after_intro"] is True
+    assert qa["checks"]["watermark_aspect_ratio_preserved"] is True
+    assert qa["checks"]["watermark_safe_margin"] is True
+    assert qa["checks"]["watermark_scale_recorded"] is True
+    assert qa["branding"]["watermark_start_seconds"] == pytest.approx(1.0)
+    assert qa["branding"]["final_expected_duration_seconds"] == pytest.approx(4.0)
+    assert qa["duration_seconds"] == pytest.approx(4.0, abs=0.3)
+    intro_pixel = _sample_rgb(base, 0.5, x=264, y=124)
+    content_pixel = _sample_rgb(base, 1.5, x=264, y=124)
+    assert intro_pixel[0] > 180 and intro_pixel[1] < 80 and intro_pixel[2] < 80
+    assert all(channel > 160 for channel in content_pixel)
     assert probe["brand_assets"] == [
         {"asset_id": 1, "asset_type": "intro", "telegram_file_unique_id": "proof-intro", "sha256": "a" * 64},
         {"asset_id": 2, "asset_type": "watermark", "telegram_file_unique_id": "proof-watermark", "sha256": "b" * 64},

@@ -185,8 +185,8 @@ def test_cloud_materializer_resolves_getfile_downloads_and_emits_sanitized_hash_
     assert "file-id" not in rendered
 
 
-def test_brand_ffmpeg_stage_replaces_intro_window_audio_and_overlays_watermark_without_token():
-    command = _build_ffmpeg_command(
+def test_brand_ffmpeg_stage_prepends_complete_intro_then_watermarks_content_without_token():
+    command, evidence = _build_ffmpeg_command(
         base=Path("base.mp4"),
         output=Path("final.mp4"),
         assets=[
@@ -195,7 +195,9 @@ def test_brand_ffmpeg_stage_replaces_intro_window_audio_and_overlays_watermark_w
                 "asset_type": "intro",
                 "media_path": "/runner/intro.mp4",
                 "duration_seconds": 5.0,
+                "has_video": True,
                 "has_audio": True,
+                "av_sync_verified": True,
             },
             {
                 "asset_id": 2,
@@ -213,10 +215,20 @@ def test_brand_ffmpeg_stage_replaces_intro_window_audio_and_overlays_watermark_w
     joined = " ".join(command)
     assert "intro.mp4" in joined
     assert "watermark.png" in joined
-    assert "between(t,0,5.000000)" in joined
-    assert "volume=0" in joined
-    assert "amix=inputs=2" in joined
+    assert "concat=n=2:v=1:a=1" in joined
+    assert "trim=" not in joined
+    assert "atrim=" not in joined
+    assert "setpts=PTS-STARTPTS" in joined
+    assert "volume=0" not in joined
+    assert "amix=" not in joined
     assert "overlay=x=W-w-" in joined
-    assert "-t 1500.000000" in joined
+    assert "-t" not in command
+    assert evidence["intro_duration_seconds"] == 5.0
+    assert evidence["content_expected_duration_seconds"] == 1500.0
+    assert evidence["final_expected_duration_seconds"] == 1505.0
+    assert evidence["watermark_start_seconds"] == 5.0
+    assert evidence["watermark_scale"] == 0.16
+    assert evidence["watermark_position"] == "BOTTOM_RIGHT"
+    assert evidence["watermark_applied_to"] == "CONTENT_ONLY"
     assert "bot" not in joined.casefold()
     assert "token" not in joined.casefold()
