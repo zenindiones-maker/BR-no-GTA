@@ -28,12 +28,20 @@ def _execute_running_render_job(
     if job_id is None:
         raise ValueError("Render Job running não possui id persistido.")
     selected_executor = executor or NullRenderExecutor()
+    dispatch_metadata_persisted = False
+
+    def _persist_dispatch_metadata(github_execution):
+        nonlocal dispatch_metadata_persisted
+        update_render_job_payload(
+            int(job_id),
+            github_execution=github_execution,
+        )
+        dispatch_metadata_persisted = True
+
     try:
         execute_kwargs = {}
         if "on_dispatch" in signature(selected_executor.execute).parameters:
-            execute_kwargs["on_dispatch"] = lambda github_execution: update_render_job_payload(
-                int(job_id), github_execution=github_execution
-            )
+            execute_kwargs["on_dispatch"] = _persist_dispatch_metadata
         result = selected_executor.execute(running_job, **execute_kwargs)
         if not isinstance(result, RenderExecutionResult):
             raise TypeError("O executor deve retornar RenderExecutionResult.")
@@ -46,7 +54,7 @@ def _execute_running_render_job(
                 raise ValueError(
                     "RenderExecutionResult de sucesso precisa possuir output_path."
                 )
-            if result.github_execution:
+            if result.github_execution and not dispatch_metadata_persisted:
                 update_render_job_payload(
                     int(job_id),
                     github_execution=result.github_execution,
