@@ -1,0 +1,110 @@
+name: Telegram Video Review
+
+on:
+  workflow_run:
+    workflows: ["YouTube Private Upload Worker"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: telegram-video-review-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  deliver-review:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact triggering ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+
+      - name: Download exact private-upload result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: youtube-private-upload-result-*
+          path: runtime/telegram-review/upload-result
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Resolve exact render lineage
+        id: resolve
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          matches = sorted(Path("runtime/telegram-review/upload-result").rglob("youtube-upload-result.json"))
+          if len(matches) != 1:
+              raise SystemExit(f"expected one youtube-upload-result.json, found {len(matches)}")
+          result = json.loads(matches[0].read_text(encoding="utf-8"))
+          if result.get("status") != "UPLOADED":
+              raise SystemExit("private upload result is not UPLOADED")
+          evidence = result.get("artifact_evidence")
+          if not isinstance(evidence, dict) or evidence.get("qa_status") != "PASS":
+              raise SystemExit("private upload result lacks QA PASS evidence")
+          run_id = evidence.get("workflow_run_id")
+          publication_id = result.get("publication_id")
+          if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
+              raise SystemExit("render workflow_run_id missing")
+          if isinstance(publication_id, bool) or not isinstance(publication_id, int) or publication_id <= 0:
+              raise SystemExit("publication_id missing")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"render_run_id={run_id}\n")
+              handle.write(f"publication_id={publication_id}\n")
+          print(f"RENDER_RUN_ID={run_id}")
+          print(f"PUBLICATION_ID={publication_id}")
+          PY
+
+      - name: Download QA-passed render artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: render-output
+          path: runtime/telegram-review/render-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.render_run_id }}
+
+      - name: Deliver review proxy to Telegram
+        env:
+          PYTHONPATH: .
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python scripts/telegram_video_review_worker.py \
+            --artifact-root runtime/telegram-review/render-artifact \
+            --upload-result runtime/telegram-review/upload-result/youtube-upload-result.json \
+            --output-dir runtime/telegram-review/output
+
+      - name: Upload review evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-video-review-result-${{ steps.resolve.outputs.publication_id }}-${{ github.event.workflow_run.id }}
+          path: runtime/telegram-review/output/telegram-review-result.json
+          if-no-files-found: warn
+          retention-days: 30
