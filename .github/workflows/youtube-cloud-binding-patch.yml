@@ -1,0 +1,52 @@
+name: YouTube Cloud Executor Binding Patch
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply the staged deterministic patch
+        run: python scripts/apply_cloud_youtube_registry_patch.py
+
+      - name: Validate patched Python syntax
+        run: |
+          python -m py_compile \
+            app/services/global_capability_registry_base.py \
+            app/integrations/deepseek_harness/server.py
+
+      - name: Run focused Harness YouTube tests
+        run: |
+          python -m pip install -r requirements.txt
+          pytest -q tests/test_deepseek_harness.py -k 'youtube_publish or youtube_pode_postar'
+
+      - name: Remove one-shot patch infrastructure
+        run: |
+          rm -f scripts/apply_cloud_youtube_registry_patch.py
+          rm -f .github/workflows/youtube-cloud-binding-patch.yml
+
+      - name: Commit and push exact staged result
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(youtube): bind targeted private upload to cloud executor'
+          git push origin HEAD:work/gate6f-analytics-learning
