@@ -15,6 +15,9 @@ from app.services.github_actions_run_watcher import (
 from app.services.audiovisual_render_request_service import (
     build_audiovisual_render_request,
 )
+from app.services.media_artifact_locator_service import (
+    build_github_media_artifact_locator,
+)
 from app.services.render_artifact_validator import (
     RenderArtifactValidator,
 )
@@ -199,9 +202,20 @@ class GitHubActionsAudiovisualExecutor(AbstractRenderExecutor):
                 "artifact_expired": artifact.expired,
             }
         )
+        try:
+            locator = build_github_media_artifact_locator(
+                render_job,
+                enriched_execution,
+            )
+        except ValueError as exc:
+            return self._build_error_result(
+                f"Artifact remoto não pôde ser ligado ao RenderJob: {exc}",
+                github_execution=enriched_execution,
+            )
+        enriched_execution["artifact_locator"] = locator
         return RenderExecutionResult(
             success=True,
-            output_path=artifact.remote_uri,
+            output_path=locator["media_uri"],
             error=None,
             github_execution=enriched_execution,
         )
