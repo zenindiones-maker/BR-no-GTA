@@ -101,7 +101,7 @@ start_gateway() {
   fi
 
   cd "${ROOT}"
-  nohup "${PYTHON_BIN}" -u scripts/telegram_harness_gateway.py \
+  nohup "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py \
     >>"${LOG_FILE}" 2>&1 </dev/null &
   local pid=$!
   printf '%s\n' "${pid}" > "${PID_FILE}"
@@ -158,7 +158,7 @@ foreground_gateway() {
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
   cd "${ROOT}"
-  exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway.py
+  exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
 
 case "${1:-start}" in
