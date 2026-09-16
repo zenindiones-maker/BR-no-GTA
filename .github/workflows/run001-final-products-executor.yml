@@ -44,15 +44,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/run001-bootstrap
-          cat .run001/final-products-bootstrap.part.* > /tmp/run001-bootstrap/bootstrap.b64
+          cp .run001/final-products-bootstrap.b64 /tmp/run001-bootstrap/bootstrap.b64
           base64 -d /tmp/run001-bootstrap/bootstrap.b64 > /tmp/run001-bootstrap/bootstrap.gz
+          expected_sha="$(tr -d '\r\n' < .run001/final-products-bootstrap.ready)"
+          echo "${expected_sha}  /tmp/run001-bootstrap/bootstrap.gz" | sha256sum -c -
           gzip -t /tmp/run001-bootstrap/bootstrap.gz
           gzip -dc /tmp/run001-bootstrap/bootstrap.gz > /tmp/run001-bootstrap/payload
 
-          echo "PARTS_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.b64 | awk '{print $1}')"
+          echo "B64_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.b64 | awk '{print $1}')"
           echo "GZIP_SHA256=$(sha256sum /tmp/run001-bootstrap/bootstrap.gz | awk '{print $1}')"
           echo "PAYLOAD_SHA256=$(sha256sum /tmp/run001-bootstrap/payload | awk '{print $1}')"
-          echo "READY_MARKER=$(tr -d '\r\n' < .run001/final-products-bootstrap.ready)"
+          echo "READY_MARKER=${expected_sha}"
           file /tmp/run001-bootstrap/payload
 
           python - <<'PY'
