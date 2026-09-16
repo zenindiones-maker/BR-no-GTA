@@ -154,9 +154,43 @@ jobs:
           print("PRIVATE_UPLOAD=PASS")
           PY
 
-      - name: Remove OAuth files before artifact handling
+      - name: Remove OAuth files before review handling
         if: always()
         run: rm -rf runtime/youtube-upload/oauth
+
+      - name: Install FFmpeg for Telegram review proxy
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n 1
+
+      - name: Deliver mandatory Telegram review package
+        env:
+          PYTHONPATH: .
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python scripts/telegram_video_review_worker.py \
+            --artifact-root runtime/youtube-upload/render-artifact \
+            --upload-result runtime/youtube-upload/result/youtube-upload-result.json \
+            --output-dir runtime/youtube-upload/review
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("runtime/youtube-upload/result/youtube-upload-result.json").read_text())
+          review = result.get("telegram_review")
+          if not isinstance(review, dict) or review.get("status") != "DELIVERED":
+              raise SystemExit("Telegram review delivery evidence missing")
+          if str(review.get("publication_id")) != "${{ inputs.publication_id }}":
+              raise SystemExit("Telegram review publication identity mismatch")
+          print("TELEGRAM_REVIEW_DELIVERY=PASS")
+          PY
+
+      - name: Remove Telegram review proxy after delivery
+        if: always()
+        run: rm -rf runtime/youtube-upload/review
 
       - name: Upload lightweight execution result
         if: always()
