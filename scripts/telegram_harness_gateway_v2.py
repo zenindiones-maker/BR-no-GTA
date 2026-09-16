@@ -6,7 +6,14 @@ import time
 from typing import Any
 
 from app.main import initialize_application
-from app.services.telegram_harness_service import chat_under_harness
+from app.services.channel_branding_standard_service import (
+    get_channel_branding_readiness,
+    synchronize_channel_branding_standard_after_registration,
+)
+from app.services.telegram_harness_service import (
+    chat_under_harness,
+    list_governed_brand_assets,
+)
 from app.services.telegram_learning_service import (
     ingest_telegram_input_under_harness,
     list_recent_governed_telegram_inputs,
@@ -117,6 +124,19 @@ def _attachment_reply(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _branding_reply(readiness: dict[str, Any]) -> str:
+    return (
+        "CHANNEL_BRANDING_STANDARD=PASS\n"
+        f"STANDARD={readiness.get('standard')}\n"
+        f"ACTIVE={readiness.get('active')}\n"
+        f"READY={readiness.get('ready')}\n"
+        f"REQUIRED={','.join(readiness.get('required_asset_types') or [])}\n"
+        f"MISSING={','.join(readiness.get('missing_asset_types') or []) or 'NONE'}\n"
+        f"ENFORCEMENT={readiness.get('enforcement')}\n"
+        "RULE=Quando ACTIVE=True, todo novo vídeo falha fechado se não houver exatamente uma intro e uma marca d'água oficiais verificadas."
+    )
+
+
 def _execute_v2_command(text: str) -> str:
     parts = text.strip().split(maxsplit=1)
     command = parts[0].split("@", 1)[0].casefold()
@@ -126,14 +146,23 @@ def _execute_v2_command(text: str) -> str:
         if len(parts) != 2 or not parts[1].strip():
             raise ValueError("uso: /aprendeu <consulta>")
         return _execute_command(f"/memoria {parts[1].strip()}")
+    if command in {"/assets", "/branding", "/marca"}:
+        return _render_result(
+            {
+                "brand_assets": list_governed_brand_assets(),
+                "channel_standard": get_channel_branding_readiness(),
+            }
+        )
     if command in {"/help", "/start", "/ajuda"}:
         return (
             _help_text()
-            + "\n\nAprendizado:\n"
+            + "\n\nAprendizado e padrão do canal:\n"
             + "/inbox — mostra entradas Telegram capturadas pelo Harness\n"
             + "/aprendeu <consulta> — prova o que entrou no Knowledge Brain\n"
+            + "/assets — mostra intro/marca d'água e o padrão obrigatório do canal\n"
             + "Mensagens comuns são capturadas com proveniência antes do raciocínio. "
-            + "Ideias, temas, padrões, notas e notícias são aprendidos de forma tipada; notícias ficam marcadas como incertas até verificação."
+            + "Ideias, temas, padrões, notas e notícias são aprendidos de forma tipada; notícias ficam marcadas como incertas até verificação. "
+            + "Quando intro e marca d'água oficiais estiverem ambas verificadas, o padrão BR_NO_GTA_VIDEO_BRANDING_V1 é ativado e passa a ser obrigatório para novos vídeos."
         )
     return _execute_command(text)
 
@@ -171,6 +200,7 @@ def main() -> int:
     print("TELEGRAM_BRAND_ASSET_INTAKE=ENABLED", flush=True)
     print("TELEGRAM_TOTAL_INGRESS=ENABLED", flush=True)
     print("TELEGRAM_GTA6_LEARNING=ENABLED", flush=True)
+    print("TELEGRAM_CHANNEL_BRANDING_STANDARD=ENABLED", flush=True)
     if allowed_user_id is None:
         print(f"TELEGRAM_PAIRING=WAITING_TEXT:{PAIR_TEXT}", flush=True)
     else:
@@ -241,6 +271,9 @@ def main() -> int:
                                 update_id=update_id,
                                 caption=text,
                             )
+                            readiness = synchronize_channel_branding_standard_after_registration(
+                                registration_result=brand_result,
+                            )
                             learned = _ingest(
                                 user_id=user_id,
                                 chat_id=chat_id,
@@ -250,9 +283,15 @@ def main() -> int:
                                 attachment=verified,
                                 classification_override="brand_asset",
                             )
-                            reply = _asset_reply(brand_result) + "\n\n" + _learning_evidence(learned)
+                            reply = (
+                                _asset_reply(brand_result)
+                                + "\n\n"
+                                + _branding_reply(readiness)
+                                + "\n\n"
+                                + _learning_evidence(learned)
+                            )
                             print(
-                                f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={brand_result['asset']['id']}",
+                                f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={brand_result['asset']['id']} BRANDING_STANDARD_ACTIVE={readiness['active']}",
                                 flush=True,
                             )
                         else:
