@@ -42,9 +42,10 @@ def _resolve_exact_goal(publication: dict[str, Any]) -> tuple[dict[str, Any], di
 def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
     """Return publication readiness without granting authority or mutating state.
 
-    This is deliberately observation-only.  PUBLICATION_READY means the exact
-    private upload and its render lineage are technically ready for an explicit
-    user-originated ``br_youtube_pode_postar`` command; it is not approval.
+    PUBLICATION_READY now also proves that the exact private-upload version was
+    delivered to the governed Telegram review destination. Delivery is not user
+    approval: public authority still requires the explicit user-originated
+    ``br_youtube_pode_postar(publication_id)`` operation.
     """
     publication_id = _positive_int(publication_id, "publication_id")
     publication = get_youtube_publication(publication_id)
@@ -74,6 +75,7 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
     render_job_id: int | None = None
     artifact_identity: dict[str, Any] | None = None
     qa_status: str | None = None
+    telegram_review: dict[str, Any] | None = None
     try:
         goal, artifacts = _resolve_exact_goal(publication)
         goal_id = goal["goal_id"]
@@ -147,6 +149,31 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
             raise ValueError("artifact evidence size_bytes is invalid")
         if isinstance(duration_seconds, bool) or not isinstance(duration_seconds, (int, float)) or duration_seconds <= 0:
             raise ValueError("artifact evidence duration_seconds is invalid")
+
+        review = result.get("telegram_review")
+        if not isinstance(review, dict) or review.get("status") != "DELIVERED":
+            raise ValueError("Telegram video review was not delivered")
+        if review.get("publication_id") != publication_id or review.get("video_id") != video_id:
+            raise ValueError("Telegram review publication/video mismatch")
+        message_id = review.get("telegram_message_id")
+        if isinstance(message_id, bool) or not isinstance(message_id, int) or message_id <= 0:
+            raise ValueError("Telegram review message identity is invalid")
+        proxy = review.get("proxy")
+        if not isinstance(proxy, dict):
+            raise ValueError("Telegram review proxy evidence missing")
+        proxy_sha256 = proxy.get("sha256")
+        proxy_size = proxy.get("size_bytes")
+        proxy_duration = proxy.get("duration_seconds")
+        if not isinstance(proxy_sha256, str) or len(proxy_sha256) != 64:
+            raise ValueError("Telegram review proxy sha256 is invalid")
+        if isinstance(proxy_size, bool) or not isinstance(proxy_size, int) or proxy_size <= 0:
+            raise ValueError("Telegram review proxy size is invalid")
+        if isinstance(proxy_duration, bool) or not isinstance(proxy_duration, (int, float)) or proxy_duration <= 0:
+            raise ValueError("Telegram review proxy duration is invalid")
+        if abs(float(proxy_duration) - float(duration_seconds)) > max(1.0, float(duration_seconds) * 0.01):
+            raise ValueError("Telegram review proxy duration mismatch")
+        telegram_review = dict(review)
+
         qa_status = "PASS"
         artifact_identity = {
             "provider": locator["provider"],
@@ -183,9 +210,13 @@ def build_youtube_publication_preview(publication_id: int) -> dict[str, Any]:
         "upload_status": status,
         "qa_status": qa_status,
         "artifact_identity": artifact_identity,
+        "telegram_review": telegram_review,
+        "telegram_review_status": (
+            telegram_review.get("status") if isinstance(telegram_review, dict) else None
+        ),
         "analytics_eligible": status in {"uploaded", "published"} and bool(youtube_video_id),
         "PUBLICATION_READY": ready,
-        "reasons": reasons if reasons else ["uploaded_private_and_lineage_verified"],
+        "reasons": reasons if reasons else ["uploaded_private_review_delivered_and_lineage_verified"],
         "approval_granted": False,
         "public_transition_status": public_transition_status,
         "boundary": "READ_ONLY_NO_PUBLICATION_AUTHORITY",
