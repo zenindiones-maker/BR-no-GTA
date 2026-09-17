@@ -139,18 +139,38 @@ def _fetch_sources(config: dict[str, Any], *, cutoff: str) -> tuple[list[Researc
         for spec in specs:
             source_id = str(spec["source_id"])
             url = str(spec["url"])
+            candidates = [url, *[str(item) for item in (spec.get("fallback_urls") or [])]]
             retrieved_at = now()
             status_code = 0
             content = b""
             error = None
-            try:
-                response = session.get(url, timeout=45, allow_redirects=True)
-                status_code = response.status_code
-                content = response.content
-                if not 200 <= response.status_code < 400:
-                    error = f"HTTP {response.status_code}"
-            except requests.RequestException as exc:
-                error = exc.__class__.__name__
+            resolved_url = url
+            attempts: list[dict[str, Any]] = []
+            for candidate in candidates:
+                for attempt in range(1, 3):
+                    try:
+                        response = session.get(candidate, timeout=45, allow_redirects=True)
+                        status_code = response.status_code
+                        content = response.content
+                        resolved_url = str(response.url or candidate)
+                        error = None if 200 <= response.status_code < 400 else f"HTTP {response.status_code}"
+                    except requests.RequestException as exc:
+                        status_code = 0
+                        content = b""
+                        resolved_url = candidate
+                        error = exc.__class__.__name__
+                    attempts.append({
+                        "url": candidate,
+                        "attempt": attempt,
+                        "http_status": status_code,
+                        "error": error,
+                    })
+                    if error is None:
+                        break
+                    if attempt < 2:
+                        time.sleep(1.0)
+                if error is None:
+                    break
             digest = hashlib.sha256(content).hexdigest() if content else None
             required = bool(spec.get("required", True))
             if required and error:
@@ -158,15 +178,17 @@ def _fetch_sources(config: dict[str, Any], *, cutoff: str) -> tuple[list[Researc
             provenance = {
                 "source_id": source_id,
                 "url": url,
+                "resolved_url": resolved_url,
                 "retrieved_at": retrieved_at,
                 "research_cutoff_timestamp": cutoff,
                 "http_status": status_code,
                 "content_sha256": digest,
                 "fresh_retrieval": error is None,
+                "retrieval_attempts": attempts,
             }
             source = ResearchSource(
                 source_id=source_id,
-                url=url,
+                url=resolved_url,
                 source_type=str(spec["source_type"]),
                 source_authority=str(spec["source_authority"]),
                 original_source=bool(spec.get("original_source", False)),
