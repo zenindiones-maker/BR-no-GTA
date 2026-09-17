@@ -16,6 +16,11 @@ def job():
                 "segment_id": 6, "media_path": "source.mp4", "track": "V1",
                 "start_seconds": 0, "source_start_seconds": 2, "duration_seconds": 40,
             }]}],
+            "audio": [{
+                "media_path": "source.mp4", "track": "A1",
+                "start_seconds": 0, "source_start_seconds": 2,
+                "duration_seconds": 40, "volume": 1.0,
+                "fade_in_seconds": 0.0, "fade_out_seconds": 0.0,
+            }],
         },
     }
-
