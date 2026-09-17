@@ -17,6 +17,11 @@ from app.services.agent_office_harness_service import (
     AGENT_OFFICE_EXECUTOR_BINDING,
     execute_authorized_agent_office,
 )
+from app.services.gta6_fact_check_service import (
+    FACT_CHECK_CAPABILITY_ID,
+    FACT_CHECK_EXECUTOR_BINDING,
+    execute_authorized_gta6_fact_check,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -25,6 +30,7 @@ SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
 MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     PHONE_CAPABILITY_ID: PHONE_EXECUTOR_BINDING,
     AGENT_OFFICE_CAPABILITY_ID: AGENT_OFFICE_EXECUTOR_BINDING,
+    FACT_CHECK_CAPABILITY_ID: FACT_CHECK_EXECUTOR_BINDING,
 }
 
 
@@ -38,12 +44,29 @@ def execute_mcp_capability(
 ) -> CapabilityEvidence:
     """Dispatch only MCP-supported capability classes after Harness authorization.
 
-    SKILL keeps the existing bounded Codex/Addy path. Side-effecting EXECUTOR
-    capabilities are denied by default and must be explicitly allowlisted here.
-    No caller-provided module, callable, command, or executor binding is used.
+    Generic SKILL execution keeps the existing bounded skill path. gta6.fact-check
+    is explicitly intercepted and dispatched to its deterministic Registry-bound
+    executor so a caller-supplied skill executor can never replace the fact-check
+    implementation. Side-effecting EXECUTOR capabilities are denied by default
+    and must be explicitly allowlisted here.
     """
     capability_id = routing_decision.selected_capability_id
     implementation_type = implementation.get("type")
+
+    if capability_id == FACT_CHECK_CAPABILITY_ID:
+        if implementation_type != "SKILL":
+            raise PermissionError("gta6.fact-check implementation type mismatch")
+        if implementation.get("skill_id") != "gta6-fact-check":
+            raise PermissionError("gta6.fact-check skill identity mismatch")
+        if routing_decision.selected_executor_binding != FACT_CHECK_EXECUTOR_BINDING:
+            raise PermissionError("gta6.fact-check executor binding mismatch")
+        if authorization.authorized_action not in {"RESEARCH", "EDITORIAL"}:
+            raise PermissionError("gta6.fact-check authorization action mismatch")
+        return execute_authorized_gta6_fact_check(
+            authorization=authorization,
+            routing_decision=routing_decision,
+            payload=payload,
+        )
 
     if implementation_type == "SKILL" and implementation.get("skill_id"):
         return execute_capability(
