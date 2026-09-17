@@ -74,7 +74,8 @@ jobs:
           pytest -q \
             tests/test_run001_longform_editorial_controller.py \
             tests/test_professional_audiovisual_worker.py \
-            tests/test_semantic_ptbr_audio_qa.py
+            tests/test_semantic_ptbr_audio_qa.py \
+            tests/test_render_job_handoff_service.py
 
       - name: Canonicalize redundant section evidence lineage
         run: |
@@ -182,32 +183,78 @@ jobs:
           print('VIDEO_A_RENDER_JOB_VALIDATION=PASS')
           PY
 
+      - name: Hash governed RenderJob handoff
+        id: render_job_hash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          path = Path('runtime/run001/video-a-editorial/render-job.json')
+          if not path.is_file():
+              raise SystemExit('VIDEO_A_RENDER_JOB_HANDOFF_MISSING')
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+              stream.write(f"sha256={digest}\n")
+          print(f'VIDEO_A_RENDER_JOB_SHA256={digest}')
+          PY
+
+      - name: Publish governed RenderJob handoff artifact
+        id: render_job_handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-job-handoff-${{ github.run_id }}
+          path: runtime/run001/video-a-editorial/render-job.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Dispatch official Render Worker
+        env:
+          HANDOFF_ARTIFACT_ID: ${{ steps.render_job_handoff.outputs.artifact-id }}
+          HANDOFF_ARTIFACT_NAME: render-job-handoff-${{ github.run_id }}
+          PRODUCER_RUN_ID: ${{ github.run_id }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
           import os
           from pathlib import Path
+          from app.services.render_job_handoff_service import build_artifact_descriptor
+
           root = Path('runtime/run001/video-a-editorial')
-          job = json.loads((root / 'render-job.json').read_text(encoding='utf-8'))
-          compact = json.dumps(job, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
-          dispatch_bytes = len(compact.encode('utf-8'))
-          if dispatch_bytes > 64000:
-              raise SystemExit(f'VIDEO_A_RENDER_JOB_DISPATCH_ENVELOPE_TOO_LARGE:{dispatch_bytes}')
+          render_job_path = root / 'render-job.json'
+          job = json.loads(render_job_path.read_text(encoding='utf-8'))
+          descriptor = build_artifact_descriptor(
+              render_job_path=render_job_path,
+              job=job,
+              artifact_id=int(os.environ['HANDOFF_ARTIFACT_ID']),
+              artifact_name=os.environ['HANDOFF_ARTIFACT_NAME'],
+              producer_run_id=int(os.environ['PRODUCER_RUN_ID']),
+              producer_workflow='run001-longform-video-a.yml',
+              source_sha=os.environ['SOURCE_SHA'],
+          )
+          descriptor_compact = json.dumps(descriptor, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
           payload = {
               'ref': os.environ['TARGET_REF'],
               'inputs': {
-                  'render_job': compact,
+                  'render_job': '',
+                  'render_job_descriptor': descriptor_compact,
                   'brain_decision_id': job['brain_decision_id'],
                   'execution_id': job['execution_id'],
                   'authorized_action': job['authorized_action'],
               },
           }
+          (root / 'render-job-handoff-descriptor.json').write_text(
+              json.dumps(descriptor, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
           (root / 'render-dispatch-request.json').write_text(
               json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8'
           )
-          print(f'VIDEO_A_RENDER_JOB_DISPATCH_BYTES={dispatch_bytes}')
+          print(f"VIDEO_A_RENDER_JOB_DISPATCH_DESCRIPTOR_BYTES={len(descriptor_compact.encode('utf-8'))}")
+          print('VIDEO_A_RENDER_JOB_TRANSPORT_MODE=artifact')
+          print('VIDEO_A_RENDER_JOB_ARTIFACT_INTEGRITY=PREPARED')
           PY
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/dispatches" \
