@@ -140,8 +140,9 @@ jobs:
           root = Path('runtime/run001/video-a-editorial')
           job = json.loads((root / 'render-job.json').read_text(encoding='utf-8'))
           compact = json.dumps(job, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
-          if len(compact.encode('utf-8')) > 64000:
-              raise SystemExit(f'VIDEO_A_RENDER_JOB_DISPATCH_ENVELOPE_TOO_LARGE:{len(compact.encode("utf-8"))}')
+          dispatch_bytes = len(compact.encode('utf-8'))
+          if dispatch_bytes > 64000:
+              raise SystemExit(f'VIDEO_A_RENDER_JOB_DISPATCH_ENVELOPE_TOO_LARGE:{dispatch_bytes}')
           payload = {
               'ref': os.environ['TARGET_REF'],
               'inputs': {
@@ -154,7 +155,7 @@ jobs:
           (root / 'render-dispatch-request.json').write_text(
               json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8'
           )
-          print(f'VIDEO_A_RENDER_JOB_DISPATCH_BYTES={len(compact.encode("utf-8"))}')
+          print(f'VIDEO_A_RENDER_JOB_DISPATCH_BYTES={dispatch_bytes}')
           PY
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/dispatches" \
