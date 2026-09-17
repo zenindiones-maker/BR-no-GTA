@@ -7,6 +7,7 @@ import json
 import math
 import re
 import subprocess
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,11 @@ MIN_SCRIPT_WORDS = 2600
 MAX_SCRIPT_WORDS = 5200
 MAX_VISUAL_CUT_SECONDS = 12.0
 TARGET_VISUAL_CUT_SECONDS = (6.0, 8.0, 10.0, 7.0, 9.0, 11.0)
+VOICE_CALIBRATION_MAX_ATTEMPTS = 3
+VOICE_TARGET_TOLERANCE_RATIO = 0.02
+VOICE_TARGET_TOLERANCE_FLOOR_SECONDS = 20.0
+VOICE_NATURAL_RATE_MIN_PERCENT = -15
+VOICE_NATURAL_RATE_MAX_PERCENT = 15
 
 VOICE_RECORD = CapabilityRecord(
     capability_id=VOICE_CAPABILITY_ID,
@@ -275,6 +281,130 @@ async def _edge_tts_save(text: str, voice: str, rate: str, output: Path) -> None
     await communicator.save(str(output))
 
 
+def _parse_voice_rate_percent(rate: str) -> int:
+    match = re.fullmatch(r"([+-]?)([0-9]{1,3})%", rate.strip())
+    if not match:
+        raise WorkerError("VOICE_QA: narration rate must use signed percentage syntax")
+    value = int(match.group(2))
+    if match.group(1) == "-":
+        value = -value
+    return value
+
+
+def _format_voice_rate_percent(value: int) -> str:
+    return f"{value:+d}%"
+
+
+def _initial_calibrated_rate_percent(configured_rate: str) -> int:
+    requested = _parse_voice_rate_percent(configured_rate)
+    return max(VOICE_NATURAL_RATE_MIN_PERCENT, min(VOICE_NATURAL_RATE_MAX_PERCENT, requested))
+
+
+def _voice_target_tolerance_seconds(target_seconds: float) -> float:
+    return max(VOICE_TARGET_TOLERANCE_FLOOR_SECONDS, target_seconds * VOICE_TARGET_TOLERANCE_RATIO)
+
+
+def _voice_duration_is_acceptable(*, duration_seconds: float, target_seconds: float, rate_percent: int) -> bool:
+    if not (TARGET_MIN_SECONDS <= duration_seconds <= TARGET_MAX_SECONDS):
+        return False
+    if not (VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT):
+        return False
+    return abs(duration_seconds - target_seconds) <= _voice_target_tolerance_seconds(target_seconds)
+
+
+def _next_calibrated_rate_percent(*, current_rate_percent: int, actual_seconds: float, target_seconds: float) -> int:
+    if not math.isfinite(actual_seconds) or actual_seconds <= 0 or not math.isfinite(target_seconds) or target_seconds <= 0:
+        raise WorkerError("VOICE_QA: invalid duration for narration calibration")
+    current_speed = 1.0 + current_rate_percent / 100.0
+    required_speed = current_speed * actual_seconds / target_seconds
+    candidate = int(round((required_speed - 1.0) * 100.0))
+    if candidate < VOICE_NATURAL_RATE_MIN_PERCENT or candidate > VOICE_NATURAL_RATE_MAX_PERCENT:
+        raise WorkerError(
+            "VOICE_QA: target duration requires narration rate outside naturalness guard "
+            f"[{VOICE_NATURAL_RATE_MIN_PERCENT:+d}%,{VOICE_NATURAL_RATE_MAX_PERCENT:+d}%]: {candidate:+d}%"
+        )
+    if candidate == current_rate_percent:
+        candidate += 1 if actual_seconds > target_seconds else -1
+    if candidate < VOICE_NATURAL_RATE_MIN_PERCENT or candidate > VOICE_NATURAL_RATE_MAX_PERCENT:
+        raise WorkerError("VOICE_QA: bounded narration calibration cannot converge naturally")
+    return candidate
+
+
+def _synthesize_ptbr_attempt(
+    job: dict[str, Any],
+    voice_root: Path,
+    *,
+    voice: str,
+    rate_percent: int,
+    attempt: int,
+) -> tuple[list[dict[str, Any]], Path, float]:
+    attempt_root = voice_root / f"attempt-{attempt:02d}"
+    attempt_root.mkdir(parents=True, exist_ok=False)
+    rate = _format_voice_rate_percent(rate_percent)
+    section_results: list[dict[str, Any]] = []
+    concat_lines: list[str] = []
+
+    for index, section in enumerate(job["script_sections"], start=1):
+        raw_path = attempt_root / f"section-{index:02d}.raw.mp3"
+        normalized = attempt_root / f"section-{index:02d}.wav"
+        asyncio.run(_edge_tts_save(section["narration"], voice, rate, raw_path))
+        if not raw_path.is_file() or raw_path.stat().st_size <= 0:
+            raise WorkerError("VOICE_QA: TTS returned no audio file")
+        _run([
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(raw_path), "-af", "loudnorm=I=-16:LRA=11:TP=-1.5",
+            "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(normalized),
+        ], timeout=1200)
+        _, duration = _probe_audio(normalized)
+        metrics = _audio_metrics(normalized)
+        words = len(_words(section["narration"]))
+        words_per_minute = words * 60.0 / duration
+        checks = {
+            "real_file": normalized.is_file() and normalized.stat().st_size > 0,
+            "ptbr_voice_identity": voice.startswith("pt-BR-") and voice.endswith("Neural"),
+            "finite_positive_duration": duration > 0,
+            "no_clipping": metrics["max_volume_db"] <= -0.1,
+            "consistent_level": -35.0 <= metrics["mean_volume_db"] <= -10.0,
+            "no_abnormal_silence": metrics["longest_silence_seconds"] <= 5.0,
+            "speech_rate_plausible": 85.0 <= words_per_minute <= 220.0,
+        }
+        decode = subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", str(normalized), "-map", "0:a:0", "-f", "null", "-"],
+            capture_output=True,
+            timeout=600,
+        )
+        checks["full_audio_decode"] = decode.returncode == 0 and not decode.stderr.strip()
+        if not all(checks.values()):
+            raise WorkerError(f"VOICE_QA failed for {section['section_id']}: {checks}")
+        with normalized.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        section_results.append({
+            "section_id": section["section_id"],
+            "path": str(normalized.relative_to(voice_root.parent)),
+            "duration_seconds": duration,
+            "words": words,
+            "words_per_minute": words_per_minute,
+            "sha256": digest,
+            "metrics": metrics,
+            "checks": checks,
+        })
+        concat_lines.append(f"file '{normalized.name}'")
+        raw_path.unlink(missing_ok=True)
+
+    concatenation_file = attempt_root / "concat.txt"
+    concatenation_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+    master = attempt_root / "narration-master.wav"
+    _run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", str(concatenation_file), "-c", "copy", str(master),
+    ], timeout=1200)
+    _, master_duration = _probe_audio(master)
+    section_duration = sum(item["duration_seconds"] for item in section_results)
+    if abs(master_duration - section_duration) > max(0.5, section_duration * 0.002):
+        raise WorkerError("VOICE_QA: narration master duration mismatch")
+    return section_results, master, master_duration
+
+
 def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     routing = route_harness_request(
         HarnessRoutingRequest(
@@ -315,72 +445,69 @@ def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[s
 
     config = job["narration"]
     voice = config["voice"]
-    rate = str(config.get("rate") or "-15%")
+    configured_rate = str(config.get("rate") or "-15%")
+    target_duration = _finite(job.get("estimated_duration_seconds"), "VOICE_QA target duration", minimum=TARGET_MIN_SECONDS)
+    if target_duration > TARGET_MAX_SECONDS:
+        raise WorkerError("VOICE_QA: target duration outside professional target")
+    rate_percent = _initial_calibrated_rate_percent(configured_rate)
     voice_root = root / "voice"
     voice_root.mkdir(parents=True, exist_ok=False)
+    calibration_attempts: list[dict[str, Any]] = []
     section_results: list[dict[str, Any]] = []
-    concatenation_file = voice_root / "concat.txt"
-    concat_lines: list[str] = []
+    master: Path | None = None
+    master_duration = math.nan
 
-    for index, section in enumerate(job["script_sections"], start=1):
-        raw_path = voice_root / f"section-{index:02d}.raw.mp3"
-        normalized = voice_root / f"section-{index:02d}.wav"
-        asyncio.run(_edge_tts_save(section["narration"], voice, rate, raw_path))
-        if not raw_path.is_file() or raw_path.stat().st_size <= 0:
-            raise WorkerError("VOICE_QA: TTS returned no audio file")
-        _run([
-            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(raw_path), "-af", "loudnorm=I=-16:LRA=11:TP=-1.5",
-            "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(normalized),
-        ], timeout=1200)
-        probe, duration = _probe_audio(normalized)
-        metrics = _audio_metrics(normalized)
-        words = len(_words(section["narration"]))
-        words_per_minute = words * 60.0 / duration
-        checks = {
-            "real_file": normalized.is_file() and normalized.stat().st_size > 0,
-            "ptbr_voice_identity": voice.startswith("pt-BR-") and voice.endswith("Neural"),
-            "finite_positive_duration": duration > 0,
-            "no_clipping": metrics["max_volume_db"] <= -0.1,
-            "consistent_level": -35.0 <= metrics["mean_volume_db"] <= -10.0,
-            "no_abnormal_silence": metrics["longest_silence_seconds"] <= 5.0,
-            "speech_rate_plausible": 85.0 <= words_per_minute <= 220.0,
-        }
-        decode = subprocess.run(
-            ["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", str(normalized), "-map", "0:a:0", "-f", "null", "-"],
-            capture_output=True,
-            timeout=600,
+    for attempt in range(1, VOICE_CALIBRATION_MAX_ATTEMPTS + 1):
+        section_results, attempt_master, measured_duration = _synthesize_ptbr_attempt(
+            job,
+            voice_root,
+            voice=voice,
+            rate_percent=rate_percent,
+            attempt=attempt,
         )
-        checks["full_audio_decode"] = decode.returncode == 0 and not decode.stderr.strip()
-        if not all(checks.values()):
-            raise WorkerError(f"VOICE_QA failed for {section['section_id']}: {checks}")
-        with normalized.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        section_results.append({
-            "section_id": section["section_id"],
-            "path": str(normalized.relative_to(root)),
-            "duration_seconds": duration,
-            "words": words,
-            "words_per_minute": words_per_minute,
-            "sha256": digest,
-            "metrics": metrics,
-            "checks": checks,
+        acceptable = _voice_duration_is_acceptable(
+            duration_seconds=measured_duration,
+            target_seconds=target_duration,
+            rate_percent=rate_percent,
+        )
+        calibration_attempts.append({
+            "attempt": attempt,
+            "rate": _format_voice_rate_percent(rate_percent),
+            "rate_percent": rate_percent,
+            "duration_seconds": measured_duration,
+            "target_duration_seconds": target_duration,
+            "absolute_error_seconds": abs(measured_duration - target_duration),
+            "tolerance_seconds": _voice_target_tolerance_seconds(target_duration),
+            "within_professional_ceiling": TARGET_MIN_SECONDS <= measured_duration <= TARGET_MAX_SECONDS,
+            "within_natural_rate_guard": VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT,
+            "accepted": acceptable,
         })
-        concat_lines.append(f"file '{normalized.name}'")
-        raw_path.unlink(missing_ok=True)
+        if acceptable:
+            master = attempt_master
+            master_duration = measured_duration
+            break
 
-    concatenation_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
-    master = voice_root / "narration-master.wav"
-    _run([
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concatenation_file), "-c", "copy", str(master),
-    ], timeout=1200)
-    _, master_duration = _probe_audio(master)
-    section_duration = sum(item["duration_seconds"] for item in section_results)
-    if abs(master_duration - section_duration) > max(0.5, section_duration * 0.002):
-        raise WorkerError("VOICE_QA: narration master duration mismatch")
+        if attempt == VOICE_CALIBRATION_MAX_ATTEMPTS:
+            break
+        next_rate = _next_calibrated_rate_percent(
+            current_rate_percent=rate_percent,
+            actual_seconds=measured_duration,
+            target_seconds=target_duration,
+        )
+        shutil.rmtree(attempt_master.parent)
+        rate_percent = next_rate
+
+    if master is None or not math.isfinite(master_duration):
+        last = calibration_attempts[-1]
+        raise WorkerError(
+            "VOICE_QA: bounded narration calibration failed "
+            f"after {VOICE_CALIBRATION_MAX_ATTEMPTS} attempts; "
+            f"last_duration={last['duration_seconds']:.3f}s target={target_duration:.3f}s "
+            f"rate={last['rate']}"
+        )
     if not (TARGET_MIN_SECONDS <= master_duration <= TARGET_MAX_SECONDS):
         raise WorkerError(f"VOICE_QA: final narration duration outside professional target: {master_duration:.3f}s")
+
     with master.open("rb") as stream:
         master_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
     result = {
@@ -394,6 +521,20 @@ def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[s
         "authority": authorization.authority,
         "provider": "edge-tts",
         "voice": voice,
+        "configured_rate": configured_rate,
+        "effective_rate": _format_voice_rate_percent(rate_percent),
+        "effective_rate_percent": rate_percent,
+        "calibration_attempt_count": len(calibration_attempts),
+        "calibration_attempts": calibration_attempts,
+        "target_duration_seconds": target_duration,
+        "target_tolerance_seconds": _voice_target_tolerance_seconds(target_duration),
+        "voice_naturalness_guards": {
+            "status": "PASS",
+            "bounded_retries": len(calibration_attempts) <= VOICE_CALIBRATION_MAX_ATTEMPTS,
+            "rate_within_guard": VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT,
+            "duration_near_editorial_target": abs(master_duration - target_duration) <= _voice_target_tolerance_seconds(target_duration),
+            "professional_hard_ceiling_preserved": master_duration <= TARGET_MAX_SECONDS,
+        },
         "locale": "pt-BR",
         "language": "pt-BR",
         "track": "A1",
