@@ -120,6 +120,7 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         caption = (
             f"{review_label}\nvideo_id={job.get('video_id')}\nrender_job_id={job.get('render_job_id')}\n"
             f"execution_id={job.get('execution_id')}\nasset_ids=1,2\nrun_id={run_id}\n"
+            f"intro={branding.get('intro_duration_seconds')}s\n"
             "status=AGUARDANDO SUA AVALIAÇÃO\nPUBLICATION_AUTHORITY=NONE"
         )
 
