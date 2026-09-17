@@ -128,7 +128,7 @@ jobs:
       - name: Install validation runtime dependencies
         run: |
           set -euo pipefail
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt pytest
       - name: Validate job before media processing
         env:
           RENDER_JOB: ${{ inputs.render_job }}
@@ -201,7 +201,7 @@ jobs:
           git ls-files --error-unmatch video-engine/backend/vedit/render.py
           python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
           python -m unittest discover -s tests -p test_professional_audiovisual_worker.py -v
-          pytest -q tests/test_semantic_ptbr_audio_qa.py
+          python -m pytest -q tests/test_semantic_ptbr_audio_qa.py
       - name: Setup ingestion JavaScript runtime
         uses: denoland/setup-deno@v2
         with:
