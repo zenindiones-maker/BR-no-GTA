@@ -1,0 +1,15 @@
+{
+  "schema": "run001-e2e-canary-request/v1",
+  "render_job_id": 910001,
+  "video_id": 910001,
+  "content_item_id": 910001,
+  "script_id": 910001,
+  "idea_id": 910001,
+  "goal_id": "run001-e2e-canary-v1",
+  "execution_id": "run001-e2e-canary-v1",
+  "estimated_duration_seconds": 45.0,
+  "source_url": "https://www.youtube.com/watch?v=QdBZY2fkU-0",
+  "source_start_seconds": 5.0,
+  "review_only": true,
+  "youtube_publication": false
+}
