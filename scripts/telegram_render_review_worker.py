@@ -11,6 +11,9 @@ import requests
 from scripts.telegram_video_review_worker import _sha256, _single_mp4, build_review_proxy
 
 
+READY_FOR_HUMAN_REVIEW = "READY_FOR_HUMAN_REVIEW"
+
+
 def _load_object(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -113,6 +116,7 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
             f"versão={product_version}\n"
             f"{gate_lines}\n"
             "HUMAN_EDITORIAL_APPROVAL=PENDING\n"
+            f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
             "PUBLICATION_AUTHORITY=NONE"
         )
     else:
@@ -121,7 +125,8 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
             f"{review_label}\nvideo_id={job.get('video_id')}\nrender_job_id={job.get('render_job_id')}\n"
             f"execution_id={job.get('execution_id')}\nasset_ids=1,2\nrun_id={run_id}\n"
             f"intro={branding.get('intro_duration_seconds')}s\n"
-            "status=AGUARDANDO SUA AVALIAÇÃO\nPUBLICATION_AUTHORITY=NONE"
+            f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
+            "PUBLICATION_AUTHORITY=NONE"
         )
 
     message = _send_video(token=token, chat_id=review_chat_id, video=proxy, caption=caption)
@@ -140,6 +145,7 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         "asset_ids": [1, 2],
         "gates": gates,
         "human_editorial_approval": "PENDING" if is_professional else None,
+        "human_review_state": READY_FOR_HUMAN_REVIEW,
         "review_chat_id": review_chat_id,
         "telegram_message_id": message["message_id"],
         "telegram_video_file_id": telegram_video.get("file_id"),
@@ -167,6 +173,7 @@ def main() -> int:
     if result.get("product_label") in {"A", "B"}:
         print(f"VIDEO_{result['product_label']}_TELEGRAM_REVIEW_DELIVERY=PASS")
         print("HUMAN_EDITORIAL_APPROVAL=PENDING")
+    print(f"HUMAN_REVIEW_STATE={result['human_review_state']}")
     print(f"TELEGRAM_MESSAGE_ID={result['telegram_message_id']}")
     print("PUBLICATION_AUTHORITY=NONE")
     return 0
