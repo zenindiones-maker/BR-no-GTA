@@ -90,8 +90,9 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         _gate(folder, "editorial-qa.json", "EDITORIAL_QA")
         _gate(folder, "voice-qa.json", "VOICE_QA")
         _gate(folder, "edit-qa.json", "EDIT_QA")
+        _gate(folder, "no-artificial-padding-qa.json", "NO_PADDING_QA")
         _gate(folder, "audiovisual-qa.json", "AUDIOVISUAL_QA")
-        gates.update(EDITORIAL_QA="PASS", VOICE_QA="PASS", EDIT_QA="PASS")
+        gates.update(EDITORIAL_QA="PASS", VOICE_QA="PASS", EDIT_QA="PASS", NO_PADDING_QA="PASS")
         if branding.get("intro_duration_seconds", 0) <= 0:
             raise RuntimeError("INTRO_QA requires the intact official intro")
         if branding.get("watermark_start_seconds") != branding.get("intro_duration_seconds"):
@@ -106,7 +107,7 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
     if is_professional:
         review_label = f"VIDEO {product_label} — REVISÃO — NÃO PUBLICAR"
         gate_lines = "\n".join(f"{name}=PASS" for name in (
-            "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA"
+            "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "NO_PADDING_QA", "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA"
         ))
         caption = (
             f"{review_label}\n"

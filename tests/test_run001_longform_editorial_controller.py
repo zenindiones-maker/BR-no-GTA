@@ -12,6 +12,10 @@ from scripts.run001_longform_no_padding_qa import validate_no_padding
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO_A = ROOT / ".run001" / "video-a-investigative-longform.json"
+RENDER_WORKER = ROOT / ".github" / "workflows" / "render-worker.yml"
+LONGFORM_BRIDGE = ROOT / ".github" / "workflows" / "run001-longform-video-a.yml"
+FINALIZER = ROOT / "scripts" / "run001_professional_finalize_qa.py"
+TELEGRAM_REVIEW = ROOT / "scripts" / "telegram_render_review_worker.py"
 
 
 def _config():
@@ -97,3 +101,24 @@ def test_no_padding_qa_rejects_source_reuse():
         })
     with pytest.raises(RuntimeError, match="source windows were reused or overlapped"):
         validate_no_padding(job=job, edit_qa={"duration_seconds": 1200.0, "semantic_links": links})
+
+
+def test_official_render_worker_enforces_no_padding_before_final_qa_and_telegram():
+    workflow = RENDER_WORKER.read_text(encoding="utf-8")
+    assert "run001_longform_no_padding_qa.py" in workflow
+    assert workflow.index("run001_longform_no_padding_qa.py") < workflow.index("run001_professional_finalize_qa.py")
+    finalizer = FINALIZER.read_text(encoding="utf-8")
+    assert "no-artificial-padding-qa.json" in finalizer
+    assert 'gates["NO_PADDING_QA"]' in finalizer
+    telegram = TELEGRAM_REVIEW.read_text(encoding="utf-8")
+    assert '"no-artificial-padding-qa.json", "NO_PADDING_QA"' in telegram
+
+
+def test_video_a_live_bridge_runs_editorial_controller_then_official_render_worker():
+    workflow = LONGFORM_BRIDGE.read_text(encoding="utf-8")
+    assert "scripts/run001_longform_editorial_controller.py" in workflow
+    assert ".run001/video-a-investigative-longform.json" in workflow
+    assert "actions/workflows/render-worker.yml/dispatches" in workflow
+    assert "run001-e2e-canary" not in workflow
+    assert "'render_job_id': 920101" in workflow
+    assert "'youtube_publication': False" in workflow

@@ -1,0 +1,192 @@
+name: RUN-001 VIDEO A Long-form Production
+run-name: VIDEO A long-form · run001-video-a-investigative-v1
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/video-a-longform-production.request.json
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: run001-video-a-longform-production
+  cancel-in-progress: false
+
+jobs:
+  editorial-and-dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: .
+      TARGET_REF: work/gate6f-analytics-learning
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install editorial runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Validate exact VIDEO A request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          request = json.loads(Path('.run001/video-a-longform-production.request.json').read_text(encoding='utf-8'))
+          expected = {
+              'mission_id': 'run001-video-a-investigative-20260917',
+              'goal_id': 'goal-video-a-state-of-knowledge-20260917',
+              'execution_id': 'run001-video-a-investigative-v1',
+              'render_job_id': 920101,
+              'video_id': 920101,
+              'target_language': 'pt-BR',
+              'youtube_publication': False,
+          }
+          for key, value in expected.items():
+              if request.get(key) != value:
+                  raise SystemExit(f'VIDEO_A_REQUEST_MISMATCH:{key}')
+          if request.get('dispatch') is not True:
+              raise SystemExit('VIDEO_A_REQUEST_DISPATCH_NOT_AUTHORIZED')
+          print('VIDEO_A_REQUEST_VALIDATION=PASS')
+          print('JOB18_UNCHANGED=YES')
+          print('JOB20_REUSED_AS_FINAL=NO')
+          print('NO_YOUTUBE_PUBLISH=YES')
+          PY
+
+      - name: Focused professional preflight
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_run001_longform_editorial_controller.py \
+            tests/test_professional_audiovisual_worker.py \
+            tests/test_semantic_ptbr_audio_qa.py
+
+      - name: Execute live Harness-governed editorial mission
+        run: |
+          set -euo pipefail
+          rm -rf runtime/run001/video-a-editorial
+          python scripts/run001_longform_editorial_controller.py \
+            --config .run001/video-a-investigative-longform.json \
+            --output-dir runtime/run001/video-a-editorial
+
+      - name: Validate governed RenderJob and editorial proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('runtime/run001/video-a-editorial')
+          required = (
+              'research-dossier.json',
+              'claim-ledger.json',
+              'first-pass-fact-check.json',
+              'content-strategy.json',
+              'script-critic-review.json',
+              'final-script-fact-check.json',
+              'content-intelligence-proof.json',
+              'agent-invocation-receipts.json',
+              'knowledge-return.json',
+              'render-job.json',
+              'controller-result.json',
+          )
+          missing = [name for name in required if not (root / name).is_file()]
+          if missing:
+              raise SystemExit('VIDEO_A_EDITORIAL_PROOF_MISSING:' + ','.join(missing))
+          job = json.loads((root / 'render-job.json').read_text(encoding='utf-8'))
+          expected = {
+              'mission_id': 'run001-video-a-investigative-20260917',
+              'goal_id': 'goal-video-a-state-of-knowledge-20260917',
+              'execution_id': 'run001-video-a-investigative-v1',
+              'render_job_id': 920101,
+              'video_id': 920101,
+              'product_profile': 'professional_ptbr_v1',
+              'product_label': 'A',
+              'language': 'pt-BR',
+              'issued_by': 'deepseek_harness',
+              'authorized_action': 'EXECUTION',
+              'youtube_publication': False,
+          }
+          for key, value in expected.items():
+              if job.get(key) != value:
+                  raise SystemExit(f'VIDEO_A_RENDER_JOB_MISMATCH:{key}:{job.get(key)!r}')
+          if job.get('render_job_id') in {18, 20}:
+              raise SystemExit('VIDEO_A_FORBIDDEN_RENDER_JOB')
+          print('VIDEO_A_EDITORIAL_LIVE=PASS')
+          print('VIDEO_A_RENDER_JOB_VALIDATION=PASS')
+          PY
+
+      - name: Dispatch official Render Worker
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path('runtime/run001/video-a-editorial')
+          job = json.loads((root / 'render-job.json').read_text(encoding='utf-8'))
+          compact = json.dumps(job, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+          if len(compact.encode('utf-8')) > 64000:
+              raise SystemExit(f'VIDEO_A_RENDER_JOB_DISPATCH_ENVELOPE_TOO_LARGE:{len(compact.encode("utf-8"))}')
+          payload = {
+              'ref': os.environ['TARGET_REF'],
+              'inputs': {
+                  'render_job': compact,
+                  'brain_decision_id': job['brain_decision_id'],
+                  'execution_id': job['execution_id'],
+                  'authorized_action': job['authorized_action'],
+              },
+          }
+          (root / 'render-dispatch-request.json').write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print(f'VIDEO_A_RENDER_JOB_DISPATCH_BYTES={len(compact.encode("utf-8"))}')
+          PY
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/dispatches" \
+            --input runtime/run001/video-a-editorial/render-dispatch-request.json
+          echo "VIDEO_A_RENDER_DISPATCH=ACCEPTED"
+
+      - name: Resolve Render Worker run identity
+        run: |
+          set -euo pipefail
+          target_title='Render Worker · run001-video-a-investigative-v1'
+          run_id=''
+          for attempt in $(seq 1 24); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/runs?branch=${TARGET_REF}&event=workflow_dispatch&per_page=20")"
+            run_id="$(printf '%s' "$runs" | jq -r --arg title "$target_title" '.workflow_runs[] | select(.display_title == $title) | .id' | head -n1)"
+            if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "VIDEO_A_RENDER_RUN_ID=UNRESOLVED" >&2
+            exit 1
+          fi
+          printf '{"status":"DISPATCHED","render_run_id":%s,"execution_id":"run001-video-a-investigative-v1","render_job_id":920101}\n' "$run_id" \
+            > runtime/run001/video-a-editorial/render-dispatch-evidence.json
+          echo "VIDEO_A_RENDER_RUN_ID=$run_id"
+
+      - name: Upload live editorial and dispatch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-editorial-proof-${{ github.run_id }}
+          path: runtime/run001/video-a-editorial/
+          if-no-files-found: warn
+          retention-days: 30

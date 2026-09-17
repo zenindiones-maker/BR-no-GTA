@@ -1,4 +1,5 @@
 name: Render Worker
+run-name: Render Worker · ${{ inputs.execution_id }}
 
 on:
   workflow_dispatch:
@@ -174,6 +175,12 @@ jobs:
           python scripts/semantic_ptbr_audio_qa.py \
             --artifact-root runtime/render/output
 
+      - name: Prove long-form edit has no artificial padding
+        run: |
+          set -euo pipefail
+          python scripts/run001_longform_no_padding_qa.py \
+            --artifact-root runtime/render/output
+
       - name: Finalize professional QA gates
         run: |
           set -euo pipefail
@@ -213,6 +220,7 @@ jobs:
             runtime/render/output/**/voice-qa.json
             runtime/render/output/**/semantic-ptbr-audio-qa.json
             runtime/render/output/**/edit-qa.json
+            runtime/render/output/**/no-artificial-padding-qa.json
             runtime/render/output/**/audiovisual-qa.json
             runtime/render/output/**/research-evidence.json
             runtime/render/output/**/fact-check.json

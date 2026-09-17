@@ -52,6 +52,23 @@ def main() -> int:
     )
     gates["SEMANTIC_PTBR_QA"] = "PASS" if semantic_ok else "FAIL"
 
+    no_padding = load(folder / "no-artificial-padding-qa.json")
+    no_padding_required = (
+        "FINAL_DURATION_COMPATIBLE_WITH_RENDER_JOB",
+        "NO_ARTIFICIAL_PADDING",
+        "NO_REPEATED_SOURCE_WINDOWS",
+        "NO_OVERLAPPING_SOURCE_WINDOWS",
+    )
+    no_padding_ok = (
+        no_padding.get("status") == "PASS"
+        and no_padding.get("LONG_FORM_REQUIRED") == "YES"
+        and all(no_padding.get(key) == "PASS" for key in no_padding_required)
+        and no_padding.get("job18_unchanged") is True
+        and no_padding.get("job20_reused_as_final") is False
+        and no_padding.get("no_youtube_publish") is True
+    )
+    gates["NO_PADDING_QA"] = "PASS" if no_padding_ok else "FAIL"
+
     render_qa = load(folder / "render-qa.json")
     if render_qa.get("status") != "PASS":
         raise RuntimeError("final branded render QA is not PASS")
@@ -78,6 +95,7 @@ def main() -> int:
         gates=gates,
         spoken_audio_language="pt-BR",
         spoken_audio_semantic_qa=semantic,
+        longform_no_padding_qa=no_padding,
         human_editorial_approval="PENDING",
         youtube_publication_authority="BLOCKED_PENDING_HUMAN_APPROVAL",
     )
@@ -86,12 +104,13 @@ def main() -> int:
     )
     print("PROFESSIONAL_FINAL_QA=PASS")
     for key in (
-        "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "SEMANTIC_PTBR_QA",
+        "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "SEMANTIC_PTBR_QA", "NO_PADDING_QA",
         "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA",
     ):
         print(f"VIDEO_{job.get('product_label')}_{key}=PASS")
     print("TARGET_LANGUAGE=pt-BR")
     print("SPOKEN_AUDIO_PT_BR=PASS")
+    print("NO_ARTIFICIAL_PADDING=PASS")
     print("FINAL_MIX_CONTAINS_PT_BR_NARRATION=PASS")
     print("HUMAN_EDITORIAL_APPROVAL=PENDING")
     print("YOUTUBE_PUBLICATION=BLOCKED")
