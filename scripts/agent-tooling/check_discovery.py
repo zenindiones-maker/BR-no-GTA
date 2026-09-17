@@ -11,11 +11,14 @@ import time
 from app.services.global_capability_registry_base import ADDY_SKILLS
 
 PLUGIN_ID = "agent-skills@agent-skills"
+SKILL_NAME_PREFIXES = (f"{PLUGIN_ID}:", "agent-skills:")
 
 
 def _normalized_skill_name(raw_name: str) -> str:
-    prefix = f"{PLUGIN_ID}:"
-    return raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
+    for prefix in SKILL_NAME_PREFIXES:
+        if raw_name.startswith(prefix):
+            return raw_name[len(prefix):]
+    return raw_name
 
 
 def main() -> None:
