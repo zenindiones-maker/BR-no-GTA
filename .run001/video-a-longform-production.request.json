@@ -1,0 +1,11 @@
+{
+  "mission_id": "run001-video-a-investigative-20260917",
+  "goal_id": "goal-video-a-state-of-knowledge-20260917",
+  "execution_id": "run001-video-a-investigative-v1",
+  "render_job_id": 920101,
+  "video_id": 920101,
+  "target_language": "pt-BR",
+  "youtube_publication": false,
+  "dispatch": true,
+  "request_version": 1
+}
