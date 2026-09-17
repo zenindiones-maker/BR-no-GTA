@@ -1,0 +1,575 @@
+{
+  "product_label": "A",
+  "product_version": "investigative-v1",
+  "mission_id": "run001-video-a-investigative-20260917",
+  "goal_id": "goal-video-a-state-of-knowledge-20260917",
+  "execution_id": "run001-video-a-investigative-v1",
+  "brain_decision_id": "harness-video-a-investigative-v1",
+  "render_job_id": 920101,
+  "video_id": 920101,
+  "content_item_id": 920101,
+  "script_id": 920101,
+  "idea_id": 920101,
+  "target_language": "pt-BR",
+  "target_wpm": 125,
+  "youtube_publication": false,
+  "research_questions": [
+    "Qual é o estado público atual e oficialmente confirmado de GTA VI?",
+    "Quais informações vieram de reporting ou vazamentos e qual é a força da evidência?",
+    "Quais alegações antigas foram substituídas por anúncios mais recentes?",
+    "O que o material oficial permite inferir sobre mundo, personagens e tecnologia sem transformar observação em confirmação?",
+    "Quais rumores relevantes devem ser removidos por insuficiência de evidência?"
+  ],
+  "queries": [
+    "Rockstar GTA VI release date November 19 2026 official",
+    "Take-Two GTA VI November 19 2026 PS5 Xbox Series X|S",
+    "Rockstar GTA VI Jason Lucia Leonida Vice City official",
+    "Rockstar GTA VI Extended Look August 27 2026 PlayStation 5",
+    "Rockstar 2022 GTA VI network intrusion leak reporting",
+    "Digital Foundry GTA VI Extended Look 30fps RTGI analysis",
+    "GTA VI community mapping project reconstruction uncertainty"
+  ],
+  "sources": [
+    {
+      "source_id": "S1_ROCKSTAR_CURRENT",
+      "url": "https://www.rockstargames.com/VI",
+      "title": "Grand Theft Auto VI - Rockstar Games",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games",
+      "authority_for_render": "official",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S2_ROCKSTAR_CURRENT_DATE",
+      "url": "https://www.rockstargames.com/br/newswire/article/ak3ak31a49a221/grand-theft-auto-vi-is-now-set-to-launch-november-19-2026",
+      "title": "Grand Theft Auto VI será lançado dia 19 de novembro de 2026",
+      "source_type": "official-newswire",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "published_at": "2025-11-06",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S3_ROCKSTAR_PREORDER",
+      "url": "https://www.rockstargames.com/newswire/article/5171972o3ak5oa/pre-order-grand-theft-auto-vi-on-june-25",
+      "title": "Pre-Order Grand Theft Auto VI on June 25",
+      "source_type": "official-newswire",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "published_at": "2026-06-24",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S4_TAKE2_Q1_FY27",
+      "url": "https://www.take2games.com/ir/news/take-two-interactive-software-inc-reports-results-fiscal-first-6",
+      "title": "Take-Two Interactive Software, Inc. Reports Results for Fiscal First Quarter 2027",
+      "source_type": "corporate-release",
+      "source_authority": "Take-Two Interactive",
+      "original_source": true,
+      "independent_group": "take-two-corporate",
+      "published_at": "2026-08-07",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S5_ROCKSTAR_EXTENDED_LOOK",
+      "url": "https://www.rockstargames.com/VI/an-extended-look",
+      "title": "Grand Theft Auto VI: An Extended Look",
+      "source_type": "official-video-page",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "published_at": "2026-08-27",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S6_ROCKSTAR_LEONIDA",
+      "url": "https://www.rockstargames.com/VI/only-in-leonida",
+      "title": "Only in Leonida",
+      "source_type": "official-page",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S7_ROCKSTAR_MEDIA",
+      "url": "https://www.rockstargames.com/VI/media",
+      "title": "Grand Theft Auto VI Official Media",
+      "source_type": "official-media-library",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S8_ROCKSTAR_TRAILER2",
+      "url": "https://www.rockstargames.com/newswire/article/3928aaa9471o3a/grand-theft-auto-vi-watch-trailer-2-now",
+      "title": "Grand Theft Auto VI — Watch Trailer 2 Now",
+      "source_type": "official-newswire",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "published_at": "2025-05-06",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S9_ROCKSTAR_OLD_DATE",
+      "url": "https://www.rockstargames.com/newswire/article/258aa538o412ok/grand-theft-auto-vi-is-now-coming-may-26-2026",
+      "title": "Grand Theft Auto VI is Now Coming May 26, 2026",
+      "source_type": "official-historical",
+      "source_authority": "Rockstar Games",
+      "original_source": true,
+      "independent_group": "rockstar-official",
+      "published_at": "2025-05-02",
+      "research_lane": "official",
+      "required": true
+    },
+    {
+      "source_id": "S10_SECURITYWEEK_2022_LEAK",
+      "url": "https://www.securityweek.com/rockstar-games-confirms-breach-leading-gta-6-leak/",
+      "title": "Rockstar Games Confirms Breach Leading to GTA 6 Leak",
+      "source_type": "journalism",
+      "source_authority": "SecurityWeek",
+      "original_source": true,
+      "independent_group": "securityweek",
+      "published_at": "2022-09-19",
+      "publicly_reported_leak": true,
+      "research_lane": "reporting",
+      "required": true
+    },
+    {
+      "source_id": "S11_GUARDIAN_2022_LEAK",
+      "url": "https://www.theguardian.com/games/2022/sep/19/grand-theft-auto-6-leak-who-hacked-rockstar-and-what-was-stolen",
+      "title": "Grand Theft Auto 6 leak: who hacked Rockstar and what was stolen?",
+      "source_type": "journalism",
+      "source_authority": "The Guardian",
+      "original_source": true,
+      "independent_group": "guardian",
+      "published_at": "2022-09-19",
+      "publicly_reported_leak": true,
+      "research_lane": "reporting",
+      "required": true
+    },
+    {
+      "source_id": "S12_DF_EXTENDED_LOOK",
+      "url": "https://shows.acast.com/digital-foundry-direct-weekly/episodes/grand-theft-auto-6-extended-look-the-most-impressive-real-ti",
+      "title": "Digital Foundry Direct: GTA 6 Extended Look technical analysis",
+      "source_type": "technical-analysis",
+      "source_authority": "Digital Foundry",
+      "original_source": true,
+      "independent_group": "digital-foundry",
+      "published_at": "2026-08-29",
+      "research_lane": "technical-community",
+      "required": true
+    },
+    {
+      "source_id": "S13_COMMUNITY_MAP",
+      "url": "https://www.reddit.com/r/GTA6/comments/1p8ow14/inside_gta_vi_mapping_the_community_rebuilding/",
+      "title": "Inside GTA VI Mapping: community reconstruction methods",
+      "source_type": "community-analysis",
+      "source_authority": "GTA VI Mapping community",
+      "original_source": false,
+      "independent_group": "community-mapping",
+      "community_source": true,
+      "research_lane": "technical-community",
+      "required": false
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "C01_CURRENT_DATE",
+      "statement": "A data pública atual anunciada para Grand Theft Auto VI é 19 de novembro de 2026.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S1_ROCKSTAR_CURRENT", "S2_ROCKSTAR_CURRENT_DATE", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27"],
+      "stances": {},
+      "weights": {"S1_ROCKSTAR_CURRENT": 1.0, "S2_ROCKSTAR_CURRENT_DATE": 1.0, "S3_ROCKSTAR_PREORDER": 1.0, "S4_TAKE2_Q1_FY27": 1.0},
+      "evidence_summary": "Rockstar e Take-Two apresentam 19 de novembro de 2026 como data vigente.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C02_PLATFORMS",
+      "statement": "As plataformas de lançamento atualmente anunciadas são PlayStation 5 e Xbox Series X|S.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S1_ROCKSTAR_CURRENT", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "As páginas atuais de Rockstar e Take-Two listam PS5 e Xbox Series X|S.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C03_SINGLE_PLAYER",
+      "statement": "A Rockstar descreve GTA VI como uma experiência single-player.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S3_ROCKSTAR_PREORDER"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "O anúncio de pré-venda descreve explicitamente uma experiência single-player.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C04_JASON_LUCIA",
+      "statement": "Jason Duval e Lucia Caminos são os protagonistas centrais apresentados oficialmente pela Rockstar.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S6_ROCKSTAR_LEONIDA", "S8_ROCKSTAR_TRAILER2"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "A página oficial apresenta biografias de Jason e Lucia e o Trailer 2 estrutura a história em torno da dupla.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C05_SETTING",
+      "statement": "GTA VI se passa em Vice City e no estado de Leonida, conforme material oficial atual.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S1_ROCKSTAR_CURRENT", "S6_ROCKSTAR_LEONIDA", "S8_ROCKSTAR_TRAILER2"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "Rockstar identifica Vice City e Leonida diretamente em páginas e materiais oficiais.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C06_LOCATIONS",
+      "statement": "A Rockstar já nomeou regiões de Leonida como Leonida Keys, Grassrivers, Port Gellhorn, Ambrosia e Mount Kalaga National Park.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S6_ROCKSTAR_LEONIDA", "S7_ROCKSTAR_MEDIA"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "As páginas oficiais de Leonida e mídia identificam múltiplas localidades do estado.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C07_EXTENDED_LOOK",
+      "statement": "O vídeo oficial An Extended Look, publicado em 27 de agosto de 2026, foi descrito pela Rockstar como capturado inteiramente de footage in-game no PlayStation 5.",
+      "classification": "OFFICIAL_CONFIRMED",
+      "source_refs": ["S5_ROCKSTAR_EXTENDED_LOOK"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "A própria Rockstar informa data, origem in-game e captura em PS5.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C08_2022_INTRUSION",
+      "statement": "Em setembro de 2022, a Rockstar reconheceu uma intrusão de rede que expôs material inicial de desenvolvimento do próximo Grand Theft Auto.",
+      "classification": "PUBLICLY_REPORTED_LEAK",
+      "source_refs": ["S10_SECURITYWEEK_2022_LEAK", "S11_GUARDIAN_2022_LEAK"],
+      "stances": {},
+      "weights": {"S10_SECURITYWEEK_2022_LEAK": 0.95, "S11_GUARDIAN_2022_LEAK": 0.95},
+      "evidence_summary": "Veículos independentes reproduziram e contextualizaram a declaração pública da Rockstar sobre a intrusão.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C09_DATE_HISTORY",
+      "statement": "Antes da data atual, a Rockstar havia anunciado 26 de maio de 2026 e posteriormente substituiu esse cronograma por 19 de novembro de 2026.",
+      "classification": "PRIMARY_SOURCE_SUPPORTED",
+      "source_refs": ["S9_ROCKSTAR_OLD_DATE", "S2_ROCKSTAR_CURRENT_DATE"],
+      "stances": {},
+      "weights": {},
+      "evidence_summary": "Duas publicações oficiais preservam a mudança histórica do cronograma.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C10_OLD_DATE_CURRENT",
+      "statement": "A data atual de lançamento de GTA VI ainda é 26 de maio de 2026.",
+      "classification": "OUTDATED",
+      "source_refs": ["S9_ROCKSTAR_OLD_DATE", "S2_ROCKSTAR_CURRENT_DATE"],
+      "stances": {"S9_ROCKSTAR_OLD_DATE": "supporting", "S2_ROCKSTAR_CURRENT_DATE": "contradicting"},
+      "weights": {"S9_ROCKSTAR_OLD_DATE": 0.4, "S2_ROCKSTAR_CURRENT_DATE": 1.0},
+      "evidence_summary": "A página histórica sustentava a data antiga, mas uma publicação oficial posterior a substituiu.",
+      "script_usage": "NOT_USED",
+      "final_status": "REMOVED_OUTDATED"
+    },
+    {
+      "claim_id": "C11_DF_30FPS",
+      "statement": "A análise técnica da Digital Foundry do Extended Look reporta o material mostrado em 30 quadros por segundo no PS5.",
+      "classification": "ANALYTICAL_INFERENCE",
+      "source_refs": ["S12_DF_EXTENDED_LOOK", "S5_ROCKSTAR_EXTENDED_LOOK"],
+      "stances": {},
+      "weights": {"S12_DF_EXTENDED_LOOK": 0.9, "S5_ROCKSTAR_EXTENDED_LOOK": 0.7},
+      "evidence_summary": "Rockstar confirma a origem em PS5; Digital Foundry mede e analisa performance do material, sem transformar isso em especificação final de lançamento.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C12_DF_LIGHTING",
+      "statement": "A Digital Foundry identificou no Extended Look sinais de RTGI e reflexos com ray tracing, como análise técnica do footage e não como especificação oficial da Rockstar.",
+      "classification": "ANALYTICAL_INFERENCE",
+      "source_refs": ["S12_DF_EXTENDED_LOOK", "S5_ROCKSTAR_EXTENDED_LOOK"],
+      "stances": {},
+      "weights": {"S12_DF_EXTENDED_LOOK": 0.9, "S5_ROCKSTAR_EXTENDED_LOOK": 0.7},
+      "evidence_summary": "A inferência vem de análise especializada do material oficial capturado em PS5.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C13_60FPS_CONFIRMED",
+      "statement": "A Rockstar confirmou um modo de 60 fps para GTA VI no lançamento.",
+      "classification": "INSUFFICIENT_EVIDENCE",
+      "source_refs": ["S12_DF_EXTENDED_LOOK"],
+      "stances": {"S12_DF_EXTENDED_LOOK": "insufficient"},
+      "weights": {"S12_DF_EXTENDED_LOOK": 0.0},
+      "evidence_summary": "Análise técnica não equivale a anúncio oficial de modo de performance.",
+      "script_usage": "NOT_USED",
+      "final_status": "REMOVED_INSUFFICIENT"
+    },
+    {
+      "claim_id": "C14_EXACT_MAP_SIZE",
+      "statement": "O tamanho final exato do mapa de GTA VI já foi confirmado pela Rockstar em quilômetros quadrados.",
+      "classification": "INSUFFICIENT_EVIDENCE",
+      "source_refs": ["S13_COMMUNITY_MAP"],
+      "stances": {"S13_COMMUNITY_MAP": "insufficient"},
+      "weights": {"S13_COMMUNITY_MAP": 0.0},
+      "evidence_summary": "Reconstruções comunitárias não são confirmação oficial de área final exata.",
+      "script_usage": "NOT_USED",
+      "final_status": "REMOVED_INSUFFICIENT"
+    },
+    {
+      "claim_id": "C15_PC_DATE",
+      "statement": "Os materiais oficiais atuais consultados listam PS5 e Xbox Series X|S e não apresentam uma data oficial de lançamento para PC.",
+      "classification": "ANALYTICAL_INFERENCE",
+      "source_refs": ["S1_ROCKSTAR_CURRENT", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27"],
+      "stances": {},
+      "weights": {"S1_ROCKSTAR_CURRENT": 0.9, "S3_ROCKSTAR_PREORDER": 0.9, "S4_TAKE2_Q1_FY27": 0.9},
+      "evidence_summary": "A inferência é limitada às páginas atuais verificadas e não afirma que uma versão de PC nunca existirá.",
+      "script_usage": "USED",
+      "final_status": "APPROVED_FOR_SCRIPT"
+    },
+    {
+      "claim_id": "C16_ONLINE_DETAILS",
+      "statement": "A Rockstar já detalhou oficialmente a estrutura completa do futuro multiplayer específico de GTA VI.",
+      "classification": "INSUFFICIENT_EVIDENCE",
+      "source_refs": ["S3_ROCKSTAR_PREORDER"],
+      "stances": {"S3_ROCKSTAR_PREORDER": "insufficient"},
+      "weights": {"S3_ROCKSTAR_PREORDER": 0.0},
+      "evidence_summary": "A comunicação atual sobre GTA VI não sustenta uma descrição completa de um multiplayer futuro específico do jogo.",
+      "script_usage": "NOT_USED",
+      "final_status": "REMOVED_INSUFFICIENT"
+    }
+  ],
+  "historical_changes": [
+    {
+      "topic": "release_date",
+      "previous": "2026-05-26",
+      "current": "2026-11-19",
+      "source_refs": ["S9_ROCKSTAR_OLD_DATE", "S2_ROCKSTAR_CURRENT_DATE"],
+      "resolution": "OUTDATED_VALUE_REPLACED_BY_NEWER_OFFICIAL_ANNOUNCEMENT"
+    }
+  ],
+  "disagreements": [
+    {
+      "disagreement_id": "D01_MAP_SCALE",
+      "positions": [
+        {"position": "community reconstructions estimate scale from visible geography", "origin": "S13_COMMUNITY_MAP"},
+        {"position": "Rockstar has not published an exact final square-kilometer figure in the consulted official sources", "origin": "S1_ROCKSTAR_CURRENT"}
+      ],
+      "evidence_refs": ["S13_COMMUNITY_MAP", "S1_ROCKSTAR_CURRENT"],
+      "origin": "research-swarm",
+      "reviewer": "gta6-fact-check",
+      "harness_resolution": "Present community mapping only as reconstruction methodology; remove any exact final map-size claim."
+    }
+  ],
+  "content_strategy": {
+    "status": "PASS",
+    "selected_title": "GTA 6: o que realmente sabemos — fatos, vazamentos, tecnologia e rumores separados",
+    "objective": "Entregar um panorama investigativo atualizado de GTA VI, mostrando a origem e a força da evidência em vez de misturar confirmação oficial com rumor.",
+    "hook": "Começar pela mudança mais fácil de errar — a data atual — para mostrar por que fonte e recência importam.",
+    "retention_structure": "Método -> estado atual -> personagens/mundo -> evidência visual -> tecnologia -> leaks -> mapa/rumor -> plataformas -> síntese.",
+    "thumbnail_strategy": "Jason e Lucia em material oficial, selo visual FATO / LEAK / RUMOR; sem promessas não verificadas.",
+    "seo_entities": ["GTA 6", "GTA VI", "Rockstar Games", "Lucia Caminos", "Jason Duval", "Vice City", "Leonida"],
+    "youtube_publication": false
+  },
+  "media_sources": [
+    {
+      "asset_ref": "remote://media-worker/gta6-extended-look-official-20260827",
+      "source_url": "https://www.youtube.com/watch?v=tJbzMqJGH4k",
+      "provenance": "official Rockstar Games YouTube channel",
+      "usage": "official in-game visual source only"
+    }
+  ],
+  "narration": {
+    "language": "pt-BR",
+    "voice": "pt-BR-AntonioNeural",
+    "rate": "-25%"
+  },
+  "script_sections": [
+    {
+      "section_id": "A01",
+      "heading": "O problema não é falta de informação — é separar informação de ruído",
+      "role": "hook",
+      "classification": "OFFICIAL_FACT",
+      "claim_ids": ["C01_CURRENT_DATE", "C09_DATE_HISTORY"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S2_ROCKSTAR_CURRENT_DATE", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27", "S9_ROCKSTAR_OLD_DATE"],
+      "narration": "Se você tentar responder hoje qual é a situação real de GTA 6 usando apenas memória, é fácil começar o vídeo errado. A própria data de lançamento mostra por quê. Em maio de 2025, a Rockstar anunciou 26 de maio de 2026. Depois, em novembro daquele ano, publicou uma nova atualização e substituiu esse cronograma por 19 de novembro de 2026. Em 2026, a página oficial, a abertura das pré-vendas e a comunicação corporativa da Take-Two continuam apontando para 19 de novembro. Então nosso ponto de partida é simples: não vamos tratar uma informação como atual só porque ela foi verdadeira em algum momento. Neste dossiê, cada afirmação importante foi ligada a uma fonte, classificada pela força da evidência e rechecada antes de entrar na narração. Quando a Rockstar confirma, vamos chamar de confirmação oficial. Quando uma conclusão vem de análise técnica, vamos dizer que é análise. Quando a origem é vazamento publicamente reportado, ela continuará sendo vazamento. E quando não houver base suficiente, o dado fica de fora. Essa disciplina muda bastante o retrato de GTA 6, porque o jogo já tem muito material oficial, mas ainda existe um volume enorme de especulação circulando como se fosse fato.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 0.0, "end_seconds": 100.0, "reason": "abertura oficial do Extended Look contextualiza o estado atual do projeto"}]
+    },
+    {
+      "section_id": "A02",
+      "heading": "O estado oficial do projeto em setembro de 2026",
+      "role": "body",
+      "classification": "STORE_CURRENT",
+      "claim_ids": ["C01_CURRENT_DATE", "C02_PLATFORMS", "C03_SINGLE_PLAYER"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S2_ROCKSTAR_CURRENT_DATE", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27"],
+      "narration": "No corte de pesquisa desta missão, o quadro oficial é objetivo. Grand Theft Auto VI está anunciado para 19 de novembro de 2026, com lançamento listado para PlayStation 5 e Xbox Series X e S. A Rockstar também descreveu o produto atual como uma experiência single-player. Isso é diferente de tentar prever tudo que a empresa poderá anunciar depois. Nosso Claim Ledger registra somente o que as páginas atuais sustentam. A comunicação de pré-venda reforça a data, detalha pré-carregamento e edições comerciais, enquanto a Take-Two inclui GTA VI em sua linha futura com a mesma data e as mesmas famílias de consoles. Essa concordância entre a fonte criadora e a documentação corporativa é importante porque reduz o risco de uma página isolada estar desatualizada. Também estabelece uma fronteira editorial: não há motivo para preencher lacunas com supostas datas de PC, modos de performance ou detalhes de um multiplayer futuro se esses itens não foram apresentados com o mesmo nível de confirmação. Em outras palavras, o que sabemos hoje não é pouco; apenas precisa ser separado do que gostaríamos de saber. Essa separação vai guiar o restante do vídeo, especialmente quando entrarmos em mapa, sistemas, tecnologia e vazamentos.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 100.0, "end_seconds": 200.0, "reason": "material oficial contemporâneo sustenta a descrição do produto atual"}]
+    },
+    {
+      "section_id": "A03",
+      "heading": "Jason e Lucia: o que a Rockstar realmente apresentou",
+      "role": "body",
+      "classification": "OFFICIAL_FACT",
+      "claim_ids": ["C04_JASON_LUCIA", "C05_SETTING"],
+      "evidence_ids": ["S6_ROCKSTAR_LEONIDA", "S8_ROCKSTAR_TRAILER2", "S1_ROCKSTAR_CURRENT"],
+      "narration": "Jason Duval e Lucia Caminos não são nomes extraídos de rumor. A Rockstar criou páginas próprias para os dois e estruturou o material promocional em torno da relação entre eles. Jason é descrito como alguém criado perto de golpistas e criminosos, que passou pelo Exército e acabou trabalhando para traficantes locais nas Keys. Lucia aparece com uma história marcada por prisão, família e uma ambição muito concreta de construir uma vida melhor. O Trailer 2 coloca a dupla dentro de uma conspiração criminal que atravessa Leonida e apresenta a dependência mútua como parte central da história. Aqui existe um detalhe editorial importante: biografia oficial não é a mesma coisa que saber como todas as missões funcionam. Podemos falar de passado, motivação e relação porque a Rockstar publicou isso. Não podemos transformar uma cena curta em confirmação de uma mecânica inteira. Essa diferença ajuda a evitar um erro comum em análises de trailers: observar uma ação, imaginar o sistema por trás dela e depois narrar a imaginação como recurso confirmado. Para este vídeo, personagens entram como fatos oficiais; qualquer leitura sobre estrutura de campanha, alternância de protagonista ou consequência sistêmica só aparece quando for explicitamente marcada como inferência, e não como promessa da Rockstar.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 200.0, "end_seconds": 300.0, "reason": "trechos oficiais focados em personagens e narrativa"}]
+    },
+    {
+      "section_id": "A04",
+      "heading": "Vice City é só o centro de um estado maior",
+      "role": "body",
+      "classification": "OFFICIAL_FACT",
+      "claim_ids": ["C05_SETTING", "C06_LOCATIONS"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S6_ROCKSTAR_LEONIDA", "S7_ROCKSTAR_MEDIA", "S8_ROCKSTAR_TRAILER2"],
+      "narration": "A geografia oficial já é mais ampla do que a frase 'volta para Vice City'. A Rockstar fala no estado de Leonida e publicou nomes de regiões que ajudam a entender a variedade buscada para o mundo. Leonida Keys, Grassrivers, Port Gellhorn, Ambrosia e Mount Kalaga National Park aparecem em material oficial, além de Vice City. Isso permite uma conclusão segura: a identidade do mapa não depende de uma única metrópole. Há litoral, áreas de pântano, zonas industriais ou portuárias, comunidades menores e ambientes naturais apresentados como partes distintas do mesmo estado ficcional. O que ainda não temos, porém, é uma metragem oficial em quilômetros quadrados que autorize cravar o tamanho final. Essa ausência é relevante porque mapas comunitários conseguem fazer um trabalho impressionante de triangulação com estradas, skylines e pontos de referência, mas continuam sendo reconstruções. Para manter a análise honesta, usamos os nomes e características que a Rockstar publicou e tratamos o desenho completo como algo ainda em construção pública. Isso não diminui o trabalho da comunidade; ao contrário, ajuda a entender o valor correto dele: uma ferramenta de investigação que produz hipóteses testáveis, não uma planta oficial do jogo antes de a Rockstar disponibilizar uma.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 300.0, "end_seconds": 400.0, "reason": "panoramas e deslocamentos oficiais demonstram diversidade regional"}]
+    },
+    {
+      "section_id": "A05",
+      "heading": "O Extended Look mudou a qualidade da evidência",
+      "role": "body",
+      "classification": "OFFICIAL_STATEMENT",
+      "claim_ids": ["C07_EXTENDED_LOOK"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK"],
+      "narration": "Em 27 de agosto de 2026, a quantidade de material observável mudou de escala. A Rockstar publicou An Extended Look e afirmou que o vídeo foi capturado inteiramente de footage in-game no PlayStation 5. Isso é uma informação primária poderosa porque transforma várias discussões que antes dependiam de poucos segundos de trailer em observação de um recorte bem maior do jogo rodando. Ainda assim, precisamos manter duas camadas separadas. A primeira é o que a Rockstar diz sobre a origem do material: footage in-game em PS5. A segunda é o que analistas técnicos conseguem medir naquele footage: resolução aparente, taxa de quadros, técnicas de iluminação e comportamento de imagem. Uma camada não substitui a outra. O vídeo oficial permite observar densidade urbana, interiores, circulação de veículos, personagens em diferentes contextos e uma variedade grande de iluminação e clima. Mas observar uma cena cheia de pessoas não autoriza automaticamente a frase 'cada NPC tem inteligência artificial avançada e rotina persistente'. Para chegar a essa conclusão seria preciso documentação adicional. É justamente esse tipo de freio que torna o material mais útil: ele fornece muito mais evidência visual, sem nos dar licença para inventar especificações que a Rockstar não publicou.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 400.0, "end_seconds": 500.0, "reason": "o próprio Extended Look é a evidência discutida"}]
+    },
+    {
+      "section_id": "A06",
+      "heading": "Mundo vivo: o que pode ser observado e o que ainda não pode ser afirmado",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK", "C05_SETTING"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK", "S1_ROCKSTAR_CURRENT", "S6_ROCKSTAR_LEONIDA"],
+      "narration": "O Extended Look mostra um mundo visualmente ocupado: tráfego, pedestres, praias, estabelecimentos, interiores e atividades acontecendo em planos diferentes. Isso sustenta uma análise de densidade e variedade de cena. Não sustenta, sozinho, uma lista fechada de sistemas de inteligência artificial. A forma profissional de falar sobre 'mundo vivo' é começar pelo observável. Há mais elementos simultâneos em muitos enquadramentos do que nos materiais iniciais, existe continuidade visual entre espaços externos e internos em determinadas cenas e a direção de arte diferencia regiões de Leonida por arquitetura, vegetação, sinalização e composição social. O que permanece aberto é a profundidade sistêmica por trás disso. Um NPC atravessando a rua pode ser parte de uma simulação complexa ou apenas uma rotina de ambientação; um interior mostrado em sequência não prova que todos os prédios equivalentes serão acessíveis; uma interação curta não define a quantidade total de atividades. Essa distinção talvez pareça conservadora, mas ela melhora a análise. Em vez de vender um catálogo de mecânicas imaginadas, conseguimos apontar onde a ambição visual é verificável e onde ainda precisamos esperar documentação, gameplay contextualizado ou o jogo final para afirmar como aqueles elementos funcionam sob controle do jogador.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 500.0, "end_seconds": 600.0, "reason": "cenas densas permitem análise visual sem extrapolar mecânicas"}]
+    },
+    {
+      "section_id": "A07",
+      "heading": "Redes sociais, celulares e interface: tema visual não é especificação de mecânica",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK", "C05_SETTING"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK", "S7_ROCKSTAR_MEDIA"],
+      "narration": "Desde o primeiro trailer, GTA VI usa a linguagem de vídeos verticais, transmissões, comentários e recortes de redes sociais como parte da representação de Leonida. O material mais recente reforça essa estética de um estado observado por câmeras, celulares e feeds. O que podemos dizer com segurança é que essa linguagem faz parte do universo visual e narrativo mostrado pela Rockstar. O que não devemos fazer é assumir, sem prova, que existe uma plataforma interna com todas as funções de uma rede social real, algoritmos persistentes ou um sistema específico de reputação apenas porque a interface aparece na tela. Essa cautela vale também para celulares e outros elementos de interface. Em GTA V, o telefone já era uma peça funcional do jogo, então é natural imaginar evolução. Mas 'natural imaginar' é justamente a categoria de análise que precisa ser nomeada. O valor investigativo aqui está em perceber como a Rockstar escolheu retratar a cultura contemporânea de Miami e da Flórida ficcionalizada: excesso de registro, viralização, ostentação, polícia filmada, festa filmada e comportamento performático. Isso pode ter impacto em missões e mecânicas, mas, até existir confirmação específica, tratamos esse impacto como possibilidade editorial, não como feature anunciada.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 600.0, "end_seconds": 700.0, "reason": "trechos de cultura digital e cotidiano sustentam a análise temática"}]
+    },
+    {
+      "section_id": "A08",
+      "heading": "Tecnologia gráfica: onde começa a análise técnica",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK", "C11_DF_30FPS", "C12_DF_LIGHTING"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK", "S12_DF_EXTENDED_LOOK"],
+      "narration": "Quando entramos em tecnologia gráfica, a fonte muda. A Rockstar confirma que o Extended Look foi capturado em PlayStation 5; quem mede o comportamento do footage é a análise especializada. A Digital Foundry reportou o material apresentado em 30 quadros por segundo e discutiu sinais de iluminação global e reflexos baseados em ray tracing. Isso é relevante, mas precisa de uma etiqueta clara: análise técnica do que foi mostrado, não especificação oficial do produto final. Essa diferença evita dois saltos comuns. O primeiro é transformar 30 fps no vídeo em promessa de que não existirá nenhum outro modo. O segundo é transformar uma técnica identificada em cada cena em documentação completa do pipeline de renderização. O que a análise realmente nos permite discutir é o custo aparente de um mundo com alta densidade geométrica, personagens detalhados, reflexos e iluminação dinâmica em um console base. Também ajuda a explicar por que performance não pode ser reduzida a uma contagem de pixels: simulação, CPU, streaming de cenário e qualidade de animação competem pelo mesmo orçamento de hardware. Para o espectador, a conclusão segura é que a apresentação técnica é ambiciosa e mensurável, enquanto configuração final, modos e compromissos de lançamento continuam dependentes de confirmação futura.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 700.0, "end_seconds": 800.0, "reason": "cenas de iluminação, reflexos e densidade visual acompanham análise técnica"}]
+    },
+    {
+      "section_id": "A09",
+      "heading": "NPCs e inteligência artificial: a palavra que mais exige cuidado",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK"],
+      "narration": "Poucos temas geram tanta extrapolação quanto 'IA de NPC'. No material oficial, podemos ver multidões, reações, ocupações, animações contextuais e cenas com bastante atividade. O problema começa quando qualquer comportamento visual vira prova de um sistema autônomo específico. Para confirmar rotinas persistentes, memória individual, tomada de decisão sofisticada ou relações sistêmicas entre personagens, precisaríamos de documentação ou demonstrações desenhadas para mostrar exatamente isso. O Extended Look não deve ser forçado a responder uma pergunta que ele não foi feito para responder. Ainda assim, existe uma análise útil. Quanto maior a densidade de personagens e variedade de ações apresentada, maior é a exigência sobre animação, navegação, streaming e agendamento de comportamentos, mesmo que a implementação interna permaneça desconhecida. Essa é uma inferência de engenharia, não uma lista de features. Da mesma forma, cenas de polícia e crime ajudam a observar direção, encenação e reação ambiental, mas não fecham como funciona o wanted system sob todas as condições. Nosso roteiro prefere dizer 'o material mostra' e depois explicar o limite da observação. Essa linguagem não enfraquece o vídeo; ela impede que um rumor sobre inteligência artificial seja promovido a fato apenas porque combina com aquilo que gostaríamos de ver no jogo.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 800.0, "end_seconds": 900.0, "reason": "multidões e cenas de rua permitem discutir observação versus implementação"}]
+    },
+    {
+      "section_id": "A10",
+      "heading": "Polícia, crime e wanted system: separar cena de regra",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK", "C04_JASON_LUCIA"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK", "S6_ROCKSTAR_LEONIDA", "S8_ROCKSTAR_TRAILER2"],
+      "narration": "Crime é parte estrutural da série e da própria premissa oficial de Jason e Lucia. O material mostra polícia, perseguição, armas, assaltos e consequências visuais suficientes para discutir o tema narrativo. Mas isso não significa que todas as listas de 'novo sistema policial' publicadas em redes estejam confirmadas. Quantos níveis de procurado existirão, como testemunhas comunicam crimes, quanto tempo policiais guardam informação, como reconhecimento de veículo funciona ou se determinadas mecânicas vistas em material antigo permanecem no produto final são perguntas diferentes. Um trailer pode sugerir comportamento; uma build vazada pode registrar um estado temporário de desenvolvimento; uma versão final pode alterar ambos. Por isso, o Claim Ledger deste vídeo não usa como fato nenhuma regra detalhada de wanted system que dependa apenas de rumor. O que permanece sólido é a posição do crime dentro da história, a presença visual de forças policiais e a intenção evidente de encenar confrontos em um estado maior que Vice City. Quando o jogo estiver disponível ou quando a Rockstar publicar documentação específica, será possível medir os sistemas. Antes disso, a análise mais útil é mapear o que foi mostrado, marcar o que vem de vazamento e recusar a falsa precisão de números ou regras que não têm fonte primária atual.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 900.0, "end_seconds": 1000.0, "reason": "sequências oficiais de crime e resposta policial dão contexto sem inventar regras"}]
+    },
+    {
+      "section_id": "A11",
+      "heading": "O vazamento de 2022 é fato histórico; as mecânicas nele não viram confirmação automática",
+      "role": "body",
+      "classification": "NOT_CONFIRMED",
+      "claim_ids": ["C08_2022_INTRUSION"],
+      "evidence_ids": ["S10_SECURITYWEEK_2022_LEAK", "S11_GUARDIAN_2022_LEAK"],
+      "narration": "Há uma diferença fundamental entre confirmar que um vazamento aconteceu e confirmar tudo que alguém interpreta dentro dele. Em setembro de 2022, a Rockstar reconheceu publicamente uma intrusão de rede que expôs material inicial de desenvolvimento do próximo Grand Theft Auto. Veículos independentes registraram a declaração e o contexto do incidente. Portanto, a existência do episódio e a natureza de material inicial de desenvolvimento fazem parte do histórico documentado do projeto. O que não segue daí é que cada interface, animação, arma, atividade ou comportamento visto naquela fase esteja garantido para a versão final. Software muda. Protótipos existem justamente para serem testados, descartados ou transformados. Nosso tratamento de vazamentos usa essa fronteira: podemos explicar que determinada ideia foi publicamente reportada em material de desenvolvimento e perguntar se anúncios posteriores deram suporte a ela. Se a Rockstar depois mostra algo semelhante, isso aumenta a relevância da comparação, mas ainda precisamos especificar exatamente o que foi confirmado. E para o vídeo, existe uma segunda fronteira: discutir o fato jornalístico do leak não nos autoriza a reutilizar footage proprietário vazado como B-roll. A representação visual aqui permanece baseada em material oficial, preservando a investigação sem transformar conteúdo obtido ilicitamente em ativo de produção.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1000.0, "end_seconds": 1100.0, "reason": "footage oficial substitui qualquer necessidade de exibir material vazado"}]
+    },
+    {
+      "section_id": "A12",
+      "heading": "Mapa comunitário: investigação valiosa, medida final ainda não oficial",
+      "role": "body",
+      "classification": "NOT_CONFIRMED",
+      "claim_ids": ["C05_SETTING", "C06_LOCATIONS"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S6_ROCKSTAR_LEONIDA", "S7_ROCKSTAR_MEDIA"],
+      "narration": "A comunidade de mapeamento de GTA VI faz um trabalho tecnicamente interessante: cruza skylines, rodovias, ângulos de câmera, pontos de referência e correspondências com lugares reais para reconstruir a geografia provável de Leonida. Esse método pode ser útil para formular hipóteses e até antecipar relações espaciais que mais tarde são confirmadas por novos trailers. Mas o nosso fact-check rejeitou uma afirmação que circula com facilidade: a ideia de que já existe um número oficial definitivo para a área do mapa em quilômetros quadrados. Nas fontes primárias consultadas, a Rockstar nomeia regiões e apresenta ambientes, mas não publica esse número final. Por isso, qualquer medida da reconstrução comunitária precisa continuar rotulada como estimativa do projeto de fãs, não como dimensão oficial. Essa distinção também protege o vídeo contra outro problema: versões diferentes do mapa comunitário mudam conforme novas imagens aparecem. Uma estimativa pode ser excelente em setembro e ainda ser corrigida em novembro. O dado que permanece forte é a existência de várias localidades oficiais e a escala regional de Leonida. A forma exata de conectar tudo continua sendo um campo de investigação até que documentação oficial ou o jogo final ofereça coordenadas suficientes para medir com precisão.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1100.0, "end_seconds": 1200.0, "reason": "travessias e panoramas oficiais contextualizam geografia sem exibir leak proprietário"}]
+    },
+    {
+      "section_id": "A13",
+      "heading": "Veículos, física, interiores e atividades: como não transformar montagem em catálogo",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C07_EXTENDED_LOOK", "C05_SETTING"],
+      "evidence_ids": ["S5_ROCKSTAR_EXTENDED_LOOK", "S7_ROCKSTAR_MEDIA", "S1_ROCKSTAR_CURRENT"],
+      "narration": "O material oficial contém carros, motos, barcos, aeronaves, interiores, lojas, ruas, praias e diferentes tipos de atividade. Isso dá uma base real para discutir variedade. A armadilha é tratar toda aparição como feature controlável com profundidade garantida. Um barco em cena confirma a existência visual daquele tipo de veículo, não necessariamente todas as atividades marítimas que fãs podem imaginar. Um estabelecimento aberto em uma sequência demonstra que aquele ambiente existe, não que cada prédio semelhante seja explorável. Uma animação física convincente permite analisar qualidade de movimento, não concluir sozinho quais parâmetros o jogador poderá manipular. Esse cuidado é especialmente importante em um jogo cuja campanha de marketing utiliza montagem cinematográfica e gameplay dentro do mesmo universo visual. A própria Rockstar informa quando um material é capturado in-game, mas a função editorial ainda é separar observação de regra. O resultado é uma leitura mais útil: há diversidade concreta de transporte e ambientes, há uma ambição visível de tornar Leonida multifacetada e existem sinais de integração mais rica entre personagens, objetos e espaços. A profundidade de cada sistema, porém, precisa ser avaliada com gameplay contextualizado. Até lá, o vídeo prefere uma lista menor de coisas demonstráveis a uma lista enorme de features inventadas a partir de segundos isolados.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1200.0, "end_seconds": 1300.0, "reason": "variedade oficial de veículos e ambientes acompanha a análise"}]
+    },
+    {
+      "section_id": "A14",
+      "heading": "Plataformas, PC e performance: o que não está anunciado também importa",
+      "role": "body",
+      "classification": "ANALYSIS",
+      "claim_ids": ["C02_PLATFORMS", "C15_PC_DATE", "C11_DF_30FPS"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27", "S12_DF_EXTENDED_LOOK", "S5_ROCKSTAR_EXTENDED_LOOK"],
+      "narration": "Nas páginas atuais verificadas, GTA VI está listado para PlayStation 5 e Xbox Series X e S. Não encontramos nessas fontes uma data oficial de lançamento para PC. Isso não é a mesma coisa que dizer 'não haverá PC'. É apenas uma descrição do estado da comunicação pública no momento da pesquisa. A mesma disciplina vale para performance. O Extended Look vem de PlayStation 5 e a Digital Foundry analisou o material em 30 quadros por segundo, mas isso não transforma um modo de 60 fps em confirmado ou impossível por decreto. Até a Rockstar publicar especificações finais, qualquer discussão sobre modos precisa permanecer no campo de análise técnica. Essa postura é útil porque expectativas de plataforma envelhecem rápido. Páginas de loja mudam, patches de lançamento existem e versões posteriores podem ser anunciadas. O vídeo registra um cutoff de pesquisa justamente para permitir revisão futura. Se amanhã a Rockstar anunciar PC ou detalhar modos de performance, o Knowledge Brain deve comparar a nova evidência com este estado e marcar a mudança, não fingir que sempre soube. Para um canal investigativo, rastrear a evolução da informação vale mais do que acertar uma aposta por acaso. Nosso objetivo é mostrar o que pode ser sustentado hoje e deixar claro onde termina a evidência.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1300.0, "end_seconds": 1400.0, "reason": "footage oficial de PS5 acompanha discussão de plataforma e análise técnica"}]
+    },
+    {
+      "section_id": "A15",
+      "heading": "O que foi removido do roteiro e por quê",
+      "role": "body",
+      "classification": "NOT_CONFIRMED",
+      "claim_ids": ["C01_CURRENT_DATE", "C07_EXTENDED_LOOK"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S2_ROCKSTAR_CURRENT_DATE", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27", "S5_ROCKSTAR_EXTENDED_LOOK"],
+      "narration": "Uma prova de inteligência editorial não aparece apenas no que entra no vídeo; aparece também no que o sistema decide retirar. Três exemplos ficaram fora como afirmações factuais. Primeiro, 26 de maio de 2026 não pode ser apresentado como data atual, porque foi substituído por 19 de novembro. Segundo, um modo de 60 fps no lançamento não foi tratado como confirmado: análise de footage não substitui anúncio oficial de configuração. Terceiro, não usamos nenhum número de área do mapa como medida final oficial, porque reconstrução comunitária é uma fonte de hipótese, não uma especificação publicada pela Rockstar. O mesmo princípio vale para descrições completas de um futuro multiplayer específico de GTA VI. A comunicação consultada não sustenta esse nível de detalhe. Esse processo reduz manchetes fáceis, mas aumenta a confiabilidade do roteiro. Também cria uma trilha auditável: cada claim removido mantém sua fonte, classificação e motivo de descarte. Se nova evidência surgir, ele pode ser reavaliado sem apagar o histórico. E isso responde à pergunta central desta missão: saber muito sobre GTA 6 não significa acumular o maior número possível de alegações; significa saber quais afirmações estão fortes, quais estão envelhecidas, quais são análise e quais ainda não sobreviveram ao fact-check.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1400.0, "end_seconds": 1500.0, "reason": "material oficial final permite resumir sem recorrer a imagens vazadas"}]
+    },
+    {
+      "section_id": "A16",
+      "heading": "O retrato mais seguro de GTA 6 hoje",
+      "role": "cta",
+      "classification": "OFFICIAL_FACT",
+      "claim_ids": ["C01_CURRENT_DATE", "C02_PLATFORMS", "C03_SINGLE_PLAYER", "C04_JASON_LUCIA", "C05_SETTING", "C06_LOCATIONS", "C07_EXTENDED_LOOK", "C08_2022_INTRUSION", "C09_DATE_HISTORY", "C11_DF_30FPS", "C12_DF_LIGHTING", "C15_PC_DATE"],
+      "evidence_ids": ["S1_ROCKSTAR_CURRENT", "S2_ROCKSTAR_CURRENT_DATE", "S3_ROCKSTAR_PREORDER", "S4_TAKE2_Q1_FY27", "S5_ROCKSTAR_EXTENDED_LOOK", "S6_ROCKSTAR_LEONIDA", "S7_ROCKSTAR_MEDIA", "S8_ROCKSTAR_TRAILER2", "S9_ROCKSTAR_OLD_DATE", "S10_SECURITYWEEK_2022_LEAK", "S11_GUARDIAN_2022_LEAK", "S12_DF_EXTENDED_LOOK"],
+      "narration": "Juntando tudo, o retrato mais seguro de GTA VI hoje é mais interessante do que uma lista de rumores. Temos uma data vigente de 19 de novembro de 2026, lançamento atualmente listado para PlayStation 5 e Xbox Series X e S, uma experiência single-player, Jason e Lucia no centro da história e um estado chamado Leonida que vai além de Vice City com várias regiões já nomeadas. Temos também um Extended Look capturado in-game em PlayStation 5, oferecendo material suficiente para análise técnica séria. Especialistas conseguem medir características do footage, como 30 quadros por segundo e técnicas aparentes de ray tracing, desde que essas observações continuem rotuladas como análise e não como especificações finais. O leak de 2022 faz parte do histórico documentado, mas não transforma protótipos antigos em contrato de features, e material vazado não precisa virar footage do canal. Reconstruções comunitárias ajudam a investigar geografia, sem substituir um mapa oficial. E informações antigas, como a data de maio de 2026, permanecem no histórico em vez de serem repetidas como atuais. Esse é o padrão que vamos carregar para os próximos vídeos: fonte primeiro, contexto depois e inferência claramente identificada. A revisão humana agora pode julgar não apenas se o vídeo é tecnicamente correto, mas se a investigação realmente explica o que sabemos, como sabemos e onde ainda existe incerteza.",
+      "visual_candidates": [{"asset_ref": "remote://media-worker/gta6-extended-look-official-20260827", "start_seconds": 1500.0, "end_seconds": 1600.0, "reason": "fechamento com imagens oficiais do mesmo corpus investigado"}]
+    }
+  ]
+}
