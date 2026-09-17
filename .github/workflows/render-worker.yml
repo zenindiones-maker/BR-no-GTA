@@ -123,6 +123,7 @@ jobs:
           run-id: ${{ steps.render_transport.outputs.producer_run_id }}
           github-token: ${{ github.token }}
           path: runtime/render/handoff
+          merge-multiple: true
 
       - name: Install validation runtime dependencies
         run: |
