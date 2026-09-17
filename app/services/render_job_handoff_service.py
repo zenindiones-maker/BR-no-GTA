@@ -55,6 +55,10 @@ def build_artifact_descriptor(
     return descriptor
 
 
+def validate_artifact_descriptor(descriptor: dict[str, Any]) -> None:
+    _validate_descriptor_shape(descriptor)
+
+
 def _validate_descriptor_shape(descriptor: dict[str, Any]) -> None:
     if descriptor.get("schema") != _DESCRIPTOR_SCHEMA:
         raise RenderJobHandoffError("unsupported RenderJob handoff schema")
