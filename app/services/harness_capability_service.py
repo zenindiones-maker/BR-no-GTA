@@ -118,6 +118,7 @@ def _to_definition(record) -> CapabilityDefinition:
 
 # Compatibility surface for existing bounded capability callers. The global
 # registry is the source of truth; execution still uses the established contract.
+# Native capabilities remain deny-by-default here and must be added explicitly.
 CAPABILITY_CATALOG = tuple(
     _to_definition(record)
     for record in GLOBAL_CAPABILITY_REGISTRY.all()
@@ -125,6 +126,7 @@ CAPABILITY_CATALOG = tuple(
         record.capability_id.startswith("addy:")
         or record.provider_id == "higgsfield"
         or record.capability_id == "agent-office.execute"
+        or record.capability_id == "gta6.fact-check"
     )
 )
 _CAPABILITY_BY_ID = {
@@ -167,12 +169,20 @@ def authorize_capability(
     record = _REGISTRY_BY_ID.get(capability_id)
     if capability is None or record is None or record.availability == UNKNOWN:
         raise ValueError(f"Capability is not AVAILABLE: {capability_id}")
+    if not record.execution_enabled or not capability.execution_enabled:
+        raise PermissionError(f"Capability is not executable: {capability_id}")
     if authorization.authorized_action not in capability.allowed_actions:
         raise PermissionError(
             "Capability is not authorized for action "
             f"{authorization.authorized_action!r}"
         )
     return capability
+
+
+def _callable_binding(executor: Callable[..., Any]) -> str:
+    module = getattr(executor, "__module__", "")
+    name = getattr(executor, "__name__", "")
+    return f"{module}.{name}" if module and name else ""
 
 
 def execute_capability(
@@ -198,10 +208,21 @@ def execute_capability(
         selected = routing_decision.policy_metadata.get("selected_implementation")
         if not isinstance(selected, dict):
             raise PermissionError("Harness routing implementation metadata is required")
+        if selected.get("implementation") != record.implementation:
+            raise PermissionError("Harness routing implementation mismatch")
+        if selected.get("executor_binding") != record.executor_binding:
+            raise PermissionError("Harness routing implementation executor mismatch")
+        if selected.get("evidence_contract") != record.evidence_contract:
+            raise PermissionError("Harness routing evidence contract mismatch")
         if selected.get("agent_id") != record.agent_id:
             raise PermissionError("Harness routing agent mismatch")
         if selected.get("skill_id") != record.skill_id:
             raise PermissionError("Harness routing skill mismatch")
+
+    if capability_id == "gta6.fact-check" and executor is not None:
+        if _callable_binding(executor) != record.executor_binding:
+            raise PermissionError("gta6.fact-check caller executor is not the Registry binding")
+
     if record.availability == BLOCKED:
         return CapabilityEvidence(
             capability_id=capability.capability_id,
