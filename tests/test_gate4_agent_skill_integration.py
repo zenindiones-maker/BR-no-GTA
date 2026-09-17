@@ -220,7 +220,7 @@ def test_unknown_tubegent_is_not_selected_or_invented():
         )
 
 
-def test_native_gta6_skill_mappings_are_explicit_and_fact_check_stays_unproven():
+def test_native_gta6_skill_mappings_are_explicit_and_fact_check_is_bounded_executable():
     expected = {
         "gta6.research": ("gta6-research", "RESEARCH"),
         "editorial.process": ("gta6-editorial", "EDITORIAL"),
@@ -236,8 +236,14 @@ def test_native_gta6_skill_mappings_are_explicit_and_fact_check_stays_unproven()
         assert record.evidence_contract
     fact_check = GLOBAL_CAPABILITY_REGISTRY.get("gta6.fact-check")
     assert fact_check.skill_id == "gta6-fact-check"
-    assert fact_check.availability == UNKNOWN
-    assert fact_check.executor_binding is None
+    assert fact_check.availability == AVAILABLE
+    assert fact_check.execution_enabled is True
+    assert fact_check.executor_binding == (
+        "app.services.gta6_fact_check_service.execute_gta6_fact_check_capability"
+    )
+    assert fact_check.evidence_contract == (
+        "app.services.gta6_fact_check_service.FactCheckResult"
+    )
 
 
 def test_youtube_skill_keeps_private_upload_and_publication_authorization_distinct():
@@ -267,9 +273,9 @@ def test_no_eligible_implementation_fails_closed_without_fallback():
     with pytest.raises(RoutingPolicyError, match="No executable capability") as exc_info:
         route_harness_request(
             HarnessRoutingRequest(
-                intent="gta6 fact check",
+                intent="unregistered gta6 capability",
                 authorized_action="EDITORIAL",
-                required_capability_id="gta6.fact-check",
+                required_capability_id="unregistered.gta6.fact-check",
                 fallback_allowed=False,
             )
         )
