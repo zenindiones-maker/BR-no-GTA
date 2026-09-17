@@ -30,6 +30,7 @@ jobs:
       - name: Focused proof
         run: |
           pytest -q \
+            tests/test_gta6_fact_check_harness_boundary_unit.py \
             tests/test_system_synergy_service.py \
             tests/test_monetization_observability_service.py \
             tests/test_global_capability_registry.py \
