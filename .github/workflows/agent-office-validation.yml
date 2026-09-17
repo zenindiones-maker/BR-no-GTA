@@ -4,14 +4,18 @@ on:
   push:
     branches:
       - work/munder-difflin-agent-office
+      - work/gate6f-analytics-learning
     paths:
       - "app/services/agent_office/**"
       - "app/services/agent_office_harness_service.py"
       - "app/services/global_capability_registry.py"
+      - "app/services/global_capability_registry_base.py"
+      - "app/services/codex_addy_capability_executor.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
+      - "scripts/agent-tooling/**"
       - "tests/test_agent_office.py"
       - ".github/workflows/agent-office-*.yml"
   pull_request:
@@ -19,10 +23,13 @@ on:
       - "app/services/agent_office/**"
       - "app/services/agent_office_harness_service.py"
       - "app/services/global_capability_registry.py"
+      - "app/services/global_capability_registry_base.py"
+      - "app/services/codex_addy_capability_executor.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
+      - "scripts/agent-tooling/**"
       - "tests/test_agent_office.py"
       - ".github/workflows/agent-office-*.yml"
   workflow_dispatch:
@@ -107,12 +114,13 @@ jobs:
             app/services/agent_office/*.py \
             app/services/agent_office_harness_service.py \
             scripts/agent_office_preflight.py \
-            scripts/agent_office_canary.py
+            scripts/agent_office_canary.py \
+            scripts/agent_office_addy_24_canary.py
 
       - name: Test authorization, routing, worktrees and evidence
         run: python -m pytest -q tests/test_agent_office.py tests/test_harness_capability_service.py tests/test_harness_routing_policy_service.py
 
-      - name: Run bounded multi-agent canary
+      - name: Run bounded parallel-task canary
         run: |
           python scripts/agent_office_canary.py \
             --branch "${GITHUB_REF_NAME}" \
@@ -120,7 +128,15 @@ jobs:
             --output agent-office-evidence/canary.json
           test -z "$(git status --porcelain --untracked-files=no)"
 
-      - name: Upload canary evidence
+      - name: Prove Addy 24 Agent Office swarm routing and isolation
+        run: |
+          python scripts/agent_office_addy_24_canary.py \
+            --branch "${GITHUB_REF_NAME}" \
+            --base-sha "${GITHUB_SHA}" \
+            --output agent-office-evidence/addy-24-swarm.json
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Upload Agent Office evidence
         uses: actions/upload-artifact@v4
         with:
           name: agent-office-validation-${{ github.run_id }}

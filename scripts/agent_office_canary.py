@@ -49,7 +49,7 @@ def main() -> int:
         initialize_schema()
         routing = route_harness_request(
             HarnessRoutingRequest(
-                intent="execute bounded multi agent office read only canary",
+                intent="execute bounded Agent Office read only parallel task canary",
                 authorized_action="DEVELOPMENT",
                 required_capability_id="agent-office.execute",
                 fallback_allowed=False,
@@ -110,10 +110,14 @@ def main() -> int:
         )
 
     result = evidence.result
+    workspace_ids = {
+        str(item.get("workspace_id")) for item in result["per_agent_results"]
+    }
     checks = {
         "AGENT_OFFICE_CANARY": evidence.status == "EXECUTED" and result["status"] == "SUCCEEDED",
         "HARNESS_AUTHORITY": evidence.authority == "deepseek_harness",
-        "MULTI_AGENT_ROUTING": len(result["per_agent_results"]) == 3,
+        "PARALLEL_TASK_ROUTING": len(result["per_agent_results"]) == 3,
+        "DISTINCT_WORKTREES": len(workspace_ids) == 3,
         "WORKTREE_ISOLATION": result["evidence"]["worktree_isolation"] == "PASS",
         "EVIDENCE_RETURN": bool(result["evidence"]["deterministic_digest"]),
         "KNOWLEDGE_RETURN_PATH": result["evidence"]["knowledge_return_path"].endswith("Knowledge Brain"),
