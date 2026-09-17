@@ -172,3 +172,10 @@ def test_youtube_publication_remains_forbidden():
             expected_execution_id="run001-video-a-investigative-v1",
             expected_authorized_action="EXECUTION",
         )
+
+
+def test_render_worker_downloads_artifact_into_expected_root():
+    workflow = Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
+    assert "name: Materialize artifact-backed RenderJob" in workflow
+    assert "merge-multiple: true" in workflow
+    assert "path: runtime/render/handoff" in workflow
