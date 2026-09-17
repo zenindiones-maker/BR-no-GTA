@@ -30,6 +30,7 @@ from app.services.gta6_fact_check_service import (
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
+from scripts.run001_final_product_dispatch import OFFICIAL_BRAND_ASSETS
 
 
 WORD_RE = re.compile(r"[A-Za-zÀ-ÿ0-9]+(?:['’\-][A-Za-zÀ-ÿ0-9]+)?")
@@ -449,7 +450,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         },
         "script_sections": config["script_sections"],
         "media_sources": config["media_sources"],
-        "brand_assets": [{"asset_id": 1, "asset_type": "intro"}, {"asset_id": 2, "asset_type": "watermark"}],
+        "brand_assets": [dict(item) for item in OFFICIAL_BRAND_ASSETS],
         "narration": config.get("narration") or {"language": "pt-BR", "voice": "pt-BR-AntonioNeural", "rate": "-15%"},
         "research_dossier": dossier.to_dict(),
         "claim_ledger": [item.to_dict() for item in ledger],
