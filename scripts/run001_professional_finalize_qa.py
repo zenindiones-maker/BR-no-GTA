@@ -35,6 +35,23 @@ def main() -> int:
         "VOICE_QA": load(folder / "voice-qa.json").get("status"),
         "EDIT_QA": load(folder / "edit-qa.json").get("status"),
     }
+    semantic = load(folder / "semantic-ptbr-audio-qa.json")
+    semantic_required = (
+        "NARRATION_PRESENT",
+        "SPOKEN_AUDIO_PT_BR",
+        "NARRATION_NONEMPTY",
+        "NARRATION_DURATION_VALID",
+        "AUDIO_TIMELINE_ALIGNMENT",
+        "FINAL_MIX_CONTAINS_PT_BR_NARRATION",
+    )
+    semantic_ok = (
+        semantic.get("status") == "PASS"
+        and semantic.get("TARGET_LANGUAGE") == "pt-BR"
+        and semantic.get("FINAL_AUDIO_LANGUAGE_METADATA") == "pt-BR"
+        and all(semantic.get(key) == "PASS" for key in semantic_required)
+    )
+    gates["SEMANTIC_PTBR_QA"] = "PASS" if semantic_ok else "FAIL"
+
     render_qa = load(folder / "render-qa.json")
     if render_qa.get("status") != "PASS":
         raise RuntimeError("final branded render QA is not PASS")
@@ -59,6 +76,8 @@ def main() -> int:
         product_label=job.get("product_label"),
         product_version=job.get("product_version"),
         gates=gates,
+        spoken_audio_language="pt-BR",
+        spoken_audio_semantic_qa=semantic,
         human_editorial_approval="PENDING",
         youtube_publication_authority="BLOCKED_PENDING_HUMAN_APPROVAL",
     )
@@ -66,8 +85,14 @@ def main() -> int:
         json.dumps(final, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("PROFESSIONAL_FINAL_QA=PASS")
-    for key in ("EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA"):
+    for key in (
+        "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "SEMANTIC_PTBR_QA",
+        "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA",
+    ):
         print(f"VIDEO_{job.get('product_label')}_{key}=PASS")
+    print("TARGET_LANGUAGE=pt-BR")
+    print("SPOKEN_AUDIO_PT_BR=PASS")
+    print("FINAL_MIX_CONTAINS_PT_BR_NARRATION=PASS")
     print("HUMAN_EDITORIAL_APPROVAL=PENDING")
     print("YOUTUBE_PUBLICATION=BLOCKED")
     return 0
