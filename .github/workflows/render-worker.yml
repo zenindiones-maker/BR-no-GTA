@@ -5,8 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       render_job:
-        description: "RenderJob completo autorizado pelo Harness (#2/#4)"
-        required: true
+        description: "RenderJob completo autorizado pelo Harness (#2/#4); use vazio quando render_job_descriptor for usado"
+        required: false
+        default: ""
+        type: string
+      render_job_descriptor:
+        description: "Descriptor pequeno render-job-handoff/v1 para transporte governado por artifact"
+        required: false
+        default: ""
         type: string
       brain_decision_id:
         required: true
@@ -20,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   audiovisual:
@@ -34,6 +41,89 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Resolve RenderJob transport
+        id: render_transport
+        env:
+          RENDER_JOB: ${{ inputs.render_job }}
+          RENDER_JOB_DESCRIPTOR: ${{ inputs.render_job_descriptor }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          from app.services.render_job_handoff_service import (
+              RenderJobHandoffError,
+              validate_artifact_descriptor,
+          )
+
+          inline = (os.environ.get("RENDER_JOB") or "").strip()
+          descriptor_text = (os.environ.get("RENDER_JOB_DESCRIPTOR") or "").strip()
+          if bool(inline) == bool(descriptor_text):
+              raise SystemExit("exactly one RenderJob transport must be supplied")
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          if inline:
+              with output.open("a", encoding="utf-8") as stream:
+                  stream.write("mode=inline\n")
+              print("RENDER_JOB_TRANSPORT_MODE=inline")
+          else:
+              try:
+                  descriptor = json.loads(descriptor_text)
+                  validate_artifact_descriptor(descriptor)
+              except (json.JSONDecodeError, RenderJobHandoffError) as exc:
+                  raise SystemExit(str(exc)) from None
+              if descriptor["source_sha"] != os.environ["GITHUB_SHA"]:
+                  raise SystemExit("RenderJob handoff source commit mismatch")
+              artifact_name = descriptor["artifact_name"]
+              if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", artifact_name):
+                  raise SystemExit("RenderJob handoff artifact_name is unsafe")
+              with output.open("a", encoding="utf-8") as stream:
+                  stream.write("mode=artifact\n")
+                  stream.write(f"artifact_id={descriptor['artifact_id']}\n")
+                  stream.write(f"artifact_name={artifact_name}\n")
+                  stream.write(f"producer_run_id={descriptor['producer_run_id']}\n")
+              print("RENDER_JOB_TRANSPORT_MODE=artifact")
+          PY
+
+      - name: Verify RenderJob handoff artifact metadata
+        if: steps.render_transport.outputs.mode == 'artifact'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.render_transport.outputs.artifact_id }}
+          ARTIFACT_NAME: ${{ steps.render_transport.outputs.artifact_name }}
+          PRODUCER_RUN_ID: ${{ steps.render_transport.outputs.producer_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/render/handoff
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" > runtime/render/handoff/artifact-metadata.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          metadata = json.loads(Path("runtime/render/handoff/artifact-metadata.json").read_text(encoding="utf-8"))
+          if str(metadata.get("id")) != os.environ["ARTIFACT_ID"]:
+              raise SystemExit("RenderJob handoff artifact id mismatch")
+          if metadata.get("name") != os.environ["ARTIFACT_NAME"]:
+              raise SystemExit("RenderJob handoff artifact name mismatch")
+          if metadata.get("expired") is True:
+              raise SystemExit("RenderJob handoff artifact expired")
+          workflow_run = metadata.get("workflow_run") or {}
+          if str(workflow_run.get("id")) != os.environ["PRODUCER_RUN_ID"]:
+              raise SystemExit("RenderJob handoff producer run mismatch")
+          print("RENDER_JOB_ARTIFACT_METADATA=PASS")
+          PY
+
+      - name: Materialize artifact-backed RenderJob
+        if: steps.render_transport.outputs.mode == 'artifact'
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.render_transport.outputs.artifact_id }}
+          run-id: ${{ steps.render_transport.outputs.producer_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/render/handoff
+
       - name: Install validation runtime dependencies
         run: |
           set -euo pipefail
@@ -41,6 +131,7 @@ jobs:
       - name: Validate job before media processing
         env:
           RENDER_JOB: ${{ inputs.render_job }}
+          RENDER_JOB_DESCRIPTOR: ${{ inputs.render_job_descriptor }}
           EXPECTED_BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
           EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
           EXPECTED_AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
@@ -50,29 +141,51 @@ jobs:
           import json
           import os
           from pathlib import Path
+          from app.services.render_job_handoff_service import RenderJobHandoffError, resolve_render_job
           from app.workers.audiovisual_worker import WorkerError, validate_job
           from app.workers.professional_audiovisual_worker import validate_product_job
+
           failure_path = Path("runtime/render/validation-qa.json")
           failure_path.parent.mkdir(parents=True, exist_ok=True)
           try:
-              job = json.loads(os.environ["RENDER_JOB"])
-              for key in ("brain_decision_id", "execution_id", "authorized_action"):
-                  expected = os.environ.get("EXPECTED_" + key.upper())
-                  if expected is not None and job.get(key) != expected:
-                      raise WorkerError(f"Dispatch envelope mismatch: {key}")
+              descriptor_text = (os.environ.get("RENDER_JOB_DESCRIPTOR") or "").strip()
+              artifact_root = Path("runtime/render/handoff") if descriptor_text else None
+              job, transport_mode = resolve_render_job(
+                  inline_json=os.environ.get("RENDER_JOB"),
+                  descriptor_json=descriptor_text,
+                  artifact_root=artifact_root,
+                  expected_brain_decision_id=os.environ["EXPECTED_BRAIN_DECISION_ID"],
+                  expected_execution_id=os.environ["EXPECTED_EXECUTION_ID"],
+                  expected_authorized_action=os.environ["EXPECTED_AUTHORIZED_ACTION"],
+                  expected_source_sha=os.environ["GITHUB_SHA"] if descriptor_text else None,
+              )
               if job.get("product_profile") == "professional_ptbr_v1":
                   validate_product_job(job)
               else:
                   validate_job(job, allow_runtime_plan=True)
-          except WorkerError as exc:
+          except (RenderJobHandoffError, WorkerError) as exc:
               failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": str(exc)}))
               raise SystemExit(str(exc)) from None
           except Exception as exc:
               failure_path.write_text(json.dumps({"status": "FAIL", "stage": "validation", "reason": str(exc)[:500]}))
               raise
+
           path = Path("runtime/render/render-job.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(job, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+          (Path("runtime/render/render-job-transport.json")).write_text(
+              json.dumps({
+                  "status": "PASS",
+                  "transport_mode": transport_mode,
+                  "render_job_id": job.get("render_job_id"),
+                  "video_id": job.get("video_id"),
+                  "execution_id": job.get("execution_id"),
+                  "source_sha": os.environ["GITHUB_SHA"],
+              }, ensure_ascii=False, indent=2),
+              encoding="utf-8",
+          )
+          print(f"RENDER_JOB_TRANSPORT_MODE={transport_mode}")
+          print("RENDER_JOB_ARTIFACT_INTEGRITY=PASS" if transport_mode == "artifact" else "RENDER_JOB_INLINE_INTEGRITY=PASS")
           PY
       - name: Install FFmpeg
         run: |
@@ -212,6 +325,8 @@ jobs:
           name: render-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             runtime/render/validation-qa.json
+            runtime/render/render-job-transport.json
+            runtime/render/handoff/artifact-metadata.json
             runtime/render/materialization/**/*.json
             runtime/render/branding/**/brand-assets.json
             runtime/render/output/**/brand-assets.json
