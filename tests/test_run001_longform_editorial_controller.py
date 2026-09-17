@@ -56,8 +56,11 @@ def test_duplicate_section_narration_is_rejected():
 
 def test_short_script_cannot_pass_longform_duration_gate():
     config = _config()
-    for section in config["script_sections"]:
-        section["narration"] = "Este é um trecho curto em português que não sustenta um produto long-form profissional com investigação real."
+    for index, section in enumerate(config["script_sections"], start=1):
+        section["narration"] = (
+            f"Trecho curto e exclusivo da seção {index}, com contexto factual próprio, "
+            "mas deliberadamente insuficiente para sustentar um produto long-form profissional."
+        )
     with pytest.raises(ValueError, match="word count outside professional range|does not sustain"):
         validate_config(config)
 
