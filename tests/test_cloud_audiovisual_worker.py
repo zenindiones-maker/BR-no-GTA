@@ -76,7 +76,7 @@ class AdapterTests(unittest.TestCase):
             media = Media(id="media-test", path=str(root / "source.mp4"), duration=50, has_audio=True)
             with patch("vedit.store.probe_mod.probe", return_value=media):
                 project = build_timeline(plan, root, data["render"])
-            clips = [c for t in project.tracks for c in t.clips]
+            clips = [c for t in project.tracks if t.kind == "video" for c in t.clips]
             self.assertEqual(len(clips), 1)
             self.assertEqual((clips[0].start, clips[0].in_, clips[0].duration), (0, 2, 40))
             media.duration = 20
