@@ -135,3 +135,13 @@ def test_video_a_uses_complete_governed_brand_asset_snapshots():
     assert all(item["telegram_file_unique_id"] for item in OFFICIAL_BRAND_ASSETS)
     controller = (ROOT / "scripts" / "run001_longform_editorial_controller.py").read_text(encoding="utf-8")
     assert '"brand_assets": [dict(item) for item in OFFICIAL_BRAND_ASSETS]' in controller
+
+
+def test_required_take2_source_has_governed_official_fallback():
+    config = _config()
+    source = next(item for item in config["sources"] if item["source_id"] == "S4_TAKE2_Q1_FY27")
+    assert source["required"] is True
+    assert source["fallback_urls"] == ["https://ir.take2games.com/node/32401/pdf"]
+    controller = (ROOT / "scripts" / "run001_longform_editorial_controller.py").read_text(encoding="utf-8")
+    assert 'spec.get("fallback_urls")' in controller
+    assert '"retrieval_attempts": attempts' in controller
