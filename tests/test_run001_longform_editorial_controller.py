@@ -8,6 +8,7 @@ import pytest
 
 from scripts.run001_longform_editorial_controller import validate_config
 from scripts.run001_longform_no_padding_qa import validate_no_padding
+from scripts.run001_final_product_dispatch import OFFICIAL_BRAND_ASSETS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,3 +126,12 @@ def test_video_a_live_bridge_runs_editorial_controller_then_official_render_work
     assert "run001-e2e-canary" not in workflow
     assert "'render_job_id': 920101" in workflow
     assert "'youtube_publication': False" in workflow
+
+
+def test_video_a_uses_complete_governed_brand_asset_snapshots():
+    assert {item["asset_type"] for item in OFFICIAL_BRAND_ASSETS} == {"intro", "watermark"}
+    assert all(item["asset_id"] in {1, 2} for item in OFFICIAL_BRAND_ASSETS)
+    assert all(item["telegram_file_id"] for item in OFFICIAL_BRAND_ASSETS)
+    assert all(item["telegram_file_unique_id"] for item in OFFICIAL_BRAND_ASSETS)
+    controller = (ROOT / "scripts" / "run001_longform_editorial_controller.py").read_text(encoding="utf-8")
+    assert '"brand_assets": [dict(item) for item in OFFICIAL_BRAND_ASSETS]' in controller
