@@ -45,6 +45,18 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(WorkerError):
             validate_job(data)
 
+    def test_authorization_receipt_id_is_not_treated_as_a_credential(self):
+        data = job()
+        data["edit_plan"]["metadata"] = {"authorization_id": "authz-receipt-123"}
+        self.assertIsNotNone(validate_job(data))
+
+    def test_authorization_credentials_remain_blocked(self):
+        for key in ("authorization", "authorization_token"):
+            data = job()
+            data["edit_plan"]["metadata"] = {key: "never archive"}
+            with self.subTest(key=key), self.assertRaisesRegex(WorkerError, "Credentials do not belong"):
+                validate_job(data)
+
     def test_asset_resolution(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
