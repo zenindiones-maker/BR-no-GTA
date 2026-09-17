@@ -86,16 +86,18 @@ jobs:
           git ls-files --error-unmatch video-engine/backend/vedit/render.py
           python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
           python -m unittest discover -s tests -p test_professional_audiovisual_worker.py -v
+          pytest -q tests/test_semantic_ptbr_audio_qa.py
       - name: Setup ingestion JavaScript runtime
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Install existing ingestion and professional narration adapters
+      - name: Install existing ingestion, narration and spoken-language QA adapters
         run: |
           set -euo pipefail
           python -m pip install -U "yt-dlp[default]"
           python -m pip install -U "bgutil-ytdlp-pot-provider==1.3.1"
           python -m pip install "edge-tts==7.2.8"
+          python -m pip install "faster-whisper==1.2.0"
 
       - name: Setup YouTube PO Token provider
         run: |
@@ -166,6 +168,12 @@ jobs:
             --runtime-root runtime/render \
             --output-dir runtime/render/output
 
+      - name: Prove spoken audio is Brazilian Portuguese
+        run: |
+          set -euo pipefail
+          python scripts/semantic_ptbr_audio_qa.py \
+            --artifact-root runtime/render/output
+
       - name: Finalize professional QA gates
         run: |
           set -euo pipefail
@@ -203,6 +211,7 @@ jobs:
             runtime/render/output/**/render-qa.json
             runtime/render/output/**/editorial-qa.json
             runtime/render/output/**/voice-qa.json
+            runtime/render/output/**/semantic-ptbr-audio-qa.json
             runtime/render/output/**/edit-qa.json
             runtime/render/output/**/audiovisual-qa.json
             runtime/render/output/**/research-evidence.json
