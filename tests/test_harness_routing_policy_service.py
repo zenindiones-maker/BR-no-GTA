@@ -106,9 +106,9 @@ def test_unknown_capability_is_never_auto_promoted():
     with pytest.raises(RoutingPolicyError, match="No executable capability"):
         route_harness_request(
             HarnessRoutingRequest(
-                intent="gta6 fact check",
+                intent="unregistered capability",
                 authorized_action="EDITORIAL",
-                required_capability_id="gta6.fact-check",
+                required_capability_id="unknown.unregistered-capability",
             )
         )
 
