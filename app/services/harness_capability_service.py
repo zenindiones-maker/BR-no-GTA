@@ -157,7 +157,11 @@ def authorize_capability(
     capability_id: str,
     authorization: CapabilityAuthorization,
 ) -> CapabilityDefinition:
-    """Validate Harness authority and action policy before any adapter runs."""
+    """Validate Harness authority and action policy before any adapter runs.
+
+    BLOCKED implementations may cross only far enough to return auditable BLOCKED
+    evidence. They are never considered executable and their adapter is never called.
+    """
     authorization = resolve_harness_authorization(authorization)
     authorization = validate_harness_authorization(
         authorization,
@@ -169,13 +173,15 @@ def authorize_capability(
     record = _REGISTRY_BY_ID.get(capability_id)
     if capability is None or record is None or record.availability == UNKNOWN:
         raise ValueError(f"Capability is not AVAILABLE: {capability_id}")
-    if not record.execution_enabled or not capability.execution_enabled:
-        raise PermissionError(f"Capability is not executable: {capability_id}")
     if authorization.authorized_action not in capability.allowed_actions:
         raise PermissionError(
             "Capability is not authorized for action "
             f"{authorization.authorized_action!r}"
         )
+    if record.availability == BLOCKED:
+        return capability
+    if not record.execution_enabled or not capability.execution_enabled:
+        raise PermissionError(f"Capability is not executable: {capability_id}")
     return capability
 
 
