@@ -268,7 +268,7 @@ jobs:
           run_id=''
           for attempt in $(seq 1 24); do
             runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/render-worker.yml/runs?branch=${TARGET_REF}&event=workflow_dispatch&per_page=20")"
-            run_id="$(printf '%s' "$runs" | jq -r --arg title "$target_title" '.workflow_runs[] | select(.display_title == $title) | .id' | head -n1)"
+            run_id="$(printf '%s' "$runs" | jq -r --arg title "$target_title" --arg sha "$GITHUB_SHA" '.workflow_runs[] | select(.display_title == $title and .head_sha == $sha) | .id' | head -n1)"
             if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
               break
             fi
