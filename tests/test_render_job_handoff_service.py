@@ -179,3 +179,9 @@ def test_render_worker_downloads_artifact_into_expected_root():
     assert "name: Materialize artifact-backed RenderJob" in workflow
     assert "merge-multiple: true" in workflow
     assert "path: runtime/render/handoff" in workflow
+
+
+def test_render_worker_installs_pytest_before_adapter_validation():
+    workflow = Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
+    assert "python -m pip install -r requirements.txt pytest" in workflow
+    assert "python -m pytest -q tests/test_semantic_ptbr_audio_qa.py" in workflow
