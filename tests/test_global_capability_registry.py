@@ -106,13 +106,24 @@ def test_unknown_does_not_become_available():
         "ai.provider.gemini",
         "analytics.learning",
         "tubegent",
-        "gta6.fact-check",
     ):
         record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
         assert record is not None
         assert record.availability == UNKNOWN
         assert record.available is False
         assert record.execution_enabled is False
+
+
+def test_fact_check_is_explicitly_executable_after_bounded_runtime_promotion():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("gta6.fact-check")
+    assert record is not None
+    assert record.availability == AVAILABLE
+    assert record.available is True
+    assert record.execution_enabled is True
+    assert record.executor_binding == (
+        "app.services.gta6_fact_check_service.execute_gta6_fact_check_capability"
+    )
+    assert record.evidence_contract == "app.services.gta6_fact_check_service.FactCheckResult"
 
 
 def test_every_available_capability_has_executor_binding():
@@ -210,14 +221,17 @@ def test_native_skills_are_mapped_to_real_capabilities():
 
 
 def test_production_plan_is_allowed_from_editorial_and_execution():
-    record=GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
+    record = GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
     assert record is not None
     assert set(record.allowed_actions) == {"EDITORIAL", "EXECUTION"}
-    editorial=GLOBAL_CAPABILITY_REGISTRY.discover(intent="production plan", authorized_action="EDITORIAL", limit=20)
+    editorial = GLOBAL_CAPABILITY_REGISTRY.discover(
+        intent="production plan", authorized_action="EDITORIAL", limit=20
+    )
     assert "production.plan" in {item["capability_id"] for item in editorial}
 
+
 def test_production_plan_rejects_unrelated_actions():
-    record=GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
+    record = GLOBAL_CAPABILITY_REGISTRY.get("production.plan")
     assert record is not None
     assert "RESEARCH" not in record.allowed_actions
     assert "YOUTUBE" not in record.allowed_actions
