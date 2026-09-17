@@ -283,4 +283,47 @@ for _capability_id in ("ai.provider.opencode-free", "executor.omniroute-gateway"
         )
     )
 
+# gta6.fact-check is a native deterministic executor. The base registry keeps
+# the skill discoverable as unproven metadata; this overlay promotes the exact
+# implementation only after the bounded runtime exists in this repository.
+_existing_fact_check = _REGISTRY._by_id.get("gta6.fact-check")
+if _existing_fact_check is None:
+    raise ValueError("Missing gta6.fact-check Registry record")
+FACT_CHECK_RECORD = replace(
+    _existing_fact_check,
+    implementation="Harness-governed deterministic GTA6 claim/evidence fact-check executor",
+    input_contract="claim + provenance-complete evidence + mission/task/goal lineage",
+    output_contract="FactCheckResult + AgentInvocationReceipt + canonical Harness evidence",
+    requirements=(
+        "persisted Harness RESEARCH or EDITORIAL authorization",
+        "Harness Routing/Policy decision",
+        "exact Global Capability Registry executor binding",
+        "provenance-complete evidence",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    security_boundary=(
+        "DeepSeek Harness exact authorization/routing/executor binding; deterministic evidence assessment only; "
+        "missing provenance fails closed; no autonomous research, memory write, editorial decision, publication, or fallback authority"
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_PROVENANCE_FAIL_CLOSED",
+    evidence_contract="app.services.gta6_fact_check_service.FactCheckResult",
+    executor_binding="app.services.gta6_fact_check_service.execute_gta6_fact_check_capability",
+    provider_id="internal",
+    side_effects=(),
+)
+_REGISTRY._by_id[FACT_CHECK_RECORD.capability_id] = FACT_CHECK_RECORD
+_REGISTRY._records = tuple(
+    sorted(
+        (
+            FACT_CHECK_RECORD if record.capability_id == FACT_CHECK_RECORD.capability_id else record
+            for record in _REGISTRY._records
+        ),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
