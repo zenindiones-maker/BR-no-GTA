@@ -76,13 +76,64 @@ jobs:
             tests/test_professional_audiovisual_worker.py \
             tests/test_semantic_ptbr_audio_qa.py
 
+      - name: Canonicalize redundant section evidence lineage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path('.run001/video-a-investigative-longform.json')
+          out_root = Path('runtime/run001')
+          out_root.mkdir(parents=True, exist_ok=True)
+          config = json.loads(source.read_text(encoding='utf-8'))
+          claims = {claim['claim_id']: claim for claim in config.get('claims', [])}
+          patches = []
+          for section in config.get('script_sections', []):
+              claim_ids = section.get('claim_ids') or []
+              unknown = [claim_id for claim_id in claim_ids if claim_id not in claims]
+              if unknown:
+                  raise SystemExit(f"VIDEO_A_UNKNOWN_SECTION_CLAIMS:{section.get('section_id')}:{','.join(unknown)}")
+              required = {
+                  source_ref
+                  for claim_id in claim_ids
+                  for source_ref in (claims[claim_id].get('source_refs') or [])
+              }
+              current = set(section.get('evidence_ids') or [])
+              missing = sorted(required - current)
+              if missing:
+                  section['evidence_ids'] = sorted(current | required)
+                  patches.append({
+                      'section_id': section.get('section_id'),
+                      'missing_evidence_ids': missing,
+                      'resolution': 'DERIVED_FROM_CANONICAL_CLAIM_LEDGER',
+                  })
+          canonical = out_root / 'video-a-canonical-config.json'
+          canonical.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+          reconciliation = {
+              'status': 'PASS',
+              'source_config': str(source),
+              'canonical_config': str(canonical),
+              'policy': 'SECTION_EVIDENCE_MUST_SUPERSET_REFERENCED_CLAIM_PROVENANCE',
+              'patches': patches,
+              'patch_count': len(patches),
+          }
+          (out_root / 'evidence-lineage-reconciliation.json').write_text(
+              json.dumps(reconciliation, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print('VIDEO_A_EVIDENCE_LINEAGE_RECONCILIATION=PASS')
+          print(f"VIDEO_A_EVIDENCE_LINEAGE_PATCH_COUNT={len(patches)}")
+          PY
+
       - name: Execute live Harness-governed editorial mission
         run: |
           set -euo pipefail
           rm -rf runtime/run001/video-a-editorial
           python scripts/run001_longform_editorial_controller.py \
-            --config .run001/video-a-investigative-longform.json \
+            --config runtime/run001/video-a-canonical-config.json \
             --output-dir runtime/run001/video-a-editorial
+          cp runtime/run001/evidence-lineage-reconciliation.json \
+            runtime/run001/video-a-editorial/evidence-lineage-reconciliation.json
 
       - name: Validate governed RenderJob and editorial proof
         run: |
@@ -101,6 +152,7 @@ jobs:
               'content-intelligence-proof.json',
               'agent-invocation-receipts.json',
               'knowledge-return.json',
+              'evidence-lineage-reconciliation.json',
               'render-job.json',
               'controller-result.json',
           )

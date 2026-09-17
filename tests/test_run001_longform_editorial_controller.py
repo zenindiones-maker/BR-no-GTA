@@ -118,6 +118,9 @@ def test_video_a_live_bridge_runs_editorial_controller_then_official_render_work
     workflow = LONGFORM_BRIDGE.read_text(encoding="utf-8")
     assert "scripts/run001_longform_editorial_controller.py" in workflow
     assert ".run001/video-a-investigative-longform.json" in workflow
+    assert "video-a-canonical-config.json" in workflow
+    assert "evidence-lineage-reconciliation.json" in workflow
+    assert "DERIVED_FROM_CANONICAL_CLAIM_LEDGER" in workflow
     assert "actions/workflows/render-worker.yml/dispatches" in workflow
     assert "run001-e2e-canary" not in workflow
     assert "'render_job_id': 920101" in workflow
