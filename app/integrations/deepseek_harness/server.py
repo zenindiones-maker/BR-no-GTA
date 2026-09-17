@@ -556,17 +556,24 @@ def br_capability_execute(
     if not isinstance(implementation, dict):
         raise RuntimeError("Harness routing did not bind implementation metadata")
 
+    authorization_lineage = {
+        "routing_id": routing.routing_id,
+        "capability_id": routing.selected_capability_id,
+        "selected_agent_id": implementation.get("agent_id"),
+        "selected_skill_id": implementation.get("skill_id"),
+        "selected_executor_binding": routing.selected_executor_binding,
+        "fallback_occurred": routing.fallback_occurred,
+    }
+    if routing.selected_capability_id == "agent-office.execute":
+        goal_id = payload.get("goal_id")
+        if not isinstance(goal_id, str) or not goal_id.strip():
+            raise ValueError("Agent Office payload requires goal_id")
+        authorization_lineage["goal_id"] = goal_id.strip()
+
     authorization = issue_harness_authorization(
         authorized_action=routing.authorized_action,
         subject=f"capability:{routing.selected_capability_id}",
-        lineage={
-            "routing_id": routing.routing_id,
-            "capability_id": routing.selected_capability_id,
-            "selected_agent_id": implementation.get("agent_id"),
-            "selected_skill_id": implementation.get("skill_id"),
-            "selected_executor_binding": routing.selected_executor_binding,
-            "fallback_occurred": routing.fallback_occurred,
-        },
+        lineage=authorization_lineage,
     )
     capability_evidence = execute_mcp_capability(
         routing_decision=routing,

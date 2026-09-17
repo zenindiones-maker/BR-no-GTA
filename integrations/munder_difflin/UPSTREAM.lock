@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/chaitanyagiri/munder-difflin",
+  "commit": "6248293a7cd9dfdbf9633d12bbe857831ccfee88",
+  "tree": "7c531d662beac46af3a6c9f1c2176135b5628b3c",
+  "version": "0.4.6",
+  "describe": "v0.5.2-52-g6248293a",
+  "license": "MIT (source code); bundled pixel-art assets excluded",
+  "audit_review": {
+    "reviewed_at": "2026-09-16",
+    "review_by": "2026-10-16",
+    "runtime_reachable_from_br": false,
+    "allowed_high_packages": ["axios", "localtunnel", "toml", "tunnelmole"],
+    "critical_count": 0
+  },
+  "package_lock_sha256": "18ed0753b21d742a03d79161c2b0b3c9f8ccd7d47d663d30e8cd3eacbabe580b",
+  "core_source_sha256": {
+    "src/main/hive.ts": "307412158e8212e52dee6afc184f115bf75f34c56ec7c16611aa779aaa237a64",
+    "src/main/git.ts": "7cdd597e52859469266c522c3e4521c5906ac820bea1b25d4e6e731e4754a025",
+    "src/main/workerLaunch.ts": "026b74e0e65cb7bd29ba17737407974f4d26912ea36fcb6376b427595e4e85ea"
+  }
+}

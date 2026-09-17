@@ -124,6 +124,7 @@ CAPABILITY_CATALOG = tuple(
     if (
         record.capability_id.startswith("addy:")
         or record.provider_id == "higgsfield"
+        or record.capability_id == "agent-office.execute"
     )
 )
 _CAPABILITY_BY_ID = {

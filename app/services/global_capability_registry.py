@@ -12,6 +12,58 @@ from app.services.global_capability_registry_base import (
     GLOBAL_CAPABILITY_REGISTRY as _REGISTRY,
 )
 
+AGENT_OFFICE_RECORD = CapabilityRecord(
+    capability_id="agent-office.execute",
+    capability_type="EXECUTOR",
+    domain="development",
+    implementation=(
+        "Harness-subordinated headless Munder Difflin Agent Office coordinator"
+    ),
+    input_contract="AgentOfficeExecutionSpec + bounded AgentOfficeTask list",
+    output_contract=(
+        "AgentOfficeExecutionResult + CapabilityEvidence/CanonicalExecutionResult"
+    ),
+    requirements=(
+        "persisted Harness DEVELOPMENT authorization",
+        "Harness Routing/Policy decision",
+        "pinned Munder Difflin upstream commit",
+        "existing Codex executor integration",
+        "existing Agent Skills registry",
+        "git worktree support",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "agent-office",
+        "munder-difflin",
+        "multi-agent",
+        "codex",
+        "agent-skills",
+        "worktree",
+        "evidence",
+        "headless",
+    ),
+    security_boundary=(
+        "DeepSeek Harness is sole authority; AGENT_OFFICE_COORDINATOR has delegated-only "
+        "mission scope; exact branch/base SHA, agent, capability, path, time and cost bounds; "
+        "no scheduler, publication, secret access, canonical memory or parallel control plane"
+    ),
+    cost_class="BOUNDED_BY_SPEC",
+    quota_class="HARNESS_SELECTED_WORKERS",
+    latency_class="BOUNDED_ASYNC",
+    quality_class="DETERMINISTIC_BOUNDARY_HEADLESS_CANARY_REQUIRED",
+    evidence_contract="app.services.agent_office.contracts.AgentOfficeExecutionResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service.execute_agent_office_capability"
+    ),
+    version="1",
+    provider_id="munder-difflin-pinned",
+    agent_id="agent-office-coordinator",
+    side_effects=("ephemeral worktrees", "mission-local mailbox"),
+)
+
 PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control", implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP", input_contract="allowlisted phone operation + deterministic parameters", output_contract="sanitized phone control result + Harness evidence", requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE", quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability", version="1", provider_id="mobilerun-local", side_effects=("device UI state change",))
 
 PRODUCTION_MEDIA_BINDING_RECORD = CapabilityRecord(capability_id="production.media.bind-selected-segments", capability_type="CAPABILITY", domain="production-media", implementation="Harness-governed bounded binding of selected Media segments into ProductionPlan", input_contract="persisted ProductionPlan + selected segment ids + authorization lineage", output_contract="persisted composed ProductionPlan + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "matching production lineage and execution_id"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("production", "media", "selection", "binding", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry capability and executor binding; caller cannot select executor; bind_selected_segments is reachable only after all gates", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.production_media_composition_service.execute_production_media_binding_capability", version="1", side_effects=("ProductionPlan media binding persistence",))
@@ -192,6 +244,7 @@ TELEGRAM_USER_INPUT_RECORD = CapabilityRecord(
 )
 
 for _record in (
+    AGENT_OFFICE_RECORD,
     PHONE_CONTROL_RECORD,
     PRODUCTION_MEDIA_SELECTION_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
