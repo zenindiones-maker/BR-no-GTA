@@ -6,46 +6,26 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - '.github/workflows/addy-24-live-semantic-smoke.yml'
-      - 'scripts/agent-tooling/live_semantic_smoke_addy_24.py'
-      - 'scripts/agent-tooling/bootstrap.sh'
-      - 'app/services/codex_addy_capability_executor.py'
-      - 'app/services/global_capability_registry_base.py'
-      - 'app/services/harness_authorization_service.py'
-      - 'app/services/harness_capability_service.py'
   workflow_dispatch:
-    inputs:
-      max_total_tokens:
-        description: Hard aggregate token ceiling for the 24 real Codex turns
-        required: true
-        default: '1500000'
-      max_tokens_per_turn:
-        description: Hard token ceiling for each individual skill turn
-        required: true
-        default: '60000'
-      parallelism:
-        description: Bounded concurrent live Codex turns (1-4)
-        required: true
-        default: '4'
 
 permissions:
   contents: read
 
 concurrency:
-  group: addy-24-live-semantic-smoke-${{ github.ref }}
+  group: addy-24-live-semantic-smoke
   cancel-in-progress: false
 
 jobs:
   live-semantic-smoke:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[live-addy-24]')
     name: Prove 24 real Addy semantic turns
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      PYTHONPATH: ${{ github.workspace }}
-      BR_TEST_DATABASE: ${{ runner.temp }}/addy-24-live-semantic.db
-      MAX_TOTAL_TOKENS: ${{ inputs.max_total_tokens || '1500000' }}
-      MAX_TOKENS_PER_TURN: ${{ inputs.max_tokens_per_turn || '60000' }}
-      LIVE_PARALLELISM: ${{ inputs.parallelism || '4' }}
+      PYTHONPATH: .
+      BR_TEST_DATABASE: /tmp/addy-24-live-semantic.db
+      MAX_TOTAL_TOKENS: '1500000'
+      MAX_TOKENS_PER_TURN: '60000'
+      LIVE_PARALLELISM: '4'
 
     steps:
       - name: Checkout exact branch state
