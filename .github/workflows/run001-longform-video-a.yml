@@ -145,7 +145,7 @@ jobs:
           required = (
               'research-dossier.json',
               'claim-ledger.json',
-              'first-pass-fact-check.json',
+              'research-fact-check.json',
               'content-strategy.json',
               'script-critic-review.json',
               'final-script-fact-check.json',
