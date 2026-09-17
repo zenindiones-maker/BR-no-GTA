@@ -153,11 +153,17 @@ def reject_secrets(value):
     """Fail before archiving credentials accidentally embedded in a job."""
     if isinstance(value, dict):
         for key, child in value.items():
-            if re.search(
-                r"token|password|secret|api[_-]?key|authorization",
-                str(key),
+            key_text = str(key)
+            credential_key = re.search(
+                r"token|password|secret|api[_-]?key",
+                key_text,
                 re.I,
-            ):
+            )
+            authorization_credential = (
+                re.search(r"authorization", key_text, re.I)
+                and not re.fullmatch(r"authorization_id", key_text, re.I)
+            )
+            if credential_key or authorization_credential:
                 raise WorkerError("Credentials do not belong in RenderJob")
             reject_secrets(child)
     elif isinstance(value, list):
