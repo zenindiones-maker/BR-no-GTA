@@ -24,7 +24,9 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.nvidia_nim_provider import NvidiaNIMProvider
-from app.services.omniroute_ai_provider import OmniRouteAIProvider
+from app.services.opencode_executor_profile_service import (
+    create_opencode_provider_for_active_profile,
+)
 
 
 HarnessAIProviderAuthorization = HarnessAuthorization
@@ -50,6 +52,10 @@ class HarnessAIProviderEvidence:
     latency_seconds: float | None = None
     retry_count: int = 0
     evidence_refs: tuple[str, ...] = ()
+    provider_profile_skill_id: str | None = None
+    provider_profile_version: str | None = None
+    provider_profile_content_ref: str | None = None
+    provider_profile_checksum: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -192,11 +198,11 @@ def select_harness_ai_provider(
         )
 
     if normalized_provider == "opencode":
-        if "omniroute_gateway_service.execute_omniroute_gateway" not in (
+        if "opencode_executor_profile_service.create_opencode_provider_for_active_profile" not in (
             decision.selected_provider_executor_binding or ""
         ):
-            raise PermissionError("OpenCode executor escaped registered OmniRoute binding")
-        return normalized_provider, OmniRouteAIProvider(
+            raise PermissionError("OpenCode executor escaped governed profile resolver binding")
+        return normalized_provider, create_opencode_provider_for_active_profile(
             routing_decision=decision,
             authorization=resolved_authorization,
         )
@@ -244,8 +250,16 @@ def execute_harness_ai_generation(
         authorization=resolved_authorization,
         prompt=prompt,
     )
-    executor_binding = decision.selected_provider_executor_binding
+    executor_binding = (
+        getattr(provider, "executor_binding", None)
+        or decision.selected_provider_executor_binding
+    )
     model = decision.selected_model
+    profile = getattr(provider, "profile", None)
+    profile_skill_id = profile.get("skill_id") if isinstance(profile, dict) else None
+    profile_version = getattr(provider, "profile_version", None)
+    profile_content_ref = getattr(provider, "profile_content_ref", None)
+    profile_checksum = getattr(provider, "profile_checksum", None)
 
     try:
         response = provider.generate(prompt)
@@ -283,6 +297,10 @@ def execute_harness_ai_generation(
             latency_seconds=latency,
             retry_count=0,
             evidence_refs=refs,
+            provider_profile_skill_id=profile_skill_id,
+            provider_profile_version=profile_version,
+            provider_profile_content_ref=profile_content_ref,
+            provider_profile_checksum=profile_checksum,
         )
     except Exception as exc:
         finished_at = _utcnow()
@@ -313,6 +331,10 @@ def execute_harness_ai_generation(
             latency_seconds=latency,
             retry_count=0,
             evidence_refs=refs,
+            provider_profile_skill_id=profile_skill_id,
+            provider_profile_version=profile_version,
+            provider_profile_content_ref=profile_content_ref,
+            provider_profile_checksum=profile_checksum,
         )
 
     finished_at = _utcnow()
@@ -346,6 +368,10 @@ def execute_harness_ai_generation(
             latency_seconds=latency,
             retry_count=0,
             evidence_refs=refs,
+            provider_profile_skill_id=profile_skill_id,
+            provider_profile_version=profile_version,
+            provider_profile_content_ref=profile_content_ref,
+            provider_profile_checksum=profile_checksum,
         )
 
     return HarnessAIProviderEvidence(
@@ -366,4 +392,8 @@ def execute_harness_ai_generation(
         latency_seconds=latency,
         retry_count=0,
         evidence_refs=refs,
+        provider_profile_skill_id=profile_skill_id,
+        provider_profile_version=profile_version,
+        provider_profile_content_ref=profile_content_ref,
+        provider_profile_checksum=profile_checksum,
     )
