@@ -30,6 +30,10 @@ from app.services.telegram_fresh_research_service import (
     requires_fresh_research,
     research_fresh_gta6_under_harness,
 )
+from app.services.telegram_reasoning_learning_service import (
+    TELEGRAM_REASONING_TASK_CLASS,
+    capture_telegram_reasoning_outcome,
+)
 
 
 TELEGRAM_ASSET_CAPABILITY_ID = "telegram.asset.register"
@@ -39,6 +43,24 @@ TELEGRAM_ASSET_EXECUTOR_BINDING = (
 
 
 ProgressCallback = Callable[[str, str], None]
+
+
+class HarnessReasoningFailure(RuntimeError):
+    """Safe user-boundary error carrying persisted Learning Plane evidence."""
+
+    def __init__(self, payload: dict[str, Any]):
+        self.payload = dict(payload)
+        error = self.payload.get("provider_error")
+        error = error if isinstance(error, dict) else {}
+        code = str(error.get("code") or "provider_failure")
+        super().__init__(
+            "Harness-governed AI reasoning failed "
+            f"(provider={self.payload.get('provider')}, "
+            f"model={self.payload.get('model')}, code={code})"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self.payload)
 
 
 def _safe_asset(record: dict[str, Any]) -> dict[str, Any]:
@@ -215,6 +237,7 @@ def chat_under_harness(
     message: str,
     *,
     progress_callback: ProgressCallback | None = None,
+    input_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = str(message or "").strip()
     if not text:
@@ -252,6 +275,14 @@ def chat_under_harness(
                 "fresh_research_required": True,
                 "fresh_research_status": "FAIL_CLOSED",
                 "fresh_research_error": type(exc).__name__,
+                "INPUT_MEMORY_CAPTURED": (
+                    "PASS"
+                    if input_record is not None
+                    and input_record.get("memory_event_id") is not None
+                    else "UNKNOWN"
+                ),
+                "EXECUTION_OUTCOME_LEARNED": "NOT_APPLICABLE",
+                "USER_GOAL_COMPLETED": "NO",
             }
         _emit(
             progress_callback,
@@ -259,20 +290,41 @@ def chat_under_harness(
             f"✅ Evidência fresca coletada em {fresh.checked_at}. Validando hierarquia de fontes antes do raciocínio...",
         )
 
+    telegram_goal = None
+    if input_record is not None:
+        telegram_goal = (
+            f"telegram:{input_record.get('telegram_chat_id')}:"
+            f"{input_record.get('telegram_message_id')}"
+        )
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent="answer one Telegram user message with governed grounded GTA6 reasoning",
             authorized_action="DECISION",
             domain="ai",
+            task_class=TELEGRAM_REASONING_TASK_CLASS,
+            goal_id=telegram_goal,
             required_capability_id="ai.reasoning.text",
             provider_required=True,
             provider_domain="ai",
             fallback_allowed=False,
             zero_cost_operation=True,
+            learning_required=True,
         )
     )
     if not routing.selected_provider:
         raise RuntimeError("Harness did not select an AI provider")
+
+    telegram_lineage = {}
+    if input_record is not None:
+        telegram_lineage = {
+            "telegram_input_id": input_record.get("id"),
+            "telegram_user_id": input_record.get("telegram_user_id"),
+            "telegram_chat_id": input_record.get("telegram_chat_id"),
+            "telegram_message_id": input_record.get("telegram_message_id"),
+            "telegram_update_id": input_record.get("telegram_update_id"),
+            "memory_event_id": input_record.get("memory_event_id"),
+            "memory_id": input_record.get("memory_id"),
+        }
 
     authorization = issue_harness_authorization(
         authorized_action="DECISION",
@@ -284,6 +336,8 @@ def chat_under_harness(
             "selected_model": routing.selected_model,
             "selected_executor_binding": routing.selected_provider_executor_binding,
             "ingress": "telegram",
+            "task_class": TELEGRAM_REASONING_TASK_CLASS,
+            **telegram_lineage,
             "fresh_research_required": freshness_required,
             "fresh_research_execution_id": fresh.execution_id if fresh is not None else None,
             "fresh_research_routing_id": fresh.routing_id if fresh is not None else None,
@@ -318,30 +372,90 @@ def chat_under_harness(
         "REASONING",
         "🧠 Evidências prontas. Roteando raciocínio governado pelo Harness no cloud...",
     )
+    evidence = None
+    learned_outcome = None
     try:
         evidence = execute_harness_ai_generation(
             prompt=prompt,
             authorization=authorization,
             routing_decision=routing,
         )
+        if input_record is not None:
+            learned_outcome = capture_telegram_reasoning_outcome(
+                evidence=evidence,
+                routing_decision=routing,
+                input_record=input_record,
+            )
     finally:
         consume_harness_authorization(authorization)
+
+    if evidence is None:
+        raise RuntimeError("Harness AI execution returned no evidence")
 
     result = evidence.result if isinstance(evidence.result, dict) else {}
     answer = str(result.get("text") or "").strip()
     if not evidence.active or evidence.status != "EXECUTED" or not answer:
-        raise RuntimeError("Harness-governed AI reasoning did not produce a usable answer")
+        provider_error = (
+            dict(evidence.error)
+            if isinstance(evidence.error, dict)
+            else {"code": "provider_failure", "message": str(evidence.error or "")[:1200]}
+        )
+        payload = {
+            "TELEGRAM_INGRESS": "PASS" if input_record is not None else "UNKNOWN",
+            "HARNESS_REASONING": "FAIL",
+            "USER_GOAL_COMPLETED": "NO",
+            "INPUT_MEMORY_CAPTURED": (
+                learned_outcome.get("INPUT_MEMORY_CAPTURED")
+                if learned_outcome is not None else "UNKNOWN"
+            ),
+            "EXECUTION_OUTCOME_LEARNED": (
+                learned_outcome.get("EXECUTION_OUTCOME_LEARNED")
+                if learned_outcome is not None else "FAIL"
+            ),
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "provider": evidence.provider,
+            "model": evidence.model or routing.selected_model,
+            "executor_binding": evidence.executor_binding or routing.selected_provider_executor_binding,
+            "authorization_id": evidence.authorization_id or authorization.authorization_id,
+            "execution_id": evidence.execution_id,
+            "latency_seconds": evidence.latency_seconds,
+            "retry_count": evidence.retry_count,
+            "provider_error": provider_error,
+            "episode_id": (
+                learned_outcome["episode"]["episode_id"]
+                if learned_outcome is not None else None
+            ),
+            "failure_memory_id": (
+                learned_outcome["failure_memory"]["memory_id"]
+                if learned_outcome is not None
+                and learned_outcome.get("failure_memory") is not None
+                else None
+            ),
+            "improvement_mission_id": (
+                learned_outcome["improvement_mission"]["improvement_mission_id"]
+                if learned_outcome is not None
+                and learned_outcome.get("improvement_mission") is not None
+                else None
+            ),
+            "learning_context": dict(
+                routing.policy_metadata.get("learning_context") or {}
+            ),
+        }
+        raise HarnessReasoningFailure(payload)
 
+    learning_context = dict(routing.policy_metadata.get("learning_context") or {})
     return {
         "answer": answer,
         "authority": evidence.authority,
         "authorized_action": evidence.authorized_action,
         "routing_id": routing.routing_id,
-        "authorization_id": authorization.authorization_id,
+        "authorization_id": evidence.authorization_id or authorization.authorization_id,
         "execution_id": evidence.execution_id,
         "capability_id": routing.selected_capability_id,
         "provider": evidence.provider,
-        "model": result.get("model") or routing.selected_model,
+        "model": evidence.model or result.get("model") or routing.selected_model,
+        "executor_binding": evidence.executor_binding or routing.selected_provider_executor_binding,
         "fallback_occurred": routing.fallback_occurred,
         "zero_cost_operation": bool(routing.policy_metadata.get("zero_cost_operation")),
         "fresh_research_required": freshness_required,
@@ -351,8 +465,32 @@ def chat_under_harness(
         "fresh_research_execution_ref": fresh.execution_ref if fresh is not None else None,
         "official_source_count": fresh.official_source_count if fresh is not None else 0,
         "secondary_source_count": fresh.secondary_source_count if fresh is not None else 0,
+        "INPUT_MEMORY_CAPTURED": (
+            learned_outcome.get("INPUT_MEMORY_CAPTURED")
+            if learned_outcome is not None else "UNKNOWN"
+        ),
+        "EXECUTION_OUTCOME_LEARNED": (
+            learned_outcome.get("EXECUTION_OUTCOME_LEARNED")
+            if learned_outcome is not None else "NOT_APPLICABLE"
+        ),
+        "USER_GOAL_COMPLETED": "YES",
+        "episode_id": (
+            learned_outcome["episode"]["episode_id"]
+            if learned_outcome is not None else None
+        ),
+        "retrieved_memory_ids": list(
+            learning_context.get("retrieved_memory_ids") or ()
+        ),
+        "retrieved_failure_memory_ids": list(
+            learning_context.get("retrieved_failure_memory_ids") or ()
+        ),
+        "retrieved_human_feedback_ids": list(
+            learning_context.get("retrieved_human_feedback_ids") or ()
+        ),
+        "competence_records": list(
+            learning_context.get("competence_records") or ()
+        ),
     }
-
 
 def execute_telegram_asset_registration_capability(
     *,
