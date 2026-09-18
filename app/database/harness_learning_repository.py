@@ -449,6 +449,52 @@ def insert_evaluation(record: dict[str, Any]) -> dict[str, Any]:
         connection.close()
 
 
+def get_evaluation(evaluation_id: str) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_improvement_evaluations WHERE evaluation_id = ?",
+            (evaluation_id,),
+        ).fetchone()
+        return _deserialize(row, _EVAL_JSON) if row else None
+    finally:
+        connection.close()
+
+
+def list_evaluations(
+    *,
+    candidate_id: str | None = None,
+    evaluation_mode: str | None = None,
+    decision: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+    connection = get_connection()
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for key, value in (
+            ("candidate_id", candidate_id),
+            ("evaluation_mode", evaluation_mode),
+            ("decision", decision),
+        ):
+            if value is not None:
+                clauses.append(f"{key} = ?")
+                params.append(value)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        rows = connection.execute(
+            f"""SELECT * FROM harness_improvement_evaluations{where}
+                ORDER BY created_at DESC, evaluation_id DESC
+                LIMIT ?""",
+            params,
+        ).fetchall()
+        return [_deserialize(row, _EVAL_JSON) for row in rows]
+    finally:
+        connection.close()
+
+
 def insert_version(*, table: str, identity_field: str, record: dict[str, Any]) -> dict[str, Any]:
     if table not in {"harness_skill_versions", "harness_policy_versions"}:
         raise ValueError("unsupported version table")
