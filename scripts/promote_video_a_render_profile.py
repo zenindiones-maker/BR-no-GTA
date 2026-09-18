@@ -232,7 +232,7 @@ def main() -> int:
         authorized_action="EXECUTION",
         subject="action:EXECUTION",
         harness_decision_id=str(job["brain_decision_id"]),
-        execution_id="run001-video-a-investigative-v2",
+        execution_id="run001-video-a-investigative-v3",
         lineage={
             "goal_id": job["goal_id"],
             "routing_id": routing.routing_id,
