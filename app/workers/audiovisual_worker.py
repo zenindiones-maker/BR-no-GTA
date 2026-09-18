@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from app.services.edit_plan_service import EditPlan
+from app.services.render_learning_profile_service import resolve_bound_render_options
 
 
 class WorkerError(ValueError):
@@ -490,14 +491,71 @@ def execute(job, asset_root, output_root, *, source_job=None):
         from vedit.render import RenderOptions, render
 
         qa["stage"] = "render"
-        render(
+        bound_options = resolve_bound_render_options(job.get("render"))
+        learning_binding = dict((job.get("render") or {}).get("learning_profile") or {})
+        progress_path = folder / "render-progress.json"
+
+        def _record_progress(progress):
+            payload = dict(progress or {})
+            payload.update({
+                "status": "RUNNING",
+                "render_job_id": job["render_job_id"],
+                "video_id": job["video_id"],
+                "execution_id": job["execution_id"],
+                "skill_id": learning_binding.get("skill_id"),
+                "skill_version": learning_binding.get("version", "v1-legacy"),
+                "encoder_policy": {
+                    "codec": bound_options["codec"],
+                    "quality": bound_options["quality"],
+                    "software_preset": bound_options.get("software_preset"),
+                    "prefer_hw": bound_options["prefer_hw"],
+                    "hwaccel_decode": bound_options["hwaccel_decode"],
+                },
+            })
+            write_json(progress_path, payload)
+
+        render_result = render(
             project,
             RenderOptions(
                 output=str(output),
-                prefer_hw=False,
-                hwaccel_decode=False,
+                codec=bound_options["codec"],
+                quality=bound_options["quality"],
+                prefer_hw=bound_options["prefer_hw"],
+                hwaccel_decode=bound_options["hwaccel_decode"],
+                software_preset=bound_options.get("software_preset"),
             ),
+            on_progress=_record_progress,
         )
+        runtime_metrics = {
+            "status": "COMPLETED",
+            "wall_clock_seconds": render_result.seconds,
+            "media_duration_seconds": render_result.duration,
+            "realtime_factor": (
+                round(render_result.seconds / render_result.duration, 6)
+                if render_result.duration > 0 else None
+            ),
+            "render_speed_x": (
+                round(render_result.duration / render_result.seconds, 6)
+                if render_result.seconds > 0 else None
+            ),
+            "encoder": render_result.encoder,
+            "size_bytes": render_result.size,
+            "warnings": list(render_result.warnings),
+            "skill_id": learning_binding.get("skill_id"),
+            "skill_version": learning_binding.get("version", "v1-legacy"),
+            "content_ref": learning_binding.get("content_ref"),
+            "checksum": learning_binding.get("checksum"),
+            "encoder_policy": {
+                "codec": bound_options["codec"],
+                "quality": bound_options["quality"],
+                "software_preset": bound_options.get("software_preset"),
+                "prefer_hw": bound_options["prefer_hw"],
+                "hwaccel_decode": bound_options["hwaccel_decode"],
+            },
+        }
+        write_json(folder / "render-runtime.json", runtime_metrics)
+        write_json(progress_path, runtime_metrics)
+        qa["render_runtime"] = runtime_metrics
         if not output.is_file() or output.stat().st_size <= 0:
             raise WorkerError("Missing or empty output")
         if len(list(folder.glob("*.mp4"))) != 1:
