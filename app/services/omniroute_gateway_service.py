@@ -4,8 +4,9 @@ from dataclasses import asdict, dataclass
 import base64
 import json
 from pathlib import Path
+import re
 import time
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, Sequence
 
 from app.services.github_actions_artifact_service import GitHubActionsArtifactService
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
@@ -21,7 +22,17 @@ OMNIROUTE_ARTIFACT_NAME = "omniroute-result"
 
 
 class OmniRouteGatewayError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.safe_message = message
+        self.details = dict(details or {})
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": "omniroute_gateway_error",
+            "message": self.safe_message,
+            **self.details,
+        }
 
 
 class OmniRouteGatewayIntegrityError(OmniRouteGatewayError):
@@ -94,6 +105,34 @@ def _canonicalize_reported_model(*, provider: str, requested_model: str, reporte
     )
 
 
+CommandRunner = Callable[[Sequence[str]], str]
+
+
+def _sanitize_failed_run_log(log_text: str) -> dict[str, Any]:
+    text = str(log_text or "")
+    http_codes = [
+        int(value)
+        for value in re.findall(r"HTTP(?: Error)?\s+(\d{3})", text, flags=re.IGNORECASE)
+    ]
+    exit_codes = [
+        int(value)
+        for value in re.findall(r"exit code\s+(\d+)", text, flags=re.IGNORECASE)
+    ]
+    result: dict[str, Any] = {
+        "log_sha256": __import__("hashlib").sha256(text.encode("utf-8")).hexdigest(),
+    }
+    if http_codes:
+        result["http_status"] = http_codes[-1]
+        result["failure_code"] = f"upstream_http_{http_codes[-1]}"
+    elif "empty result" in text.lower():
+        result["failure_code"] = "empty_result"
+    else:
+        result["failure_code"] = "workflow_failure"
+    if exit_codes:
+        result["exit_code"] = exit_codes[-1]
+    return result
+
+
 class GitHubActionsOmniRouteTransport:
     """Ephemeral standard GitHub runner transport. Never authorizes or routes."""
 
@@ -105,6 +144,7 @@ class GitHubActionsOmniRouteTransport:
         dispatcher: GitHubActionsDispatcher,
         watcher: GitHubActionsRunWatcher,
         artifact_service: GitHubActionsArtifactService,
+        command_runner: CommandRunner | None = None,
         workflow: str = "omniroute.yml",
         artifact_root: str | Path = "runtime/omniroute-artifacts",
     ) -> None:
@@ -116,6 +156,7 @@ class GitHubActionsOmniRouteTransport:
         self.dispatcher = dispatcher
         self.watcher = watcher
         self.artifact_service = artifact_service
+        self.command_runner = command_runner
         self.artifact_root = Path(artifact_root)
 
     def execute(
@@ -149,9 +190,29 @@ class GitHubActionsOmniRouteTransport:
             run_id=dispatched.run_id,
         )
         if not watched.succeeded:
+            details: dict[str, Any] = {
+                "execution_ref": f"github-actions:{dispatched.run_id}",
+                "run_id": dispatched.run_id,
+                "status": watched.status,
+                "conclusion": watched.conclusion,
+                "provider": provider,
+                "model": model,
+                "retry_count": 0,
+            }
+            if self.command_runner is not None:
+                try:
+                    failed_log = self.command_runner([
+                        "gh", "run", "view", str(dispatched.run_id),
+                        "--repo", self.repository,
+                        "--log-failed",
+                    ])
+                except Exception:
+                    failed_log = ""
+                if failed_log:
+                    details.update(_sanitize_failed_run_log(failed_log))
             raise OmniRouteGatewayError(
-                f"OmniRoute workflow failed run_id={dispatched.run_id} "
-                f"status={watched.status} conclusion={watched.conclusion}"
+                "OmniRoute workflow failed",
+                details=details,
             )
         output_dir = self.artifact_root / str(dispatched.run_id)
         self.artifact_service.download(
