@@ -163,7 +163,11 @@ def reject_secrets(value):
             )
             authorization_credential = (
                 re.search(r"authorization", key_text, re.I)
-                and not re.fullmatch(r"authorization_id", key_text, re.I)
+                and not re.fullmatch(
+                    r"(?:[a-z0-9]+_)*authorization_id",
+                    key_text,
+                    re.I,
+                )
             )
             if credential_key or authorization_credential:
                 raise WorkerError("Credentials do not belong in RenderJob")
