@@ -1163,6 +1163,7 @@ def _migrate_harness_learning_plane(connection) -> None:
             run_ref TEXT,
             artifact_refs TEXT NOT NULL DEFAULT '[]',
             source_versions TEXT NOT NULL DEFAULT '{}',
+            lineage TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(execution_id, task_id, capability_id, agent_id)
         );
@@ -1190,6 +1191,7 @@ def _migrate_harness_learning_plane(connection) -> None:
             skill_id TEXT,
             skill_version TEXT,
             source_versions TEXT NOT NULL DEFAULT '{}',
+            metadata TEXT NOT NULL DEFAULT '{}',
             support_count INTEGER NOT NULL DEFAULT 0,
             contradiction_count INTEGER NOT NULL DEFAULT 0,
             confidence REAL NOT NULL DEFAULT 0.0,
@@ -1247,6 +1249,8 @@ def _migrate_harness_learning_plane(connection) -> None:
             source_episode_ids TEXT NOT NULL DEFAULT '[]',
             evidence_refs TEXT NOT NULL DEFAULT '[]',
             contradiction_check TEXT NOT NULL DEFAULT '{}',
+            implementation_ref TEXT,
+            acceptance_criteria TEXT NOT NULL DEFAULT '{}',
             status TEXT NOT NULL DEFAULT 'CANDIDATE',
             created_at TEXT NOT NULL,
             promoted_at TEXT
@@ -1264,6 +1268,10 @@ def _migrate_harness_learning_plane(connection) -> None:
             regression_pass INTEGER NOT NULL,
             adversarial_pass INTEGER NOT NULL,
             critical_regression INTEGER NOT NULL DEFAULT 0,
+            evaluation_mode TEXT NOT NULL DEFAULT 'LEGACY',
+            regression_evidence TEXT NOT NULL DEFAULT '{}',
+            adversarial_evidence TEXT NOT NULL DEFAULT '{}',
+            observed_evidence TEXT NOT NULL DEFAULT '{}',
             decision TEXT NOT NULL,
             evidence_refs TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL,
@@ -1312,6 +1320,7 @@ def _migrate_harness_learning_plane(connection) -> None:
             affected_capability TEXT,
             affected_skill TEXT,
             evidence_refs TEXT NOT NULL DEFAULT '[]',
+            metadata TEXT NOT NULL DEFAULT '{}',
             scope TEXT NOT NULL DEFAULT 'LOCAL',
             status TEXT NOT NULL DEFAULT 'CANDIDATE',
             created_at TEXT NOT NULL
@@ -1326,6 +1335,12 @@ def _migrate_harness_learning_plane(connection) -> None:
             trigger_refs TEXT NOT NULL DEFAULT '[]',
             diagnosis TEXT NOT NULL,
             hypothesis TEXT NOT NULL,
+            evidence_considered TEXT NOT NULL DEFAULT '[]',
+            affected_capability TEXT,
+            affected_config TEXT,
+            objective TEXT,
+            constraints TEXT NOT NULL DEFAULT '[]',
+            acceptance_criteria TEXT NOT NULL DEFAULT '{}',
             candidate_id TEXT,
             harness_decision_id TEXT NOT NULL,
             authorization_id TEXT NOT NULL,
@@ -1338,6 +1353,49 @@ def _migrate_harness_learning_plane(connection) -> None:
         );
         """
     )
+
+    # Existing databases already contain the Learning Plane tables. Keep this
+    # migration additive so operational evidence can be introduced without
+    # resetting or rewriting the 14 prior learning commits/data.
+    additive_columns = {
+        "harness_episodes": {
+            "lineage": "TEXT NOT NULL DEFAULT '{}'",
+        },
+        "harness_memories": {
+            "metadata": "TEXT NOT NULL DEFAULT '{}'",
+        },
+        "harness_learning_candidates": {
+            "implementation_ref": "TEXT",
+            "acceptance_criteria": "TEXT NOT NULL DEFAULT '{}'",
+        },
+        "harness_improvement_evaluations": {
+            "evaluation_mode": "TEXT NOT NULL DEFAULT 'LEGACY'",
+            "regression_evidence": "TEXT NOT NULL DEFAULT '{}'",
+            "adversarial_evidence": "TEXT NOT NULL DEFAULT '{}'",
+            "observed_evidence": "TEXT NOT NULL DEFAULT '{}'",
+        },
+        "harness_human_corrections": {
+            "metadata": "TEXT NOT NULL DEFAULT '{}'",
+        },
+        "harness_improvement_missions": {
+            "evidence_considered": "TEXT NOT NULL DEFAULT '[]'",
+            "affected_capability": "TEXT",
+            "affected_config": "TEXT",
+            "objective": "TEXT",
+            "constraints": "TEXT NOT NULL DEFAULT '[]'",
+            "acceptance_criteria": "TEXT NOT NULL DEFAULT '{}'",
+        },
+    }
+    for table, additions in additive_columns.items():
+        existing = {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        for column, declaration in additions.items():
+            if column not in existing:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"
+                )
 
 
 def initialize_schema() -> None:
