@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.run001_longform_editorial_controller import validate_config
+from scripts.run001_longform_editorial_controller import PROFESSIONAL_RENDER_CONFIG, validate_config
 from scripts.run001_longform_no_padding_qa import validate_no_padding
 from scripts.run001_final_product_dispatch import OFFICIAL_BRAND_ASSETS
 
@@ -35,6 +35,16 @@ def test_video_a_contract_is_independent_longform_ptbr_and_review_only():
     assert 1200 <= metrics["estimated_spoken_duration"] <= 1800
     assert metrics["target_wpm"] == 125.0
     assert len({section["section_id"] for section in config["script_sections"]}) == len(config["script_sections"])
+
+
+def test_professional_render_config_is_explicit_and_deterministic():
+    assert PROFESSIONAL_RENDER_CONFIG == {
+        "resolution": "1920x1080",
+        "fps": 30.0,
+        "container": "mp4",
+        "video_codec": "h264",
+        "audio_codec": "aac",
+    }
 
 
 def test_job18_and_job20_are_hard_blocked_as_final_products():
