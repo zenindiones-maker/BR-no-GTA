@@ -472,8 +472,10 @@ def test_gateway_keeps_url_as_source_input_and_hides_telemetry_in_normal_reply()
             },
         }
     )
-    assert "A fonte foi verificada." in reply
-    assert "Ação: guardar para uso editorial futuro." in reply
+    assert "✅ Fonte analisada" in reply
+    assert "Resultado: A fonte foi verificada." in reply
+    assert "Ação do Harness: STORE_FOR_FUTURE" in reply
+    assert "Digite /evidence" in reply
     assert "routing_id" not in reply
     assert "secret-noise" not in reply
     assert "Harness evidence" not in reply
