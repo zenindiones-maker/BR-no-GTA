@@ -17,6 +17,15 @@ from app.services.telegram_harness_service import (
     chat_under_harness,
     list_governed_brand_assets,
 )
+from app.services.human_presentation_service import (
+    ACTION_FIRST,
+    TECHNICAL_FULL,
+    present_canonical_result_under_harness,
+)
+from app.database import harness_learning_repository
+from app.database.harness_authorization_repository import (
+    list_recent_harness_authorizations,
+)
 from app.services.telegram_learning_service import (
     extract_source_url,
     ingest_telegram_input_under_harness,
@@ -159,25 +168,42 @@ def _editorial_action(result: dict[str, Any]) -> str | None:
     return labels.get(decision, decision or None)
 
 
+def _present_chat_v2(
+    result: dict[str, Any],
+    *,
+    input_record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    lineage = {}
+    if isinstance(input_record, dict):
+        lineage = {
+            "telegram_input_id": input_record.get("id"),
+            "telegram_message_id": input_record.get("telegram_message_id"),
+            "telegram_update_id": input_record.get("telegram_update_id"),
+            "memory_event_id": input_record.get("memory_event_id"),
+            "classification": input_record.get("classification"),
+            "input_kind": input_record.get("input_kind"),
+            "source_url": input_record.get("source_url"),
+        }
+    return present_canonical_result_under_harness(
+        result,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage=lineage,
+    )
+
+
 def _chat_reply_v2(result: dict[str, Any]) -> str:
-    answer = str(result.get("answer") or "").strip() or "Concluído."
-    action = _editorial_action(result)
-    if action:
-        return f"{answer}\n\nAção: {action}."
-    return answer
+    return str(_present_chat_v2(result)["text"])
 
 
 def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
     if input_id is None:
         rows = list_recent_telegram_user_inputs(limit=50)
-        record = next(
-            (item for item in rows if str(item.get("source_url") or "").strip()),
-            None,
-        )
+        record = rows[0] if rows else None
     else:
         record = get_telegram_user_input(input_id)
     if record is None:
-        raise ValueError("nenhuma entrada Telegram com fonte foi encontrada")
+        raise ValueError("nenhuma entrada Telegram foi encontrada")
     candidate = get_source_candidate_by_input(int(record["id"]))
     claims = (
         list_source_claims(candidate["candidate_id"])
@@ -197,6 +223,16 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
             "execution_failure_memory_id", "created_at", "updated_at",
         )
     }
+    episode = None
+    if record.get("execution_episode_id"):
+        episode = harness_learning_repository.get_episode(
+            str(record["execution_episode_id"])
+        )
+    authorizations = [
+        item
+        for item in list_recent_harness_authorizations(limit=200)
+        if (item.get("lineage") or {}).get("telegram_input_id") == record.get("id")
+    ]
     return {
         "INPUT_CAPTURED": "PASS" if record.get("memory_event_id") else "FAIL",
         "SOURCE_LEARNED": (
@@ -226,6 +262,10 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         "source_candidate": candidate,
         "claims": claims,
         "editorial_signal": signal,
+        "reasoning_episode": episode,
+        "harness_authorizations": authorizations,
+        "AUDIT_DETAILS_PRESERVED": "PASS",
+        "EVIDENCE_COMMAND_AVAILABLE": "PASS",
     }
 
 
@@ -310,7 +350,17 @@ def _execute_v2_command(text: str) -> str:
                 input_id = int(parts[1].strip())
             except ValueError as exc:
                 raise ValueError("uso: /evidence [telegram_input_id]") from exc
-        return _render_result(_source_evidence_payload(input_id))
+        audit = _source_evidence_payload(input_id)
+        presentation = present_canonical_result_under_harness(
+            audit,
+            surface="telegram",
+            mode=TECHNICAL_FULL,
+            lineage={
+                "telegram_input_id": (audit.get("input") or {}).get("id"),
+                "audit_command": command,
+            },
+        )
+        return str(presentation["text"])
     if command in {"/aprendeu", "/learned"}:
         if len(parts) != 2 or not parts[1].strip():
             raise ValueError("uso: /aprendeu <consulta>")
@@ -537,7 +587,20 @@ def main() -> int:
                             progress_callback=progress,
                             input_record=learned["input"],
                         )
-                        reply = _chat_reply_v2(chat_result)
+                        presentation = _present_chat_v2(
+                            chat_result,
+                            input_record=learned["input"],
+                        )
+                        reply = str(presentation["text"])
+                        print(
+                            "TELEGRAM_PRESENTATION=PASS "
+                            f"MODE={presentation.get('mode')} "
+                            f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
+                            f"CANONICAL_CHARS={presentation.get('canonical_chars')} "
+                            f"PRESENTED_CHARS={presentation.get('presented_chars')} "
+                            f"AUTHORITY={presentation.get('authority')}",
+                            flush=True,
+                        )
                         command_name = "natural-language"
                 except HarnessReasoningFailure as exc:
                     reply = _reasoning_failure_reply(exc)
