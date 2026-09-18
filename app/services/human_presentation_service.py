@@ -239,6 +239,7 @@ def present_canonical_result_under_harness(
     *,
     surface: str,
     mode: str | None = None,
+    lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected_mode = _mode_for_surface(surface, mode)
     routing = route_harness_request(
@@ -269,6 +270,11 @@ def present_canonical_result_under_harness(
             "memory_write": False,
             "routing_authority": False,
             "publication_authority": False,
+            **{
+                str(key): value
+                for key, value in dict(lineage or {}).items()
+                if value is not None
+            },
         },
     )
     try:
