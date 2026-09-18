@@ -4,41 +4,85 @@ import argparse
 import json
 from pathlib import Path
 
+from app.database import harness_learning_repository as repository
 from app.main import initialize_application
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
 )
 from app.services.harness_learning_service import (
-    create_learning_candidate,
+    complete_improvement_mission,
     evaluate_candidate_from_observed_results,
     promote_candidate,
-    register_skill_version,
 )
-from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 from app.services.render_learning_profile_service import (
-    BASELINE_RENDER_PROFILE_VERSION,
     CANDIDATE_RENDER_PROFILE_VERSION,
     RENDER_PROFILE_SKILL_ID,
     bind_active_render_profile,
-    render_profile_checksum,
-    render_profile_content_ref,
     resolve_active_render_profile,
 )
+from scripts.prepare_video_a_render_improvement import prepare as prepare_improvement
 
 
-def _metrics(item: dict, *, quality: float) -> dict:
-    success = 1.0 if item.get("qa_status") == "PASS" else 0.0
-    return {
-        "task_success_rate": success,
-        "quality": quality,
-        "human_correction_rate": 0.0,
-        "retry_rate": 0.0,
-        "failure_recurrence": 0.0 if success else 1.0,
-        "latency_seconds": float(item["wall_clock_seconds"]),
-        "cost": 0.0,
-        "policy_violations": float(item.get("policy_violations") or 0),
+def _require_observed_benchmark(benchmark: dict) -> None:
+    if benchmark.get("observed") is not True:
+        raise ValueError("observed benchmark evidence is required")
+    incident = benchmark.get("source_incident") or {}
+    if incident.get("run_id") != 35289594486:
+        raise ValueError("benchmark is not linked to the real VIDEO A timeout")
+    if incident.get("job_id") != 105429342947:
+        raise ValueError("benchmark job lineage mismatch")
+    if benchmark.get("decision") != "PROMOTION_ELIGIBLE_FOR_HARNESS_EVALUATION":
+        raise ValueError("benchmark did not establish a promotion-eligible candidate")
+    ready = benchmark.get("evaluator_ready")
+    if not isinstance(ready, dict):
+        raise ValueError("benchmark lacks evaluator-ready observed evidence")
+    required = {
+        "baseline_observation",
+        "candidate_observation",
+        "regression_observation",
+        "adversarial_observation",
     }
+    if not required.issubset(ready):
+        raise ValueError("benchmark evaluator-ready bundle is incomplete")
+
+
+def _ensure_incident_matches_db(incident: dict) -> None:
+    if incident.get("REAL_RENDER_FAILURE_EPISODE") != "PASS":
+        raise ValueError("real render incident proof is required")
+    episode_id = str(incident.get("episode_id") or "")
+    failure_memory_id = str(incident.get("failure_memory_id") or "")
+    if not episode_id or not failure_memory_id:
+        raise ValueError("incident proof lacks episode/failure memory identity")
+    episode = repository.get_episode(episode_id)
+    memory = repository.get_memory(failure_memory_id)
+    if episode is None:
+        raise ValueError("incident Episode is not persisted in the active Learning Plane")
+    if memory is None:
+        raise ValueError("incident Failure Memory is not persisted in the active Learning Plane")
+    if episode_id not in (memory.get("source_episode_ids") or ()):
+        raise PermissionError("failure memory/episode provenance mismatch")
+
+
+def _benchmark_refs(
+    benchmark: dict,
+    *,
+    benchmark_run_id: int,
+    benchmark_artifact_id: int,
+) -> tuple[str, ...]:
+    source = benchmark["source_incident"]
+    workload = str(benchmark["workload_fingerprint"])
+    return (
+        f"github:run:{source['run_id']}",
+        f"github:job:{source['job_id']}",
+        f"github:benchmark-run:{benchmark_run_id}",
+        f"github:benchmark-artifact:{benchmark_artifact_id}",
+        f"benchmark-workload:{workload}",
+    )
 
 
 def main() -> int:
@@ -46,6 +90,8 @@ def main() -> int:
     parser.add_argument("--render-job", required=True, type=Path)
     parser.add_argument("--incident-proof", required=True, type=Path)
     parser.add_argument("--benchmark-evidence", required=True, type=Path)
+    parser.add_argument("--benchmark-run-id", required=True, type=int)
+    parser.add_argument("--benchmark-artifact-id", required=True, type=int)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
 
@@ -53,125 +99,68 @@ def main() -> int:
     job = json.loads(args.render_job.read_text(encoding="utf-8"))
     incident = json.loads(args.incident_proof.read_text(encoding="utf-8"))
     benchmark = json.loads(args.benchmark_evidence.read_text(encoding="utf-8"))
-    if incident.get("REAL_RENDER_FAILURE_EPISODE") != "PASS":
-        raise ValueError("real render incident proof is required")
-    if benchmark.get("observed") is not True:
-        raise ValueError("observed benchmark evidence is required")
-    if benchmark.get("source_incident", {}).get("run_id") != 35289594486:
-        raise ValueError("benchmark is not linked to the real VIDEO A timeout")
-    if benchmark.get("decision") != "PROMOTION_ELIGIBLE_FOR_HARNESS_EVALUATION":
-        raise ValueError("benchmark did not establish an eligible candidate")
+    _ensure_incident_matches_db(incident)
+    _require_observed_benchmark(benchmark)
 
-    evidence_refs = (
-        f"github:run:{benchmark['source_incident']['run_id']}",
-        f"github:job:{benchmark['source_incident']['job_id']}",
-        "github:run:35343530893",
-        "github:artifact:10546471925:video-a-render-learning-benchmark",
-        f"episode:{incident['episode_id']}",
-        f"failure-memory:{incident['failure_memory_id']}",
-        f"benchmark-workload:{benchmark['workload_fingerprint']}",
-    )
-    register_skill_version(
-        skill_id=RENDER_PROFILE_SKILL_ID,
-        version=BASELINE_RENDER_PROFILE_VERSION,
-        content_ref=render_profile_content_ref(BASELINE_RENDER_PROFILE_VERSION),
-        checksum=render_profile_checksum(BASELINE_RENDER_PROFILE_VERSION),
-        status="ACTIVE",
-        evidence_refs=evidence_refs,
-    )
-    register_skill_version(
-        skill_id=RENDER_PROFILE_SKILL_ID,
-        version=CANDIDATE_RENDER_PROFILE_VERSION,
-        parent_version=BASELINE_RENDER_PROFILE_VERSION,
-        content_ref=render_profile_content_ref(CANDIDATE_RENDER_PROFILE_VERSION),
-        checksum=render_profile_checksum(CANDIDATE_RENDER_PROFILE_VERSION),
-        status="CANDIDATE",
-        evidence_refs=evidence_refs,
-    )
-    candidate = create_learning_candidate(
-        candidate_type="SKILL_UPDATE",
-        hypothesis=(
-            "Changing only the VEdit software x264 preset from slow to medium "
-            "reduces real long-form render latency without audiovisual regression."
-        ),
-        domain="production-render",
-        task_class="long-form-render",
-        source_episode_ids=(incident["episode_id"],),
-        evidence_refs=evidence_refs,
-        target_agent_id="audiovisual-worker",
-        target_capability_id="production.render.execute",
-        target_skill_id=RENDER_PROFILE_SKILL_ID,
-        baseline_version=BASELINE_RENDER_PROFILE_VERSION,
-        candidate_version=CANDIDATE_RENDER_PROFILE_VERSION,
-        implementation_ref=render_profile_content_ref(CANDIDATE_RENDER_PROFILE_VERSION),
-        acceptance_criteria={
-            "min_latency_reduction_fraction": 0.20,
-            "minimum_ssim": 0.98,
-            "baseline_qa": "PASS",
-            "candidate_qa": "PASS",
-            "policy_violations": 0,
-        },
-    )
+    # Causal order is mandatory: real incident -> ImprovementMission -> candidate.
+    prepared = prepare_improvement()
+    mission_id = str(prepared["improvement_mission_id"])
+    candidate_id = str(prepared["candidate_id"])
+    mission = repository.get_improvement_mission(mission_id)
+    candidate = repository.get_learning_candidate(candidate_id)
+    if mission is None or candidate is None:
+        raise RuntimeError("prepared ImprovementMission/candidate did not persist")
+    if mission.get("candidate_id") != candidate_id:
+        raise PermissionError("ImprovementMission is not linked to the candidate")
+    if mission.get("status") != "CANDIDATE_CREATED":
+        raise PermissionError("ImprovementMission is not in candidate-created state")
+    if candidate.get("implementation_ref") is None:
+        raise PermissionError("candidate is not executable")
 
-    baseline = benchmark["baseline"]
-    challenger = benchmark["candidate"]
-    regression = benchmark["regression_evidence"]
-    regression_observation = {
-        "observed": True,
-        "status": regression["status"],
-        "critical_failures": list(regression.get("critical_failures") or ()),
-        "evidence_refs": evidence_refs,
-        "checks": dict(regression.get("checks") or {}),
-        "ssim": benchmark["quality_metrics"]["ssim_candidate_vs_baseline"],
-    }
-    workload = benchmark["workload_fingerprint"]
+    ready = benchmark["evaluator_ready"]
+    extra_refs = _benchmark_refs(
+        benchmark,
+        benchmark_run_id=args.benchmark_run_id,
+        benchmark_artifact_id=args.benchmark_artifact_id,
+    )
     evaluation = evaluate_candidate_from_observed_results(
-        candidate_id=candidate["candidate_id"],
-        baseline_observation={
-            "observed": True,
-            "metrics": _metrics(baseline, quality=1.0 if baseline["qa_status"] == "PASS" else 0.0),
-            "workload_fingerprint": workload,
-            "evidence_refs": evidence_refs,
-        },
-        candidate_observation={
-            "observed": True,
-            "metrics": _metrics(challenger, quality=1.0 if challenger["qa_status"] == "PASS" else 0.0),
-            "workload_fingerprint": workload,
-            "evidence_refs": evidence_refs,
-        },
-        regression_observation=regression_observation,
-        adversarial_observation={
-            "observed": True,
-            "status": "N/A",
-            "reason": benchmark["adversarial_evidence"]["reason"],
-            "evidence_refs": evidence_refs,
-        },
-        evidence_refs=evidence_refs,
+        candidate_id=candidate_id,
+        baseline_observation=dict(ready["baseline_observation"]),
+        candidate_observation=dict(ready["candidate_observation"]),
+        regression_observation=dict(ready["regression_observation"]),
+        adversarial_observation=dict(ready["adversarial_observation"]),
+        evidence_refs=extra_refs,
     )
+    if evaluation["evaluation_mode"] != "OBSERVED":
+        raise PermissionError("executable candidate evaluation was not observed")
     if evaluation["decision"] != "PROMOTE":
-        raise RuntimeError(f"observed evaluator rejected candidate: {evaluation['decision']}")
+        raise RuntimeError(
+            f"observed evaluator rejected candidate: {evaluation['decision']}"
+        )
 
     promotion_auth = issue_harness_authorization(
         authorized_action="EXECUTION",
-        subject=f"learning:candidate:{candidate['candidate_id']}",
+        subject=f"learning:candidate:{candidate_id}",
         harness_decision_id=str(job["brain_decision_id"]),
         execution_id="run001-video-a-render-profile-promotion-v2",
         lineage={
+            "improvement_mission_id": mission_id,
             "source_episode_id": incident["episode_id"],
             "failure_memory_id": incident["failure_memory_id"],
             "evaluation_id": evaluation["evaluation_id"],
-            "benchmark_run_id": 35343530893,
-            "candidate_id": candidate["candidate_id"],
+            "benchmark_run_id": args.benchmark_run_id,
+            "benchmark_artifact_id": args.benchmark_artifact_id,
+            "candidate_id": candidate_id,
         },
     )
     try:
         promotion = promote_candidate(
-            candidate_id=candidate["candidate_id"],
+            candidate_id=candidate_id,
             evaluation=evaluation,
             authorization=promotion_auth,
             memory_claim=(
-                "Observed VIDEO A benchmark promoted v2 after 25%+ latency reduction, "
-                "PASS audiovisual regression gates and SSIM >= 0.98."
+                "Observed VIDEO A benchmark promoted VEdit long-form render profile v2 "
+                "after measurable wall-clock improvement with audiovisual regression gates PASS."
             ),
             memory_type="PROCEDURAL",
             source_versions={
@@ -185,9 +174,33 @@ def main() -> int:
     if active["version"] != CANDIDATE_RENDER_PROFILE_VERSION:
         raise RuntimeError("promoted render profile did not become active")
 
+    completion_auth = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="learning:improvement",
+        harness_decision_id=str(job["brain_decision_id"]),
+        execution_id="run001-video-a-render-improvement-complete-v2",
+        lineage={
+            "improvement_mission_id": mission_id,
+            "candidate_id": candidate_id,
+            "evaluation_id": evaluation["evaluation_id"],
+            "promotion_authorization_id": promotion["authorization_id"],
+        },
+    )
+    try:
+        completed_mission = complete_improvement_mission(
+            improvement_mission_id=mission_id,
+            authorization=completion_auth,
+        )
+    finally:
+        consume_harness_authorization(completion_auth)
+    if completed_mission["status"] != "COMPLETED":
+        raise RuntimeError("ImprovementMission did not complete after governed promotion")
+
+    # The next request goes through the normal boundary. No version/use_candidate
+    # argument is injected here.
     routing = route_harness_request(
         HarnessRoutingRequest(
-            intent="execute next real VIDEO A render with promoted observed render profile",
+            intent="execute next real VIDEO A render after governed learning promotion",
             authorized_action="EXECUTION",
             domain="production-render",
             task_class="long-form-render",
@@ -202,6 +215,19 @@ def main() -> int:
             learning_required=True,
         )
     )
+    learning_context = dict(routing.policy_metadata.get("learning_context") or {})
+    active_versions = {
+        (item.get("skill_id"), item.get("version"))
+        for item in (learning_context.get("active_skill_versions") or ())
+        if isinstance(item, dict)
+    }
+    promotion_memory_id = str(promotion["memory"]["memory_id"])
+    retrieved_memory_ids = list(learning_context.get("retrieved_memory_ids") or ())
+    if (RENDER_PROFILE_SKILL_ID, CANDIDATE_RENDER_PROFILE_VERSION) not in active_versions:
+        raise RuntimeError("next Harness request did not retrieve promoted active skill version")
+    if promotion_memory_id not in retrieved_memory_ids:
+        raise RuntimeError("next Harness request did not retrieve promoted procedural memory")
+
     render_auth = issue_harness_authorization(
         authorized_action="EXECUTION",
         subject="action:EXECUTION",
@@ -210,10 +236,15 @@ def main() -> int:
         lineage={
             "goal_id": job["goal_id"],
             "routing_id": routing.routing_id,
-            "candidate_id": candidate["candidate_id"],
+            "improvement_mission_id": mission_id,
+            "candidate_id": candidate_id,
             "evaluation_id": evaluation["evaluation_id"],
             "promotion_authorization_id": promotion["authorization_id"],
             "active_render_profile": active["version"],
+            "retrieved_memory_ids": retrieved_memory_ids,
+            "retrieved_failure_memory_ids": list(
+                learning_context.get("retrieved_failure_memory_ids") or ()
+            ),
         },
     )
 
@@ -227,17 +258,29 @@ def main() -> int:
     promoted_job["learning_lineage"] = {
         "source_incident_episode_id": incident["episode_id"],
         "failure_memory_id": incident["failure_memory_id"],
-        "candidate_id": candidate["candidate_id"],
+        "improvement_mission_id": mission_id,
+        "candidate_id": candidate_id,
         "evaluation_id": evaluation["evaluation_id"],
         "promotion_authorization_id": promotion["authorization_id"],
         "render_authorization_id": render_auth.authorization_id,
-        "retrieved_memory_ids": list(
-            routing.policy_metadata.get("learning_context", {}).get("retrieved_memory_ids") or ()
+        "retrieved_memory_ids": retrieved_memory_ids,
+        "retrieved_failure_memory_ids": list(
+            learning_context.get("retrieved_failure_memory_ids") or ()
+        ),
+        "retrieved_human_feedback_ids": list(
+            learning_context.get("retrieved_human_feedback_ids") or ()
+        ),
+        "competence_records": list(
+            learning_context.get("competence_records") or ()
         ),
         "active_skill_versions": list(
-            routing.policy_metadata.get("learning_context", {}).get("active_skill_versions") or ()
+            learning_context.get("active_skill_versions") or ()
         ),
     }
+    if promoted_job["render"]["learning_profile"]["version"] != "v2":
+        raise RuntimeError("next RenderJob did not resolve the promoted executable v2 binding")
+    if promoted_job["render"]["learning_profile"]["routing_id"] != routing.routing_id:
+        raise RuntimeError("next RenderJob binding lost Harness routing lineage")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "render-job.json").write_text(
@@ -245,26 +288,43 @@ def main() -> int:
         encoding="utf-8",
     )
     proof = {
+        "REAL_IMPROVEMENT_MISSION": "PASS",
         "REAL_IMPROVEMENT_EXPERIMENT": "PASS",
         "OBSERVED_EVAL": "PASS",
         "GOVERNED_PROMOTION": "PASS",
-        "NEXT_REAL_RUN_RETRIEVES_LEARNING": (
-            "PASS"
-            if promoted_job["render"]["learning_profile"]["version"] == "v2"
-            else "FAIL"
-        ),
-        "candidate_id": candidate["candidate_id"],
+        "PROMOTION_CHANGES_EXECUTABLE_BEHAVIOR": "PASS",
+        "NEXT_REAL_RUN_RETRIEVES_LEARNING": "PASS",
+        "improvement_mission_id": mission_id,
+        "improvement_mission_status": completed_mission["status"],
+        "candidate_id": candidate_id,
         "evaluation_id": evaluation["evaluation_id"],
+        "evaluation_mode": evaluation["evaluation_mode"],
         "evaluation_decision": evaluation["decision"],
         "promotion_authorization_id": promotion["authorization_id"],
+        "promotion_memory_id": promotion_memory_id,
         "render_authorization_id": render_auth.authorization_id,
         "routing_id": routing.routing_id,
         "active_profile": active,
         "learning_profile_binding": promoted_job["render"]["learning_profile"],
-        "baseline_wall_clock_seconds": baseline["wall_clock_seconds"],
-        "candidate_wall_clock_seconds": challenger["wall_clock_seconds"],
+        "retrieved_memory_ids": retrieved_memory_ids,
+        "retrieved_failure_memory_ids": list(
+            learning_context.get("retrieved_failure_memory_ids") or ()
+        ),
+        "retrieved_human_feedback_ids": list(
+            learning_context.get("retrieved_human_feedback_ids") or ()
+        ),
+        "competence_records": list(
+            learning_context.get("competence_records") or ()
+        ),
+        "active_skill_versions": list(
+            learning_context.get("active_skill_versions") or ()
+        ),
+        "baseline_wall_clock_seconds": benchmark["baseline"]["wall_clock_seconds"],
+        "candidate_wall_clock_seconds": benchmark["candidate"]["wall_clock_seconds"],
         "latency_reduction_fraction": benchmark["performance"]["latency_reduction_fraction"],
         "ssim": benchmark["quality_metrics"]["ssim_candidate_vs_baseline"],
+        "benchmark_run_id": args.benchmark_run_id,
+        "benchmark_artifact_id": args.benchmark_artifact_id,
     }
     (args.output_dir / "promotion-proof.json").write_text(
         json.dumps(proof, indent=2, sort_keys=True),
