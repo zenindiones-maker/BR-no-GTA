@@ -52,7 +52,9 @@ def main() -> int:
     ))
     manifest=result["round1_manifest"]
     state=result["state"]
-    print("VOICE_CASTING_REQUEST=PASS")\n    print("HUMAN_A_B_REVIEW=PREFERS_BASELINE")\n    print("PTBR_EDGE_VOICE_INVENTORY=PASS")
+    print("VOICE_CASTING_REQUEST=PASS")
+    print("HUMAN_A_B_REVIEW=PREFERS_BASELINE")
+    print("PTBR_EDGE_VOICE_INVENTORY=PASS")
     print("BLIND_VOICE_CASTING_ROUND1=READY")
     print("HUMAN_REVIEW_REQUIRED=YES")
     print("PASSING_BLIND_IDS="+",".join(manifest["passing_blind_ids"]))

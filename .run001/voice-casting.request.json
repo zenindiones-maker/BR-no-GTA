@@ -24,6 +24,6 @@
   "publication_authority": "NONE",
   "preserve_narration_bundle_v2": true,
   "preserve_cache_retry_checkpoint": true,
-  "iteration": 2,
-  "retry_reason": "workflow configuration simplification; no casting job ran in prior attempt"
+  "iteration": 3,
+  "retry_reason": "fix literal newline syntax in casting CLI; prior run synthesized nothing"
 }
