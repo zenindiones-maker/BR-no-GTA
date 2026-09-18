@@ -665,10 +665,20 @@ jobs:
               for filename in focused_workflows
           )
           ci_definition = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+          ci_lines = [line.strip() for line in ci_definition.splitlines()]
           checkpoint_concurrency_isolated = (
-              "group: br-no-gta-ci-" not in ci_definition
-              and "group: br-no-gta-canonical-full-suite-" in ci_definition
-              and "group: br-no-gta-fast-feedback-" in ci_definition
+              not any(
+                  line.startswith("group: br-no-gta-ci-")
+                  for line in ci_lines
+              )
+              and any(
+                  line.startswith("group: br-no-gta-canonical-full-suite-")
+                  for line in ci_lines
+              )
+              and any(
+                  line.startswith("group: br-no-gta-fast-feedback-")
+                  for line in ci_lines
+              )
           )
 
           after_cancelled_minutes = cancelled_full_suite_seconds / 60.0
