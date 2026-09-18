@@ -1123,6 +1123,223 @@ def _migrate_harness_authorizations(connection) -> None:
     )
 
 
+def _migrate_harness_learning_plane(connection) -> None:
+    """Persist Harness-governed operational learning without creating a second Brain."""
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS harness_episodes (
+            episode_id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL,
+            decision_id TEXT NOT NULL,
+            execution_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            parent_task_id TEXT,
+            agent_id TEXT NOT NULL,
+            capability_id TEXT NOT NULL,
+            skill_id TEXT,
+            skill_version TEXT,
+            provider TEXT,
+            domain TEXT NOT NULL,
+            task_class TEXT NOT NULL,
+            input_refs TEXT NOT NULL DEFAULT '[]',
+            output_refs TEXT NOT NULL DEFAULT '[]',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            tool_calls TEXT NOT NULL DEFAULT '[]',
+            routing_decision TEXT NOT NULL DEFAULT '{}',
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL,
+            duration_seconds REAL NOT NULL,
+            status TEXT NOT NULL,
+            actual_outcome TEXT NOT NULL DEFAULT '{}',
+            outcome_evidence TEXT NOT NULL DEFAULT '[]',
+            error TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            human_intervention INTEGER NOT NULL DEFAULT 0,
+            qa_results TEXT NOT NULL DEFAULT '{}',
+            cost REAL,
+            latency_seconds REAL,
+            commit_ref TEXT,
+            run_ref TEXT,
+            artifact_refs TEXT NOT NULL DEFAULT '[]',
+            source_versions TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(execution_id, task_id, capability_id, agent_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_episodes_goal
+        ON harness_episodes(goal_id);
+
+        CREATE INDEX IF NOT EXISTS idx_harness_episodes_capability
+        ON harness_episodes(capability_id, task_class, domain);
+
+        CREATE INDEX IF NOT EXISTS idx_harness_episodes_status
+        ON harness_episodes(status);
+
+        CREATE TABLE IF NOT EXISTS harness_memories (
+            memory_id TEXT PRIMARY KEY,
+            memory_type TEXT NOT NULL,
+            claim TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            task_class TEXT,
+            failure_pattern TEXT,
+            source_episode_ids TEXT NOT NULL DEFAULT '[]',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            agent_id TEXT,
+            capability_id TEXT,
+            skill_id TEXT,
+            skill_version TEXT,
+            source_versions TEXT NOT NULL DEFAULT '{}',
+            support_count INTEGER NOT NULL DEFAULT 0,
+            contradiction_count INTEGER NOT NULL DEFAULT 0,
+            confidence REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'CANDIDATE',
+            fingerprint TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            last_verified_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_memories_retrieval
+        ON harness_memories(status, domain, task_class, capability_id);
+
+        CREATE INDEX IF NOT EXISTS idx_harness_memories_type
+        ON harness_memories(memory_type, status);
+
+        CREATE TABLE IF NOT EXISTS harness_competence (
+            competence_id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            skill_id TEXT,
+            capability_id TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            task_class TEXT NOT NULL,
+            version TEXT NOT NULL,
+            tested_cases INTEGER NOT NULL DEFAULT 0,
+            success_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            human_correction_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            total_latency_seconds REAL NOT NULL DEFAULT 0,
+            total_cost REAL NOT NULL DEFAULT 0,
+            known_failure_modes TEXT NOT NULL DEFAULT '[]',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            last_verified_at TEXT,
+            confidence REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(agent_id, capability_id, task_class, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_competence_route
+        ON harness_competence(status, domain, task_class, capability_id);
+
+        CREATE TABLE IF NOT EXISTS harness_learning_candidates (
+            candidate_id TEXT PRIMARY KEY,
+            candidate_type TEXT NOT NULL,
+            hypothesis TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            task_class TEXT NOT NULL,
+            target_agent_id TEXT,
+            target_capability_id TEXT,
+            target_skill_id TEXT,
+            baseline_version TEXT,
+            candidate_version TEXT,
+            source_episode_ids TEXT NOT NULL DEFAULT '[]',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            contradiction_check TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'CANDIDATE',
+            created_at TEXT NOT NULL,
+            promoted_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_learning_candidates_status
+        ON harness_learning_candidates(status, candidate_type);
+
+        CREATE TABLE IF NOT EXISTS harness_improvement_evaluations (
+            evaluation_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            baseline_metrics TEXT NOT NULL,
+            candidate_metrics TEXT NOT NULL,
+            trials INTEGER NOT NULL,
+            regression_pass INTEGER NOT NULL,
+            adversarial_pass INTEGER NOT NULL,
+            critical_regression INTEGER NOT NULL DEFAULT 0,
+            decision TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (candidate_id)
+                REFERENCES harness_learning_candidates(candidate_id)
+                ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_improvement_evaluations_candidate
+        ON harness_improvement_evaluations(candidate_id);
+
+        CREATE TABLE IF NOT EXISTS harness_skill_versions (
+            skill_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            parent_version TEXT,
+            content_ref TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            status TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            promoted_at TEXT,
+            PRIMARY KEY (skill_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS harness_policy_versions (
+            policy_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            parent_version TEXT,
+            content_ref TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            status TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            promoted_at TEXT,
+            PRIMARY KEY (policy_id, version)
+        );
+
+        CREATE TABLE IF NOT EXISTS harness_human_corrections (
+            correction_id TEXT PRIMARY KEY,
+            goal_id TEXT,
+            task_id TEXT,
+            context TEXT NOT NULL,
+            undesired_behavior TEXT NOT NULL,
+            desired_behavior TEXT NOT NULL,
+            affected_agent TEXT,
+            affected_capability TEXT,
+            affected_skill TEXT,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            scope TEXT NOT NULL DEFAULT 'LOCAL',
+            status TEXT NOT NULL DEFAULT 'CANDIDATE',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_human_corrections_retrieval
+        ON harness_human_corrections(status, affected_capability, affected_skill);
+
+        CREATE TABLE IF NOT EXISTS harness_improvement_missions (
+            improvement_mission_id TEXT PRIMARY KEY,
+            trigger_type TEXT NOT NULL,
+            trigger_refs TEXT NOT NULL DEFAULT '[]',
+            diagnosis TEXT NOT NULL,
+            hypothesis TEXT NOT NULL,
+            candidate_id TEXT,
+            harness_decision_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            finished_at TEXT,
+            FOREIGN KEY (candidate_id)
+                REFERENCES harness_learning_candidates(candidate_id)
+                ON DELETE SET NULL
+        );
+        """
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1152,6 +1369,7 @@ def initialize_schema() -> None:
         _migrate_production_plans(connection)
         _migrate_gta6_media_intelligence(connection)
         _migrate_harness_authorizations(connection)
+        _migrate_harness_learning_plane(connection)
         connection.commit()
     finally:
         connection.close()
