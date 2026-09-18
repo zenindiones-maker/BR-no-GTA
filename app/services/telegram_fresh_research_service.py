@@ -224,8 +224,16 @@ def _validate_packet(packet: dict[str, Any], *, execution_id: str) -> None:
         if not isinstance(source, dict):
             raise FreshResearchError("fresh research official source is malformed")
         url = str(source.get("url") or "")
-        if not url.startswith(("https://www.rockstargames.com/", "https://store.rockstargames.com/")):
-            raise FreshResearchError("fresh research official source escaped Rockstar allowlist")
+        resolved_url = str(source.get("resolved_url") or url)
+        allowed = ("https://www.rockstargames.com/", "https://store.rockstargames.com/")
+        if not url.startswith(allowed) or not resolved_url.startswith(allowed):
+            raise FreshResearchError(
+                "fresh research official source escaped Rockstar allowlist after resolution"
+            )
+        if source.get("source_hierarchy") not in (None, "OFFICIAL_PRIMARY"):
+            raise FreshResearchError("fresh research official source hierarchy mismatch")
+        if source.get("original_source") not in (None, True):
+            raise FreshResearchError("fresh research official source is not direct evidence")
         if not str(source.get("content_excerpt") or "").strip():
             raise FreshResearchError("fresh research official source has no evidence text")
 
