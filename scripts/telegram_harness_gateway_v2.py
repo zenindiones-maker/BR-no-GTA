@@ -146,12 +146,33 @@ def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
     payload = exc.to_dict()
     error = payload.get("provider_error")
     error = error if isinstance(error, dict) else {}
-    code = str(error.get("code") or "provider_failure")
-    return (
-        "Não consegui concluir o raciocínio agora. "
-        f"O Harness registrou a falha ({code}) e preservou a evidência. "
-        "Use /evidence para ver os detalhes técnicos."
+    canonical_failure = {
+        "status": "FAILED",
+        "success": False,
+        "error": {
+            "code": str(error.get("code") or "provider_failure"),
+            "message": str(
+                error.get("message")
+                or error.get("safe_message")
+                or "Falha observada no executor de raciocínio."
+            ),
+        },
+        "answer": (
+            "A evidência da falha foi preservada. "
+            "Use /evidence para o diagnóstico completo."
+        ),
+    }
+    presentation = present_canonical_result_under_harness(
+        canonical_failure,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage={
+            "episode_id": payload.get("episode_id"),
+            "failure_memory_id": payload.get("failure_memory_id"),
+            "execution_id": payload.get("execution_id"),
+        },
     )
+    return str(presentation["text"])
 
 
 def _editorial_action(result: dict[str, Any]) -> str | None:
