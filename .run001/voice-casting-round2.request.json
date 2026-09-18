@@ -53,10 +53,13 @@
   "preserve_content_addressed_cache": true,
   "preserve_segment_retry": true,
   "preserve_render_retry_reuse": true,
-  "iteration": 4,
-  "retry_reason": "install canonical repo runtime for resume tests; reuse completed Round 2 audio checkpoint; no TTS",
+  "iteration": 5,
+  "retry_reason": "resume Telegram Round 2 after observed HTTP 429; send only unsent suffix; no TTS",
   "resume_from_run_id": 35398148125,
   "resume_proof_artifact_id": 10569806440,
   "resume_private_artifact_id": 10570056356,
-  "resume_redundant_tts_requests": 0
+  "resume_redundant_tts_requests": 0,
+  "delivery_resume_from_run_id": 35398844175,
+  "delivery_sent_prefix_count": 20,
+  "delivery_redundant_tts_requests": 0
 }
