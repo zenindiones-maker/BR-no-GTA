@@ -7,7 +7,7 @@ on:
       - work/gate6f-analytics-learning
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -100,6 +100,10 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/work/gate6f-analytics-learning" --jq '.object.sha')"
+          DISPATCH_TAG="render-handoff-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${DISPATCH_TAG}" \
+            -f sha="$SOURCE_SHA" >/dev/null
           python - "$ARTIFACT_ID" "$ARTIFACT_NAME" "$SOURCE_SHA" <<'PY'
           import json,sys
           from pathlib import Path
@@ -125,6 +129,7 @@ jobs:
           EXECUTION="$(python -c 'import json; print(json.load(open("runtime/video-a-promotion/promoted/render-job.json"))["execution_id"])')"
           gh workflow run render-worker.yml             --repo "$GITHUB_REPOSITORY"             --ref work/gate6f-analytics-learning             -f render_job=""             -f render_job_descriptor="$DESCRIPTOR"             -f brain_decision_id="$BRAIN"             -f execution_id="$EXECUTION"             -f authorized_action="EXECUTION"
           echo "NEXT_REAL_VIDEO_A_RENDER_DISPATCHED=PASS"
+          echo "RENDER_DISPATCH_IMMUTABLE_REF=$DISPATCH_TAG"
 
       - uses: actions/upload-artifact@v4
         if: always()
