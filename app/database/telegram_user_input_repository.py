@@ -59,6 +59,10 @@ def _ensure_schema(connection) -> None:
             claim_id INTEGER,
             memory_id INTEGER,
             provenance TEXT NOT NULL DEFAULT '{}',
+            execution_outcome_status TEXT NOT NULL DEFAULT 'NOT_OBSERVED',
+            execution_episode_id TEXT,
+            execution_failure_memory_id TEXT,
+            execution_outcome_updated_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(telegram_chat_id, telegram_message_id)
