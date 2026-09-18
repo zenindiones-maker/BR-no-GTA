@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -66,6 +66,37 @@ def _refs(values: Iterable[str]) -> tuple[str, ...]:
 def _stable_id(prefix: str, payload: Any) -> str:
     raw = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str)
     return f"{prefix}-{sha256(raw.encode('utf-8')).hexdigest()[:24]}"
+
+
+@dataclass
+class HarnessWorkingMemory:
+    """Ephemeral execution state. It is intentionally not persisted as semantic truth."""
+
+    execution_id: str
+    goal_id: str
+    state: dict[str, Any] = field(default_factory=dict)
+    refs: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.execution_id = _require_text(self.execution_id, "execution_id")
+        self.goal_id = _require_text(self.goal_id, "goal_id")
+
+    def put(self, key: str, value: Any, *, evidence_ref: str | None = None) -> None:
+        key = _require_text(key, "working memory key")
+        self.state[key] = value
+        if evidence_ref:
+            ref = _require_text(evidence_ref, "evidence_ref")
+            if ref not in self.refs:
+                self.refs.append(ref)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "goal_id": self.goal_id,
+            "state": dict(self.state),
+            "refs": list(self.refs),
+            "persistent": False,
+        }
 
 
 @dataclass(frozen=True)
@@ -739,3 +770,28 @@ def create_improvement_mission(*, trigger_type: str, trigger_refs: Iterable[str]
         "created_at": _utcnow(),
         "finished_at": None,
     })
+
+def complete_improvement_mission(*, improvement_mission_id: str,
+                                 authorization: HarnessAuthorization | dict[str, Any] | str) -> dict[str, Any]:
+    authorization = validate_harness_authorization(
+        authorization,
+        expected_action="EXECUTION",
+        expected_subject="learning:improvement",
+    )
+    mission = repository.get_improvement_mission(improvement_mission_id)
+    if mission is None:
+        raise ValueError("improvement mission not found")
+    if mission["authorization_id"] != authorization.authorization_id:
+        raise PermissionError("improvement mission authorization lineage mismatch")
+    candidate_id = mission.get("candidate_id")
+    if not candidate_id:
+        raise PermissionError("improvement mission has no evaluated candidate")
+    candidate = repository.get_learning_candidate(candidate_id)
+    if candidate is None or candidate.get("status") != "PROMOTED":
+        raise PermissionError("improvement mission cannot complete before candidate promotion")
+    return repository.update_improvement_mission_status(
+        improvement_mission_id,
+        "COMPLETED",
+        finished_at=_utcnow(),
+    )
+
