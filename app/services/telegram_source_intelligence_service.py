@@ -14,9 +14,10 @@ from app.database.memory_claim_evidence_repository import (
 from app.database.memory_claim_repository import (
     find_memory_claim_by_canonical_key,
     insert_memory_claim,
+    update_memory_claim_status,
 )
 from app.database.memory_event_repository import insert_memory_event
-from app.database.memory_repository import find_memory_by_source
+from app.database.memory_repository import find_memory_by_source, update_memory_status
 from app.database.telegram_user_input_repository import update_telegram_source_state
 from app.services.editorial_intelligence_contracts import (
     ClaimLedgerItem,
@@ -544,6 +545,39 @@ def _editorial_decision(
     return signal
 
 
+def quarantine_premature_source_memory(
+    input_record: dict[str, Any],
+) -> dict[str, Any]:
+    """Deactivate legacy URL memory that was promoted before source verification."""
+    if str(input_record.get("classification") or "").lower() != "news":
+        return {"quarantined": False}
+    claim_id = input_record.get("claim_id")
+    memory_id = input_record.get("memory_id")
+    changed = False
+    if isinstance(claim_id, int) and claim_id > 0:
+        changed = update_memory_claim_status(claim_id, "uncertain") or changed
+    if isinstance(memory_id, int) and memory_id > 0:
+        memory = find_memory_by_source(source_type="memory_claim", source_id=str(claim_id)) if claim_id else []
+        target_ids = {memory_id, *[int(item["id"]) for item in memory]}
+        for target_id in target_ids:
+            changed = update_memory_status(
+                target_id,
+                "quarantined_unverified_source",
+            ) or changed
+    if changed:
+        update_telegram_source_state(
+            int(input_record["id"]),
+            source_state="SOURCE_CANDIDATE",
+            source_url=str(input_record.get("source_url") or "") or None,
+            learning_status="captured",
+        )
+    return {
+        "quarantined": changed,
+        "legacy_claim_id": claim_id,
+        "legacy_memory_id": memory_id,
+    }
+
+
 def process_telegram_source_intelligence(
     *,
     input_record: dict[str, Any],
@@ -556,6 +590,7 @@ def process_telegram_source_intelligence(
             "INPUT_CAPTURED": "PASS",
         }
 
+    quarantine = quarantine_premature_source_memory(input_record)
     candidate = source_repository.get_source_candidate_by_input(int(input_record["id"]))
     if candidate is None:
         candidate_id = _stable(
@@ -620,6 +655,9 @@ def process_telegram_source_intelligence(
             "EDITORIAL_SIGNAL_CREATED": "PASS",
             "EDITORIAL_SIGNAL_USED": "NO",
             "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS",
+            "PREMATURE_INGRESS_MEMORY_QUARANTINED": (
+                "PASS" if quarantine.get("quarantined") else "NOT_REQUIRED"
+            ),
             "source_candidate": candidate,
             "claims": [],
             "editorial_signal": signal,
@@ -837,6 +875,9 @@ def process_telegram_source_intelligence(
         "EDITORIAL_SIGNAL_CREATED": "PASS",
         "EDITORIAL_SIGNAL_USED": "NO",
         "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS",
+        "PREMATURE_INGRESS_MEMORY_QUARANTINED": (
+            "PASS" if quarantine.get("quarantined") else "NOT_REQUIRED"
+        ),
         "source_candidate": candidate,
         "research_dossier": dossier.to_dict() if dossier is not None else None,
         "claims": persisted_claims,
