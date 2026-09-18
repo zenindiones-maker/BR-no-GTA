@@ -202,7 +202,12 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         "SOURCE_LEARNED": (
             "PASS"
             if candidate is not None
-            and candidate.get("source_state") not in {None, "SOURCE_CANDIDATE"}
+            and candidate.get("source_state") in {
+                "VERIFIED",
+                "CONTRADICTED",
+                "INSUFFICIENT_EVIDENCE",
+                "MEMORY_ELIGIBLE",
+            }
             else "PENDING"
         ),
         "CLAIM_VERIFIED": (
