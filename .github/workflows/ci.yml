@@ -1,41 +1,716 @@
-name: BR no GTA CI
+name: BR-no-GTA CI
 
 on:
   push:
     branches:
       - main
+      - work/gate6f-analytics-learning
+      - work/gate6f-telegram-total-ingress
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      checkpoint:
+        description: "Run the canonical full-suite checkpoint"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: br-no-gta-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
 
 jobs:
-  test:
-    name: Testes BR no GTA
+  impact:
+    name: Change Impact
     runs-on: ubuntu-latest
-
+    outputs:
+      gate6f: ${{ steps.classify.outputs.gate6f }}
+      synergy: ${{ steps.classify.outputs.synergy }}
+      canary: ${{ steps.classify.outputs.canary }}
+      any_tests: ${{ steps.classify.outputs.any_tests }}
+      checkpoint: ${{ steps.classify.outputs.checkpoint }}
+      changed_count: ${{ steps.classify.outputs.changed_count }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
+      - name: Classify changed paths fail-closed
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          CHECKPOINT_INPUT: ${{ inputs.checkpoint }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          event = os.environ.get("EVENT_NAME", "")
+          before = os.environ.get("BEFORE_SHA", "")
+          pr_base = os.environ.get("PR_BASE_SHA", "")
+          ref_name = os.environ.get("REF_NAME", "")
+          message = os.environ.get("COMMIT_MESSAGE", "")
+          checkpoint_input = os.environ.get("CHECKPOINT_INPUT", "").lower() == "true"
+
+          def valid_sha(value: str) -> bool:
+              return bool(value) and value != "0" * 40
+
+          if event == "pull_request" and valid_sha(pr_base):
+              base = pr_base
+          elif event == "push" and valid_sha(before):
+              base = before
+          else:
+              try:
+                  base = subprocess.check_output(
+                      ["git", "rev-parse", "HEAD^"], text=True
+                  ).strip()
+              except subprocess.CalledProcessError:
+                  base = ""
+
+          if base:
+              changed = subprocess.check_output(
+                  ["git", "diff", "--name-only", base, os.environ["GITHUB_SHA"]],
+                  text=True,
+              ).splitlines()
+          else:
+              changed = subprocess.check_output(
+                  ["git", "ls-files"], text=True
+              ).splitlines()
+
+          changed = [item.strip() for item in changed if item.strip()]
+          lower_message = message.lower()
+          checkpoint = (
+              event == "pull_request"
+              or ref_name == "main"
+              or (event == "workflow_dispatch" and checkpoint_input)
+              or "[checkpoint]" in lower_message
+          )
+
+          ci_definition_paths = {
+              ".github/workflows/ci.yml",
+              ".github/workflows/gate6f-analytics-validation.yml",
+              ".github/workflows/system-synergy-validation.yml",
+              ".github/workflows/run001-canary-isolation-validation.yml",
+          }
+          if any(path in ci_definition_paths for path in changed):
+              checkpoint = True
+
+          docs_only = bool(changed) and all(
+              path.startswith(("docs/", ".github/ISSUE_TEMPLATE/"))
+              or path.endswith((".md", ".txt"))
+              for path in changed
+          )
+
+          def matches(path: str, prefixes=(), exact=()):
+              return path in exact or any(path.startswith(prefix) for prefix in prefixes)
+
+          gate6f = any(
+              matches(
+                  path,
+                  prefixes=(
+                      "app/services/telegram",
+                      "app/database/telegram",
+                      "app/services/human_presentation",
+                      "app/services/phone_control",
+                      "app/services/youtube_analytics",
+                      "scripts/telegram",
+                      "tests/test_telegram",
+                      "tests/test_human_presentation",
+                      "tests/test_real_telegram_presentation",
+                      "tests/test_phone_control",
+                      "tests/test_youtube_analytics",
+                      "tests/test_google_oauth",
+                  ),
+                  exact=(".github/workflows/gate6f-analytics-validation.yml",),
+              )
+              for path in changed
+          )
+          synergy = any(
+              matches(
+                  path,
+                  prefixes=(
+                      "app/integrations/deepseek_harness",
+                      "app/services/harness_",
+                      "app/services/global_capability_registry",
+                      "app/services/gta6_fact_check",
+                      "app/database/harness_",
+                      "tests/test_gta6_fact_check",
+                      "tests/test_system_synergy",
+                      "tests/test_global_capability_registry",
+                      "tests/test_youtube_analytics_learning",
+                  ),
+                  exact=(".github/workflows/system-synergy-validation.yml",),
+              )
+              for path in changed
+          )
+          canary = any(
+              matches(
+                  path,
+                  prefixes=(
+                      "app/services/production_",
+                      "app/services/render_",
+                      "app/workers/",
+                      "video-engine/",
+                      "tests/test_production_",
+                      "tests/test_render_",
+                      "tests/test_gate6e_production_media_registry",
+                  ),
+                  exact=(".github/workflows/run001-canary-isolation-validation.yml",),
+              )
+              for path in changed
+          )
+
+          broad = any(
+              path in {"requirements.txt", "pytest.ini", ".github/workflows/ci.yml"}
+              or path.startswith(("app/database/", "app/models/", "app/main.py"))
+              for path in changed
+          )
+          if broad:
+              gate6f = synergy = canary = True
+
+          if checkpoint:
+              gate6f = synergy = canary = True
+          elif not docs_only and changed and not any((gate6f, synergy, canary)):
+              # Unknown code/config impact fails closed to the complete focused set.
+              gate6f = synergy = canary = True
+
+          any_tests = any((gate6f, synergy, canary))
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          values = {
+              "gate6f": gate6f,
+              "synergy": synergy,
+              "canary": canary,
+              "any_tests": any_tests,
+              "checkpoint": checkpoint,
+              "changed_count": len(changed),
+          }
+          with output.open("a", encoding="utf-8") as fh:
+              for key, value in values.items():
+                  fh.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")
+
+          evidence = {
+              "event": event,
+              "base": base,
+              "head": os.environ["GITHUB_SHA"],
+              "changed_files": changed,
+              **values,
+              "policy": {
+                  "ordinary_work_branch_push": "FAST_FEEDBACK",
+                  "pull_request_main_or_explicit_checkpoint": "CANONICAL_CHECKPOINT",
+                  "unknown_impact": "FAIL_CLOSED_ALL_FOCUSED",
+              },
+          }
+          Path("ci-impact.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-change-impact
+          path: ci-impact.json
+          if-no-files-found: error
+          retention-days: 14
+
+  bootstrap:
+    name: Test Environment
+    needs: impact
+    if: needs.impact.outputs.any_tests == 'true' || needs.impact.outputs.checkpoint == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements.txt
 
-      - name: Verificar estrutura
-        run: |
-          python --version
-          git status --short
-          test -d app
-          test -d tests
+      - name: Restore canonical test environment
+        id: venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-py312-br-no-gta-venv-${{ hashFiles('requirements.txt') }}
 
-      - name: Instalar dependências
+      - name: Install dependencies on cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pytest
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.txt pytest
 
-      - name: Executar testes
+      - name: Verify canonical test environment
         run: |
-          pytest -q
+          .venv/bin/python --version
+          .venv/bin/python -c "import pytest; print('PYTEST_VERSION='+pytest.__version__)"
+
+  gate6f:
+    name: Gate6F specialized
+    needs: [impact, bootstrap]
+    if: always() && needs.impact.outputs.gate6f == 'true' && needs.bootstrap.result == 'success'
+    uses: ./.github/workflows/gate6f-analytics-validation.yml
+
+  system-synergy:
+    name: System Synergy specialized
+    needs: [impact, bootstrap]
+    if: always() && needs.impact.outputs.synergy == 'true' && needs.bootstrap.result == 'success'
+    uses: ./.github/workflows/system-synergy-validation.yml
+
+  canary:
+    name: Canary specialized
+    needs: [impact, bootstrap]
+    if: always() && needs.impact.outputs.canary == 'true' && needs.bootstrap.result == 'success'
+    uses: ./.github/workflows/run001-canary-isolation-validation.yml
+
+  fast-feedback:
+    name: Fast Feedback
+    runs-on: ubuntu-latest
+    needs: [impact, bootstrap, gate6f, system-synergy, canary]
+    if: always()
+    steps:
+      - name: Derive applicable focused gate status
+        env:
+          ANY_TESTS: ${{ needs.impact.outputs.any_tests }}
+          BOOTSTRAP: ${{ needs.bootstrap.result }}
+          GATE6F_REQUIRED: ${{ needs.impact.outputs.gate6f }}
+          GATE6F_RESULT: ${{ needs.gate6f.result }}
+          SYNERGY_REQUIRED: ${{ needs.impact.outputs.synergy }}
+          SYNERGY_RESULT: ${{ needs.system-synergy.result }}
+          CANARY_REQUIRED: ${{ needs.impact.outputs.canary }}
+          CANARY_RESULT: ${{ needs.canary.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          checks = {}
+          if os.environ["ANY_TESTS"] == "true":
+              checks["bootstrap"] = os.environ["BOOTSTRAP"] == "success"
+          for name, required_key, result_key in (
+              ("gate6f", "GATE6F_REQUIRED", "GATE6F_RESULT"),
+              ("system_synergy", "SYNERGY_REQUIRED", "SYNERGY_RESULT"),
+              ("canary", "CANARY_REQUIRED", "CANARY_RESULT"),
+          ):
+              required = os.environ[required_key] == "true"
+              result = os.environ[result_key]
+              checks[name] = (result == "success") if required else (result == "skipped")
+
+          status = "PASS" if all(checks.values()) else "FAIL"
+          evidence = {
+              "FAST_FEEDBACK": status,
+              "checks": checks,
+              "results": {
+                  "bootstrap": os.environ["BOOTSTRAP"],
+                  "gate6f": os.environ["GATE6F_RESULT"],
+                  "system_synergy": os.environ["SYNERGY_RESULT"],
+                  "canary": os.environ["CANARY_RESULT"],
+              },
+          }
+          Path("fast-feedback.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, sort_keys=True))
+          if status != "PASS":
+              raise SystemExit(1)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fast-feedback-evidence
+          path: fast-feedback.json
+          if-no-files-found: error
+          retention-days: 14
+
+  full-suite:
+    name: Canonical Full Suite
+    needs: [impact, bootstrap, gate6f, system-synergy, canary, fast-feedback]
+    if: >-
+      always() &&
+      needs.impact.outputs.checkpoint == 'true' &&
+      needs.bootstrap.result == 'success' &&
+      needs.gate6f.result == 'success' &&
+      needs.system-synergy.result == 'success' &&
+      needs.canary.result == 'success' &&
+      needs.fast-feedback.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Restore canonical test environment
+        id: venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-py312-br-no-gta-venv-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies on cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.txt pytest
+
+      - name: Collect canonical suite
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          .venv/bin/python -m pytest --collect-only -q tests/ | tee ci-artifacts/test-collection.txt
+
+      - name: Canonical full suite with slow-test profile
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          .venv/bin/python -m pytest -q tests/ \
+            --durations=50 \
+            --junitxml=ci-artifacts/pytest-junit.xml \
+            | tee ci-artifacts/pytest-full.log
+
+      - name: Build full-suite metrics
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root = Path("ci-artifacts")
+          log = (root / "pytest-full.log").read_text(encoding="utf-8", errors="replace") if (root / "pytest-full.log").exists() else ""
+          collection = (root / "test-collection.txt").read_text(encoding="utf-8", errors="replace") if (root / "test-collection.txt").exists() else ""
+          summary = {
+              "passed": None,
+              "failed": None,
+              "skipped": None,
+              "errors": None,
+              "subtests_passed": None,
+              "pytest_wall_clock_seconds": None,
+              "collected": None,
+          }
+          match = re.search(
+              r"(?P<passed>\d+) passed(?:, (?P<failed>\d+) failed)?(?:, (?P<skipped>\d+) skipped)?(?:, (?P<subtests>\d+) subtests passed)?.*? in (?P<seconds>\d+(?:\.\d+)?)s",
+              log,
+          )
+          if match:
+              summary.update({
+                  "passed": int(match.group("passed")),
+                  "failed": int(match.group("failed") or 0),
+                  "skipped": int(match.group("skipped") or 0),
+                  "subtests_passed": int(match.group("subtests") or 0),
+                  "pytest_wall_clock_seconds": float(match.group("seconds")),
+              })
+          collected = re.search(r"(\d+) tests? collected", collection)
+          if collected:
+              summary["collected"] = int(collected.group(1))
+          xml_path = root / "pytest-junit.xml"
+          if xml_path.exists():
+              xml_root = ET.parse(xml_path).getroot()
+              suites = [xml_root] if xml_root.tag == "testsuite" else list(xml_root.findall("testsuite"))
+              summary["junit"] = {
+                  "tests": sum(int(item.attrib.get("tests", 0)) for item in suites),
+                  "failures": sum(int(item.attrib.get("failures", 0)) for item in suites),
+                  "errors": sum(int(item.attrib.get("errors", 0)) for item in suites),
+                  "skipped": sum(int(item.attrib.get("skipped", 0)) for item in suites),
+                  "time_seconds": sum(float(item.attrib.get("time", 0.0)) for item in suites),
+              }
+              summary["errors"] = summary["junit"]["errors"]
+          summary["slow_test_profile_available"] = (
+              "slowest 50 durations" in log.lower()
+              or "50 slowest durations" in log.lower()
+          )
+          summary["command"] = "pytest -q tests/ --durations=50"
+          (root / "full-suite-metrics.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          print(json.dumps(summary, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canonical-full-suite-profile
+          path: ci-artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+  final-gate:
+    name: Final Gate
+    runs-on: ubuntu-latest
+    needs: [impact, bootstrap, gate6f, system-synergy, canary, fast-feedback, full-suite]
+    if: always() && needs.impact.outputs.checkpoint == 'true'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASELINE_SHA: fb61a835ee6d5f7e2a8cf1d83d8f12f9e454dd02
+      BOOTSTRAP_RESULT: ${{ needs.bootstrap.result }}
+      GATE6F_RESULT: ${{ needs.gate6f.result }}
+      SYNERGY_RESULT: ${{ needs.system-synergy.result }}
+      CANARY_RESULT: ${{ needs.canary.result }}
+      FAST_FEEDBACK_RESULT: ${{ needs.fast-feedback.result }}
+      FULL_SUITE_RESULT: ${{ needs.full-suite.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: canonical-full-suite-profile
+          path: ci-evidence/full-suite
+
+      - name: Capture workflow execution graph
+        run: |
+          mkdir -p ci-evidence/final
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > ci-evidence/final/current-run.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" > ci-evidence/final/current-jobs.json
+
+      - name: Derive final gate and before/after metrics
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def dt(value):
+              if not value:
+                  return None
+              return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+          evidence_root = Path("ci-evidence")
+          run = json.loads((evidence_root / "final/current-run.json").read_text())
+          jobs_payload = json.loads((evidence_root / "final/current-jobs.json").read_text())
+          jobs = jobs_payload.get("jobs", [])
+          metrics = json.loads((evidence_root / "full-suite/full-suite-metrics.json").read_text())
+
+          dependency_installations = 0
+          full_suite_executions = 0
+          cancelled_full_suite_seconds = 0.0
+          fast_completed_at = None
+
+          for job in jobs:
+              if job.get("name") == "Fast Feedback":
+                  fast_completed_at = dt(job.get("completed_at"))
+              for step in job.get("steps", []):
+                  if (
+                      step.get("name") == "Install dependencies on cache miss"
+                      and step.get("conclusion") == "success"
+                  ):
+                      dependency_installations += 1
+                  if step.get("name") == "Canonical full suite with slow-test profile":
+                      if step.get("status") == "completed":
+                          full_suite_executions += 1
+                      if step.get("conclusion") == "cancelled":
+                          started = dt(step.get("started_at"))
+                          completed = dt(step.get("completed_at"))
+                          if started and completed:
+                              cancelled_full_suite_seconds += (completed - started).total_seconds()
+
+          created_at = dt(run["created_at"])
+          now = datetime.now(timezone.utc)
+          focused_feedback_seconds = (
+              (fast_completed_at - created_at).total_seconds()
+              if fast_completed_at and created_at else None
+          )
+          total_ci_wall_clock_seconds = (
+              (now - created_at).total_seconds() if created_at else None
+          )
+
+          baseline = {
+              "sha": os.environ["BASELINE_SHA"],
+              "source_runs": {
+                  "gate6f": 35377013088,
+                  "system_synergy": 35377013026,
+                  "canary": 35377013105,
+              },
+              "full_suite_executions_per_sha": 3,
+              "dependency_installations_per_sha": 4,
+              "ci_total_wall_clock_seconds": 415.0,
+              "focused_feedback_time_seconds": 120.38,
+              "full_suite_wall_clock_seconds_observed": [306.79, 311.56, 241.25],
+              "full_suite_wall_clock_seconds_reference": 306.79,
+              "passed_tests": 2004,
+              "skipped_tests": 2,
+              "subtests_passed": 16,
+              "cancelled_test_minutes_observed": 10.7869,
+              "cancelled_test_source_runs": [35376374808, 35376374846, 35377001127],
+          }
+
+          results = {
+              "bootstrap": os.environ["BOOTSTRAP_RESULT"],
+              "gate6f": os.environ["GATE6F_RESULT"],
+              "system_synergy": os.environ["SYNERGY_RESULT"],
+              "canary": os.environ["CANARY_RESULT"],
+              "fast_feedback": os.environ["FAST_FEEDBACK_RESULT"],
+              "full_suite": os.environ["FULL_SUITE_RESULT"],
+          }
+          required_jobs_pass = all(value == "success" for value in results.values())
+          collection_preserved = (
+              metrics.get("passed") == baseline["passed_tests"]
+              and metrics.get("failed", 0) == 0
+              and metrics.get("skipped") == baseline["skipped_tests"]
+              and metrics.get("subtests_passed") == baseline["subtests_passed"]
+          )
+
+          focused_membership = {
+              ".github/workflows/gate6f-analytics-validation.yml": [
+                  "tests/test_telegram_source_intelligence.py",
+                  "tests/test_human_presentation_service.py",
+                  "Phone runtime static boundary",
+                  "Diff and frozen-boundary guards",
+              ],
+              ".github/workflows/system-synergy-validation.yml": [
+                  "tests/test_gta6_fact_check_harness_boundary_unit.py",
+                  "tests/test_system_synergy_service.py",
+                  "Machine-readable Harness proof",
+              ],
+              ".github/workflows/run001-canary-isolation-validation.yml": [
+                  "tests/test_production_execution_goal_targeting.py",
+                  "tests/test_harness_authorization_service.py",
+                  "tests/test_gate6e_production_media_registry.py",
+                  "tests/test_render_worker_service.py",
+                  "JOB18_GUARD=PASS",
+              ],
+          }
+          membership_ok = True
+          for filename, tokens in focused_membership.items():
+              content = Path(filename).read_text(encoding="utf-8")
+              membership_ok = membership_ok and all(token in content for token in tokens)
+
+          after_cancelled_minutes = cancelled_full_suite_seconds / 60.0
+          after = {
+              "sha": os.environ["GITHUB_SHA"],
+              "full_suite_executions_per_sha": full_suite_executions,
+              "dependency_installations_per_sha": dependency_installations,
+              "ci_total_wall_clock_seconds_at_measurement": total_ci_wall_clock_seconds,
+              "focused_feedback_time_seconds": focused_feedback_seconds,
+              "full_suite_wall_clock_seconds": metrics.get("pytest_wall_clock_seconds"),
+              "passed_tests": metrics.get("passed"),
+              "failed_tests": metrics.get("failed"),
+              "skipped_tests": metrics.get("skipped"),
+              "subtests_passed": metrics.get("subtests_passed"),
+              "collected_tests": metrics.get("collected"),
+              "cancelled_test_minutes": after_cancelled_minutes,
+              "slow_test_profile_available": metrics.get("slow_test_profile_available"),
+          }
+
+          comparisons = {
+              "FULL_SUITE_EXECUTIONS_PER_SHA": "PASS" if full_suite_executions == 1 else "FAIL",
+              "CANONICAL_FULL_SUITE": "PASS" if os.environ["FULL_SUITE_RESULT"] == "success" else "FAIL",
+              "GATE6F_SPECIALIZED": "PASS" if os.environ["GATE6F_RESULT"] == "success" else "FAIL",
+              "SYSTEM_SYNERGY_SPECIALIZED": "PASS" if os.environ["SYNERGY_RESULT"] == "success" else "FAIL",
+              "CANARY_SPECIALIZED": "PASS" if os.environ["CANARY_RESULT"] == "success" else "FAIL",
+              "TEST_COLLECTION_PRESERVED": "PASS" if collection_preserved else "FAIL",
+              "NO_QA_COVERAGE_LOSS": "PASS" if collection_preserved and membership_ok else "FAIL",
+              "DEPENDENCY_INSTALLATIONS_REDUCED": (
+                  "PASS" if dependency_installations < baseline["dependency_installations_per_sha"]
+                  else "NO_MEASURABLE_IMPROVEMENT=DEPENDENCY_INSTALLATIONS_PER_SHA"
+              ),
+              "SLOW_TEST_PROFILE_AVAILABLE": "PASS" if metrics.get("slow_test_profile_available") else "FAIL",
+              "CANCELLED_TEST_MINUTES_REDUCED": (
+                  "OBSERVED" if after_cancelled_minutes < baseline["cancelled_test_minutes_observed"]
+                  else "NO_MEASURABLE_IMPROVEMENT=CANCELLED_TEST_MINUTES"
+              ),
+              "FOCUSED_FEEDBACK_TIME_IMPROVED": (
+                  "OBSERVED"
+                  if focused_feedback_seconds is not None
+                  and focused_feedback_seconds < baseline["focused_feedback_time_seconds"]
+                  else "NO_MEASURABLE_IMPROVEMENT=FOCUSED_FEEDBACK_TIME"
+              ),
+              "TOTAL_CI_WALL_CLOCK_IMPROVED": (
+                  "OBSERVED"
+                  if total_ci_wall_clock_seconds is not None
+                  and total_ci_wall_clock_seconds < baseline["ci_total_wall_clock_seconds"]
+                  else "NO_MEASURABLE_IMPROVEMENT=CI_TOTAL_WALL_CLOCK"
+              ),
+              "JOB18_UNCHANGED": "YES" if os.environ["CANARY_RESULT"] == "success" else "UNVERIFIED",
+              "HARNESS_AUTHORITY_PRESERVED": "YES" if os.environ["SYNERGY_RESULT"] == "success" else "UNVERIFIED",
+          }
+
+          structural_keys = (
+              "FULL_SUITE_EXECUTIONS_PER_SHA",
+              "CANONICAL_FULL_SUITE",
+              "GATE6F_SPECIALIZED",
+              "SYSTEM_SYNERGY_SPECIALIZED",
+              "CANARY_SPECIALIZED",
+              "TEST_COLLECTION_PRESERVED",
+              "NO_QA_COVERAGE_LOSS",
+              "SLOW_TEST_PROFILE_AVAILABLE",
+          )
+          structural_pass = required_jobs_pass and all(
+              comparisons[key] == "PASS" for key in structural_keys
+          )
+          proof = {
+              "FINAL_AGGREGATE_GATE": "PASS" if structural_pass else "FAIL",
+              "baseline": baseline,
+              "after": after,
+              "job_results": results,
+              "focused_membership_preserved": membership_ok,
+              "comparisons": comparisons,
+              "measurement_notes": {
+                  "baseline_cancelled_test_minutes": (
+                      "Observed from cancelled full-suite steps in runs "
+                      "35376374808, 35376374846 and 35377001127."
+                  ),
+                  "after_cancelled_test_minutes": (
+                      "Derived from cancelled canonical full-suite steps in this checkpoint run."
+                  ),
+                  "total_ci_wall_clock": (
+                      "Measured at Final Gate evaluation; artifact upload/post-job time is excluded."
+                  ),
+              },
+          }
+          output = evidence_root / "final/ci-optimization-proof.json"
+          output.write_text(json.dumps(proof, indent=2, sort_keys=True), encoding="utf-8")
+          print(json.dumps(proof, sort_keys=True))
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as fh:
+              fh.write("## BR-no-GTA CI optimization proof\n\n")
+              fh.write(f"- Final aggregate: **{proof['FINAL_AGGREGATE_GATE']}**\n")
+              fh.write(f"- Full suite executions/SHA: **{full_suite_executions}** (baseline 3)\n")
+              fh.write(f"- Dependency installs/SHA: **{dependency_installations}** (baseline 4)\n")
+              fh.write(f"- Focused feedback: **{focused_feedback_seconds:.2f}s** (baseline 120.38s)\n")
+              fh.write(f"- Canonical full suite: **{metrics.get('pytest_wall_clock_seconds')}s**\n")
+              fh.write(f"- Tests: **{metrics.get('passed')} passed, {metrics.get('skipped')} skipped, {metrics.get('subtests_passed')} subtests**\n")
+
+          if not structural_pass:
+              raise SystemExit("Final CI gate failed because one or more required dependencies did not pass")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-optimization-proof
+          path: ci-evidence/final/
+          if-no-files-found: error
+          retention-days: 30

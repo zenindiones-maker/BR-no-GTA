@@ -1,42 +1,53 @@
 name: RUN-001 Canary Isolation Validation
 
 on:
-  push:
-    branches:
-      - work/gate6f-analytics-learning
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   validate:
+    name: Canary specialized
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
       ZERO_COST_OPERATION: "TRUE"
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install dependencies
+          cache-dependency-path: requirements.txt
+
+      - name: Restore canonical test environment
+        id: venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-py312-br-no-gta-venv-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies on cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pytest
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.txt pytest
+
       - name: Focused fail-closed tests
         run: |
-          pytest -q tests/test_production_execution_goal_targeting.py tests/test_harness_authorization_service.py tests/test_gate6e_production_media_registry.py tests/test_render_worker_service.py
-      - name: Full suite
-        run: pytest -q tests/
+          .venv/bin/python -m pytest -q \
+            tests/test_production_execution_goal_targeting.py \
+            tests/test_harness_authorization_service.py \
+            tests/test_gate6e_production_media_registry.py \
+            tests/test_render_worker_service.py
+
       - name: Zero-cost and Job18 guards
         run: |
-          python - <<'PY'
+          .venv/bin/python - <<'PY'
           import os
           from pathlib import Path
           assert os.environ["ZERO_COST_OPERATION"] == "TRUE"
