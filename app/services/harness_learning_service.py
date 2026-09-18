@@ -393,6 +393,70 @@ def retrieve_known_failure_patterns(*, domain: str, task_class: str | None = Non
     )
 
 
+def record_or_reuse_failure_memory(
+    *,
+    claim: str,
+    domain: str,
+    task_class: str,
+    failure_pattern: str,
+    source_episode_id: str,
+    evidence_refs: Iterable[str],
+    capability_id: str,
+    agent_id: str | None = None,
+    skill_id: str | None = None,
+    skill_version: str | None = None,
+    source_versions: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    confidence: float = 0.8,
+) -> dict[str, Any]:
+    """Persist one canonical failure pattern and accumulate real recurrences."""
+    evidence = _refs(evidence_refs)
+    if not evidence:
+        raise ValueError("failure memory requires evidence refs")
+    existing = repository.find_failure_memory(
+        domain=domain,
+        task_class=task_class,
+        capability_id=capability_id,
+        failure_pattern=failure_pattern,
+        skill_id=skill_id,
+        skill_version=skill_version,
+        status="ACTIVE",
+    )
+    observation = dict(metadata or {})
+    observation["episode_id"] = source_episode_id
+    observation["observed_at"] = _utcnow()
+    if existing is not None:
+        return repository.add_failure_memory_observation(
+            existing["memory_id"],
+            episode_id=source_episode_id,
+            evidence_refs=evidence,
+            metadata=observation,
+            confidence=max(float(existing.get("confidence") or 0.0), confidence),
+        )
+    initial_metadata = dict(metadata or {})
+    initial_metadata["occurrences"] = [observation]
+    initial_metadata["recurrence_count"] = 1
+    return record_memory(
+        memory_type="FAILURE",
+        claim=claim,
+        domain=domain,
+        task_class=task_class,
+        failure_pattern=failure_pattern,
+        source_episode_ids=(source_episode_id,),
+        evidence_refs=evidence,
+        agent_id=agent_id,
+        capability_id=capability_id,
+        skill_id=skill_id,
+        skill_version=skill_version,
+        source_versions=source_versions,
+        metadata=initial_metadata,
+        support_count=1,
+        contradiction_count=0,
+        confidence=confidence,
+        status="ACTIVE",
+    )
+
+
 def mark_stale_memories_for_version_change(*, current_versions: dict[str, str],
                                            domain: str | None = None) -> list[str]:
     stale: list[str] = []
