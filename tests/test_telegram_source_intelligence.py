@@ -4,6 +4,7 @@ import app.services.telegram_learning_service as telegram_learning_service
 import app.services.telegram_source_intelligence_service as source_intelligence_service
 import scripts.gta6_fresh_research_worker as fresh_worker
 
+from app.database.harness_authorization_repository import get_harness_authorization
 from app.database.telegram_source_intelligence_repository import (
     get_editorial_signal_by_candidate,
     get_source_candidate_by_input,
@@ -346,6 +347,18 @@ def test_direct_official_source_verifies_before_memory_and_creates_signal():
     assert signal["harness_decision"] == "STORE_FOR_FUTURE"
     assert signal["payload"]["telegram_input_id"] == record["id"]
     assert signal["payload"]["memory_event_id"] == record["memory_event_id"]
+    authorization = get_harness_authorization(signal["authorization_id"])
+    assert authorization is not None
+    assert authorization["lineage"]["telegram_input_id"] == record["id"]
+    assert authorization["lineage"]["memory_event_id"] == record["memory_event_id"]
+    assert (
+        authorization["lineage"]["source_candidate_id"]
+        == candidate["candidate_id"]
+    )
+    assert (
+        authorization["lineage"]["research_dossier_id"]
+        == result["research_dossier"]["mission_id"]
+    )
 
     debug = _source_evidence_payload(record["id"])
     assert debug["INPUT_CAPTURED"] == "PASS"
