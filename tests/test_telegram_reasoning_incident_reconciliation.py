@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -226,3 +228,29 @@ def test_reconciliation_cli_uses_exact_evidence_contract(monkeypatch, capsys):
     assert "TELEGRAM_INCIDENT_RECONCILIATION=PASS" in output
     assert "REAL_TELEGRAM_FAILURE_EPISODE=" in output
     assert "FAILURE_MEMORY_FROM_REAL_INCIDENT=" in output
+
+def test_real_recovery_wrapper_is_syntax_valid_and_pins_observed_evidence():
+    root = Path(__file__).resolve().parents[1]
+    wrapper = root / "scripts" / "promote_real_telegram_recovery.sh"
+    assert wrapper.is_file()
+
+    checked = subprocess.run(
+        ["bash", "-n", str(wrapper)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert checked.returncode == 0, checked.stderr
+
+    source = wrapper.read_text(encoding="utf-8")
+    assert 'BENCHMARK_RUN_ID="35346769369"' in source
+    assert 'BENCHMARK_ARTIFACT_ID="10547072630"' in source
+    assert 'BENCHMARK_ARTIFACT_NAME="telegram-opencode-executor-benchmark"' in source
+    assert "bash scripts/reconcile_real_telegram_403.sh" in source
+    assert "scripts/promote_telegram_opencode_executor_profile.py" in source
+    assert "scripts/telegram_termux_control.sh" in source
+    assert "gh run download" in source
+    assert "--benchmark-run-id" in source
+    assert "--benchmark-artifact-id" in source
+    assert "TELEGRAM_REAL_RECOVERY=READY_FOR_NEXT_REAL_INTERACTION" in source
+
