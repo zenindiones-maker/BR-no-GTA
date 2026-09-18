@@ -158,6 +158,45 @@ def test_structured_news_and_urls_force_fresh_research():
     )
 
 
+def test_verification_request_forces_fresh_research_without_keywords_about_time():
+    assert requires_fresh_research("Verifique esta informação sobre GTA VI.") is True
+    assert requires_fresh_research("Confere se isso procede sobre GTA 6.") is True
+
+
+def test_http_url_is_captured_as_source_candidate_and_must_fail_closed_later():
+    result = ingest_telegram_input_under_harness(
+        {
+            "telegram_user_id": 111,
+            "telegram_chat_id": 111,
+            "telegram_message_id": 8999,
+            "telegram_update_id": 9999,
+            "input_kind": "text",
+            "text": "Confira esta fonte: http://example.com/gta-vi",
+        }
+    )
+    record = result["input"]
+    assert record["classification"] == "news"
+    assert record["source_url"] == "http://example.com/gta-vi"
+    assert record["source_state"] == "SOURCE_CANDIDATE"
+    assert record["learning_status"] == "captured"
+    assert record["memory_id"] is None
+
+
+def test_url_classification_wins_over_video_or_pauta_intent():
+    result = ingest_telegram_input_under_harness(
+        {
+            "telegram_user_id": 111,
+            "telegram_chat_id": 111,
+            "telegram_message_id": 8998,
+            "telegram_update_id": 9998,
+            "input_kind": "text",
+            "text": "Transforme esta pauta em vídeo se fizer sentido: https://example.com/gta",
+        }
+    )
+    assert result["input"]["classification"] == "news"
+    assert result["input"]["source_state"] == "SOURCE_CANDIDATE"
+
+
 def test_url_ingress_is_source_candidate_not_semantic_memory():
     record = _ingest("https://example.com/gta-vi")
     assert record["classification"] == "news"
