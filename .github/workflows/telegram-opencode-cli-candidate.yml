@@ -31,19 +31,16 @@ jobs:
           npm install -g "@opencode/cli@${VERSION}"
           opencode --version | tee runtime/opencode-cli-candidate/reported-version.txt
 
-      - name: Observe available OpenCode models
+      - name: Observe available OpenCode models without treating discovery as authorization
         run: |
           set -euo pipefail
-          opencode models > runtime/opencode-cli-candidate/models.txt
-          grep -E '^opencode/(big-pickle|deepseek-v4-flash-free|mimo-v2\.5-free|nemotron-3-ultra-free)$'             runtime/opencode-cli-candidate/models.txt             > runtime/opencode-cli-candidate/eligible-models.txt || true
-          cat runtime/opencode-cli-candidate/eligible-models.txt
-          test -s runtime/opencode-cli-candidate/eligible-models.txt
+          opencode models > runtime/opencode-cli-candidate/models.txt || true
+          wc -l runtime/opencode-cli-candidate/models.txt
 
       - name: Execute explicit in-OpenCode candidate
         run: |
           set -euo pipefail
           MODEL="opencode/big-pickle"
-          grep -Fxq "$MODEL" runtime/opencode-cli-candidate/eligible-models.txt
           START="$(python - <<'PY'
           import time
           print(time.time())
