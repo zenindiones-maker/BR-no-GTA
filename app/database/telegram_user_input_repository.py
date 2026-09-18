@@ -81,6 +81,23 @@ def _ensure_schema(connection) -> None:
         ON telegram_user_inputs(telegram_file_unique_id)
         """
     )
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(telegram_user_inputs)"
+        ).fetchall()
+    }
+    additions = {
+        "execution_outcome_status": "TEXT NOT NULL DEFAULT 'NOT_OBSERVED'",
+        "execution_episode_id": "TEXT",
+        "execution_failure_memory_id": "TEXT",
+        "execution_outcome_updated_at": "TEXT",
+    }
+    for column, declaration in additions.items():
+        if column not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE telegram_user_inputs ADD COLUMN {column} {declaration}"
+            )
 
 
 def _row_to_record(row) -> dict[str, Any] | None:
