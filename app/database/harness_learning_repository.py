@@ -366,6 +366,54 @@ def update_version_status(*, table: str, identity_field: str, identity: str, ver
 
 
 
+
+def get_version(*, table: str, identity_field: str, identity: str, version: str) -> dict[str, Any] | None:
+    if table not in {"harness_skill_versions", "harness_policy_versions"}:
+        raise ValueError("unsupported version table")
+    if identity_field not in {"skill_id", "policy_id"}:
+        raise ValueError("unsupported version identity")
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            f"SELECT * FROM {table} WHERE {identity_field} = ? AND version = ?",
+            (identity, version),
+        ).fetchone()
+        return _deserialize(row, _VERSION_JSON) if row else None
+    finally:
+        connection.close()
+
+
+def activate_version(*, table: str, identity_field: str, identity: str, version: str,
+                     promoted_at: str) -> dict[str, Any]:
+    if table not in {"harness_skill_versions", "harness_policy_versions"}:
+        raise ValueError("unsupported version table")
+    if identity_field not in {"skill_id", "policy_id"}:
+        raise ValueError("unsupported version identity")
+    connection = get_connection()
+    try:
+        target = connection.execute(
+            f"SELECT * FROM {table} WHERE {identity_field} = ? AND version = ?",
+            (identity, version),
+        ).fetchone()
+        if target is None:
+            raise ValueError("version not found")
+        connection.execute(
+            f"UPDATE {table} SET status = 'RETIRED' WHERE {identity_field} = ? AND status = 'ACTIVE' AND version != ?",
+            (identity, version),
+        )
+        connection.execute(
+            f"UPDATE {table} SET status = 'ACTIVE', promoted_at = ? WHERE {identity_field} = ? AND version = ?",
+            (promoted_at, identity, version),
+        )
+        connection.commit()
+        row = connection.execute(
+            f"SELECT * FROM {table} WHERE {identity_field} = ? AND version = ?",
+            (identity, version),
+        ).fetchone()
+        return _deserialize(row, _VERSION_JSON)
+    finally:
+        connection.close()
+
 def get_active_version(*, table: str, identity_field: str, identity: str) -> dict[str, Any] | None:
     if table not in {"harness_skill_versions", "harness_policy_versions"}:
         raise ValueError("unsupported version table")
