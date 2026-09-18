@@ -690,59 +690,55 @@ def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
     }
 
 
-def route_harness_request_with_learning(request: HarnessRoutingRequest, *, goal: str,
-                                        registry=None) -> tuple[HarnessRoutingDecision, dict[str, Any]]:
+def route_harness_request_with_learning(
+    request: HarnessRoutingRequest,
+    *,
+    goal: str,
+    registry=None,
+) -> tuple[HarnessRoutingDecision, dict[str, Any]]:
+    """Compatibility facade over the normal learning-aware Harness boundary.
+
+    Learning is no longer enabled by this helper. route_harness_request()
+    performs the retrieval automatically whenever domain + task_class exist.
+    This helper only exposes the persisted retrieval evidence to legacy callers.
+    """
     if not request.domain or not request.task_class:
         raise ValueError("learning-aware routing requires domain and task_class")
-    competence = retrieve_agent_competence(
-        domain=request.domain,
-        task_class=request.task_class,
-        limit=50,
+    _require_text(goal, "goal")
+    enriched = replace(
+        request,
+        goal_id=request.goal_id or goal,
+        learning_required=True,
     )
-    active = tuple(
-        {
-            "agent_id": item["agent_id"],
-            "capability_id": item["capability_id"],
-            "task_class": item["task_class"],
-            "domain": item["domain"],
-            "version": item["version"],
-            "tested_cases": item["tested_cases"],
-            "success_rate": item["success_rate"],
-            "failure_rate": item["failure_rate"],
-            "human_correction_rate": item["human_correction_rate"],
-            "retry_rate": item["retry_rate"],
-            "mean_latency_seconds": item["mean_latency_seconds"],
-            "mean_cost": item["mean_cost"],
-            "confidence": item["confidence"],
-            "evidence_refs": item["evidence_refs"],
-            "last_verified_at": item["last_verified_at"],
-            "status": item["status"],
-            "evidence_sufficient": item["evidence_sufficient"],
-        }
-        for item in competence
-        if item["evidence_sufficient"]
-    )
-    memories = retrieve_relevant_memory(
-        goal=goal,
-        domain=request.domain,
-        task_class=request.task_class,
-        capability=request.required_capability_id,
-        limit=8,
-    )
-    enriched = replace(request, competence_records=active)
     kwargs = {} if registry is None else {"registry": registry}
     decision = route_harness_request(enriched, **kwargs)
+    context = dict(decision.policy_metadata.get("learning_context") or {})
     proof = {
         "goal": goal,
         "task_class": request.task_class,
-        "competence_records_considered": list(active),
-        "memory_ids_retrieved": [item["memory_id"] for item in memories],
+        "competence_records_considered": list(
+            context.get("competence_records") or ()
+        ),
+        "memory_ids_retrieved": list(
+            context.get("retrieved_memory_ids") or ()
+        ),
+        "failure_memory_ids_retrieved": list(
+            context.get("retrieved_failure_memory_ids") or ()
+        ),
+        "human_feedback_ids_retrieved": list(
+            context.get("retrieved_human_feedback_ids") or ()
+        ),
+        "active_skill_versions": list(
+            context.get("active_skill_versions") or ()
+        ),
+        "active_policy_versions": list(
+            context.get("active_policy_versions") or ()
+        ),
         "selected_capability_id": decision.selected_capability_id,
         "routing_id": decision.routing_id,
-        "learning_participated": bool(active or memories),
+        "learning_participated": bool(context.get("learning_participated")),
     }
     return decision, proof
-
 
 def create_improvement_mission(*, trigger_type: str, trigger_refs: Iterable[str],
                                diagnosis: str, hypothesis: str,
