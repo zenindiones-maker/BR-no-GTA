@@ -1,0 +1,320 @@
+{
+  "version": "voice-casting-round2-checkpoint/v1",
+  "casting_id": "br-no-gta-ptbr-casting-20260918-r1",
+  "status": "HUMAN_FINAL_SELECTION_REQUIRED",
+  "phase": "ROUND2_FINAL_HUMAN_SELECTION",
+  "checkpoint_created_at": "2026-09-18T21:57:00Z",
+  "source_head": "c3a50a19ebc82fed0dc3b404b3a8b3c7e7e54ccd",
+  "source_run_id": 35399181943,
+  "source_audio_checkpoint": {
+    "synthesis_run_id": 35398148125,
+    "proof_artifact_id": 10569806440,
+    "private_artifact_id": 10570056356,
+    "reused": true,
+    "redundant_tts_requests": 0,
+    "full_decode_revalidation_count": 22
+  },
+  "final_artifacts": {
+    "public_proof": {
+      "artifact_id": 10568953094,
+      "name": "ptbr-voice-casting-round2-final-proof-35399181943-1",
+      "size_bytes": 11872567
+    },
+    "private_identity_state": {
+      "artifact_id": 10569172880,
+      "name": "ptbr-voice-casting-round2-final-private-35399181943-1",
+      "size_bytes": 428,
+      "identity_revealed": false
+    }
+  },
+  "round1_human_feedback": {
+    "top2": [
+      "Voice B",
+      "Voice C"
+    ],
+    "ranking": [
+      "Voice B",
+      "Voice C"
+    ],
+    "notes": {
+      "Voice C": [
+        "melhor_diccao"
+      ]
+    },
+    "consumed": true
+  },
+  "technical_proof": {
+    "round2_multicontext": "PASS",
+    "prosody_window_benchmark": "PASS",
+    "boundary_artifact_audit": "PASS",
+    "rate_tuning": "PASS",
+    "learning_plane": "PASS",
+    "automatic_winner": null,
+    "identity_revealed": false,
+    "mastering": "two-pass common chain; -16 LUFS target; MP3 true-peak headroom",
+    "prosody_windows": [
+      "25-35s",
+      "40-60s",
+      "60-90s"
+    ],
+    "rates": [
+      "+0%",
+      "-5%",
+      "-10%"
+    ],
+    "pitch": "+0Hz",
+    "boundary_summary": {
+      "Voice B": {
+        "25-35s": {
+          "max_boundary_gap_seconds": 0.448067,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        },
+        "40-60s": {
+          "max_boundary_gap_seconds": 0.4506,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        },
+        "60-90s": {
+          "max_boundary_gap_seconds": 0,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        }
+      },
+      "Voice C": {
+        "25-35s": {
+          "max_boundary_gap_seconds": 1.004217,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        },
+        "40-60s": {
+          "max_boundary_gap_seconds": 1.000942,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        },
+        "60-90s": {
+          "max_boundary_gap_seconds": 0,
+          "max_encoder_padding_estimate_ms": 0,
+          "assembly_added_gap_seconds": 0
+        }
+      }
+    }
+  },
+  "telegram": {
+    "status": "SENT",
+    "sample_count": 22,
+    "samples": [
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "hook",
+        "variant": "+0%",
+        "telegram_message_id": 38
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "factual-dense",
+        "variant": "+0%",
+        "telegram_message_id": 39
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "names-and-numbers",
+        "variant": "+0%",
+        "telegram_message_id": 40
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "long-paragraph",
+        "variant": "+0%",
+        "telegram_message_id": 41
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "emotional-transition",
+        "variant": "+0%",
+        "telegram_message_id": 42
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice B",
+        "context": "cta",
+        "variant": "+0%",
+        "telegram_message_id": 43
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "hook",
+        "variant": "+0%",
+        "telegram_message_id": 44
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "factual-dense",
+        "variant": "+0%",
+        "telegram_message_id": 45
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "names-and-numbers",
+        "variant": "+0%",
+        "telegram_message_id": 46
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "long-paragraph",
+        "variant": "+0%",
+        "telegram_message_id": 47
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "emotional-transition",
+        "variant": "+0%",
+        "telegram_message_id": 48
+      },
+      {
+        "kind": "multicontext",
+        "blind_id": "Voice C",
+        "context": "cta",
+        "variant": "+0%",
+        "telegram_message_id": 49
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice B",
+        "prosody_window": "25-35s",
+        "variant": "+0%",
+        "telegram_message_id": 50
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice B",
+        "prosody_window": "40-60s",
+        "variant": "+0%",
+        "telegram_message_id": 51
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice B",
+        "prosody_window": "60-90s",
+        "variant": "+0%",
+        "telegram_message_id": 52
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice C",
+        "prosody_window": "25-35s",
+        "variant": "+0%",
+        "telegram_message_id": 53
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice C",
+        "prosody_window": "40-60s",
+        "variant": "+0%",
+        "telegram_message_id": 54
+      },
+      {
+        "kind": "prosody",
+        "blind_id": "Voice C",
+        "prosody_window": "60-90s",
+        "variant": "+0%",
+        "telegram_message_id": 55
+      },
+      {
+        "kind": "rate",
+        "blind_id": "Voice B",
+        "prosody_window": "40-60s",
+        "variant": "-5%",
+        "telegram_message_id": 56
+      },
+      {
+        "kind": "rate",
+        "blind_id": "Voice B",
+        "prosody_window": "40-60s",
+        "variant": "-10%",
+        "telegram_message_id": 57
+      },
+      {
+        "kind": "rate",
+        "blind_id": "Voice C",
+        "prosody_window": "40-60s",
+        "variant": "-5%",
+        "telegram_message_id": 58
+      },
+      {
+        "kind": "rate",
+        "blind_id": "Voice C",
+        "prosody_window": "40-60s",
+        "variant": "-10%",
+        "telegram_message_id": 59
+      }
+    ],
+    "control_message_id": 60,
+    "identity_revealed": false,
+    "round1_audio_repeated": false,
+    "round2_prefix_audio_repeated": false,
+    "recovery": {
+      "source_failed_run_id": 35398844175,
+      "failure": "HTTP_429",
+      "sent_prefix_count": 20,
+      "first_resume_message_id": 58,
+      "message_id_sequence": "EXACT_CONTIGUOUS_SEQUENCE_PROVEN",
+      "recovered_without_duplicate_audio": true
+    }
+  },
+  "human_gate": {
+    "required": true,
+    "decision": "OFFICIAL_PROFILE_INPUT",
+    "official_profile_promoted": false,
+    "required_response_format": "FINAL_CHOICE=Voice B PROSODY_WINDOW=40-60s RATE=-5% NOTE=<opcional>",
+    "valid_voices": [
+      "Voice B",
+      "Voice C"
+    ],
+    "valid_prosody_windows": [
+      "25-35s",
+      "40-60s",
+      "60-90s"
+    ],
+    "valid_rates": [
+      "+0%",
+      "-5%",
+      "-10%"
+    ],
+    "note": "Human listening is authoritative for naturalness; technical metrics do not select a winner."
+  },
+  "continuation": {
+    "after_final_human_selection": [
+      "Resolve only the chosen blind identity from the private Round 2 artifact.",
+      "Persist final human voice/prosody/rate preference into the governed Learning Plane.",
+      "Create official-narration-profile.json without exposing unrelated blind identities.",
+      "Generate full VIDEO A narration from the canonical 3229-word/16-section script using the selected profile.",
+      "Preserve narration-bundle/v2, cache/retry/checkpoint and render-retry reuse.",
+      "Run final PT-BR semantic/loudness/long-form QA and blind baseline-vs-official-profile human confirmation before promotion."
+    ],
+    "longform_round2_profile_started": false,
+    "official_profile_promoted": false
+  },
+  "invariants": {
+    "narration_bundle_v2_preserved": true,
+    "content_addressed_cache_preserved": true,
+    "segment_retry_preserved": true,
+    "narration_checkpoint_preserved": true,
+    "render_retry_reuse_preserved": true,
+    "native_timing_fallback_preserved": true,
+    "ci_optimization_preserved": true,
+    "harness_authority_preserved": true,
+    "job18_unchanged": true,
+    "publication_authority_unchanged": true
+  }
+}
