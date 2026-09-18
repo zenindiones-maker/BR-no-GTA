@@ -25,5 +25,5 @@
     "editorial authority",
     "publication authority"
   ],
-  "upstream_eval_note": "Upstream RESULTS.md records a failed release gate; BR-no-GTA therefore treats the source as presentation guidance only and adds fail-closed semantic-preservation tests."
+  "upstream_eval_note": "Upstream evals/RESULTS.md records a failed release gate; BR-no-GTA therefore treats the source as presentation guidance only and adds fail-closed semantic-preservation tests."
 }
