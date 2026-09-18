@@ -52,7 +52,13 @@ class FreshResearchEvidence:
 
 
 class FreshResearchTransport(Protocol):
-    def execute(self, *, query: str, execution_id: str) -> tuple[dict[str, Any], str]: ...
+    def execute(
+        self,
+        *,
+        query: str,
+        execution_id: str,
+        source_context: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], str]: ...
 
 
 def _fold(value: str) -> str:
@@ -60,16 +66,29 @@ def _fold(value: str) -> str:
     return "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
 
 
-def requires_fresh_research(message: str) -> bool:
-    """Deterministic freshness gate for GTA6 factual/current questions.
+def requires_fresh_research(
+    message: str,
+    *,
+    input_context: dict[str, Any] | None = None,
+) -> bool:
+    """Deterministic freshness gate using message plus structured ingress context.
 
-    Purely creative/user-preference requests can use canonical memory without a
-    network refresh. Questions about current facts, Rockstar, release state,
-    news, leaks or what is known now must refresh evidence first.
+    Telegram classification/provenance is authoritative input to this gate.
+    Keyword matching is only a fallback for ordinary unstructured chat.
     """
+    context = dict(input_context or {})
+    classification = str(context.get("classification") or "").strip().lower()
+    input_kind = str(context.get("input_kind") or "").strip().lower()
+    source_url = str(context.get("source_url") or "").strip()
+    if classification == "news" or source_url:
+        return True
+    if input_kind in {"url", "link", "social", "social_link"}:
+        return True
     text = _fold(message).strip()
     if not text:
         return False
+    if "https://" in str(message or "").casefold() or "http://" in str(message or "").casefold():
+        return True
     system_only = (
         "como funciona o sistema",
         "quem manda no sistema",
@@ -135,7 +154,15 @@ class GitHubActionsFreshResearchTransport:
             or "runtime/gta6-fresh-research-artifacts"
         )
 
-    def execute(self, *, query: str, execution_id: str) -> tuple[dict[str, Any], str]:
+    def execute(
+        self,
+        *,
+        query: str,
+        execution_id: str,
+        source_context: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        source_context = dict(source_context or {})
+        source_url = str(source_context.get("source_url") or "").strip()
         dispatched = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=self.workflow,
@@ -143,6 +170,14 @@ class GitHubActionsFreshResearchTransport:
             inputs={
                 "execution_id": execution_id,
                 "query_b64": base64.b64encode(query.encode("utf-8")).decode("ascii"),
+                "source_url_b64": (
+                    base64.b64encode(source_url.encode("utf-8")).decode("ascii")
+                    if source_url else ""
+                ),
+                "telegram_input_id": str(source_context.get("id") or ""),
+                "classification": str(source_context.get("classification") or ""),
+                "input_kind": str(source_context.get("input_kind") or ""),
+                "memory_event_id": str(source_context.get("memory_event_id") or ""),
             },
         )
         watched = self.watcher.wait_for_completion(
@@ -201,6 +236,7 @@ def execute_fresh_gta6_research_capability(
     authorization: HarnessAuthorization | dict[str, Any] | str,
     routing_decision: HarnessRoutingDecision,
     transport: FreshResearchTransport | None = None,
+    source_context: dict[str, Any] | None = None,
 ) -> FreshResearchEvidence:
     auth = validate_harness_authorization(
         authorization,
@@ -217,10 +253,17 @@ def execute_fresh_gta6_research_capability(
         raise ValueError("fresh research query is required")
     selected_transport = transport or GitHubActionsFreshResearchTransport()
     try:
-        packet, execution_ref = selected_transport.execute(
-            query=query.strip(),
-            execution_id=auth.execution_id,
-        )
+        if source_context:
+            packet, execution_ref = selected_transport.execute(
+                query=query.strip(),
+                execution_id=auth.execution_id,
+                source_context=dict(source_context),
+            )
+        else:
+            packet, execution_ref = selected_transport.execute(
+                query=query.strip(),
+                execution_id=auth.execution_id,
+            )
     except FreshResearchError:
         raise
     except Exception as exc:
@@ -246,6 +289,7 @@ def research_fresh_gta6_under_harness(
     query: str,
     *,
     transport: FreshResearchTransport | None = None,
+    source_context: dict[str, Any] | None = None,
 ) -> FreshResearchEvidence:
     routing = route_harness_request(
         HarnessRoutingRequest(
@@ -259,6 +303,7 @@ def research_fresh_gta6_under_harness(
             zero_cost_operation=True,
         )
     )
+    context = dict(source_context or {})
     authorization = issue_harness_authorization(
         authorized_action="RESEARCH",
         subject=f"capability:{FRESH_RESEARCH_CAPABILITY_ID}",
@@ -268,6 +313,11 @@ def research_fresh_gta6_under_harness(
             "selected_executor_binding": routing.selected_executor_binding,
             "ingress": "telegram",
             "freshness_required": True,
+            "classification": context.get("classification"),
+            "input_kind": context.get("input_kind"),
+            "source_url": context.get("source_url"),
+            "telegram_input_id": context.get("id"),
+            "memory_event_id": context.get("memory_event_id"),
         },
     )
     try:
@@ -276,6 +326,7 @@ def research_fresh_gta6_under_harness(
             authorization=authorization,
             routing_decision=routing,
             transport=transport,
+            source_context=context,
         )
     finally:
         consume_harness_authorization(authorization)
