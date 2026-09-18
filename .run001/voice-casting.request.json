@@ -23,5 +23,7 @@
   "job18_frozen": true,
   "publication_authority": "NONE",
   "preserve_narration_bundle_v2": true,
-  "preserve_cache_retry_checkpoint": true
+  "preserve_cache_retry_checkpoint": true,
+  "iteration": 2,
+  "retry_reason": "workflow configuration simplification; no casting job ran in prior attempt"
 }
