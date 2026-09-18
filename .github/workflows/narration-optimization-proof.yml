@@ -106,7 +106,7 @@ jobs:
           python scripts/narration_optimization_proof.py \
             --config .run001/video-a-investigative-longform.json \
             --output-dir runtime/narration-proof \
-            --baseline-evidence-dir runtime/baseline-evidence
+            --baseline-evidence-dir runtime/baseline-evidence/narration-optimization-proof-35385957338-1
 
       - name: Validate observed proof contract
         if: always()

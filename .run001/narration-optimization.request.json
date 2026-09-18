@@ -9,6 +9,6 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "benchmark": "baseline-vs-edge-optimized-real-audio",
-  "iteration": 5,
-  "reason": "enable explicit Edge WordBoundary metadata and reuse observed baseline artifact 10564001994"
+  "iteration": 6,
+  "reason": "correct downloaded baseline artifact subdirectory path; prior iteration executed no candidate TTS"
 }
