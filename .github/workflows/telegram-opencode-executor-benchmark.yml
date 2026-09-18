@@ -40,7 +40,7 @@ jobs:
           npm install --global "omniroute@$OMNIROUTE_VERSION"
           npm install --global "@opencode/cli@$OPENCODE_CLI_VERSION"
           OMNI_REPORTED="$(omniroute --version | tr -d '\r' | sed -E 's/^[^0-9]*//')"
-          OPENCODE_REPORTED="$(opencode --version | awk '{print $NF}' | tr -d '\r')"
+          OPENCODE_REPORTED="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
           test "$OMNI_REPORTED" = "$OMNIROUTE_VERSION"
           test "$OPENCODE_REPORTED" = "$OPENCODE_CLI_VERSION"
 
