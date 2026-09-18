@@ -253,4 +253,3 @@ def test_real_recovery_wrapper_is_syntax_valid_and_pins_observed_evidence():
     assert "--benchmark-run-id" in source
     assert "--benchmark-artifact-id" in source
     assert "TELEGRAM_REAL_RECOVERY=READY_FOR_NEXT_REAL_INTERACTION" in source
-
