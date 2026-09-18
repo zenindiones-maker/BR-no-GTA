@@ -160,6 +160,23 @@ jobs:
           print("BENCHMARK_DECISION="+data["decision"])
           PY
 
+      - name: Prepare phone-safe evidence bundle
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/video-a-benchmark/evidence-only
+          cp runtime/video-a-benchmark/result/benchmark-evidence.json runtime/video-a-benchmark/evidence-only/
+          cp runtime/video-a-benchmark/result/edit-plan.json runtime/video-a-benchmark/evidence-only/
+          cp runtime/video-a-benchmark/result/materialization-evidence.json runtime/video-a-benchmark/evidence-only/
+          cp runtime/video-a-benchmark/handoff/artifact-metadata.json runtime/video-a-benchmark/evidence-only/
+          du -sh runtime/video-a-benchmark/evidence-only
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-a-render-learning-evidence
+          path: runtime/video-a-benchmark/evidence-only/
+          retention-days: 30
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         with:
           name: video-a-render-learning-benchmark
