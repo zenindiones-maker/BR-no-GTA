@@ -396,9 +396,9 @@ def chat_under_harness(
     answer = str(result.get("text") or "").strip()
     if not evidence.active or evidence.status != "EXECUTED" or not answer:
         provider_error = (
-            dict(evidence.error)
-            if isinstance(evidence.error, dict)
-            else {"code": "provider_failure", "message": str(evidence.error or "")[:1200]}
+            dict(getattr(evidence, "error", None))
+            if isinstance(getattr(evidence, "error", None), dict)
+            else {"code": "provider_failure", "message": str(getattr(evidence, "error", None) or "")[:1200]}
         )
         payload = {
             "TELEGRAM_INGRESS": "PASS" if input_record is not None else "UNKNOWN",
@@ -415,12 +415,12 @@ def chat_under_harness(
             "routing_id": routing.routing_id,
             "capability_id": routing.selected_capability_id,
             "provider": evidence.provider,
-            "model": evidence.model or routing.selected_model,
-            "executor_binding": evidence.executor_binding or routing.selected_provider_executor_binding,
-            "authorization_id": evidence.authorization_id or authorization.authorization_id,
+            "model": getattr(evidence, "model", None) or routing.selected_model,
+            "executor_binding": getattr(evidence, "executor_binding", None) or routing.selected_provider_executor_binding,
+            "authorization_id": getattr(evidence, "authorization_id", None) or authorization.authorization_id,
             "execution_id": evidence.execution_id,
-            "latency_seconds": evidence.latency_seconds,
-            "retry_count": evidence.retry_count,
+            "latency_seconds": getattr(evidence, "latency_seconds", None),
+            "retry_count": getattr(evidence, "retry_count", 0),
             "provider_error": provider_error,
             "episode_id": (
                 learned_outcome["episode"]["episode_id"]
@@ -450,12 +450,12 @@ def chat_under_harness(
         "authority": evidence.authority,
         "authorized_action": evidence.authorized_action,
         "routing_id": routing.routing_id,
-        "authorization_id": evidence.authorization_id or authorization.authorization_id,
+        "authorization_id": getattr(evidence, "authorization_id", None) or authorization.authorization_id,
         "execution_id": evidence.execution_id,
         "capability_id": routing.selected_capability_id,
         "provider": evidence.provider,
         "model": evidence.model or result.get("model") or routing.selected_model,
-        "executor_binding": evidence.executor_binding or routing.selected_provider_executor_binding,
+        "executor_binding": getattr(evidence, "executor_binding", None) or routing.selected_provider_executor_binding,
         "fallback_occurred": routing.fallback_occurred,
         "zero_cost_operation": bool(routing.policy_metadata.get("zero_cost_operation")),
         "fresh_research_required": freshness_required,
