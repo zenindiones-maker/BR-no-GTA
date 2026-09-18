@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from app.database.harness_authorization_repository import get_harness_authorization
+from app.services.telegram_harness_service import HarnessReasoningFailure
 from scripts import prove_real_telegram_presentation as proof
+from scripts import telegram_harness_gateway_v2 as gateway
 
 
 def test_source_selection_requires_resolved_url_and_editorial_signal(monkeypatch):
@@ -88,3 +91,59 @@ def test_evidence_proof_rejects_absent_real_command(monkeypatch):
     monkeypatch.setattr(proof, "list_recent_harness_authorizations", lambda limit=500: [])
     with pytest.raises(RuntimeError, match="no real /evidence presentation authorization"):
         proof._find_evidence_authorization(42)
+
+
+def test_generic_telegram_failure_uses_action_first_harness_presentation():
+    presentation = gateway._generic_failure_presentation(
+        ValueError("uso: /evidence [telegram_input_id]"),
+        command="/evidence",
+        telegram_message_id=901,
+        telegram_update_id=902,
+    )
+    assert presentation["mode"] == "ACTION_FIRST"
+    assert presentation["canonical_unchanged"] is True
+    assert presentation["text"].startswith("❌ FAILED")
+    assert "Causa observada: uso: /evidence [telegram_input_id]" in presentation["text"]
+    auth = get_harness_authorization(presentation["authorization_id"])
+    assert auth is not None
+    assert auth["status"] == "consumed"
+    assert auth["lineage"]["command"] == "/evidence"
+    assert auth["lineage"]["presentation_error"] == "ValueError"
+    assert auth["lineage"]["memory_write"] is False
+    assert auth["lineage"]["routing_authority"] is False
+    assert auth["lineage"]["publication_authority"] is False
+
+
+def test_reasoning_failure_presentation_preserves_real_telegram_input_lineage():
+    exc = HarnessReasoningFailure(
+        {
+            "provider": "opencode",
+            "model": "oc/big-pickle",
+            "execution_id": "exec-real-failure",
+            "episode_id": "episode-real-failure",
+            "failure_memory_id": "memory-real-failure",
+            "provider_error": {
+                "code": "upstream_http_403",
+                "message": "HTTP 403 Forbidden",
+            },
+        }
+    )
+    presentation = gateway._reasoning_failure_presentation(
+        exc,
+        input_record={
+            "id": 77,
+            "telegram_message_id": 88,
+            "telegram_update_id": 99,
+            "memory_event_id": 111,
+            "classification": "chat",
+            "input_kind": "text",
+            "source_url": None,
+        },
+    )
+    assert presentation["mode"] == "ACTION_FIRST"
+    assert presentation["text"].startswith("❌ FAILED")
+    auth = get_harness_authorization(presentation["authorization_id"])
+    assert auth is not None
+    assert auth["lineage"]["telegram_input_id"] == 77
+    assert auth["lineage"]["episode_id"] == "episode-real-failure"
+    assert auth["lineage"]["failure_memory_id"] == "memory-real-failure"
