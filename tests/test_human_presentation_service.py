@@ -79,6 +79,22 @@ def test_insufficient_evidence_never_becomes_pass():
     assert "VERIFIED" not in result.text
 
 
+def test_source_resolution_failure_remains_explicit_and_never_looks_successful():
+    canonical = {
+        "answer": "O conteúdo original da URL não pôde ser recuperado.",
+        "source_intelligence": {
+            "SOURCE_CONTENT_RESOLVED": "FAIL",
+            "claims": [],
+            "editorial_signal": {"harness_decision": "REJECT_LOW_EVIDENCE"},
+        },
+    }
+    result = render_human_presentation(canonical, surface="telegram", mode=ACTION_FIRST)
+    assert result.text.startswith("❌ Falha ao resolver a fonte")
+    assert "Ação do Harness: REJECT_LOW_EVIDENCE" in result.text
+    assert "Uso editorial: NÃO" in result.text
+    assert "✅ Fonte analisada" not in result.text
+
+
 def test_fail_remains_visible_and_only_observed_cause_is_shown():
     canonical = {
         "status": "FAILED",
