@@ -13,6 +13,7 @@ from app.services.channel_branding_standard_service import (
 )
 from app.services.telegram_fresh_research_service import requires_fresh_research
 from app.services.telegram_harness_service import (
+    HarnessReasoningFailure,
     chat_under_harness,
     list_governed_brand_assets,
 )
@@ -84,22 +85,67 @@ def _ingest(
 
 def _learning_evidence(result: dict[str, Any]) -> str:
     item = result.get("input") or {}
+    memory_event_id = item.get("memory_event_id")
     memory_id = item.get("memory_id")
-    learned = "PASS" if memory_id is not None else "CAPTURED"
     return (
-        "--- Telegram → Harness ingest ---\n"
+        "--- Telegram → Harness input capture ---\n"
         f"INGESTION={result.get('status')}\n"
         f"AUTHORITY={result.get('authority')}\n"
         f"CAPABILITY={result.get('capability_id')}\n"
         f"CLASSIFICATION={item.get('classification')}\n"
-        f"LEARNING={learned}\n"
+        f"INPUT_MEMORY_CAPTURED={'PASS' if memory_event_id is not None else 'FAIL'}\n"
+        "EXECUTION_OUTCOME_LEARNED=NOT_OBSERVED\n"
+        "USER_GOAL_COMPLETED=NOT_YET_EVALUATED\n"
         f"LEARNING_STATUS={item.get('learning_status')}\n"
-        f"MEMORY_EVENT_ID={item.get('memory_event_id')}\n"
+        f"MEMORY_EVENT_ID={memory_event_id}\n"
         f"CLAIM_ID={item.get('claim_id')}\n"
         f"MEMORY_ID={memory_id}\n"
         f"ROUTING_ID={result.get('routing_id')}"
     )
 
+
+def _reasoning_outcome_evidence(result: dict[str, Any]) -> str:
+    return (
+        "--- Telegram → Harness execution outcome ---\n"
+        f"INPUT_MEMORY_CAPTURED={result.get('INPUT_MEMORY_CAPTURED')}\n"
+        f"EXECUTION_OUTCOME_LEARNED={result.get('EXECUTION_OUTCOME_LEARNED')}\n"
+        f"USER_GOAL_COMPLETED={result.get('USER_GOAL_COMPLETED')}\n"
+        f"EPISODE_ID={result.get('episode_id')}\n"
+        f"RETRIEVED_FAILURE_MEMORIES={','.join(result.get('retrieved_failure_memory_ids') or []) or 'NONE'}"
+    )
+
+
+def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
+    payload = exc.to_dict()
+    error = payload.get("provider_error")
+    error = error if isinstance(error, dict) else {}
+    learning = payload.get("learning_context")
+    learning = learning if isinstance(learning, dict) else {}
+    return (
+        "COMMAND=FAIL\n"
+        f"TELEGRAM_INGRESS={payload.get('TELEGRAM_INGRESS')}\n"
+        f"HARNESS_REASONING={payload.get('HARNESS_REASONING')}\n"
+        f"USER_GOAL_COMPLETED={payload.get('USER_GOAL_COMPLETED')}\n"
+        f"INPUT_MEMORY_CAPTURED={payload.get('INPUT_MEMORY_CAPTURED')}\n"
+        f"EXECUTION_OUTCOME_LEARNED={payload.get('EXECUTION_OUTCOME_LEARNED')}\n"
+        f"ROUTING_ID={payload.get('routing_id')}\n"
+        f"CAPABILITY={payload.get('capability_id')}\n"
+        f"PROVIDER={payload.get('provider')}\n"
+        f"MODEL={payload.get('model')}\n"
+        f"EXECUTOR={payload.get('executor_binding')}\n"
+        f"AUTHORIZATION_ID={payload.get('authorization_id')}\n"
+        f"EXECUTION_ID={payload.get('execution_id')}\n"
+        f"LATENCY_SECONDS={payload.get('latency_seconds')}\n"
+        f"RETRIES={payload.get('retry_count')}\n"
+        f"PROVIDER_ERROR_CODE={error.get('code')}\n"
+        f"PROVIDER_HTTP_STATUS={error.get('status_code')}\n"
+        f"PROVIDER_RUN_ID={error.get('run_id')}\n"
+        f"PROVIDER_ERROR={str(error.get('message') or '')[:500]}\n"
+        f"EPISODE_ID={payload.get('episode_id')}\n"
+        f"FAILURE_MEMORY_ID={payload.get('failure_memory_id')}\n"
+        f"IMPROVEMENT_MISSION_ID={payload.get('improvement_mission_id')}\n"
+        f"RETRIEVED_FAILURE_MEMORIES={','.join(learning.get('retrieved_failure_memory_ids') or []) or 'NONE'}"
+    )
 
 def _grounding_evidence(result: dict[str, Any]) -> str:
     if not result.get("fresh_research_required"):
@@ -400,9 +446,29 @@ def main() -> int:
                         chat_result = chat_under_harness(
                             text,
                             progress_callback=progress,
+                            input_record=learned["input"],
                         )
-                        reply = _chat_reply_v2(chat_result) + "\n\n" + _learning_evidence(learned)
+                        reply = (
+                            _chat_reply_v2(chat_result)
+                            + "\n\n"
+                            + _learning_evidence(learned)
+                            + "\n\n"
+                            + _reasoning_outcome_evidence(chat_result)
+                        )
                         command_name = "natural-language"
+                except HarnessReasoningFailure as exc:
+                    reply = _reasoning_failure_reply(exc)
+                    payload = exc.to_dict()
+                    print(
+                        "TELEGRAM_COMMAND=FAIL "
+                        f"USER_ID={user_id} "
+                        f"ERROR=HarnessReasoningFailure "
+                        f"EPISODE_ID={payload.get('episode_id')} "
+                        f"FAILURE_MEMORY_ID={payload.get('failure_memory_id')} "
+                        f"PROVIDER={payload.get('provider')} "
+                        f"MODEL={payload.get('model')}",
+                        flush=True,
+                    )
                 except Exception as exc:
                     reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
                     print(
