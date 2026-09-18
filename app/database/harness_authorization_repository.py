@@ -45,6 +45,30 @@ def get_harness_authorization(authorization_id: str) -> dict[str, Any] | None:
         connection.close()
 
 
+def list_recent_harness_authorizations(*, limit: int = 100) -> list[dict[str, Any]]:
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            """SELECT * FROM harness_authorizations
+               ORDER BY issued_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["lineage"] = json.loads(item.get("lineage") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                item["lineage"] = {}
+            result.append(item)
+        return result
+    finally:
+        connection.close()
+
+
 def update_harness_authorization_status(authorization_id: str, status: str) -> None:
     if status not in {"active", "consumed", "revoked"}:
         raise ValueError("invalid harness authorization status")
