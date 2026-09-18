@@ -19,6 +19,10 @@ from app.services.harness_learning_service import (
     record_or_reuse_failure_memory,
 )
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
+from app.services.opencode_executor_profile_service import (
+    BASELINE_OPENCODE_EXECUTOR_VERSION,
+    OPENCODE_EXECUTOR_SKILL_ID,
+)
 
 
 TELEGRAM_REASONING_CAPABILITY_ID = "ai.reasoning.text"
@@ -79,6 +83,10 @@ def _failure_metadata(
         "provider": evidence.provider,
         "model": evidence.model,
         "executor_binding": evidence.executor_binding,
+        "provider_profile_skill_id": evidence.provider_profile_skill_id,
+        "provider_profile_version": evidence.provider_profile_version,
+        "provider_profile_content_ref": evidence.provider_profile_content_ref,
+        "provider_profile_checksum": evidence.provider_profile_checksum,
         "latency_seconds": evidence.latency_seconds,
         "retry_count": evidence.retry_count,
         "provider_error": error,
@@ -224,11 +232,18 @@ def capture_telegram_reasoning_outcome(
     )
     capability_version = _capability_version()
     provider_version = _provider_version(evidence.provider)
+    skill_id = evidence.provider_profile_skill_id
+    skill_version = evidence.provider_profile_version
+    if evidence.provider == "opencode" and not skill_id:
+        skill_id = OPENCODE_EXECUTOR_SKILL_ID
+        skill_version = skill_version or BASELINE_OPENCODE_EXECUTOR_VERSION
     source_versions = {
         "capability:ai.reasoning.text": capability_version or "unversioned",
         f"provider:{evidence.provider}": provider_version or "unversioned",
         f"model:{evidence.provider}": str(evidence.model or "unversioned"),
     }
+    if skill_id and skill_version:
+        source_versions[f"skill:{skill_id}"] = str(skill_version)
     identity = {
         "execution_id": evidence.execution_id,
         "telegram_input_id": input_record["id"],
@@ -244,8 +259,8 @@ def capture_telegram_reasoning_outcome(
         task_id=f"telegram-input:{input_record['id']}",
         agent_id=f"provider:{evidence.provider}",
         capability_id=TELEGRAM_REASONING_CAPABILITY_ID,
-        skill_id=None,
-        skill_version=str(evidence.model or provider_version or "unversioned"),
+        skill_id=skill_id,
+        skill_version=str(skill_version or evidence.model or provider_version or "unversioned"),
         provider=evidence.provider,
         domain=TELEGRAM_REASONING_DOMAIN,
         task_class=TELEGRAM_REASONING_TASK_CLASS,
@@ -275,6 +290,10 @@ def capture_telegram_reasoning_outcome(
             "provider": evidence.provider,
             "model": evidence.model,
             "executor_binding": evidence.executor_binding,
+            "provider_profile_skill_id": skill_id,
+            "provider_profile_version": skill_version,
+            "provider_profile_content_ref": evidence.provider_profile_content_ref,
+            "provider_profile_checksum": evidence.provider_profile_checksum,
             "authorization_id": evidence.authorization_id,
             "routing_id": routing_decision.routing_id,
             "execution_id": evidence.execution_id,
@@ -313,6 +332,11 @@ def capture_telegram_reasoning_outcome(
             "selected_provider": routing_decision.selected_provider,
             "selected_model": routing_decision.selected_model,
             "selected_executor_binding": routing_decision.selected_provider_executor_binding,
+            "resolved_executable_binding": evidence.executor_binding,
+            "provider_profile_skill_id": skill_id,
+            "provider_profile_version": skill_version,
+            "provider_profile_content_ref": evidence.provider_profile_content_ref,
+            "provider_profile_checksum": evidence.provider_profile_checksum,
             "retrieved_memory_ids": list(learning_context.get("retrieved_memory_ids") or ()),
             "retrieved_failure_memory_ids": list(
                 learning_context.get("retrieved_failure_memory_ids") or ()
@@ -352,7 +376,8 @@ def capture_telegram_reasoning_outcome(
             evidence_refs=evidence_refs,
             capability_id=TELEGRAM_REASONING_CAPABILITY_ID,
             agent_id=f"provider:{evidence.provider}",
-            skill_version=str(evidence.model or provider_version or "unversioned"),
+            skill_id=skill_id,
+            skill_version=str(skill_version or evidence.model or provider_version or "unversioned"),
             source_versions=source_versions,
             metadata=metadata,
             confidence=0.99,
