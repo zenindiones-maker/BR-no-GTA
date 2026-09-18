@@ -39,6 +39,7 @@ class HarnessAIProviderEvidence:
     authorized_action: str
     harness_decision_id: str
     execution_id: str
+    authorization_id: str | None = None
     result: Any = None
     error: Any = None
     routing: dict[str, Any] | None = None
@@ -272,6 +273,7 @@ def execute_harness_ai_generation(
             authorized_action=resolved_authorization.authorized_action,
             harness_decision_id=resolved_authorization.harness_decision_id,
             execution_id=resolved_authorization.execution_id,
+            authorization_id=resolved_authorization.authorization_id,
             error=structured_error,
             routing=decision.to_dict(),
             model=model,
@@ -293,6 +295,7 @@ def execute_harness_ai_generation(
             authorized_action=resolved_authorization.authorized_action,
             harness_decision_id=resolved_authorization.harness_decision_id,
             execution_id=resolved_authorization.execution_id,
+            authorization_id=resolved_authorization.authorization_id,
             error={
                 "provider": expected_provider,
                 "model": model,
@@ -353,6 +356,7 @@ def execute_harness_ai_generation(
         authorized_action=resolved_authorization.authorized_action,
         harness_decision_id=resolved_authorization.harness_decision_id,
         execution_id=resolved_authorization.execution_id,
+        authorization_id=resolved_authorization.authorization_id,
         result=result,
         routing=decision.to_dict(),
         model=result.get("model") or model,
