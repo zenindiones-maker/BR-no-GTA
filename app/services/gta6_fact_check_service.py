@@ -13,6 +13,7 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_capability_service import CapabilityEvidence, execute_capability
 from app.services.harness_execution_result import CanonicalExecutionResult
+from app.services.harness_episode_capture_service import capture_canonical_execution_episode
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
@@ -388,6 +389,10 @@ def _failed_receipt(
         executor=FACT_CHECK_EXECUTOR_BINDING,
         provider="internal",
         input_refs=_input_refs(payload),
+        evidence_refs=(
+            f"fact-check-failure:{_receipt_lineage_value(payload, authorization, 'mission_id', execution_suffix)}:"
+            f"{_receipt_lineage_value(payload, authorization, 'task_id', execution_suffix)}",
+        ),
         started_at=started_at,
         finished_at=finished_at,
         status="FAILED",
@@ -512,10 +517,24 @@ def execute_gta6_fact_check_via_harness(
         routing_decision=routing_decision,
         payload=payload,
     )
-    return evidence.to_canonical_result(
+    canonical = evidence.to_canonical_result(
         authorization_id=resolved.authorization_id,
         routing_id=routing_decision.routing_id,
         tool="gta6-fact-check",
         operation="fact-check",
         executor=FACT_CHECK_EXECUTOR_BINDING,
     )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(FACT_CHECK_CAPABILITY_ID)
+    capture_canonical_execution_episode(
+        canonical,
+        routing_decision=routing_decision,
+        domain=routing_decision.policy_metadata.get("domain") or "gta6-research",
+        task_class=routing_decision.policy_metadata.get("task_class") or "fact-check",
+        skill_version=(record.version if record is not None else None),
+        source_versions={
+            "capability:gta6.fact-check": (
+                str(record.version) if record is not None else "unversioned"
+            ),
+        },
+    )
+    return canonical
