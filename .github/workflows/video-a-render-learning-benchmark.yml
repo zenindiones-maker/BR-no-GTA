@@ -36,7 +36,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/video-a-benchmark/handoff
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}"             > runtime/video-a-benchmark/handoff/artifact-metadata.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}" > runtime/video-a-benchmark/handoff/artifact-metadata.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > runtime/video-a-benchmark/handoff/producer-run.json
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -47,7 +48,9 @@ jobs:
           assert data.get("expired") is False
           run=data.get("workflow_run") or {}
           assert str(run.get("id")) == os.environ["SOURCE_RUN_ID"]
-          assert run.get("head_sha") == os.environ["SOURCE_SHA"]
+          producer=json.loads(Path("runtime/video-a-benchmark/handoff/producer-run.json").read_text())
+          assert str(producer.get("id")) == os.environ["SOURCE_RUN_ID"]
+          assert producer.get("head_sha") == os.environ["SOURCE_SHA"]
           print("VIDEO_A_HANDOFF_METADATA=PASS")
           PY
 
@@ -78,7 +81,6 @@ jobs:
           assert job["render"] == {
               "resolution":"1920x1080",
               "fps":30.0,
-              "aspect_ratio":"16:9",
               "container":"mp4",
               "video_codec":"h264",
               "audio_codec":"aac",
