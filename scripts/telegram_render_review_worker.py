@@ -112,6 +112,8 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         caption = (
             f"{review_label}\n"
             f"RenderJob={job.get('render_job_id')}\n"
+            f"video_id={job.get('video_id')}\n"
+            f"execution_id={job.get('execution_id')}\n"
             f"run_id={run_id}\n"
             f"duração={duration}s\n"
             f"versão={product_version}\n"
