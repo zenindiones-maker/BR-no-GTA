@@ -5,6 +5,10 @@ on:
   push:
     branches: [work/gate6f-analytics-learning, work/gate6f-telegram-total-ingress]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
