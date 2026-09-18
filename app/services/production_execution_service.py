@@ -8,6 +8,7 @@ from app.services.gta6_goal_service import get_artifacts, resolve_next_stage, up
 from app.services.render_worker_service import process_next_render_job, process_render_job
 from app.services.video_render_service import create_video_and_enqueue_render
 from app.services.video_service import create_video_spec
+from app.services.render_learning_profile_service import bind_active_render_profile
 from app.services.harness_authorization_service import (
     authorization_to_context,
     issue_harness_authorization,
@@ -278,6 +279,14 @@ def process_next_production_execution(
         )
 
         video_spec = create_video_spec(production_plan, brain_decision=execution_context)
+        # The Harness snapshots the currently promoted executable render profile
+        # into the newly created contract. Workers only validate/execute it and
+        # never choose a learning version themselves.
+        video_spec["render"] = bind_active_render_profile(
+            video_spec.get("render"),
+            routing_id=authorization.lineage.get("routing_id"),
+            authorization_id=authorization.authorization_id,
+        )
         # Snapshot only into this newly created execution contract. Existing
         # RenderJobs are never retroactively mutated by a Telegram asset change.
         video_spec["brand_assets"] = list(brand_result["brand_assets"])
