@@ -9,6 +9,7 @@ from typing import Any, Callable, Sequence
 from app.database.harness_authorization_repository import (
     list_recent_harness_authorizations,
 )
+from app.database import harness_learning_repository as learning_repository
 from app.database.telegram_user_input_repository import (
     list_recent_telegram_user_inputs,
 )
@@ -357,6 +358,142 @@ def _evidence_from_observation(
             f"routing:{routing.routing_id}",
         ),
     )
+
+
+def _existing_reconciled_episode(*, run_id: int, job_id: int) -> dict[str, Any] | None:
+    run_ref = f"github:run:{run_id}"
+    job_ref = f"github:job:{job_id}"
+    for episode in learning_repository.list_episodes(
+        domain="ai",
+        task_class=TELEGRAM_REASONING_TASK_CLASS,
+        capability_id=TELEGRAM_REASONING_CAPABILITY_ID,
+        limit=200,
+    ):
+        refs = set(episode.get("evidence_refs") or ())
+        if run_ref in refs and job_ref in refs:
+            return episode
+    return None
+
+
+def reconcile_specific_telegram_provider_failure(
+    *,
+    repository: str,
+    run_id: int,
+    command_runner: CommandRunner,
+    expected_job_id: int | None = None,
+    expected_provider: str | None = None,
+    expected_model: str | None = None,
+    expected_http_status: int | None = None,
+    expected_exit_code: int | None = None,
+) -> dict[str, Any]:
+    """Reconcile one real Telegram provider incident, failing closed on mismatched evidence."""
+    observation = _observe_failed_run(
+        repository=repository,
+        run_id=run_id,
+        command_runner=command_runner,
+    )
+    expectations = {
+        "job_id": expected_job_id,
+        "provider": expected_provider,
+        "model": expected_model,
+        "http_status": expected_http_status,
+        "exit_code": expected_exit_code,
+    }
+    mismatches = {
+        key: {"expected": expected, "observed": observation.get(key)}
+        for key, expected in expectations.items()
+        if expected is not None and observation.get(key) != expected
+    }
+    if mismatches:
+        raise PermissionError(
+            "Telegram incident evidence mismatch: "
+            + json.dumps(mismatches, sort_keys=True)
+        )
+    if observation.get("run_status") != "completed":
+        raise RuntimeError("Telegram provider incident run is not terminal")
+    if observation.get("run_conclusion") == "success":
+        raise RuntimeError("Telegram provider incident is not a failed run")
+
+    existing = _existing_reconciled_episode(
+        run_id=run_id,
+        job_id=int(observation["job_id"]),
+    )
+    if existing is not None:
+        lineage = dict(existing.get("lineage") or {})
+        # The episode is the idempotency authority; memory is resolved by source episode below.
+        matching_memories = [
+            item for item in learning_repository.list_memories(
+                status="ACTIVE",
+                memory_type="FAILURE",
+                domain="ai",
+                task_class=TELEGRAM_REASONING_TASK_CLASS,
+                capability_id=TELEGRAM_REASONING_CAPABILITY_ID,
+                limit=100,
+            )
+            if existing["episode_id"] in (item.get("source_episode_ids") or ())
+        ]
+        return {
+            "run_id": run_id,
+            "job_id": observation["job_id"],
+            "authorization_id": lineage.get("authorization_id"),
+            "execution_id": existing.get("execution_id"),
+            "routing_id": lineage.get("routing_id"),
+            "telegram_input_id": lineage.get("telegram_input_id"),
+            "episode_id": existing["episode_id"],
+            "failure_memory_id": (
+                matching_memories[0]["memory_id"] if matching_memories else None
+            ),
+            "provider_error": (existing.get("actual_outcome") or {}).get("provider_error"),
+            "INPUT_MEMORY_CAPTURED": (existing.get("qa_results") or {}).get("INPUT_MEMORY_CAPTURED"),
+            "EXECUTION_OUTCOME_LEARNED": "PASS",
+            "USER_GOAL_COMPLETED": "NO",
+            "IDEMPOTENT": True,
+        }
+
+    authorizations = _telegram_reasoning_authorizations()
+    authorization = _match_authorization(
+        observation=observation,
+        authorizations=authorizations,
+    )
+    if authorization is None:
+        raise RuntimeError(
+            "No unique persisted Telegram HarnessAuthorization matches the observed provider run"
+        )
+    inputs = list_recent_telegram_user_inputs(limit=200)
+    input_record = _match_input(
+        authorization=authorization,
+        inputs=inputs,
+    )
+    if input_record is None:
+        raise RuntimeError(
+            "No unique persisted Telegram input matches the observed provider authorization"
+        )
+    routing = _routing_from_authorization(authorization, observation)
+    evidence = _evidence_from_observation(
+        authorization=authorization,
+        routing=routing,
+        observation=observation,
+    )
+    captured = capture_telegram_reasoning_outcome(
+        evidence=evidence,
+        routing_decision=routing,
+        input_record=input_record,
+    )
+    return {
+        "run_id": run_id,
+        "job_id": observation["job_id"],
+        "authorization_id": authorization["authorization_id"],
+        "execution_id": authorization["execution_id"],
+        "routing_id": routing.routing_id,
+        "telegram_input_id": input_record["id"],
+        "episode_id": captured["episode"]["episode_id"],
+        "failure_memory_id": captured["failure_memory"]["memory_id"],
+        "provider_error": evidence.error,
+        "INPUT_MEMORY_CAPTURED": captured["INPUT_MEMORY_CAPTURED"],
+        "EXECUTION_OUTCOME_LEARNED": captured["EXECUTION_OUTCOME_LEARNED"],
+        "USER_GOAL_COMPLETED": captured["USER_GOAL_COMPLETED"],
+        "IDEMPOTENT": False,
+    }
 
 
 def reconcile_recent_unlearned_telegram_provider_failures(
