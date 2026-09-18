@@ -184,7 +184,6 @@ def run_benchmark(render_job_path: Path, asset_root: Path, output_dir: Path) -> 
     if job.get("render") != {
         "resolution": "1920x1080",
         "fps": 30.0,
-        "aspect_ratio": "16:9",
         "container": "mp4",
         "video_codec": "h264",
         "audio_codec": "aac",
