@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import inspect
 import math
 import os
 import re
@@ -514,18 +515,25 @@ def execute(job, asset_root, output_root, *, source_job=None):
             })
             write_json(progress_path, payload)
 
-        render_result = render(
-            project,
-            RenderOptions(
-                output=str(output),
-                codec=bound_options["codec"],
-                quality=bound_options["quality"],
-                prefer_hw=bound_options["prefer_hw"],
-                hwaccel_decode=bound_options["hwaccel_decode"],
-                software_preset=bound_options.get("software_preset"),
-            ),
-            on_progress=_record_progress,
+        render_options = RenderOptions(
+            output=str(output),
+            codec=bound_options["codec"],
+            quality=bound_options["quality"],
+            prefer_hw=bound_options["prefer_hw"],
+            hwaccel_decode=bound_options["hwaccel_decode"],
+            software_preset=bound_options.get("software_preset"),
         )
+        render_parameters = inspect.signature(render).parameters
+        if "on_progress" in render_parameters:
+            render_result = render(
+                project,
+                render_options,
+                on_progress=_record_progress,
+            )
+        else:
+            # Preserve compatibility with injected legacy render adapters while
+            # the real VEdit binding receives progress telemetry.
+            render_result = render(project, render_options)
         runtime_metrics = {
             "status": "COMPLETED",
             "wall_clock_seconds": render_result.seconds,
