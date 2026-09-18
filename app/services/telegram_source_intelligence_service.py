@@ -23,6 +23,7 @@ from app.services.editorial_intelligence_contracts import (
     ClaimLedgerItem,
     ResearchDossier,
     ResearchSource,
+    validate_claim_ledger,
 )
 from app.services.gta6_fact_check_service import execute_gta6_fact_check_via_harness
 from app.services.harness_authorization_service import (
@@ -458,6 +459,75 @@ def _promote_verified_claim(
     return int(consolidate_and_persist_claim(claim_id)["memory_id"])
 
 
+def _claim_ledger(
+    *,
+    dossier: ResearchDossier | None,
+    claims: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if dossier is None or not claims:
+        return []
+    by_url = {source.url: source.source_id for source in dossier.sources}
+    items: list[ClaimLedgerItem] = []
+    for claim in claims:
+        payload = dict(claim.get("payload") or {})
+        fact_check = dict(payload.get("fact_check") or {})
+        source_ids = tuple(
+            dict.fromkeys(
+                by_url[url]
+                for url in (fact_check.get("source_refs") or ())
+                if url in by_url
+            )
+        )
+        verification = str(claim.get("verification_status") or "")
+        hierarchy = str(claim.get("source_hierarchy") or "")
+        if verification == "CONTRADICTED":
+            classification = "CONTRADICTED"
+        elif hierarchy == "OFFICIAL_PRIMARY":
+            classification = "OFFICIAL_CONFIRMED"
+        elif hierarchy == "MULTIPLE_INDEPENDENT_REPORTS":
+            classification = "MULTIPLE_REPUTABLE_REPORTS"
+        else:
+            classification = "INSUFFICIENT_EVIDENCE"
+        fact_result = str(fact_check.get("verdict") or "INSUFFICIENT_EVIDENCE")
+        if fact_result not in {
+            "SUPPORTED", "CONTRADICTED", "CONFLICTING_EVIDENCE",
+            "INSUFFICIENT_EVIDENCE",
+        }:
+            fact_result = "INSUFFICIENT_EVIDENCE"
+        approved = verification == "VERIFIED" and fact_result == "SUPPORTED"
+        items.append(
+            ClaimLedgerItem(
+                claim_id=str(claim["claim_id"]),
+                statement=str(claim["statement"]),
+                classification=classification,
+                source_refs=source_ids,
+                supporting_evidence_refs=(
+                    source_ids if fact_result == "SUPPORTED" else ()
+                ),
+                contradicting_evidence_refs=(
+                    source_ids if fact_result == "CONTRADICTED" else ()
+                ),
+                confidence=float(fact_check.get("confidence") or 0.0),
+                fact_check_result=fact_result,
+                provenance={
+                    "source_candidate_id": claim["candidate_id"],
+                    "source_hierarchy": hierarchy,
+                    "fact_check_lineage": payload.get("fact_check_lineage") or {},
+                    "evidence_refs": claim.get("evidence_refs") or [],
+                },
+                script_usage="NOT_USED",
+                final_status=(
+                    "APPROVED_FOR_SCRIPT" if approved else "REJECTED_FROM_SCRIPT"
+                ),
+            )
+        )
+    validate_claim_ledger(
+        items,
+        known_source_refs=(source.source_id for source in dossier.sources),
+    )
+    return [item.to_dict() for item in items]
+
+
 def _editorial_decision(
     *,
     candidate: dict[str, Any],
@@ -849,6 +919,16 @@ def process_telegram_source_intelligence(
         learning_status="captured",
     )
 
+    ledger = _claim_ledger(
+        dossier=dossier,
+        claims=persisted_claims,
+    )
+    candidate = source_repository.transition_source_candidate(
+        candidate["candidate_id"],
+        state=terminal_state,
+        evidence_refs=fetch_refs,
+        payload_patch={"claim_ledger": ledger},
+    )
     signal = _editorial_decision(
         candidate=candidate,
         input_record=input_record,
@@ -880,6 +960,7 @@ def process_telegram_source_intelligence(
         ),
         "source_candidate": candidate,
         "research_dossier": dossier.to_dict() if dossier is not None else None,
+        "claim_ledger": ledger,
         "claims": persisted_claims,
         "editorial_signal": signal,
         "promoted_memory_ids": promoted_memory_ids,
