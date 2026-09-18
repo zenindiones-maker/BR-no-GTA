@@ -22,7 +22,13 @@ from app.services.telegram_harness_service import chat_under_harness
 
 
 class FakeFreshTransport:
-    def execute(self, *, query: str, execution_id: str):
+    def execute(
+        self,
+        *,
+        query: str,
+        execution_id: str,
+        source_context: dict | None = None,
+    ):
         assert query
         return (
             {
