@@ -364,6 +364,50 @@ def update_version_status(*, table: str, identity_field: str, identity: str, ver
         connection.close()
 
 
+
+def get_active_version(*, table: str, identity_field: str, identity: str) -> dict[str, Any] | None:
+    if table not in {"harness_skill_versions", "harness_policy_versions"}:
+        raise ValueError("unsupported version table")
+    if identity_field not in {"skill_id", "policy_id"}:
+        raise ValueError("unsupported version identity")
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            f"""SELECT * FROM {table}
+                WHERE {identity_field} = ? AND status = 'ACTIVE'
+                ORDER BY COALESCE(promoted_at, created_at) DESC, created_at DESC, version DESC
+                LIMIT 1""",
+            (identity,),
+        ).fetchone()
+        return _deserialize(row, _VERSION_JSON) if row else None
+    finally:
+        connection.close()
+
+
+def list_active_versions(*, table: str) -> list[dict[str, Any]]:
+    if table not in {"harness_skill_versions", "harness_policy_versions"}:
+        raise ValueError("unsupported version table")
+    identity_field = "skill_id" if table == "harness_skill_versions" else "policy_id"
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            f"""SELECT * FROM {table}
+                WHERE status = 'ACTIVE'
+                ORDER BY {identity_field} ASC, COALESCE(promoted_at, created_at) DESC"""
+        ).fetchall()
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = _deserialize(row, _VERSION_JSON)
+            identity = str(item[identity_field])
+            if identity in seen:
+                continue
+            seen.add(identity)
+            result.append(item)
+        return result
+    finally:
+        connection.close()
+
 def insert_human_correction(record: dict[str, Any]) -> dict[str, Any]:
     connection = get_connection()
     try:
