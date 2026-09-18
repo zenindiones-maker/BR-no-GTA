@@ -603,6 +603,26 @@ def list_human_corrections(*, affected_capability: str | None = None,
         connection.close()
 
 
+def find_open_improvement_mission_by_trigger(trigger_ref: str) -> dict[str, Any] | None:
+    trigger_ref = str(trigger_ref or "").strip()
+    if not trigger_ref:
+        raise ValueError("trigger_ref is required")
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            """SELECT * FROM harness_improvement_missions
+               WHERE status NOT IN ('COMPLETED', 'CANCELLED')
+               ORDER BY created_at DESC"""
+        ).fetchall()
+        for row in rows:
+            item = _deserialize(row, _MISSION_JSON)
+            if trigger_ref in (item.get("trigger_refs") or []):
+                return item
+        return None
+    finally:
+        connection.close()
+
+
 def get_improvement_mission(improvement_mission_id: str) -> dict[str, Any] | None:
     connection = get_connection()
     try:
