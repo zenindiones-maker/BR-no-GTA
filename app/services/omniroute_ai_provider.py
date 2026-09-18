@@ -18,6 +18,33 @@ from app.services.omniroute_gateway_service import (
 )
 
 
+class OmniRouteAIProviderError(AIProviderError):
+    def __init__(self, message: str, *, details: dict | None = None):
+        super().__init__(message)
+        self.safe_message = message
+        self.details = dict(details or {})
+        self.status_code = self.details.get("http_status")
+        self.retryable = bool(self.details.get("retryable", False))
+
+    def to_dict(self) -> dict:
+        return {
+            "provider": self.details.get("provider", "opencode"),
+            "model": self.details.get("model"),
+            "code": self.details.get("failure_code", "omniroute_failure"),
+            "status_code": self.details.get("http_status"),
+            "retryable": self.retryable,
+            "message": self.safe_message,
+            "error_type": type(self).__name__,
+            "execution_ref": self.details.get("execution_ref"),
+            "run_id": self.details.get("run_id"),
+            "workflow_status": self.details.get("status"),
+            "workflow_conclusion": self.details.get("conclusion"),
+            "exit_code": self.details.get("exit_code"),
+            "log_sha256": self.details.get("log_sha256"),
+            "retry_count": int(self.details.get("retry_count") or 0),
+        }
+
+
 class OmniRouteAIProvider:
     """AIProvider adapter over the bounded zero-cost OmniRoute GitHub executor.
 
@@ -66,6 +93,7 @@ class OmniRouteAIProvider:
             dispatcher=dispatcher,
             watcher=watcher,
             artifact_service=artifacts,
+            command_runner=run_github_actions_command,
             artifact_root=Path(
                 os.getenv(
                     "BR_OMNIROUTE_ARTIFACT_ROOT",
@@ -85,11 +113,35 @@ class OmniRouteAIProvider:
                 transport=self.transport,
                 quota_available=True,
             )
-        except (OmniRouteGatewayError, PermissionError, ValueError) as exc:
-            raise AIProviderError("Governed zero-cost OmniRoute execution failed") from exc
+        except OmniRouteGatewayError as exc:
+            raise OmniRouteAIProviderError(
+                "Governed zero-cost OmniRoute execution failed",
+                details=exc.to_dict(),
+            ) from exc
+        except (PermissionError, ValueError) as exc:
+            raise OmniRouteAIProviderError(
+                "Governed zero-cost OmniRoute execution was rejected",
+                details={
+                    "provider": self.routing_decision.selected_provider,
+                    "model": self.routing_decision.selected_model,
+                    "failure_code": "governance_rejection",
+                    "retryable": False,
+                    "error_type": type(exc).__name__,
+                },
+            ) from exc
         text = evidence.result or ""
         if not text.strip():
-            raise AIProviderError("Governed zero-cost OmniRoute returned an empty result")
+            raise OmniRouteAIProviderError(
+                "Governed zero-cost OmniRoute returned an empty result",
+                details={
+                    "provider": evidence.provider,
+                    "model": evidence.model,
+                    "failure_code": "empty_result",
+                    "execution_ref": evidence.execution_ref,
+                    "retry_count": evidence.retry_count,
+                    "retryable": True,
+                },
+            )
         return AIResponse(
             text=text,
             provider=evidence.provider,
