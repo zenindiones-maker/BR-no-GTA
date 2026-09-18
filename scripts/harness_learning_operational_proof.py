@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ from app.services.global_capability_registry_base import (
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_learning_service import (
     HarnessEpisode,
+    HarnessWorkingMemory,
+    complete_improvement_mission,
     create_improvement_mission,
     create_learning_candidate,
     evaluate_candidate,
@@ -29,6 +32,8 @@ from app.services.harness_learning_service import (
     register_policy_version,
     register_skill_version,
     retrieve_agent_competence,
+    retrieve_known_failure_patterns,
+    retrieve_relevant_human_feedback,
     retrieve_relevant_memory,
     route_harness_request_with_learning,
 )
@@ -63,6 +68,7 @@ def _observed_artifact(root: Path, name: str, content: str) -> dict[str, Any]:
 
 
 def _controlled_trial(root: Path, *, name: str, preflight: bool) -> dict[str, Any]:
+    started_at = datetime.now(timezone.utc).isoformat()
     started = time.perf_counter()
     payload = {"expected_identity": "canonical", "actual_identity": "stale"}
     retry_count = 0
@@ -91,7 +97,10 @@ def _controlled_trial(root: Path, *, name: str, preflight: bool) -> dict[str, An
         f"trial={name}\nidentity={payload['actual_identity']}\nmode={'candidate' if preflight else 'baseline'}\n",
     )
     latency = max(0.000001, time.perf_counter() - started)
+    finished_at = datetime.now(timezone.utc).isoformat()
     return {
+        "started_at": started_at,
+        "finished_at": finished_at,
         "success": artifact["exists"],
         "quality": 1.0 if artifact["exists"] and artifact["size_bytes"] > 0 else 0.0,
         "retry_count": retry_count,
@@ -124,7 +133,6 @@ def _episode(*, episode_id: str, execution_id: str, capability_id: str, agent_id
              version: str, trial: dict[str, Any], run_ref: str, commit_ref: str,
              decision_id: str) -> HarnessEpisode:
     artifact = trial["artifact"]
-    now = "2026-09-18T00:00:00+00:00"
     return HarnessEpisode(
         episode_id=episode_id,
         goal_id="goal-harness-learning-proof",
@@ -143,8 +151,8 @@ def _episode(*, episode_id: str, execution_id: str, capability_id: str, agent_id
         evidence_refs=(f"sha256:{artifact['sha256']}",),
         tool_calls=({"tool": "filesystem", "operation": "write+verify", "observed": True},),
         routing_decision={"decision_source": "deepseek_harness", "proof": "controlled"},
-        started_at=now,
-        finished_at=now,
+        started_at=trial["started_at"],
+        finished_at=trial["finished_at"],
         duration_seconds=trial["latency_seconds"],
         status="COMPLETED",
         actual_outcome={
@@ -210,6 +218,16 @@ def main() -> int:
     commit_ref = os.environ.get("GITHUB_SHA", "local")
     run_ref = os.environ.get("GITHUB_RUN_ID", "local")
     decision_id = "decision-harness-learning-proof"
+    working_memory = HarnessWorkingMemory(
+        execution_id="learning-proof-working",
+        goal_id="goal-harness-learning-proof",
+    )
+    working_memory.put(
+        "task_class",
+        TASK_CLASS,
+        evidence_ref=f"commit:{commit_ref}",
+    )
+    working_memory.put("phase", "OBSERVE")
 
     baseline_trials = [
         _controlled_trial(output, name=f"baseline-trial-{index}", preflight=False)
@@ -307,6 +325,28 @@ def main() -> int:
         contradiction_check={"status": "NO_CONTRADICTION_FOUND", "checked_against": ["baseline-controlled-trials"]},
     )
 
+    improvement_auth = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="learning:improvement",
+        harness_decision_id=decision_id,
+        execution_id="learning-proof-improvement",
+        lineage={"candidate_id": candidate["candidate_id"]},
+    )
+    improvement = create_improvement_mission(
+        trigger_type="REPEATED_FAILURE",
+        trigger_refs=("learning-proof-episode-a", "learning-proof-episode-a2"),
+        diagnosis="baseline execution repeated the same identity mismatch and required retry/human correction",
+        hypothesis="candidate preflight procedure should remove recurrence without reducing observed quality",
+        authorization=improvement_auth,
+        candidate_id=candidate["candidate_id"],
+    )
+    working_memory.put(
+        "improvement_mission_id",
+        improvement["improvement_mission_id"],
+        evidence_ref=f"candidate:{candidate['candidate_id']}",
+    )
+    working_memory.put("phase", "EXPERIMENT")
+
     candidate_trials = [
         _controlled_trial(output, name=f"candidate-trial-{index}", preflight=True)
         for index in range(1, 3)
@@ -344,6 +384,16 @@ def main() -> int:
         memory_type="PROCEDURAL",
         source_versions={"skill": "v2"},
     )
+    improvement = complete_improvement_mission(
+        improvement_mission_id=improvement["improvement_mission_id"],
+        authorization=improvement_auth,
+    )
+    working_memory.put(
+        "promoted_candidate_id",
+        candidate["candidate_id"],
+        evidence_ref=f"evaluation:{evaluation['evaluation_id']}",
+    )
+    working_memory.put("phase", "PROMOTED")
 
     failure_memory = record_memory(
         memory_type="FAILURE",
@@ -382,6 +432,55 @@ def main() -> int:
             decision_id=decision_id,
         ))
     competence_after = retrieve_agent_competence(domain=DOMAIN, task_class=TASK_CLASS)
+
+    semantic_memory = record_memory(
+        memory_type="SEMANTIC",
+        claim="Observed preflight trials preserved outcome quality while removing the repeatable retry pattern.",
+        domain=DOMAIN,
+        task_class=TASK_CLASS,
+        source_episode_ids=("learning-proof-candidate-1", "learning-proof-candidate-2"),
+        evidence_refs=tuple(
+            f"sha256:{item['artifact']['sha256']}" for item in candidate_trials
+        ),
+        capability_id="learning.candidate",
+        skill_id=SKILL_ID,
+        skill_version="v2",
+        source_versions={"skill": "v2"},
+        support_count=2,
+        confidence=0.8,
+        status="ACTIVE",
+    )
+    active_failure_memory = record_memory(
+        memory_type="FAILURE",
+        claim="Identity mismatch before preflight is a known historical failure signature and must be checked before execution.",
+        domain=DOMAIN,
+        task_class=TASK_CLASS,
+        failure_pattern="identity-mismatch-before-preflight",
+        source_episode_ids=("learning-proof-episode-a", "learning-proof-episode-a2"),
+        evidence_refs=(
+            f"sha256:{baseline_trials[0]['artifact']['sha256']}",
+            f"sha256:{baseline_trials[1]['artifact']['sha256']}",
+            f"evaluation:{evaluation['evaluation_id']}",
+        ),
+        capability_id="learning.baseline",
+        skill_id=SKILL_ID,
+        skill_version="v1",
+        source_versions={"failure_signature": "identity-mismatch-v1"},
+        support_count=2,
+        confidence=0.8,
+        status="ACTIVE",
+    )
+    failure_retrieval = retrieve_known_failure_patterns(
+        domain=DOMAIN,
+        task_class=TASK_CLASS,
+        capability="learning.baseline",
+        limit=8,
+    )
+    human_feedback_retrieval = retrieve_relevant_human_feedback(
+        capability="learning.baseline",
+        skill_id=SKILL_ID,
+        limit=8,
+    )
 
     register_policy_version(
         policy_id="harness-learning-routing",
@@ -467,22 +566,6 @@ def main() -> int:
         decision_id=decision_id,
     ))
 
-    improvement_auth = issue_harness_authorization(
-        authorized_action="EXECUTION",
-        subject="learning:improvement",
-        harness_decision_id=decision_id,
-        execution_id="learning-proof-improvement",
-        lineage={"evaluation_id": evaluation["evaluation_id"]},
-    )
-    improvement = create_improvement_mission(
-        trigger_type="REPEATED_FAILURE",
-        trigger_refs=("learning-proof-episode-a", "learning-proof-episode-a2"),
-        diagnosis="baseline execution repeated the same identity mismatch and required retry/human correction",
-        hypothesis="promoted preflight procedure should remove recurrence",
-        authorization=improvement_auth,
-        candidate_id=candidate["candidate_id"],
-    )
-
     active_memory = retrieve_relevant_memory(
         goal="goal-harness-learning-proof-b",
         domain=DOMAIN,
@@ -502,7 +585,39 @@ def main() -> int:
         candidate_metrics["quality"] > baseline_metrics["quality"],
     ))
 
+    working_memory_snapshot = working_memory.snapshot()
+    semantic_retrieval = retrieve_relevant_memory(
+        goal="goal-harness-learning-proof-b",
+        domain=DOMAIN,
+        task_class=TASK_CLASS,
+        capability="learning.candidate",
+        limit=8,
+    )
+    semantic_memory_retrieved = semantic_memory["memory_id"] in {
+        item["memory_id"] for item in semantic_retrieval
+    }
+    failure_memory_retrieved = active_failure_memory["memory_id"] in {
+        item["memory_id"] for item in failure_retrieval
+    }
+    human_feedback_retrieved = correction["correction_id"] in {
+        item["correction_id"] for item in human_feedback_retrieval
+    }
+
     artifacts = {
+        "working-memory-proof.json": working_memory_snapshot,
+        "semantic-memory-proof.json": {
+            "memory": semantic_memory,
+            "retrieved_on_next_run": semantic_memory_retrieved,
+        },
+        "failure-memory-proof.json": {
+            "memory": active_failure_memory,
+            "retrieved": failure_memory_retrieved,
+            "stale_historical_memory_ids": stale_ids,
+        },
+        "human-feedback-proof.json": {
+            "correction": correction,
+            "retrieved": human_feedback_retrieved,
+        },
         "episode-a.json": episode_a,
         "learning-candidate.json": candidate,
         "competence-before.json": competence_before,
@@ -524,6 +639,16 @@ def main() -> int:
             "human_correction": correction,
             "stale_memory_ids": stale_ids,
             "measurable_improvement": measurable_improvement,
+            "stages": [
+                "OBSERVE",
+                "MEASURE",
+                "DIAGNOSE",
+                "HYPOTHESIZE",
+                "EXPERIMENT",
+                "EVALUATE",
+                "LEARN",
+                "PROMOTE",
+            ],
         },
     }
     for name, payload in artifacts.items():
@@ -535,13 +660,21 @@ def main() -> int:
         "commit_ref": commit_ref,
         "workflow_run": run_ref,
         "knowledge_brain_boundary": "PRESERVED",
-        "harness_memory": "FUNCTIONAL",
-        "competence_graph": "FUNCTIONAL",
-        "episodic_memory": "FUNCTIONAL",
-        "semantic_memory": "FUNCTIONAL",
-        "procedural_memory": "FUNCTIONAL",
-        "failure_memory": "FUNCTIONAL",
-        "human_feedback_loop": "FUNCTIONAL",
+        "working_memory": "FUNCTIONAL" if (
+            working_memory_snapshot["persistent"] is False
+            and working_memory_snapshot["state"].get("phase") == "PROMOTED"
+        ) else "FAIL",
+        "harness_memory": "FUNCTIONAL" if promotion["memory"]["status"] == "ACTIVE" else "FAIL",
+        "competence_graph": "FUNCTIONAL" if (
+            any(item["capability_id"] == "learning.candidate" and item["evidence_sufficient"] for item in competence_after)
+        ) else "FAIL",
+        "episodic_memory": "FUNCTIONAL" if (
+            episode_a["actual_outcome"]["observed"] is True and episode_b["actual_outcome"]["observed"] is True
+        ) else "FAIL",
+        "semantic_memory": "FUNCTIONAL" if semantic_memory_retrieved else "FAIL",
+        "procedural_memory": "FUNCTIONAL" if promotion["memory"]["memory_id"] in active_memory_ids else "FAIL",
+        "failure_memory": "FUNCTIONAL" if failure_memory_retrieved else "FAIL",
+        "human_feedback_loop": "FUNCTIONAL" if human_feedback_retrieved else "FAIL",
         "memory_provenance": bool(episode_a["outcome_evidence"] and promotion["memory"]["evidence_refs"]),
         "memory_staleness": stale_seed["memory_id"] in stale_ids,
         "learning_candidate_pipeline": evaluation["decision"] == "PROMOTE",
@@ -559,7 +692,7 @@ def main() -> int:
         "promotion_gate": promotion["authority"] == "deepseek_harness",
         "retrieval_next_run_proven": retrieval_proof["learning_participated"],
         "agent_competence_routing_proven": decision_b.selected_capability_id == "learning.candidate",
-        "system_improvement_loop_proven": improvement["status"] == "AUTHORIZED",
+        "system_improvement_loop_proven": improvement["status"] == "COMPLETED",
         "no_self_modification_bypass": promotion["authority"] == "deepseek_harness",
         "publication_authority_changed": False,
         "execution_a_episode_id": episode_a["episode_id"],
@@ -568,6 +701,14 @@ def main() -> int:
         "artifacts": sorted(artifacts),
     }
     if not all((
+        proof["working_memory"] == "FUNCTIONAL",
+        proof["harness_memory"] == "FUNCTIONAL",
+        proof["competence_graph"] == "FUNCTIONAL",
+        proof["episodic_memory"] == "FUNCTIONAL",
+        proof["semantic_memory"] == "FUNCTIONAL",
+        proof["procedural_memory"] == "FUNCTIONAL",
+        proof["failure_memory"] == "FUNCTIONAL",
+        proof["human_feedback_loop"] == "FUNCTIONAL",
         proof["memory_provenance"],
         proof["memory_staleness"],
         proof["learning_candidate_pipeline"],
