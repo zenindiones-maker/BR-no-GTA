@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import app.services.telegram_fresh_research_service as fresh_research_service
+
 import pytest
 
 from app.services.global_capability_registry import (
@@ -96,6 +98,39 @@ def test_current_gta6_questions_require_fresh_research(message):
 
 def test_pure_system_question_does_not_force_web_refresh():
     assert requires_fresh_research("Como funciona o sistema BR no GTA?") is False
+
+
+def test_source_research_route_is_learning_aware(monkeypatch):
+    captured = {}
+    real_route = fresh_research_service.route_harness_request
+
+    def wrapped(request):
+        captured["request"] = request
+        return real_route(request)
+
+    monkeypatch.setattr(
+        fresh_research_service,
+        "route_harness_request",
+        wrapped,
+    )
+    context = {
+        "id": 79,
+        "classification": "news",
+        "input_kind": "text",
+        "source_url": "https://example.com/gta-current",
+        "memory_event_id": 91,
+    }
+    research_fresh_gta6_under_harness(
+        "verifique esta fonte",
+        transport=FakeFreshTransport(),
+        source_context=context,
+    )
+    request = captured["request"]
+    assert request.domain == "research"
+    assert request.task_class == "telegram-source-fresh-research"
+    assert request.goal_id == "telegram-source:79"
+    assert request.learning_required is True
+    assert request.fallback_allowed is False
 
 
 def test_structured_telegram_source_context_reaches_fresh_transport():
