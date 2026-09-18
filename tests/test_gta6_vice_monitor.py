@@ -76,12 +76,18 @@ def test_custom_user_agent_is_used(monkeypatch):
 
 
 def test_network_error_becomes_runtime_error(monkeypatch):
+    delays = []
+
     def fake_urlopen(request, timeout):
         raise OSError("connection failed")
 
     monkeypatch.setattr(
         "urllib.request.urlopen",
         fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "time.sleep",
+        delays.append,
     )
 
     monitor = GTA6ViceMonitor()
@@ -91,6 +97,8 @@ def test_network_error_becomes_runtime_error(monkeypatch):
         match="GTA6 monitored page request failed",
     ):
         monitor.fetch("https://example.com")
+
+    assert delays == [1.0, 2.0]
 
 
 def test_invalid_url_is_rejected():
