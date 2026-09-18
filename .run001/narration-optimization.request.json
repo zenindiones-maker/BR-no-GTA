@@ -9,6 +9,6 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "benchmark": "baseline-vs-edge-optimized-real-audio",
-  "iteration": 2,
-  "reason": "fix native timing response semantics, physical audio duration contract, compact proof artifact"
+  "iteration": 3,
+  "reason": "rerun after proof workflow fetch-depth fix; no baseline executed in iteration 2"
 }
