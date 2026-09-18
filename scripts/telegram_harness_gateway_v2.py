@@ -18,8 +18,18 @@ from app.services.telegram_harness_service import (
     list_governed_brand_assets,
 )
 from app.services.telegram_learning_service import (
+    extract_source_url,
     ingest_telegram_input_under_harness,
     list_recent_governed_telegram_inputs,
+)
+from app.database.telegram_user_input_repository import (
+    get_telegram_user_input,
+    list_recent_telegram_user_inputs,
+)
+from app.database.telegram_source_intelligence_repository import (
+    get_editorial_signal_by_candidate,
+    get_source_candidate_by_input,
+    list_source_claims,
 )
 from app.services.telegram_review_feedback_service import (
     is_render_review_feedback_message,
@@ -123,50 +133,95 @@ def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
     payload = exc.to_dict()
     error = payload.get("provider_error")
     error = error if isinstance(error, dict) else {}
-    learning = payload.get("learning_context")
-    learning = learning if isinstance(learning, dict) else {}
+    code = str(error.get("code") or "provider_failure")
     return (
-        "COMMAND=FAIL\n"
-        f"TELEGRAM_INGRESS={payload.get('TELEGRAM_INGRESS')}\n"
-        f"HARNESS_REASONING={payload.get('HARNESS_REASONING')}\n"
-        f"USER_GOAL_COMPLETED={payload.get('USER_GOAL_COMPLETED')}\n"
-        f"INPUT_MEMORY_CAPTURED={payload.get('INPUT_MEMORY_CAPTURED')}\n"
-        f"EXECUTION_OUTCOME_LEARNED={payload.get('EXECUTION_OUTCOME_LEARNED')}\n"
-        f"ROUTING_ID={payload.get('routing_id')}\n"
-        f"CAPABILITY={payload.get('capability_id')}\n"
-        f"PROVIDER={payload.get('provider')}\n"
-        f"MODEL={payload.get('model')}\n"
-        f"EXECUTOR={payload.get('executor_binding')}\n"
-        f"AUTHORIZATION_ID={payload.get('authorization_id')}\n"
-        f"EXECUTION_ID={payload.get('execution_id')}\n"
-        f"LATENCY_SECONDS={payload.get('latency_seconds')}\n"
-        f"RETRIES={payload.get('retry_count')}\n"
-        f"PROVIDER_ERROR_CODE={error.get('code')}\n"
-        f"PROVIDER_HTTP_STATUS={error.get('status_code')}\n"
-        f"PROVIDER_RUN_ID={error.get('run_id')}\n"
-        f"PROVIDER_ERROR={str(error.get('message') or '')[:500]}\n"
-        f"EPISODE_ID={payload.get('episode_id')}\n"
-        f"FAILURE_MEMORY_ID={payload.get('failure_memory_id')}\n"
-        f"IMPROVEMENT_MISSION_ID={payload.get('improvement_mission_id')}\n"
-        f"RETRIEVED_FAILURE_MEMORIES={','.join(learning.get('retrieved_failure_memory_ids') or []) or 'NONE'}"
+        "Não consegui concluir o raciocínio agora. "
+        f"O Harness registrou a falha ({code}) e preservou a evidência. "
+        "Use /evidence para ver os detalhes técnicos."
     )
 
-def _grounding_evidence(result: dict[str, Any]) -> str:
-    if not result.get("fresh_research_required"):
-        return "FRESH_RESEARCH=NOT_REQUIRED"
-    return (
-        "--- Fresh GTA6 research evidence ---\n"
-        f"FRESH_RESEARCH={result.get('fresh_research_status')}\n"
-        f"CHECKED_AT={result.get('fresh_research_checked_at')}\n"
-        f"RESEARCH_ROUTING_ID={result.get('fresh_research_routing_id')}\n"
-        f"RESEARCH_EXECUTION={result.get('fresh_research_execution_ref')}\n"
-        f"OFFICIAL_SOURCES={result.get('official_source_count', 0)}\n"
-        f"SECONDARY_SOURCES={result.get('secondary_source_count', 0)}"
-    )
+
+def _editorial_action(result: dict[str, Any]) -> str | None:
+    intelligence = result.get("source_intelligence")
+    if not isinstance(intelligence, dict):
+        return None
+    signal = intelligence.get("editorial_signal")
+    if not isinstance(signal, dict):
+        return None
+    decision = str(signal.get("harness_decision") or "").strip()
+    labels = {
+        "USE_FOR_VIDEO": "usar como oportunidade de vídeo",
+        "MERGE_WITH_EXISTING_GOAL": "mesclar com pauta já existente",
+        "STORE_FOR_FUTURE": "guardar para uso editorial futuro",
+        "REJECT_LOW_EVIDENCE": "não usar editorialmente por evidência insuficiente",
+        "REJECT_SATURATED": "não abrir nova pauta por saturação/duplicidade",
+    }
+    return labels.get(decision, decision or None)
 
 
 def _chat_reply_v2(result: dict[str, Any]) -> str:
-    return _chat_reply(result) + "\n\n" + _grounding_evidence(result)
+    answer = str(result.get("answer") or "").strip() or "Concluído."
+    action = _editorial_action(result)
+    if action:
+        return f"{answer}\n\nAção: {action}."
+    return answer
+
+
+def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
+    if input_id is None:
+        rows = list_recent_telegram_user_inputs(limit=50)
+        record = next(
+            (item for item in rows if str(item.get("source_url") or "").strip()),
+            None,
+        )
+    else:
+        record = get_telegram_user_input(input_id)
+    if record is None:
+        raise ValueError("nenhuma entrada Telegram com fonte foi encontrada")
+    candidate = get_source_candidate_by_input(int(record["id"]))
+    claims = (
+        list_source_claims(candidate["candidate_id"])
+        if candidate is not None else []
+    )
+    signal = (
+        get_editorial_signal_by_candidate(candidate["candidate_id"])
+        if candidate is not None else None
+    )
+    safe_input = {
+        key: record.get(key)
+        for key in (
+            "id", "telegram_message_id", "telegram_update_id", "input_kind",
+            "classification", "learning_status", "source_url", "source_state",
+            "memory_event_id", "claim_id", "memory_id",
+            "execution_outcome_status", "execution_episode_id",
+            "execution_failure_memory_id", "created_at", "updated_at",
+        )
+    }
+    return {
+        "INPUT_CAPTURED": "PASS" if record.get("memory_event_id") else "FAIL",
+        "SOURCE_LEARNED": (
+            "PASS"
+            if candidate is not None
+            and candidate.get("source_state") not in {None, "SOURCE_CANDIDATE"}
+            else "PENDING"
+        ),
+        "CLAIM_VERIFIED": (
+            "PASS"
+            if any(item.get("verification_status") == "VERIFIED" for item in claims)
+            else "NO"
+        ),
+        "SEMANTIC_MEMORY_PROMOTED": (
+            "PASS" if any(item.get("semantic_memory_id") for item in claims) else "NO"
+        ),
+        "EDITORIAL_SIGNAL_CREATED": "PASS" if signal is not None else "NO",
+        "EDITORIAL_SIGNAL_USED": (
+            "PASS" if signal is not None and signal.get("status") == "USED" else "NO"
+        ),
+        "input": safe_input,
+        "source_candidate": candidate,
+        "claims": claims,
+        "editorial_signal": signal,
+    }
 
 
 def _fold(value: str) -> str:
@@ -175,8 +230,10 @@ def _fold(value: str) -> str:
 
 
 def _conversation_classification_override(text: str) -> str | None:
-    """Questions must be captured, not accidentally learned as editorial facts/ideas."""
+    """Questions are captured as questions unless a URL makes them source input."""
     normalized = _fold(text).strip()
+    if extract_source_url(text) is not None:
+        return None
     if requires_fresh_research(text):
         return "question"
     if normalized.endswith("?") or normalized.startswith(
@@ -241,6 +298,14 @@ def _execute_v2_command(text: str) -> str:
     command = parts[0].split("@", 1)[0].casefold()
     if command in {"/inbox", "/ingress", "/alimentacao"}:
         return _render_result(list_recent_governed_telegram_inputs(limit=20))
+    if command in {"/evidence", "/debug", "/evidencia"}:
+        input_id = None
+        if len(parts) == 2 and parts[1].strip():
+            try:
+                input_id = int(parts[1].strip())
+            except ValueError as exc:
+                raise ValueError("uso: /evidence [telegram_input_id]") from exc
+        return _render_result(_source_evidence_payload(input_id))
     if command in {"/aprendeu", "/learned"}:
         if len(parts) != 2 or not parts[1].strip():
             raise ValueError("uso: /aprendeu <consulta>")
@@ -259,9 +324,9 @@ def _execute_v2_command(text: str) -> str:
             + "/inbox — mostra entradas Telegram capturadas pelo Harness\n"
             + "/aprendeu <consulta> — prova o que entrou no Knowledge Brain\n"
             + "/assets — mostra intro/marca d'água e o padrão obrigatório do canal\n"
+            + "/evidence [input_id] — mostra a telemetria completa de fonte/claims/editorial\n"
             + "Mensagens comuns são capturadas com proveniência antes do raciocínio. "
-            + "Perguntas atuais sobre GTA 6 acionam pesquisa fresca obrigatória antes da IA. "
-            + "Ideias, temas, padrões, notas e notícias são aprendidos de forma tipada; notícias ficam marcadas como incertas até verificação. "
+            + "Notícias e URLs viram SourceCandidate e exigem fetch + fact-check antes de qualquer promoção semântica. "
             + "Quando intro e marca d'água oficiais estiverem ambas verificadas, o padrão BR_NO_GTA_VIDEO_BRANDING_V1 é ativado e passa a ser obrigatório para novos vídeos."
         )
     return _execute_command(text)
@@ -456,13 +521,7 @@ def main() -> int:
                             text=text,
                             classification_override=_conversation_classification_override(text),
                         )
-                        api.send(
-                            chat_id,
-                            "🧠 DeepSeek Harness capturou sua mensagem com proveniência. Classificando necessidade de pesquisa e raciocínio...",
-                        )
-
                         def progress(stage: str, message_text: str) -> None:
-                            api.send(chat_id, message_text)
                             print(
                                 f"TELEGRAM_PROGRESS=PASS USER_ID={user_id} STAGE={stage}",
                                 flush=True,
@@ -473,13 +532,7 @@ def main() -> int:
                             progress_callback=progress,
                             input_record=learned["input"],
                         )
-                        reply = (
-                            _chat_reply_v2(chat_result)
-                            + "\n\n"
-                            + _learning_evidence(learned)
-                            + "\n\n"
-                            + _reasoning_outcome_evidence(chat_result)
-                        )
+                        reply = _chat_reply_v2(chat_result)
                         command_name = "natural-language"
                 except HarnessReasoningFailure as exc:
                     reply = _reasoning_failure_reply(exc)
