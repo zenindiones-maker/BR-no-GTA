@@ -41,6 +41,14 @@ BANNED_HYPE = (
     "vai revolucionar os games",
     "gta 6 promete revolucionar",
 )
+PROFESSIONAL_RENDER_CONFIG = {
+    "resolution": "1920x1080",
+    "fps": 30.0,
+    "container": "mp4",
+    "video_codec": "h264",
+    "audio_codec": "aac",
+}
+
 
 
 def now() -> str:
@@ -457,6 +465,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "title": config["content_strategy"]["selected_title"],
         "objective": config["content_strategy"]["objective"],
         "format": "investigative-longform",
+        "render": dict(config.get("render") or PROFESSIONAL_RENDER_CONFIG),
         "research_evidence": render_evidence,
         "fact_check": {"status": "PASS", "phase": "FINAL_SCRIPT", "checks": checks, "receipts": final_receipts},
         "editorial_qa": {
