@@ -135,6 +135,53 @@ PRODUCTION_BRAND_ASSET_BINDING_RECORD = CapabilityRecord(
     side_effects=(),
 )
 
+PRODUCTION_RENDER_EXECUTOR_BINDING = "app.services.render_worker_service.process_render_job"
+PRODUCTION_RENDER_RECORD = CapabilityRecord(
+    capability_id="production.render.execute",
+    capability_type="EXECUTOR",
+    domain="production-render",
+    implementation=(
+        "Harness-governed RenderJob execution through GitHub Actions, VEdit and FFmpeg"
+    ),
+    input_contract=(
+        "persisted RenderJob + Harness EXECUTION lineage + versioned render profile"
+    ),
+    output_contract=(
+        "GitHub run/job evidence + MP4/QA/manifests or terminal failure evidence"
+    ),
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "Harness Routing/Policy decision",
+        "versioned VEdit long-form render profile",
+        "GitHub Actions cloud runner",
+        "canonical observed result reconciliation",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=(
+        "production", "render", "audiovisual", "vedit", "ffmpeg",
+        "github-actions", "learning",
+    ),
+    security_boundary=(
+        "DeepSeek Harness selects and authorizes the render capability/profile; "
+        "workers only execute the immutable RenderJob and may not choose policy, "
+        "learning versions or publication actions."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="GITHUB_ACTIONS",
+    latency_class="REMOTE_LONG_RUNNING",
+    quality_class="FFPROBE_QA_FAIL_CLOSED",
+    evidence_contract="HarnessEpisode + render manifests + ffprobe/QA + GitHub run/job evidence",
+    fallback_eligibility=False,
+    executor_binding=PRODUCTION_RENDER_EXECUTOR_BINDING,
+    version="1",
+    provider_id="github-actions",
+    agent_id="audiovisual-worker",
+    skill_id="vedit.longform.render-profile",
+    side_effects=("GitHub Actions dispatch", "render artifact creation"),
+)
+
 FRESH_GTA6_RESEARCH_RECORD = CapabilityRecord(
     capability_id="gta6.research.fresh-cloud",
     capability_type="EXECUTOR",
@@ -249,6 +296,7 @@ for _record in (
     PRODUCTION_MEDIA_SELECTION_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
     PRODUCTION_BRAND_ASSET_BINDING_RECORD,
+    PRODUCTION_RENDER_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
