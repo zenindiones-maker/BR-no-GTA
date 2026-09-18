@@ -55,6 +55,8 @@ def _ensure_schema(connection) -> None:
             remote_verified INTEGER NOT NULL DEFAULT 0,
             classification TEXT NOT NULL,
             learning_status TEXT NOT NULL,
+            source_url TEXT,
+            source_state TEXT,
             memory_event_id INTEGER,
             claim_id INTEGER,
             memory_id INTEGER,
@@ -88,6 +90,8 @@ def _ensure_schema(connection) -> None:
         ).fetchall()
     }
     additions = {
+        "source_url": "TEXT",
+        "source_state": "TEXT",
         "execution_outcome_status": "TEXT NOT NULL DEFAULT 'NOT_OBSERVED'",
         "execution_episode_id": "TEXT",
         "execution_failure_memory_id": "TEXT",
@@ -135,6 +139,8 @@ def upsert_telegram_user_input(
     text_content: str,
     classification: str,
     learning_status: str = "captured",
+    source_url: str | None = None,
+    source_state: str | None = None,
     telegram_update_id: int | None = None,
     telegram_file_id: str | None = None,
     telegram_file_unique_id: str | None = None,
@@ -184,6 +190,8 @@ def upsert_telegram_user_input(
             int(bool(remote_verified)),
             classification,
             learning_status,
+            source_url,
+            source_state,
             memory_event_id,
             claim_id,
             memory_id,
@@ -210,12 +218,14 @@ def upsert_telegram_user_input(
                     remote_verified,
                     classification,
                     learning_status,
+                    source_url,
+                    source_state,
                     memory_event_id,
                     claim_id,
                     memory_id,
                     provenance
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     telegram_user_id,
@@ -244,6 +254,8 @@ def upsert_telegram_user_input(
                     remote_verified = CASE WHEN ? = 1 THEN 1 ELSE remote_verified END,
                     classification = ?,
                     learning_status = ?,
+                    source_url = COALESCE(?, source_url),
+                    source_state = COALESCE(?, source_state),
                     memory_event_id = COALESCE(?, memory_event_id),
                     claim_id = COALESCE(?, claim_id),
                     memory_id = COALESCE(?, memory_id),
@@ -283,6 +295,52 @@ def get_telegram_user_input_by_message(
             (telegram_chat_id, telegram_message_id),
         ).fetchone()
         return _row_to_record(row)
+    finally:
+        connection.close()
+
+
+def update_telegram_source_state(
+    input_id: int,
+    *,
+    source_state: str,
+    source_url: str | None = None,
+    learning_status: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(input_id, int) or isinstance(input_id, bool) or input_id <= 0:
+        raise ValueError("Telegram input id must be positive")
+    normalized_state = str(source_state or "").strip().upper()
+    allowed_states = {
+        "SOURCE_CANDIDATE", "FETCHED", "CLAIMS_EXTRACTED", "FACT_CHECKED",
+        "VERIFIED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE", "MEMORY_ELIGIBLE",
+    }
+    if normalized_state not in allowed_states:
+        raise ValueError("invalid Telegram source state")
+    normalized_learning = None
+    if learning_status is not None:
+        normalized_learning = _validate_learning_status(learning_status)
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        cursor = connection.execute(
+            """UPDATE telegram_user_inputs
+               SET source_state = ?,
+                   source_url = COALESCE(?, source_url),
+                   learning_status = COALESCE(?, learning_status),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (normalized_state, source_url, normalized_learning, input_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Telegram input not found")
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM telegram_user_inputs WHERE id = ?",
+            (input_id,),
+        ).fetchone()
+        record = _row_to_record(row)
+        if record is None:
+            raise RuntimeError("Telegram input disappeared after source-state update")
+        return record
     finally:
         connection.close()
 
