@@ -11,6 +11,31 @@ on:
         description: Base64 UTF-8 research query
         required: true
         type: string
+      source_url_b64:
+        description: Optional Base64 UTF-8 submitted source URL
+        required: false
+        default: ""
+        type: string
+      telegram_input_id:
+        description: Optional canonical Telegram input id
+        required: false
+        default: ""
+        type: string
+      classification:
+        description: Optional Telegram classification
+        required: false
+        default: ""
+        type: string
+      input_kind:
+        description: Optional Telegram input kind
+        required: false
+        default: ""
+        type: string
+      memory_event_id:
+        description: Optional canonical Memory Event id
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -34,10 +59,20 @@ jobs:
       - name: Collect fresh GTA6 evidence
         env:
           QUERY_B64: ${{ inputs.query_b64 }}
+          SOURCE_URL_B64: ${{ inputs.source_url_b64 }}
+          TELEGRAM_INPUT_ID: ${{ inputs.telegram_input_id }}
+          CLASSIFICATION: ${{ inputs.classification }}
+          INPUT_KIND: ${{ inputs.input_kind }}
+          MEMORY_EVENT_ID: ${{ inputs.memory_event_id }}
           EXECUTION_ID: ${{ inputs.execution_id }}
         run: |
           python scripts/gta6_fresh_research_worker.py \
             --query-b64 "$QUERY_B64" \
+            --source-url-b64 "$SOURCE_URL_B64" \
+            --telegram-input-id "$TELEGRAM_INPUT_ID" \
+            --classification "$CLASSIFICATION" \
+            --input-kind "$INPUT_KIND" \
+            --memory-event-id "$MEMORY_EVENT_ID" \
             --execution-id "$EXECUTION_ID" \
             --output runtime/gta6-fresh-research/result.json
 
