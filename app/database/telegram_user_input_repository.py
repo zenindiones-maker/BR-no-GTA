@@ -287,6 +287,50 @@ def get_telegram_user_input_by_message(
         connection.close()
 
 
+def update_telegram_execution_outcome(
+    input_id: int,
+    *,
+    status: str,
+    episode_id: str,
+    failure_memory_id: str | None = None,
+) -> dict[str, Any]:
+    normalized = str(status or "").strip().upper()
+    allowed = VALID_EXECUTION_OUTCOME_STATUSES - {"NOT_OBSERVED"}
+    if normalized not in allowed:
+        raise ValueError("invalid Telegram execution outcome status")
+    if not isinstance(input_id, int) or isinstance(input_id, bool) or input_id <= 0:
+        raise ValueError("Telegram input id must be positive")
+    episode_id = str(episode_id or "").strip()
+    if not episode_id:
+        raise ValueError("execution episode id is required")
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        cursor = connection.execute(
+            """UPDATE telegram_user_inputs
+               SET execution_outcome_status = ?,
+                   execution_episode_id = ?,
+                   execution_failure_memory_id = ?,
+                   execution_outcome_updated_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (normalized, episode_id, failure_memory_id, input_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Telegram input not found")
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM telegram_user_inputs WHERE id = ?",
+            (input_id,),
+        ).fetchone()
+        record = _row_to_record(row)
+        if record is None:
+            raise RuntimeError("Telegram input disappeared after outcome update")
+        return record
+    finally:
+        connection.close()
+
+
 def list_recent_telegram_user_inputs(*, limit: int = 20) -> list[dict[str, Any]]:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
         raise ValueError("limit must be a positive integer")
