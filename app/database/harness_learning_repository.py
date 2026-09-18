@@ -21,15 +21,15 @@ def _load(value: str | None, default: Any) -> Any:
 
 _EPISODE_JSON = {
     "input_refs", "output_refs", "evidence_refs", "tool_calls", "routing_decision",
-    "actual_outcome", "outcome_evidence", "qa_results", "artifact_refs", "source_versions",
+    "actual_outcome", "outcome_evidence", "qa_results", "artifact_refs", "source_versions", "lineage",
 }
-_MEMORY_JSON = {"source_episode_ids", "evidence_refs", "source_versions"}
+_MEMORY_JSON = {"source_episode_ids", "evidence_refs", "source_versions", "metadata"}
 _COMPETENCE_JSON = {"known_failure_modes", "evidence_refs"}
-_CANDIDATE_JSON = {"source_episode_ids", "evidence_refs", "contradiction_check"}
-_EVAL_JSON = {"baseline_metrics", "candidate_metrics", "evidence_refs"}
+_CANDIDATE_JSON = {"source_episode_ids", "evidence_refs", "contradiction_check", "acceptance_criteria"}
+_EVAL_JSON = {"baseline_metrics", "candidate_metrics", "evidence_refs", "regression_evidence", "adversarial_evidence", "observed_evidence"}
 _VERSION_JSON = {"evidence_refs"}
-_CORRECTION_JSON = {"evidence_refs"}
-_MISSION_JSON = {"trigger_refs"}
+_CORRECTION_JSON = {"evidence_refs", "metadata"}
+_MISSION_JSON = {"trigger_refs", "evidence_considered", "constraints", "acceptance_criteria"}
 
 
 def _deserialize(row: Any, json_fields: set[str]) -> dict[str, Any]:
@@ -53,7 +53,7 @@ def insert_episode(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             "routing_decision", "started_at", "finished_at", "duration_seconds", "status",
             "actual_outcome", "outcome_evidence", "error", "retry_count", "human_intervention",
             "qa_results", "cost", "latency_seconds", "commit_ref", "run_ref", "artifact_refs",
-            "source_versions",
+            "source_versions", "lineage",
         )
         values = []
         for key in columns:
@@ -123,7 +123,7 @@ def insert_memory(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         columns = (
             "memory_id", "memory_type", "claim", "domain", "task_class", "failure_pattern",
             "source_episode_ids", "evidence_refs", "agent_id", "capability_id", "skill_id",
-            "skill_version", "source_versions", "support_count", "contradiction_count",
+            "skill_version", "source_versions", "metadata", "support_count", "contradiction_count",
             "confidence", "status", "fingerprint", "created_at", "last_verified_at",
         )
         values = [_dump(record.get(k, [] if k in {"source_episode_ids", "evidence_refs"} else {})) if k in _MEMORY_JSON else record.get(k) for k in columns]
@@ -264,7 +264,7 @@ def insert_learning_candidate(record: dict[str, Any]) -> dict[str, Any]:
             "candidate_id", "candidate_type", "hypothesis", "domain", "task_class",
             "target_agent_id", "target_capability_id", "target_skill_id", "baseline_version",
             "candidate_version", "source_episode_ids", "evidence_refs", "contradiction_check",
-            "status", "created_at", "promoted_at",
+            "implementation_ref", "acceptance_criteria", "status", "created_at", "promoted_at",
         )
         values = [_dump(record.get(k, [] if k in {"source_episode_ids", "evidence_refs"} else {})) if k in _CANDIDATE_JSON else record.get(k) for k in columns]
         connection.execute(
@@ -304,7 +304,8 @@ def insert_evaluation(record: dict[str, Any]) -> dict[str, Any]:
     try:
         columns = (
             "evaluation_id", "candidate_id", "baseline_metrics", "candidate_metrics", "trials",
-            "regression_pass", "adversarial_pass", "critical_regression", "decision",
+            "regression_pass", "adversarial_pass", "critical_regression", "evaluation_mode",
+            "regression_evidence", "adversarial_evidence", "observed_evidence", "decision",
             "evidence_refs", "created_at",
         )
         values = []
@@ -414,7 +415,7 @@ def insert_human_correction(record: dict[str, Any]) -> dict[str, Any]:
         columns = (
             "correction_id", "goal_id", "task_id", "context", "undesired_behavior",
             "desired_behavior", "affected_agent", "affected_capability", "affected_skill",
-            "evidence_refs", "scope", "status", "created_at",
+            "evidence_refs", "metadata", "scope", "status", "created_at",
         )
         values = [_dump(record.get(k, [])) if k in _CORRECTION_JSON else record.get(k) for k in columns]
         connection.execute(
@@ -489,7 +490,9 @@ def insert_improvement_mission(record: dict[str, Any]) -> dict[str, Any]:
     try:
         columns = (
             "improvement_mission_id", "trigger_type", "trigger_refs", "diagnosis", "hypothesis",
-            "candidate_id", "harness_decision_id", "authorization_id", "status", "created_at", "finished_at",
+            "evidence_considered", "affected_capability", "affected_config", "objective",
+            "constraints", "acceptance_criteria", "candidate_id", "harness_decision_id",
+            "authorization_id", "status", "created_at", "finished_at",
         )
         values = [_dump(record.get(k, [])) if k in _MISSION_JSON else record.get(k) for k in columns]
         connection.execute(
