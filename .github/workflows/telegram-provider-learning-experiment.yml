@@ -27,8 +27,8 @@ jobs:
       - name: Install pinned OmniRoute
         run: |
           set -euo pipefail
-          npm install -g "omniroute@\${OMNIROUTE_VERSION}"
-          test "$(omniroute --version | tr -d '\r')" = "\${OMNIROUTE_VERSION}"
+          npm install -g "omniroute@${OMNIROUTE_VERSION}"
+          test "$(omniroute --version | tr -d '\r')" = "${OMNIROUTE_VERSION}"
 
       - name: Start loopback-only OmniRoute
         run: |
