@@ -52,13 +52,15 @@ def main() -> int:
             "telegram_message_id":int(response["result"]["message_id"]),
         })
 
+    valid_ids=", ".join(manifest["passing_blind_ids"])
+    required_format=manifest["human_gate"]["required_response_format"]
     control_text=(
         "BR no GTA 6 · Voice Casting Round 1\n"
         "HUMAN_REVIEW_REQUIRED\n"
         "Ouça os samples sem tentar identificar as vozes.\n"
+        f"IDs válidos: {valid_ids}\n"
         "Escolha as duas melhores e responda exatamente:\n"
-        "TOP_2=Voice A,Voice C\n"
-        "(substitua A e C pelos seus dois IDs preferidos)"
+        f"{required_format}"
     )
     control=_curl_json([
         "-X","POST",f"https://api.telegram.org/bot{token}/sendMessage",
@@ -72,7 +74,7 @@ def main() -> int:
         "samples":rows,
         "control_message_id":int(control["result"]["message_id"]),
         "human_review_required":True,
-        "required_response_format":"TOP_2=Voice A,Voice C",
+        "required_response_format":required_format,
         "identity_revealed":False,
     }
     delivery.write_text(json.dumps(payload,indent=2),encoding="utf-8")

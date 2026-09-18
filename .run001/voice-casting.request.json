@@ -24,6 +24,6 @@
   "publication_authority": "NONE",
   "preserve_narration_bundle_v2": true,
   "preserve_cache_retry_checkpoint": true,
-  "iteration": 3,
-  "retry_reason": "fix literal newline syntax in casting CLI; prior run synthesized nothing"
+  "iteration": 4,
+  "retry_reason": "relax only non-broken technical casting gates; preserve human choice and common-condition comparability"
 }

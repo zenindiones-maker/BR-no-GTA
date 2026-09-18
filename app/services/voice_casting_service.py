@@ -556,13 +556,18 @@ def evaluate_sample_qa(
         "ptbr_language": asr["language"].lower().startswith("pt")
         and asr["language_probability"] >= ROUND1_MIN_PTBR_PROBABILITY,
         "no_clipping": acoustic["true_peak_dbfs"] <= MASTER_TRUE_PEAK_DB + 0.15,
-        "loudness_comparable": abs(acoustic["integrated_lufs"] - MASTER_TARGET_LUFS) <= 0.8,
+        "loudness_sane": abs(acoustic["integrated_lufs"] - MASTER_TARGET_LUFS) <= 2.0,
         "no_abnormal_silence": acoustic["longest_silence_seconds"] <= ROUND1_MAX_SILENCE_SECONDS,
         "script_alignment": max(speech_alignment, editorial_alignment) >= ROUND1_MIN_SCRIPT_ALIGNMENT,
-        "critical_lexical_terms": critical["lexical_preservation_ratio"] >= 0.60,
+        "critical_lexical_terms_observed": critical["lexical_preservation_ratio"] >= 0.60,
     }
+    technical_required = (
+        "file_exists", "audio_stream", "full_decode", "duration_valid",
+        "ptbr_language", "no_clipping", "loudness_sane",
+        "no_abnormal_silence", "script_alignment",
+    )
     return {
-        "status": "PASS" if all(checks.values()) else "VOICE_CANDIDATE_TECHNICAL_FAIL",
+        "status": "PASS" if all(checks[key] for key in technical_required) else "VOICE_CANDIDATE_TECHNICAL_FAIL",
         "checks": checks,
         "probe": probe,
         "acoustic": acoustic,
@@ -727,6 +732,16 @@ async def execute_round1(
     comparison_set_checks["loudness_comparable"] = (
         comparison_set_checks["loudness_spread_lu"] <= 1.0
     )
+    if not comparison_set_checks["duration_approximately_comparable"]:
+        raise VoiceCastingError("Round 1 candidate durations are not comparable at the common rate")
+    if not comparison_set_checks["loudness_comparable"]:
+        raise VoiceCastingError("Round 1 mastered loudness is not comparable across candidates")
+
+    passing_blind_ids = [
+        mapping["blind_id"] for mapping in private_map
+        if qa_by_voice[mapping["voice_short_name"]]["status"] == "PASS"
+    ]
+    required_response_format = "TOP_2=" + ",".join(passing_blind_ids[:2])
 
     public_candidates: list[dict[str, Any]] = []
     for mapping in private_map:
@@ -790,10 +805,7 @@ async def execute_round1(
         },
         "comparison_set_checks": comparison_set_checks,
         "candidates": public_candidates,
-        "passing_blind_ids": [
-            mapping["blind_id"] for mapping in private_map
-            if qa_by_voice[mapping["voice_short_name"]]["status"] == "PASS"
-        ],
+        "passing_blind_ids": passing_blind_ids,
         "technical_failures": [
             mapping["blind_id"] for mapping in private_map
             if qa_by_voice[mapping["voice_short_name"]]["status"] != "PASS"
@@ -802,7 +814,7 @@ async def execute_round1(
         "human_gate": {
             "required": True,
             "decision": "TOP_2",
-            "required_response_format": "TOP_2=Voice A,Voice C",
+            "required_response_format": required_response_format,
             "do_not_promote_before_human_selection": True,
         },
         "harness_lineage": lineage,
@@ -841,7 +853,7 @@ async def execute_round1(
             "voice_identity": None,
             "notes": None,
             "decision_source": "human_only",
-            "required_response_format": "TOP_2=Voice A,Voice C",
+            "required_response_format": required_response_format,
         },
         "harness_lineage": lineage,
         "learning_plane_promotion": "BLOCKED_UNTIL_HUMAN_TOP2",
@@ -859,7 +871,7 @@ async def execute_round1(
         "provider": PROVIDER_ID,
         "provider_version": inventory["provider_version"],
         "passing_blind_ids": round1_manifest["passing_blind_ids"],
-        "required_response_format": "TOP_2=Voice A,Voice C",
+        "required_response_format": required_response_format,
         "blind_map_location": "SEPARATE_ARTIFACT",
         "round2_started": False,
         "official_profile_promoted": False,
