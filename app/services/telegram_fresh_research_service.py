@@ -106,6 +106,8 @@ def requires_fresh_research(
         "rockstar", "newswire", "confirmado", "confirmada", "oficial", "oficiais", "rumor", "rumores",
         "vazamento", "vazamentos", "lancamento", "data", "pre-venda", "pre venda", "trailer",
         "o que se sabe", "o que sabemos", "o que voce sabe", "o que sabe",
+        "verifique", "verificar", "verifica", "confira", "confere", "cheque",
+        "checar", "fact-check", "fact check", "factcheck",
     )
     if any(term in text for term in freshness_terms):
         return True
