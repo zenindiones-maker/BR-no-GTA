@@ -701,6 +701,7 @@ def process_telegram_source_intelligence(
             )
         memory_eligible = verification == "VERIFIED"
         claim_id = _stable("source-claim", f"{candidate['candidate_id']}:{statement}")
+        existing_claim = source_repository.get_source_claim(claim_id)
         evidence_refs = list(dict.fromkeys([
             *fetch_refs,
             *[str(item.get("source_ref")) for item in evidence if item.get("source_ref")],
@@ -708,8 +709,13 @@ def process_telegram_source_intelligence(
             f"fact-check-authorization:{fact_lineage['authorization_id']}",
             f"fact-check-execution:{fact_lineage['execution_id']}",
         ]))
-        memory_id = None
-        if memory_eligible:
+        memory_id = (
+            int(existing_claim["semantic_memory_id"])
+            if existing_claim is not None
+            and existing_claim.get("semantic_memory_id") is not None
+            else None
+        )
+        if memory_eligible and memory_id is None:
             memory_id = _promote_verified_claim(
                 candidate=candidate,
                 input_record=input_record,
@@ -718,6 +724,7 @@ def process_telegram_source_intelligence(
                 hierarchy=claim_hierarchy,
                 evidence_refs=evidence_refs,
             )
+        if memory_id is not None:
             promoted_memory_ids.append(memory_id)
         claim = source_repository.upsert_source_claim(
             {
@@ -756,26 +763,52 @@ def process_telegram_source_intelligence(
     verified_claims = [item for item in persisted_claims if item["verification_status"] == "VERIFIED"]
     contradicted_claims = [item for item in persisted_claims if item["verification_status"] == "CONTRADICTED"]
     if verified_claims:
-        terminal_state = "MEMORY_ELIGIBLE"
+        candidate = source_repository.transition_source_candidate(
+            candidate["candidate_id"],
+            state="VERIFIED",
+            evidence_refs=fetch_refs,
+            payload_patch={
+                "verified_claim_ids": [item["claim_id"] for item in verified_claims],
+            },
+        )
+        update_telegram_source_state(
+            int(input_record["id"]),
+            source_state="VERIFIED",
+            source_url=source_url,
+            learning_status="captured",
+        )
+        if promoted_memory_ids:
+            terminal_state = "MEMORY_ELIGIBLE"
+            candidate = source_repository.transition_source_candidate(
+                candidate["candidate_id"],
+                state=terminal_state,
+                semantic_memory_id=promoted_memory_ids[0],
+                evidence_refs=fetch_refs,
+                payload_patch={"promoted_memory_ids": promoted_memory_ids},
+            )
+        else:
+            terminal_state = "VERIFIED"
     elif contradicted_claims:
         terminal_state = "CONTRADICTED"
+        candidate = source_repository.transition_source_candidate(
+            candidate["candidate_id"],
+            state=terminal_state,
+            evidence_refs=fetch_refs,
+        )
     else:
         terminal_state = "INSUFFICIENT_EVIDENCE"
-    candidate = source_repository.transition_source_candidate(
-        candidate["candidate_id"],
-        state=terminal_state,
-        semantic_memory_id=(promoted_memory_ids[0] if promoted_memory_ids else None),
-        evidence_refs=fetch_refs,
-        payload_patch={
-            "verified_claim_ids": [item["claim_id"] for item in verified_claims],
-            "promoted_memory_ids": promoted_memory_ids,
-        },
-    )
+        candidate = source_repository.transition_source_candidate(
+            candidate["candidate_id"],
+            state=terminal_state,
+            evidence_refs=fetch_refs,
+        )
     update_telegram_source_state(
         int(input_record["id"]),
         source_state=terminal_state,
         source_url=source_url,
-        learning_status=("learned" if promoted_memory_ids else "captured"),
+        # learning_status is ingress capture only; semantic promotion is explicit
+        # in source_state/source claim identities and must not be conflated.
+        learning_status="captured",
     )
 
     signal = _editorial_decision(
