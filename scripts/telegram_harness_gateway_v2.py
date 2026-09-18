@@ -40,6 +40,10 @@ from app.database.telegram_source_intelligence_repository import (
     get_source_candidate_by_input,
     list_source_claims,
 )
+from app.database.telegram_presentation_repository import (
+    get_latest_telegram_presentation_audit,
+    record_telegram_presentation_audit,
+)
 from app.services.telegram_review_feedback_service import (
     is_render_review_feedback_message,
     record_render_review_feedback,
@@ -264,6 +268,7 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         "editorial_signal": signal,
         "reasoning_episode": episode,
         "harness_authorizations": authorizations,
+        "presentation_audit": get_latest_telegram_presentation_audit(int(record["id"])),
         "AUDIT_DETAILS_PRESERVED": "PASS",
         "EVIDENCE_COMMAND_AVAILABLE": "PASS",
     }
@@ -592,12 +597,19 @@ def main() -> int:
                             input_record=learned["input"],
                         )
                         reply = str(presentation["text"])
+                        presentation_audit = record_telegram_presentation_audit(
+                            telegram_input_id=int(learned["input"]["id"]),
+                            presentation=presentation,
+                            reply_text=reply,
+                        )
                         print(
                             "TELEGRAM_PRESENTATION=PASS "
                             f"MODE={presentation.get('mode')} "
                             f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
                             f"CANONICAL_CHARS={presentation.get('canonical_chars')} "
                             f"PRESENTED_CHARS={presentation.get('presented_chars')} "
+                            f"INPUT_ID={presentation_audit.get('telegram_input_id')} "
+                            f"REPLY_SHA256={presentation_audit.get('reply_sha256')} "
                             f"AUTHORITY={presentation.get('authority')}",
                             flush=True,
                         )
