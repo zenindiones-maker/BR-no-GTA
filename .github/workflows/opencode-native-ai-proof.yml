@@ -1,0 +1,89 @@
+name: OpenCode Native AI Production Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  prove:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run OpenCode native production proof')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REF: work/gate6f-analytics-learning
+      BR_OPENCODE_NATIVE_POLL_INTERVAL: "2"
+      BR_OPENCODE_NATIVE_RUN_TIMEOUT: "600"
+      BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/opencode-native-production-proof/artifacts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Execute production provider adapter
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/opencode-native-production-proof
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          from app.services.opencode_executor_profile_service import (
+              executable_opencode_executor_profile,
+          )
+          from app.services.opencode_native_ai_provider import OpenCodeNativeAIProvider
+
+          profile=executable_opencode_executor_profile("v2")
+          route=SimpleNamespace(
+              selected_provider="opencode",
+              selected_model="oc/big-pickle",
+          )
+          authorization=SimpleNamespace(
+              execution_id=f"opencode-native-proof-{os.environ['GITHUB_RUN_ID']}",
+          )
+          provider=OpenCodeNativeAIProvider(
+              routing_decision=route,
+              authorization=authorization,
+              profile=profile,
+          )
+          response=provider.generate(
+              "Return only: BR_NO_GTA_OPENCODE_NATIVE_PRODUCTION_OK"
+          )
+          assert response.provider == "opencode"
+          assert response.model == "oc/big-pickle"
+          assert response.text.strip() == "BR_NO_GTA_OPENCODE_NATIVE_PRODUCTION_OK"
+          proof={
+              "OPENCODE_NATIVE_PRODUCTION_EXECUTOR":"PASS",
+              "provider":response.provider,
+              "canonical_model":response.model,
+              "text_exact":True,
+              "profile_skill_id":profile["skill_id"],
+              "profile_version":profile["version"],
+              "profile_content_ref":profile["content_ref"],
+              "profile_checksum":profile["checksum"],
+              "resolved_executor_binding":provider.executor_binding,
+              "outer_run_id":int(os.environ["GITHUB_RUN_ID"]),
+          }
+          Path("runtime/opencode-native-production-proof/proof.json").write_text(
+              json.dumps(proof,indent=2,sort_keys=True),
+              encoding="utf-8",
+          )
+          print(json.dumps(proof,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: opencode-native-production-proof
+          path: runtime/opencode-native-production-proof/
+          retention-days: 14
+          if-no-files-found: error
