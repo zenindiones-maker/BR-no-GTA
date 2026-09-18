@@ -460,25 +460,47 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             capability_id="ai.provider.opencode-free",
             capability_type="PROVIDER",
             domain="ai",
-            implementation="OpenCode Free through Harness-governed OmniRoute gateway",
-            input_contract="explicit Harness-selected prompt/provider/model",
-            output_contract="OmniRouteGatewayEvidence",
-            requirements=("Observed upstream policy blocks OpenCode free tier through OmniRoute HTTP gateway", "incident run 35340487375 HTTP 403", "provider experiment run 35343464974"),
-            maturity=UNPROVEN,
-            availability=BLOCKED,
+            implementation=(
+                "Harness-governed versioned OpenCode executor profile; "
+                "v1 records the disproven OmniRoute HTTP path and v2 resolves "
+                "the official OpenCode CLI only after governed promotion"
+            ),
+            input_contract="explicit Harness-selected prompt/provider/model + active executable profile",
+            output_contract="HarnessAIProviderEvidence with executor-profile lineage",
+            requirements=(
+                "persisted HarnessAuthorization",
+                "explicit provider/model identity",
+                "active Learning Plane executor profile",
+                "ZERO_COST_OPERATION",
+                "no silent fallback",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
-            policy_tags=("ai", "provider", "opencode", "free", "zero-cost", "omniroute", "upstream-policy-blocked"),
-            security_boundary="HarnessAuthorization + explicit provider/model + zero-cost policy; no auto/fallback",
-            executor_binding="app.services.omniroute_gateway_service.execute_omniroute_gateway",
-            evidence_contract="app.services.omniroute_gateway_service.OmniRouteGatewayEvidence",
+            policy_tags=(
+                "ai", "provider", "opencode", "free", "zero-cost",
+                "learning", "versioned-executor", "no-fallback",
+            ),
+            security_boundary=(
+                "DeepSeek Harness selects provider/model and the promoted Learning Plane "
+                "profile resolves the executable binding; v1 fails closed from observed "
+                "HTTP 403 evidence and v2 may execute only after governed promotion."
+            ),
+            executor_binding=(
+                "app.services.opencode_executor_profile_service."
+                "create_opencode_provider_for_active_profile"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
             provider_id="opencode",
             model_id="oc/big-pickle",
             cost_class="FREE_NO_BILLING",
             quota_class="PUBLIC_NO_AUTH_UPSTREAM_POLICY",
             latency_class="EXTERNAL_EPHEMERAL",
-            quality_class="BLOCKED_BY_UPSTREAM_POLICY",
+            quality_class="LEARNING_GOVERNED",
             fallback_eligibility=False,
-            version="3.8.50",
+            version="learning-profile-v1",
         ),
         _record(
             capability_id="executor.omniroute-gateway",
