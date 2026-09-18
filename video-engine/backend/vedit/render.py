@@ -54,6 +54,10 @@ class RenderOptions:
     # Decodifica accelerata: si spegne da sola al primo ripiego, tenendo pero'
     # l'encoder GPU. Sono due meta' separabili e non valgono lo stesso.
     hwaccel_decode: bool = True
+    # Optional software-only speed preset. This is deliberately independent
+    # from the quality target so the Harness can optimize encode time without
+    # silently changing CRF/quality semantics.
+    software_preset: str | None = None
     video: bool = True
     audio: bool = True
     threads: int | None = None
@@ -194,7 +198,12 @@ def build_command(project: Project, opts: RenderOptions, workdir: Path) -> tuple
         if enc == "gif":
             args += ["-loop", "0"]
         else:
-            args += hw.encoder_args(enc, opts.quality, opts.bitrate)
+            args += hw.encoder_args(
+                enc,
+                opts.quality,
+                opts.bitrate,
+                software_preset=opts.software_preset,
+            )
             args += ["-pix_fmt", "yuv420p", "-fps_mode", "cfr", "-r", str(opts.fps or project.settings.fps)]
     if c.audio_label:
         acodec = opts.audio_codec if opts.audio_codec else def_a
