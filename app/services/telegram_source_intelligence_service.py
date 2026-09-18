@@ -7,6 +7,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.database import telegram_source_intelligence_repository as source_repository
+from app.database.editorial_repository import list_evaluations_for_research
+from app.database.gta6_goal_repository import (
+    get_active_gta6_goal,
+    get_gta6_goal_artifacts_by_idea_id,
+)
 from app.database.memory_claim_evidence_repository import (
     insert_memory_claim_evidence,
     list_memory_claim_evidence_for_event,
@@ -25,7 +30,10 @@ from app.services.editorial_intelligence_contracts import (
     ResearchSource,
     validate_claim_ledger,
 )
+from app.integrations.gta6.source import GTA6SourceItem
+from app.services.gta6_editorial_pipeline import process_gta6_research_results
 from app.services.gta6_fact_check_service import execute_gta6_fact_check_via_harness
+from app.services.gta6_ingestion import ingest_gta6_source_item
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -535,18 +543,25 @@ def _editorial_decision(
     claims: list[dict[str, Any]],
     dossier_id: str | None,
 ) -> dict[str, Any]:
+    existing = source_repository.get_editorial_signal_by_candidate(
+        candidate["candidate_id"]
+    )
+    if existing is not None:
+        return existing
+
     verified = [item for item in claims if item["verification_status"] == "VERIFIED"]
     text = str(input_record.get("text_content") or "").casefold()
-    if not verified:
-        decision = "REJECT_LOW_EVIDENCE"
-    elif any(marker in text for marker in ("video", "pauta", "transforma", "transforme")):
-        decision = "USE_FOR_VIDEO"
-    else:
-        decision = "STORE_FOR_FUTURE"
+    explicit_video_intent = any(
+        marker in text
+        for marker in ("video", "vídeo", "pauta", "transforma", "transforme")
+    )
 
     routing = route_harness_request(
         HarnessRoutingRequest(
-            intent="evaluate a verified Telegram source as an editorial signal without automatically creating production",
+            intent=(
+                "evaluate a verified Telegram source as an editorial signal "
+                "without automatically dispatching production"
+            ),
             authorized_action="EDITORIAL",
             domain="editorial",
             task_class=EDITORIAL_TASK_CLASS,
@@ -572,18 +587,102 @@ def _editorial_decision(
             "source_candidate_id": candidate["candidate_id"],
             "research_dossier_id": dossier_id,
             "verified_claim_ids": [item["claim_id"] for item in verified],
-            "decision": decision,
+            "explicit_video_intent": explicit_video_intent,
         },
     )
-    signal_id = _stable("editorial-signal", candidate["candidate_id"])
+
+    decision = "REJECT_LOW_EVIDENCE"
+    signal_status = "CREATED"
+    goal_id = None
+    pipeline_result: dict[str, Any] | None = None
+    research_item_id = None
+    knowledge_id = None
+
     try:
+        if not verified:
+            decision = "REJECT_LOW_EVIDENCE"
+        elif not explicit_video_intent:
+            decision = "STORE_FOR_FUTURE"
+        else:
+            title = str(verified[0]["statement"]).strip()[:240]
+            existing_goal = get_active_gta6_goal(topic=title)
+            if existing_goal is not None:
+                decision = "MERGE_WITH_EXISTING_GOAL"
+                goal_id = existing_goal["goal_id"]
+                signal_status = "USED"
+            else:
+                packet = dict((candidate.get("payload") or {}).get("fresh_packet") or {})
+                submitted = dict(packet.get("submitted_source") or {})
+                source_name = str(
+                    submitted.get("source_name")
+                    or urlparse(candidate["source_url"]).hostname
+                    or "telegram-source"
+                )
+                published_at = (
+                    str(submitted.get("retrieved_at") or "").strip() or None
+                )
+                source_item = GTA6SourceItem(
+                    title=title,
+                    summary=" ".join(
+                        str(item["statement"]).strip()
+                        for item in verified
+                    ),
+                    url=candidate["source_url"],
+                    source_name=source_name,
+                    fact_type="news",
+                    confidence="confirmed",
+                    published_at=published_at,
+                )
+                ingested = ingest_gta6_source_item(source_item)
+                research_item_id = int(ingested["research_item_id"])
+                knowledge_id = int(ingested["knowledge_id"])
+                processed = process_gta6_research_results([ingested])
+                if processed:
+                    pipeline_result = dict(processed[0])
+                else:
+                    evaluations = list_evaluations_for_research(research_item_id)
+                    if evaluations:
+                        latest = dict(evaluations[-1])
+                        pipeline_result = {
+                            "evaluation_id": latest.get("id"),
+                            "research_item_id": research_item_id,
+                            "idea_id": latest.get("idea_id"),
+                            "score": latest.get("score"),
+                            "decision": latest.get("decision"),
+                            "criteria": {
+                                "novelty": latest.get("novelty"),
+                                "source_reliability": latest.get("source_reliability"),
+                            },
+                        }
+                if pipeline_result is None:
+                    decision = "STORE_FOR_FUTURE"
+                else:
+                    pipeline_decision = str(
+                        pipeline_result.get("decision") or ""
+                    ).lower()
+                    if pipeline_decision == "approve":
+                        decision = "USE_FOR_VIDEO"
+                    elif pipeline_decision == "discard" and float(
+                        (pipeline_result.get("criteria") or {}).get("novelty") or 0.0
+                    ) < 5.0:
+                        decision = "REJECT_SATURATED"
+                    else:
+                        decision = "STORE_FOR_FUTURE"
+                    idea_id = pipeline_result.get("idea_id")
+                    if isinstance(idea_id, int) and idea_id > 0:
+                        artifacts = get_gta6_goal_artifacts_by_idea_id(idea_id)
+                        if artifacts is not None:
+                            goal_id = artifacts.get("goal_id")
+                    signal_status = "USED"
+
+        signal_id = _stable("editorial-signal", candidate["candidate_id"])
         signal = source_repository.upsert_editorial_signal(
             {
                 "signal_id": signal_id,
                 "candidate_id": candidate["candidate_id"],
-                "status": "CREATED",
+                "status": signal_status,
                 "harness_decision": decision,
-                "goal_id": None,
+                "goal_id": goal_id,
                 "routing_id": routing.routing_id,
                 "authorization_id": authorization.authorization_id,
                 "evidence_refs": [
@@ -592,6 +691,14 @@ def _editorial_decision(
                     f"source-candidate:{candidate['candidate_id']}",
                     *([f"research-dossier:{dossier_id}"] if dossier_id else []),
                     *[f"claim:{item['claim_id']}" for item in claims],
+                    *(
+                        [f"research-item:{research_item_id}"]
+                        if research_item_id is not None else []
+                    ),
+                    *(
+                        [f"goal:{goal_id}"]
+                        if goal_id is not None else []
+                    ),
                 ],
                 "payload": {
                     "authority": "deepseek_harness",
@@ -599,13 +706,22 @@ def _editorial_decision(
                     "reason": (
                         "No claim met the evidence hierarchy required for editorial use."
                         if decision == "REJECT_LOW_EVIDENCE"
-                        else "Verified source intelligence is preserved as an editorial signal; production is not automatic."
+                        else (
+                            "Verified source intelligence entered the official editorial "
+                            "pipeline; production remains a separate authorized stage."
+                            if signal_status == "USED"
+                            else "Verified source intelligence is preserved for future editorial use."
+                        )
                     ),
                     "telegram_input_id": input_record["id"],
                     "memory_event_id": input_record.get("memory_event_id"),
                     "source_url": candidate["source_url"],
                     "verified_claim_ids": [item["claim_id"] for item in verified],
                     "research_dossier_id": dossier_id,
+                    "research_item_id": research_item_id,
+                    "knowledge_id": knowledge_id,
+                    "pipeline_result": pipeline_result,
+                    "goal_id": goal_id,
                     "production_dispatched": False,
                 },
             }
