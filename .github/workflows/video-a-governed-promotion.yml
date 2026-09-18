@@ -20,8 +20,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE_RENDER_ARTIFACT_ID: "10525757299"
       SOURCE_RENDER_RUN_ID: "35289539299"
-      BENCHMARK_ARTIFACT_ID: "10546471925"
-      BENCHMARK_RUN_ID: "35343530893"
+      BENCHMARK_ARTIFACT_ID: "10545807568"
+      BENCHMARK_RUN_ID: "35343762651"
       INCIDENT_RUN_ID: "35289594486"
       INCIDENT_JOB_ID: "105429342947"
       INCIDENT_HEAD_SHA: "7bc7b9c719d45efa23745d618ec8ba3077addaec"
@@ -65,16 +65,20 @@ jobs:
       - name: Evaluate and govern promotion
         run: |
           set -euo pipefail
-          python scripts/promote_video_a_render_profile.py             --render-job runtime/video-a-promotion/source/render-job.json             --incident-proof runtime/video-a-promotion/incident/proof.json             --benchmark-evidence runtime/video-a-promotion/benchmark/result/benchmark-evidence.json             --output-dir runtime/video-a-promotion/promoted
+          python scripts/promote_video_a_render_profile.py             --render-job runtime/video-a-promotion/source/render-job.json             --incident-proof runtime/video-a-promotion/incident/proof.json             --benchmark-evidence runtime/video-a-promotion/benchmark/benchmark-evidence.json             --benchmark-run-id "$BENCHMARK_RUN_ID"             --benchmark-artifact-id "$BENCHMARK_ARTIFACT_ID"             --output-dir runtime/video-a-promotion/promoted
           python - <<'PY'
           import json
           from pathlib import Path
           p=Path("runtime/video-a-promotion/promoted/promotion-proof.json")
           d=json.loads(p.read_text())
+          assert d["REAL_IMPROVEMENT_MISSION"]=="PASS"
           assert d["REAL_IMPROVEMENT_EXPERIMENT"]=="PASS"
           assert d["OBSERVED_EVAL"]=="PASS"
           assert d["GOVERNED_PROMOTION"]=="PASS"
+          assert d["PROMOTION_CHANGES_EXECUTABLE_BEHAVIOR"]=="PASS"
           assert d["NEXT_REAL_RUN_RETRIEVES_LEARNING"]=="PASS"
+          assert d["improvement_mission_status"]=="COMPLETED"
+          assert d["promotion_memory_id"] in d["retrieved_memory_ids"]
           assert d["learning_profile_binding"]["version"]=="v2"
           assert d["evaluation_decision"]=="PROMOTE"
           print("VIDEO_A_GOVERNED_PROMOTION=PASS")
