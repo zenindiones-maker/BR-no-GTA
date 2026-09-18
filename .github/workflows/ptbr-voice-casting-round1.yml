@@ -1,0 +1,259 @@
+name: PT-BR Voice Casting Round 1
+run-name: PT-BR voice casting · blind round 1 · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/voice-casting.request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ptbr-voice-casting-round1
+  cancel-in-progress: false
+
+jobs:
+  voice-casting-round1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate governed casting request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          request=json.loads(Path('.run001/voice-casting.request.json').read_text(encoding='utf-8'))
+          expected={
+              'mission':'ptbr-edge-voice-casting-v1',
+              'base_head':'ac61c3cfc61a76c507e4092223aff835603c4020',
+              'script_path':'.run001/video-a-investigative-longform.json',
+              'locale':'pt-BR',
+              'provider':'edge-tts',
+              'round1_rate':'+0%',
+              'round1_pitch':'+0Hz',
+              'prior_human_feedback':'PREFERS_BASELINE',
+              'job18_frozen':True,
+              'publication_authority':'NONE',
+          }
+          for key,value in expected.items():
+              actual=request.get(key)
+              if key=='prior_human_feedback':
+                  actual=(request.get('prior_human_feedback') or {}).get('result')
+              if actual!=value:
+                  raise SystemExit(f'VOICE_CASTING_REQUEST_MISMATCH:{key}:{actual!r}')
+          print('VOICE_CASTING_REQUEST=PASS')
+          print('HUMAN_A_B_REVIEW=PREFERS_BASELINE')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY=NONE')
+          PY
+          git merge-base --is-ancestor ac61c3cfc61a76c507e4092223aff835603c4020 HEAD
+
+      - name: Install voice casting runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          python -m pip install "edge-tts==7.2.8" "faster-whisper==1.2.0"
+          python - <<'PY'
+          import importlib.metadata
+          print('EDGE_TTS_VERSION='+importlib.metadata.version('edge-tts'))
+          PY
+
+      - name: Focused voice casting and narration contract tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_voice_casting_service.py \
+            tests/test_narration_pipeline.py \
+            tests/test_narration_timing_contract.py \
+            tests/test_harness_capability_service.py \
+            tests/test_harness_routing_policy_service.py
+
+      - name: Enumerate live PT-BR voices and build blind Round 1
+        run: |
+          set -euo pipefail
+          rm -rf runtime/voice-casting
+          python scripts/ptbr_voice_casting.py \
+            --config .run001/video-a-investigative-longform.json \
+            --request .run001/voice-casting.request.json \
+            --output-dir runtime/voice-casting
+
+      - name: Validate blind and technical gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          proof=Path('runtime/voice-casting/proof')
+          private=Path('runtime/voice-casting/private-map')
+          required=(
+              'ptbr-edge-voice-inventory.json',
+              'voice-casting-round1-manifest.json',
+              'voice-casting-round1-technical-qa.json',
+              'speech-transform-manifest.json',
+              'human-voice-feedback.json',
+              'voice-casting-state.json',
+          )
+          missing=[name for name in required if not (proof/name).is_file()]
+          if missing:
+              raise SystemExit('VOICE_CASTING_PROOF_MISSING:'+','.join(missing))
+          if not (private/'blind-identity-map.json').is_file():
+              raise SystemExit('BLIND_IDENTITY_MAP_MISSING')
+          manifest=json.loads((proof/'voice-casting-round1-manifest.json').read_text(encoding='utf-8'))
+          inventory=json.loads((proof/'ptbr-edge-voice-inventory.json').read_text(encoding='utf-8'))
+          if inventory.get('status')!='PASS' or inventory.get('voice_count',0)<2:
+              raise SystemExit('PTBR_EDGE_VOICE_INVENTORY=FAIL')
+          if manifest.get('status')!='HUMAN_REVIEW_REQUIRED':
+              raise SystemExit('ROUND1_STATE_INVALID')
+          if manifest.get('voice_identity_revealed_in_manifest') is not False:
+              raise SystemExit('BLINDING_FAIL')
+          passing=manifest.get('passing_blind_ids') or []
+          if len(passing)<2:
+              raise SystemExit('INSUFFICIENT_TECHNICAL_PASS_CANDIDATES')
+          candidates=manifest.get('candidates') or []
+          if any('voice_short_name' in item or 'friendly_name' in item for item in candidates):
+              raise SystemExit('VOICE_IDENTITY_LEAK_IN_PUBLIC_MANIFEST')
+          for blind_id in passing:
+              sample=proof/'samples'/(blind_id.replace(' ','_')+'.mp3')
+              if not sample.is_file() or sample.stat().st_size<=0:
+                  raise SystemExit('BLIND_SAMPLE_MISSING:'+blind_id)
+          print('PTBR_EDGE_VOICE_INVENTORY=PASS')
+          print('BLINDING=PASS')
+          print('VOICE_CANDIDATE_TECHNICAL_QA=PASS')
+          print('SPEECH_SCRIPT_PROFILE=PASS')
+          print('PASSING_BLIND_IDS='+','.join(passing))
+          print('HUMAN_REVIEW_REQUIRED=YES')
+          PY
+
+      - name: Deliver blind Round 1 to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          proof=runtime/voice-casting/proof
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+            printf '{"status":"NOT_SENT","reason":"EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"}\n' > "$proof/telegram-round1-delivery.json"
+            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"
+            exit 0
+          fi
+          if [ -z "${TELEGRAM_REVIEW_CHAT_ID:-}" ]; then
+            printf '{"status":"NOT_SENT","reason":"EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"}\n' > "$proof/telegram-round1-delivery.json"
+            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"
+            exit 0
+          fi
+          : > runtime/voice-casting/message-ids.tsv
+          while IFS= read -r blind_id; do
+            file="$proof/samples/${blind_id// /_}.mp3"
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio" \
+              -F "chat_id=${TELEGRAM_REVIEW_CHAT_ID}" \
+              -F "audio=@${file}" \
+              -F "caption=BR no GTA 6 · Voice Casting Round 1 · ${blind_id}")"
+            message_id="$(RESPONSE="$response" python - <<'PY'
+          import json,os
+          payload=json.loads(os.environ['RESPONSE'])
+          if payload.get('ok') is not True:
+              raise SystemExit('telegram sendAudio failed')
+          print(payload['result']['message_id'])
+          PY
+            )"
+            printf '%s\t%s\n' "$blind_id" "$message_id" >> runtime/voice-casting/message-ids.tsv
+          done < <(python - <<'PY'
+          import json
+          p=json.load(open('runtime/voice-casting/proof/voice-casting-round1-manifest.json'))
+          for item in p['passing_blind_ids']:
+              print(item)
+          PY
+          )
+          control_response="$(curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_REVIEW_CHAT_ID}" \
+            --data-urlencode "text=BR no GTA 6 · Voice Casting Round 1
+HUMAN_REVIEW_REQUIRED
+Ouça os samples sem tentar identificar as vozes.
+Escolha as duas melhores e responda exatamente:
+TOP_2=Voice A,Voice C
+(substitua A e C pelos seus dois IDs preferidos)")"
+          CONTROL_RESPONSE="$control_response" TELEGRAM_REVIEW_CHAT_ID="$TELEGRAM_REVIEW_CHAT_ID" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          rows=[]
+          for line in Path('runtime/voice-casting/message-ids.tsv').read_text().splitlines():
+              blind_id,message_id=line.split('\t',1)
+              rows.append({'blind_id':blind_id,'telegram_message_id':int(message_id)})
+          control=json.loads(os.environ['CONTROL_RESPONSE'])
+          if control.get('ok') is not True:
+              raise SystemExit('telegram control message failed')
+          payload={
+              'status':'SENT',
+              'round':1,
+              'chat_id':os.environ['TELEGRAM_REVIEW_CHAT_ID'],
+              'samples':rows,
+              'control_message_id':control['result']['message_id'],
+              'human_review_required':True,
+              'required_response_format':'TOP_2=Voice A,Voice C',
+              'identity_revealed':False,
+          }
+          Path('runtime/voice-casting/proof/telegram-round1-delivery.json').write_text(
+              json.dumps(payload,indent=2),encoding='utf-8'
+          )
+          print('BLIND_VOICE_CASTING_ROUND1=DELIVERED')
+          print('TELEGRAM_ROUND1_SAMPLE_COUNT='+str(len(rows)))
+          print('HUMAN_REVIEW_REQUIRED=YES')
+          PY
+
+      - name: Validate delivery state
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('runtime/voice-casting/proof/telegram-round1-delivery.json')
+          if not path.is_file():
+              raise SystemExit('TELEGRAM_DELIVERY_EVIDENCE_MISSING')
+          state=json.loads(path.read_text())
+          print('TELEGRAM_ROUND1_STATUS='+str(state.get('status')))
+          if state.get('status')=='SENT':
+              print('BLIND_VOICE_CASTING_ROUND1=DELIVERED')
+              print('HUMAN_TOP2_SELECTED=NO')
+              print('HUMAN_REVIEW_REQUIRED=YES')
+          else:
+              print(str(state.get('reason') or 'TELEGRAM_DELIVERY_BLOCKED'))
+          PY
+
+      - name: Upload compact blind casting proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptbr-voice-casting-round1-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/voice-casting/proof/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload blind identity map separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptbr-voice-casting-round1-identity-map-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/voice-casting/private-map/
+          if-no-files-found: error
+          retention-days: 30
