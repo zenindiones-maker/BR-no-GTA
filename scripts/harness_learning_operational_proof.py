@@ -88,7 +88,7 @@ def _controlled_trial(root: Path, *, name: str, preflight: bool) -> dict[str, An
     artifact = _observed_artifact(
         root,
         f"{name}.txt",
-        f"identity={payload['actual_identity']}\nmode={'candidate' if preflight else 'baseline'}\n",
+        f"trial={name}\nidentity={payload['actual_identity']}\nmode={'candidate' if preflight else 'baseline'}\n",
     )
     latency = max(0.000001, time.perf_counter() - started)
     return {
