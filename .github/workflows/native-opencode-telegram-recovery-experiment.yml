@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          opencode models --refresh > runtime/native-opencode-experiment/models.txt 2> runtime/native-opencode-experiment/models.stderr
+          opencode models --standalone > runtime/native-opencode-experiment/models.txt 2> runtime/native-opencode-experiment/models.stderr
           rc=$?
           set -e
           RC="$rc" python - <<'PY'
@@ -43,11 +43,19 @@ jobs:
           root=Path("runtime/native-opencode-experiment")
           stdout=(root/"models.txt").read_text(errors="replace")
           stderr=(root/"models.stderr").read_text(errors="replace")
+          rows=[line.strip() for line in stdout.splitlines() if line.strip()]
+          models=[
+              line for line in rows
+              if "/" in line
+              and not line.startswith(("http://","https://"))
+              and " " not in line
+              and not line.startswith("--")
+          ]
           evidence={
               "exit_code": int(os.environ["RC"]),
               "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
               "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
-              "models": [line.strip() for line in stdout.splitlines() if line.strip()],
+              "models": sorted(set(models)),
           }
           (root/"model-catalog.json").write_text(json.dumps(evidence,sort_keys=True))
           print(json.dumps({"exit_code":evidence["exit_code"],"model_count":len(evidence["models"])},sort_keys=True))
