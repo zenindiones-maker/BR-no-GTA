@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import re
@@ -446,6 +447,9 @@ def candidate_profile(job: dict[str, Any], root: Path, concurrency: int) -> tupl
         "SYNTHESIS_ATTEMPT_COUNT": stats["synthesis_attempt_count"],
         "FFMPEG_AUDIO_PROCESS_COUNT": stats["ffmpeg_audio_process_count"],
         "FFPROBE_COUNT": stats["ffprobe_count"],
+        "AUDIO_DURATION_PROBE_COUNT": stats["audio_duration_probe_count"],
+        "AUDIO_DURATION_PROBE_WALL_CLOCK": stats["audio_duration_probe_wall_clock"],
+        "AUDIO_DURATION_SOURCE": qa["audio_duration_source"],
         "FULL_DECODE_COUNT": stats["full_decode_count"],
         "LOUDNESS_SCAN_COUNT": stats["loudness_scan_count"],
         "SILENCE_SCAN_COUNT": stats["silence_scan_count"],
@@ -462,6 +466,9 @@ def candidate_profile(job: dict[str, Any], root: Path, concurrency: int) -> tupl
         "FULL_SCRIPT_REGEN_COUNT": qa["full_script_calibration_regeneration_count"],
         "MASTER_NORMALIZATION_COUNT": stats["master_normalization_count"],
         "NATIVE_TIMING_USED": qa["native_timing_used"],
+        "NATIVE_TIMING_ABSENT_RESPONSES": stats["native_timing_absent_responses"],
+        "AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING": qa["AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING"],
+        "NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE": qa["NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE"],
         "LOUDNESS": qa["master_metrics"]["integrated_lufs"],
         "TRUE_PEAK": qa["master_metrics"]["true_peak_dbfs"],
         "LONGEST_SILENCE": qa["master_metrics"]["longest_silence_seconds"],
@@ -470,6 +477,96 @@ def candidate_profile(job: dict[str, Any], root: Path, concurrency: int) -> tupl
     }
     (root.parent / "narration-candidate-profile.json").write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
     return profile, Path(qa["master_path"]), sections
+
+
+
+def _build_proof_package(output: Path) -> Path:
+    package = output.parent / "narration-proof-package"
+    if package.exists():
+        shutil.rmtree(package)
+    package.mkdir(parents=True)
+    json_names = (
+        "narration-baseline-profile.json",
+        "narration-candidate-profile.json",
+        "provider-concurrency-benchmark.json",
+        "failure-isolation-proof.json",
+        "render-retry-proof.json",
+        "human-ab-review.json",
+        "narration-semantic-qa.json",
+        "narration-comparison.json",
+    )
+    copied: list[str] = []
+    for name in json_names:
+        source = output / name
+        if source.is_file():
+            shutil.copy2(source, package / name)
+            copied.append(name)
+
+    bundle = output / "candidate" / "narration-bundle"
+    bundle_evidence = package / "candidate-bundle-evidence"
+    bundle_evidence.mkdir()
+    for name in (
+        "narration-manifest.json",
+        "narration-qa.json",
+        "speech-timing.json",
+        "voice-speed-profile.json",
+        "narration-learning-evidence.json",
+    ):
+        source = bundle / name
+        if source.is_file():
+            shutil.copy2(source, bundle_evidence / name)
+            copied.append(f"candidate-bundle-evidence/{name}")
+
+    ab_source = output / "ab-samples"
+    ab_target = package / "ab-samples"
+    if ab_source.is_dir():
+        ab_target.mkdir()
+        for source in sorted(ab_source.glob("*.mp3")):
+            shutil.copy2(source, ab_target / source.name)
+            copied.append(f"ab-samples/{source.name}")
+
+    checksums = {}
+    for path in sorted(package.rglob("*")):
+        if path.is_file():
+            checksums[str(path.relative_to(package))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (package / "proof-checksums.json").write_text(
+        json.dumps(checksums, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    package_bytes = sum(path.stat().st_size for path in package.rglob("*") if path.is_file())
+    manifest = {
+        "status": "PASS" if package_bytes < 780_103_616 else "FAIL",
+        "proof_package_version": "narration-optimization-proof/v2",
+        "files": copied,
+        "uncompressed_bytes": package_bytes,
+        "previous_artifact_10562148401_bytes": 780_103_616,
+        "PROOF_ARTIFACT_SIZE_REDUCED": "OBSERVED_PREUPLOAD_PACKAGE" if package_bytes < 780_103_616 else "NO",
+        "excluded": [
+            "baseline WAV attempts",
+            "baseline intermediate masters",
+            "content-addressed caches",
+            "concurrency benchmark temporary audio",
+            "failure-isolation temporary audio",
+            "candidate segment audio and production master (uploaded separately as narration-bundle)",
+        ],
+    }
+    (package / "proof-package-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return package
+
+
+def _cleanup_proof_intermediates(output: Path) -> None:
+    for path in (
+        output / "baseline",
+        output / "concurrency-benchmark",
+        output / "failure-isolation",
+        output / "candidate" / "cache",
+        output / "candidate" / "narration-bundle" / ".semantic-samples",
+    ):
+        if path.is_dir():
+            shutil.rmtree(path)
 
 
 def main() -> int:
@@ -561,18 +658,31 @@ def main() -> int:
         "FULL_SCRIPT_CALIBRATION_REGENERATION": candidate["FULL_SCRIPT_REGEN_COUNT"],
         "MASTER_NORMALIZATION_ONCE": "PASS" if candidate["MASTER_NORMALIZATION_COUNT"] == 1 else "FAIL",
         "NATIVE_TIMING_USED_WHEN_AVAILABLE": "PASS" if candidate["NATIVE_TIMING_USED"] else "FAIL",
+        "AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING": "PASS" if candidate["AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING"] else "FAIL",
+        "NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE": "PASS" if candidate["NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE"] else "FAIL",
+        "AUDIO_DURATION_SOURCE": candidate["AUDIO_DURATION_SOURCE"],
         "PTBR_SEMANTIC_QA": "PASS" if semantic_pass else "FAIL",
         "ASR_SCRIPT_ALIGNMENT": candidate_overlap if not args.skip_asr else None,
+        "PROPER_NAME_NUMBER_ASR_OBSERVATIONS": candidate_semantic.get("critical_tokens_observed", []) if not args.skip_asr else [],
         "JOB18_UNCHANGED": "YES",
         "PUBLICATION_AUTHORITY_UNCHANGED": "YES",
         "HARNESS_AUTHORITY_PRESERVED": "YES",
     }
     (output / "narration-comparison.json").write_text(json.dumps(comparison, ensure_ascii=False, indent=2), encoding="utf-8")
+    package = _build_proof_package(output)
+    package_manifest = json.loads((package / "proof-package-manifest.json").read_text(encoding="utf-8"))
+    comparison["PROOF_PACKAGE_UNCOMPRESSED_BYTES"] = package_manifest["uncompressed_bytes"]
+    comparison["PROOF_ARTIFACT_SIZE_REDUCED"] = package_manifest["PROOF_ARTIFACT_SIZE_REDUCED"]
+    (output / "narration-comparison.json").write_text(json.dumps(comparison, ensure_ascii=False, indent=2), encoding="utf-8")
+    shutil.copy2(output / "narration-comparison.json", package / "narration-comparison.json")
+    _cleanup_proof_intermediates(output)
     print(f"NARRATION_BASELINE_PROFILE=AVAILABLE", flush=True)
     print(f"NARRATION_WALL_CLOCK_IMPROVED={comparison['NARRATION_WALL_CLOCK_IMPROVED']}", flush=True)
     print(f"FAILED_SEGMENT_ONLY_RETRY={retry['status']}", flush=True)
     print(f"RENDER_RETRY_REUSES_NARRATION={render_retry['status']}", flush=True)
     print(f"NO_AUDIO_QUALITY_REGRESSION={comparison['NO_AUDIO_QUALITY_REGRESSION']}", flush=True)
+    print(f"PROOF_PACKAGE_UNCOMPRESSED_BYTES={comparison['PROOF_PACKAGE_UNCOMPRESSED_BYTES']}", flush=True)
+    print(f"PROOF_ARTIFACT_SIZE_REDUCED={comparison['PROOF_ARTIFACT_SIZE_REDUCED']}", flush=True)
     print("JOB18_UNCHANGED=YES", flush=True)
     print("PUBLICATION_AUTHORITY_UNCHANGED=YES", flush=True)
     return 0 if comparison["status"] == "PASS" else 2

@@ -312,6 +312,77 @@ def _valid_mp3_header(path: Path) -> bool:
     return header.startswith(b"ID3") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0)
 
 
+
+def _probe_audio_duration(path: Path, stats: dict[str, Any], *, source: str = "ffprobe-minimal") -> tuple[float, str]:
+    started = time.monotonic()
+    stats["ffprobe_count"] += 1
+    stats["audio_duration_probe_count"] += 1
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=nw=1:nk=1", str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    stats["audio_duration_probe_wall_clock"] += time.monotonic() - started
+    if result.returncode != 0:
+        raise NarrationError(f"segment QA: ffprobe duration failed: {result.stderr[-500:]}")
+    try:
+        duration = float(result.stdout.strip())
+    except (TypeError, ValueError) as exc:
+        raise NarrationError("segment QA: invalid physical audio duration") from exc
+    if not math.isfinite(duration) or duration <= 0:
+        raise NarrationError("segment QA: physical audio duration must be finite and positive")
+    return duration, source
+
+
+def _validate_native_timing(
+    timing: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    audio_duration_seconds: float,
+) -> tuple[str, list[dict[str, Any]], bool]:
+    if not math.isfinite(audio_duration_seconds) or audio_duration_seconds <= 0:
+        raise NarrationError("segment QA: audio duration is required independently of native timing")
+    if not timing:
+        return "proportional-fallback", [], False
+
+    normalized: list[dict[str, Any]] = []
+    previous_offset = -1.0
+    tolerance = max(0.75, audio_duration_seconds * 0.05)
+    empty_run = 0
+    for index, item in enumerate(timing):
+        try:
+            offset = float(item.get("offset_seconds"))
+            duration = float(item.get("duration_seconds"))
+        except (TypeError, ValueError) as exc:
+            raise NarrationError(f"segment QA: malformed native timing numeric value at index {index}") from exc
+        text = str(item.get("text") or "").strip()
+        if not math.isfinite(offset) or not math.isfinite(duration):
+            raise NarrationError(f"segment QA: non-finite native timing at index {index}")
+        if offset < 0 or duration < 0:
+            raise NarrationError(f"segment QA: negative native timing at index {index}")
+        if offset + 1e-6 < previous_offset:
+            raise NarrationError(f"segment QA: regressive native timing offset at index {index}")
+        if offset > audio_duration_seconds + tolerance or offset + duration > audio_duration_seconds + tolerance:
+            raise NarrationError(f"segment QA: native timing exceeds physical audio at index {index}")
+        if text:
+            empty_run = 0
+        else:
+            empty_run += 1
+            if empty_run >= 1:
+                raise NarrationError(f"segment QA: empty native timing token at index {index}")
+        normalized.append({
+            "type": str(item.get("type") or "word"),
+            "text": text,
+            "offset_seconds": offset,
+            "duration_seconds": duration,
+        })
+        previous_offset = offset
+    return "provider-native", normalized, True
+
+
 class ContentAddressedNarrationCache:
     def __init__(self, root: Path):
         self.root = root
@@ -353,6 +424,12 @@ class ContentAddressedNarrationCache:
         temp_meta.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(temp_meta, meta)
         return audio, payload
+
+    def update_metadata(self, fingerprint: str, payload: dict[str, Any]) -> None:
+        meta = self.meta_root / f"{fingerprint}.json"
+        temp_meta = meta.with_suffix(".tmp.json")
+        temp_meta.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp_meta, meta)
 
     def profile_path(self, identity: str) -> Path:
         return self.profile_root / f"{hashlib.sha256(identity.encode('utf-8')).hexdigest()}.json"
@@ -459,8 +536,6 @@ async def _synthesize_provider_with_retry(
             stats["tts_bytes"] += result.bytes_written
             if not _valid_mp3_header(result.audio_path):
                 raise NarrationError("segment QA: provider returned invalid MP3")
-            if provider.supports_native_timing and not result.timing:
-                raise NarrationError("segment QA: native timing promised but absent")
             return result
         except Exception as exc:  # noqa: BLE001 - provider boundary must normalize failures
             stats["remote_tts_wall_clock"] += max(0.0, time.monotonic() - request_started)
@@ -496,6 +571,42 @@ async def _synthesize_segment_set(
     completed_lock = asyncio.Lock()
     bundle_segment_root.mkdir(parents=True, exist_ok=True)
 
+    def normalize_cached_metadata(
+        fingerprint: str,
+        cache_audio: Path,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = dict(metadata)
+        raw_duration = payload.get("audio_duration_seconds")
+        try:
+            audio_duration = float(raw_duration)
+        except (TypeError, ValueError):
+            audio_duration = math.nan
+        migrated = False
+        if not math.isfinite(audio_duration) or audio_duration <= 0:
+            audio_duration, duration_source = _probe_audio_duration(
+                cache_audio,
+                stats,
+                source="ffprobe-minimal-cache-migration",
+            )
+            payload["audio_duration_seconds"] = audio_duration
+            payload["audio_duration_source"] = duration_source
+            migrated = True
+        timing_source, timing, native_available = _validate_native_timing(
+            list(payload.get("timing") or []),
+            audio_duration_seconds=audio_duration,
+        )
+        if payload.get("timing_source") != timing_source:
+            migrated = True
+        payload["timing_source"] = timing_source
+        payload["timing"] = timing
+        payload["native_timing_available"] = native_available
+        payload["native_duration_seconds"] = _native_duration(timing)
+        if migrated:
+            cache.update_metadata(fingerprint, payload)
+            stats["cache_metadata_migrations"] += 1
+        return payload
+
     async def one(segment: PhysicalSegment) -> dict[str, Any]:
         nonlocal failure_streak, completed
         fingerprint = segment_fingerprint(
@@ -512,6 +623,7 @@ async def _synthesize_segment_set(
         if cached is not None:
             stats["cache_hits"] += 1
             cache_audio, metadata = cached
+            metadata = normalize_cached_metadata(fingerprint, cache_audio, metadata)
         else:
             stats["cache_misses"] += 1
             async with semaphore:
@@ -528,12 +640,20 @@ async def _synthesize_segment_set(
                         output=temp,
                         stats=stats,
                     )
+                    audio_duration, duration_source = _probe_audio_duration(temp, stats)
+                    timing_source, timing, native_available = _validate_native_timing(
+                        list(result.timing),
+                        audio_duration_seconds=audio_duration,
+                    )
                 except Exception:
                     async with breaker_lock:
                         failure_streak += 1
+                    temp.unlink(missing_ok=True)
                     raise
                 async with breaker_lock:
                     failure_streak = 0
+                if provider.supports_native_timing and not native_available:
+                    stats["native_timing_absent_responses"] += 1
                 metadata = {
                     "segment_id": segment.segment_id,
                     "section_id": segment.section_id,
@@ -545,9 +665,12 @@ async def _synthesize_segment_set(
                     "provider_version": provider.provider_version,
                     "pronunciation_profile_version": segment.pronunciation_profile_version,
                     "output_format": provider.output_format,
-                    "timing_source": "provider-native" if result.timing else "fallback",
-                    "timing": list(result.timing),
-                    "native_duration_seconds": _native_duration(result.timing),
+                    "audio_duration_seconds": audio_duration,
+                    "audio_duration_source": duration_source,
+                    "timing_source": timing_source,
+                    "timing": timing,
+                    "native_timing_available": native_available,
+                    "native_duration_seconds": _native_duration(timing),
                     "provider_success": True,
                 }
                 cache_audio, metadata = cache.store(fingerprint, temp, metadata)
@@ -566,8 +689,11 @@ async def _synthesize_segment_set(
             "audio_sha256": metadata["audio_sha256"],
             "bytes": metadata["bytes"],
             "cache_hit": cache_hit,
-            "timing_source": metadata.get("timing_source") or "fallback",
-            "timing": metadata.get("timing") or [],
+            "audio_duration_seconds": float(metadata["audio_duration_seconds"]),
+            "audio_duration_source": str(metadata.get("audio_duration_source") or "cache-metadata"),
+            "timing_source": str(metadata.get("timing_source") or "proportional-fallback"),
+            "timing": list(metadata.get("timing") or []),
+            "native_timing_available": bool(metadata.get("native_timing_available")),
             "native_duration_seconds": float(metadata.get("native_duration_seconds") or 0.0),
             "provider_success": bool(metadata.get("provider_success")),
         }
@@ -623,9 +749,9 @@ async def calibrate_voice_rate(
         stats=stats,
     )
     pilot_words = sum(int(item["word_count"]) for item in pilot_results)
-    pilot_duration = sum(float(item["native_duration_seconds"] or 0.0) for item in pilot_results)
+    pilot_duration = sum(float(item["audio_duration_seconds"] or 0.0) for item in pilot_results)
     if pilot_duration <= 0:
-        raise NarrationError("calibration pilot has no usable provider timing")
+        raise NarrationError("calibration pilot has no usable physical audio duration")
     observed_wpm = pilot_words * 60.0 / pilot_duration
     projected_duration = total_words * 60.0 / observed_wpm
     natural = 90.0 <= observed_wpm <= 180.0
@@ -648,6 +774,10 @@ async def calibrate_voice_rate(
         "pilot_word_count": pilot_words,
         "pilot_duration_seconds": pilot_duration,
         "pilot_observed_wpm": observed_wpm,
+        "pilot_timing_sources": [item["timing_source"] for item in pilot_results],
+        "audio_duration_sources": sorted({item["audio_duration_source"] for item in pilot_results}),
+        "AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING": True,
+        "NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE": True,
         "projected_full_duration_seconds": projected_duration,
         "configured_rate": configured_rate,
         "clamped_initial_rate": _format_rate(rate_percent),
@@ -734,20 +864,20 @@ def _timing_and_sections(
     master_duration: float,
     sections: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    basis = [max(0.001, float(item.get("native_duration_seconds") or 0.0)) for item in records]
+    basis = [max(0.001, float(item.get("audio_duration_seconds") or 0.0)) for item in records]
     total_basis = sum(basis)
     scale = master_duration / total_basis
     cursor = 0.0
     timing_segments: list[dict[str, Any]] = []
     section_acc: dict[str, dict[str, Any]] = {}
-    for record, native_duration in zip(records, basis):
-        scaled_duration = native_duration * scale
+    for record, audio_duration in zip(records, basis):
+        scaled_duration = audio_duration * scale
         start = cursor
         end = start + scaled_duration
         native = list(record.get("timing") or [])
         provider_words: list[dict[str, Any]] = []
         if native:
-            native_scale = scaled_duration / max(0.001, native_duration)
+            native_scale = scaled_duration / max(0.001, audio_duration)
             for boundary in native:
                 b_start = start + float(boundary.get("offset_seconds") or 0.0) * native_scale
                 b_duration = max(0.01, float(boundary.get("duration_seconds") or 0.0) * native_scale)
@@ -762,7 +892,10 @@ def _timing_and_sections(
             "start_seconds": start,
             "end_seconds": end,
             "duration_seconds": scaled_duration,
-            "timing_source": "provider-native" if provider_words else "proportional-fallback",
+            "timing_source": str(record.get("timing_source") or ("provider-native" if provider_words else "proportional-fallback")),
+            "audio_duration_seconds": audio_duration,
+            "audio_duration_source": str(record.get("audio_duration_source") or "unknown"),
+            "native_timing_available": bool(record.get("native_timing_available")),
             "words": provider_words,
         })
         section = section_acc.setdefault(record["section_id"], {
@@ -861,6 +994,10 @@ def _new_stats() -> dict[str, Any]:
         "failed_segments": set(),
         "retries": 0,
         "master_normalization_count": 0,
+        "audio_duration_probe_count": 0,
+        "audio_duration_probe_wall_clock": 0.0,
+        "native_timing_absent_responses": 0,
+        "cache_metadata_migrations": 0,
     }
 
 
@@ -999,6 +1136,9 @@ async def generate_narration_bundle_async(
         "calibration": calibration,
         "voice_profile": profile,
         "native_timing_used": bool(timing["native_timing_used"]),
+        "audio_duration_source": "ffprobe-minimal-or-cache-metadata",
+        "AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING": True,
+        "NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE": True,
         "speech_timing_path": str(speech_timing_path),
         "pronunciation_profile_version": PRONUNCIATION_PROFILE_VERSION,
         "pronunciation_profile": list(PRONUNCIATION_ENTRIES),

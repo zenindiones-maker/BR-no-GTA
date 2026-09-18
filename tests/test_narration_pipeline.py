@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.services.narration_pipeline import (
     BUNDLE_VERSION,
@@ -85,6 +86,16 @@ class FakeProvider:
 
 
 class NarrationPipelineTests(unittest.TestCase):
+    def setUp(self):
+        self._duration_probe = patch(
+            "app.services.narration_pipeline._probe_audio_duration",
+            return_value=(1.5, "ffprobe-minimal-test"),
+        )
+        self._duration_probe.start()
+
+    def tearDown(self):
+        self._duration_probe.stop()
+
     def test_segmentation_is_deterministic_and_keeps_editorial_sections(self):
         first = deterministic_segment_script(SECTIONS, target_wpm=125)
         second = deterministic_segment_script(SECTIONS, target_wpm=125)
@@ -238,6 +249,10 @@ class NarrationPipelineTests(unittest.TestCase):
             "segment_id": "A01-tts-001",
             "section_id": "A01",
             "original_text": "Primeiro fato importante.",
+            "audio_duration_seconds": 1.0,
+            "audio_duration_source": "ffprobe-minimal-test",
+            "native_timing_available": True,
+            "timing_source": "provider-native",
             "native_duration_seconds": 1.0,
             "timing": [
                 {"text": "Primeiro", "offset_seconds": 0.0, "duration_seconds": 0.4},

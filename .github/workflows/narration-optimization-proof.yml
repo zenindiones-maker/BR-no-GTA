@@ -85,6 +85,7 @@ jobs:
           set -euo pipefail
           pytest -q \
             tests/test_narration_pipeline.py \
+            tests/test_narration_timing_contract.py \
             tests/test_professional_audiovisual_worker.py \
             tests/test_harness_capability_service.py \
             tests/test_harness_routing_policy_service.py \
@@ -130,6 +131,9 @@ jobs:
               'UNCHANGED_SEGMENT_REUSE':retry.get('SUCCESSFUL_SEGMENTS_REUSED')=='YES',
               'MASTER_NORMALIZATION_ONCE':candidate.get('MASTER_NORMALIZATION_COUNT')==1,
               'NATIVE_TIMING_USED_WHEN_AVAILABLE':candidate.get('NATIVE_TIMING_USED') is True,
+              'AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING':comparison.get('AUDIO_DURATION_INDEPENDENT_OF_NATIVE_TIMING')=='PASS',
+              'NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE':comparison.get('NATIVE_TIMING_CAPABILITY_NOT_RESPONSE_GUARANTEE')=='PASS',
+              'AUDIO_DURATION_SOURCE_RECORDED':bool(comparison.get('AUDIO_DURATION_SOURCE')),
               'RENDER_RETRY_REUSES_NARRATION':render_retry.get('NARRATION_CACHE_HIT')=='100%' and render_retry.get('REDUNDANT_TTS_REQUESTS')==0,
               'FINAL_FULL_AUDIO_DECODE':candidate.get('FULL_DECODE_COUNT')==1,
               'LOUDNESS_QA':abs(float(candidate.get('LOUDNESS'))+16.0)<=0.8 and float(candidate.get('TRUE_PEAK'))<=-1.4,
@@ -138,6 +142,7 @@ jobs:
               'HARNESS_AUTHORITY_PRESERVED':comparison.get('HARNESS_AUTHORITY_PRESERVED')=='YES',
               'JOB18_UNCHANGED':comparison.get('JOB18_UNCHANGED')=='YES',
               'PUBLICATION_AUTHORITY_UNCHANGED':comparison.get('PUBLICATION_AUTHORITY_UNCHANGED')=='YES',
+              'PROOF_PACKAGE_SIZE_REDUCED_PREUPLOAD':comparison.get('PROOF_ARTIFACT_SIZE_REDUCED')=='OBSERVED_PREUPLOAD_PACKAGE',
           }
           for key,passed in checks.items():
               print(f'{key}={"PASS" if passed else "FAIL"}')
@@ -168,7 +173,11 @@ jobs:
               state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
           else:
               state['status']='READY'
-          (root/'telegram-ab-review-delivery.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
+          payload=json.dumps(state,indent=2)
+          (root/'telegram-ab-review-delivery.json').write_text(payload,encoding='utf-8')
+          package=Path('runtime/narration-proof-package')
+          if package.is_dir():
+              (package/'telegram-ab-review-delivery.json').write_text(payload,encoding='utf-8')
           print(state['status']); print(state['reason'] or 'TELEGRAM_AB_REVIEW_READY')
           PY
           status="$(python -c "import json;print(json.load(open('runtime/narration-proof/telegram-ab-review-delivery.json'))['status'])")"
@@ -189,15 +198,28 @@ jobs:
           path=Path('runtime/narration-proof/telegram-ab-review-delivery.json')
           payload=json.loads(path.read_text())
           payload.update({'status':'SENT','sample_count':int(os.environ['SENT_COUNT']),'human_feedback_status':'PENDING'})
-          path.write_text(json.dumps(payload,indent=2),encoding='utf-8')
+          rendered=json.dumps(payload,indent=2)
+          path.write_text(rendered,encoding='utf-8')
+          package=Path('runtime/narration-proof-package')
+          if package.is_dir():
+              (package/'telegram-ab-review-delivery.json').write_text(rendered,encoding='utf-8')
           print('TELEGRAM_AB_REVIEW_SAMPLES_SENT='+os.environ['SENT_COUNT'])
           PY
 
-      - name: Upload narration proof and A/B review package
+      - name: Upload compact narration optimization proof package
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: narration-optimization-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          path: runtime/narration-proof/
+          path: runtime/narration-proof-package/
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload reusable production narration bundle separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-bundle-video-a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/narration-proof/candidate/narration-bundle/
+          if-no-files-found: warn
           retention-days: 30
