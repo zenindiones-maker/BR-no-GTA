@@ -34,6 +34,9 @@ from app.services.telegram_reasoning_learning_service import (
     TELEGRAM_REASONING_TASK_CLASS,
     capture_telegram_reasoning_outcome,
 )
+from app.services.telegram_source_intelligence_service import (
+    process_telegram_source_intelligence,
+)
 
 
 TELEGRAM_ASSET_CAPABILITY_ID = "telegram.asset.register"
@@ -168,6 +171,21 @@ def _capability_context() -> list[dict[str, Any]]:
 
 
 def _compact_fresh_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    submitted = packet.get("submitted_source")
+    compact_submitted = None
+    if isinstance(submitted, dict):
+        compact_submitted = {
+            "resolution_status": submitted.get("resolution_status"),
+            "source_name": submitted.get("source_name"),
+            "url": submitted.get("url"),
+            "resolved_url": submitted.get("resolved_url"),
+            "platform": submitted.get("platform"),
+            "retrieved_at": submitted.get("retrieved_at"),
+            "source_hierarchy": submitted.get("source_hierarchy"),
+            "original_source_retrieved": submitted.get("original_source_retrieved"),
+            "content_excerpt": str(submitted.get("content_excerpt") or "")[:7000],
+            "content_sha256": submitted.get("content_sha256"),
+        }
     official: list[dict[str, Any]] = []
     for source in (packet.get("official_sources") or [])[:3]:
         if not isinstance(source, dict):
@@ -200,6 +218,9 @@ def _compact_fresh_packet(packet: dict[str, Any]) -> dict[str, Any]:
         "checked_at": packet.get("checked_at"),
         "official_source_count": packet.get("official_source_count"),
         "secondary_source_count": packet.get("secondary_source_count"),
+        "source_content_resolution": packet.get("source_content_resolution"),
+        "submitted_source": compact_submitted,
+        "telegram_context": packet.get("telegram_context") or {},
         "official_sources": official,
         "secondary_sources": secondary,
         "source_errors": (packet.get("source_errors") or [])[:8],
@@ -211,6 +232,7 @@ def _chat_context(
     message: str,
     *,
     fresh_packet: dict[str, Any] | None = None,
+    source_intelligence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observation = build_gta6_observation()
     knowledge = query_gta6_knowledge_context(query=message)
@@ -225,6 +247,7 @@ def _chat_context(
         "knowledge": knowledge_context_to_dict(knowledge) if knowledge is not None else None,
         "capabilities": _capability_context(),
         "fresh_research": _compact_fresh_packet(fresh_packet) if fresh_packet is not None else None,
+        "source_intelligence": source_intelligence,
     }
 
 
@@ -245,8 +268,12 @@ def chat_under_harness(
     if len(text) > 8000:
         raise ValueError("Telegram chat message is too long")
 
-    freshness_required = requires_fresh_research(text)
+    freshness_required = requires_fresh_research(
+        text,
+        input_context=input_record,
+    )
     fresh = None
+    source_intelligence = None
     if freshness_required:
         _emit(
             progress_callback,
@@ -254,7 +281,10 @@ def chat_under_harness(
             "🔎 Pesquisa atual obrigatória: consultando fontes oficiais da Rockstar e fontes configuradas no cloud...",
         )
         try:
-            fresh = research_fresh_gta6_under_harness(text)
+            fresh = research_fresh_gta6_under_harness(
+                text,
+                source_context=input_record,
+            )
         except FreshResearchError as exc:
             return {
                 "answer": (
@@ -289,6 +319,44 @@ def chat_under_harness(
             "VALIDATION",
             f"✅ Evidência fresca coletada em {fresh.checked_at}. Validando hierarquia de fontes antes do raciocínio...",
         )
+        if (
+            input_record is not None
+            and str(input_record.get("classification") or "").lower() == "news"
+            and str(input_record.get("source_url") or "").strip()
+        ):
+            source_intelligence = process_telegram_source_intelligence(
+                input_record=input_record,
+                fresh_evidence=fresh,
+            )
+            if source_intelligence.get("SOURCE_CONTENT_RESOLVED") == "FAIL":
+                return {
+                    "answer": (
+                        "Não consegui recuperar o conteúdo original desse link de forma verificável. "
+                        "Registrei a fonte para rastreabilidade, mas não tratei o conteúdo inferido como fato "
+                        "nem o promovi para memória. Ação editorial: REJECT_LOW_EVIDENCE."
+                    ),
+                    "authority": HARNESS_ISSUER,
+                    "authorized_action": "RESEARCH",
+                    "routing_id": None,
+                    "authorization_id": None,
+                    "execution_id": fresh.execution_id,
+                    "capability_id": "gta6.research.fresh-cloud",
+                    "provider": None,
+                    "model": None,
+                    "fallback_occurred": False,
+                    "zero_cost_operation": True,
+                    "fresh_research_required": True,
+                    "fresh_research_status": "PASS",
+                    "fresh_research_checked_at": fresh.checked_at,
+                    "fresh_research_routing_id": fresh.routing_id,
+                    "fresh_research_execution_ref": fresh.execution_ref,
+                    "official_source_count": fresh.official_source_count,
+                    "secondary_source_count": fresh.secondary_source_count,
+                    "source_intelligence": source_intelligence,
+                    "INPUT_MEMORY_CAPTURED": "PASS",
+                    "EXECUTION_OUTCOME_LEARNED": "NOT_APPLICABLE",
+                    "USER_GOAL_COMPLETED": "YES",
+                }
 
     telegram_goal = None
     if input_record is not None:
@@ -324,6 +392,10 @@ def chat_under_harness(
             "telegram_update_id": input_record.get("telegram_update_id"),
             "memory_event_id": input_record.get("memory_event_id"),
             "memory_id": input_record.get("memory_id"),
+            "classification": input_record.get("classification"),
+            "input_kind": input_record.get("input_kind"),
+            "source_url": input_record.get("source_url"),
+            "source_state": input_record.get("source_state"),
         }
 
     authorization = issue_harness_authorization(
@@ -341,12 +413,21 @@ def chat_under_harness(
             "fresh_research_required": freshness_required,
             "fresh_research_execution_id": fresh.execution_id if fresh is not None else None,
             "fresh_research_routing_id": fresh.routing_id if fresh is not None else None,
+            "source_candidate_id": (
+                (source_intelligence.get("source_candidate") or {}).get("candidate_id")
+                if isinstance(source_intelligence, dict) else None
+            ),
+            "editorial_signal_id": (
+                (source_intelligence.get("editorial_signal") or {}).get("signal_id")
+                if isinstance(source_intelligence, dict) else None
+            ),
         },
     )
 
     context = _chat_context(
         text,
         fresh_packet=fresh.packet if fresh is not None else None,
+        source_intelligence=source_intelligence,
     )
     prompt = (
         "Você é a interface conversacional do BR-no-GTA subordinada ao DeepSeek Harness. "
@@ -362,7 +443,10 @@ def chat_under_harness(
         "5) Se EVIDENCIA_FRESCA estiver presente e PASS, não diga que você não tem acesso atual às fontes; informe o horário checked_at quando relevante e use URLs reais do pacote.\n"
         "6) Se houver conflito entre memória antiga e fonte oficial fresca, trate a memória antiga como obsoleta e explique a atualização.\n"
         "7) Para perguntas sobre o próprio sistema, use apenas CAPABILITIES presentes no contexto; não prometa funções ausentes ou não comprovadas.\n"
-        "8) Diferencie claramente FATO OFICIAL, REPORTAGEM/SECUNDÁRIA, RUMOR/SINAL DA COMUNIDADE e IDEIA DO USUÁRIO.\n\n"
+        "8) Diferencie claramente FATO OFICIAL, REPORTAGEM/SECUNDÁRIA, RUMOR/SINAL DA COMUNIDADE e IDEIA DO USUÁRIO.\n"
+        "9) Para links enviados no Telegram, só descreva o que o link diz quando SOURCE_CONTENT_RESOLUTION=PASS; se falhar, não infira conteúdo.\n"
+        "10) OFFICIAL_PRIMARY exige artifact recuperado diretamente de Rockstar/Take-Two. Matéria que relata fala primária continua sendo PRIMARY_STATEMENT_REPORTED_BY_SECONDARY.\n"
+        "11) MEMORY_ID de ingress não prova verificação. Use apenas claims VERIFIED/MEMORY_ELIGIBLE da SOURCE_INTELLIGENCE como fatos aprendidos.\n\n"
         f"CONTEXTO_CANONICO={json.dumps(context, ensure_ascii=False, default=str)}\n\n"
         f"MENSAGEM_USUARIO={text}"
     )
@@ -463,6 +547,7 @@ def chat_under_harness(
         "fresh_research_checked_at": fresh.checked_at if fresh is not None else None,
         "fresh_research_routing_id": fresh.routing_id if fresh is not None else None,
         "fresh_research_execution_ref": fresh.execution_ref if fresh is not None else None,
+        "source_intelligence": source_intelligence,
         "official_source_count": fresh.official_source_count if fresh is not None else 0,
         "secondary_source_count": fresh.secondary_source_count if fresh is not None else 0,
         "INPUT_MEMORY_CAPTURED": (
