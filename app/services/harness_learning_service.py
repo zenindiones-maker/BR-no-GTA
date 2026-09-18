@@ -135,6 +135,7 @@ class HarnessEpisode:
     run_ref: str | None = None
     artifact_refs: tuple[str, ...] = ()
     source_versions: dict[str, str] | None = None
+    lineage: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         for field in (
@@ -165,6 +166,7 @@ class HarnessEpisode:
         data["routing_decision"] = dict(self.routing_decision or {})
         data["qa_results"] = dict(self.qa_results or {})
         data["source_versions"] = dict(self.source_versions or {})
+        data["lineage"] = dict(self.lineage or {})
         return data
 
 
@@ -183,6 +185,8 @@ class LearningCandidate:
     baseline_version: str | None = None
     candidate_version: str | None = None
     contradiction_check: dict[str, Any] | None = None
+    implementation_ref: str | None = None
+    acceptance_criteria: dict[str, Any] | None = None
     status: str = "CANDIDATE"
     created_at: str = ""
 
@@ -205,6 +209,7 @@ class LearningCandidate:
     def to_record(self) -> dict[str, Any]:
         data = asdict(self)
         data["contradiction_check"] = dict(self.contradiction_check or {})
+        data["acceptance_criteria"] = dict(self.acceptance_criteria or {})
         data["promoted_at"] = None
         return data
 
@@ -315,6 +320,7 @@ def record_memory(*, memory_type: str, claim: str, domain: str,
                   agent_id: str | None = None, capability_id: str | None = None,
                   skill_id: str | None = None, skill_version: str | None = None,
                   source_versions: dict[str, str] | None = None,
+                  metadata: dict[str, Any] | None = None,
                   support_count: int = 1, contradiction_count: int = 0,
                   confidence: float = 0.5, status: str = "CANDIDATE") -> dict[str, Any]:
     if memory_type not in MEMORY_TYPES:
@@ -341,6 +347,7 @@ def record_memory(*, memory_type: str, claim: str, domain: str,
         "skill_id": skill_id,
         "skill_version": skill_version,
         "source_versions": dict(source_versions or {}),
+        "metadata": dict(metadata or {}),
     }
     fingerprint = sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     record = {
@@ -410,6 +417,7 @@ def record_human_correction(*, context: str, undesired_behavior: str, desired_be
                             evidence_refs: Iterable[str], goal_id: str | None = None,
                             task_id: str | None = None, affected_agent: str | None = None,
                             affected_capability: str | None = None, affected_skill: str | None = None,
+                            metadata: dict[str, Any] | None = None,
                             scope: str = "LOCAL") -> dict[str, Any]:
     evidence_refs = _refs(evidence_refs)
     if not evidence_refs:
@@ -426,6 +434,7 @@ def record_human_correction(*, context: str, undesired_behavior: str, desired_be
         "affected_capability": affected_capability,
         "affected_skill": affected_skill,
         "evidence_refs": evidence_refs,
+        "metadata": dict(metadata or {}),
         "scope": scope,
     }
     record = {
@@ -455,7 +464,9 @@ def create_learning_candidate(*, candidate_type: str, hypothesis: str, domain: s
                               target_skill_id: str | None = None,
                               baseline_version: str | None = None,
                               candidate_version: str | None = None,
-                              contradiction_check: dict[str, Any] | None = None) -> dict[str, Any]:
+                              contradiction_check: dict[str, Any] | None = None,
+                              implementation_ref: str | None = None,
+                              acceptance_criteria: dict[str, Any] | None = None) -> dict[str, Any]:
     source_episode_ids = _refs(source_episode_ids)
     evidence_refs = _refs(evidence_refs)
     payload = {
@@ -470,6 +481,8 @@ def create_learning_candidate(*, candidate_type: str, hypothesis: str, domain: s
         "target_skill_id": target_skill_id,
         "baseline_version": baseline_version,
         "candidate_version": candidate_version,
+        "implementation_ref": implementation_ref,
+        "acceptance_criteria": dict(acceptance_criteria or {}),
     }
     candidate = LearningCandidate(
         candidate_id=_stable_id("candidate", payload),
@@ -485,6 +498,8 @@ def create_learning_candidate(*, candidate_type: str, hypothesis: str, domain: s
         baseline_version=baseline_version,
         candidate_version=candidate_version,
         contradiction_check=contradiction_check or {"status": "NO_CONTRADICTION_FOUND"},
+        implementation_ref=implementation_ref,
+        acceptance_criteria=dict(acceptance_criteria or {}),
     )
     existing = repository.get_learning_candidate(candidate.candidate_id)
     if existing is not None:
@@ -529,6 +544,10 @@ def evaluate_candidate(*, candidate_id: str, baseline_metrics: dict[str, Any],
     candidate = repository.get_learning_candidate(candidate_id)
     if candidate is None:
         raise ValueError("learning candidate not found")
+    if candidate.get("implementation_ref"):
+        raise PermissionError(
+            "executable candidates require evaluation derived from observed results"
+        )
     if trials < 1:
         raise ValueError("evaluation requires at least one trial")
     baseline = _validate_eval_metrics(baseline_metrics, "baseline")
@@ -574,6 +593,10 @@ def evaluate_candidate(*, candidate_id: str, baseline_metrics: dict[str, Any],
         "regression_pass": regression_pass,
         "adversarial_pass": adversarial_pass,
         "critical_regression": critical_regression,
+        "evaluation_mode": "LEGACY_CALLER_ASSERTED",
+        "regression_evidence": {"source": "caller_assertion"},
+        "adversarial_evidence": {"source": "caller_assertion"},
+        "observed_evidence": {},
         "decision": decision,
         "evidence_refs": evidence_refs,
         "created_at": _utcnow(),
@@ -586,10 +609,147 @@ def evaluate_candidate(*, candidate_id: str, baseline_metrics: dict[str, Any],
     return persisted
 
 
+
+def evaluate_candidate_from_observed_results(
+    *,
+    candidate_id: str,
+    baseline_observation: dict[str, Any],
+    candidate_observation: dict[str, Any],
+    regression_observation: dict[str, Any],
+    adversarial_observation: dict[str, Any] | None = None,
+    evidence_refs: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Derive all evaluation gates from persisted/observed execution evidence."""
+    candidate = repository.get_learning_candidate(candidate_id)
+    if candidate is None:
+        raise ValueError("learning candidate not found")
+    if not candidate.get("implementation_ref"):
+        raise ValueError("observed evaluator requires an executable candidate")
+
+    def observed_run(value: dict[str, Any], label: str) -> tuple[dict[str, float], tuple[str, ...], str]:
+        if not isinstance(value, dict) or value.get("observed") is not True:
+            raise ValueError(f"{label} must be an observed execution result")
+        refs = _refs(value.get("evidence_refs") or ())
+        if not refs:
+            raise ValueError(f"{label} requires evidence refs")
+        fingerprint = _require_text(value.get("workload_fingerprint"), f"{label}.workload_fingerprint")
+        return _validate_eval_metrics(dict(value.get("metrics") or {}), label), refs, fingerprint
+
+    baseline, baseline_refs, baseline_workload = observed_run(
+        baseline_observation, "baseline"
+    )
+    challenger, candidate_refs, candidate_workload = observed_run(
+        candidate_observation, "candidate"
+    )
+    if baseline_workload != candidate_workload:
+        raise ValueError("baseline/candidate workload fingerprints differ")
+
+    if not isinstance(regression_observation, dict) or regression_observation.get("observed") is not True:
+        raise ValueError("regression result must be observed")
+    regression_status = str(regression_observation.get("status") or "").upper()
+    if regression_status not in {"PASS", "FAIL"}:
+        raise ValueError("regression status must be PASS or FAIL")
+    regression_refs = _refs(regression_observation.get("evidence_refs") or ())
+    if not regression_refs:
+        raise ValueError("regression observation requires evidence refs")
+    critical_failures = tuple(
+        str(item) for item in (regression_observation.get("critical_failures") or ())
+        if str(item)
+    )
+
+    adversarial = dict(adversarial_observation or {
+        "observed": True,
+        "status": "N/A",
+        "reason": "No adversarial surface is applicable to deterministic encoder-preset benchmarking.",
+        "evidence_refs": (),
+    })
+    if adversarial.get("observed") is not True:
+        raise ValueError("adversarial result must be observed or explicit N/A")
+    adversarial_status = str(adversarial.get("status") or "").upper()
+    if adversarial_status not in {"PASS", "FAIL", "N/A"}:
+        raise ValueError("adversarial status must be PASS, FAIL, or N/A")
+    if adversarial_status == "N/A" and not str(adversarial.get("reason") or "").strip():
+        raise ValueError("adversarial N/A requires a justification")
+    adversarial_refs = _refs(adversarial.get("evidence_refs") or ())
+
+    regression_pass = regression_status == "PASS"
+    adversarial_gate = adversarial_status in {"PASS", "N/A"}
+    critical_regression = bool(critical_failures)
+    non_regression = (
+        challenger["task_success_rate"] >= baseline["task_success_rate"]
+        and challenger["quality"] >= baseline["quality"]
+        and challenger["policy_violations"] <= baseline["policy_violations"]
+    )
+
+    criteria = dict(candidate.get("acceptance_criteria") or {})
+    minimum_latency_reduction = float(
+        criteria.get("min_latency_reduction_fraction", 0.0)
+    )
+    latency_reduction = 0.0
+    if baseline["latency_seconds"] > 0:
+        latency_reduction = (
+            baseline["latency_seconds"] - challenger["latency_seconds"]
+        ) / baseline["latency_seconds"]
+    measurable_improvement = (
+        latency_reduction >= minimum_latency_reduction
+        and challenger["latency_seconds"] < baseline["latency_seconds"]
+    )
+    hard_gate = regression_pass and adversarial_gate and not critical_regression
+
+    if hard_gate and non_regression and measurable_improvement:
+        decision = "PROMOTE"
+    elif not hard_gate or not non_regression:
+        decision = "REJECT_REGRESSION"
+    else:
+        decision = "REJECT_NO_MEASURABLE_IMPROVEMENT"
+
+    combined_refs = _refs(dict.fromkeys([
+        *baseline_refs,
+        *candidate_refs,
+        *regression_refs,
+        *adversarial_refs,
+        *_refs(evidence_refs),
+    ]).keys())
+    record = {
+        "evaluation_id": _stable_id("eval", {
+            "candidate_id": candidate_id,
+            "baseline": baseline,
+            "candidate": challenger,
+            "workload_fingerprint": baseline_workload,
+            "evidence_refs": combined_refs,
+        }),
+        "candidate_id": candidate_id,
+        "baseline_metrics": baseline,
+        "candidate_metrics": challenger,
+        "trials": 2,
+        "regression_pass": regression_pass,
+        "adversarial_pass": adversarial_gate,
+        "critical_regression": critical_regression,
+        "evaluation_mode": "OBSERVED",
+        "regression_evidence": dict(regression_observation),
+        "adversarial_evidence": adversarial,
+        "observed_evidence": {
+            "baseline": dict(baseline_observation),
+            "candidate": dict(candidate_observation),
+            "workload_fingerprint": baseline_workload,
+            "latency_reduction_fraction": latency_reduction,
+            "minimum_latency_reduction_fraction": minimum_latency_reduction,
+        },
+        "decision": decision,
+        "evidence_refs": combined_refs,
+        "created_at": _utcnow(),
+    }
+    persisted = repository.insert_evaluation(record)
+    repository.update_learning_candidate_status(
+        candidate_id,
+        "EVALUATED" if decision == "PROMOTE" else "REJECTED",
+    )
+    return persisted
+
 def register_skill_version(*, skill_id: str, version: str, content_ref: str, checksum: str,
                            status: str, evidence_refs: Iterable[str],
                            parent_version: str | None = None) -> dict[str, Any]:
-    return repository.insert_version(
+    persisted = repository.insert_version(
         table="harness_skill_versions",
         identity_field="skill_id",
         record={
@@ -605,11 +765,10 @@ def register_skill_version(*, skill_id: str, version: str, content_ref: str, che
         },
     )
 
-
 def register_policy_version(*, policy_id: str, version: str, content_ref: str, checksum: str,
                             status: str, evidence_refs: Iterable[str],
                             parent_version: str | None = None) -> dict[str, Any]:
-    return repository.insert_version(
+    persisted = repository.insert_version(
         table="harness_policy_versions",
         identity_field="policy_id",
         record={
@@ -625,7 +784,6 @@ def register_policy_version(*, policy_id: str, version: str, content_ref: str, c
         },
     )
 
-
 def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
                       authorization: HarnessAuthorization | dict[str, Any] | str,
                       memory_claim: str, memory_type: str,
@@ -635,6 +793,8 @@ def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
         raise ValueError("learning candidate not found")
     if evaluation.get("candidate_id") != candidate_id or evaluation.get("decision") != "PROMOTE":
         raise PermissionError("candidate cannot be promoted without a passing evaluation")
+    if candidate.get("implementation_ref") and evaluation.get("evaluation_mode") != "OBSERVED":
+        raise PermissionError("executable candidate promotion requires observed evaluation")
     authorization = validate_harness_authorization(
         authorization,
         expected_action="EXECUTION",
@@ -644,23 +804,45 @@ def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
     repository.update_learning_candidate_status(candidate_id, "PROMOTED", promoted_at=promoted_at)
 
     if candidate.get("target_skill_id") and candidate.get("candidate_version") and candidate["candidate_type"] == "SKILL_UPDATE":
-        repository.update_version_status(
+        version_record = repository.get_version(
             table="harness_skill_versions",
             identity_field="skill_id",
             identity=candidate["target_skill_id"],
             version=candidate["candidate_version"],
-            status="ACTIVE",
+        )
+        if version_record is None:
+            raise PermissionError("candidate executable skill version is not registered")
+        if candidate.get("implementation_ref") and version_record.get("content_ref") != candidate["implementation_ref"]:
+            raise PermissionError("candidate implementation_ref does not match registered executable version")
+        repository.activate_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=candidate["target_skill_id"],
+            version=candidate["candidate_version"],
             promoted_at=promoted_at,
+        )
+        mark_stale_memories_for_version_change(
+            current_versions={
+                "skill": candidate["candidate_version"],
+                f"skill:{candidate['target_skill_id']}": candidate["candidate_version"],
+            },
+            domain=candidate["domain"],
         )
     if candidate.get("candidate_version") and candidate["candidate_type"] == "ROUTING_POLICY_CHANGE":
         policy_id = candidate.get("target_skill_id") or "harness-routing-policy"
-        repository.update_version_status(
+        repository.activate_version(
             table="harness_policy_versions",
             identity_field="policy_id",
             identity=policy_id,
             version=candidate["candidate_version"],
-            status="ACTIVE",
             promoted_at=promoted_at,
+        )
+        mark_stale_memories_for_version_change(
+            current_versions={
+                "policy": candidate["candidate_version"],
+                f"policy:{policy_id}": candidate["candidate_version"],
+            },
+            domain=candidate["domain"],
         )
 
     memory = record_memory(
@@ -675,6 +857,12 @@ def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
         skill_id=candidate.get("target_skill_id"),
         skill_version=candidate.get("candidate_version"),
         source_versions=source_versions,
+        metadata={
+            "promotion_authorization_id": authorization.authorization_id,
+            "implementation_ref": candidate.get("implementation_ref"),
+            "evaluation_id": evaluation.get("evaluation_id"),
+            "evaluation_mode": evaluation.get("evaluation_mode"),
+        },
         support_count=max(1, int(evaluation.get("trials") or 1)),
         contradiction_count=0,
         confidence=min(1.0, 0.5 + min(int(evaluation.get("trials") or 1), 5) * 0.1),
@@ -743,7 +931,13 @@ def route_harness_request_with_learning(
 def create_improvement_mission(*, trigger_type: str, trigger_refs: Iterable[str],
                                diagnosis: str, hypothesis: str,
                                authorization: HarnessAuthorization | dict[str, Any] | str,
-                               candidate_id: str | None = None) -> dict[str, Any]:
+                               candidate_id: str | None = None,
+                               evidence_considered: Iterable[str] = (),
+                               affected_capability: str | None = None,
+                               affected_config: str | None = None,
+                               objective: str | None = None,
+                               constraints: Iterable[str] = (),
+                               acceptance_criteria: dict[str, Any] | None = None) -> dict[str, Any]:
     authorization = validate_harness_authorization(
         authorization,
         expected_action="EXECUTION",
@@ -755,6 +949,12 @@ def create_improvement_mission(*, trigger_type: str, trigger_refs: Iterable[str]
         "trigger_refs": trigger_refs,
         "diagnosis": _require_text(diagnosis, "diagnosis"),
         "hypothesis": _require_text(hypothesis, "hypothesis"),
+        "evidence_considered": _refs(evidence_considered),
+        "affected_capability": affected_capability,
+        "affected_config": affected_config,
+        "objective": objective,
+        "constraints": _refs(constraints),
+        "acceptance_criteria": dict(acceptance_criteria or {}),
         "candidate_id": candidate_id,
         "harness_decision_id": authorization.harness_decision_id,
         "authorization_id": authorization.authorization_id,
