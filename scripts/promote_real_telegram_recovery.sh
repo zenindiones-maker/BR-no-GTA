@@ -36,13 +36,27 @@ if [[ "${CURRENT_BRANCH}" != "${BRANCH}" ]]; then
   exit 3
 fi
 
-REMOTE_HEAD="$(git ls-remote origin "refs/heads/${BRANCH}" | awk '{print $1}')"
-LOCAL_HEAD="$(git rev-parse HEAD)"
-if [[ -z "${REMOTE_HEAD}" || "${LOCAL_HEAD}" != "${REMOTE_HEAD}" ]]; then
-  echo "TELEGRAM_REAL_RECOVERY=FAIL local HEAD is not the current remote HEAD" >&2
-  echo "LOCAL_HEAD=${LOCAL_HEAD}" >&2
-  echo "REMOTE_HEAD=${REMOTE_HEAD}" >&2
+git fetch --quiet origin "${BRANCH}"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "TELEGRAM_REAL_RECOVERY=FAIL local worktree has uncommitted changes" >&2
   exit 3
+fi
+if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+  echo "TELEGRAM_REAL_RECOVERY=FAIL local worktree has untracked files" >&2
+  exit 3
+fi
+LOCAL_HEAD="$(git rev-parse HEAD)"
+REMOTE_HEAD="$(git rev-parse "origin/${BRANCH}")"
+if [[ "${LOCAL_HEAD}" != "${REMOTE_HEAD}" ]]; then
+  if git merge-base --is-ancestor "${LOCAL_HEAD}" "${REMOTE_HEAD}"; then
+    git merge --ff-only "${REMOTE_HEAD}"
+    LOCAL_HEAD="$(git rev-parse HEAD)"
+  else
+    echo "TELEGRAM_REAL_RECOVERY=FAIL local HEAD is not an ancestor of current remote HEAD" >&2
+    echo "LOCAL_HEAD=${LOCAL_HEAD}" >&2
+    echo "REMOTE_HEAD=${REMOTE_HEAD}" >&2
+    exit 3
+  fi
 fi
 
 echo "TELEGRAM_REAL_RECOVERY_HEAD=${LOCAL_HEAD}"
