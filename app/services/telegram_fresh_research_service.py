@@ -31,6 +31,7 @@ FRESH_RESEARCH_EXECUTOR_BINDING = (
     "app.services.telegram_fresh_research_service.execute_fresh_gta6_research_capability"
 )
 FRESH_RESEARCH_ARTIFACT = "gta6-fresh-research"
+FRESH_RESEARCH_TASK_CLASS = "telegram-source-fresh-research"
 
 
 class FreshResearchError(RuntimeError):
@@ -299,19 +300,28 @@ def research_fresh_gta6_under_harness(
     transport: FreshResearchTransport | None = None,
     source_context: dict[str, Any] | None = None,
 ) -> FreshResearchEvidence:
+    context = dict(source_context or {})
+    telegram_input_id = context.get("id")
+    goal_id = (
+        f"telegram-source:{telegram_input_id}"
+        if telegram_input_id is not None
+        else None
+    )
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent="collect fresh current GTA6 evidence from official Rockstar and configured sources",
             authorized_action="RESEARCH",
             domain="research",
+            task_class=FRESH_RESEARCH_TASK_CLASS,
+            goal_id=goal_id,
             required_capability_id=FRESH_RESEARCH_CAPABILITY_ID,
             required_policy_tags=("gta6", "research", "fresh", "cloud", "evidence"),
             provider_required=False,
             fallback_allowed=False,
             zero_cost_operation=True,
+            learning_required=True,
         )
     )
-    context = dict(source_context or {})
     authorization = issue_harness_authorization(
         authorized_action="RESEARCH",
         subject=f"capability:{FRESH_RESEARCH_CAPABILITY_ID}",
@@ -321,6 +331,8 @@ def research_fresh_gta6_under_harness(
             "selected_executor_binding": routing.selected_executor_binding,
             "ingress": "telegram",
             "freshness_required": True,
+            "task_class": FRESH_RESEARCH_TASK_CLASS,
+            "goal_id": goal_id,
             "classification": context.get("classification"),
             "input_kind": context.get("input_kind"),
             "source_url": context.get("source_url"),
