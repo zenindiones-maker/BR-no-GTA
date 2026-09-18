@@ -8,6 +8,7 @@ import math
 import os
 import re
 import subprocess
+import time
 import shutil
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,11 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.narration_pipeline import NarrationError, generate_narration_bundle, load_narration_bundle
+from app.services.operational_efficiency_policy import (
+    POLICY_ID as EFFICIENCY_POLICY_ID,
+    POLICY_VERSION as EFFICIENCY_POLICY_VERSION,
+    validate_observability_event,
+)
 from app.services.render_media_materializer import materialize_scenes
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
@@ -824,11 +830,13 @@ def _refresh_final_qa(folder: Path, job: dict[str, Any], expected_duration: floa
 
 
 def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Path, render_job_path: Path) -> Path:
+    operation_started = time.monotonic()
     initialize_application()
     editorial_metrics = validate_product_job(job)
     root = asset_root / job["execution_id"] / str(job["render_job_id"])
     root.mkdir(parents=True, exist_ok=True)
     prepared_path = root / "professional-inputs.json"
+    preparation_started = time.monotonic()
     if prepared_path.is_file():
         prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
         if prepared.get("status") != "PASS":
@@ -850,6 +858,8 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         (source_paths, media_evidence), (voice_sections, voice_qa) = asyncio.run(prepare_parallel())
         print("PARALLEL_NARRATION_MEDIA_PREPARATION=PASS", flush=True)
 
+    preparation_elapsed = time.monotonic() - preparation_started
+    edit_started = time.monotonic()
     plan, edit_qa, expanded_scenes = _build_edit_plan(
         job,
         voice_sections,
@@ -894,10 +904,15 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         "authority": voice_qa["authority"],
     }
     render_job_path.write_text(json.dumps(effective, ensure_ascii=False, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+    edit_elapsed = time.monotonic() - edit_started
+    render_started = time.monotonic()
     folder = execute(effective, root, output_root, source_job=effective)
+    render_elapsed = time.monotonic() - render_started
     narration_master = root / voice_qa["master_path"]
+    final_mix_started = time.monotonic()
     _replace_source_audio_with_voice(folder, narration_master)
     audiovisual_qa = _refresh_final_qa(folder, effective, plan.duration_seconds)
+    final_mix_qa_elapsed = time.monotonic() - final_mix_started
 
     editorial_qa = dict(job["editorial_qa"])
     editorial_qa.update({
@@ -929,6 +944,39 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         "source_materialization": media_evidence,
         "semantic_links": edit_qa["semantic_links"],
     })
+    voice_stats = dict(voice_qa.get("stats") or {})
+    narration_reused = bool(voice_qa.get("narration_artifact_reused"))
+    output_mp4 = next(path for path in folder.glob("*.mp4") if path.is_file())
+    observability = validate_observability_event({
+        "operation_id": f"render:{job['execution_id']}:{job['render_job_id']}",
+        "capability_id": "production.render.execute",
+        "stage": "complete",
+        "elapsed_seconds": time.monotonic() - operation_started,
+        "cache_hit": 1 if narration_reused else int(voice_stats.get("cache_hits") or 0),
+        "cache_miss": 0 if narration_reused else int(voice_stats.get("cache_misses") or 0),
+        "retry_count": int(voice_stats.get("retries") or 0),
+        "reused_artifacts": (
+            ["narration-bundle"] if narration_reused else
+            [f"narration-segment:{item['segment_id']}" for item in voice_qa.get("section_results", []) if item.get("cache_hit")]
+        ),
+        "external_calls": int(voice_stats.get("tts_request_count") or 0) + len(media_evidence),
+        "output_artifact": output_mp4.name,
+        "stage_elapsed": {
+            "prepare_narration_media_seconds": preparation_elapsed,
+            "edit_plan_seconds": edit_elapsed,
+            "render_seconds": render_elapsed,
+            "final_mix_qa_seconds": final_mix_qa_elapsed,
+        },
+        "encode_count": 1,
+        "decode_count": 1,
+        "download_count": len(media_evidence),
+        "policy_id": EFFICIENCY_POLICY_ID,
+        "policy_version": EFFICIENCY_POLICY_VERSION,
+        "narration_checkpoint_reused": narration_reused,
+        "job18_unchanged": True,
+        "publication_authority": "NONE",
+    })
+    write_json(folder / "operation-observability.json", observability)
     return folder
 
 

@@ -51,6 +51,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Resolve RenderJob transport
         id: render_transport
@@ -211,7 +212,10 @@ jobs:
           git ls-files --error-unmatch video-engine/backend/vedit/render.py
           python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
           python -m unittest discover -s tests -p test_professional_audiovisual_worker.py -v
-          python -m pytest -q tests/test_semantic_ptbr_audio_qa.py
+          python -m pytest -q \
+            tests/test_semantic_ptbr_audio_qa.py \
+            tests/test_narration_pipeline.py \
+            tests/test_operational_efficiency_policy.py
       - name: Setup ingestion JavaScript runtime
         uses: denoland/setup-deno@v2
         with:
@@ -401,6 +405,28 @@ jobs:
           print(f"NATIVE_TIMING_USED={qa.get('native_timing_used')}")
           PY
 
+      - name: Validate narration operational observability
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.operational_efficiency_policy import validate_observability_event
+          files=list(Path('runtime/render/input').glob('**/narration-bundle/narration-observability.json'))
+          if not files:
+              print('NARRATION_OBSERVABILITY=NOT_APPLICABLE')
+              raise SystemExit(0)
+          event=json.loads(files[0].read_text(encoding='utf-8'))
+          validate_observability_event(event)
+          print('NARRATION_OBSERVABILITY=PASS')
+          print('NARRATION_STAGE_ELAPSED=' + json.dumps(event.get('stage_elapsed') or {}, sort_keys=True))
+          print(f"CACHE_HIT={event.get('cache_hit')}")
+          print(f"CACHE_MISS={event.get('cache_miss')}")
+          print(f"RETRY_COUNT={event.get('retry_count')}")
+          print(f"EXTERNAL_CALLS={event.get('external_calls')}")
+          print(f"REUSED_ARTIFACTS={len(event.get('reused_artifacts') or [])}")
+          PY
+
       - name: Checkpoint QA-passed narration artifact
         id: narration_checkpoint
         uses: actions/upload-artifact@v4
@@ -434,6 +460,30 @@ jobs:
               --asset-root runtime/render/input \
               --output-dir runtime/render/output
           fi
+
+      - name: Validate render operational observability
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.operational_efficiency_policy import validate_observability_event
+          files=list(Path('runtime/render/output').glob('**/operation-observability.json'))
+          if not files:
+              raise SystemExit('RENDER_OBSERVABILITY=MISSING')
+          event=json.loads(files[0].read_text(encoding='utf-8'))
+          validate_observability_event(event)
+          if event.get('policy_id')!='br-no-gta.operational-efficiency':
+              raise SystemExit('RENDER_OBSERVABILITY_POLICY_MISMATCH')
+          print('RENDER_OBSERVABILITY=PASS')
+          print('RENDER_STAGE_ELAPSED=' + json.dumps(event.get('stage_elapsed') or {}, sort_keys=True))
+          print(f"CACHE_HIT={event.get('cache_hit')}")
+          print(f"CACHE_MISS={event.get('cache_miss')}")
+          print(f"RETRY_COUNT={event.get('retry_count')}")
+          print(f"EXTERNAL_CALLS={event.get('external_calls')}")
+          print(f"REUSED_ARTIFACTS={len(event.get('reused_artifacts') or [])}")
+          print(f"OUTPUT_ARTIFACT={event.get('output_artifact')}")
+          PY
 
       - name: Apply governed intro and watermark
         run: |
@@ -512,6 +562,8 @@ jobs:
             runtime/render/output/**/fact-check.json
             runtime/render/output/**/script-ptbr.json
             runtime/render/output/**/media-selection-evidence.json
+            runtime/render/output/**/operation-observability.json
+            runtime/render/input/**/narration-bundle/narration-observability.json
             runtime/render/output/**/render-job.json
             runtime/render/output/**/video-probe.json
             runtime/render/output/**/telegram-review.json

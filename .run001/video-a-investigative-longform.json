@@ -514,8 +514,16 @@
   ],
   "narration": {
     "language": "pt-BR",
-    "voice": "pt-BR-AntonioNeural",
-    "rate": "-25%"
+    "voice": "pt-BR-ThalitaMultilingualNeural",
+    "rate": "+0%",
+    "pitch": "+0Hz",
+    "rate_locked": true,
+    "segment_strategy": "semantic-section-v1",
+    "official_profile_id": "br-no-gta-ptbr-official-voice-b-v1",
+    "official_profile_path": ".run001/official-narration-profile.json",
+    "official_profile_sha256": "f3bc54c57b0bf57f44eef3c9f5d0fe64945c2a8da46e4d07dd36e927ab741755",
+    "performance_candidates_auto_promote": false,
+    "human_quality_baseline": "Voice B"
   },
   "script_sections": [
     {

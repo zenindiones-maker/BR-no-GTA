@@ -20,6 +20,7 @@ from app.services.narration_pipeline import (
     deterministic_segment_script,
     script_fingerprint,
     segment_fingerprint,
+    semantic_section_segments,
 )
 
 
@@ -103,6 +104,16 @@ class NarrationPipelineTests(unittest.TestCase):
         self.assertEqual({item.section_id for item in first}, {"A01", "A02"})
         self.assertTrue(all(item.segment_id.startswith(item.section_id + "-tts-") for item in first))
         self.assertTrue(all(item.original_text for item in first))
+
+    def test_semantic_section_strategy_uses_one_retryable_cache_unit_per_section(self):
+        segments = semantic_section_segments(SECTIONS)
+        self.assertEqual(len(segments), len(SECTIONS))
+        self.assertEqual([item.section_id for item in segments], ["A01", "A02"])
+        self.assertTrue(all(item.segment_id.endswith("-semantic-001") for item in segments))
+        self.assertEqual(
+            " ".join(item.original_text for item in segments),
+            " ".join(section["narration"] for section in SECTIONS),
+        )
 
     def test_pronunciation_profile_preserves_original_separately(self):
         original = "GTA VI é publicado pela Rockstar Games e Take-Two acompanha o negócio."

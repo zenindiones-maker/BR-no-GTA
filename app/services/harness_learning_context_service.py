@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.database import harness_learning_repository as repository
+from app.services.operational_efficiency_policy import policy_metadata as operational_efficiency_policy_metadata
 
 
 MIN_COMPETENCE_CASES = 2
@@ -108,6 +109,7 @@ def load_operational_learning_context(
             }
             for item in policies
         ],
+        "mandatory_operational_policies": [operational_efficiency_policy_metadata()],
         "learning_participated": bool(
             memories or failures or feedback or usable_competence or skills or policies
         ),

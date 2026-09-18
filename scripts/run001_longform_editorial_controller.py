@@ -88,6 +88,19 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("long-form acceptance products cannot publish to YouTube")
     if config.get("target_language") != "pt-BR":
         raise ValueError("target_language must be pt-BR")
+    narration = config.get("narration")
+    if not isinstance(narration, dict):
+        raise ValueError("official narration configuration is required")
+    if narration.get("official_profile_id") != "br-no-gta-ptbr-official-voice-b-v1":
+        raise ValueError("VIDEO A must use the human-selected official narration profile")
+    if narration.get("human_quality_baseline") != "Voice B":
+        raise ValueError("Voice B must remain the canonical human quality baseline")
+    if narration.get("rate_locked") is not True or narration.get("rate") != "+0%":
+        raise ValueError("human-selected narration rate must remain locked at +0%")
+    if narration.get("segment_strategy") != "semantic-section-v1":
+        raise ValueError("quality-first semantic section narration strategy is required")
+    if narration.get("performance_candidates_auto_promote") is not False:
+        raise ValueError("performance candidates cannot auto-promote over human narration quality")
     sources = config.get("sources")
     claims = config.get("claims")
     sections = config.get("script_sections")

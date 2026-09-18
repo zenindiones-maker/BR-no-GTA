@@ -13,6 +13,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.services.operational_efficiency_policy import (
+    POLICY_ID as EFFICIENCY_POLICY_ID,
+    POLICY_VERSION as EFFICIENCY_POLICY_VERSION,
+    validate_observability_event,
+)
+
 CAPABILITY_ID = "narration.generate.pt-BR"
 EXECUTOR_BINDING = "app.services.narration_pipeline.execute_narration_capability"
 BUNDLE_VERSION = "narration-bundle/v2"
@@ -264,6 +270,31 @@ def deterministic_segment_script(
                 text_sha256=hashlib.sha256(original_text.encode("utf-8")).hexdigest(),
                 word_count=len(words(original_text)),
             ))
+    return output
+
+
+def semantic_section_segments(sections: list[dict[str, Any]]) -> list[PhysicalSegment]:
+    """One content-addressed synthesis unit per canonical semantic section.
+
+    This is the quality-first long-form baseline: it removes micro-call boundary
+    artifacts while retaining section-local retry/cache/checkpoint behavior.
+    """
+    output: list[PhysicalSegment] = []
+    for order, section in enumerate(sections, start=1):
+        section_id = str(section.get("section_id") or "").strip()
+        original = normalize_text(str(section.get("narration") or ""))
+        if not section_id or not original:
+            raise NarrationError("every narration section requires section_id and narration")
+        synthesis_text, _ = apply_pronunciation_profile(original)
+        output.append(PhysicalSegment(
+            order=order,
+            segment_id=f"{section_id}-semantic-001",
+            section_id=section_id,
+            original_text=original,
+            synthesis_text=normalize_text(synthesis_text),
+            text_sha256=hashlib.sha256(original.encode("utf-8")).hexdigest(),
+            word_count=len(words(original)),
+        ))
     return output
 
 
@@ -1028,7 +1059,16 @@ async def generate_narration_bundle_async(
     if language != "pt-BR" or not voice.startswith("pt-BR-"):
         raise NarrationError("narration bundle requires an explicit pt-BR neural voice")
     target_wpm = float(job.get("target_wpm") or 125.0)
-    physical = deterministic_segment_script(sections, target_wpm=target_wpm)
+    segment_strategy = str(narration.get("segment_strategy") or "microsegment-v1")
+    rate_locked = bool(narration.get("rate_locked") is True)
+    official_profile_id = str(narration.get("official_profile_id") or "")
+    official_profile_sha256 = str(narration.get("official_profile_sha256") or "")
+    if segment_strategy == "semantic-section-v1":
+        physical = semantic_section_segments(sections)
+    elif segment_strategy == "microsegment-v1":
+        physical = deterministic_segment_script(sections, target_wpm=target_wpm)
+    else:
+        raise NarrationError(f"unsupported narration segment strategy: {segment_strategy}")
     total_words = sum(segment.word_count for segment in physical)
     if total_words <= 0:
         raise NarrationError("approved narration script is empty")
@@ -1037,18 +1077,34 @@ async def generate_narration_bundle_async(
     cache = ContentAddressedNarrationCache(cache_root)
     stats = _new_stats()
     calibration_root = bundle_root / "calibration-pilot"
-    effective_rate, calibration = await calibrate_voice_rate(
-        segments=physical,
-        provider=provider,
-        cache=cache,
-        calibration_root=calibration_root,
-        voice=voice,
-        language=language,
-        configured_rate=configured_rate,
-        target_wpm=target_wpm,
-        total_words=total_words,
-        stats=stats,
-    )
+    calibration_started = time.monotonic()
+    if rate_locked:
+        effective_rate = _format_rate(_clamp_rate(configured_rate))
+        calibration = {
+            "source": "human-locked-official-profile",
+            "pilot_used": False,
+            "configured_rate": configured_rate,
+            "effective_rate": effective_rate,
+            "rate_adjusted": False,
+            "full_script_regeneration_count": 0,
+            "official_profile_id": official_profile_id or None,
+            "quality_rule": "human-approved configuration cannot be auto-retuned for duration",
+        }
+    else:
+        effective_rate, calibration = await calibrate_voice_rate(
+            segments=physical,
+            provider=provider,
+            cache=cache,
+            calibration_root=calibration_root,
+            voice=voice,
+            language=language,
+            configured_rate=configured_rate,
+            target_wpm=target_wpm,
+            total_words=total_words,
+            stats=stats,
+        )
+    calibration_elapsed = time.monotonic() - calibration_started
+    synthesis_started = time.monotonic()
     records = await _synthesize_segment_set(
         segments=physical,
         provider=provider,
@@ -1060,6 +1116,7 @@ async def generate_narration_bundle_async(
         concurrency=concurrency,
         stats=stats,
     )
+    synthesis_elapsed = time.monotonic() - synthesis_started
     if calibration_root.is_dir():
         shutil.rmtree(calibration_root)
     master, _ = _assemble_and_master(records, bundle_root, stats)
@@ -1095,6 +1152,10 @@ async def generate_narration_bundle_async(
         "sample_duration_seconds": master_duration,
         "confidence": min(1.0, total_words / 1200.0),
         "pronunciation_profile_version": PRONUNCIATION_PROFILE_VERSION,
+        "segment_strategy": segment_strategy,
+        "rate_locked": rate_locked,
+        "official_profile_id": official_profile_id or None,
+        "official_profile_sha256": official_profile_sha256 or None,
         "last_verified_unix": int(time.time()),
         "evidence_refs": ["narration-qa.json", "speech-timing.json", "narration-manifest.json"],
         "stale_if": ["provider_version changes", "voice changes", "rate semantics changes", "observed provider behavior contradicts profile"],
@@ -1142,6 +1203,10 @@ async def generate_narration_bundle_async(
         "speech_timing_path": str(speech_timing_path),
         "pronunciation_profile_version": PRONUNCIATION_PROFILE_VERSION,
         "pronunciation_profile": list(PRONUNCIATION_ENTRIES),
+        "segment_strategy": segment_strategy,
+        "rate_locked": rate_locked,
+        "official_profile_id": official_profile_id or None,
+        "official_profile_sha256": official_profile_sha256 or None,
         "full_script_calibration_regeneration_count": 0,
         "section_results": section_results,
         "stats": _jsonable_stats(stats),
@@ -1164,6 +1229,10 @@ async def generate_narration_bundle_async(
         "voice": voice,
         "language": language,
         "effective_rate": effective_rate,
+        "segment_strategy": segment_strategy,
+        "rate_locked": rate_locked,
+        "official_profile_id": official_profile_id or None,
+        "official_profile_sha256": official_profile_sha256 or None,
         "pronunciation_profile_version": PRONUNCIATION_PROFILE_VERSION,
         "master": {
             "path": master.name,
@@ -1174,6 +1243,7 @@ async def generate_narration_bundle_async(
         "speech_timing": speech_timing_path.name,
         "voice_profile": "voice-speed-profile.json",
         "qa": qa_path.name,
+        "observability": "narration-observability.json",
         "segments": manifest_segments,
         "lineage": dict(lineage or {}),
         "reconstructible_from": "approved script + provider identity/version + voice/rate + pronunciation profile + segment cache fingerprints",
@@ -1199,6 +1269,39 @@ async def generate_narration_bundle_async(
         "human_feedback_status": "PENDING_AB_REVIEW",
     }
     (bundle_root / "narration-learning-evidence.json").write_text(json.dumps(learning, ensure_ascii=False, indent=2), encoding="utf-8")
+    total_elapsed = time.monotonic() - started
+    observability = validate_observability_event({
+        "operation_id": f"narration:{(lineage or {}).get('execution_id') or script_fingerprint(sections)}",
+        "capability_id": CAPABILITY_ID,
+        "stage": "complete",
+        "elapsed_seconds": total_elapsed,
+        "cache_hit": stats["cache_hits"],
+        "cache_miss": stats["cache_misses"],
+        "retry_count": stats["retries"],
+        "reused_artifacts": [item["segment_id"] for item in records if item.get("cache_hit")],
+        "external_calls": stats["tts_request_count"],
+        "output_artifact": "narration-bundle",
+        "stage_elapsed": {
+            "calibration_seconds": calibration_elapsed,
+            "synthesis_seconds": synthesis_elapsed,
+            "mastering_seconds": stats["mastering_wall_clock"],
+            "qa_seconds": stats["qa_wall_clock"],
+            "total_seconds": total_elapsed,
+        },
+        "process_count": stats["ffmpeg_audio_process_count"] + stats["ffprobe_count"],
+        "encode_count": stats["ffmpeg_audio_process_count"],
+        "decode_count": stats["full_decode_count"],
+        "download_count": 0,
+        "cache_hit_rate": stats["cache_hits"] / max(1, stats["cache_hits"] + stats["cache_misses"]),
+        "policy_id": EFFICIENCY_POLICY_ID,
+        "policy_version": EFFICIENCY_POLICY_VERSION,
+        "segment_strategy": segment_strategy,
+        "rate_locked": rate_locked,
+        "official_profile_id": official_profile_id or None,
+    })
+    (bundle_root / "narration-observability.json").write_text(
+        json.dumps(observability, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     if status != "PASS":
         raise NarrationError(f"master narration QA failed: {checks}")
     return section_results, qa
@@ -1243,6 +1346,16 @@ def load_narration_bundle(
     narration = dict(job.get("narration") or {})
     if manifest.get("voice") != narration.get("voice") or manifest.get("language") != narration.get("language"):
         raise NarrationError("narration artifact voice/language mismatch")
+    expected_strategy = str(narration.get("segment_strategy") or "microsegment-v1")
+    if manifest.get("segment_strategy") != expected_strategy:
+        raise NarrationError("narration artifact segment strategy mismatch")
+    if narration.get("rate_locked") is True:
+        expected_rate = _format_rate(_clamp_rate(str(narration.get("rate") or "+0%")))
+        if manifest.get("effective_rate") != expected_rate:
+            raise NarrationError("narration artifact locked rate mismatch")
+    expected_profile_sha = str(narration.get("official_profile_sha256") or "")
+    if expected_profile_sha and manifest.get("official_profile_sha256") != expected_profile_sha:
+        raise NarrationError("narration artifact official profile checksum mismatch")
     master = bundle_root / str(manifest["master"]["path"])
     if not master.is_file() or _sha256(master) != manifest["master"]["sha256"]:
         raise NarrationError("narration artifact master checksum mismatch")

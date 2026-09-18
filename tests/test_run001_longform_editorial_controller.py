@@ -37,6 +37,19 @@ def test_video_a_contract_is_independent_longform_ptbr_and_review_only():
     assert len({section["section_id"] for section in config["script_sections"]}) == len(config["script_sections"])
 
 
+def test_video_a_uses_human_locked_official_voice_b_profile():
+    config = _config()
+    narration = config["narration"]
+    assert narration["human_quality_baseline"] == "Voice B"
+    assert narration["voice"] == "pt-BR-ThalitaMultilingualNeural"
+    assert narration["rate"] == "+0%"
+    assert narration["pitch"] == "+0Hz"
+    assert narration["rate_locked"] is True
+    assert narration["segment_strategy"] == "semantic-section-v1"
+    assert narration["performance_candidates_auto_promote"] is False
+    assert narration["official_profile_sha256"] == "f3bc54c57b0bf57f44eef3c9f5d0fe64945c2a8da46e4d07dd36e927ab741755"
+
+
 def test_professional_render_config_is_explicit_and_deterministic():
     assert PROFESSIONAL_RENDER_CONFIG == {
         "resolution": "1920x1080",
