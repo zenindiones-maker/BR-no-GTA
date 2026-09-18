@@ -1034,6 +1034,32 @@ def create_improvement_mission(*, trigger_type: str, trigger_refs: Iterable[str]
         "finished_at": None,
     })
 
+def attach_candidate_to_improvement_mission(
+    *,
+    improvement_mission_id: str,
+    candidate_id: str,
+    authorization: HarnessAuthorization | dict[str, Any] | str,
+) -> dict[str, Any]:
+    authorization = validate_harness_authorization(
+        authorization,
+        expected_action="EXECUTION",
+        expected_subject="learning:improvement",
+    )
+    mission = repository.get_improvement_mission(improvement_mission_id)
+    if mission is None:
+        raise ValueError("improvement mission not found")
+    candidate = repository.get_learning_candidate(candidate_id)
+    if candidate is None:
+        raise ValueError("learning candidate not found")
+    if mission.get("affected_capability") and candidate.get("target_capability_id"):
+        if mission["affected_capability"] != candidate["target_capability_id"]:
+            raise PermissionError("candidate capability does not match improvement mission")
+    return repository.attach_candidate_to_improvement_mission(
+        improvement_mission_id,
+        candidate_id=candidate_id,
+    )
+
+
 def complete_improvement_mission(*, improvement_mission_id: str,
                                  authorization: HarnessAuthorization | dict[str, Any] | str) -> dict[str, Any]:
     authorization = validate_harness_authorization(
