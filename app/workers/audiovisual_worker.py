@@ -534,36 +534,46 @@ def execute(job, asset_root, output_root, *, source_job=None):
             # Preserve compatibility with injected legacy render adapters while
             # the real VEdit binding receives progress telemetry.
             render_result = render(project, render_options)
-        runtime_metrics = {
-            "status": "COMPLETED",
-            "wall_clock_seconds": render_result.seconds,
-            "media_duration_seconds": render_result.duration,
-            "realtime_factor": (
-                round(render_result.seconds / render_result.duration, 6)
-                if render_result.duration > 0 else None
-            ),
-            "render_speed_x": (
-                round(render_result.duration / render_result.seconds, 6)
-                if render_result.seconds > 0 else None
-            ),
-            "encoder": render_result.encoder,
-            "size_bytes": render_result.size,
-            "warnings": list(render_result.warnings),
-            "skill_id": learning_binding.get("skill_id"),
-            "skill_version": learning_binding.get("version", "v1-legacy"),
-            "content_ref": learning_binding.get("content_ref"),
-            "checksum": learning_binding.get("checksum"),
-            "encoder_policy": {
-                "codec": bound_options["codec"],
-                "quality": bound_options["quality"],
-                "software_preset": bound_options.get("software_preset"),
-                "prefer_hw": bound_options["prefer_hw"],
-                "hwaccel_decode": bound_options["hwaccel_decode"],
-            },
-        }
-        write_json(folder / "render-runtime.json", runtime_metrics)
-        write_json(progress_path, runtime_metrics)
-        qa["render_runtime"] = runtime_metrics
+        if render_result is None:
+            if learning_binding:
+                raise WorkerError(
+                    "Harness-bound VEdit render returned no runtime evidence"
+                )
+            # Legacy/injected adapters used by compatibility tests predate the
+            # RenderResult telemetry contract. They may still prove the older
+            # worker gates, but can never satisfy a learning-bound execution.
+            runtime_metrics = None
+        else:
+            runtime_metrics = {
+                "status": "COMPLETED",
+                "wall_clock_seconds": render_result.seconds,
+                "media_duration_seconds": render_result.duration,
+                "realtime_factor": (
+                    round(render_result.seconds / render_result.duration, 6)
+                    if render_result.duration > 0 else None
+                ),
+                "render_speed_x": (
+                    round(render_result.duration / render_result.seconds, 6)
+                    if render_result.seconds > 0 else None
+                ),
+                "encoder": render_result.encoder,
+                "size_bytes": render_result.size,
+                "warnings": list(render_result.warnings),
+                "skill_id": learning_binding.get("skill_id"),
+                "skill_version": learning_binding.get("version", "v1-legacy"),
+                "content_ref": learning_binding.get("content_ref"),
+                "checksum": learning_binding.get("checksum"),
+                "encoder_policy": {
+                    "codec": bound_options["codec"],
+                    "quality": bound_options["quality"],
+                    "software_preset": bound_options.get("software_preset"),
+                    "prefer_hw": bound_options["prefer_hw"],
+                    "hwaccel_decode": bound_options["hwaccel_decode"],
+                },
+            }
+            write_json(folder / "render-runtime.json", runtime_metrics)
+            write_json(progress_path, runtime_metrics)
+            qa["render_runtime"] = runtime_metrics
         if not output.is_file() or output.stat().st_size <= 0:
             raise WorkerError("Missing or empty output")
         if len(list(folder.glob("*.mp4"))) != 1:
