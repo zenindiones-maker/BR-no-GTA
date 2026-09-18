@@ -97,3 +97,4 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 # Evidence-only trigger; no promotion is performed by this proof.
+# Retry after native workflow version normalization.
