@@ -23,6 +23,11 @@ from app.services.telegram_reasoning_learning_service import (
     TELEGRAM_REASONING_TASK_CLASS,
     capture_telegram_reasoning_outcome,
 )
+from app.services.opencode_executor_profile_service import (
+    BASELINE_OPENCODE_EXECUTOR_VERSION,
+    OPENCODE_EXECUTOR_SKILL_ID,
+    executable_opencode_executor_profile,
+)
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -332,6 +337,9 @@ def _evidence_from_observation(
         "commit_sha": observation["head_sha"],
         "retry_count": 0,
     }
+    baseline_profile = executable_opencode_executor_profile(
+        BASELINE_OPENCODE_EXECUTOR_VERSION
+    )
     return HarnessAIProviderEvidence(
         provider=str(routing.selected_provider),
         status="FAILED",
@@ -357,6 +365,10 @@ def _evidence_from_observation(
             f"authorization:{authorization['authorization_id']}",
             f"routing:{routing.routing_id}",
         ),
+        provider_profile_skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+        provider_profile_version=BASELINE_OPENCODE_EXECUTOR_VERSION,
+        provider_profile_content_ref=baseline_profile["content_ref"],
+        provider_profile_checksum=baseline_profile["checksum"],
     )
 
 
