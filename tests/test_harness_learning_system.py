@@ -342,34 +342,23 @@ def test_candidate_rejected_when_no_measurable_improvement():
 
 
 def test_skill_and_policy_versions_are_append_only():
-    repository.activate_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity="learning.artifact-integrity",
-        version="v1",
-        promoted_at="2026-09-18T00:00:00+00:00",
-    ) if repository.get_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity="learning.artifact-integrity",
-        version="v1",
-    ) is not None else None
+    skill_id = "test.learning.append-only"
+    policy_id = "test.harness-routing-policy.append-only"
     skill = register_skill_version(
-        skill_id="learning.artifact-integrity", version="v1", content_ref="skill:v1",
+        skill_id=skill_id, version="v1", content_ref="skill:v1",
         checksum="a" * 64, status="ACTIVE", evidence_refs=("evidence:v1",),
     )
     policy = register_policy_version(
-        policy_id="harness-routing-policy", version="v1", content_ref="policy:v1",
+        policy_id=policy_id, version="v1", content_ref="policy:v1",
         checksum="b" * 64, status="ACTIVE", evidence_refs=("evidence:p1",),
     )
     assert skill["version"] == "v1"
     assert policy["version"] == "v1"
     with pytest.raises(Exception):
         register_skill_version(
-            skill_id="learning.artifact-integrity", version="v1", content_ref="overwrite",
+            skill_id=skill_id, version="v1", content_ref="overwrite",
             checksum="c" * 64, status="ACTIVE", evidence_refs=("evidence:overwrite",),
         )
-
 
 def test_promotion_requires_harness_authorization_and_creates_active_procedural_memory():
     candidate = _candidate()
