@@ -233,8 +233,11 @@ def add_failure_memory_observation(
         current = _deserialize(row, _MEMORY_JSON)
         if current.get("memory_type") != "FAILURE":
             raise ValueError("memory is not a failure memory")
+        existing_episode_ids = list(current.get("source_episode_ids") or [])
+        if episode_id in existing_episode_ids:
+            return current
         episodes = list(dict.fromkeys([
-            *(current.get("source_episode_ids") or []),
+            *existing_episode_ids,
             episode_id,
         ]))
         evidence = list(dict.fromkeys([
