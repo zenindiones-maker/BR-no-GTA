@@ -142,7 +142,27 @@ def _reasoning_outcome_evidence(result: dict[str, Any]) -> str:
     )
 
 
-def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
+def _input_presentation_lineage(
+    input_record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(input_record, dict):
+        return {}
+    return {
+        "telegram_input_id": input_record.get("id"),
+        "telegram_message_id": input_record.get("telegram_message_id"),
+        "telegram_update_id": input_record.get("telegram_update_id"),
+        "memory_event_id": input_record.get("memory_event_id"),
+        "classification": input_record.get("classification"),
+        "input_kind": input_record.get("input_kind"),
+        "source_url": input_record.get("source_url"),
+    }
+
+
+def _reasoning_failure_presentation(
+    exc: HarnessReasoningFailure,
+    *,
+    input_record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     payload = exc.to_dict()
     error = payload.get("provider_error")
     error = error if isinstance(error, dict) else {}
@@ -162,17 +182,61 @@ def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
             "Use /evidence para o diagnóstico completo."
         ),
     }
-    presentation = present_canonical_result_under_harness(
+    return present_canonical_result_under_harness(
         canonical_failure,
         surface="telegram",
         mode=ACTION_FIRST,
         lineage={
+            **_input_presentation_lineage(input_record),
             "episode_id": payload.get("episode_id"),
             "failure_memory_id": payload.get("failure_memory_id"),
             "execution_id": payload.get("execution_id"),
         },
     )
-    return str(presentation["text"])
+
+
+def _reasoning_failure_reply(exc: HarnessReasoningFailure) -> str:
+    return str(_reasoning_failure_presentation(exc)["text"])
+
+
+def _generic_failure_presentation(
+    exc: Exception,
+    *,
+    input_record: dict[str, Any] | None = None,
+    command: str | None = None,
+    telegram_message_id: int | None = None,
+    telegram_update_id: int | None = None,
+) -> dict[str, Any]:
+    canonical_failure = {
+        "status": "FAILED",
+        "success": False,
+        "error": {
+            "code": type(exc).__name__,
+            "message": str(exc)[:1200] or type(exc).__name__,
+        },
+        "answer": (
+            "Corrija a causa mostrada acima e repita a ação. "
+            "Use /evidence quando houver input persistido."
+        ),
+    }
+    return present_canonical_result_under_harness(
+        canonical_failure,
+        surface="telegram",
+        mode=ACTION_FIRST,
+        lineage={
+            **_input_presentation_lineage(input_record),
+            "command": command,
+            "telegram_message_id": (
+                _input_presentation_lineage(input_record).get("telegram_message_id")
+                or telegram_message_id
+            ),
+            "telegram_update_id": (
+                _input_presentation_lineage(input_record).get("telegram_update_id")
+                or telegram_update_id
+            ),
+            "presentation_error": type(exc).__name__,
+        },
+    )
 
 
 def _editorial_action(result: dict[str, Any]) -> str | None:
@@ -198,22 +262,11 @@ def _present_chat_v2(
     *,
     input_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    lineage = {}
-    if isinstance(input_record, dict):
-        lineage = {
-            "telegram_input_id": input_record.get("id"),
-            "telegram_message_id": input_record.get("telegram_message_id"),
-            "telegram_update_id": input_record.get("telegram_update_id"),
-            "memory_event_id": input_record.get("memory_event_id"),
-            "classification": input_record.get("classification"),
-            "input_kind": input_record.get("input_kind"),
-            "source_url": input_record.get("source_url"),
-        }
     return present_canonical_result_under_harness(
         result,
         surface="telegram",
         mode=ACTION_FIRST,
-        lineage=lineage,
+        lineage=_input_presentation_lineage(input_record),
     )
 
 
@@ -568,6 +621,8 @@ def main() -> int:
                     continue
 
                 api.typing(chat_id)
+                learned: dict[str, Any] | None = None
+                command_name = text.split()[0] if text.startswith("/") else "natural-language"
                 try:
                     if is_render_review_feedback_message(message, text):
                         learned = _ingest(
@@ -636,7 +691,31 @@ def main() -> int:
                         )
                         command_name = "natural-language"
                 except HarnessReasoningFailure as exc:
-                    reply = _reasoning_failure_reply(exc)
+                    input_record = (
+                        learned.get("input")
+                        if isinstance(learned, dict)
+                        and isinstance(learned.get("input"), dict)
+                        else None
+                    )
+                    presentation = _reasoning_failure_presentation(
+                        exc,
+                        input_record=input_record,
+                    )
+                    reply = str(presentation["text"])
+                    if input_record is not None:
+                        audit = record_telegram_presentation_audit(
+                            telegram_input_id=int(input_record["id"]),
+                            presentation=presentation,
+                            reply_text=reply,
+                        )
+                        print(
+                            "TELEGRAM_PRESENTATION=PASS "
+                            f"MODE={presentation.get('mode')} "
+                            "OUTCOME=FAIL "
+                            f"INPUT_ID={audit.get('telegram_input_id')} "
+                            f"REPLY_SHA256={audit.get('reply_sha256')}",
+                            flush=True,
+                        )
                     payload = exc.to_dict()
                     print(
                         "TELEGRAM_COMMAND=FAIL "
@@ -649,7 +728,34 @@ def main() -> int:
                         flush=True,
                     )
                 except Exception as exc:
-                    reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
+                    input_record = (
+                        learned.get("input")
+                        if isinstance(learned, dict)
+                        and isinstance(learned.get("input"), dict)
+                        else None
+                    )
+                    presentation = _generic_failure_presentation(
+                        exc,
+                        input_record=input_record,
+                        command=command_name,
+                        telegram_message_id=int(message.get("message_id") or 0) or None,
+                        telegram_update_id=update_id,
+                    )
+                    reply = str(presentation["text"])
+                    if input_record is not None:
+                        audit = record_telegram_presentation_audit(
+                            telegram_input_id=int(input_record["id"]),
+                            presentation=presentation,
+                            reply_text=reply,
+                        )
+                        print(
+                            "TELEGRAM_PRESENTATION=PASS "
+                            f"MODE={presentation.get('mode')} "
+                            "OUTCOME=FAIL "
+                            f"INPUT_ID={audit.get('telegram_input_id')} "
+                            f"REPLY_SHA256={audit.get('reply_sha256')}",
+                            flush=True,
+                        )
                     print(
                         f"TELEGRAM_COMMAND=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                         flush=True,
