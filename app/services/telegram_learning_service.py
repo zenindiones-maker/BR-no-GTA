@@ -319,16 +319,19 @@ def execute_telegram_input_ingestion_capability(
         },
     )
     event_id = insert_memory_event(event)
-    claim_id, memory_id = _persist_memory_learning(
-        event_id=event_id,
-        classification=classification,
-        text=text,
-        attachment=attachment,
-    )
     if classification == "news":
-        # User-supplied news/URLs are evidence candidates, never facts at ingress.
+        # User-supplied news/URLs are evidence candidates, never semantic facts
+        # at ingress. Persist provenance + SourceCandidate only; claim/memory
+        # creation is exclusively owned by the verified source-intelligence path.
         claim_id = None
         memory_id = None
+    else:
+        claim_id, memory_id = _persist_memory_learning(
+            event_id=event_id,
+            classification=classification,
+            text=text,
+            attachment=attachment,
+        )
     learning_status = "learned" if memory_id is not None else "captured"
     if classification == "reference_media" and attachment is not None:
         learning_status = "pending_cloud_analysis" if memory_id is not None else "captured"
