@@ -758,17 +758,59 @@ def evaluate_candidate_from_observed_results(
     )
 
     criteria = dict(candidate.get("acceptance_criteria") or {})
-    minimum_latency_reduction = float(
-        criteria.get("min_latency_reduction_fraction", 0.0)
-    )
     latency_reduction = 0.0
     if baseline["latency_seconds"] > 0:
         latency_reduction = (
             baseline["latency_seconds"] - challenger["latency_seconds"]
         ) / baseline["latency_seconds"]
+    task_success_increase = (
+        challenger["task_success_rate"] - baseline["task_success_rate"]
+    )
+    quality_increase = challenger["quality"] - baseline["quality"]
+
+    improvement_checks: list[bool] = []
+    if "min_latency_reduction_fraction" in criteria:
+        minimum_latency_reduction = float(
+            criteria["min_latency_reduction_fraction"]
+        )
+        improvement_checks.append(
+            challenger["latency_seconds"] < baseline["latency_seconds"]
+            and latency_reduction >= minimum_latency_reduction
+        )
+    else:
+        minimum_latency_reduction = None
+    if "min_task_success_rate_increase" in criteria:
+        improvement_checks.append(
+            task_success_increase
+            >= float(criteria["min_task_success_rate_increase"])
+        )
+    if "min_quality_increase" in criteria:
+        improvement_checks.append(
+            quality_increase >= float(criteria["min_quality_increase"])
+        )
+    if "max_candidate_latency_seconds" in criteria:
+        improvement_checks.append(
+            challenger["latency_seconds"]
+            <= float(criteria["max_candidate_latency_seconds"])
+        )
+    if "max_policy_violations" in criteria:
+        improvement_checks.append(
+            challenger["policy_violations"]
+            <= float(criteria["max_policy_violations"])
+        )
+
     measurable_improvement = (
-        latency_reduction >= minimum_latency_reduction
-        and challenger["latency_seconds"] < baseline["latency_seconds"]
+        all(improvement_checks)
+        if improvement_checks
+        else any((
+            task_success_increase > 0,
+            quality_increase > 0,
+            challenger["human_correction_rate"] < baseline["human_correction_rate"],
+            challenger["retry_rate"] < baseline["retry_rate"],
+            challenger["failure_recurrence"] < baseline["failure_recurrence"],
+            challenger["latency_seconds"] < baseline["latency_seconds"],
+            challenger["cost"] < baseline["cost"],
+        ))
     )
     hard_gate = regression_pass and adversarial_gate and not critical_regression
 
@@ -810,6 +852,10 @@ def evaluate_candidate_from_observed_results(
             "workload_fingerprint": baseline_workload,
             "latency_reduction_fraction": latency_reduction,
             "minimum_latency_reduction_fraction": minimum_latency_reduction,
+            "task_success_rate_increase": task_success_increase,
+            "quality_increase": quality_increase,
+            "acceptance_criteria": criteria,
+            "measurable_improvement": measurable_improvement,
         },
         "decision": decision,
         "evidence_refs": combined_refs,
