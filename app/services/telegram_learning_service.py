@@ -60,7 +60,7 @@ def _fold(value: str) -> str:
 
 
 def extract_source_url(text: str) -> str | None:
-    match = re.search(r"https://[^\s<>()]+", str(text or ""), flags=re.IGNORECASE)
+    match = re.search(r"https?://[^\s<>()]+", str(text or ""), flags=re.IGNORECASE)
     if match is None:
         return None
     return match.group(0).rstrip(".,;:!?)]}").strip() or None
