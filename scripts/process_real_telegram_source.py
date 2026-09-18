@@ -139,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
 
     required = {
         "REAL_TELEGRAM_SOURCE_INPUT": "PASS",
+        "INPUT_CAPTURED": "PASS",
+        "SOURCE_LEARNED": "PASS",
         "SOURCE_CONTENT_RESOLVED": "PASS",
         "FRESH_RESEARCH_TRIGGERED": "PASS",
         "SOURCE_HIERARCHY_ENFORCED": "PASS",
