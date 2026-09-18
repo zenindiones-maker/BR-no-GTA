@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping, Sequence
 from app.services.harness_learning_service import (
     HarnessEpisode,
     persist_episode,
-    record_memory,
+    record_or_reuse_failure_memory,
 )
 from app.services.render_learning_profile_service import (
     BASELINE_RENDER_PROFILE_VERSION,
@@ -378,8 +378,7 @@ def capture_observed_render_episode(
     failure_memory = None
     if not observation.success:
         diagnostic_status = "OUTCOME_CONFIRMED_ROOT_CAUSE_OPEN"
-        failure_memory = record_memory(
-            memory_type="FAILURE",
+        failure_memory = record_or_reuse_failure_memory(
             claim=(
                 f"Observed RenderJob {render_job_id} ended with "
                 f"{observation.job_conclusion} after {observation.duration_seconds:.3f}s "
@@ -388,7 +387,7 @@ def capture_observed_render_episode(
             domain=RENDER_DOMAIN,
             task_class=RENDER_TASK_CLASS,
             failure_pattern=observation.failure_class,
-            source_episode_ids=(persisted["episode_id"],),
+            source_episode_id=persisted["episode_id"],
             evidence_refs=evidence_refs,
             agent_id=RENDER_AGENT_ID,
             capability_id=RENDER_CAPABILITY_ID,
@@ -421,7 +420,6 @@ def capture_observed_render_episode(
                 "applicable_scope": "TASK_CLASS",
             },
             confidence=0.99,
-            status="ACTIVE",
         )
     return {
         "episode": persisted,
