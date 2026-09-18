@@ -108,6 +108,24 @@ def test_fail_remains_visible_and_only_observed_cause_is_shown():
     assert "Ação: Tente novamente" in result.text
 
 
+def test_action_first_never_hides_policy_violation_or_material_warning():
+    canonical = {
+        "status": "COMPLETED",
+        "answer": "A operação terminou com restrições.",
+        "policy_violations": [
+            {"code": "PUBLICATION_GATE_DENIED", "message": "Publicação não autorizada."}
+        ],
+        "warnings": ["Resultado parcial; revisão humana necessária."],
+    }
+    result = render_human_presentation(
+        canonical,
+        surface="telegram",
+        mode=ACTION_FIRST,
+    )
+    assert "Policy violation: Publicação não autorizada." in result.text
+    assert "Aviso: Resultado parcial; revisão humana necessária." in result.text
+    assert result.canonical_unchanged is True
+
 def test_machine_readable_and_technical_full_are_lossless_projections():
     canonical = {
         "status": "COMPLETED",
