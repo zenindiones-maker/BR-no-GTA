@@ -64,7 +64,7 @@ jobs:
       - name: Evaluate and govern promotion
         run: |
           set -euo pipefail
-          python scripts/promote_video_a_render_profile.py             --render-job runtime/video-a-promotion/source/render-job.json             --incident-proof runtime/video-a-promotion/incident/proof.json             --benchmark-evidence runtime/video-a-promotion/benchmark/benchmark-evidence.json             --output-dir runtime/video-a-promotion/promoted
+          python scripts/promote_video_a_render_profile.py             --render-job runtime/video-a-promotion/source/render-job.json             --incident-proof runtime/video-a-promotion/incident/proof.json             --benchmark-evidence runtime/video-a-promotion/benchmark/result/benchmark-evidence.json             --output-dir runtime/video-a-promotion/promoted
           python - <<'PY'
           import json
           from pathlib import Path
