@@ -168,6 +168,110 @@ def list_memories(*, status: str | None = "ACTIVE", memory_type: str | None = No
         connection.close()
 
 
+
+def find_failure_memory(
+    *,
+    domain: str,
+    task_class: str,
+    capability_id: str,
+    failure_pattern: str,
+    skill_id: str | None = None,
+    skill_version: str | None = None,
+    status: str = "ACTIVE",
+) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        clauses = [
+            "memory_type = 'FAILURE'",
+            "domain = ?",
+            "task_class = ?",
+            "capability_id = ?",
+            "failure_pattern = ?",
+            "status = ?",
+        ]
+        params: list[Any] = [
+            domain,
+            task_class,
+            capability_id,
+            failure_pattern,
+            status,
+        ]
+        if skill_id is not None:
+            clauses.append("skill_id = ?")
+            params.append(skill_id)
+        if skill_version is not None:
+            clauses.append("skill_version = ?")
+            params.append(skill_version)
+        row = connection.execute(
+            f"""SELECT * FROM harness_memories
+                WHERE {' AND '.join(clauses)}
+                ORDER BY last_verified_at DESC, created_at DESC
+                LIMIT 1""",
+            params,
+        ).fetchone()
+        return _deserialize(row, _MEMORY_JSON) if row else None
+    finally:
+        connection.close()
+
+
+def add_failure_memory_observation(
+    memory_id: str,
+    *,
+    episode_id: str,
+    evidence_refs: list[str] | tuple[str, ...],
+    metadata: dict[str, Any],
+    confidence: float | None = None,
+) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("failure memory not found")
+        current = _deserialize(row, _MEMORY_JSON)
+        if current.get("memory_type") != "FAILURE":
+            raise ValueError("memory is not a failure memory")
+        episodes = list(dict.fromkeys([
+            *(current.get("source_episode_ids") or []),
+            episode_id,
+        ]))
+        evidence = list(dict.fromkeys([
+            *(current.get("evidence_refs") or []),
+            *[str(ref) for ref in evidence_refs if str(ref)],
+        ]))
+        current_metadata = dict(current.get("metadata") or {})
+        occurrences = list(current_metadata.get("occurrences") or [])
+        occurrences.append(dict(metadata))
+        current_metadata["occurrences"] = occurrences[-50:]
+        current_metadata["recurrence_count"] = int(current.get("support_count") or 0) + 1
+        cursor = connection.execute(
+            """UPDATE harness_memories
+               SET source_episode_ids = ?, evidence_refs = ?, metadata = ?,
+                   support_count = support_count + 1,
+                   confidence = COALESCE(?, confidence),
+                   last_verified_at = CURRENT_TIMESTAMP
+               WHERE memory_id = ?""",
+            (
+                _dump(episodes),
+                _dump(evidence),
+                _dump(current_metadata),
+                confidence,
+                memory_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("failure memory recurrence update failed")
+        connection.commit()
+        updated = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        return _deserialize(updated, _MEMORY_JSON)
+    finally:
+        connection.close()
+
 def update_memory_status(memory_id: str, status: str, *, last_verified_at: str | None = None) -> None:
     connection = get_connection()
     try:
