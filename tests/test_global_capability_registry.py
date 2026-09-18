@@ -236,3 +236,19 @@ def test_production_plan_rejects_unrelated_actions():
     assert "RESEARCH" not in record.allowed_actions
     assert "YOUTUBE" not in record.allowed_actions
     assert "PUBLICATION" not in record.allowed_actions
+
+
+def test_human_presentation_skill_is_bounded_and_pinned():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("human.presentation.action-first")
+    assert record is not None
+    assert record.capability_type == "SKILL"
+    assert record.domain == "human-presentation"
+    assert record.allowed_actions == ("DECISION",)
+    assert record.skill_id == "human.presentation.action-first"
+    assert record.instruction_path == ".dsh/skills/human-presentation-action-first/SKILL.md"
+    assert record.side_effects == ()
+    assert record.fallback_eligibility is False
+    assert record.version == "0.3.0-br1"
+    assert "b15d0be58f55b33972ba3e39709e0e5208ef30cb" in record.implementation
+    assert "write memory" in record.security_boundary
+    assert "publication authority" in record.security_boundary
