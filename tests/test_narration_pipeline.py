@@ -89,7 +89,7 @@ class NarrationPipelineTests(unittest.TestCase):
     def setUp(self):
         self._duration_probe = patch(
             "app.services.narration_pipeline._probe_audio_duration",
-            return_value=(1.5, "ffprobe-minimal-test"),
+            return_value=(60.0, "ffprobe-minimal-test"),
         )
         self._duration_probe.start()
 

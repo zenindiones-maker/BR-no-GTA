@@ -9,6 +9,6 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "benchmark": "baseline-vs-edge-optimized-real-audio",
-  "iteration": 3,
-  "reason": "rerun after proof workflow fetch-depth fix; no baseline executed in iteration 2"
+  "iteration": 4,
+  "reason": "fix narration test fixture physical duration coherence; previous run stopped before baseline"
 }
