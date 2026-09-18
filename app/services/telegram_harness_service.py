@@ -281,10 +281,13 @@ def chat_under_harness(
             "🔎 Pesquisa atual obrigatória: consultando fontes oficiais da Rockstar e fontes configuradas no cloud...",
         )
         try:
-            fresh = research_fresh_gta6_under_harness(
-                text,
-                source_context=input_record,
-            )
+            if input_record is not None:
+                fresh = research_fresh_gta6_under_harness(
+                    text,
+                    source_context=input_record,
+                )
+            else:
+                fresh = research_fresh_gta6_under_harness(text)
         except FreshResearchError as exc:
             return {
                 "answer": (
