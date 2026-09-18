@@ -829,6 +829,7 @@ def register_skill_version(*, skill_id: str, version: str, content_ref: str, che
             "promoted_at": None,
         },
     )
+    return persisted
 
 def register_policy_version(*, policy_id: str, version: str, content_ref: str, checksum: str,
                             status: str, evidence_refs: Iterable[str],
@@ -848,6 +849,7 @@ def register_policy_version(*, policy_id: str, version: str, content_ref: str, c
             "promoted_at": None,
         },
     )
+    return persisted
 
 def promote_candidate(*, candidate_id: str, evaluation: dict[str, Any],
                       authorization: HarnessAuthorization | dict[str, Any] | str,
