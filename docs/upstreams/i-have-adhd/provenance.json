@@ -1,0 +1,29 @@
+{
+  "name": "i-have-adhd",
+  "upstream_repository": "ayghri/i-have-adhd",
+  "upstream_commit": "b15d0be58f55b33972ba3e39709e0e5208ef30cb",
+  "upstream_version": "0.3.0",
+  "upstream_skill_path": "skills/i-have-adhd/SKILL.md",
+  "upstream_skill_blob_sha": "9138ae4af11065b7971eea17edc48a2498c1af35",
+  "license": "MIT",
+  "integration_role": "human_interaction_presentation_skill",
+  "adapted_skill_id": "human.presentation.action-first",
+  "adopted_components": [
+    "action-first response shaping",
+    "bounded numbered steps",
+    "tangent suppression",
+    "matter-of-fact error presentation",
+    "visible progress",
+    "eval dimensions: correctness, autonomy, actionability, safety, concision"
+  ],
+  "intentionally_not_adopted": [
+    "always-on hooks",
+    "session-global state injection",
+    "Pi/Claude/Codex plugin runtime",
+    "routing authority",
+    "memory authority",
+    "editorial authority",
+    "publication authority"
+  ],
+  "upstream_eval_note": "Upstream RESULTS.md records a failed release gate; BR-no-GTA therefore treats the source as presentation guidance only and adds fail-closed semantic-preservation tests."
+}
