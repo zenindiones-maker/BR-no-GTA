@@ -100,6 +100,46 @@ def _error_detail(result: Mapping[str, Any]) -> str | None:
     return str(value).strip() if value else None
 
 
+def _material_warnings(result: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return human-relevant warnings without inventing or reclassifying them."""
+    collected: list[str] = []
+
+    def add(value: Any, *, label: str) -> None:
+        if value in (None, False, "", [], {}, ()):
+            return
+        if isinstance(value, Mapping):
+            detail = value.get("message") or value.get("reason") or value.get("code")
+            if detail:
+                collected.append(f"{label}: {str(detail).strip()}")
+            else:
+                collected.append(
+                    f"{label}: "
+                    + json.dumps(dict(value), ensure_ascii=False, sort_keys=True, default=str)
+                )
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value[:3]:
+                add(item, label=label)
+            return
+        if isinstance(value, bool):
+            if value:
+                collected.append(label)
+            return
+        collected.append(f"{label}: {str(value).strip()}")
+
+    add(result.get("policy_violation"), label="Policy violation")
+    add(result.get("policy_violations"), label="Policy violation")
+    add(result.get("warning"), label="Aviso")
+    add(result.get("warnings"), label="Aviso")
+
+    # Some canonical executors place policy evidence one level below evidence.
+    evidence = result.get("evidence")
+    if isinstance(evidence, Mapping):
+        add(evidence.get("policy_violation"), label="Policy violation")
+        add(evidence.get("policy_violations"), label="Policy violation")
+
+    return tuple(dict.fromkeys(item for item in collected if item))
+
 def _answer(result: Mapping[str, Any]) -> str:
     for key in ("answer", "message", "summary"):
         value = result.get(key)
@@ -144,12 +184,14 @@ def _action_first(result: Mapping[str, Any]) -> str:
     failure = _failure_state(result)
     answer = _answer(result)
     resolution, verification, decision = _source_status(result)
+    warnings = _material_warnings(result)
 
     if failure:
         detail = _error_detail(result)
         lines = [f"❌ {failure}"]
         if detail:
             lines.append(f"Causa observada: {detail}")
+        lines.extend(f"⚠️ {item}" for item in warnings)
         if answer:
             lines.append(f"Ação: {answer}")
         else:
@@ -178,13 +220,19 @@ def _action_first(result: Mapping[str, Any]) -> str:
                 "Uso editorial: "
                 + ("SIM" if decision in {"USE_FOR_VIDEO", "MERGE_WITH_EXISTING_GOAL", "STORE_FOR_FUTURE"} else "NÃO")
             )
+        lines.extend(f"⚠️ {item}" for item in warnings)
         lines.append("Digite /evidence para auditoria completa.")
         return "\n".join(lines)
 
     if answer:
+        if warnings:
+            return "\n".join([answer, *(f"⚠️ {item}" for item in warnings)])
         return answer
     status = str(result.get("status") or "").strip()
-    return status or "Concluído."
+    base = status or "Concluído."
+    if warnings:
+        return "\n".join([base, *(f"⚠️ {item}" for item in warnings)])
+    return base
 
 
 def render_human_presentation(
