@@ -63,7 +63,11 @@ def _episode(*, episode_id: str, execution_id: str, capability_id: str = "learni
         finished_at="2026-09-18T00:00:01+00:00",
         duration_seconds=1.0,
         status=status,
-        actual_outcome={"observed": observed, "success": status == "COMPLETED", "agent_report": "done"},
+        actual_outcome={
+            "observed": observed,
+            "success": status == "COMPLETED",
+            **({"agent_report": "done"} if observed else {}),
+        },
         outcome_evidence=(f"artifact:{episode_id}:sha256",),
         error=error,
         retry_count=retry_count,
