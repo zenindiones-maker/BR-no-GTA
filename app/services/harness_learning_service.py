@@ -1070,8 +1070,11 @@ def complete_improvement_mission(*, improvement_mission_id: str,
     mission = repository.get_improvement_mission(improvement_mission_id)
     if mission is None:
         raise ValueError("improvement mission not found")
-    if mission["authorization_id"] != authorization.authorization_id:
-        raise PermissionError("improvement mission authorization lineage mismatch")
+    if (
+        mission["authorization_id"] != authorization.authorization_id
+        and authorization.lineage.get("improvement_mission_id") != improvement_mission_id
+    ):
+        raise PermissionError("improvement mission completion authorization lineage mismatch")
     candidate_id = mission.get("candidate_id")
     if not candidate_id:
         raise PermissionError("improvement mission has no evaluated candidate")
