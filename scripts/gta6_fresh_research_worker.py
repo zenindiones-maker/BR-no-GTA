@@ -153,18 +153,25 @@ def _resolve_submitted_source(source_url: str, *, checked_at: str) -> dict[str, 
             "log in to instagram", "login • instagram", "something went wrong",
             "javascript is not available", "enable javascript",
         )
-        minimum = 80 if platform == "web" else 40
+        if platform in {"instagram", "x"}:
+            # A generic HTML response from a social platform does not prove that
+            # the original post/tweet body was recovered. Until a dedicated
+            # permalink resolver provides content-bound evidence, fail closed.
+            raise ValueError(
+                "social original content requires a dedicated content resolver"
+            )
+        minimum = 80
         if len(text.strip()) < minimum or any(marker in lowered for marker in unusable_markers):
             raise ValueError("original source content was not recoverable as usable text")
         excerpt = text[:16000]
         return {
             "resolution_status": "PASS",
-            "source_name": urllib.parse.urlparse(safe_url).hostname,
+            "source_name": urllib.parse.urlparse(final_url).hostname,
             "url": safe_url,
             "resolved_url": final_url,
             "platform": platform,
             "retrieved_at": checked_at,
-            "source_hierarchy": _source_hierarchy(safe_url),
+            "source_hierarchy": _source_hierarchy(final_url),
             "original_source_retrieved": True,
             "content_excerpt": excerpt,
             "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -262,6 +269,13 @@ def collect(
             text, resolved_url = _fetch_text(url)
         except Exception as exc:
             errors.append({"source": source_name, "url": url, "error": type(exc).__name__})
+            continue
+        if _source_hierarchy(resolved_url) != "OFFICIAL_PRIMARY":
+            errors.append({
+                "source": source_name,
+                "url": url,
+                "error": "OFFICIAL_SOURCE_REDIRECTED_OUTSIDE_PRIMARY_DOMAIN",
+            })
             continue
         official.append(
             {
