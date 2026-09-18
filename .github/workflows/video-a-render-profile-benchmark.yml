@@ -110,3 +110,5 @@ jobs:
             runtime/bgutil-ytdlp-pot-provider/server/provider.log
           if-no-files-found: warn
           retention-days: 30
+
+# Manual benchmark trigger marker.
