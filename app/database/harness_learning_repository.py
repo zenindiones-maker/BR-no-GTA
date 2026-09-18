@@ -638,6 +638,39 @@ def get_improvement_mission(improvement_mission_id: str) -> dict[str, Any] | Non
         connection.close()
 
 
+def attach_candidate_to_improvement_mission(
+    improvement_mission_id: str,
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_improvement_missions WHERE improvement_mission_id = ?",
+            (improvement_mission_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("improvement mission not found")
+        mission = _deserialize(row, _MISSION_JSON)
+        current = mission.get("candidate_id")
+        if current not in (None, "", candidate_id):
+            raise PermissionError("improvement mission already references a different candidate")
+        connection.execute(
+            """UPDATE harness_improvement_missions
+               SET candidate_id = ?, status = 'CANDIDATE_CREATED'
+               WHERE improvement_mission_id = ?""",
+            (candidate_id, improvement_mission_id),
+        )
+        connection.commit()
+        updated = connection.execute(
+            "SELECT * FROM harness_improvement_missions WHERE improvement_mission_id = ?",
+            (improvement_mission_id,),
+        ).fetchone()
+        return _deserialize(updated, _MISSION_JSON)
+    finally:
+        connection.close()
+
+
 def update_improvement_mission_status(improvement_mission_id: str, status: str, *,
                                       finished_at: str | None = None) -> dict[str, Any]:
     connection = get_connection()
