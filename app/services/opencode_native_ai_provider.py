@@ -150,10 +150,10 @@ class OpenCodeNativeAIProvider:
             workflow=workflow,
             ref=self.ref,
             inputs={
+                "mode": "opencode_native",
                 "execution_id": self.authorization.execution_id,
-                "canonical_model": canonical_model,
-                "executor_model": executor_model,
-                "cli_version": cli_version,
+                "provider": "opencode",
+                "model": canonical_model,
                 "prompt_b64": base64.b64encode(prompt.encode("utf-8")).decode("ascii"),
                 "zero_cost_operation": "true",
             },
