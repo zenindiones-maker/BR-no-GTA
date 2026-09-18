@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.database.schema import initialize_schema
 from app.services.harness_learning_service import HarnessEpisode, persist_episode, record_memory
 from app.services.voice_casting_service import (
     MASTER_TARGET_LUFS,
@@ -798,6 +799,7 @@ async def execute_round2(
             "job18_frozen": True,
         },
     )
+    initialize_schema()
     persisted_episode = persist_episode(episode)
     memory = record_memory(
         memory_type="HUMAN_FEEDBACK",

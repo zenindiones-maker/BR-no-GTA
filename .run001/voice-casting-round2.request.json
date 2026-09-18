@@ -53,6 +53,10 @@
   "preserve_content_addressed_cache": true,
   "preserve_segment_retry": true,
   "preserve_render_retry_reuse": true,
-  "iteration": 2,
-  "retry_reason": "two-pass common mastering after observed MP3 true-peak overshoot on Voice B 60-90s"
+  "iteration": 3,
+  "retry_reason": "reuse completed Round 2 audio checkpoint; initialize canonical Learning Plane schema before persistence",
+  "resume_from_run_id": 35398148125,
+  "resume_proof_artifact_id": 10569806440,
+  "resume_private_artifact_id": 10570056356,
+  "resume_redundant_tts_requests": 0
 }
