@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from app.main import initialize_application
@@ -119,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     parser.add_argument("--input-id", type=int)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
 
     initialize_application()
@@ -135,6 +137,12 @@ def main(argv: list[str] | None = None) -> int:
     proof["fresh_research_execution_id"] = fresh.execution_id
     proof["fresh_research_routing_id"] = fresh.routing_id
     proof["fresh_research_execution_ref"] = fresh.execution_ref
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(proof, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
     print(json.dumps(proof, ensure_ascii=False, sort_keys=True))
 
     required = {
