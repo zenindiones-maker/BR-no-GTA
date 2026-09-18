@@ -1,6 +1,7 @@
 name: Telegram Provider Learning Experiment
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -10,7 +11,7 @@ permissions:
 
 jobs:
   observed-provider-experiment:
-    if: contains(github.event.head_commit.message, 'run telegram provider experiment')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run telegram provider experiment')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
