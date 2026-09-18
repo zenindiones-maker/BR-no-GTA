@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from app.main import initialize_application
-from app.database.harness_authorization_repository import get_harness_authorization
+from app.database.harness_authorization_repository import (
+    get_harness_authorization,
+    list_recent_harness_authorizations,
+)
 from app.database import harness_learning_repository
 from app.database.telegram_presentation_repository import (
     get_latest_telegram_presentation_audit,
@@ -46,13 +49,73 @@ def _find_source_input(input_id: int | None) -> dict[str, Any]:
         row = get_telegram_user_input(input_id)
         if row is None:
             raise ValueError(f"Telegram source input {input_id} not found")
+        candidate = get_source_candidate_by_input(int(row["id"]))
+        if candidate is None or candidate.get("source_content_resolution") != "PASS":
+            raise ValueError(
+                f"Telegram source input {input_id} is not a successfully resolved source"
+            )
         return row
     for row in list_recent_telegram_user_inputs(limit=300):
-        if str(row.get("source_url") or "").strip():
-            candidate = get_source_candidate_by_input(int(row["id"]))
-            if candidate is not None:
-                return row
-    raise ValueError("no processed real Telegram URL/source input was found")
+        if not str(row.get("source_url") or "").strip():
+            continue
+        candidate = get_source_candidate_by_input(int(row["id"]))
+        if (
+            candidate is not None
+            and candidate.get("source_content_resolution") == "PASS"
+            and get_editorial_signal_by_candidate(str(candidate["candidate_id"])) is not None
+        ):
+            return row
+    raise ValueError(
+        "no processed real Telegram URL/source input with resolved content and EditorialSignal was found"
+    )
+
+
+def _find_failed_source_input(input_id: int | None) -> dict[str, Any]:
+    if input_id is not None:
+        row = get_telegram_user_input(input_id)
+        if row is None:
+            raise ValueError(f"Telegram failure input {input_id} not found")
+        candidate = get_source_candidate_by_input(int(row["id"]))
+        if candidate is None or candidate.get("source_content_resolution") != "FAIL":
+            raise ValueError(
+                f"Telegram failure input {input_id} is not an observed source-resolution failure"
+            )
+        return row
+    for row in list_recent_telegram_user_inputs(limit=300):
+        if not str(row.get("source_url") or "").strip():
+            continue
+        candidate = get_source_candidate_by_input(int(row["id"]))
+        if candidate is not None and candidate.get("source_content_resolution") == "FAIL":
+            return row
+    raise ValueError(
+        "no real Telegram URL/source input with SOURCE_CONTENT_RESOLUTION=FAIL was found"
+    )
+
+
+def _find_evidence_authorization(source_input_id: int) -> dict[str, Any]:
+    matches = []
+    for item in list_recent_harness_authorizations(limit=500):
+        if item.get("subject") != "capability:human.presentation.action-first":
+            continue
+        if item.get("status") != "consumed":
+            continue
+        lineage = dict(item.get("lineage") or {})
+        if lineage.get("telegram_input_id") != source_input_id:
+            continue
+        if str(lineage.get("audit_command") or "").casefold() not in {
+            "/evidence", "/debug", "/evidencia"
+        }:
+            continue
+        if lineage.get("presentation_mode") != "TECHNICAL_FULL":
+            continue
+        if lineage.get("surface") != "telegram":
+            continue
+        matches.append(item)
+    if not matches:
+        raise RuntimeError(
+            f"no real /evidence presentation authorization targets Telegram input {source_input_id}"
+        )
+    return matches[0]
 
 
 def _assert_reasoning_complete(row: dict[str, Any]) -> dict[str, Any]:
@@ -98,9 +161,15 @@ def _assert_presentation(row: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     return audit, auth
 
 
-def build_proof(*, test_input_id: int | None, source_input_id: int | None) -> dict[str, Any]:
+def build_proof(
+    *,
+    test_input_id: int | None,
+    source_input_id: int | None,
+    failure_input_id: int | None,
+) -> dict[str, Any]:
     test_row = _find_test_input(test_input_id)
     source_row = _find_source_input(source_input_id)
+    failure_row = _find_failed_source_input(failure_input_id)
 
     test_episode = _assert_reasoning_complete(test_row)
     test_audit, test_auth = _assert_presentation(test_row)
@@ -112,6 +181,8 @@ def build_proof(*, test_input_id: int | None, source_input_id: int | None) -> di
     candidate = get_source_candidate_by_input(int(source_row["id"]))
     if candidate is None:
         raise RuntimeError("real source input lacks SourceCandidate")
+    if candidate.get("source_content_resolution") != "PASS":
+        raise RuntimeError("real URL/news source content was not resolved")
     signal = get_editorial_signal_by_candidate(str(candidate["candidate_id"]))
     if signal is None:
         raise RuntimeError("real source input lacks EditorialSignal")
@@ -122,6 +193,32 @@ def build_proof(*, test_input_id: int | None, source_input_id: int | None) -> di
         raise RuntimeError("/evidence payload lacks presentation audit")
     if int(source_audit["presented_chars"]) >= int(source_audit["canonical_chars"]):
         raise RuntimeError("real URL Telegram reply was not compact relative to canonical result")
+
+    failure_audit, failure_auth = _assert_presentation(failure_row)
+    failure_candidate = get_source_candidate_by_input(int(failure_row["id"]))
+    if failure_candidate is None:
+        raise RuntimeError("real failure input lacks SourceCandidate")
+    if failure_candidate.get("source_content_resolution") != "FAIL":
+        raise RuntimeError("real failure input did not preserve SOURCE_CONTENT_RESOLUTION=FAIL")
+    failure_signal = get_editorial_signal_by_candidate(
+        str(failure_candidate["candidate_id"])
+    )
+    if failure_signal is None:
+        raise RuntimeError("real failure input lacks evidence-based EditorialSignal")
+    if failure_signal.get("harness_decision") not in {
+        "REJECT_LOW_EVIDENCE", "STORE_FOR_FUTURE"
+    }:
+        raise RuntimeError("real source-resolution failure was presented as an unsafe editorial action")
+    if int(failure_audit["presented_chars"]) >= int(failure_audit["canonical_chars"]):
+        raise RuntimeError("real FAIL Telegram reply was not compact relative to canonical result")
+
+    evidence_auth = _find_evidence_authorization(int(source_row["id"]))
+    evidence_lineage = dict(evidence_auth.get("lineage") or {})
+    if evidence_lineage.get("canonical_sha256") != source_debug.get("presentation_audit", {}).get("canonical_sha256"):
+        # /evidence renders the full audit payload, not the earlier source reply,
+        # so hashes are intentionally distinct. Presence is still mandatory.
+        if not str(evidence_lineage.get("canonical_sha256") or "").strip():
+            raise RuntimeError("/evidence authorization lacks canonical payload hash")
 
     return {
         "UPSTREAM_PINNED": "PASS",
@@ -139,6 +236,10 @@ def build_proof(*, test_input_id: int | None, source_input_id: int | None) -> di
         "NO_ROUTING_AUTHORITY": "PASS",
         "NO_PUBLICATION_AUTHORITY": "PASS",
         "REAL_TELEGRAM_PROOF": "PASS",
+        "REAL_TELEGRAM_SUCCESS_PRESENTATION": "PASS",
+        "REAL_TELEGRAM_FAIL_PRESENTATION": "PASS",
+        "REAL_TELEGRAM_URL_NEWS_PRESENTATION": "PASS",
+        "REAL_EVIDENCE_COMMAND": "PASS",
         "test_input_id": test_row["id"],
         "test_episode_id": test_episode["episode_id"],
         "test_presentation_authorization_id": test_auth["authorization_id"],
@@ -152,6 +253,16 @@ def build_proof(*, test_input_id: int | None, source_input_id: int | None) -> di
         "source_presentation_authorization_id": source_auth["authorization_id"],
         "source_canonical_chars": source_audit["canonical_chars"],
         "source_presented_chars": source_audit["presented_chars"],
+        "failure_input_id": failure_row["id"],
+        "failure_source_candidate_id": failure_candidate["candidate_id"],
+        "failure_editorial_signal_id": failure_signal["signal_id"],
+        "failure_editorial_decision": failure_signal["harness_decision"],
+        "failure_presentation_authorization_id": failure_auth["authorization_id"],
+        "failure_canonical_chars": failure_audit["canonical_chars"],
+        "failure_presented_chars": failure_audit["presented_chars"],
+        "evidence_authorization_id": evidence_auth["authorization_id"],
+        "evidence_target_input_id": source_row["id"],
+        "evidence_presentation_mode": evidence_lineage["presentation_mode"],
     }
 
 
@@ -159,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-input-id", type=int)
     parser.add_argument("--source-input-id", type=int)
+    parser.add_argument("--failure-input-id", type=int)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
 
@@ -166,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     proof = build_proof(
         test_input_id=args.test_input_id,
         source_input_id=args.source_input_id,
+        failure_input_id=args.failure_input_id,
     )
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
