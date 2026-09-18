@@ -142,3 +142,22 @@ def test_harness_subordinated_presentation_has_no_memory_routing_or_publication_
     assert auth["lineage"]["memory_write"] is False
     assert auth["lineage"]["routing_authority"] is False
     assert auth["lineage"]["publication_authority"] is False
+
+
+def test_priority_human_surfaces_default_to_action_first():
+    canonical = {"status": "COMPLETED", "answer": "AÇÃO_PRIMEIRO"}
+    for surface in ("telegram", "termux", "work", "codex", "admin"):
+        result = render_human_presentation(canonical, surface=surface)
+        assert result.mode == ACTION_FIRST
+        assert result.text == "AÇÃO_PRIMEIRO"
+
+
+def test_artifact_surface_defaults_to_machine_readable_passthrough():
+    canonical = {
+        "status": "COMPLETED",
+        "ResearchDossier": {"full": [1, 2, 3]},
+        "ClaimLedger": [{"claim": "x", "status": "VERIFIED"}],
+    }
+    result = render_human_presentation(canonical, surface="artifact")
+    assert result.mode == MACHINE_READABLE
+    assert json.loads(result.text) == canonical
