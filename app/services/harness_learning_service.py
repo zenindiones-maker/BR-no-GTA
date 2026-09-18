@@ -323,7 +323,8 @@ def record_memory(*, memory_type: str, claim: str, domain: str,
                   source_versions: dict[str, str] | None = None,
                   metadata: dict[str, Any] | None = None,
                   support_count: int = 1, contradiction_count: int = 0,
-                  confidence: float = 0.5, status: str = "CANDIDATE") -> dict[str, Any]:
+                  confidence: float = 0.5, status: str = "CANDIDATE",
+                  identity_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     if memory_type not in MEMORY_TYPES:
         raise ValueError(f"invalid memory_type: {memory_type}")
     if status not in MEMORY_STATUSES:
@@ -353,7 +354,7 @@ def record_memory(*, memory_type: str, claim: str, domain: str,
     fingerprint = sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     record = {
         **payload,
-        "memory_id": _stable_id("memory", payload),
+        "memory_id": _stable_id("memory", identity_payload or payload),
         "support_count": support_count,
         "contradiction_count": contradiction_count,
         "confidence": float(confidence),
@@ -455,6 +456,16 @@ def record_or_reuse_failure_memory(
         contradiction_count=0,
         confidence=confidence,
         status="ACTIVE",
+        identity_payload={
+            "memory_type": "FAILURE",
+            "domain": domain,
+            "task_class": task_class,
+            "capability_id": capability_id,
+            "failure_pattern": failure_pattern,
+            "agent_id": agent_id,
+            "skill_id": skill_id,
+            "skill_version": skill_version,
+        },
     )
 
 
