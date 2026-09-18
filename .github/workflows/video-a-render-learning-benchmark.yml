@@ -1,0 +1,175 @@
+name: VIDEO A Render Learning Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  benchmark:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run video a render benchmark')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: video-engine/backend:.
+      SOURCE_RUN_ID: "35289539299"
+      SOURCE_ARTIFACT_ID: "10525757299"
+      SOURCE_ARTIFACT_NAME: "render-job-handoff-35289539299"
+      SOURCE_SHA: "7bc7b9c719d45efa23745d618ec8ba3077addaec"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify real VIDEO A handoff metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/video-a-benchmark/handoff
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}"             > runtime/video-a-benchmark/handoff/artifact-metadata.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path("runtime/video-a-benchmark/handoff/artifact-metadata.json")
+          data=json.loads(p.read_text())
+          assert str(data["id"]) == os.environ["SOURCE_ARTIFACT_ID"]
+          assert data["name"] == os.environ["SOURCE_ARTIFACT_NAME"]
+          assert data.get("expired") is False
+          run=data.get("workflow_run") or {}
+          assert str(run.get("id")) == os.environ["SOURCE_RUN_ID"]
+          assert run.get("head_sha") == os.environ["SOURCE_SHA"]
+          print("VIDEO_A_HANDOFF_METADATA=PASS")
+          PY
+
+      - name: Download real VIDEO A RenderJob handoff
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/video-a-benchmark/handoff
+          merge-multiple: true
+
+      - name: Validate exact real VIDEO A identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime/video-a-benchmark/handoff/render-job.json")
+          assert p.is_file()
+          job=json.loads(p.read_text(encoding="utf-8"))
+          assert job["render_job_id"] == 920101
+          assert job["video_id"] == 920101
+          assert job["execution_id"] == "run001-video-a-investigative-v1"
+          assert job["issued_by"] == "deepseek_harness"
+          assert job["authorized_action"] == "EXECUTION"
+          assert job["product_profile"] == "professional_ptbr_v1"
+          assert job["render"] == {
+              "resolution":"1920x1080",
+              "fps":30.0,
+              "aspect_ratio":"16:9",
+              "container":"mp4",
+              "video_codec":"h264",
+              "audio_codec":"aac",
+          }
+          assert job["script_sections"][0]["section_id"] == "A01"
+          print("REAL_VIDEO_A_RENDER_JOB=PASS")
+          PY
+
+      - name: Install benchmark runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt
+          python -m pip install -U "yt-dlp[default]" "bgutil-ytdlp-pot-provider==1.3.1" "edge-tts==7.2.8"
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Start YouTube PO Token provider
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 1.3.1             https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git             runtime/video-a-benchmark/bgutil-ytdlp-pot-provider
+          cd runtime/video-a-benchmark/bgutil-ytdlp-pot-provider/server
+          deno install --allow-scripts=npm:canvas --frozen
+          cd node_modules
+          export DENO_NO_PROMPT=1
+          nohup deno run --no-prompt --allow-env --allow-net --allow-ffi=. --allow-read=.             ../src/main.ts --port 4416 > ../provider.log 2>&1 &
+          echo $! > ../provider.pid
+          sleep 5
+          kill -0 "$(cat ../provider.pid)"
+          echo "PO_TOKEN_PROVIDER=PASS"
+
+      - name: Prepare YouTube cookies
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          set -euo pipefail
+          test -n "${YOUTUBE_COOKIES}"
+          mkdir -p runtime/video-a-benchmark/secrets
+          printf '%s' "${YOUTUBE_COOKIES}" > runtime/video-a-benchmark/secrets/youtube-cookies.txt
+          chmod 600 runtime/video-a-benchmark/secrets/youtube-cookies.txt
+
+      - name: Run real VEdit baseline vs candidate
+        env:
+          YTDLP_COOKIES_FILE: runtime/video-a-benchmark/secrets/youtube-cookies.txt
+          YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
+        run: |
+          set -euo pipefail
+          python scripts/run_video_a_render_profile_benchmark.py             --render-job runtime/video-a-benchmark/handoff/render-job.json             --asset-root runtime/video-a-benchmark/assets             --output-dir runtime/video-a-benchmark/result
+
+      - name: Validate benchmark evidence is observed
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime/video-a-benchmark/result/benchmark-evidence.json")
+          data=json.loads(p.read_text())
+          assert data["observed"] is True
+          assert data["source_incident"]["run_id"] == 35289594486
+          assert data["source_incident"]["job_id"] == 105429342947
+          assert data["source_incident"]["render_job_id"] == 920101
+          assert data["baseline"]["profile_version"] == "v1"
+          assert data["candidate"]["profile_version"] == "v2"
+          assert data["baseline"]["software_preset"] == "slow"
+          assert data["candidate"]["software_preset"] == "medium"
+          assert data["baseline"]["qa_status"] == "PASS"
+          assert data["candidate"]["qa_status"] == "PASS"
+          assert data["regression_evidence"]["observed"] is True
+          assert data["promotion_performed"] is False
+          print("REAL_BASELINE_VS_CANDIDATE=PASS")
+          print("OBSERVED_RENDER_EVIDENCE=PASS")
+          print("BENCHMARK_DECISION="+data["decision"])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-a-render-learning-benchmark
+          path: |
+            runtime/video-a-benchmark/result/
+            runtime/video-a-benchmark/handoff/artifact-metadata.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Stop PO Token provider
+        if: always()
+        run: |
+          if [ -f runtime/video-a-benchmark/bgutil-ytdlp-pot-provider/server/provider.pid ]; then
+            kill "$(cat runtime/video-a-benchmark/bgutil-ytdlp-pot-provider/server/provider.pid)" 2>/dev/null || true
+          fi
