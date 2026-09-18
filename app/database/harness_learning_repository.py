@@ -140,6 +140,21 @@ def insert_memory(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         connection.close()
 
 
+def get_memory(memory_id: str) -> dict[str, Any] | None:
+    memory_id = str(memory_id or "").strip()
+    if not memory_id:
+        raise ValueError("memory_id is required")
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        return _deserialize(row, _MEMORY_JSON) if row else None
+    finally:
+        connection.close()
+
+
 def list_memories(*, status: str | None = "ACTIVE", memory_type: str | None = None,
                   domain: str | None = None, task_class: str | None = None,
                   capability_id: str | None = None, failure_pattern: str | None = None,
