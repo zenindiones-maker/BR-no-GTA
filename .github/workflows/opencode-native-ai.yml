@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           npm install --global "@opencode/cli@${CLI_VERSION}"
-          REPORTED="$(opencode --version | awk '{print $NF}' | tr -d '\r')"
+          REPORTED="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
           test "$REPORTED" = "$CLI_VERSION"
 
       - name: Execute explicit governed model
