@@ -175,7 +175,13 @@ def detect(force: bool = False) -> HWInfo:
     return info
 
 
-def encoder_args(enc: str, quality: str = "high", bitrate: str | None = None) -> list[str]:
+def encoder_args(
+    enc: str,
+    quality: str = "high",
+    bitrate: str | None = None,
+    *,
+    software_preset: str | None = None,
+) -> list[str]:
     """Argomenti di codifica tarati per encoder e livello qualita'.
 
     ``bitrate`` (es. ``"12M"``) vale per *tutti* gli encoder, non solo per quelli
@@ -186,6 +192,14 @@ def encoder_args(enc: str, quality: str = "high", bitrate: str | None = None) ->
     preset, non piu' il fattore di qualita'.
     """
     q = {"draft": 0, "medium": 1, "high": 2, "max": 3}.get(quality, 2)
+    if software_preset is not None:
+        software_preset = str(software_preset).strip().lower()
+        allowed_software_presets = {
+            "ultrafast", "superfast", "veryfast", "faster", "fast",
+            "medium", "slow", "slower", "veryslow",
+        }
+        if software_preset not in allowed_software_presets:
+            raise ValueError(f"unsupported software encoder preset: {software_preset}")
 
     if "nvenc" in enc:
         preset = ["p1", "p4", "p5", "p7"][q]
@@ -209,7 +223,7 @@ def encoder_args(enc: str, quality: str = "high", bitrate: str | None = None) ->
         return ["-c:v", enc, "-quality", ["speed", "balanced", "quality", "quality"][q],
                 "-rc", "cqp", "-qp_i", str([32, 26, 22, 18][q]), "-qp_p", str([34, 28, 24, 20][q])]
     if enc == "libx265":
-        preset = ["ultrafast", "medium", "slow", "slower"][q]
+        preset = software_preset or ["ultrafast", "medium", "slow", "slower"][q]
         if bitrate:
             return ["-c:v", enc, "-preset", preset, "-b:v", bitrate,
                     "-maxrate", bitrate, "-bufsize", _bufsize(bitrate), "-tag:v", "hvc1"]
@@ -225,8 +239,9 @@ def encoder_args(enc: str, quality: str = "high", bitrate: str | None = None) ->
             return ["-c:v", enc, "-b:v", bitrate, "-maxrate", bitrate,
                     "-bufsize", _bufsize(bitrate), "-row-mt", "1"]
         return ["-c:v", enc, "-crf", str([40, 34, 30, 26][q]), "-b:v", "0", "-row-mt", "1"]
-    # libx264 e fallback
-    preset = ["ultrafast", "medium", "slow", "slower"][q]
+    # libx264 e fallback. A promoted Harness profile may alter only encode
+    # speed while preserving the quality/CRF target selected above.
+    preset = software_preset or ["ultrafast", "medium", "slow", "slower"][q]
     if bitrate:
         return ["-c:v", enc, "-preset", preset, "-b:v", bitrate,
                 "-maxrate", bitrate, "-bufsize", _bufsize(bitrate)]
