@@ -35,16 +35,18 @@ jobs:
         run: |
           set -euo pipefail
           test "$ZERO_COST_OPERATION" = "true"
-          case "$MODE" in health|execute) ;; *) exit 2;; esac
+          case "$MODE" in health|execute|opencode_native) ;; *) exit 2;; esac
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
       - name: Install pinned OmniRoute
+        if: ${{ inputs.mode == 'health' || inputs.mode == 'execute' }}
         run: |
           set -euo pipefail
           npm install -g omniroute@3.8.50
           omniroute --version
       - name: Start OmniRoute
+        if: ${{ inputs.mode == 'health' || inputs.mode == 'execute' }}
         run: |
           set -euo pipefail
           trap 'rc=$?; if [ "$rc" -ne 0 ]; then cat /tmp/omniroute.log || true; fi' EXIT
@@ -113,6 +115,131 @@ jobs:
           path: runtime/omniroute-result/result.json
           retention-days: 1
           if-no-files-found: error
+
+      - name: Install pinned official OpenCode CLI
+        if: ${{ inputs.mode == 'opencode_native' }}
+        run: |
+          set -euo pipefail
+          npm install -g "@opencode/cli@2.0.8"
+          REPORTED="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
+          test "$REPORTED" = "2.0.8"
+
+      - name: Execute governed OpenCode CLI
+        if: ${{ inputs.mode == 'opencode_native' }}
+        env:
+          EXECUTION_ID: ${{ inputs.execution_id }}
+          PROVIDER: ${{ inputs.provider }}
+          MODEL: ${{ inputs.model }}
+          PROMPT_B64: ${{ inputs.prompt_b64 }}
+        run: |
+          set -euo pipefail
+          test -n "$EXECUTION_ID"
+          test "$PROVIDER" = "opencode"
+          test "$MODEL" = "oc/big-pickle"
+          test -n "$PROMPT_B64"
+          mkdir -p runtime/opencode-native-result
+          python - <<'PY'
+          import base64, os
+          from pathlib import Path
+          prompt=base64.b64decode(os.environ["PROMPT_B64"], validate=True).decode("utf-8")
+          if not prompt.strip():
+              raise SystemExit("empty prompt")
+          Path("runtime/opencode-native-result/prompt.txt").write_text(prompt, encoding="utf-8")
+          PY
+          START="$(python - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )"
+          set +e
+          timeout 300 opencode run             --standalone             --model "opencode/big-pickle"             --format json             "$(cat runtime/opencode-native-result/prompt.txt)"             > runtime/opencode-native-result/stdout.ndjson             2> runtime/opencode-native-result/stderr.txt
+          RC=$?
+          set -e
+          END="$(python - <<'PY'
+          import time
+          print(time.time())
+          PY
+          )"
+          RC="$RC" START="$START" END="$END" python - <<'PY'
+          import hashlib, json, os, re
+          from pathlib import Path
+          root=Path("runtime/opencode-native-result")
+          stdout=(root/"stdout.ndjson").read_text(encoding="utf-8", errors="replace")
+          stderr=(root/"stderr.txt").read_text(encoding="utf-8", errors="replace")
+          rc=int(os.environ["RC"])
+          parts=[]; parse_errors=0
+          for raw in stdout.splitlines():
+              if not raw.strip():
+                  continue
+              try:
+                  item=json.loads(raw)
+              except json.JSONDecodeError:
+                  parse_errors+=1
+                  continue
+              if item.get("type")!="text":
+                  continue
+              part=item.get("part") or {}
+              value=part.get("text")
+              if isinstance(value,str) and value:
+                  parts.append(value)
+          answer="".join(parts).strip()
+          safe_stderr=[]
+          for line in stderr.splitlines():
+              low=line.lower()
+              if any(term in low for term in ("authorization:", "bearer ", "api_key", "apikey", "token=")):
+                  continue
+              if re.search(r"(sk-|ghp_|github_pat_)[A-Za-z0-9_-]{8,}", line):
+                  continue
+              safe_stderr.append(line[:500])
+          elapsed=max(0.0,float(os.environ["END"])-float(os.environ["START"]))
+          result={
+              "status":"EXECUTED" if rc==0 and bool(answer) else "FAILED",
+              "provider":"opencode",
+              "canonical_model":"oc/big-pickle",
+              "executor_model":"opencode/big-pickle",
+              "text":answer,
+              "cli_version":"2.0.8",
+              "runtime_identity":"github-actions:ubuntu-latest:node24:opencode-cli",
+              "execution_id":os.environ["EXECUTION_ID"],
+              "elapsed_seconds":elapsed,
+              "fallback_occurred":False,
+              "retry_count":0,
+              "exit_code":rc,
+              "stdout_sha256":hashlib.sha256(stdout.encode()).hexdigest(),
+              "stderr_sha256":hashlib.sha256(stderr.encode()).hexdigest(),
+              "parse_errors":parse_errors,
+              "safe_stderr":safe_stderr[-20:],
+          }
+          (root/"result.json").write_text(json.dumps(result,sort_keys=True),encoding="utf-8")
+          print(json.dumps({
+              "status":result["status"],
+              "provider":result["provider"],
+              "canonical_model":result["canonical_model"],
+              "executor_model":result["executor_model"],
+              "cli_version":result["cli_version"],
+              "elapsed_seconds":result["elapsed_seconds"],
+              "exit_code":result["exit_code"],
+              "usable_text":bool(answer),
+              "fallback_occurred":False,
+          },sort_keys=True))
+          if result["status"]!="EXECUTED":
+              print("OPENCODE_NATIVE_ERROR=native_execution_failed")
+              raise SystemExit(rc or 1)
+          PY
+          rm -f runtime/opencode-native-result/prompt.txt
+
+      - name: Upload governed OpenCode native result
+        if: ${{ always() && inputs.mode == 'opencode_native' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-native-result
+          path: |
+            runtime/opencode-native-result/result.json
+            runtime/opencode-native-result/stdout.ndjson
+            runtime/opencode-native-result/stderr.txt
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Shutdown OmniRoute
         if: always()
         run: |
