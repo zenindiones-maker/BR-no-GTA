@@ -20,8 +20,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE_RENDER_ARTIFACT_ID: "10525757299"
       SOURCE_RENDER_RUN_ID: "35289539299"
-      BENCHMARK_ARTIFACT_ID: "10545807568"
-      BENCHMARK_RUN_ID: "35343762651"
+      BENCHMARK_ARTIFACT_ID: "10546949960"
+      BENCHMARK_RUN_ID: "35347546577"
       INCIDENT_RUN_ID: "35289594486"
       INCIDENT_JOB_ID: "105429342947"
       INCIDENT_HEAD_SHA: "7bc7b9c719d45efa23745d618ec8ba3077addaec"
@@ -142,3 +142,5 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 # Retry note: re-dispatch after scoped authorization-id provenance guard fix.
+
+# Fresh observed benchmark: run 35347546577 / artifact 10546949960.
