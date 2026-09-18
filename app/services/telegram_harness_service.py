@@ -454,7 +454,7 @@ def chat_under_harness(
         "execution_id": evidence.execution_id,
         "capability_id": routing.selected_capability_id,
         "provider": evidence.provider,
-        "model": evidence.model or result.get("model") or routing.selected_model,
+        "model": getattr(evidence, "model", None) or result.get("model") or routing.selected_model,
         "executor_binding": getattr(evidence, "executor_binding", None) or routing.selected_provider_executor_binding,
         "fallback_occurred": routing.fallback_occurred,
         "zero_cost_operation": bool(routing.policy_metadata.get("zero_cost_operation")),
