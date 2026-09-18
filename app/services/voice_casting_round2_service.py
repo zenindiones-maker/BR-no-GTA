@@ -20,7 +20,6 @@ from app.services.voice_casting_service import (
     MASTER_TARGET_LUFS,
     MASTER_TRUE_PEAK_DB,
     _decode_and_acoustic_qa,
-    _master_sample,
     _probe_audio,
     _synthesize_edge_sample,
     build_speech_text,
@@ -40,6 +39,9 @@ PROSODY_TIERS = (
     ("60-90s", 75.0),
 )
 TARGET_WPM = 125.0
+ROUND2_TRUE_PEAK_TARGET = -2.0
+ROUND2_SAMPLE_RATE = 48000
+ROUND2_BITRATE = "96k"
 _WORD_RE = re.compile(r"[A-Za-zÀ-ÿ0-9]+(?:['’\-][A-Za-zÀ-ÿ0-9]+)?")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -229,6 +231,59 @@ def _decode_to_wav(source: Path, target: Path) -> None:
         raise Round2Error(result.stderr[-800:])
 
 
+def _master_round2(source: Path, target: Path) -> dict[str, Any]:
+    """Two-pass EBU R128 normalization with MP3 true-peak headroom."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    first = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-y", "-i", str(source),
+            "-af",
+            f"loudnorm=I={MASTER_TARGET_LUFS}:LRA=11:TP={ROUND2_TRUE_PEAK_TARGET}:print_format=json",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True, timeout=300,
+    )
+    if first.returncode != 0:
+        raise Round2Error(first.stderr[-1200:])
+    matches = re.findall(r'\{\s*"input_i".*?\}', first.stderr, flags=re.DOTALL)
+    if not matches:
+        raise Round2Error("two-pass loudnorm measurement JSON unavailable")
+    measured = json.loads(matches[-1])
+    filt = (
+        f"loudnorm=I={MASTER_TARGET_LUFS}:LRA=11:TP={ROUND2_TRUE_PEAK_TARGET}:"
+        f"measured_I={measured['input_i']}:"
+        f"measured_LRA={measured['input_lra']}:"
+        f"measured_TP={measured['input_tp']}:"
+        f"measured_thresh={measured['input_thresh']}:"
+        f"offset={measured['target_offset']}:linear=true:print_format=summary"
+    )
+    second = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source), "-af", filt,
+            "-ar", str(ROUND2_SAMPLE_RATE), "-ac", "1",
+            "-c:a", "libmp3lame", "-b:a", ROUND2_BITRATE, str(target),
+        ],
+        capture_output=True, text=True, timeout=300,
+    )
+    if second.returncode != 0:
+        raise Round2Error(second.stderr[-1200:])
+    if not target.is_file() or target.stat().st_size <= 0:
+        raise Round2Error("two-pass mastered sample is empty")
+    return {
+        "mastering_wall_clock": time.monotonic() - started,
+        "mastering_passes": 2,
+        "target_lufs": MASTER_TARGET_LUFS,
+        "target_true_peak_db": ROUND2_TRUE_PEAK_TARGET,
+        "codec": "mp3",
+        "sample_rate": ROUND2_SAMPLE_RATE,
+        "channels": 1,
+        "bitrate": ROUND2_BITRATE,
+        "measured_input": measured,
+    }
+
+
 def assemble_windows(raw_paths: list[Path], target: Path) -> dict[str, Any]:
     if not raw_paths:
         raise Round2Error("no prosody windows to assemble")
@@ -255,7 +310,7 @@ def assemble_windows(raw_paths: list[Path], target: Path) -> dict[str, Any]:
         )
         if result.returncode != 0:
             raise Round2Error(result.stderr[-1200:])
-        master_meta = _master_sample(pcm_master, target)
+        master_meta = _master_round2(pcm_master, target)
     return master_meta
 
 
@@ -279,7 +334,7 @@ def qa_sample(
         "duration_valid": 12.0 <= probe["duration_seconds"] <= max_seconds,
         "ptbr_language": asr["language"].lower().startswith("pt")
         and float(asr["language_probability"]) >= 0.45,
-        "no_clipping": float(acoustic["true_peak_dbfs"]) <= MASTER_TRUE_PEAK_DB + 0.20,
+        "no_clipping": float(acoustic["true_peak_dbfs"]) <= -1.40,
         "loudness_comparable": abs(float(acoustic["integrated_lufs"]) - MASTER_TARGET_LUFS) <= 0.9,
         "no_abnormal_silence": float(acoustic["longest_silence_seconds"]) <= 5.0,
         "script_alignment": max(speech_alignment, editorial_alignment) >= 0.50,
@@ -343,7 +398,7 @@ async def _synth_master(
         pitch=PITCH,
         volume=VOLUME,
     )
-    mastering = await asyncio.to_thread(_master_sample, raw, output)
+    mastering = await asyncio.to_thread(_master_round2, raw, output)
     raw.unlink(missing_ok=True)
     return {**synth, **mastering}
 
@@ -636,7 +691,7 @@ async def execute_round2(
         "volume": VOLUME,
         "mastering": {
             "target_lufs": MASTER_TARGET_LUFS,
-            "target_true_peak_db": MASTER_TRUE_PEAK_DB,
+            "target_true_peak_db": ROUND2_TRUE_PEAK_TARGET,
             "same_chain_for_all_variants": True,
         },
         "multicontext": multicontext,

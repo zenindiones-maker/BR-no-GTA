@@ -53,5 +53,6 @@
   "preserve_content_addressed_cache": true,
   "preserve_segment_retry": true,
   "preserve_render_retry_reuse": true,
-  "iteration": 1
+  "iteration": 2,
+  "retry_reason": "two-pass common mastering after observed MP3 true-peak overshoot on Voice B 60-90s"
 }
