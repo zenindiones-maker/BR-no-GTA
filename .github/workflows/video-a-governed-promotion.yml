@@ -141,3 +141,4 @@ jobs:
             runtime/video-a-promotion/promoted/descriptor.json
           if-no-files-found: warn
           retention-days: 30
+# Retry note: re-dispatch after scoped authorization-id provenance guard fix.
