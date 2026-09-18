@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 import json
 from typing import Any
@@ -65,6 +65,10 @@ class HarnessRoutingRequest:
     zero_cost_operation: bool = False
     exhausted_free_quota_provider_ids: tuple[str, ...] = ()
     task_class: str | None = None
+    goal_id: str | None = None
+    agent_id: str | None = None
+    skill_id: str | None = None
+    learning_required: bool | None = None
     competence_records: tuple[dict[str, Any], ...] = ()
 
 
@@ -412,12 +416,75 @@ def route_harness_request(
     *,
     registry: GlobalCapabilityRegistry = GLOBAL_CAPABILITY_REGISTRY,
 ) -> HarnessRoutingDecision:
-    """Select capability/provider/model/executor metadata without authorizing or executing."""
+    """Select capability/provider/model/executor metadata without authorizing or executing.
+
+    Operational learning is part of this normal boundary whenever domain and
+    task_class are available. Callers cannot substitute persisted competence
+    with self-reported competence in that case.
+    """
     if not request.intent or not request.intent.strip():
         raise ValueError("routing intent is required")
     action = request.authorized_action.strip().upper()
     if not action:
         raise ValueError("authorized_action is required")
+
+    has_learning_context = bool(request.domain and request.task_class)
+    learning_required = (
+        has_learning_context
+        if request.learning_required is None
+        else bool(request.learning_required)
+    )
+    if learning_required and not has_learning_context:
+        raise RoutingPolicyError(
+            "Operational learning requires both domain and task_class",
+            evidence={
+                "domain": request.domain,
+                "task_class": request.task_class,
+                "learning_required": True,
+            },
+        )
+
+    learning_context: dict[str, Any] = {
+        "learning_required": learning_required,
+        "learning_participated": False,
+        "retrieved_memory_ids": [],
+        "retrieved_failure_memory_ids": [],
+        "retrieved_human_feedback_ids": [],
+        "competence_records": [],
+        "active_skill_versions": [],
+        "active_policy_versions": [],
+    }
+    if has_learning_context:
+        try:
+            from app.services.harness_learning_context_service import (
+                load_operational_learning_context,
+            )
+            learning_context = {
+                "learning_required": learning_required,
+                **load_operational_learning_context(
+                    domain=str(request.domain),
+                    task_class=str(request.task_class),
+                    capability_id=request.required_capability_id,
+                    agent_id=request.agent_id,
+                    skill_id=request.skill_id,
+                ),
+            }
+        except Exception as exc:
+            if learning_required:
+                raise RoutingPolicyError(
+                    "Operational learning context retrieval failed closed",
+                    evidence={
+                        "domain": request.domain,
+                        "task_class": request.task_class,
+                        "error_type": type(exc).__name__,
+                    },
+                ) from exc
+        if learning_required:
+            request = replace(
+                request,
+                competence_records=tuple(learning_context.get("competence_records") or ()),
+            )
+
     request = _apply_global_zero_cost_policy(
         request,
         authorized_action=action,
@@ -528,6 +595,10 @@ def route_harness_request(
             "historical competence evidence participated in Harness routing: "
             f"tested_cases={max(int(item.get('tested_cases') or 0) for item in selected_competence)}"
         )
+    if learning_context.get("learning_participated"):
+        rationale.append(
+            "persisted Harness learning context was retrieved automatically before selection"
+        )
     if capability.agent_id or capability.skill_id:
         implementation_identity = capability.skill_id or capability.agent_id or capability.capability_id
         rationale.append(
@@ -563,6 +634,7 @@ def route_harness_request(
         "zero_cost_operation": request.zero_cost_operation,
         "global_zero_cost_operation": ZERO_COST_OPERATION,
         "task_class": request.task_class,
+        "learning_context": learning_context,
         "competence_evidence_used": [
             {
                 "agent_id": item.get("agent_id"),
