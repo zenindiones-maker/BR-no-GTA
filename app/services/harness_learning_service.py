@@ -794,4 +794,3 @@ def complete_improvement_mission(*, improvement_mission_id: str,
         "COMPLETED",
         finished_at=_utcnow(),
     )
-
