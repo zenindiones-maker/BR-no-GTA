@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import app.services.telegram_learning_service as telegram_learning_service
+import app.services.telegram_source_intelligence_service as source_intelligence_service
+
 from app.database.telegram_source_intelligence_repository import (
     get_editorial_signal_by_candidate,
     get_source_candidate_by_input,
@@ -127,6 +130,75 @@ def test_url_ingress_is_source_candidate_not_semantic_memory():
     assert candidate["source_state"] == "SOURCE_CANDIDATE"
 
 
+def test_news_ingress_never_calls_semantic_memory_persistence(monkeypatch):
+    def forbidden(**kwargs):
+        raise AssertionError("news ingress must not create semantic claim/memory")
+
+    monkeypatch.setattr(
+        telegram_learning_service,
+        "_persist_memory_learning",
+        forbidden,
+    )
+    record = _ingest("https://example.com/news-only-candidate", message_id=9008)
+    assert record["classification"] == "news"
+    assert record["learning_status"] == "captured"
+    assert record["source_state"] == "SOURCE_CANDIDATE"
+    assert record["claim_id"] is None
+    assert record["memory_id"] is None
+
+
+def test_semantic_promotion_happens_only_after_source_candidate_is_verified(monkeypatch):
+    url = "https://www.rockstargames.com/VI/causal-proof"
+    record = _ingest(url, message_id=9009)
+    claim = (
+        "Rockstar confirms that GTA VI follows Lucia and Jason across Vice City "
+        "and the state of Leonida."
+    )
+    packet = _base_packet(
+        {
+            "resolution_status": "PASS",
+            "source_name": "Rockstar GTA VI",
+            "url": url,
+            "resolved_url": url,
+            "platform": "web",
+            "retrieved_at": CHECKED_AT,
+            "source_hierarchy": "OFFICIAL_PRIMARY",
+            "original_source_retrieved": True,
+            "content_excerpt": claim,
+            "content_sha256": "d" * 64,
+            "independent_group": "rockstargames.com",
+            "content_fingerprint": "official-causal-proof",
+        }
+    )
+    packet["official_sources"][0]["content_excerpt"] = claim
+
+    observed_states = []
+    original = source_intelligence_service._promote_verified_claim
+
+    def guarded_promote(**kwargs):
+        current = get_source_candidate_by_input(record["id"])
+        assert current is not None
+        observed_states.append(current["source_state"])
+        assert current["source_state"] == "VERIFIED"
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        source_intelligence_service,
+        "_promote_verified_claim",
+        guarded_promote,
+    )
+    result = process_telegram_source_intelligence(
+        input_record=record,
+        fresh_evidence=_fresh(packet),
+    )
+    assert observed_states == ["VERIFIED"]
+    assert result["INPUT_CAPTURED"] == "PASS"
+    assert result["SOURCE_LEARNED"] == "PASS"
+    assert result["CLAIM_VERIFIED"] == "PASS"
+    assert result["SEMANTIC_MEMORY_PROMOTED"] == "PASS"
+    assert result["source_candidate"]["source_state"] == "MEMORY_ELIGIBLE"
+
+
 def test_direct_official_source_verifies_before_memory_and_creates_signal():
     url = "https://www.rockstargames.com/VI"
     record = _ingest(url, message_id=9002)
@@ -158,6 +230,9 @@ def test_direct_official_source_verifies_before_memory_and_creates_signal():
     )
 
     assert result["REAL_TELEGRAM_SOURCE_INPUT"] == "PASS"
+    assert result["INPUT_CAPTURED"] == "PASS"
+    assert result["SOURCE_LEARNED"] == "PASS"
+    assert result["CLAIM_VERIFIED"] == "PASS"
     assert result["SOURCE_CONTENT_RESOLVED"] == "PASS"
     assert result["CLAIMS_EXTRACTED"] == "PASS"
     assert result["FACT_CHECK_EXECUTED"] == "PASS"
@@ -194,6 +269,7 @@ def test_direct_official_source_verifies_before_memory_and_creates_signal():
 
     debug = _source_evidence_payload(record["id"])
     assert debug["INPUT_CAPTURED"] == "PASS"
+    assert debug["SOURCE_LEARNED"] == "PASS"
     assert debug["CLAIM_VERIFIED"] == "PASS"
     assert debug["SEMANTIC_MEMORY_PROMOTED"] == "PASS"
     assert debug["EDITORIAL_SIGNAL_CREATED"] == "PASS"
