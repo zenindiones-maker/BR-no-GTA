@@ -831,6 +831,9 @@ def process_telegram_source_intelligence(
         )
         return {
             "REAL_TELEGRAM_SOURCE_INPUT": "PASS",
+            "INPUT_CAPTURED": "PASS",
+            "SOURCE_LEARNED": "PASS",
+            "CLAIM_VERIFIED": "NO",
             "SOURCE_CONTENT_RESOLVED": "FAIL",
             "FRESH_RESEARCH_TRIGGERED": "PASS",
             "CLAIMS_EXTRACTED": "NO",
@@ -923,7 +926,6 @@ def process_telegram_source_intelligence(
                 if hierarchy == "PRIMARY_STATEMENT_REPORTED_BY_SECONDARY"
                 else "INSUFFICIENT_EVIDENCE"
             )
-        memory_eligible = verification == "VERIFIED"
         claim_id = _stable("source-claim", f"{candidate['candidate_id']}:{statement}")
         existing_claim = source_repository.get_source_claim(claim_id)
         evidence_refs = list(dict.fromkeys([
@@ -933,23 +935,16 @@ def process_telegram_source_intelligence(
             f"fact-check-authorization:{fact_lineage['authorization_id']}",
             f"fact-check-execution:{fact_lineage['execution_id']}",
         ]))
+        # A fact-check can mark a claim VERIFIED, but semantic memory promotion
+        # is forbidden until the SourceCandidate itself has crossed FACT_CHECKED
+        # and then VERIFIED. Existing semantic memory is preserved only for an
+        # idempotent replay of an already promoted claim.
         memory_id = (
             int(existing_claim["semantic_memory_id"])
             if existing_claim is not None
             and existing_claim.get("semantic_memory_id") is not None
             else None
         )
-        if memory_eligible and memory_id is None:
-            memory_id = _promote_verified_claim(
-                candidate=candidate,
-                input_record=input_record,
-                statement=statement,
-                fact_check=fact_check,
-                hierarchy=claim_hierarchy,
-                evidence_refs=evidence_refs,
-            )
-        if memory_id is not None:
-            promoted_memory_ids.append(memory_id)
         claim = source_repository.upsert_source_claim(
             {
                 "claim_id": claim_id,
@@ -958,7 +953,7 @@ def process_telegram_source_intelligence(
                 "fact_check_result": fact_verdict,
                 "verification_status": verification,
                 "source_hierarchy": claim_hierarchy,
-                "memory_eligible": memory_eligible,
+                "memory_eligible": bool(memory_id),
                 "semantic_memory_id": memory_id,
                 "source_refs": list(fact_check.get("source_refs") or ()),
                 "evidence_refs": evidence_refs,
@@ -1001,8 +996,40 @@ def process_telegram_source_intelligence(
             source_url=source_url,
             learning_status="captured",
         )
-        if promoted_memory_ids:
-            terminal_state = "MEMORY_ELIGIBLE"
+
+        # MEMORY_ELIGIBLE is a post-verification transition. Only after the
+        # candidate is durably VERIFIED may a verified claim become semantic
+        # memory. This preserves the causal chain:
+        # FACT_CHECKED -> VERIFIED -> semantic promotion -> MEMORY_ELIGIBLE.
+        refreshed_claims: list[dict[str, Any]] = []
+        for item in persisted_claims:
+            if item["verification_status"] != "VERIFIED":
+                refreshed_claims.append(item)
+                continue
+            memory_id = item.get("semantic_memory_id")
+            if memory_id is None:
+                payload = dict(item.get("payload") or {})
+                memory_id = _promote_verified_claim(
+                    candidate=candidate,
+                    input_record=input_record,
+                    statement=str(item["statement"]),
+                    fact_check=dict(payload.get("fact_check") or {}),
+                    hierarchy=str(item.get("source_hierarchy") or "INSUFFICIENT_EVIDENCE"),
+                    evidence_refs=list(item.get("evidence_refs") or ()),
+                )
+            promoted_memory_ids.append(int(memory_id))
+            refreshed_claims.append(
+                source_repository.upsert_source_claim(
+                    {
+                        **item,
+                        "memory_eligible": True,
+                        "semantic_memory_id": int(memory_id),
+                    }
+                )
+            )
+        persisted_claims = refreshed_claims
+        terminal_state = "MEMORY_ELIGIBLE" if promoted_memory_ids else "VERIFIED"
+        if terminal_state == "MEMORY_ELIGIBLE":
             candidate = source_repository.transition_source_candidate(
                 candidate["candidate_id"],
                 state=terminal_state,
@@ -1010,8 +1037,6 @@ def process_telegram_source_intelligence(
                 evidence_refs=fetch_refs,
                 payload_patch={"promoted_memory_ids": promoted_memory_ids},
             )
-        else:
-            terminal_state = "VERIFIED"
     elif contradicted_claims:
         terminal_state = "CONTRADICTED"
         candidate = source_repository.transition_source_candidate(
@@ -1053,6 +1078,9 @@ def process_telegram_source_intelligence(
     )
     return {
         "REAL_TELEGRAM_SOURCE_INPUT": "PASS",
+        "INPUT_CAPTURED": "PASS",
+        "SOURCE_LEARNED": "PASS",
+        "CLAIM_VERIFIED": "PASS" if verified_claims else "NO",
         "SOURCE_CONTENT_RESOLVED": "PASS",
         "FRESH_RESEARCH_TRIGGERED": "PASS",
         "CLAIMS_EXTRACTED": "PASS" if claims_text else "NO",
