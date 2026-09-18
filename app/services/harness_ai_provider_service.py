@@ -367,4 +367,3 @@ def execute_harness_ai_generation(
         retry_count=0,
         evidence_refs=refs,
     )
-
