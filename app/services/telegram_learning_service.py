@@ -19,6 +19,7 @@ from app.database.telegram_user_input_repository import (
     list_recent_telegram_user_inputs,
     upsert_telegram_user_input,
 )
+from app.database.telegram_source_intelligence_repository import upsert_source_candidate
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
@@ -46,7 +47,6 @@ TELEGRAM_INPUT_EXECUTOR_BINDING = (
 _LEARNING_CLASSES = {
     "idea",
     "theme",
-    "news",
     "knowledge_note",
     "reference_media",
     "channel_standard",
@@ -57,6 +57,13 @@ _LEARNING_CLASSES = {
 def _fold(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or ""))
     return "".join(ch for ch in normalized if not unicodedata.combining(ch)).casefold()
+
+
+def extract_source_url(text: str) -> str | None:
+    match = re.search(r"https://[^\s<>()]+", str(text or ""), flags=re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(0).rstrip(".,;:!?)]}").strip() or None
 
 
 def classify_telegram_input(
@@ -88,7 +95,7 @@ def classify_telegram_input(
         return "theme"
     if any(term in normalized for term in ("noticia", "reportagem", "news", "fonte")):
         return "news"
-    if re.search(r"https?://\S+", text or ""):
+    if extract_source_url(text) is not None:
         return "news"
     if has_attachment:
         return "reference_media"
@@ -121,6 +128,8 @@ def _safe_input(record: dict[str, Any]) -> dict[str, Any]:
         "remote_verified": bool(record.get("remote_verified")),
         "classification": record["classification"],
         "learning_status": record["learning_status"],
+        "source_url": record.get("source_url"),
+        "source_state": record.get("source_state"),
         "memory_event_id": record.get("memory_event_id"),
         "claim_id": record.get("claim_id"),
         "memory_id": record.get("memory_id"),
@@ -245,6 +254,7 @@ def execute_telegram_input_ingestion_capability(
         has_attachment=attachment is not None,
         classification_override=payload.get("classification_override"),
     )
+    source_url = extract_source_url(text)
     if classification not in {
         "chat", "question", "idea", "theme", "news", "knowledge_note",
         "reference_media", "channel_standard", "brand_asset",
@@ -303,6 +313,7 @@ def execute_telegram_input_ingestion_capability(
             "mime_type": (attachment or {}).get("mime_type"),
             "file_size": (attachment or {}).get("file_size"),
             "remote_verified": remote_verified,
+            "source_url": source_url,
             "routing_id": routing_decision.routing_id,
             "authorization_id": auth.authorization_id,
         },
@@ -314,6 +325,10 @@ def execute_telegram_input_ingestion_capability(
         text=text,
         attachment=attachment,
     )
+    if classification == "news":
+        # User-supplied news/URLs are evidence candidates, never facts at ingress.
+        claim_id = None
+        memory_id = None
     learning_status = "learned" if memory_id is not None else "captured"
     if classification == "reference_media" and attachment is not None:
         learning_status = "pending_cloud_analysis" if memory_id is not None else "captured"
@@ -340,6 +355,8 @@ def execute_telegram_input_ingestion_capability(
         remote_verified=remote_verified,
         classification=classification,
         learning_status=learning_status,
+        source_url=source_url,
+        source_state=("SOURCE_CANDIDATE" if classification == "news" and source_url else None),
         memory_event_id=event_id,
         claim_id=claim_id,
         memory_id=memory_id,
@@ -351,6 +368,26 @@ def execute_telegram_input_ingestion_capability(
             "execution_id": auth.execution_id,
         },
     )
+    if classification == "news" and source_url:
+        candidate_key = f"{saved['telegram_chat_id']}:{saved['telegram_message_id']}:{source_url}"
+        candidate_id = "source-" + __import__("hashlib").sha256(
+            candidate_key.encode("utf-8")
+        ).hexdigest()[:24]
+        source_candidate = upsert_source_candidate(
+            candidate_id=candidate_id,
+            telegram_input_id=int(saved["id"]),
+            source_url=source_url,
+            provenance={
+                "source": "telegram",
+                "telegram_input_id": saved["id"],
+                "memory_event_id": event_id,
+                "routing_id": routing_decision.routing_id,
+                "authorization_id": auth.authorization_id,
+            },
+        )
+    else:
+        source_candidate = None
+
     consume_harness_authorization(auth)
 
     evidence = CapabilityEvidence(
@@ -369,6 +406,11 @@ def execute_telegram_input_ingestion_capability(
             "memory_event_id": event_id,
             "claim_id": claim_id,
             "memory_id": memory_id,
+            "source_url": source_url,
+            "source_state": saved.get("source_state"),
+            "source_candidate_id": (
+                source_candidate.get("candidate_id") if source_candidate is not None else None
+            ),
         },
         boundary=record.security_boundary,
     )
@@ -385,6 +427,7 @@ def execute_telegram_input_ingestion_capability(
         "routing_id": routing_decision.routing_id,
         "authorization_id": auth.authorization_id,
         "input": _safe_input(saved),
+        "source_candidate": source_candidate,
         "canonical_execution_result": canonical.to_dict(),
     }
 
