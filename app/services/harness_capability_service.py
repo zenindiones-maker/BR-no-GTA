@@ -127,6 +127,7 @@ CAPABILITY_CATALOG = tuple(
         or record.provider_id == "higgsfield"
         or record.capability_id == "agent-office.execute"
         or record.capability_id == "gta6.fact-check"
+        or record.capability_id == "human.presentation.action-first"
     )
 )
 _CAPABILITY_BY_ID = {
