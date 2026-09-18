@@ -24,6 +24,7 @@ from app.database.memory_claim_repository import (
 from app.database.memory_event_repository import insert_memory_event
 from app.database.memory_repository import find_memory_by_source, update_memory_status
 from app.database.telegram_user_input_repository import update_telegram_source_state
+from app.database.harness_authorization_repository import get_harness_authorization
 from app.services.editorial_intelligence_contracts import (
     ClaimLedgerItem,
     ResearchDossier,
@@ -786,6 +787,26 @@ def _human_input_lineage_preserved(
         return False
     if signal_payload.get("memory_event_id") != memory_event_id:
         return False
+
+    authorization_id = str(signal.get("authorization_id") or "").strip()
+    authorization = (
+        get_harness_authorization(authorization_id)
+        if authorization_id
+        else None
+    )
+    if authorization is None:
+        return False
+    auth_lineage = dict(authorization.get("lineage") or {})
+    if auth_lineage.get("telegram_input_id") != input_id:
+        return False
+    if auth_lineage.get("memory_event_id") != memory_event_id:
+        return False
+    if auth_lineage.get("source_candidate_id") != candidate.get("candidate_id"):
+        return False
+    expected_dossier = dossier.mission_id if dossier is not None else None
+    if auth_lineage.get("research_dossier_id") != expected_dossier:
+        return False
+
     refs = set(signal.get("evidence_refs") or ())
     return (
         f"telegram-input:{input_id}" in refs
