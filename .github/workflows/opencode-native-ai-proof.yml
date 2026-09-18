@@ -98,3 +98,4 @@ jobs:
           if-no-files-found: error
 # Evidence-only trigger; no promotion is performed by this proof.
 # Retry after native workflow version normalization.
+# Retry after binding native execution to registered omniroute.yml host.
