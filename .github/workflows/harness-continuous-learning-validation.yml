@@ -1,0 +1,153 @@
+name: Harness Continuous Learning Validation
+run-name: Harness learning proof · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - app/database/schema.py
+      - app/database/harness_learning_repository.py
+      - app/services/harness_learning_service.py
+      - app/services/harness_routing_policy_service.py
+      - scripts/harness_learning_operational_proof.py
+      - tests/test_harness_learning_system.py
+      - .github/workflows/harness-continuous-learning-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  learning-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: runtime/learning/harness-learning.db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install root dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Compile learning boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile             app/database/harness_learning_repository.py             app/services/harness_learning_service.py             app/services/harness_routing_policy_service.py             scripts/harness_learning_operational_proof.py
+
+      - name: Focused closed-loop tests
+        run: |
+          set -euo pipefail
+          pytest -q             tests/test_harness_learning_system.py             tests/test_harness_routing_policy_service.py             tests/test_harness_authorization_service.py             tests/test_memory_consolidation_persistence.py
+
+      - name: Architecture authority guards
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path("app/services/harness_learning_service.py").read_text(encoding="utf-8")
+          repository = Path("app/database/harness_learning_repository.py").read_text(encoding="utf-8")
+          schema = Path("app/database/schema.py").read_text(encoding="utf-8")
+          routing = Path("app/services/harness_routing_policy_service.py").read_text(encoding="utf-8")
+
+          assert "validate_harness_authorization" in service
+          assert 'expected_subject=f"learning:candidate:{candidate_id}"' in service
+          assert 'expected_subject="learning:improvement"' in service
+          assert "gta6_knowledge_repository" not in service
+          assert "youtube_publication_repository" not in service
+          assert "harness_episodes" in schema
+          assert "harness_competence" in schema
+          assert "harness_learning_candidates" in schema
+          assert "competence_records" in routing
+          assert "youtube_publications" not in repository
+          print("HARNESS_AUTHORITY=PRESERVED")
+          print("KNOWLEDGE_BRAIN_BOUNDARY=PRESERVED")
+          print("NO_SELF_MODIFICATION_BYPASS=PASS")
+          print("PUBLICATION_AUTHORITY_UNCHANGED=PASS")
+          PY
+
+      - name: Root full pytest suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Execute controlled operational learning loop
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf runtime/learning
+          mkdir -p runtime/learning/proof
+          export BR_TEST_DATABASE="$PWD/runtime/learning/harness-learning.db"
+          python scripts/harness_learning_operational_proof.py             --output-dir runtime/learning/proof
+
+      - name: Validate machine-readable proof from observed artifacts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("runtime/learning/proof")
+          required = {
+              "harness-learning-proof.json",
+              "episode-a.json",
+              "learning-candidate.json",
+              "competence-before.json",
+              "competence-after.json",
+              "eval-baseline.json",
+              "eval-candidate.json",
+              "promotion-decision.json",
+              "episode-b.json",
+              "retrieval-proof.json",
+              "system-improvement-proof.json",
+          }
+          missing = sorted(name for name in required if not (root / name).is_file())
+          assert not missing, missing
+          proof = json.loads((root / "harness-learning-proof.json").read_text(encoding="utf-8"))
+          retrieval = json.loads((root / "retrieval-proof.json").read_text(encoding="utf-8"))
+          episode_a = json.loads((root / "episode-a.json").read_text(encoding="utf-8"))
+          episode_b = json.loads((root / "episode-b.json").read_text(encoding="utf-8"))
+          assert proof["status"] == "PASS"
+          assert proof["authority"] == "deepseek_harness"
+          assert proof["knowledge_brain_boundary"] == "PRESERVED"
+          assert proof["harness_memory"] == "FUNCTIONAL"
+          assert proof["competence_graph"] == "FUNCTIONAL"
+          assert proof["memory_provenance"] is True
+          assert proof["memory_staleness"] is True
+          assert proof["learning_candidate_pipeline"] is True
+          assert proof["retrieval_next_run_proven"] is True
+          assert proof["agent_competence_routing_proven"] is True
+          assert proof["system_improvement_loop_proven"] is True
+          assert proof["no_self_modification_bypass"] is True
+          assert proof["publication_authority_changed"] is False
+          assert episode_a["actual_outcome"]["observed"] is True
+          assert episode_a["outcome_evidence"]
+          assert episode_b["actual_outcome"]["observed"] is True
+          assert retrieval["learning_participated"] is True
+          assert retrieval["promoted_memory_retrieved"] is True
+          assert retrieval["competence_evidence_used"]
+          print("MACHINE_READABLE_EVIDENCE=PASS")
+          print("RETRIEVAL_NEXT_RUN=PROVEN")
+          print("AGENT_COMPETENCE_ROUTING=PROVEN")
+          PY
+
+      - name: Upload Harness learning evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-learning-proof-${{ github.run_id }}
+          path: runtime/learning/proof/
+          if-no-files-found: error
+          retention-days: 30
