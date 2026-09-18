@@ -98,6 +98,52 @@ def test_pure_system_question_does_not_force_web_refresh():
     assert requires_fresh_research("Como funciona o sistema BR no GTA?") is False
 
 
+def test_structured_telegram_source_context_reaches_fresh_transport():
+    captured = {}
+
+    class ContextTransport:
+        def execute(self, *, query: str, execution_id: str, source_context=None):
+            captured["query"] = query
+            captured["execution_id"] = execution_id
+            captured["source_context"] = dict(source_context or {})
+            packet, ref = FakeFreshTransport().execute(
+                query=query,
+                execution_id=execution_id,
+                source_context=source_context,
+            )
+            packet["telegram_context"] = {
+                "telegram_input_id": str((source_context or {}).get("id") or ""),
+                "classification": (source_context or {}).get("classification"),
+                "input_kind": (source_context or {}).get("input_kind"),
+                "memory_event_id": str((source_context or {}).get("memory_event_id") or ""),
+                "source_url": (source_context or {}).get("source_url"),
+            }
+            return packet, ref
+
+    context = {
+        "id": 77,
+        "classification": "news",
+        "input_kind": "text",
+        "source_url": "https://example.com/gta-vi",
+        "memory_event_id": 88,
+    }
+    evidence = research_fresh_gta6_under_harness(
+        "Confira esta notícia",
+        transport=ContextTransport(),
+        source_context=context,
+    )
+
+    assert evidence.status == "PASS"
+    assert captured["source_context"] == context
+    assert evidence.packet["telegram_context"] == {
+        "telegram_input_id": "77",
+        "classification": "news",
+        "input_kind": "text",
+        "memory_event_id": "88",
+        "source_url": "https://example.com/gta-vi",
+    }
+
+
 def test_fresh_research_routes_exact_capability_and_preserves_lineage():
     evidence = research_fresh_gta6_under_harness(
         "Qual é a data oficial atual de GTA VI?",
