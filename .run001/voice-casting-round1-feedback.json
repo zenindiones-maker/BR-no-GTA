@@ -1,0 +1,41 @@
+{
+  "version": "human-voice-feedback/v1",
+  "casting_id": "br-no-gta-ptbr-casting-20260918-r1",
+  "source_checkpoint": ".run001/voice-casting-round1.checkpoint.json",
+  "round": 1,
+  "status": "CONSUMED_FOR_ROUND2",
+  "received_at": "2026-09-18T21:21:00-03:00",
+  "feedback": {
+    "top2": [
+      "Voice B",
+      "Voice C"
+    ],
+    "ranking": [
+      {
+        "blind_id": "Voice B",
+        "rank": 1
+      },
+      {
+        "blind_id": "Voice C",
+        "rank": 2,
+        "notes": [
+          "melhor_diccao"
+        ]
+      }
+    ],
+    "raw": "TOP_2=Voice B,Voice C RANK_1=Voice B RANK_2=Voice C HUMAN_NOTE_VOICE_C=melhor_diccao"
+  },
+  "identity_resolution": "PRIVATE_ARTIFACT_ONLY",
+  "automatic_promotion": false,
+  "official_voice_selected": false,
+  "harness_lineage": {
+    "authority": "deepseek_harness",
+    "authorized_action": "EXECUTION",
+    "capability": "narration.generate.pt-BR",
+    "publication_authority": "NONE"
+  },
+  "invariants": {
+    "job18_frozen": true,
+    "publication_gate_unchanged": true
+  }
+}

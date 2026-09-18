@@ -1,0 +1,216 @@
+name: PT-BR Voice Casting Round 2
+run-name: PT-BR voice casting · blind round 2 · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/voice-casting-round2.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ptbr-voice-casting-round2
+  cancel-in-progress: false
+
+jobs:
+  voice-casting-round2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate continuation and human feedback
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          req=json.loads(Path('.run001/voice-casting-round2.request.json').read_text(encoding='utf-8'))
+          cp=json.loads(Path('.run001/voice-casting-round1.checkpoint.json').read_text(encoding='utf-8'))
+          fb=json.loads(Path('.run001/voice-casting-round1-feedback.json').read_text(encoding='utf-8'))
+          if req['mission']!='ptbr-edge-voice-casting-round2-v1':
+              raise SystemExit('ROUND2_REQUEST_INVALID')
+          if req['selected_blind_ids']!=['Voice B','Voice C']:
+              raise SystemExit('ROUND2_SELECTED_IDS_MISMATCH')
+          if fb['feedback']['top2']!=['Voice B','Voice C']:
+              raise SystemExit('ROUND1_HUMAN_FEEDBACK_MISMATCH')
+          if fb['feedback']['ranking'][0]['blind_id']!='Voice B':
+              raise SystemExit('ROUND1_RANK1_MISMATCH')
+          if 'melhor_diccao' not in fb['feedback']['ranking'][1].get('notes',[]):
+              raise SystemExit('ROUND1_VOICE_C_NOTE_MISSING')
+          if cp['source_run_id']!=35390107713 or cp['blind_identity_artifact']['artifact_id']!=10565451469:
+              raise SystemExit('ROUND1_CHECKPOINT_IDENTITY_MISMATCH')
+          if req['job18_frozen'] is not True or req['publication_authority']!='NONE':
+              raise SystemExit('AUTHORITY_INVARIANT_FAIL')
+          print('ROUND1_HUMAN_FEEDBACK=CONSUMED')
+          print('HUMAN_TOP2_SELECTED=YES')
+          print('ROUND1_REPEATED=NO')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+          git merge-base --is-ancestor 17d6e762a9fd0af52928025a6202172f49b4c3b8 HEAD
+
+      - name: Install Round 2 runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          python -m pip install "edge-tts==7.2.8" "faster-whisper==1.2.0"
+
+      - name: Focused voice casting and narration tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_voice_casting_round2_service.py \
+            tests/test_voice_casting_service.py \
+            tests/test_narration_pipeline.py \
+            tests/test_narration_timing_contract.py \
+            tests/test_harness_capability_service.py \
+            tests/test_harness_routing_policy_service.py
+
+      - name: Restore private Round 1 identity map
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 10565451469
+          run-id: 35390107713
+          github-token: ${{ github.token }}
+          path: runtime/round1-private
+
+      - name: Execute blind Round 2, prosody windows and rate tuning
+        run: |
+          set -euo pipefail
+          identity_map="$(find runtime/round1-private -name blind-identity-map.json -print -quit)"
+          if [ -z "$identity_map" ]; then
+            echo "ROUND1_PRIVATE_IDENTITY_MAP=NOT_FOUND" >&2
+            exit 1
+          fi
+          rm -rf runtime/voice-casting-round2
+          python scripts/ptbr_voice_casting_round2.py \
+            --config .run001/video-a-investigative-longform.json \
+            --request .run001/voice-casting-round2.request.json \
+            --checkpoint .run001/voice-casting-round1.checkpoint.json \
+            --feedback .run001/voice-casting-round1-feedback.json \
+            --identity-map "$identity_map" \
+            --output-dir runtime/voice-casting-round2
+
+      - name: Validate Round 2 technical contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('runtime/voice-casting-round2/proof')
+          required=(
+              'voice-casting-round2-manifest.json',
+              'speech-transform-manifest-round2.json',
+              'prosody-window-benchmark.json',
+              'boundary-artifact-audit.json',
+              'rate-benchmark.json',
+              'human-voice-feedback.json',
+              'learning-plane-evidence.json',
+              'round2-performance.json',
+              'voice-casting-round2-state.json',
+          )
+          missing=[name for name in required if not (root/name).is_file()]
+          if missing:
+              raise SystemExit('ROUND2_ARTIFACTS_MISSING:'+','.join(missing))
+          manifest=json.loads((root/'voice-casting-round2-manifest.json').read_text())
+          prosody=json.loads((root/'prosody-window-benchmark.json').read_text())
+          boundary=json.loads((root/'boundary-artifact-audit.json').read_text())
+          rates=json.loads((root/'rate-benchmark.json').read_text())
+          learning=json.loads((root/'learning-plane-evidence.json').read_text())
+          if manifest['status']!='HUMAN_FINAL_SELECTION_REQUIRED':
+              raise SystemExit('ROUND2_FINAL_GATE_INVALID')
+          if manifest['selected_blind_ids']!=['Voice B','Voice C'] or manifest['identity_revealed'] is not False:
+              raise SystemExit('ROUND2_BLINDING_FAIL')
+          if set(manifest['multicontext'])!={'Voice B','Voice C'}:
+              raise SystemExit('ROUND2_MULTICONTEXT_IDS_FAIL')
+          for blind in ('Voice B','Voice C'):
+              contexts=manifest['multicontext'][blind]
+              if set(contexts)!={'hook','factual-dense','names-and-numbers','long-paragraph','emotional-transition','cta'}:
+                  raise SystemExit('ROUND2_CONTEXT_SET_FAIL:'+blind)
+              if any(item['technical_qa']['status']!='PASS' for item in contexts.values()):
+                  raise SystemExit('ROUND2_CONTEXT_QA_FAIL:'+blind)
+          if prosody['status']!='PASS' or prosody['automatic_winner'] is not None:
+              raise SystemExit('PROSODY_BENCHMARK_FAIL')
+          if boundary['status']!='PASS' or boundary['automatic_naturalness_judgment'] is not False:
+              raise SystemExit('BOUNDARY_AUDIT_FAIL')
+          if rates['status']!='PASS' or rates['automatic_winner'] is not None:
+              raise SystemExit('RATE_BENCHMARK_FAIL')
+          if learning['status']!='PASS' or learning['official_profile_promoted'] is not False:
+              raise SystemExit('LEARNING_PLANE_EVIDENCE_FAIL')
+          print('ROUND2_MULTICONTEXT=PASS')
+          print('PROSODY_WINDOW_BENCHMARK=PASS')
+          print('BOUNDARY_ARTIFACT_AUDIT=PASS')
+          print('RATE_TUNING=PASS')
+          print('LEARNING_PLANE=PASS')
+          print('AUTOMATIC_WINNER=NONE')
+          print('HUMAN_FINAL_SELECTION_REQUIRED=YES')
+          PY
+
+      - name: Deliver only Round 2 diagnostics to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python scripts/send_voice_casting_round2_telegram.py
+
+      - name: Validate human gate delivery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('runtime/voice-casting-round2/proof')
+          delivery=json.loads((root/'telegram-round2-delivery.json').read_text())
+          state=json.loads((root/'voice-casting-round2-state.json').read_text())
+          print('TELEGRAM_ROUND2_STATUS='+delivery['status'])
+          if delivery['status']=='SENT':
+              if delivery.get('round1_audio_repeated') is not False:
+                  raise SystemExit('ROUND1_AUDIO_WAS_REPEATED')
+              if delivery.get('identity_revealed') is not False:
+                  raise SystemExit('ROUND2_IDENTITY_REVEALED')
+              print('ROUND2_MULTICONTEXT=DELIVERED')
+              print('PROSODY_WINDOW_BENCHMARK=PASS')
+              print('RATE_TUNING=PASS')
+              print('HUMAN_FINAL_SELECTION_REQUIRED=YES')
+          else:
+              print(delivery.get('reason','TELEGRAM_DELIVERY_BLOCKED'))
+          if state['official_profile_promoted'] is not False:
+              raise SystemExit('PREMATURE_OFFICIAL_PROFILE_PROMOTION')
+          PY
+
+      - name: Upload compact public Round 2 proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptbr-voice-casting-round2-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/voice-casting-round2/proof/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload private Round 2 identity resolution separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptbr-voice-casting-round2-private-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/voice-casting-round2/private/
+          if-no-files-found: error
+          retention-days: 30
