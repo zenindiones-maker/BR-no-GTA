@@ -223,6 +223,51 @@ YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(capability_id="knowledge.le
 
 MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(capability_id="content.normalize.markdown", capability_type="EXECUTOR", domain="content-ingestion", implementation="Harness-authorized Microsoft MarkItDown 0.1.7 normalization adapter", input_contract="allowlisted public http/https source URI", output_contract="normalized Markdown + source provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Registry executor binding", "markitdown 0.1.7"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("ingestion", "normalization", "markdown", "evidence", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; only http/https allowlisted document formats or YouTube; plugins disabled; no shell, local-file, arbitrary executor, LLM, Azure, publication, or editorial authority", cost_class="FREE_NO_BILLING", quota_class="REMOTE_SOURCE", latency_class="REMOTE_IO", quality_class="PINNED_DETERMINISTIC_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.markitdown_ingestion_service.execute_markitdown_normalization_capability", version="1", provider_id="microsoft-markitdown", side_effects=())
 
+HUMAN_PRESENTATION_ACTION_FIRST_RECORD = CapabilityRecord(
+    capability_id="human.presentation.action-first",
+    capability_type="SKILL",
+    domain="human-presentation",
+    implementation=(
+        "Deterministic action-first presentation renderer adapted from "
+        "ayghri/i-have-adhd@b15d0be58f55b33972ba3e39709e0e5208ef30cb"
+    ),
+    input_contract="complete canonical Harness result + surface + presentation mode",
+    output_contract="human-facing presentation text + integrity/provenance metadata",
+    requirements=(
+        "canonical result already produced",
+        "persisted Harness DECISION authorization",
+        "Harness Routing/Policy decision",
+        "exact Global Capability Registry executor binding",
+        "pinned upstream provenance",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DECISION",),
+    policy_tags=(
+        "presentation", "human", "action-first", "telegram", "termux",
+        "work", "codex", "admin", "no-authority", "zero-cost",
+    ),
+    security_boundary=(
+        "Presentation-only deterministic projection after canonical execution/evidence. "
+        "May not mutate canonical result, write memory, choose routing, change factual classification, "
+        "hide FAIL/INSUFFICIENT_EVIDENCE/policy violations, trigger production, or grant publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="SEMANTIC_PRESERVATION_FAIL_CLOSED",
+    evidence_contract="app.services.human_presentation_service.PresentationResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.human_presentation_service.execute_human_presentation_capability"
+    ),
+    version="0.3.0-br1",
+    provider_id="ayghri-i-have-adhd-pinned",
+    skill_id="human.presentation.action-first",
+    instruction_path=".dsh/skills/human-presentation-action-first/SKILL.md",
+    side_effects=(),
+)
+
 TELEGRAM_BRAND_ASSET_RECORD = CapabilityRecord(
     capability_id="telegram.asset.register",
     capability_type="EXECUTOR",
@@ -301,6 +346,7 @@ for _record in (
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
     MARKITDOWN_NORMALIZE_RECORD,
+    HUMAN_PRESENTATION_ACTION_FIRST_RECORD,
     TELEGRAM_BRAND_ASSET_RECORD,
     TELEGRAM_USER_INPUT_RECORD,
 ):
