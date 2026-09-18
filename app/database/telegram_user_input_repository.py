@@ -278,6 +278,21 @@ def upsert_telegram_user_input(
         connection.close()
 
 
+def get_telegram_user_input(input_id: int) -> dict[str, Any] | None:
+    if not isinstance(input_id, int) or isinstance(input_id, bool) or input_id <= 0:
+        raise ValueError("Telegram input id must be positive")
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        row = connection.execute(
+            "SELECT * FROM telegram_user_inputs WHERE id = ?",
+            (input_id,),
+        ).fetchone()
+        return _row_to_record(row)
+    finally:
+        connection.close()
+
+
 def get_telegram_user_input_by_message(
     *,
     telegram_chat_id: int,
