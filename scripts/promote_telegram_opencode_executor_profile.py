@@ -194,7 +194,10 @@ def _mission_and_candidate(
     benchmark_artifact_id: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     trigger_ref = f"failure-memory:{memory['memory_id']}"
-    existing_mission = repository.find_open_improvement_mission_by_trigger(trigger_ref)
+    existing_mission = repository.find_open_improvement_mission_by_trigger(
+        trigger_ref,
+        include_closed=True,
+    )
     if existing_mission is not None and existing_mission.get("candidate_id"):
         candidate = repository.get_learning_candidate(existing_mission["candidate_id"])
         if candidate is None:
