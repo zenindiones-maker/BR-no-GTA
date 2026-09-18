@@ -158,7 +158,7 @@ def _action_first(result: Mapping[str, Any]) -> str:
 
     if resolution or verification or decision:
         if resolution == "FAIL":
-            headline = "⚠️ Fonte não resolvida"
+            headline = "❌ Falha ao resolver a fonte"
         elif verification == "VERIFIED":
             headline = "✅ Fonte analisada"
         elif verification == "CONTRADICTED":
