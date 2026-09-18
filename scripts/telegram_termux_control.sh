@@ -352,6 +352,12 @@ source_proof() {
   exec "${PYTHON_BIN}" scripts/process_real_telegram_source.py
 }
 
+presentation_proof() {
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  cd "${ROOT}"
+  exec bash scripts/prove_real_telegram_presentation.sh "${2:-}" "${3:-}"
+}
+
 restart_gateway() {
   # Prevent the persistence supervisor from racing the intentional stop/start.
   : > "${MAINTENANCE_FILE}"
@@ -384,8 +390,11 @@ case "${1:-start}" in
   source-proof)
     source_proof "$@"
     ;;
+  presentation-proof)
+    presentation_proof "$@"
+    ;;
   *)
-    echo "uso: $0 {start|stop|restart|status|logs [N]|foreground|source-proof [INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|status|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
     exit 2
     ;;
 esac
