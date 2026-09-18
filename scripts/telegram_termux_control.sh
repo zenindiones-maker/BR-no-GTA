@@ -342,6 +342,16 @@ foreground_gateway() {
   exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
 
+source_proof() {
+  configure_cloud_routing
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  cd "${ROOT}"
+  if [[ -n "${2:-}" ]]; then
+    exec "${PYTHON_BIN}" scripts/process_real_telegram_source.py --input-id "${2}"
+  fi
+  exec "${PYTHON_BIN}" scripts/process_real_telegram_source.py
+}
+
 restart_gateway() {
   # Prevent the persistence supervisor from racing the intentional stop/start.
   : > "${MAINTENANCE_FILE}"
@@ -371,8 +381,11 @@ case "${1:-start}" in
   foreground)
     foreground_gateway
     ;;
+  source-proof)
+    source_proof "$@"
+    ;;
   *)
-    echo "uso: $0 {start|stop|restart|status|logs [N]|foreground}" >&2
+    echo "uso: $0 {start|stop|restart|status|logs [N]|foreground|source-proof [INPUT_ID]}" >&2
     exit 2
     ;;
 esac
