@@ -1,0 +1,203 @@
+name: Narration Optimization Proof
+run-name: Narration optimization · VIDEO A · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/narration-optimization.request.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: narration-optimization-video-a
+  cancel-in-progress: false
+
+jobs:
+  narration-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate immutable proof request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          request=json.loads(Path('.run001/narration-optimization.request.json').read_text(encoding='utf-8'))
+          config=json.loads(Path('.run001/video-a-investigative-longform.json').read_text(encoding='utf-8'))
+          word_re=re.compile(r"[A-Za-zÀ-ÿ0-9]+(?:['’\-][A-Za-zÀ-ÿ0-9]+)?")
+          words=sum(len(word_re.findall(section['narration'])) for section in config['script_sections'])
+          expected={
+              'mission':'run001-video-a-narration-optimization-proof-v1',
+              'base_head':'29dfda797834a78afed8980c15cf8d7118ead32e',
+              'script_path':'.run001/video-a-investigative-longform.json',
+              'expected_words':3229,
+              'expected_sections':16,
+              'voice':'pt-BR-AntonioNeural',
+              'target_wpm':125,
+              'job18_frozen':True,
+              'youtube_publication':False,
+          }
+          for key,value in expected.items():
+              if request.get(key) != value:
+                  raise SystemExit(f'NARRATION_PROOF_REQUEST_MISMATCH:{key}:{request.get(key)!r}')
+          if words != 3229 or len(config['script_sections']) != 16:
+              raise SystemExit(f'VIDEO_A_SCRIPT_IDENTITY_MISMATCH:{words}:{len(config["script_sections"])}')
+          if config['narration']['voice'] != request['voice'] or config.get('target_wpm') != 125:
+              raise SystemExit('VIDEO_A_NARRATION_IDENTITY_MISMATCH')
+          print('VIDEO_A_NARRATION_INPUT=CANONICAL')
+          print('VIDEO_A_WORDS=3229')
+          print('VIDEO_A_SECTIONS=16')
+          print('JOB18_UNCHANGED=YES')
+          print('NO_YOUTUBE_PUBLISH=YES')
+          PY
+          git merge-base --is-ancestor 29dfda797834a78afed8980c15cf8d7118ead32e HEAD
+
+      - name: Install narration benchmark runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          python -m pip install "edge-tts==7.2.8" "faster-whisper==1.2.0"
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Focused narration and authority tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_narration_pipeline.py \
+            tests/test_professional_audiovisual_worker.py \
+            tests/test_harness_capability_service.py \
+            tests/test_harness_routing_policy_service.py \
+            tests/test_semantic_ptbr_audio_qa.py
+
+      - name: Baseline profile and optimized candidate benchmark
+        run: |
+          set -euo pipefail
+          python scripts/narration_optimization_proof.py \
+            --config .run001/video-a-investigative-longform.json \
+            --output-dir runtime/narration-proof
+
+      - name: Validate observed proof contract
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('runtime/narration-proof')
+          required=(
+              'narration-baseline-profile.json',
+              'narration-candidate-profile.json',
+              'provider-concurrency-benchmark.json',
+              'failure-isolation-proof.json',
+              'render-retry-proof.json',
+              'human-ab-review.json',
+              'narration-comparison.json',
+          )
+          missing=[name for name in required if not (root/name).is_file()]
+          if missing:
+              raise SystemExit('NARRATION_PROOF_ARTIFACTS_MISSING:'+','.join(missing))
+          comparison=json.loads((root/'narration-comparison.json').read_text(encoding='utf-8'))
+          candidate=comparison['candidate']; retry=comparison['failure_isolation']; render_retry=comparison['render_retry']
+          checks={
+              'NARRATION_BASELINE_PROFILE':(root/'narration-baseline-profile.json').is_file(),
+              'DETERMINISTIC_SEGMENTATION':candidate.get('PHYSICAL_SEGMENT_COUNT',0)>16,
+              'CONTENT_ADDRESSED_CACHE':candidate.get('CACHE_MISSES',0)>0,
+              'PILOT_CALIBRATION':candidate.get('calibration',{}).get('source') in {'representative-pilot','historical-profile'},
+              'FULL_SCRIPT_CALIBRATION_REGENERATION_0':candidate.get('FULL_SCRIPT_REGEN_COUNT')==0,
+              'BOUNDED_CONCURRENCY':comparison.get('concurrency_benchmark',{}).get('status')=='PASS',
+              'FAILED_SEGMENT_ONLY_RETRY':retry.get('FAILED_SEGMENT_RETRIED')=='YES',
+              'UNCHANGED_SEGMENT_REUSE':retry.get('SUCCESSFUL_SEGMENTS_REUSED')=='YES',
+              'MASTER_NORMALIZATION_ONCE':candidate.get('MASTER_NORMALIZATION_COUNT')==1,
+              'NATIVE_TIMING_USED_WHEN_AVAILABLE':candidate.get('NATIVE_TIMING_USED') is True,
+              'RENDER_RETRY_REUSES_NARRATION':render_retry.get('NARRATION_CACHE_HIT')=='100%' and render_retry.get('REDUNDANT_TTS_REQUESTS')==0,
+              'FINAL_FULL_AUDIO_DECODE':candidate.get('FULL_DECODE_COUNT')==1,
+              'LOUDNESS_QA':abs(float(candidate.get('LOUDNESS'))+16.0)<=0.8 and float(candidate.get('TRUE_PEAK'))<=-1.4,
+              'WALL_CLOCK_IMPROVED':comparison.get('NARRATION_WALL_CLOCK_IMPROVED')=='OBSERVED',
+              'NO_AUDIO_QUALITY_REGRESSION':comparison.get('NO_AUDIO_QUALITY_REGRESSION')=='PASS',
+              'HARNESS_AUTHORITY_PRESERVED':comparison.get('HARNESS_AUTHORITY_PRESERVED')=='YES',
+              'JOB18_UNCHANGED':comparison.get('JOB18_UNCHANGED')=='YES',
+              'PUBLICATION_AUTHORITY_UNCHANGED':comparison.get('PUBLICATION_AUTHORITY_UNCHANGED')=='YES',
+          }
+          for key,passed in checks.items():
+              print(f'{key}={"PASS" if passed else "FAIL"}')
+          if not all(checks.values()) or comparison.get('status')!='PASS':
+              raise SystemExit('NARRATION_OPTIMIZATION_PROOF=FAIL')
+          print('NARRATION_OPTIMIZATION_PROOF=PASS')
+          PY
+
+      - name: Deliver short baseline versus candidate review samples to Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('runtime/narration-proof')
+          state={'status':'NOT_SENT','reason':None,'sample_count':0}
+          token=(os.environ.get('TELEGRAM_BOT_TOKEN') or '').strip()
+          chat=(os.environ.get('TELEGRAM_REVIEW_CHAT_ID') or '').strip()
+          if not (root/'human-ab-review.json').is_file():
+              state['reason']='A_B_SAMPLES_UNAVAILABLE'
+          elif not token:
+              state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
+          elif not chat:
+              state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
+          else:
+              state['status']='READY'
+          (root/'telegram-ab-review-delivery.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
+          print(state['status']); print(state['reason'] or 'TELEGRAM_AB_REVIEW_READY')
+          PY
+          status="$(python -c "import json;print(json.load(open('runtime/narration-proof/telegram-ab-review-delivery.json'))['status'])")"
+          if [ "$status" != "READY" ]; then exit 0; fi
+          sent=0
+          for audio in runtime/narration-proof/ab-samples/*.mp3; do
+            base="$(basename "$audio" .mp3)"
+            curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio" \
+              -F "chat_id=${TELEGRAM_REVIEW_CHAT_ID}" \
+              -F "audio=@${audio}" \
+              -F "caption=VIDEO A narration A/B · ${base}" >/dev/null
+            sent=$((sent+1))
+          done
+          SENT_COUNT="$sent" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('runtime/narration-proof/telegram-ab-review-delivery.json')
+          payload=json.loads(path.read_text())
+          payload.update({'status':'SENT','sample_count':int(os.environ['SENT_COUNT']),'human_feedback_status':'PENDING'})
+          path.write_text(json.dumps(payload,indent=2),encoding='utf-8')
+          print('TELEGRAM_AB_REVIEW_SAMPLES_SENT='+os.environ['SENT_COUNT'])
+          PY
+
+      - name: Upload narration proof and A/B review package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-optimization-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/narration-proof/
+          if-no-files-found: error
+          retention-days: 30

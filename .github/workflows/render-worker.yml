@@ -23,6 +23,16 @@ on:
       authorized_action:
         required: true
         type: string
+      narration_artifact_id:
+        description: "Optional QA-passed narration checkpoint artifact ID for render retry"
+        required: false
+        default: ""
+        type: string
+      narration_producer_run_id:
+        description: "Producer workflow run ID for narration_artifact_id"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -251,10 +261,160 @@ jobs:
             --render-job runtime/render/render-job.json \
             --runtime-root runtime/render
 
-      - name: Execute authorized EditPlan
+      - name: Restore content-addressed narration cache
+        uses: actions/cache@v4
+        with:
+          path: runtime/narration-cache
+          key: narration-v2-${{ runner.os }}-edge-tts-7.2.8
+          restore-keys: |
+            narration-v2-${{ runner.os }}-edge-tts-
+
+      - name: Validate optional narration checkpoint reference
+        env:
+          NARRATION_ARTIFACT_ID: ${{ inputs.narration_artifact_id }}
+          NARRATION_PRODUCER_RUN_ID: ${{ inputs.narration_producer_run_id }}
+        run: |
+          set -euo pipefail
+          if { [ -n "$NARRATION_ARTIFACT_ID" ] && [ -z "$NARRATION_PRODUCER_RUN_ID" ]; } || \
+             { [ -z "$NARRATION_ARTIFACT_ID" ] && [ -n "$NARRATION_PRODUCER_RUN_ID" ]; }; then
+            echo "narration checkpoint requires both artifact id and producer run id" >&2
+            exit 1
+          fi
+          echo "NARRATION_CHECKPOINT_REFERENCE=PASS"
+
+      - name: Download QA-passed narration checkpoint for render retry
+        if: inputs.narration_artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.narration_artifact_id }}
+          run-id: ${{ inputs.narration_producer_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/render/reused-narration
+
+      - name: Prepare Narration and Media in parallel
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
+          NARRATION_CONCURRENCY: "4"
+        run: |
+          set -euo pipefail
+          if python - <<'PY'
+          import json
+          from pathlib import Path
+          job = json.loads(Path('runtime/render/render-job.json').read_text(encoding='utf-8'))
+          raise SystemExit(0 if job.get('product_profile') == 'professional_ptbr_v1' else 1)
+          PY
+          then
+            reuse=()
+            if [ -f runtime/render/reused-narration/narration-manifest.json ]; then
+              reuse=(--reuse-narration-dir runtime/render/reused-narration)
+            fi
+            python scripts/prepare_professional_inputs.py \
+              --render-job runtime/render/render-job.json \
+              --asset-root runtime/render/input \
+              --cache-root runtime/narration-cache \
+              "${reuse[@]}"
+          else
+            echo "NARRATION_STAGE=NOT_APPLICABLE"
+          fi
+
+      - name: Calibrate Voice
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path('runtime/render/input').glob('**/narration-bundle/narration-qa.json'))
+          if not files:
+              print('CALIBRATE_VOICE=NOT_APPLICABLE')
+              raise SystemExit(0)
+          qa=json.loads(files[0].read_text(encoding='utf-8'))
+          calibration=qa.get('calibration') or {}
+          if qa.get('status') != 'PASS' or qa.get('full_script_calibration_regeneration_count') != 0:
+              raise SystemExit('CALIBRATE_VOICE=FAIL')
+          print('CALIBRATE_VOICE=PASS')
+          print('VOICE_CALIBRATION_SOURCE=' + str(calibration.get('source')))
+          print('FULL_SCRIPT_CALIBRATION_REGENERATION=0')
+          PY
+
+      - name: Synthesize Segments
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path('runtime/render/input').glob('**/narration-bundle/narration-qa.json'))
+          if not files:
+              print('SYNTHESIZE_SEGMENTS=NOT_APPLICABLE')
+              raise SystemExit(0)
+          qa=json.loads(files[0].read_text(encoding='utf-8'))
+          stats=qa.get('stats') or {}
+          if qa.get('status') != 'PASS' or stats.get('failed_segments'):
+              raise SystemExit('SYNTHESIZE_SEGMENTS=FAIL')
+          print('SYNTHESIZE_SEGMENTS=PASS')
+          print(f"PHYSICAL_SEGMENTS={qa.get('physical_segment_count')}")
+          print(f"CACHE_HITS={stats.get('cache_hits')}")
+          print(f"CACHE_MISSES={stats.get('cache_misses')}")
+          print(f"RETRIES={stats.get('retries')}")
+          PY
+
+      - name: Assemble Master Narration
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path('runtime/render/input').glob('**/narration-bundle/narration-qa.json'))
+          if not files:
+              print('ASSEMBLE_MASTER=NOT_APPLICABLE')
+              raise SystemExit(0)
+          qa=json.loads(files[0].read_text(encoding='utf-8'))
+          stats=qa.get('stats') or {}
+          if qa.get('status') != 'PASS' or stats.get('master_normalization_count') != 1:
+              raise SystemExit('ASSEMBLE_MASTER=FAIL')
+          print('ASSEMBLE_MASTER=PASS')
+          print('MASTER_NORMALIZATION_ONCE=PASS')
+          PY
+
+      - name: Narration QA
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import shutil
+          from pathlib import Path
+          files=list(Path('runtime/render/input').glob('**/narration-bundle/narration-qa.json'))
+          if not files:
+              print('NARRATION_QA=NOT_APPLICABLE')
+              raise SystemExit(0)
+          bundle=files[0].parent
+          qa=json.loads(files[0].read_text(encoding='utf-8'))
+          if qa.get('status') != 'PASS':
+              raise SystemExit('NARRATION_QA=FAIL')
+          checkpoint=Path('runtime/render/narration-checkpoint')
+          if checkpoint.exists():
+              shutil.rmtree(checkpoint)
+          shutil.copytree(bundle, checkpoint)
+          print('NARRATION_QA=PASS')
+          print(f"NARRATION_MASTER_DURATION={qa.get('duration_seconds')}")
+          print(f"NARRATION_WPM={qa.get('words_per_minute')}")
+          print(f"NATIVE_TIMING_USED={qa.get('native_timing_used')}")
+          PY
+
+      - name: Checkpoint QA-passed narration artifact
+        id: narration_checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: narration-bundle-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/render/narration-checkpoint/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Build EditPlan and Render Video
+        env:
+          YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
+          YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
+          NARRATION_CACHE_ROOT: runtime/narration-cache
         run: |
           set -euo pipefail
           if python - <<'PY'
@@ -336,6 +496,14 @@ jobs:
             runtime/render/output/**/render-runtime.json
             runtime/render/output/**/editorial-qa.json
             runtime/render/output/**/voice-qa.json
+            runtime/render/input/**/professional-inputs.json
+            runtime/render/input/**/narration-bundle/*.json
+            runtime/render/narration-checkpoint/*.json
+            runtime/render/output/**/narration-manifest.json
+            runtime/render/output/**/speech-timing.json
+            runtime/render/output/**/voice-speed-profile.json
+            runtime/render/output/**/narration-qa.json
+            runtime/render/output/**/narration-learning-evidence.json
             runtime/render/output/**/semantic-ptbr-audio-qa.json
             runtime/render/output/**/edit-qa.json
             runtime/render/output/**/no-artificial-padding-qa.json

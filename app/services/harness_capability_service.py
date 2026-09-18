@@ -128,6 +128,7 @@ CAPABILITY_CATALOG = tuple(
         or record.capability_id == "agent-office.execute"
         or record.capability_id == "gta6.fact-check"
         or record.capability_id == "human.presentation.action-first"
+        or record.capability_id == "narration.generate.pt-BR"
     )
 )
 _CAPABILITY_BY_ID = {

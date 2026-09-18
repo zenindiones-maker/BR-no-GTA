@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import shutil
@@ -25,12 +26,13 @@ from app.services.harness_authorization_service import (
     validate_harness_authorization,
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.narration_pipeline import NarrationError, generate_narration_bundle, load_narration_bundle
 from app.services.render_media_materializer import materialize_scenes
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
 PROFILE = "professional_ptbr_v1"
 VOICE_CAPABILITY_ID = "narration.generate.pt-BR"
-VOICE_EXECUTOR = "app.workers.professional_audiovisual_worker.execute_ptbr_narration"
+VOICE_EXECUTOR = "app.services.narration_pipeline.execute_narration_capability"
 ALLOWED_CLASSES = {"OFFICIAL_FACT", "OFFICIAL_STATEMENT", "STORE_CURRENT", "ANALYSIS", "NOT_CONFIRMED"}
 TARGET_MIN_SECONDS = 20 * 60
 TARGET_MAX_SECONDS = 30 * 60
@@ -443,110 +445,61 @@ def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[s
         expected_execution_id=job["execution_id"],
     )
 
-    config = job["narration"]
-    voice = config["voice"]
-    configured_rate = str(config.get("rate") or "-15%")
-    target_duration = _finite(job.get("estimated_duration_seconds"), "VOICE_QA target duration", minimum=TARGET_MIN_SECONDS)
-    if target_duration > TARGET_MAX_SECONDS:
-        raise WorkerError("VOICE_QA: target duration outside professional target")
-    rate_percent = _initial_calibrated_rate_percent(configured_rate)
-    voice_root = root / "voice"
-    voice_root.mkdir(parents=True, exist_ok=False)
-    calibration_attempts: list[dict[str, Any]] = []
-    section_results: list[dict[str, Any]] = []
-    master: Path | None = None
-    master_duration = math.nan
+    bundle_root = root / "narration-bundle"
+    external_bundle = (os.environ.get("NARRATION_BUNDLE_DIR") or "").strip()
+    if external_bundle and not bundle_root.exists():
+        source = Path(external_bundle)
+        if source.is_dir():
+            shutil.copytree(source, bundle_root)
+    cache_root = Path(
+        (os.environ.get("NARRATION_CACHE_ROOT") or "").strip()
+        or str(root.parent.parent / "narration-cache")
+    )
+    concurrency = int((os.environ.get("NARRATION_CONCURRENCY") or "4").strip())
+    try:
+        if bundle_root.is_dir():
+            section_results, result = load_narration_bundle(bundle_root, job=job)
+        else:
+            section_results, result = generate_narration_bundle(
+                job,
+                bundle_root,
+                cache_root=cache_root,
+                concurrency=concurrency,
+                lineage={
+                    "render_job_id": job["render_job_id"],
+                    "video_id": job["video_id"],
+                    "content_item_id": job["content_item_id"],
+                    "script_id": job["script_id"],
+                    "brain_decision_id": job["brain_decision_id"],
+                    "execution_id": job["execution_id"],
+                    "routing_id": routing.routing_id,
+                    "authorization_id": authorization.authorization_id,
+                    "authorized_action": authorization.authorized_action,
+                },
+            )
+    except NarrationError as exc:
+        raise WorkerError(f"VOICE_QA: {exc}") from exc
 
-    for attempt in range(1, VOICE_CALIBRATION_MAX_ATTEMPTS + 1):
-        section_results, attempt_master, measured_duration = _synthesize_ptbr_attempt(
-            job,
-            voice_root,
-            voice=voice,
-            rate_percent=rate_percent,
-            attempt=attempt,
-        )
-        acceptable = _voice_duration_is_acceptable(
-            duration_seconds=measured_duration,
-            target_seconds=target_duration,
-            rate_percent=rate_percent,
-        )
-        calibration_attempts.append({
-            "attempt": attempt,
-            "rate": _format_voice_rate_percent(rate_percent),
-            "rate_percent": rate_percent,
-            "duration_seconds": measured_duration,
-            "target_duration_seconds": target_duration,
-            "absolute_error_seconds": abs(measured_duration - target_duration),
-            "tolerance_seconds": _voice_target_tolerance_seconds(target_duration),
-            "within_professional_ceiling": TARGET_MIN_SECONDS <= measured_duration <= TARGET_MAX_SECONDS,
-            "within_natural_rate_guard": VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT,
-            "accepted": acceptable,
-        })
-        if acceptable:
-            master = attempt_master
-            master_duration = measured_duration
-            break
-
-        if attempt == VOICE_CALIBRATION_MAX_ATTEMPTS:
-            break
-        next_rate = _next_calibrated_rate_percent(
-            current_rate_percent=rate_percent,
-            actual_seconds=measured_duration,
-            target_seconds=target_duration,
-        )
-        shutil.rmtree(attempt_master.parent)
-        rate_percent = next_rate
-
-    if master is None or not math.isfinite(master_duration):
-        last = calibration_attempts[-1]
-        raise WorkerError(
-            "VOICE_QA: bounded narration calibration failed "
-            f"after {VOICE_CALIBRATION_MAX_ATTEMPTS} attempts; "
-            f"last_duration={last['duration_seconds']:.3f}s target={target_duration:.3f}s "
-            f"rate={last['rate']}"
-        )
-    if not (TARGET_MIN_SECONDS <= master_duration <= TARGET_MAX_SECONDS):
-        raise WorkerError(f"VOICE_QA: final narration duration outside professional target: {master_duration:.3f}s")
-
-    with master.open("rb") as stream:
-        master_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
-    result = {
-        "status": "PASS",
-        "qa_status": "PASS",
+    result = dict(result)
+    for path_key in ("master_path", "speech_timing_path"):
+        raw = result.get(path_key)
+        if raw:
+            path = Path(str(raw))
+            if path.is_absolute():
+                result[path_key] = str(path.resolve().relative_to(root.resolve()))
+    result.update({
         "capability_id": VOICE_CAPABILITY_ID,
         "executor_binding": VOICE_EXECUTOR,
         "routing_id": routing.routing_id,
         "authorization_id": authorization.authorization_id,
         "harness_decision_id": authorization.harness_decision_id,
+        "execution_id": authorization.execution_id,
         "authority": authorization.authority,
-        "provider": "edge-tts",
-        "voice": voice,
-        "configured_rate": configured_rate,
-        "effective_rate": _format_voice_rate_percent(rate_percent),
-        "effective_rate_percent": rate_percent,
-        "calibration_attempt_count": len(calibration_attempts),
-        "calibration_attempts": calibration_attempts,
-        "target_duration_seconds": target_duration,
-        "target_tolerance_seconds": _voice_target_tolerance_seconds(target_duration),
-        "voice_naturalness_guards": {
-            "status": "PASS",
-            "bounded_retries": len(calibration_attempts) <= VOICE_CALIBRATION_MAX_ATTEMPTS,
-            "rate_within_guard": VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT,
-            "duration_near_editorial_target": abs(master_duration - target_duration) <= _voice_target_tolerance_seconds(target_duration),
-            "professional_hard_ceiling_preserved": master_duration <= TARGET_MAX_SECONDS,
-        },
-        "locale": "pt-BR",
-        "language": "pt-BR",
-        "track": "A1",
-        "target_lufs": -16.0,
-        "true_peak_target_db": -1.5,
-        "section_count": len(section_results),
-        "duration_seconds": master_duration,
-        "sha256": master_sha256,
+        "authorized_action": authorization.authorized_action,
+        "lineage": authorization.lineage,
         "sections": section_results,
-        "master_path": str(master.relative_to(root)),
-        "a1_voice_semantics": "governed materialized PT-BR narration; source/trailer audio is excluded",
-    }
+        "full_script_calibration_regeneration_count": 0,
+    })
     return section_results, result
 
 
@@ -619,18 +572,29 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
             track="T2", font_size=34, color="white", align="center", box=True,
         ))
 
-        sentences = _caption_chunks(section["narration"])
-        sentence_words = [max(1, len(_words(sentence))) for sentence in sentences]
-        total_sentence_words = sum(sentence_words)
-        caption_cursor = section_start
-        for sentence, count in zip(sentences, sentence_words):
-            duration = section_duration * count / total_sentence_words
-            texts.append(EditText(
-                text=sentence, start_seconds=caption_cursor,
-                duration_seconds=max(0.35, duration), track="CAPTIONS", font_size=38,
-                color="white", align="center", box=True,
-            ))
-            caption_cursor += duration
+        native_cues = list(voice.get("caption_cues") or [])
+        if native_cues:
+            for cue in native_cues:
+                cue_start = section_start + float(cue["start_seconds"])
+                cue_end = section_start + float(cue["end_seconds"])
+                texts.append(EditText(
+                    text=str(cue["text"]), start_seconds=cue_start,
+                    duration_seconds=max(0.35, cue_end - cue_start), track="CAPTIONS", font_size=38,
+                    color="white", align="center", box=True,
+                ))
+        else:
+            sentences = _caption_chunks(section["narration"])
+            sentence_words = [max(1, len(_words(sentence))) for sentence in sentences]
+            total_sentence_words = sum(sentence_words)
+            caption_cursor = section_start
+            for sentence, count in zip(sentences, sentence_words):
+                duration = section_duration * count / total_sentence_words
+                texts.append(EditText(
+                    text=sentence, start_seconds=caption_cursor,
+                    duration_seconds=max(0.35, duration), track="CAPTIONS", font_size=38,
+                    color="white", align="center", box=True,
+                ))
+                caption_cursor += duration
 
         remaining = section_duration
         local_offset = 0.0
@@ -863,9 +827,29 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     initialize_application()
     editorial_metrics = validate_product_job(job)
     root = asset_root / job["execution_id"] / str(job["render_job_id"])
-    root.mkdir(parents=True, exist_ok=False)
-    source_paths, media_evidence = _materialize_sources(job, root)
-    voice_sections, voice_qa = execute_ptbr_narration(job, root)
+    root.mkdir(parents=True, exist_ok=True)
+    prepared_path = root / "professional-inputs.json"
+    if prepared_path.is_file():
+        prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
+        if prepared.get("status") != "PASS":
+            raise WorkerError("professional input checkpoint is not PASS")
+        source_paths = {str(key): str(value) for key, value in dict(prepared["source_paths"]).items()}
+        media_evidence = list(prepared.get("media_evidence") or [])
+        voice_sections, voice_qa = execute_ptbr_narration(job, root)
+        print("NARRATION_CHECKPOINT_REUSED=YES", flush=True)
+        print("MEDIA_CHECKPOINT_REUSED=YES", flush=True)
+    else:
+        async def prepare_parallel() -> tuple[
+            tuple[dict[str, str], list[dict[str, Any]]],
+            tuple[list[dict[str, Any]], dict[str, Any]],
+        ]:
+            media_task = asyncio.to_thread(_materialize_sources, job, root)
+            voice_task = asyncio.to_thread(execute_ptbr_narration, job, root)
+            return await asyncio.gather(media_task, voice_task)
+
+        (source_paths, media_evidence), (voice_sections, voice_qa) = asyncio.run(prepare_parallel())
+        print("PARALLEL_NARRATION_MEDIA_PREPARATION=PASS", flush=True)
+
     plan, edit_qa, expanded_scenes = _build_edit_plan(
         job,
         voice_sections,
@@ -878,6 +862,14 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     effective["scenes"] = expanded_scenes
     effective["edit_plan"] = plan.to_dict()
     effective["qa_profile"] = "professional-ptbr"
+    effective["narration_artifact"] = {
+        "bundle_path": str((root / "narration-bundle").resolve().relative_to(root.resolve())),
+        "manifest": "narration-bundle/narration-manifest.json",
+        "speech_timing": "narration-bundle/speech-timing.json",
+        "voice_profile": "narration-bundle/voice-speed-profile.json",
+        "qa": "narration-bundle/narration-qa.json",
+        "reused": bool(voice_qa.get("narration_artifact_reused")),
+    }
     effective["a1_voice"] = {
         "capability_id": VOICE_CAPABILITY_ID,
         "locale": "pt-BR",
@@ -921,6 +913,16 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     write_json(folder / "voice-qa.json", voice_qa)
     write_json(folder / "edit-qa.json", edit_qa)
     write_json(folder / "audiovisual-qa.json", audiovisual_qa)
+    for name in (
+        "narration-manifest.json",
+        "speech-timing.json",
+        "voice-speed-profile.json",
+        "narration-qa.json",
+        "narration-learning-evidence.json",
+    ):
+        source = root / "narration-bundle" / name
+        if source.is_file():
+            shutil.copy2(source, folder / name)
     write_json(folder / "media-selection-evidence.json", {
         "status": "PASS",
         "selection_engine": "MediaKnowledge/WhisperX evidence-derived",

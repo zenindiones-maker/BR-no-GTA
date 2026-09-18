@@ -1,0 +1,13 @@
+{
+  "mission": "run001-video-a-narration-optimization-proof-v1",
+  "base_head": "29dfda797834a78afed8980c15cf8d7118ead32e",
+  "script_path": ".run001/video-a-investigative-longform.json",
+  "expected_words": 3229,
+  "expected_sections": 16,
+  "voice": "pt-BR-AntonioNeural",
+  "target_wpm": 125,
+  "job18_frozen": true,
+  "youtube_publication": false,
+  "benchmark": "baseline-vs-edge-optimized-real-audio",
+  "iteration": 1
+}

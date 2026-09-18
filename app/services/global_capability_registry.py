@@ -182,6 +182,40 @@ PRODUCTION_RENDER_RECORD = CapabilityRecord(
     side_effects=("GitHub Actions dispatch", "render artifact creation"),
 )
 
+NARRATION_GENERATE_PTBR_RECORD = CapabilityRecord(
+    capability_id="narration.generate.pt-BR",
+    capability_type="CAPABILITY",
+    domain="narration",
+    implementation="Harness-governed deterministic PT-BR narration bundle materialization",
+    input_contract="approved PT-BR script sections + exact Harness EXECUTION lineage",
+    output_contract="versioned narration-bundle with A1 master, segment manifest, native timing, voice profile and QA",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "Harness Routing/Policy decision",
+        "edge-tts 7.2.8 zero-cost provider",
+        "FFmpeg/ffprobe master QA",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("narration", "voice", "pt-br", "a1", "cache", "timing", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority; narration materializes only the approved script, "
+        "does not make editorial decisions, cannot publish, and exposes no parallel control plane."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="REMOTE_TTS_BOUNDED_CONCURRENCY",
+    latency_class="REMOTE_ASYNC_SEGMENTED",
+    quality_class="CONTENT_ADDRESSED_SEGMENTS_MASTER_EBU_R128_QA",
+    evidence_contract="narration-manifest.json + narration-qa.json + speech-timing.json + voice-speed-profile.json",
+    fallback_eligibility=False,
+    executor_binding="app.services.narration_pipeline.execute_narration_capability",
+    version="2",
+    provider_id="edge-tts",
+    agent_id="audiovisual-worker",
+    side_effects=("narration bundle artifact", "content-addressed segment cache", "voice speed evidence"),
+)
+
 FRESH_GTA6_RESEARCH_RECORD = CapabilityRecord(
     capability_id="gta6.research.fresh-cloud",
     capability_type="EXECUTOR",
@@ -342,6 +376,7 @@ for _record in (
     PRODUCTION_MEDIA_BINDING_RECORD,
     PRODUCTION_BRAND_ASSET_BINDING_RECORD,
     PRODUCTION_RENDER_RECORD,
+    NARRATION_GENERATE_PTBR_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
