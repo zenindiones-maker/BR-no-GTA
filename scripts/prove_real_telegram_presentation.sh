@@ -36,10 +36,13 @@ mkdir -p "${PROOF_DIR}"
 ARGS=(--output "${PROOF_FILE}")
 if [[ -n "${1:-}" ]]; then ARGS+=(--test-input-id "$1"); fi
 if [[ -n "${2:-}" ]]; then ARGS+=(--source-input-id "$2"); fi
+if [[ -n "${3:-}" ]]; then ARGS+=(--failure-input-id "$3"); fi
 
 "${PYTHON_BIN}" scripts/prove_real_telegram_presentation.py "${ARGS[@]}"
 
 echo "REAL_TELEGRAM_PRESENTATION_PROOF=PASS"
 echo "PROOF_FILE=${PROOF_FILE}"
-echo "NEXT_REAL_TEST_MESSAGE=Responda apenas: TESTE_OK"
-echo "EVIDENCE_COMMAND=/evidence [telegram_input_id]"
+echo "REQUIRED_REAL_SUCCESS_MESSAGE=Responda apenas: TESTE_OK"
+echo "REQUIRED_REAL_URL_NEWS_MESSAGE=<uma URL real que resolva e gere EditorialSignal>"
+echo "REQUIRED_REAL_EVIDENCE_COMMAND=/evidence <source_input_id>"
+echo "REQUIRED_REAL_FAIL_MESSAGE=https://example.invalid/br-no-gta-action-first-proof"
