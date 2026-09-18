@@ -8,7 +8,13 @@ from app.services.gta6_goal_service import get_artifacts, resolve_next_stage, up
 from app.services.render_worker_service import process_next_render_job, process_render_job
 from app.services.video_render_service import create_video_and_enqueue_render
 from app.services.video_service import create_video_spec
-from app.services.render_learning_profile_service import bind_active_render_profile
+from app.services.render_learning_profile_service import (
+    RENDER_PROFILE_SKILL_ID,
+    bind_active_render_profile,
+)
+from app.services.global_capability_registry import (
+    PRODUCTION_RENDER_EXECUTOR_BINDING,
+)
 from app.services.harness_authorization_service import (
     authorization_to_context,
     issue_harness_authorization,
@@ -175,6 +181,35 @@ def _govern_brand_asset_binding(
     )
 
 
+def _govern_render_execution_binding(
+    *,
+    parent_authorization,
+    goal_id: str,
+):
+    """Retrieve operational learning and select the immutable render binding."""
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute long-form audiovisual RenderJob with observed QA evidence",
+            authorized_action="EXECUTION",
+            domain="production-render",
+            task_class="long-form-render",
+            goal_id=goal_id,
+            agent_id="audiovisual-worker",
+            skill_id=RENDER_PROFILE_SKILL_ID,
+            required_capability_id="production.render.execute",
+            required_policy_tags=("production", "render", "audiovisual", "learning"),
+            provider_required=False,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+        )
+    )
+    if routing.selected_capability_id != "production.render.execute":
+        raise PermissionError("Harness selected an unexpected production render capability")
+    if routing.selected_executor_binding != PRODUCTION_RENDER_EXECUTOR_BINDING:
+        raise PermissionError("Harness selected an unexpected production render executor")
+    return routing
+
+
 def _resolve_execution_goal(*, authorization, requested_goal_id: str | None) -> dict[str, Any] | None:
     """Resolve the exact Harness-targeted Goal, falling back only for legacy untargeted calls."""
     lineage_goal_id = authorization.lineage.get("goal_id")
@@ -278,13 +313,17 @@ def process_next_production_execution(
             content_item_id=content_item_id,
         )
 
+        render_routing = _govern_render_execution_binding(
+            parent_authorization=authorization,
+            goal_id=resolved_goal_id,
+        )
         video_spec = create_video_spec(production_plan, brain_decision=execution_context)
         # The Harness snapshots the currently promoted executable render profile
-        # into the newly created contract. Workers only validate/execute it and
-        # never choose a learning version themselves.
+        # into the newly created contract after automatic learning retrieval.
+        # Workers validate/execute that immutable binding and never choose it.
         video_spec["render"] = bind_active_render_profile(
             video_spec.get("render"),
-            routing_id=authorization.lineage.get("routing_id"),
+            routing_id=render_routing.routing_id,
             authorization_id=authorization.authorization_id,
         )
         # Snapshot only into this newly created execution contract. Existing
@@ -313,6 +352,11 @@ def process_next_production_execution(
             ),
             "brand_asset_execution": brand_result["canonical_execution_result"],
             "brand_asset_count": brand_result["asset_count"],
+            "render_routing": render_routing.to_dict(),
+            "render_learning_context": dict(
+                render_routing.policy_metadata.get("learning_context") or {}
+            ),
+            "resolved_render_binding": dict(video_spec["render"].get("learning_profile") or {}),
         }
 
     if next_stage == "RENDER":
