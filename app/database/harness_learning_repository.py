@@ -406,6 +406,40 @@ def list_human_corrections(*, affected_capability: str | None = None,
         connection.close()
 
 
+def get_improvement_mission(improvement_mission_id: str) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_improvement_missions WHERE improvement_mission_id = ?",
+            (improvement_mission_id,),
+        ).fetchone()
+        return _deserialize(row, _MISSION_JSON) if row else None
+    finally:
+        connection.close()
+
+
+def update_improvement_mission_status(improvement_mission_id: str, status: str, *,
+                                      finished_at: str | None = None) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        connection.execute(
+            """UPDATE harness_improvement_missions
+               SET status = ?, finished_at = COALESCE(?, finished_at)
+               WHERE improvement_mission_id = ?""",
+            (status, finished_at, improvement_mission_id),
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM harness_improvement_missions WHERE improvement_mission_id = ?",
+            (improvement_mission_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("improvement mission not found")
+        return _deserialize(row, _MISSION_JSON)
+    finally:
+        connection.close()
+
+
 def insert_improvement_mission(record: dict[str, Any]) -> dict[str, Any]:
     connection = get_connection()
     try:
