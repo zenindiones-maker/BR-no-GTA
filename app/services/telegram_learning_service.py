@@ -108,6 +108,10 @@ def classify_telegram_input(
 def _safe_input(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": record["id"],
+        "telegram_user_id": record.get("telegram_user_id"),
+        "telegram_chat_id": record.get("telegram_chat_id"),
+        "telegram_message_id": record.get("telegram_message_id"),
+        "telegram_update_id": record.get("telegram_update_id"),
         "input_kind": record["input_kind"],
         "text_content": record.get("text_content") or "",
         "telegram_file_unique_id": record.get("telegram_file_unique_id"),
@@ -120,6 +124,9 @@ def _safe_input(record: dict[str, Any]) -> dict[str, Any]:
         "memory_event_id": record.get("memory_event_id"),
         "claim_id": record.get("claim_id"),
         "memory_id": record.get("memory_id"),
+        "execution_outcome_status": record.get("execution_outcome_status", "NOT_OBSERVED"),
+        "execution_episode_id": record.get("execution_episode_id"),
+        "execution_failure_memory_id": record.get("execution_failure_memory_id"),
         "created_at": record.get("created_at"),
     }
 
