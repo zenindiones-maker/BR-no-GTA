@@ -64,6 +64,8 @@ class HarnessRoutingRequest:
     fallback_allowed: bool = False
     zero_cost_operation: bool = False
     exhausted_free_quota_provider_ids: tuple[str, ...] = ()
+    task_class: str | None = None
+    competence_records: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,6 +192,47 @@ def _capability_candidates(
             )
             continue
         candidates.append(record)
+
+    if candidates and request.competence_records and not request.required_capability_id:
+        original_order = {record.capability_id: index for index, record in enumerate(candidates)}
+
+        def competence_key(record: CapabilityRecord) -> tuple[Any, ...]:
+            matches = [
+                item
+                for item in request.competence_records
+                if item.get("capability_id") == record.capability_id
+                and item.get("evidence_sufficient") is True
+                and (request.task_class is None or item.get("task_class") == request.task_class)
+                and (request.domain is None or item.get("domain") == request.domain)
+            ]
+            if not matches:
+                return (1, original_order[record.capability_id])
+            best = sorted(
+                matches,
+                key=lambda item: (
+                    -float(item.get("success_rate") or 0.0),
+                    float(item.get("failure_rate") or 0.0),
+                    float(item.get("human_correction_rate") or 0.0),
+                    float(item.get("retry_rate") or 0.0),
+                    float(item.get("mean_latency_seconds") or 0.0),
+                    float(item.get("mean_cost") or 0.0),
+                    -int(item.get("tested_cases") or 0),
+                    str(item.get("version") or ""),
+                ),
+            )[0]
+            return (
+                0,
+                -float(best.get("success_rate") or 0.0),
+                float(best.get("failure_rate") or 0.0),
+                float(best.get("human_correction_rate") or 0.0),
+                float(best.get("retry_rate") or 0.0),
+                float(best.get("mean_latency_seconds") or 0.0),
+                float(best.get("mean_cost") or 0.0),
+                -int(best.get("tested_cases") or 0),
+                original_order[record.capability_id],
+            )
+
+        candidates.sort(key=competence_key)
 
     return candidates, rejected, tuple(discovered_ids)
 
@@ -473,6 +516,18 @@ def route_harness_request(
     ]
     if request.zero_cost_operation:
         rationale.append("global ZERO_COST_OPERATION policy enforced")
+    selected_competence = [
+        item
+        for item in request.competence_records
+        if item.get("capability_id") == capability.capability_id
+        and item.get("evidence_sufficient") is True
+        and (request.task_class is None or item.get("task_class") == request.task_class)
+    ]
+    if selected_competence:
+        rationale.append(
+            "historical competence evidence participated in Harness routing: "
+            f"tested_cases={max(int(item.get('tested_cases') or 0) for item in selected_competence)}"
+        )
     if capability.agent_id or capability.skill_id:
         implementation_identity = capability.skill_id or capability.agent_id or capability.capability_id
         rationale.append(
@@ -507,6 +562,24 @@ def route_harness_request(
         "quota_constraint": request.quota_constraint,
         "zero_cost_operation": request.zero_cost_operation,
         "global_zero_cost_operation": ZERO_COST_OPERATION,
+        "task_class": request.task_class,
+        "competence_evidence_used": [
+            {
+                "agent_id": item.get("agent_id"),
+                "capability_id": item.get("capability_id"),
+                "version": item.get("version"),
+                "tested_cases": item.get("tested_cases"),
+                "success_rate": item.get("success_rate"),
+                "failure_rate": item.get("failure_rate"),
+                "human_correction_rate": item.get("human_correction_rate"),
+                "retry_rate": item.get("retry_rate"),
+                "evidence_refs": item.get("evidence_refs"),
+                "last_verified_at": item.get("last_verified_at"),
+            }
+            for item in request.competence_records
+            if item.get("capability_id") == capability.capability_id
+            and item.get("evidence_sufficient") is True
+        ],
         "selected_provider_cost_class": provider.cost_class if provider is not None else None,
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "selected_implementation": {
