@@ -81,9 +81,15 @@ def test_editorial_provider_boundary_selects_primary_zero_cost_provider():
     assert provider_authorization.lineage["selected_capability_id"] == routing.selected_capability_id
     assert provider_authorization.lineage["selected_provider"] == "opencode"
     assert provider_authorization.lineage["selected_model"] == "oc/big-pickle"
-    assert ai_provider.__class__.__name__ == "OmniRouteAIProvider"
-    assert ai_provider.routing_decision == routing
-    assert ai_provider.authorization.authorization_id == provider_authorization.authorization_id
+    # A clean CI database has no governed v2 promotion persisted. The resolver
+    # must therefore expose the observed-disproven v1 profile as blocked rather
+    # than silently recreating the old OmniRoute HTTP executor.
+    assert ai_provider.__class__.__name__ == "_BlockedBaselineProvider"
+    assert ai_provider.profile_version == "v1"
+    assert (
+        ai_provider.executor_binding
+        == "app.services.omniroute_gateway_service.execute_omniroute_gateway"
+    )
 
 
 def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
