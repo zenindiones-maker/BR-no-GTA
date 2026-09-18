@@ -33,6 +33,16 @@ on:
         required: false
         default: ""
         type: string
+      media_artifact_id:
+        description: "Optional QA-passed media checkpoint artifact ID for render retry"
+        required: false
+        default: ""
+        type: string
+      media_producer_run_id:
+        description: "Producer workflow run ID for media_artifact_id"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -295,6 +305,28 @@ jobs:
           github-token: ${{ github.token }}
           path: runtime/render/reused-narration
 
+      - name: Validate optional media checkpoint reference
+        env:
+          MEDIA_ARTIFACT_ID: ${{ inputs.media_artifact_id }}
+          MEDIA_PRODUCER_RUN_ID: ${{ inputs.media_producer_run_id }}
+        run: |
+          set -euo pipefail
+          if { [ -n "$MEDIA_ARTIFACT_ID" ] && [ -z "$MEDIA_PRODUCER_RUN_ID" ]; } || \
+             { [ -z "$MEDIA_ARTIFACT_ID" ] && [ -n "$MEDIA_PRODUCER_RUN_ID" ]; }; then
+            echo "media checkpoint requires both artifact id and producer run id" >&2
+            exit 1
+          fi
+          echo "MEDIA_CHECKPOINT_REFERENCE=PASS"
+
+      - name: Download QA-passed media checkpoint for render retry
+        if: inputs.media_artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.media_artifact_id }}
+          run-id: ${{ inputs.media_producer_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/render/reused-media
+
       - name: Prepare Narration and Media in parallel
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
@@ -309,15 +341,19 @@ jobs:
           raise SystemExit(0 if job.get('product_profile') == 'professional_ptbr_v1' else 1)
           PY
           then
-            reuse=()
+            reuse_narration=()
+            reuse_media=()
             if [ -f runtime/render/reused-narration/narration-manifest.json ]; then
-              reuse=(--reuse-narration-dir runtime/render/reused-narration)
+              reuse_narration=(--reuse-narration-dir runtime/render/reused-narration)
+            fi
+            if [ -f runtime/render/reused-media/media-checkpoint-manifest.json ]; then
+              reuse_media=(--reuse-media-dir runtime/render/reused-media)
             fi
             python scripts/prepare_professional_inputs.py \
               --render-job runtime/render/render-job.json \
               --asset-root runtime/render/input \
               --cache-root runtime/narration-cache \
-              "${reuse[@]}"
+              "${reuse_narration[@]}" "${reuse_media[@]}"
           else
             echo "NARRATION_STAGE=NOT_APPLICABLE"
           fi
@@ -436,6 +472,38 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Validate prepared media checkpoint
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.media_checkpoint_service import validate_media_checkpoint
+          job=json.loads(Path('runtime/render/render-job.json').read_text(encoding='utf-8'))
+          roots=list(Path('runtime/render/input').glob('**/media-checkpoint/media-checkpoint-manifest.json'))
+          if not roots:
+              print('MEDIA_CHECKPOINT=NOT_APPLICABLE')
+              raise SystemExit(0)
+          checkpoint=roots[0].parent
+          manifest=validate_media_checkpoint(checkpoint_root=checkpoint,job=job)
+          target=Path('runtime/render/media-checkpoint')
+          if target.exists():
+              import shutil; shutil.rmtree(target)
+          import shutil; shutil.copytree(checkpoint,target)
+          print('MEDIA_CHECKPOINT=PASS')
+          print('MEDIA_CHECKPOINT_CONTENT_HASH='+manifest['content_hash'])
+          print('MEDIA_CHECKPOINT_ASSET_COUNT='+str(len(manifest['assets'])))
+          PY
+
+      - name: Checkpoint QA-passed media artifact
+        id: media_checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-checkpoint-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/render/media-checkpoint/
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Build EditPlan and Render Video
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
@@ -549,6 +617,7 @@ jobs:
             runtime/render/input/**/professional-inputs.json
             runtime/render/input/**/narration-bundle/*.json
             runtime/render/narration-checkpoint/*.json
+            runtime/render/media-checkpoint/**
             runtime/render/output/**/narration-manifest.json
             runtime/render/output/**/speech-timing.json
             runtime/render/output/**/voice-speed-profile.json

@@ -595,6 +595,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "encoder": render_result.encoder,
                 "size_bytes": render_result.size,
                 "warnings": list(render_result.warnings),
+                "stage_timings": dict(getattr(render_result, "stage_timings", {}) or {}),
                 "skill_id": learning_binding.get("skill_id"),
                 "skill_version": learning_binding.get("version", "v1-legacy"),
                 "content_ref": learning_binding.get("content_ref"),

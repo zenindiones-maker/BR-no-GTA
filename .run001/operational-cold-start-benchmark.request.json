@@ -1,0 +1,11 @@
+{
+  "version": "operational-cold-start-benchmark/v1",
+  "source_failure_run_id": 35401841031,
+  "runner": "ubuntu-24.04",
+  "python": "3.12",
+  "baseline": "current-render-worker-setup",
+  "candidate": "preinstalled-ffmpeg-when-valid-plus-consolidated-pip",
+  "promotion_performed": false,
+  "quality_guard": "technical runtime parity required",
+  "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2"
+}

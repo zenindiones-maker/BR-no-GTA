@@ -7,7 +7,7 @@ import math
 from typing import Any, Iterable, Mapping
 
 POLICY_ID = "br-no-gta.operational-efficiency"
-POLICY_VERSION = "v1"
+POLICY_VERSION = "v2"
 POLICY_PRINCIPLE = (
     "MEASURE -> PROFILE -> REMOVE_REDUNDANT_WORK -> CACHE -> REUSE -> "
     "PARALLELIZE_ONLY_WHEN_SAFE -> CHECKPOINT -> QA -> COMPARE -> "
@@ -57,6 +57,8 @@ class PromotionDecision:
     improved_metrics: tuple[str, ...]
     regressed_metrics: tuple[str, ...]
     evidence_refs: tuple[str, ...]
+    guardrail_pass: bool
+    guardrail_violations: tuple[str, ...]
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -76,6 +78,9 @@ def policy_metadata() -> dict[str, Any]:
         "benchmark_reuse": (
             "reuse prior benchmark when workload fingerprint and relevant provider/skill/policy versions match"
         ),
+        "run_classes": ["COLD_RUN", "WARM_RETRY"],
+        "baseline_statistics": ["p50", "p95"],
+        "guardrail_rule": "candidate may not regress protected metrics beyond their explicit budget",
         "observability_required_fields": list(_REQUIRED_OBSERVABILITY_FIELDS),
     }
 
@@ -198,6 +203,7 @@ def evaluate_optimization_promotion(
     human_quality_applicable: bool,
     human_quality_no_regression: bool | None,
     evidence_refs: Iterable[str],
+    guardrail_budgets: Mapping[str, float] | None = None,
 ) -> PromotionDecision:
     if baseline_observation.get("observed") is not True:
         raise OperationalEfficiencyPolicyError("baseline performance must be OBSERVED")
@@ -216,7 +222,29 @@ def evaluate_optimization_promotion(
     improved, regressed = compare_performance(baseline_metrics, candidate_metrics)
     performance_improved = bool(improved)
 
-    if human_quality_applicable and human_quality_no_regression is not True:
+    budgets = dict(guardrail_budgets or {})
+    violations: list[str] = []
+    for metric, budget_value in budgets.items():
+        budget = _finite_nonnegative(budget_value, f"guardrail_budget.{metric}")
+        if metric == "cache_hit_rate":
+            if metric in baseline_metrics and metric in candidate_metrics:
+                old = _finite_nonnegative(baseline_metrics[metric], f"baseline.{metric}")
+                new = _finite_nonnegative(candidate_metrics[metric], f"candidate.{metric}")
+                if old - new > budget:
+                    violations.append(metric)
+            continue
+        if metric in baseline_metrics and metric in candidate_metrics:
+            old = _finite_nonnegative(baseline_metrics[metric], f"baseline.{metric}")
+            new = _finite_nonnegative(candidate_metrics[metric], f"candidate.{metric}")
+            allowed = old * (1.0 + budget)
+            if new > allowed:
+                violations.append(metric)
+    guardrail_pass = not violations
+
+    if not guardrail_pass:
+        decision = "REJECTED"
+        reason = "guardrail regression exceeded allowed budget"
+    elif human_quality_applicable and human_quality_no_regression is not True:
         decision = "REJECTED"
         reason = "human quality non-regression is required for perceptual/editorial changes"
     elif not technical_qa_no_regression:
@@ -240,6 +268,8 @@ def evaluate_optimization_promotion(
         improved_metrics=improved,
         regressed_metrics=regressed,
         evidence_refs=evidence,
+        guardrail_pass=guardrail_pass,
+        guardrail_violations=tuple(sorted(set(violations))),
         reason=reason,
     )
 

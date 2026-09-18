@@ -73,6 +73,7 @@ class RenderResult:
     size: int
     warnings: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
+    stage_timings: dict[str, float] = field(default_factory=dict)
 
 
 def _cache_dir() -> Path:
@@ -277,9 +278,15 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
 
     workdir = Path(tempfile.mkdtemp(prefix="vedit_"))
     t0 = time.time()
+    command_build_seconds = 0.0
+    ffmpeg_pass_seconds = 0.0
     try:
+        build_started = time.monotonic()
         args, duration, warnings, enc = build_command(project, opts, workdir)
+        command_build_seconds += time.monotonic() - build_started
+        pass_started = time.monotonic()
         code, log_lines = _run_pass(args, duration, on_progress, t0)
+        ffmpeg_pass_seconds += time.monotonic() - pass_started
         warnings = list(warnings)
 
         # L'accelerazione hardware e' un'ottimizzazione: non vale un render
@@ -299,17 +306,25 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
             warnings.append(
                 "decodifica accelerata fallita: rifatto senza, encoder GPU mantenuto"
                 + _perche(log_lines))
+            build_started = time.monotonic()
             args, duration, _, enc = build_command(
                 project, replace(opts, hwaccel_decode=False), workdir)
+            command_build_seconds += time.monotonic() - build_started
+            pass_started = time.monotonic()
             code, log_lines = _run_pass(args, duration, on_progress, t0)
+            ffmpeg_pass_seconds += time.monotonic() - pass_started
 
         if code != 0 and opts.prefer_hw and hw.detect().is_hw(enc):
             warnings.append(
                 "accelerazione hardware fallita: rifatto in software (piu' lento)"
                 + _perche(log_lines))
+            build_started = time.monotonic()
             args, duration, _, enc = build_command(
                 project, replace(opts, prefer_hw=False, hwaccel_decode=False), workdir)
+            command_build_seconds += time.monotonic() - build_started
+            pass_started = time.monotonic()
             code, log_lines = _run_pass(args, duration, on_progress, t0)
+            ffmpeg_pass_seconds += time.monotonic() - pass_started
 
         if code != 0:
             raise ffmpeg.FFmpegError(args, code, "\n".join(log_lines[-40:]))
@@ -320,6 +335,10 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
         return RenderResult(
             output=str(out_path.resolve()), duration=duration, seconds=round(time.time() - t0, 2),
             encoder=enc, size=size, warnings=warnings, command=args,
+            stage_timings={
+                "filtergraph_command_build_seconds": round(command_build_seconds, 6),
+                "ffmpeg_decode_filtergraph_encode_audio_mix_seconds": round(ffmpeg_pass_seconds, 6),
+            },
         )
     finally:
         if opts.keep_workdir:

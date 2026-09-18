@@ -28,6 +28,7 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.narration_pipeline import NarrationError, generate_narration_bundle, load_narration_bundle
+from app.services.media_checkpoint_service import normalize_runtime_asset_path
 from app.services.operational_efficiency_policy import (
     POLICY_ID as EFFICIENCY_POLICY_ID,
     POLICY_VERSION as EFFICIENCY_POLICY_VERSION,
@@ -490,9 +491,10 @@ def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[s
     for path_key in ("master_path", "speech_timing_path"):
         raw = result.get(path_key)
         if raw:
-            path = Path(str(raw))
-            if path.is_absolute():
-                result[path_key] = str(path.resolve().relative_to(root.resolve()))
+            try:
+                result[path_key] = normalize_runtime_asset_path(str(raw), root)
+            except Exception as exc:
+                raise WorkerError(f"VOICE_QA: unsafe runtime {path_key}: {raw}") from exc
     result.update({
         "capability_id": VOICE_CAPABILITY_ID,
         "executor_binding": VOICE_EXECUTOR,
@@ -522,7 +524,10 @@ def _materialize_sources(job: dict[str, Any], root: Path) -> tuple[dict[str, str
             "content_unit_id": index,
         })
     hydrated, evidence = materialize_scenes({"scenes": scenes, "audio_requirements": []}, root)
-    paths = {item["asset_ref"]: str(Path(item["media_path"]).resolve().relative_to(root.resolve())) for item in hydrated["scenes"]}
+    paths = {
+        item["asset_ref"]: normalize_runtime_asset_path(str(item["media_path"]), root)
+        for item in hydrated["scenes"]
+    }
     return paths, evidence
 
 

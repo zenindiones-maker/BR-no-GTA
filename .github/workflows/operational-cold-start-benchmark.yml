@@ -1,0 +1,149 @@
+name: Operational Cold Start Benchmark
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/operational-cold-start-benchmark.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Measure current cold-start stack
+        run: |
+          set -euo pipefail
+          python scripts/benchmark_cold_start_runtime.py \
+            --mode baseline \
+            --output runtime/cold-start/baseline.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-baseline-${{ github.run_id }}
+          path: runtime/cold-start/baseline.json
+          if-no-files-found: error
+          retention-days: 30
+
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Measure consolidated cached candidate
+        run: |
+          set -euo pipefail
+          python scripts/benchmark_cold_start_runtime.py \
+            --mode candidate \
+            --output runtime/cold-start/candidate.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-candidate-${{ github.run_id }}
+          path: runtime/cold-start/candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  compare:
+    needs: [baseline,candidate]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cold-start-*-${{ github.run_id }}
+          path: runtime/cold-start/downloaded
+          merge-multiple: true
+      - name: Compare observed wall-clock without auto-promotion
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.operational_efficiency_policy import evaluate_optimization_promotion
+          files=list(Path('runtime/cold-start/downloaded').glob('*.json'))
+          docs=[json.loads(p.read_text()) for p in files]
+          base=next(d for d in docs if d['mode']=='baseline')
+          cand=next(d for d in docs if d['mode']=='candidate')
+          assert base['versions']==cand['versions']
+          b={
+              'observed':True,
+              'workload_fingerprint':base['workload_fingerprint'],
+              'metrics':{
+                  'wall_clock_seconds':base['wall_clock_seconds'],
+                  'external_calls':0,'process_count':0,'encode_count':0,'decode_count':0,
+                  'download_count':0,'artifact_size_bytes':0,'cache_hit_rate':0,
+              },
+          }
+          c={
+              'observed':True,
+              'workload_fingerprint':cand['workload_fingerprint'],
+              'metrics':{
+                  'wall_clock_seconds':cand['wall_clock_seconds'],
+                  'external_calls':0,'process_count':0,'encode_count':0,'decode_count':0,
+                  'download_count':0,'artifact_size_bytes':0,'cache_hit_rate':0,
+              },
+          }
+          decision=evaluate_optimization_promotion(
+              baseline_observation=b,
+              candidate_observation=c,
+              technical_qa_no_regression=True,
+              human_quality_applicable=False,
+              human_quality_no_regression=None,
+              evidence_refs=('cold-start-baseline.json','cold-start-candidate.json'),
+              guardrail_budgets={'wall_clock_seconds':0.0},
+          )
+          out={
+              'status':'PASS',
+              'baseline':base,
+              'candidate':cand,
+              'evaluation':decision.to_dict(),
+              'promotion_performed':False,
+              'promotion_requires_control_plane_commit':True,
+          }
+          Path('runtime/cold-start/comparison.json').write_text(json.dumps(out,indent=2))
+          print('COLD_START_BENCHMARK=PASS')
+          print('PERFORMANCE_IMPROVED='+('OBSERVED' if decision.performance_improved else 'NO'))
+          print('CANDIDATE_EVALUATION='+decision.decision)
+          print('PROMOTION_PERFORMED=NO')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-comparison-${{ github.run_id }}
+          path: runtime/cold-start/comparison.json
+          if-no-files-found: error
+          retention-days: 30

@@ -116,3 +116,22 @@ def test_perceptual_candidate_keeps_baseline_without_human_non_regression():
     )
     assert result["selected"]==baseline
     assert result["candidate_status"]=="NOT_PROMOTED"
+
+
+def test_guardrail_budget_blocks_candidate_despite_faster_wall_clock():
+    baseline=_obs(wall=20,calls=10,cache=0.8)
+    candidate=_obs(wall=10,calls=5,cache=0.8)
+    candidate["metrics"]["artifact_size_bytes"]=1200
+    decision=evaluate_optimization_promotion(
+        baseline_observation=baseline,
+        candidate_observation=candidate,
+        technical_qa_no_regression=True,
+        human_quality_applicable=False,
+        human_quality_no_regression=None,
+        evidence_refs=("run:guardrail",),
+        guardrail_budgets={"artifact_size_bytes":0.05},
+    )
+    assert decision.performance_improved is True
+    assert decision.guardrail_pass is False
+    assert decision.guardrail_violations==("artifact_size_bytes",)
+    assert decision.decision=="REJECTED"
