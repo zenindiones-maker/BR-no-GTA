@@ -307,6 +307,19 @@ def upsert_source_claim(record: dict[str, Any]) -> dict[str, Any]:
         connection.close()
 
 
+def get_source_claim(claim_id: str) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        row = connection.execute(
+            "SELECT * FROM telegram_source_claims WHERE claim_id = ?",
+            (claim_id,),
+        ).fetchone()
+        return _claim(row)
+    finally:
+        connection.close()
+
+
 def list_source_claims(candidate_id: str) -> list[dict[str, Any]]:
     connection = get_connection()
     try:
