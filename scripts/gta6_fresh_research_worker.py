@@ -87,6 +87,29 @@ def _source_hierarchy(url: str) -> str:
     return "SECONDARY_REPORT"
 
 
+def _secondary_hierarchy(payload: dict[str, Any]) -> tuple[str, str]:
+    source_name = str(payload.get("source_name") or "")
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("title", "summary", "source_name")
+    ).casefold()
+    if "reddit" in source_name.casefold():
+        return "COMMUNITY_SIGNAL", _root_domain(str(payload.get("url") or ""))
+    rockstar_markers = (
+        "according to rockstar", "rockstar said", "rockstar says",
+        "rockstar confirmed", "rockstar announced", "rockstar revealed",
+    )
+    take_two_markers = (
+        "according to take-two", "according to take two", "take-two said",
+        "take two said", "take-two confirmed", "take two confirmed",
+    )
+    if any(marker in text for marker in rockstar_markers):
+        return "PRIMARY_STATEMENT_REPORTED_BY_SECONDARY", "primary-statement:rockstar"
+    if any(marker in text for marker in take_two_markers):
+        return "PRIMARY_STATEMENT_REPORTED_BY_SECONDARY", "primary-statement:take-two"
+    return "SECONDARY_REPORT", _root_domain(str(payload.get("url") or ""))
+
+
 def _platform(url: str) -> str:
     host = (urllib.parse.urlparse(url).hostname or "").casefold()
     if host.endswith("instagram.com"):
@@ -263,12 +286,11 @@ def collect(
         items = []
     for item in items[:MAX_SECONDARY_ITEMS]:
         payload = asdict(item)
-        payload["authority"] = "community" if "reddit" in item.source_name.casefold() else "secondary"
-        payload["source_hierarchy"] = (
-            "COMMUNITY_SIGNAL" if payload["authority"] == "community" else "SECONDARY_REPORT"
-        )
+        hierarchy, independent_group = _secondary_hierarchy(payload)
+        payload["authority"] = "community" if hierarchy == "COMMUNITY_SIGNAL" else "secondary"
+        payload["source_hierarchy"] = hierarchy
         payload["original_source"] = False
-        payload["independent_group"] = _root_domain(str(payload.get("url") or ""))
+        payload["independent_group"] = independent_group
         payload["content_fingerprint"] = _content_fingerprint(
             f"{payload.get('title') or ''} {payload.get('summary') or ''}"
         )
