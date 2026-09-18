@@ -177,6 +177,9 @@ def test_direct_official_source_verifies_before_memory_and_creates_signal():
         "VERIFIED",
         "MEMORY_ELIGIBLE",
     ]
+    assert len(result["claim_ledger"]) == 1
+    assert result["claim_ledger"][0]["fact_check_result"] == "SUPPORTED"
+    assert result["claim_ledger"][0]["script_eligible"] is True
     claims = list_source_claims(candidate["candidate_id"])
     assert len(claims) == 1
     assert claims[0]["verification_status"] == "VERIFIED"
@@ -329,3 +332,60 @@ def test_reported_primary_statements_share_the_attributed_origin_group():
         "primary-statement:rockstar",
     )
     assert second == first
+
+
+def test_explicit_video_intent_uses_official_editorial_pipeline_without_production():
+    url = "https://www.rockstargames.com/VI/editorial-proof"
+    ingested = ingest_telegram_input_under_harness(
+        {
+            "telegram_user_id": 111,
+            "telegram_chat_id": 111,
+            "telegram_message_id": 9010,
+            "telegram_update_id": 10010,
+            "input_kind": "text",
+            "text": f"Transforme isso em pauta de vídeo se fizer sentido: {url}",
+        }
+    )
+    record = ingested["input"]
+    claim = (
+        "Rockstar confirms GTA VI follows Lucia and Jason through Vice City "
+        "and the state of Leonida in this official update."
+    )
+    packet = _base_packet(
+        {
+            "resolution_status": "PASS",
+            "source_name": "Rockstar GTA VI",
+            "url": url,
+            "resolved_url": url,
+            "platform": "web",
+            "retrieved_at": CHECKED_AT,
+            "source_hierarchy": "OFFICIAL_PRIMARY",
+            "original_source_retrieved": True,
+            "content_excerpt": claim,
+            "content_sha256": "c" * 64,
+            "independent_group": "rockstargames.com",
+            "content_fingerprint": "official-editorial-proof",
+        }
+    )
+    packet["official_sources"][0]["content_excerpt"] = claim
+
+    result = process_telegram_source_intelligence(
+        input_record=record,
+        fresh_evidence=_fresh(packet),
+    )
+    signal = result["editorial_signal"]
+
+    assert signal["status"] == "USED"
+    assert signal["harness_decision"] in {
+        "USE_FOR_VIDEO",
+        "STORE_FOR_FUTURE",
+        "REJECT_SATURATED",
+    }
+    assert signal["payload"]["pipeline_result"] is not None
+    assert signal["payload"]["research_item_id"] is not None
+    assert signal["payload"]["knowledge_id"] is not None
+    assert signal["payload"]["telegram_input_id"] == record["id"]
+    assert signal["payload"]["production_dispatched"] is False
+    if signal["harness_decision"] == "USE_FOR_VIDEO":
+        assert signal["goal_id"]
+        assert signal["payload"]["goal_id"] == signal["goal_id"]
