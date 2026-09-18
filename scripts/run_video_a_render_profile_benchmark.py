@@ -192,10 +192,8 @@ def run_benchmark(render_job_path: Path, asset_root: Path, output_dir: Path) -> 
         raise ValueError("VIDEO A render contract changed; re-diagnose before benchmarking")
 
     output_dir.mkdir(parents=True, exist_ok=False)
-    working = output_dir / "working"
-    working.mkdir()
-    assets = working / "assets"
-    assets.mkdir()
+    asset_root.mkdir(parents=True, exist_ok=False)
+    assets = asset_root
 
     section = dict(job["script_sections"][0])
     if section.get("section_id") != "A01":
