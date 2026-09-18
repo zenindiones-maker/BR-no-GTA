@@ -215,8 +215,9 @@ class LearningCandidate:
 
 
 def persist_episode(episode: HarnessEpisode) -> dict[str, Any]:
-    persisted, _ = repository.insert_episode(episode.to_record())
-    _update_competence_from_episode(persisted)
+    persisted, inserted = repository.insert_episode(episode.to_record())
+    if inserted:
+        _update_competence_from_episode(persisted)
     return persisted
 
 
