@@ -76,6 +76,10 @@ def classify_telegram_input(
         return str(classification_override).strip().lower()
 
     normalized = _fold(text).strip()
+    # Any external URL is a source candidate first. Editorial intent ("pauta",
+    # "vídeo", "tema") is evaluated only after source resolution/fact-check.
+    if extract_source_url(text) is not None:
+        return "news"
     if any(
         term in normalized
         for term in (
@@ -94,8 +98,6 @@ def classify_telegram_input(
     if any(term in normalized for term in ("tema", "assunto para video", "topico")):
         return "theme"
     if any(term in normalized for term in ("noticia", "reportagem", "news", "fonte")):
-        return "news"
-    if extract_source_url(text) is not None:
         return "news"
     if has_attachment:
         return "reference_media"
