@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from hashlib import sha256
+import time
 from typing import Any, Callable
 
 from app.services.ai_provider import AIProvider, AIProviderError
@@ -39,9 +42,45 @@ class HarnessAIProviderEvidence:
     result: Any = None
     error: Any = None
     routing: dict[str, Any] | None = None
+    model: str | None = None
+    executor_binding: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    latency_seconds: float | None = None
+    retry_count: int = 0
+    evidence_refs: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_error_message(exc: Exception) -> str:
+    safe = str(getattr(exc, "safe_message", "") or str(exc) or type(exc).__name__)
+    # Never persist credential-shaped values from provider transports.
+    redactions = ("authorization", "api_key", "apikey", "token", "bearer")
+    lowered = safe.lower()
+    if any(term in lowered for term in redactions):
+        return type(exc).__name__
+    return safe[:1200]
+
+
+def _execution_evidence_refs(
+    *,
+    decision: HarnessRoutingDecision,
+    authorization: HarnessAuthorization,
+    prompt: str,
+) -> tuple[str, ...]:
+    digest = sha256(prompt.encode("utf-8")).hexdigest()
+    return (
+        f"routing:{decision.routing_id}",
+        f"authorization:{authorization.authorization_id}",
+        f"execution:{authorization.execution_id}",
+        f"prompt-sha256:{digest}",
+    )
 
 
 def _provider_record(provider_id: str):
@@ -174,7 +213,7 @@ def execute_harness_ai_generation(
     routing_decision: HarnessRoutingDecision | None = None,
     selector: Callable[..., tuple[str, AIProvider]] = select_harness_ai_provider,
 ) -> HarnessAIProviderEvidence:
-    """Execute one routed provider; provider failures never trigger silent fallback."""
+    """Execute one routed provider and preserve structured observed evidence."""
     decision, resolved_authorization, expected_provider = _resolve_routing(
         provider_name=provider_name,
         authorization=authorization,
@@ -197,18 +236,32 @@ def execute_harness_ai_generation(
     if normalize_provider_id(normalized_provider) != expected_provider:
         raise PermissionError("AI provider selector escaped Harness routing policy")
 
+    started_at = _utcnow()
+    started_perf = time.perf_counter()
+    refs = _execution_evidence_refs(
+        decision=decision,
+        authorization=resolved_authorization,
+        prompt=prompt,
+    )
+    executor_binding = decision.selected_provider_executor_binding
+    model = decision.selected_model
+
     try:
         response = provider.generate(prompt)
     except AIProviderError as exc:
+        finished_at = _utcnow()
+        latency = max(0.0, time.perf_counter() - started_perf)
         structured_error = (
             exc.to_dict()
             if callable(getattr(exc, "to_dict", None))
             else {
                 "provider": expected_provider,
+                "model": model,
                 "code": "provider_error",
-                "status_code": None,
-                "retryable": False,
-                "message": str(exc),
+                "status_code": getattr(exc, "status_code", None),
+                "retryable": bool(getattr(exc, "retryable", False)),
+                "message": _safe_error_message(exc),
+                "error_type": type(exc).__name__,
             }
         )
         return HarnessAIProviderEvidence(
@@ -221,6 +274,75 @@ def execute_harness_ai_generation(
             execution_id=resolved_authorization.execution_id,
             error=structured_error,
             routing=decision.to_dict(),
+            model=model,
+            executor_binding=executor_binding,
+            started_at=started_at,
+            finished_at=finished_at,
+            latency_seconds=latency,
+            retry_count=0,
+            evidence_refs=refs,
+        )
+    except Exception as exc:
+        finished_at = _utcnow()
+        latency = max(0.0, time.perf_counter() - started_perf)
+        return HarnessAIProviderEvidence(
+            provider=expected_provider,
+            status="FAILED",
+            active=False,
+            authority=resolved_authorization.authority,
+            authorized_action=resolved_authorization.authorized_action,
+            harness_decision_id=resolved_authorization.harness_decision_id,
+            execution_id=resolved_authorization.execution_id,
+            error={
+                "provider": expected_provider,
+                "model": model,
+                "code": "provider_unexpected_error",
+                "status_code": None,
+                "retryable": False,
+                "message": _safe_error_message(exc),
+                "error_type": type(exc).__name__,
+            },
+            routing=decision.to_dict(),
+            model=model,
+            executor_binding=executor_binding,
+            started_at=started_at,
+            finished_at=finished_at,
+            latency_seconds=latency,
+            retry_count=0,
+            evidence_refs=refs,
+        )
+
+    finished_at = _utcnow()
+    latency = max(0.0, time.perf_counter() - started_perf)
+    result = asdict(response)
+    text = str(result.get("text") or "").strip()
+    if not text:
+        return HarnessAIProviderEvidence(
+            provider=expected_provider,
+            status="FAILED",
+            active=False,
+            authority=resolved_authorization.authority,
+            authorized_action=resolved_authorization.authorized_action,
+            harness_decision_id=resolved_authorization.harness_decision_id,
+            execution_id=resolved_authorization.execution_id,
+            result=result,
+            error={
+                "provider": expected_provider,
+                "model": result.get("model") or model,
+                "code": "empty_response",
+                "status_code": None,
+                "retryable": True,
+                "message": "Provider returned no usable text response.",
+                "error_type": "EmptyProviderResponse",
+            },
+            routing=decision.to_dict(),
+            model=result.get("model") or model,
+            executor_binding=executor_binding,
+            started_at=started_at,
+            finished_at=finished_at,
+            latency_seconds=latency,
+            retry_count=0,
+            evidence_refs=refs,
         )
 
     return HarnessAIProviderEvidence(
@@ -231,6 +353,14 @@ def execute_harness_ai_generation(
         authorized_action=resolved_authorization.authorized_action,
         harness_decision_id=resolved_authorization.harness_decision_id,
         execution_id=resolved_authorization.execution_id,
-        result=asdict(response),
+        result=result,
         routing=decision.to_dict(),
+        model=result.get("model") or model,
+        executor_binding=executor_binding,
+        started_at=started_at,
+        finished_at=finished_at,
+        latency_seconds=latency,
+        retry_count=0,
+        evidence_refs=refs,
     )
+
