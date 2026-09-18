@@ -332,6 +332,8 @@ jobs:
             runtime/render/branding/**/brand-assets.json
             runtime/render/output/**/brand-assets.json
             runtime/render/output/**/render-qa.json
+            runtime/render/output/**/render-progress.json
+            runtime/render/output/**/render-runtime.json
             runtime/render/output/**/editorial-qa.json
             runtime/render/output/**/voice-qa.json
             runtime/render/output/**/semantic-ptbr-audio-qa.json
