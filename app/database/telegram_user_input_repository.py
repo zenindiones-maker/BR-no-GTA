@@ -24,6 +24,13 @@ VALID_LEARNING_STATUSES = {
     "pending_cloud_analysis",
     "command_only",
 }
+VALID_EXECUTION_OUTCOME_STATUSES = {
+    "NOT_OBSERVED",
+    "COMPLETED",
+    "FAILED",
+    "BLOCKED",
+    "CANCELLED",
+}
 
 
 def _ensure_schema(connection) -> None:
