@@ -1,0 +1,116 @@
+name: VIDEO A Real Render Learning Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  observe-real-timeout:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run VIDEO A real learning proof')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+      REAL_RENDER_RUN_ID: "35289594486"
+      REAL_RENDER_JOB_ID: "105429342947"
+      REAL_RENDER_HEAD_SHA: "7bc7b9c719d45efa23745d618ec8ba3077addaec"
+      REAL_RENDER_TIMEOUT_MINUTES: "240"
+      HANDOFF_ARTIFACT_ID: "10525757299"
+      HANDOFF_PRODUCER_RUN_ID: "35289539299"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Learning Plane runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+
+      - name: Download exact governed VIDEO A RenderJob
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.HANDOFF_ARTIFACT_ID }}
+          run-id: ${{ env.HANDOFF_PRODUCER_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/video-a-real-learning/handoff
+          merge-multiple: true
+
+      - name: Validate exact historical RenderJob identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime/video-a-real-learning/handoff/render-job.json")
+          job=json.loads(p.read_text(encoding="utf-8"))
+          expected={
+              "render_job_id":920101,
+              "video_id":920101,
+              "execution_id":"run001-video-a-investigative-v1",
+              "goal_id":"goal-video-a-state-of-knowledge-20260917",
+              "authorized_action":"EXECUTION",
+          }
+          for key,value in expected.items():
+              assert job.get(key)==value,(key,job.get(key),value)
+          print("VIDEO_A_REAL_RENDER_JOB_IDENTITY=PASS")
+          PY
+
+      - name: Reconcile real 240-minute render incident twice
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/video-a-real-learning/proof
+          python scripts/reconcile_render_learning_incident.py             --render-job runtime/video-a-real-learning/handoff/render-job.json             --run-id "$REAL_RENDER_RUN_ID"             --job-id "$REAL_RENDER_JOB_ID"             --timeout-minutes "$REAL_RENDER_TIMEOUT_MINUTES"             --expected-head-sha "$REAL_RENDER_HEAD_SHA"             --output runtime/video-a-real-learning/proof/first.json
+          python scripts/reconcile_render_learning_incident.py             --render-job runtime/video-a-real-learning/handoff/render-job.json             --run-id "$REAL_RENDER_RUN_ID"             --job-id "$REAL_RENDER_JOB_ID"             --timeout-minutes "$REAL_RENDER_TIMEOUT_MINUTES"             --expected-head-sha "$REAL_RENDER_HEAD_SHA"             --output runtime/video-a-real-learning/proof/second.json
+
+      - name: Prove idempotency and competence update
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.harness_learning_service import retrieve_agent_competence
+          root=Path("runtime/video-a-real-learning/proof")
+          first=json.loads((root/"first.json").read_text())
+          second=json.loads((root/"second.json").read_text())
+          assert first["episode_id"]==second["episode_id"]
+          assert first["failure_memory_id"]==second["failure_memory_id"]
+          assert second["failure_support_count"]==1, second
+          rows=retrieve_agent_competence(
+              domain="production-render",
+              task_class="long-form-render",
+              capability_id="production.render.execute",
+          )
+          assert len(rows)==1,rows
+          competence=rows[0]
+          assert competence["tested_cases"]==1,competence
+          assert competence["success_count"]==0,competence
+          proof={
+              "REAL_VIDEO_A_TIMEOUT_EPISODE":"PASS",
+              "FAILURE_MEMORY_FROM_REAL_VIDEO_A":"PASS",
+              "COMPETENCE_UPDATED_FROM_REAL_VIDEO_A":"PASS",
+              "IDEMPOTENT_RECONCILIATION":"PASS",
+              "episode_id":first["episode_id"],
+              "failure_memory_id":first["failure_memory_id"],
+              "competence":competence,
+              "observed_outcome":first["actual_outcome"],
+          }
+          (root/"proof.json").write_text(json.dumps(proof,indent=2,sort_keys=True))
+          print(json.dumps(proof,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-a-real-render-learning-proof
+          path: runtime/video-a-real-learning/proof/
+          if-no-files-found: error
+          retention-days: 30
