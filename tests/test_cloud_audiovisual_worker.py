@@ -51,11 +51,26 @@ class ContractTests(unittest.TestCase):
         self.assertIsNotNone(validate_job(data))
 
     def test_authorization_credentials_remain_blocked(self):
-        for key in ("authorization", "authorization_token"):
+        for key in ("authorization", "authorization_token", "authorization_header"):
             data = job()
             data["edit_plan"]["metadata"] = {key: "never archive"}
             with self.subTest(key=key), self.assertRaisesRegex(WorkerError, "Credentials do not belong"):
                 validate_job(data)
+
+    def test_scoped_authorization_ids_are_provenance_not_credentials(self):
+        data = job()
+        data["render"]["learning_profile"] = {
+            "authorization_id": "authz-render-123",
+            "resolved_by": "deepseek_harness",
+        }
+        data["learning_lineage"] = {
+            "promotion_authorization_id": "authz-promotion-456",
+            "render_authorization_id": "authz-render-123",
+        }
+        data["fact_check"] = {
+            "receipts": [{"authorization_id": "authz-fact-789"}],
+        }
+        self.assertIsNotNone(validate_job(data))
 
     def test_asset_resolution(self):
         with tempfile.TemporaryDirectory() as tmp:
