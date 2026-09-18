@@ -9,6 +9,7 @@ import math
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from app.services.edit_plan_service import EditPlan
@@ -499,6 +500,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
         bound_options = resolve_bound_render_options(job.get("render"))
         learning_binding = dict((job.get("render") or {}).get("learning_profile") or {})
         progress_path = folder / "render-progress.json"
+        heartbeat = {"last_emit": 0.0}
 
         def _record_progress(progress):
             payload = dict(progress or {})
@@ -518,6 +520,36 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 },
             })
             write_json(progress_path, payload)
+            now = time.monotonic()
+            percent = float(payload.get("percent") or 0.0)
+            if (
+                heartbeat["last_emit"] == 0.0
+                or now - heartbeat["last_emit"] >= 30.0
+                or percent >= 100.0
+            ):
+                heartbeat["last_emit"] = now
+                elapsed = float(payload.get("elapsed") or 0.0)
+                media_seconds = float(payload.get("seconds") or 0.0)
+                speed_x = media_seconds / elapsed if elapsed > 0 else None
+                print(
+                    json.dumps(
+                        {
+                            "RENDER_HEARTBEAT": "PASS",
+                            "render_job_id": job["render_job_id"],
+                            "execution_id": job["execution_id"],
+                            "skill_version": learning_binding.get("version", "v1-legacy"),
+                            "software_preset": bound_options.get("software_preset"),
+                            "percent": percent,
+                            "media_seconds": media_seconds,
+                            "elapsed_seconds": elapsed,
+                            "render_speed_x": (
+                                round(speed_x, 6) if speed_x is not None else None
+                            ),
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
 
         render_options = RenderOptions(
             output=str(output),
