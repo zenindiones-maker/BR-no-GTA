@@ -406,6 +406,10 @@ def _fact_check(
         "routing_id": routing.routing_id,
         "authorization_id": authorization.authorization_id,
         "execution_id": authorization.execution_id,
+        "telegram_input_id": input_record["id"],
+        "memory_event_id": input_record.get("memory_event_id"),
+        "source_candidate_id": candidate["candidate_id"],
+        "source_url": candidate["source_url"],
         "canonical_result": canonical.to_dict(),
     }
 
@@ -731,6 +735,64 @@ def _editorial_decision(
     return signal
 
 
+def _source_hierarchy_enforced(claims: list[dict[str, Any]]) -> bool:
+    for item in claims:
+        payload = dict(item.get("payload") or {})
+        hierarchy_evidence = dict(payload.get("hierarchy_evidence") or {})
+        verification = str(item.get("verification_status") or "")
+        hierarchy = str(item.get("source_hierarchy") or "")
+        if verification == "VERIFIED":
+            if hierarchy == "OFFICIAL_PRIMARY":
+                if hierarchy_evidence.get("official_support") is not True:
+                    return False
+            elif hierarchy == "MULTIPLE_INDEPENDENT_REPORTS":
+                if int(hierarchy_evidence.get("independent_secondary_count") or 0) < 2:
+                    return False
+            else:
+                return False
+        elif item.get("semantic_memory_id") is not None:
+            return False
+    return True
+
+
+def _human_input_lineage_preserved(
+    *,
+    candidate: dict[str, Any],
+    input_record: dict[str, Any],
+    claims: list[dict[str, Any]],
+    signal: dict[str, Any],
+    dossier: ResearchDossier | None,
+) -> bool:
+    input_id = int(input_record["id"])
+    memory_event_id = input_record.get("memory_event_id")
+    if int(candidate.get("telegram_input_id") or 0) != input_id:
+        return False
+    if dossier is not None:
+        provenance = dict(dossier.provenance or {})
+        if provenance.get("telegram_input_id") != input_id:
+            return False
+        if provenance.get("memory_event_id") != memory_event_id:
+            return False
+    for item in claims:
+        lineage = dict((item.get("payload") or {}).get("fact_check_lineage") or {})
+        if lineage.get("telegram_input_id") != input_id:
+            return False
+        if lineage.get("memory_event_id") != memory_event_id:
+            return False
+        if lineage.get("source_candidate_id") != candidate.get("candidate_id"):
+            return False
+    signal_payload = dict(signal.get("payload") or {})
+    if signal_payload.get("telegram_input_id") != input_id:
+        return False
+    if signal_payload.get("memory_event_id") != memory_event_id:
+        return False
+    refs = set(signal.get("evidence_refs") or ())
+    return (
+        f"telegram-input:{input_id}" in refs
+        and f"source-candidate:{candidate['candidate_id']}" in refs
+    )
+
+
 def quarantine_premature_source_memory(
     input_record: dict[str, Any],
 ) -> dict[str, Any]:
@@ -775,6 +837,15 @@ def process_telegram_source_intelligence(
             "SOURCE_INTELLIGENCE": "NOT_APPLICABLE",
             "INPUT_CAPTURED": "PASS",
         }
+
+    if (
+        getattr(fresh_evidence, "status", None) != "PASS"
+        or not str(getattr(fresh_evidence, "execution_id", "") or "").strip()
+        or not str(getattr(fresh_evidence, "execution_ref", "") or "").strip()
+    ):
+        raise ValueError(
+            "Telegram source intelligence requires observed fresh research evidence"
+        )
 
     quarantine = quarantine_premature_source_memory(input_record)
     candidate = source_repository.get_source_candidate_by_input(int(input_record["id"]))
@@ -829,9 +900,23 @@ def process_telegram_source_intelligence(
             claims=[],
             dossier_id=None,
         )
+        lineage_ok = _human_input_lineage_preserved(
+            candidate=candidate,
+            input_record=input_record,
+            claims=[],
+            signal=signal,
+            dossier=None,
+        )
         return {
-            "REAL_TELEGRAM_SOURCE_INPUT": "PASS",
-            "INPUT_CAPTURED": "PASS",
+            "REAL_TELEGRAM_SOURCE_INPUT": (
+                "PASS"
+                if input_record.get("memory_event_id") is not None
+                and int(input_record.get("id") or 0) > 0
+                else "FAIL"
+            ),
+            "INPUT_CAPTURED": (
+                "PASS" if input_record.get("memory_event_id") is not None else "FAIL"
+            ),
             "SOURCE_LEARNED": "PASS",
             "CLAIM_VERIFIED": "NO",
             "SOURCE_CONTENT_RESOLVED": "FAIL",
@@ -841,9 +926,13 @@ def process_telegram_source_intelligence(
             "SOURCE_HIERARCHY_ENFORCED": "PASS",
             "UNVERIFIED_CLAIM_NOT_PROMOTED": "PASS",
             "SEMANTIC_MEMORY_PROMOTED": "NO",
-            "EDITORIAL_SIGNAL_CREATED": "PASS",
-            "EDITORIAL_SIGNAL_USED": "NO",
-            "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS",
+            "EDITORIAL_SIGNAL_CREATED": (
+                "PASS" if signal.get("signal_id") else "FAIL"
+            ),
+            "EDITORIAL_SIGNAL_USED": (
+                "PASS" if signal.get("status") == "USED" else "NO"
+            ),
+            "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS" if lineage_ok else "FAIL",
             "PREMATURE_INGRESS_MEMORY_QUARANTINED": (
                 "PASS" if quarantine.get("quarantined") else "NOT_REQUIRED"
             ),
@@ -1076,16 +1165,40 @@ def process_telegram_source_intelligence(
         claims=persisted_claims,
         dossier_id=dossier_id,
     )
+    hierarchy_ok = _source_hierarchy_enforced(persisted_claims)
+    lineage_ok = _human_input_lineage_preserved(
+        candidate=candidate,
+        input_record=input_record,
+        claims=persisted_claims,
+        signal=signal,
+        dossier=dossier,
+    )
     return {
-        "REAL_TELEGRAM_SOURCE_INPUT": "PASS",
-        "INPUT_CAPTURED": "PASS",
-        "SOURCE_LEARNED": "PASS",
+        "REAL_TELEGRAM_SOURCE_INPUT": (
+            "PASS"
+            if input_record.get("memory_event_id") is not None
+            and int(input_record.get("id") or 0) > 0
+            else "FAIL"
+        ),
+        "INPUT_CAPTURED": (
+            "PASS" if input_record.get("memory_event_id") is not None else "FAIL"
+        ),
+        "SOURCE_LEARNED": (
+            "PASS"
+            if candidate.get("source_state") in {
+                "VERIFIED",
+                "CONTRADICTED",
+                "INSUFFICIENT_EVIDENCE",
+                "MEMORY_ELIGIBLE",
+            }
+            else "PENDING"
+        ),
         "CLAIM_VERIFIED": "PASS" if verified_claims else "NO",
         "SOURCE_CONTENT_RESOLVED": "PASS",
         "FRESH_RESEARCH_TRIGGERED": "PASS",
         "CLAIMS_EXTRACTED": "PASS" if claims_text else "NO",
         "FACT_CHECK_EXECUTED": "PASS" if persisted_claims else "NO",
-        "SOURCE_HIERARCHY_ENFORCED": "PASS",
+        "SOURCE_HIERARCHY_ENFORCED": "PASS" if hierarchy_ok else "FAIL",
         "UNVERIFIED_CLAIM_NOT_PROMOTED": (
             "PASS"
             if all(
@@ -1096,9 +1209,13 @@ def process_telegram_source_intelligence(
             else "FAIL"
         ),
         "SEMANTIC_MEMORY_PROMOTED": "PASS" if promoted_memory_ids else "NO",
-        "EDITORIAL_SIGNAL_CREATED": "PASS",
-        "EDITORIAL_SIGNAL_USED": "NO",
-        "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS",
+        "EDITORIAL_SIGNAL_CREATED": (
+            "PASS" if signal.get("signal_id") else "FAIL"
+        ),
+        "EDITORIAL_SIGNAL_USED": (
+            "PASS" if signal.get("status") == "USED" else "NO"
+        ),
+        "HUMAN_INPUT_LINEAGE_PRESERVED": "PASS" if lineage_ok else "FAIL",
         "PREMATURE_INGRESS_MEMORY_QUARANTINED": (
             "PASS" if quarantine.get("quarantined") else "NOT_REQUIRED"
         ),
