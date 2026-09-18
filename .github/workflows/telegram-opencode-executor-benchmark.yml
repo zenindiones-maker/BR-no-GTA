@@ -367,3 +367,4 @@ jobs:
           if [ -f /tmp/omniroute.pid ]; then
             kill "$(cat /tmp/omniroute.pid)" 2>/dev/null || true
           fi
+# Trigger note: benchmark remains manual/push-gated and evidence-only until Harness promotion.
