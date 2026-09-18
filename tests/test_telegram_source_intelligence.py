@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import app.services.telegram_learning_service as telegram_learning_service
 import app.services.telegram_source_intelligence_service as source_intelligence_service
+import scripts.gta6_fresh_research_worker as fresh_worker
 
 from app.database.telegram_source_intelligence_repository import (
     get_editorial_signal_by_candidate,
@@ -97,6 +98,46 @@ def _base_packet(submitted: dict) -> dict:
             "social_links_require_original_content_resolution": True,
         },
     }
+
+
+def test_social_html_without_dedicated_resolver_is_not_original_content(monkeypatch):
+    url = "https://www.instagram.com/p/example/"
+    monkeypatch.setattr(fresh_worker, "_public_https_url", lambda value: value)
+    monkeypatch.setattr(
+        fresh_worker,
+        "_fetch_text",
+        lambda value: (
+            "GTA VI Rockstar Lucia Jason Vice City " * 10,
+            value,
+        ),
+    )
+    resolved = fresh_worker._resolve_submitted_source(url, checked_at=CHECKED_AT)
+    assert resolved["resolution_status"] == "FAIL"
+    assert resolved["platform"] == "instagram"
+    assert resolved["original_source_retrieved"] is False
+    assert resolved["content_excerpt"] == ""
+
+
+def test_redirected_official_url_loses_official_primary_authority(monkeypatch):
+    submitted = "https://www.rockstargames.com/VI/example"
+    redirected = "https://news.example.com/copied-rockstar-page"
+    monkeypatch.setattr(fresh_worker, "_public_https_url", lambda value: value)
+    monkeypatch.setattr(
+        fresh_worker,
+        "_fetch_text",
+        lambda value: (
+            "Rockstar GTA VI Lucia Jason Vice City Leonida " * 10,
+            redirected,
+        ),
+    )
+    resolved = fresh_worker._resolve_submitted_source(
+        submitted,
+        checked_at=CHECKED_AT,
+    )
+    assert resolved["resolution_status"] == "PASS"
+    assert resolved["resolved_url"] == redirected
+    assert resolved["source_hierarchy"] == "SECONDARY_REPORT"
+    assert resolved["source_name"] == "news.example.com"
 
 
 def test_structured_news_and_urls_force_fresh_research():
