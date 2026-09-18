@@ -58,6 +58,9 @@ def _proof(result: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
         key: result.get(key)
         for key in (
             "REAL_TELEGRAM_SOURCE_INPUT",
+            "INPUT_CAPTURED",
+            "SOURCE_LEARNED",
+            "CLAIM_VERIFIED",
             "SOURCE_CONTENT_RESOLVED",
             "FRESH_RESEARCH_TRIGGERED",
             "CLAIMS_EXTRACTED",
