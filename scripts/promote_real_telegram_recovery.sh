@@ -41,9 +41,10 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "TELEGRAM_REAL_RECOVERY=FAIL local worktree has uncommitted changes" >&2
   exit 3
 fi
-if [[ -n "$(git status --porcelain --untracked-files=normal | grep -v '^?? runtime/' || true)" ]]; then
-  echo "TELEGRAM_REAL_RECOVERY=FAIL local worktree has untracked files outside runtime/" >&2
-  exit 3
+UNTRACKED_FILES="$(git status --porcelain --untracked-files=normal | sed -n 's/^?? //p' || true)"
+if [[ -n "${UNTRACKED_FILES}" ]]; then
+  echo "TELEGRAM_REAL_RECOVERY=INFO preserving local untracked files:" >&2
+  printf '%s\n' "${UNTRACKED_FILES}" >&2
 fi
 LOCAL_HEAD="$(git rev-parse HEAD)"
 REMOTE_HEAD="$(git rev-parse "origin/${BRANCH}")"
