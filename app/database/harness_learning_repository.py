@@ -635,12 +635,30 @@ def insert_human_correction(record: dict[str, Any]) -> dict[str, Any]:
         )
         values = [_dump(record.get(k, [])) if k in _CORRECTION_JSON else record.get(k) for k in columns]
         connection.execute(
-            f"INSERT INTO harness_human_corrections ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+            f"INSERT OR IGNORE INTO harness_human_corrections ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
             values,
         )
         connection.commit()
-        row = connection.execute("SELECT * FROM harness_human_corrections WHERE correction_id = ?", (record["correction_id"],)).fetchone()
-        return _deserialize(row, _CORRECTION_JSON)
+        row = connection.execute(
+            "SELECT * FROM harness_human_corrections WHERE correction_id = ?",
+            (record["correction_id"],),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("human correction persistence failed")
+        persisted = _deserialize(row, _CORRECTION_JSON)
+        identity_fields = (
+            "goal_id", "task_id", "context", "undesired_behavior",
+            "desired_behavior", "affected_agent", "affected_capability",
+            "affected_skill", "scope", "status",
+        )
+        for key in identity_fields:
+            if persisted.get(key) != record.get(key):
+                raise RuntimeError("human correction id collision")
+        if list(persisted.get("evidence_refs") or []) != list(record.get("evidence_refs") or []):
+            raise RuntimeError("human correction evidence collision")
+        if dict(persisted.get("metadata") or {}) != dict(record.get("metadata") or {}):
+            raise RuntimeError("human correction metadata collision")
+        return persisted
     finally:
         connection.close()
 
