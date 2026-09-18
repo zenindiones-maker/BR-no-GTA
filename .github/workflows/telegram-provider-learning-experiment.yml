@@ -154,11 +154,37 @@ jobs:
                       )
               except urllib.error.HTTPError as exc:
                   raw=exc.read()
+                  safe_error={}
+                  try:
+                      body=json.loads(raw.decode('utf-8','replace'))
+                      error=body.get('error') if isinstance(body,dict) else None
+                      if isinstance(error,dict):
+                          for key in ('type','code','message','param'):
+                              value=error.get(key)
+                              if isinstance(value,(str,int,float,bool)) or value is None:
+                                  safe_error[key]=value
+                      elif isinstance(error,str):
+                          safe_error['message']=error
+                      elif isinstance(body,dict):
+                          for key in ('message','code','type'):
+                              value=body.get(key)
+                              if isinstance(value,(str,int,float,bool)) or value is None:
+                                  safe_error[key]=value
+                  except Exception:
+                      safe_error={}
+                  for key,value in list(safe_error.items()):
+                      if isinstance(value,str):
+                          lowered=value.lower()
+                          if any(term in lowered for term in ('authorization','bearer ','api_key','apikey','token=')):
+                              safe_error[key]='REDACTED'
+                          else:
+                              safe_error[key]=value[:500]
                   item.update(
                       outcome='FAILED',
                       http_status=exc.code,
                       usable_text=False,
                       error_code=f'upstream_http_{exc.code}',
+                      safe_provider_error=safe_error,
                       response_body_sha256=hashlib.sha256(raw).hexdigest(),
                       response_chars=len(raw),
                   )
