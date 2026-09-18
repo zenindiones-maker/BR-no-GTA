@@ -9,6 +9,6 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "benchmark": "baseline-vs-edge-optimized-real-audio",
-  "iteration": 4,
-  "reason": "fix narration test fixture physical duration coherence; previous run stopped before baseline"
+  "iteration": 5,
+  "reason": "enable explicit Edge WordBoundary metadata and reuse observed baseline artifact 10564001994"
 }

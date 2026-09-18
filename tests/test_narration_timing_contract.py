@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from app.services.narration_pipeline import (
     ContentAddressedNarrationCache,
     NarrationError,
+    EdgeTTSProvider,
     ProviderResult,
     _new_stats,
     _synthesize_segment_set,
@@ -56,6 +58,30 @@ def _one_segment(text: str = "Rockstar Games confirmou uma informação importan
 
 
 class NarrationTimingContractTests(unittest.TestCase):
+    def test_edge_adapter_explicitly_requests_word_boundaries(self):
+        captured: dict[str, object] = {}
+
+        class FakeCommunicate:
+            def __init__(self, *, text: str, voice: str, rate: str, boundary: str):
+                captured.update({"text": text, "voice": voice, "rate": rate, "boundary": boundary})
+
+            async def stream(self):
+                yield {"type": "audio", "data": b"ID3" + b"x" * 32}
+                yield {"type": "WordBoundary", "text": "teste", "offset": 0, "duration": 3_000_000}
+
+        fake_module = types.SimpleNamespace(Communicate=FakeCommunicate)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("sys.modules", {"edge_tts": fake_module}):
+            output = Path(tmp) / "sample.mp3"
+            result = asyncio.run(EdgeTTSProvider().synthesize_segment(
+                text="teste",
+                voice="pt-BR-AntonioNeural",
+                rate="-15%",
+                output=output,
+            ))
+        self.assertEqual(captured["boundary"], "WordBoundary")
+        self.assertTrue(result.timing)
+        self.assertEqual(result.timing[0]["text"], "teste")
+
     def test_native_capability_with_valid_timing_uses_provider_native(self):
         segments = _one_segment()
         segment = segments[0]

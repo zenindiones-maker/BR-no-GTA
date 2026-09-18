@@ -378,6 +378,53 @@ def build_ab_samples(
     return {"status": "READY_FOR_HUMAN_REVIEW", "samples": samples}
 
 
+
+def build_ab_samples_from_baseline_package(
+    *,
+    job: dict[str, Any],
+    baseline_package: Path,
+    candidate_master: Path,
+    candidate_sections: list[dict[str, Any]],
+    root: Path,
+) -> dict[str, Any]:
+    indexes = {
+        "hook": 0,
+        "factual-dense": 2,
+        "names-numbers": 7,
+        "emotional-transition": 10,
+        "cta": len(job["script_sections"]) - 1,
+    }
+    baseline_samples = baseline_package / "ab-samples"
+    candidate_starts: list[float] = []
+    cursor = 0.0
+    for section in candidate_sections:
+        candidate_starts.append(cursor)
+        cursor += float(section["duration_seconds"])
+    root.mkdir(parents=True, exist_ok=True)
+    samples = []
+    for label, index in indexes.items():
+        source_baseline = baseline_samples / f"baseline-{label}.mp3"
+        if not source_baseline.is_file() or source_baseline.stat().st_size <= 0:
+            raise RuntimeError(f"baseline A/B evidence missing: {source_baseline}")
+        baseline = root / f"baseline-{label}.mp3"
+        candidate = root / f"candidate-{label}.mp3"
+        shutil.copy2(source_baseline, baseline)
+        _extract_sample(candidate_master, candidate_starts[index], 22.0, candidate)
+        samples.append({
+            "label": label,
+            "baseline": str(baseline),
+            "candidate": str(candidate),
+            "section_id": job["script_sections"][index]["section_id"],
+            "baseline_reused": True,
+        })
+    return {
+        "status": "READY_FOR_HUMAN_REVIEW",
+        "baseline_source": str(baseline_package),
+        "samples": samples,
+    }
+
+
+
 def _transcribe_master(master: Path, expected_script: str) -> dict[str, Any]:
     from faster_whisper import WhisperModel
 
@@ -574,6 +621,7 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--skip-asr", action="store_true")
+    parser.add_argument("--baseline-evidence-dir", type=Path)
     args = parser.parse_args()
     source = json.loads(args.config.read_text(encoding="utf-8"))
     job = dict(source)
@@ -590,7 +638,28 @@ def main() -> int:
 
     print(f"VIDEO_A_WORDS={total_words}", flush=True)
     print(f"VIDEO_A_SECTION_COUNT={len(job['script_sections'])}", flush=True)
-    baseline, baseline_master, baseline_sections = run_baseline(job, output / "baseline")
+    baseline_master: Path | None = None
+    baseline_sections: list[dict[str, Any]] = []
+    baseline_package = args.baseline_evidence_dir
+    if baseline_package is not None:
+        baseline_profile_path = baseline_package / "narration-baseline-profile.json"
+        baseline_semantic_path = baseline_package / "narration-semantic-qa.json"
+        if not baseline_profile_path.is_file() or not baseline_semantic_path.is_file():
+            raise RuntimeError("reused baseline evidence package is incomplete")
+        baseline = json.loads(baseline_profile_path.read_text(encoding="utf-8"))
+        if baseline.get("voice") != job["narration"]["voice"]:
+            raise RuntimeError("reused baseline voice identity mismatch")
+        if int(baseline.get("SECTION_COUNT") or 0) != len(job["script_sections"]):
+            raise RuntimeError("reused baseline section count mismatch")
+        expected_target = total_words * 60.0 / float(job.get("target_wpm") or 125.0)
+        if abs(float(baseline.get("target_duration_seconds") or 0.0) - expected_target) > 0.01:
+            raise RuntimeError("reused baseline target semantics mismatch")
+        shutil.copy2(baseline_profile_path, output / "narration-baseline-profile.json")
+        print("NARRATION_BASELINE_REUSED=YES", flush=True)
+        print("NARRATION_BASELINE_SOURCE_RUN=35385957338", flush=True)
+    else:
+        baseline, baseline_master, baseline_sections = run_baseline(job, output / "baseline")
+        print("NARRATION_BASELINE_REUSED=NO", flush=True)
     concurrency = asyncio.run(benchmark_concurrency(job, output / "concurrency-benchmark"))
     (output / "provider-concurrency-benchmark.json").write_text(json.dumps(concurrency, ensure_ascii=False, indent=2), encoding="utf-8")
     candidate, candidate_master, candidate_sections = candidate_profile(job, output / "candidate", int(concurrency["selected_concurrency"]))
@@ -613,22 +682,42 @@ def main() -> int:
         "proof_method": "fail-after-NARRATION_QA checkpoint then reload validated content-addressed narration bundle before render",
     }
     (output / "render-retry-proof.json").write_text(json.dumps(render_retry, ensure_ascii=False, indent=2), encoding="utf-8")
-    ab = build_ab_samples(
-        job=job,
-        baseline_master=baseline_master,
-        baseline_sections=baseline_sections,
-        candidate_master=candidate_master,
-        candidate_sections=candidate_sections,
-        root=output / "ab-samples",
-    )
+    if baseline_package is not None:
+        ab = build_ab_samples_from_baseline_package(
+            job=job,
+            baseline_package=baseline_package,
+            candidate_master=candidate_master,
+            candidate_sections=candidate_sections,
+            root=output / "ab-samples",
+        )
+    else:
+        assert baseline_master is not None
+        ab = build_ab_samples(
+            job=job,
+            baseline_master=baseline_master,
+            baseline_sections=baseline_sections,
+            candidate_master=candidate_master,
+            candidate_sections=candidate_sections,
+            root=output / "ab-samples",
+        )
     (output / "human-ab-review.json").write_text(json.dumps(ab, ensure_ascii=False, indent=2), encoding="utf-8")
 
     expected_script = " ".join(section["narration"] for section in job["script_sections"])
     semantic: dict[str, Any] = {"status": "SKIPPED"}
     if not args.skip_asr:
-        baseline_semantic = _transcribe_master(baseline_master, expected_script)
+        if baseline_package is not None:
+            prior_semantic = json.loads((baseline_package / "narration-semantic-qa.json").read_text(encoding="utf-8"))
+            baseline_semantic = dict(prior_semantic["baseline"])
+        else:
+            assert baseline_master is not None
+            baseline_semantic = _transcribe_master(baseline_master, expected_script)
         candidate_semantic = _transcribe_master(candidate_master, expected_script)
-        semantic = {"baseline": baseline_semantic, "candidate": candidate_semantic}
+        semantic = {
+            "baseline": baseline_semantic,
+            "candidate": candidate_semantic,
+            "baseline_reused": baseline_package is not None,
+            "baseline_source_run_id": 35385957338 if baseline_package is not None else None,
+        }
         (output / "narration-semantic-qa.json").write_text(json.dumps(semantic, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         baseline_semantic = candidate_semantic = {"status": "SKIPPED", "metrics": {"script_lexical_overlap": 0.0}}
@@ -647,6 +736,9 @@ def main() -> int:
     comparison = {
         "status": "PASS" if wall_improved and no_quality_regression and retry["status"] == "PASS" and render_retry["status"] == "PASS" else "FAIL",
         "same_input": {"video": "A", "words": total_words, "sections": len(job["script_sections"]), "voice": job["narration"]["voice"], "target_wpm": job.get("target_wpm")},
+        "baseline_reused": baseline_package is not None,
+        "baseline_source_run_id": 35385957338 if baseline_package is not None else None,
+        "baseline_source_artifact_id": 10564001994 if baseline_package is not None else None,
         "baseline": baseline,
         "candidate": candidate,
         "concurrency_benchmark": concurrency,
@@ -677,6 +769,14 @@ def main() -> int:
     shutil.copy2(output / "narration-comparison.json", package / "narration-comparison.json")
     _cleanup_proof_intermediates(output)
     print(f"NARRATION_BASELINE_PROFILE=AVAILABLE", flush=True)
+    print(f"BASELINE_NARRATION_TOTAL_WALL_CLOCK={baseline['NARRATION_TOTAL_WALL_CLOCK']}", flush=True)
+    print(f"CANDIDATE_NARRATION_TOTAL_WALL_CLOCK={candidate['NARRATION_TOTAL_WALL_CLOCK']}", flush=True)
+    print(f"BASELINE_TTS_REQUEST_COUNT={baseline['TTS_REQUEST_COUNT']}", flush=True)
+    print(f"CANDIDATE_TTS_REQUEST_COUNT={candidate['TTS_REQUEST_COUNT']}", flush=True)
+    print(f"CANDIDATE_PHYSICAL_SEGMENTS={candidate['PHYSICAL_SEGMENT_COUNT']}", flush=True)
+    print(f"CANDIDATE_FFPROBE_COUNT={candidate['FFPROBE_COUNT']}", flush=True)
+    print(f"CANDIDATE_AUDIO_DURATION_PROBE_WALL_CLOCK={candidate['AUDIO_DURATION_PROBE_WALL_CLOCK']}", flush=True)
+    print(f"CANDIDATE_NATIVE_TIMING_ABSENT_RESPONSES={candidate['NATIVE_TIMING_ABSENT_RESPONSES']}", flush=True)
     print(f"NARRATION_WALL_CLOCK_IMPROVED={comparison['NARRATION_WALL_CLOCK_IMPROVED']}", flush=True)
     print(f"FAILED_SEGMENT_ONLY_RETRY={retry['status']}", flush=True)
     print(f"RENDER_RETRY_REUSES_NARRATION={render_retry['status']}", flush=True)

@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: narration-optimization-video-a
@@ -91,12 +92,21 @@ jobs:
             tests/test_harness_routing_policy_service.py \
             tests/test_semantic_ptbr_audio_qa.py
 
-      - name: Baseline profile and optimized candidate benchmark
+      - name: Restore observed VIDEO A baseline evidence
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 10564001994
+          run-id: 35385957338
+          github-token: ${{ github.token }}
+          path: runtime/baseline-evidence
+
+      - name: Optimized candidate benchmark against observed baseline
         run: |
           set -euo pipefail
           python scripts/narration_optimization_proof.py \
             --config .run001/video-a-investigative-longform.json \
-            --output-dir runtime/narration-proof
+            --output-dir runtime/narration-proof \
+            --baseline-evidence-dir runtime/baseline-evidence
 
       - name: Validate observed proof contract
         if: always()
@@ -122,6 +132,7 @@ jobs:
           candidate=comparison['candidate']; retry=comparison['failure_isolation']; render_retry=comparison['render_retry']
           checks={
               'NARRATION_BASELINE_PROFILE':(root/'narration-baseline-profile.json').is_file(),
+              'OBSERVED_BASELINE_REUSED':comparison.get('baseline_reused') is True and comparison.get('baseline_source_run_id')==35385957338,
               'DETERMINISTIC_SEGMENTATION':candidate.get('PHYSICAL_SEGMENT_COUNT',0)>16,
               'CONTENT_ADDRESSED_CACHE':candidate.get('CACHE_MISSES',0)>0,
               'PILOT_CALIBRATION':candidate.get('calibration',{}).get('source') in {'representative-pilot','historical-profile'},

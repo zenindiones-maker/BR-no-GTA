@@ -95,7 +95,7 @@ class EdgeTTSProvider:
         started = time.monotonic()
         timing: list[dict[str, Any]] = []
         bytes_written = 0
-        communicator = edge_tts.Communicate(text=text, voice=voice, rate=rate)
+        communicator = edge_tts.Communicate(text=text, voice=voice, rate=rate, boundary="WordBoundary")
         with output.open("wb") as stream:
             async for chunk in communicator.stream():
                 chunk_type = chunk.get("type")
