@@ -21,6 +21,10 @@ from app.services.telegram_learning_service import (
     ingest_telegram_input_under_harness,
     list_recent_governed_telegram_inputs,
 )
+from app.services.telegram_review_feedback_service import (
+    is_render_review_feedback_message,
+    record_render_review_feedback,
+)
 from scripts.telegram_harness_gateway import (
     PAIR_TEXT,
     STATE_FILE,
@@ -419,7 +423,28 @@ def main() -> int:
 
                 api.typing(chat_id)
                 try:
-                    if text.startswith("/"):
+                    if is_render_review_feedback_message(message, text):
+                        learned = _ingest(
+                            user_id=user_id,
+                            chat_id=chat_id,
+                            message=message,
+                            update_id=update_id,
+                            text=text,
+                            classification_override="chat",
+                        )
+                        feedback = record_render_review_feedback(
+                            message=message,
+                            input_record=learned["input"],
+                            text=text,
+                        )
+                        reply = (
+                            _render_result(feedback)
+                            + "\n\n"
+                            + _learning_evidence(learned)
+                            + "\n\nPUBLICATION_AUTHORITY=NONE"
+                        )
+                        command_name = "CHANGES_REQUESTED"
+                    elif text.startswith("/"):
                         reply = _execute_v2_command(text)
                         command_name = text.split()[0]
                     else:
