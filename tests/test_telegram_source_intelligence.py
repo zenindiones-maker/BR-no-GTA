@@ -13,6 +13,7 @@ from app.services.telegram_learning_service import ingest_telegram_input_under_h
 from app.services.telegram_source_intelligence_service import (
     process_telegram_source_intelligence,
 )
+from scripts.gta6_fresh_research_worker import _secondary_hierarchy
 from scripts.telegram_harness_gateway_v2 import (
     _chat_reply_v2,
     _conversation_classification_override,
@@ -304,3 +305,27 @@ def test_gateway_keeps_url_as_source_input_and_hides_telemetry_in_normal_reply()
     assert "routing_id" not in reply
     assert "secret-noise" not in reply
     assert "Harness evidence" not in reply
+
+
+def test_reported_primary_statements_share_the_attributed_origin_group():
+    first = _secondary_hierarchy(
+        {
+            "source_name": "Outlet A",
+            "title": "According to Rockstar, GTA VI has a new gameplay system",
+            "summary": "The outlet reports Rockstar's statement.",
+            "url": "https://outlet-a.example/story",
+        }
+    )
+    second = _secondary_hierarchy(
+        {
+            "source_name": "Outlet B",
+            "title": "Rockstar said GTA VI has a new gameplay system",
+            "summary": "A separate article repeats the same attributed statement.",
+            "url": "https://outlet-b.example/story",
+        }
+    )
+    assert first == (
+        "PRIMARY_STATEMENT_REPORTED_BY_SECONDARY",
+        "primary-statement:rockstar",
+    )
+    assert second == first
