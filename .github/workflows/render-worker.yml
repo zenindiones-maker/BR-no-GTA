@@ -156,17 +156,50 @@ jobs:
           path: runtime/render/handoff
           merge-multiple: true
 
-      - name: Install consolidated Python runtime dependencies
+      - name: Restore versioned render Python runtime
+        id: render_python_runtime
+        uses: actions/cache@v4
+        with:
+          path: .venv-media
+          key: render-media-venv-v2-${{ runner.os }}-${{ runner.arch }}-py312-yt2026.8.19-bgutil1.3.1-edge7.2.8-fw1.2.0-${{ hashFiles('requirements.txt', 'requirements/**/*.txt', 'pyproject.toml') }}
+
+      - name: Build or validate versioned render Python runtime
+        env:
+          RENDER_RUNTIME_CACHE_HIT: ${{ steps.render_python_runtime.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          python -m pip install \
-            -r requirements.txt \
-            pytest \
-            "yt-dlp[default]==2026.8.19" \
-            "bgutil-ytdlp-pot-provider==1.3.1" \
-            "edge-tts==7.2.8" \
-            "faster-whisper==1.2.0"
-          echo "COLD_START_PYTHON_DEPENDENCY_PROFILE=consolidated-observed-v1"
+          if [ "$RENDER_RUNTIME_CACHE_HIT" != "true" ]; then
+            rm -rf .venv-media
+            python -m venv .venv-media
+            .venv-media/bin/python -m pip install --upgrade pip
+            .venv-media/bin/python -m pip install \
+              -r requirements.txt \
+              pytest \
+              "yt-dlp[default]==2026.8.19" \
+              "bgutil-ytdlp-pot-provider==1.3.1" \
+              "edge-tts==7.2.8" \
+              "faster-whisper==1.2.0"
+          fi
+          .venv-media/bin/python - <<'PY'
+          import importlib.metadata
+          import sys
+          expected={
+              "yt-dlp":"2026.8.19",
+              "bgutil-ytdlp-pot-provider":"1.3.1",
+              "edge-tts":"7.2.8",
+              "faster-whisper":"1.2.0",
+          }
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit(f"PYTHON_VERSION_MISMATCH:{sys.version}")
+          for package,version in expected.items():
+              actual=importlib.metadata.version(package)
+              if actual != version:
+                  raise SystemExit(f"RUNTIME_VERSION_MISMATCH:{package}:{actual}!={version}")
+          print("RENDER_PYTHON_RUNTIME_CONTRACT=PASS")
+          PY
+          echo "$PWD/.venv-media/bin" >> "$GITHUB_PATH"
+          echo "COLD_START_PYTHON_DEPENDENCY_PROFILE=versioned-venv-cache-v2"
+          echo "RENDER_PYTHON_RUNTIME_CACHE_HIT=$RENDER_RUNTIME_CACHE_HIT"
       - name: Validate job before media processing
         env:
           RENDER_JOB: ${{ inputs.render_job }}
