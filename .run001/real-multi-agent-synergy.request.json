@@ -1,12 +1,13 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T13:58:00Z",
-  "base_head": "8d2f9d6f7888a9808ee7d96f942a505f42f3f5b2",
-  "purpose": "Baseline real para auditoria E2E de qualidade do produto e transferência de inteligência até o domínio YouTube.",
+  "requested_at": "2026-09-19T14:15:00Z",
+  "base_head": "e94b3874067b91d52318615c348cec4ee06bb706",
+  "purpose": "Execute o E2E real corrigido e audite a qualidade persistida do pacote YouTube sem publicação.",
   "require_real_source": true,
   "require_semantic_model_execution": true,
   "require_observed_learning": true,
   "require_product_quality_audit": true,
+  "require_youtube_package_persistence": true,
   "job18_unchanged": true,
   "publication": false
 }
