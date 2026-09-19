@@ -178,10 +178,14 @@ class AgentOfficeExecutionSpec:
         cost_budget = value.get("cost_budget")
         if isinstance(cost_budget, bool) or not isinstance(cost_budget, (int, float)) or cost_budget < 0:
             raise ValueError("cost_budget must be a non-negative number")
-        forbidden = _string_tuple(value.get("forbidden_actions"), "forbidden_actions")
-        missing = MANDATORY_FORBIDDEN_ACTIONS.difference(forbidden)
-        if missing:
-            raise ValueError("forbidden_actions is missing mandatory safety boundaries")
+        requested_forbidden = _string_tuple(
+            value.get("forbidden_actions") or [],
+            "forbidden_actions",
+            allow_empty=True,
+        )
+        forbidden = tuple(
+            sorted(set(requested_forbidden) | set(MANDATORY_FORBIDDEN_ACTIONS))
+        )
 
         allowed_paths = _string_tuple(value.get("allowed_paths"), "allowed_paths", allow_empty=True)
         for path in allowed_paths:
