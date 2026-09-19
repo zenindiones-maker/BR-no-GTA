@@ -2,9 +2,13 @@
   "requested_at": "2026-09-19T19:02:00Z",
   "mode": "EXPLICIT_OPERATIONAL_CANARY",
   "purpose": "prove delegated bounded autonomy after CI GREEN",
-  "ci_run_id": 35463003165,
+  "ci_run_id": 35463157912,
   "ci_result": "SUCCESS",
-  "base_sha": "fee62f0d7bc8c2bd338e171f98700bbb961ffa56",
+  "base_sha": "354a227ac54fb2a3a9ff6b59fb4f26c333fbbc98",
   "authority": "deepseek_harness",
-  "canonical_push_authority": "NONE"
+  "canonical_push_authority": "NONE",
+  "retry_of_run_id": 35463071590,
+  "retry_reason": "fixed deterministic circular import in lease repository type-only dependency",
+  "agent_office_validation_run_id": 35463157798,
+  "attempt": 2
 }
