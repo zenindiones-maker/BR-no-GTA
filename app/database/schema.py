@@ -1500,6 +1500,82 @@ def _migrate_e2e_stage_checkpoints(connection) -> None:
         """
     )
 
+
+def _migrate_agent_execution_leases(connection) -> None:
+    """Persist Harness-authorized bounded delegation and event-driven task state."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS agent_execution_leases (
+            delegation_id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            goal_id TEXT NOT NULL,
+            harness_decision_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            capability_ids TEXT NOT NULL DEFAULT '[]',
+            base_sha TEXT NOT NULL,
+            allowed_paths TEXT NOT NULL DEFAULT '[]',
+            allowed_tools TEXT NOT NULL DEFAULT '[]',
+            allowed_actions TEXT NOT NULL DEFAULT '[]',
+            forbidden_actions TEXT NOT NULL DEFAULT '[]',
+            input_artifact_refs TEXT NOT NULL DEFAULT '[]',
+            expected_outputs TEXT NOT NULL DEFAULT '[]',
+            acceptance_criteria TEXT NOT NULL DEFAULT '[]',
+            evidence_requirements TEXT NOT NULL DEFAULT '[]',
+            time_budget_seconds INTEGER NOT NULL,
+            cost_budget REAL NOT NULL,
+            tool_call_budget INTEGER NOT NULL,
+            retry_budget INTEGER NOT NULL,
+            max_parallelism INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            escalation_conditions TEXT NOT NULL DEFAULT '[]',
+            owned_task_class TEXT NOT NULL,
+            role TEXT NOT NULL,
+            read_set TEXT NOT NULL DEFAULT '[]',
+            write_set TEXT NOT NULL DEFAULT '[]',
+            parent_task_id TEXT,
+            authority TEXT NOT NULL DEFAULT 'DELEGATED_ONLY',
+            canonical_push_authority TEXT NOT NULL DEFAULT 'NONE',
+            status TEXT NOT NULL,
+            result_ref TEXT,
+            result_hash TEXT,
+            error TEXT,
+            lease_payload TEXT NOT NULL DEFAULT '{}',
+            completed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(mission_id, task_id, authorization_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_execution_leases_mission
+        ON agent_execution_leases(mission_id, status, task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_agent_execution_leases_authorization
+        ON agent_execution_leases(authorization_id, delegation_id);
+
+        CREATE TABLE IF NOT EXISTS agent_execution_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mission_id TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            delegation_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (delegation_id)
+                REFERENCES agent_execution_leases(delegation_id)
+                ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_execution_events_mission
+        ON agent_execution_events(mission_id, id);
+
+        CREATE INDEX IF NOT EXISTS idx_agent_execution_events_task
+        ON agent_execution_events(task_id, id);
+        """
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1531,6 +1607,7 @@ def initialize_schema() -> None:
         _migrate_gta6_media_intelligence(connection)
         _migrate_harness_authorizations(connection)
         _migrate_harness_learning_plane(connection)
+        _migrate_agent_execution_leases(connection)
         _migrate_e2e_stage_checkpoints(connection)
         connection.commit()
     finally:
