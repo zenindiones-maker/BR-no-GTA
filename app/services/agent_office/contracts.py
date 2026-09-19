@@ -197,7 +197,7 @@ class AgentOfficeExecutionSpec:
             "delegation_id",
         )
         allowed_tools = _string_tuple(
-            value.get("allowed_tools") or ["git", "python", "pytest"],
+            value.get("allowed_tools") or ["git", "python", "pytest", "codex"],
             "allowed_tools",
         )
         allowed_actions = _string_tuple(
