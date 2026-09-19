@@ -14,8 +14,8 @@
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 4,
-  "retry_reason": "Re-run after locking Fluid 2 as selected opening and disabling redundant Telegram audition; final end remains the human-approved G-brand-mixed signature.",
+  "attempt": 5,
+  "retry_reason": "Re-run after aligning focused render-config test with canonical YouTube delivery_profile; require Fluid 2 opening and locked G final signature.",
   "selected_opening_take_id": "take-2",
   "selected_opening_profile": {
     "reference": "I-opening-fluid-2.mp3",
@@ -28,5 +28,5 @@
     "status": "HUMAN_APPROVED",
     "automatic_substitution_allowed": false
   },
-  "base_head": "71885f8b6e3e10598b6202b6e8cea99a98adf83e"
+  "base_head": "d7a19ab7ae2a37cfca5afc082f5b25ee56079b3c"
 }
