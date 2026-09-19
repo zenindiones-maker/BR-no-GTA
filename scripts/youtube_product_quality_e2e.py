@@ -8,7 +8,18 @@ from pathlib import Path
 from typing import Any
 
 from app.integrations.deepseek_harness.server import br_editorial_process_next
-from app.services.youtube_package_service import persist_youtube_content_package
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
+from app.services.youtube_package_service import (
+    YOUTUBE_PACKAGE_CAPABILITY_ID,
+    persist_youtube_content_package,
+)
 from scripts.prove_real_multi_agent_synergy import (
     _claim_context,
     _execute_brain,
@@ -235,8 +246,38 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         + "Canal: BR no GTA 6."
     )
     tags = _tags_for(title, script_text)
-    package = persist_youtube_content_package(
-        goal_id=goal_id,
+    package_routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="persist the verified pre-publication YouTube content package",
+            authorized_action="YOUTUBE",
+            domain="youtube-department",
+            required_capability_id=YOUTUBE_PACKAGE_CAPABILITY_ID,
+            fallback_allowed=False,
+            provider_required=False,
+            zero_cost_operation=True,
+            learning_required=True,
+            goal_id=goal_id,
+        )
+    )
+    package_authorization = issue_harness_authorization(
+        authorized_action="YOUTUBE",
+        subject=f"capability:{YOUTUBE_PACKAGE_CAPABILITY_ID}",
+        harness_decision_id=f"{mission_id}:youtube-package",
+        execution_id=f"{mission_id}:youtube-package:execution",
+        lineage={
+            "routing_id": package_routing.routing_id,
+            "capability_id": package_routing.selected_capability_id,
+            "selected_executor_binding": package_routing.selected_executor_binding,
+            "goal_id": goal_id,
+            "script_id": script_id,
+            "content_item_id": content_item_id,
+        },
+    )
+    try:
+        package_execution = persist_youtube_content_package(
+            authorization=package_authorization,
+            routing_decision=package_routing,
+            goal_id=goal_id,
         content_item_id=content_item_id,
         script_id=script_id,
         title=title,
@@ -261,15 +302,18 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             _output_ref(thumbnail),
             _output_ref(production),
         ],
-        provenance={
-            "authority": "deepseek_harness",
-            "mission_id": mission_id,
-            "goal_id": goal_id,
-            "source_url": source_url,
-            "editorial_operation": "br_editorial_process_next",
-            "publication_performed": False,
-        },
-    )
+            provenance={
+                "authority": "deepseek_harness",
+                "mission_id": mission_id,
+                "goal_id": goal_id,
+                "source_url": source_url,
+                "editorial_operation": "br_editorial_process_next",
+                "publication_performed": False,
+            },
+        )
+    finally:
+        consume_harness_authorization(package_authorization)
+    package = dict(package_execution["package"])
 
     scenes = list(production_plan.get("scenes") or [])
     return {
@@ -295,6 +339,8 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         "thumbnail": thumbnail,
         "production_review": production,
         "youtube_package": package,
+        "youtube_package_execution": package_execution["capability_evidence"],
+        "youtube_package_routing": package_routing.to_dict(),
         "metrics": {
             "verified_claims": len(verified_refs),
             "script_word_count": len(script_text.split()),
