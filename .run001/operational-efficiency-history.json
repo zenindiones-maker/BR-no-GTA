@@ -1,6 +1,6 @@
 {
   "version": "operational-efficiency-history/v1",
-  "updated_at": "2026-09-19T00:22:10Z",
+  "updated_at": "2026-09-19T01:00:00Z",
   "policy": "br-no-gta.operational-efficiency@v2",
   "observations": [
     {
@@ -103,6 +103,45 @@
       "redundant_tts_requests": 0,
       "media_valid_assets_reused": true,
       "redundant_media_downloads": 0
+    },
+    {
+      "run_class": "COLD_RUN",
+      "capability_id": "branding.audio.signature",
+      "stage": "materialize_brand_audio",
+      "wall_clock_seconds": 10.753931,
+      "run_id": 35410914365,
+      "artifact_id": 10574067653,
+      "variant": "six-take-first-materialization",
+      "baseline_eligible": true,
+      "technical_qa": "PASS",
+      "voice": "Voice B",
+      "provider": "edge-tts",
+      "provider_version": "7.2.8",
+      "external_calls": 6,
+      "cache_hit": 0,
+      "cache_miss": 6,
+      "opening_take_count": 3,
+      "closing_take_count": 3,
+      "human_brand_take_review": "PENDING"
+    },
+    {
+      "run_class": "WARM_RETRY",
+      "capability_id": "branding.audio.signature",
+      "stage": "materialize_brand_audio",
+      "wall_clock_seconds": 0.9306,
+      "run_id": 35410914365,
+      "artifact_id": 10574067653,
+      "variant": "content-addressed-cache-reuse",
+      "baseline_eligible": true,
+      "technical_qa": "PASS",
+      "voice": "Voice B",
+      "provider": "edge-tts",
+      "provider_version": "7.2.8",
+      "external_calls": 0,
+      "cache_hit": 6,
+      "cache_miss": 0,
+      "reused_artifacts": 6,
+      "human_quality_change": "NONE_SAME_CACHED_BYTES"
     }
   ],
   "baselines": [
@@ -175,6 +214,26 @@
       "p95_wall_clock_seconds": 1.976300961,
       "min_wall_clock_seconds": 1.976300961,
       "max_wall_clock_seconds": 1.976300961
+    },
+    {
+      "run_class": "COLD_RUN",
+      "capability_id": "branding.audio.signature",
+      "stage": "materialize_brand_audio",
+      "samples": 1,
+      "p50_wall_clock_seconds": 10.753931,
+      "p95_wall_clock_seconds": 10.753931,
+      "min_wall_clock_seconds": 10.753931,
+      "max_wall_clock_seconds": 10.753931
+    },
+    {
+      "run_class": "WARM_RETRY",
+      "capability_id": "branding.audio.signature",
+      "stage": "materialize_brand_audio",
+      "samples": 1,
+      "p50_wall_clock_seconds": 0.9306,
+      "p95_wall_clock_seconds": 0.9306,
+      "min_wall_clock_seconds": 0.9306,
+      "max_wall_clock_seconds": 0.9306
     }
   ],
   "promotions": {
@@ -202,6 +261,27 @@
       "audio_pcm_identical": true,
       "reason": "no observed performance improvement",
       "official_profile_remains": "v1-slow"
+    },
+    "brand_audio_content_cache": {
+      "status": "PROMOTED",
+      "source_run_id": 35410914365,
+      "artifact_id": 10574067653,
+      "baseline_seconds": 10.753931,
+      "candidate_seconds": 0.9306,
+      "improvement_fraction": 0.9134642020671324,
+      "external_calls_baseline": 6,
+      "external_calls_candidate": 0,
+      "technical_qa_no_regression": "PASS",
+      "human_quality_applicable": false,
+      "human_quality_reason": "cache reuse restores identical QA-passed bytes; no perceptual transform",
+      "guardrail_pass": true,
+      "scope": "same text + Voice B + direction + provider/version + take profile fingerprint"
+    },
+    "brand_audio_take_selection": {
+      "status": "NOT_PROMOTED",
+      "production_fallback_take_id": "take-1",
+      "human_brand_take_review": "PENDING",
+      "reason": "automatic technical metrics cannot select human prosody/naturality"
     }
   },
   "invariants": {
