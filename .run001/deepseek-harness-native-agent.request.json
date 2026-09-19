@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T04:25:00Z",
-  "base_head": "c22dd45efe4a0ba3722dd2779e138ea81fd3bb09",
-  "purpose": "Re-run native DeepSeek Harness agent proof after Addy exact executor and observed-learning fixes.",
+  "requested_at": "2026-09-19T12:07:00Z",
+  "base_head": "26bd9ee7d6daba3fabe9a1053145e2328c13f119",
+  "purpose": "Audit and complete native DeepSeek Harness gta6-master semantic execution on cloud-only governed runtime; preserve sole Harness authority and do not fabricate provider success.",
   "job18_unchanged": true,
   "publication": false
 }
