@@ -8,5 +8,6 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
-  "proof_attempt": 1
+  "proof_attempt": 2,
+  "retry_reason": "fix deterministic synthesis-plan serialization and fail-safe review diagnostics"
 }
