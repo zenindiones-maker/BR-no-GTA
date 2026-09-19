@@ -6,7 +6,12 @@ import json
 import re
 from typing import Any
 
-SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v1"
+from app.services.pronunciation_service import (
+    PRONUNCIATION_LAYER_VERSION,
+    pronunciation_lexicon_version,
+)
+
+SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v2"
 OFFICIAL_INTRO_ASSET_ID = 1
 OFFICIAL_VOICE_BLIND_ID = "Voice B"
 OFFICIAL_VOICE_SHORT_NAME = "pt-BR-ThalitaMultilingualNeural"
@@ -84,6 +89,13 @@ def get_spoken_branding_standard() -> dict[str, Any]:
         "opening_template": f"{OPENING_PREFIX}[tema do vídeo]!",
         "closing_template": "fixed",
         "closing_line": CLOSING_LINE,
+        "pronunciation_policy": {
+            "resolver_version": PRONUNCIATION_LAYER_VERSION,
+            "lexicon_version": pronunciation_lexicon_version(),
+            "canonical_text_immutable": True,
+            "critical_terms": ["vice-city"],
+            "human_approval_required": True,
+        },
         "rate": OFFICIAL_RATE,
         "pitch": OFFICIAL_PITCH,
         "take_count_per_phrase": len(TAKE_PROFILES),
@@ -124,6 +136,13 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "opening_text":opening,
         "closing_template":"fixed",
         "closing_line":CLOSING_LINE,
+        "pronunciation_policy":{
+            "resolver_version":PRONUNCIATION_LAYER_VERSION,
+            "lexicon_version":pronunciation_lexicon_version(),
+            "canonical_text_immutable":True,
+            "critical_terms":["vice-city"],
+            "human_approval_required":True,
+        },
         "rate":OFFICIAL_RATE,
         "pitch":OFFICIAL_PITCH,
         "opening_direction":deepcopy(OPENING_DIRECTION),
@@ -134,7 +153,7 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "cache_policy":{
             "fingerprint_components":[
                 "kind","text","voice_short_name","provider","provider_version",
-                "language","direction","take_profile",
+                "language","direction","take_profile","pronunciation_plan","lexicon_version",
             ],
             "opening_invalidates_on":["theme","voice","provider_version","direction"],
             "closing_invalidates_on":["voice","provider_version","direction"],
@@ -161,7 +180,7 @@ def validate_spoken_branding_contract(contract: dict[str,Any]) -> dict[str,Any]:
         "version","authority","identity_type","intro_asset_id","spoken_opening_after_intro",
         "official_voice_profile","voice_short_name","provider","provider_version","language",
         "opening_template","opening_fixed_prefix","opening_text","closing_template","closing_line",
-        "rate","pitch","opening_direction","closing_direction","take_profiles","selected_take_id",
+        "rate","pitch","pronunciation_policy","opening_direction","closing_direction","take_profiles","selected_take_id",
         "selection_rule","cache_policy","timeline_order","contract_sha256",
     )
     for key in immutable:
