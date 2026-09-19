@@ -276,9 +276,9 @@ def _action_first(result: Mapping[str, Any]) -> str:
 
 
 _INTERNAL_TELEMETRY_PATTERN = re.compile(
-    r"(?i)\\b(?:routing_id|authorization_id|memory_id|competence(?:_id)?|"
+    r"(?i)\b(?:routing_id|authorization_id|memory_id|competence(?:_id)?|"
     r"executor_binding|provider(?:_id)?|model(?:_id)?|artifact_id|database_id|"
-    r"episode_id|claim_id|signal_id|sha256)\\b"
+    r"episode_id|claim_id|signal_id|sha256)\b"
 )
 
 
