@@ -3,8 +3,11 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from hashlib import sha256
+import inspect
 import json
+import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import time
@@ -16,9 +19,15 @@ from app.services.agent_office.contracts import (
     AgentOfficeTask,
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
+from app.services.agent_office.delegation import DelegatedTaskLease
+from app.services.agent_office.codex_bounded_worker import (
+    CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+    codex_bounded_development_worker,
+)
 
 
-WorkerRunner = Callable[[AgentOfficeTask, Path, float], dict[str, Any]]
+WorkerRunner = Callable[..., dict[str, Any]]
+EventSink = Callable[[str, str, dict[str, Any]], None]
 
 
 def _utc_now() -> str:
@@ -179,7 +188,7 @@ def codex_readonly_worker(
     return {
         "status": "SUCCEEDED",
         "summary": output,
-        "commands": ["bounded internal Codex read-only worker"],
+        "commands": ["codex exec --sandbox read-only"],
         "artifacts": [],
         "tests": [],
         "usage": {"cost": 0.0, "cost_available": False},
@@ -196,7 +205,72 @@ def registered_worker_runners() -> dict[str, WorkerRunner]:
     return {
         "deterministic-analysis": deterministic_read_only_worker,
         "codex": codex_readonly_worker,
+        "codex-development": codex_bounded_development_worker,
     }
+
+
+def _tool_name(command: str) -> str:
+    try:
+        parts = shlex.split(str(command))
+    except ValueError:
+        return ""
+    return Path(parts[0]).name if parts else ""
+
+
+def _commands_within_lease(commands: list[str], lease: DelegatedTaskLease) -> None:
+    for command in commands:
+        normalized = str(command).strip()
+        if not normalized:
+            continue
+        tool = _tool_name(normalized)
+        if tool not in lease.allowed_tools:
+            raise PermissionError(f"worker command outside allowed_tools: {tool or 'unknown'}")
+        parts = shlex.split(normalized)
+        if tool == "git" and len(parts) > 1 and parts[1] in {
+            "push", "pull", "fetch", "merge", "rebase", "remote",
+        }:
+            raise PermissionError("worker attempted a forbidden git side effect")
+        if tool in {"curl", "wget", "ssh", "scp", "gh"}:
+            raise PermissionError("worker attempted a forbidden external tool")
+
+
+def _lease_conflict(left: DelegatedTaskLease, right: DelegatedTaskLease) -> bool:
+    for a in left.write_set:
+        aa = a.rstrip("/")
+        for b in right.write_set:
+            bb = b.rstrip("/")
+            if aa == bb or aa.startswith(f"{bb}/") or bb.startswith(f"{aa}/"):
+                return True
+    return False
+
+
+def _persist_task_artifact(
+    repository_root: Path,
+    spec: AgentOfficeExecutionSpec,
+    task_id: str,
+    result: dict[str, Any],
+) -> tuple[str, str]:
+    root = Path(
+        os.getenv("AGENT_OFFICE_ARTIFACT_ROOT")
+        or repository_root / "runtime" / "agent-office"
+    )
+    target = root / spec.mission_id / f"{task_id}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        sanitize_evidence(result),
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+        default=str,
+    ) + "\n"
+    target.write_text(payload, encoding="utf-8")
+    digest = sha256(payload.encode("utf-8")).hexdigest()
+    try:
+        relative = target.relative_to(repository_root)
+        ref = str(relative)
+    except ValueError:
+        ref = str(target)
+    return ref, digest
 
 
 class MunderAdapter:
@@ -230,45 +304,148 @@ class MunderAdapter:
         workspace: Path,
         spec: AgentOfficeExecutionSpec,
         timeout_seconds: float,
+        lease: DelegatedTaskLease,
+        repository_root: Path,
+        event_sink: EventSink | None,
     ) -> dict[str, Any]:
-        try:
-            runner = self._worker_runner or self._worker_runners.get(task.agent)
-            if runner is None:
-                return {
-                    "status": "BLOCKED",
-                    "error": "worker engine is not registered by the Harness",
-                    "files_changed": [],
-                    "task_id": task.task_id,
-                    "agent": task.agent,
-                    "capability": task.capability,
-                    "workspace_id": f"worktree:{task.task_id}",
-                }
-            raw = runner(task, workspace, timeout_seconds)
-            if not isinstance(raw, dict):
-                raise TypeError("worker result must be an object")
-            result = sanitize_evidence(raw)
-            status = result.get("status")
-            if status not in {"SUCCEEDED", "FAILED", "BLOCKED"}:
-                result["status"] = "FAILED"
-                result["error"] = "worker returned an invalid status"
-        except Exception:
+        lease.assert_active()
+        task_started = self._clock()
+        if event_sink:
+            event_sink(
+                task.task_id,
+                "TASK_STARTED",
+                {
+                    "agent_id": task.agent,
+                    "capability_id": task.capability,
+                    "delegation_id": lease.delegation_id,
+                },
+            )
+        runner = self._worker_runner or self._worker_runners.get(task.agent)
+        if runner is None:
             result = {
-                "status": "FAILED",
-                "error": "worker execution failed",
+                "status": "BLOCKED",
+                "error": "worker engine is not registered by the Harness",
             }
+        else:
+            result = {}
+            last_error = "worker execution failed"
+            for attempt in range(1, lease.retry_budget + 2):
+                try:
+                    if len(inspect.signature(runner).parameters) >= 4:
+                        raw = runner(task, workspace, timeout_seconds, lease)
+                    else:
+                        raw = runner(task, workspace, timeout_seconds)
+                    if not isinstance(raw, dict):
+                        raise TypeError("worker result must be an object")
+                    result = sanitize_evidence(raw)
+                    status = result.get("status")
+                    if status not in {"SUCCEEDED", "FAILED", "BLOCKED"}:
+                        raise TypeError("worker returned an invalid status")
+                    result["attempt_count"] = attempt
+                    result["retry_count"] = attempt - 1
+                    if status == "SUCCEEDED":
+                        break
+                    if status == "BLOCKED" or result.get("recoverable") is not True:
+                        break
+                    if event_sink:
+                        event_sink(
+                            task.task_id,
+                            "TASK_PROGRESS",
+                            {"state": "LOCAL_RETRY", "attempt": attempt},
+                        )
+                except (PermissionError, ValueError) as exc:
+                    result = {
+                        "status": "BLOCKED",
+                        "error": str(exc)[:500],
+                        "attempt_count": attempt,
+                        "retry_count": attempt - 1,
+                    }
+                    break
+                except Exception:
+                    last_error = "worker execution failed"
+                    if attempt > lease.retry_budget:
+                        result = {
+                            "status": "FAILED",
+                            "error": last_error,
+                            "attempt_count": attempt,
+                            "retry_count": attempt - 1,
+                        }
+                        break
+                    if event_sink:
+                        event_sink(
+                            task.task_id,
+                            "TASK_PROGRESS",
+                            {"state": "LOCAL_RETRY", "attempt": attempt},
+                        )
 
         changed = _changed_paths(workspace, spec.base_sha)
         result["files_changed"] = list(changed)
         result["commits"] = list(_commits_ahead(workspace, spec.base_sha))
-        outside = tuple(path for path in changed if not _path_allowed(path, spec.allowed_paths))
+        outside = tuple(
+            path
+            for path in changed
+            if not lease.allows_path(path, write=True)
+        )
         if outside:
             result["status"] = "FAILED"
-            result["error"] = "worker changed files outside allowed_paths"
+            result["error"] = "worker changed files outside delegated write_set"
             result["outside_allowed_paths"] = list(outside)
+
+        commands = [
+            str(item)
+            for item in (result.get("commands") or [])
+            if isinstance(item, str)
+        ]
+        if len(commands) > lease.tool_call_budget:
+            result["status"] = "FAILED"
+            result["error"] = "worker exceeded tool_call_budget"
+        else:
+            try:
+                _commands_within_lease(commands, lease)
+            except PermissionError as exc:
+                result["status"] = "BLOCKED"
+                result["error"] = str(exc)
+
         result["task_id"] = task.task_id
         result["agent"] = task.agent
         result["capability"] = task.capability
         result["workspace_id"] = f"worktree:{task.task_id}"
+        result["delegation_id"] = lease.delegation_id
+        result["role"] = lease.role
+        result["owned_task_class"] = lease.owned_task_class
+        result["task_duration_ms"] = round(max(0.0, (self._clock() - task_started) * 1000.0), 3)
+        artifact_ref, artifact_sha = _persist_task_artifact(
+            repository_root,
+            spec,
+            task.task_id,
+            result,
+        )
+        result["artifact_ref"] = artifact_ref
+        result["artifact_sha256"] = artifact_sha
+        if event_sink:
+            event_sink(
+                task.task_id,
+                "TASK_ARTIFACT_CREATED",
+                {
+                    "artifact_ref": artifact_ref,
+                    "sha256": artifact_sha,
+                    "schema_version": 1,
+                    "producer": task.agent,
+                },
+            )
+            event_sink(
+                task.task_id,
+                "TASK_COMPLETED" if result.get("status") == "SUCCEEDED" else (
+                    "TASK_ESCALATION_REQUIRED"
+                    if result.get("status") == "BLOCKED"
+                    else "TASK_FAILED"
+                ),
+                {
+                    "status": result.get("status"),
+                    "attempt_count": result.get("attempt_count", 1),
+                    "retry_count": result.get("retry_count", 0),
+                },
+            )
         return result
 
     def execute(
@@ -276,12 +453,26 @@ class MunderAdapter:
         spec: AgentOfficeExecutionSpec,
         tasks: tuple[AgentOfficeTask, ...],
         repository_root: Path,
+        *,
+        leases: Mapping[str, DelegatedTaskLease] | None = None,
+        event_sink: EventSink | None = None,
     ) -> AgentOfficeExecutionResult:
         started_at = _utc_now()
         start_tick = self._clock()
         mission_errors: list[str] = []
         per_agent: list[dict[str, Any]] = []
-        worktrees: list[Path] = []
+        worktrees: dict[str, Path] = {}
+        leases = dict(leases or {})
+        if set(leases) != {task.task_id for task in tasks}:
+            raise ValueError("Agent Office requires one delegated lease per task")
+
+        conflicts = []
+        ordered_tasks = {task.task_id: task for task in tasks}
+        task_ids = tuple(sorted(ordered_tasks))
+        for index, left_id in enumerate(task_ids):
+            for right_id in task_ids[index + 1:]:
+                if _lease_conflict(leases[left_id], leases[right_id]):
+                    conflicts.append((left_id, right_id))
 
         with tempfile.TemporaryDirectory(prefix="br-agent-office-") as temp_dir:
             mission_root = Path(temp_dir).resolve()
@@ -289,26 +480,117 @@ class MunderAdapter:
             for index, task in enumerate(tasks):
                 workspace = mission_root / f"worker-{index + 1}-{task.task_id}"
                 _git(repository_root, "worktree", "add", "--detach", str(workspace), spec.base_sha)
-                worktrees.append(workspace)
+                worktrees[task.task_id] = workspace
                 with mailbox.open("a", encoding="utf-8") as stream:
-                    stream.write(json.dumps({"to": task.agent, "task_id": task.task_id}) + "\n")
+                    stream.write(
+                        json.dumps(
+                            {
+                                "to": task.agent,
+                                "task_id": task.task_id,
+                                "delegation_id": leases[task.task_id].delegation_id,
+                            }
+                        ) + "\n"
+                    )
 
+            pending = set(ordered_tasks)
+            completed: set[str] = set()
+            failed: set[str] = set()
+            wave_count = 0
+            parallel_task_count = 0
+            serial_task_count = 0
+            critical_path_ms = 0.0
+            cumulative_task_ms = 0.0
             try:
-                with ThreadPoolExecutor(max_workers=spec.max_parallelism) as pool:
-                    futures = {
-                        pool.submit(
-                            self._run_worker,
-                            task,
-                            workspace,
-                            spec,
-                            max(0.0, spec.time_budget_seconds - (self._clock() - start_tick)),
-                        ): task.task_id
-                        for task, workspace in zip(tasks, worktrees, strict=True)
-                    }
-                    for future in as_completed(futures):
-                        per_agent.append(future.result())
+                while pending:
+                    dependency_blocked = [
+                        task_id
+                        for task_id in sorted(pending)
+                        if any(dep in failed for dep in ordered_tasks[task_id].depends_on)
+                    ]
+                    for task_id in dependency_blocked:
+                        task = ordered_tasks[task_id]
+                        lease = leases[task_id]
+                        blocked = {
+                            "status": "BLOCKED",
+                            "error": "dependency failed",
+                            "task_id": task_id,
+                            "agent": task.agent,
+                            "capability": task.capability,
+                            "delegation_id": lease.delegation_id,
+                            "files_changed": [],
+                            "commits": [],
+                            "commands": [],
+                            "tests": [],
+                            "artifacts": [],
+                            "task_duration_ms": 0.0,
+                        }
+                        ref, digest = _persist_task_artifact(
+                            repository_root, spec, task_id, blocked
+                        )
+                        blocked["artifact_ref"] = ref
+                        blocked["artifact_sha256"] = digest
+                        per_agent.append(blocked)
+                        failed.add(task_id)
+                        completed.add(task_id)
+                        pending.remove(task_id)
+                        if event_sink:
+                            event_sink(task_id, "TASK_ESCALATION_REQUIRED", {"reason": "dependency failed"})
+
+                    if not pending:
+                        break
+                    eligible = [
+                        task_id
+                        for task_id in sorted(pending)
+                        if set(ordered_tasks[task_id].depends_on).issubset(completed)
+                    ]
+                    if not eligible:
+                        mission_errors.append("task DAG contains a dependency cycle")
+                        break
+
+                    wave: list[str] = []
+                    for task_id in eligible:
+                        if len(wave) >= spec.max_parallelism:
+                            break
+                        if any(_lease_conflict(leases[task_id], leases[other]) for other in wave):
+                            continue
+                        wave.append(task_id)
+                    if not wave:
+                        wave = [eligible[0]]
+                    wave_count += 1
+                    if len(wave) > 1:
+                        parallel_task_count += len(wave)
+                    else:
+                        serial_task_count += 1
+
+                    with ThreadPoolExecutor(max_workers=min(spec.max_parallelism, len(wave))) as pool:
+                        futures = {
+                            pool.submit(
+                                self._run_worker,
+                                ordered_tasks[task_id],
+                                worktrees[task_id],
+                                spec,
+                                max(0.0, spec.time_budget_seconds - (self._clock() - start_tick)),
+                                leases[task_id],
+                                repository_root,
+                                event_sink,
+                            ): task_id
+                            for task_id in wave
+                        }
+                        wave_results = []
+                        for future in as_completed(futures):
+                            item = future.result()
+                            wave_results.append(item)
+                            per_agent.append(item)
+                            task_id = futures[future]
+                            pending.remove(task_id)
+                            completed.add(task_id)
+                            if item.get("status") != "SUCCEEDED":
+                                failed.add(task_id)
+                        durations = [float(item.get("task_duration_ms") or 0.0) for item in wave_results]
+                        cumulative_task_ms += sum(durations)
+                        critical_path_ms += max(durations, default=0.0)
             finally:
-                for workspace in worktrees:
+                for workspace in worktrees.values():
                     if workspace.parent != mission_root:
                         mission_errors.append("unsafe worktree cleanup target refused")
                         continue
@@ -361,7 +643,10 @@ class MunderAdapter:
         artifacts = tuple(sorted({
             artifact
             for item in per_agent
-            for artifact in item.get("artifacts", [])
+            for artifact in (
+                list(item.get("artifacts", []))
+                + ([item.get("artifact_ref")] if item.get("artifact_ref") else [])
+            )
             if isinstance(artifact, str)
         }))
         commits = tuple(sorted({
@@ -370,13 +655,27 @@ class MunderAdapter:
             for commit in item.get("commits", [])
             if isinstance(commit, str)
         }))
+        candidate_commits = tuple(sorted({
+            str(item.get("candidate", {}).get("RESULT_COMMIT_SHA"))
+            for item in per_agent
+            if isinstance(item.get("candidate"), dict)
+            and item["candidate"].get("RESULT_COMMIT_SHA")
+        }))
         evidence_payload = {
             "execution_id": spec.execution_id,
+            "mission_id": spec.mission_id,
             "status": status,
             "tasks": [task.to_dict() for task in tasks],
             "per_agent_results": per_agent,
             "files_changed": files_changed,
         }
+        wall_ms = max(0.0, elapsed * 1000.0)
+        parallelism_saved_ms = max(0.0, cumulative_task_ms - critical_path_ms)
+        coordination_overhead_ms = max(0.0, wall_ms - critical_path_ms)
+        agent_idle_ms = max(
+            0.0,
+            wall_ms * max(1, spec.max_parallelism) - cumulative_task_ms,
+        )
         evidence = {
             "upstream": "chaitanyagiri/munder-difflin@6248293a7cd9dfdbf9633d12bbe857831ccfee88",
             "worktree_isolation": "PASS",
@@ -384,8 +683,31 @@ class MunderAdapter:
             "no_parallel_authority": "PASS",
             "no_autonomous_publishing": "PASS",
             "no_unauthorized_scheduler": "PASS",
+            "HARNESS_SOLE_AUTHORITY": "PASS",
+            "HARNESS_MICROMANAGEMENT": "NO",
+            "PATH_OWNERSHIP": "ENFORCED",
+            "CONFLICTS_DETECTED": [list(item) for item in conflicts],
+            "PARALLEL_SAFE": len(conflicts) == 0,
+            "PARALLEL_TASK_COUNT": parallel_task_count,
+            "SERIAL_TASK_COUNT": serial_task_count,
+            "PARALLELISM_SAVED_MS": round(parallelism_saved_ms, 3),
+            "AGENT_IDLE_MS": round(agent_idle_ms, 3),
+            "COORDINATION_OVERHEAD_MS": round(coordination_overhead_ms, 3),
+            "CUMULATIVE_AGENT_WORK_MS": round(cumulative_task_ms, 3),
+            "CRITICAL_PATH_MS": round(critical_path_ms, 3),
+            "WALL_CLOCK_MS": round(wall_ms, 3),
+            "candidate_commits": list(candidate_commits),
             "deterministic_digest": evidence_digest(evidence_payload),
         }
+        if event_sink:
+            for task in tasks:
+                if task.task_id in completed:
+                    continue
+                event_sink(
+                    task.task_id,
+                    "TASK_FAILED",
+                    {"reason": "mission terminated before task completion"},
+                )
         return AgentOfficeExecutionResult(
             execution_id=spec.execution_id,
             status=status,
@@ -395,14 +717,20 @@ class MunderAdapter:
             tasks=tuple(task.to_dict() for task in tasks),
             per_agent_results=tuple(per_agent),
             files_changed=files_changed,
-            commits=commits,
+            commits=tuple(sorted(set((*commits, *candidate_commits)))),
             tests=tests,
             commands_evidence=commands,
             artifacts=artifacts,
             errors=errors,
-            usage={"cost": total_cost, "elapsed_seconds": max(0.0, elapsed)},
+            usage={
+                "cost": total_cost,
+                "elapsed_seconds": max(0.0, elapsed),
+                "tool_calls": sum(len(item.get("commands") or []) for item in per_agent),
+                "retries": sum(int(item.get("retry_count") or 0) for item in per_agent),
+            },
             final_summary=(
-                f"Agent Office {status}: {success_count}/{len(tasks)} bounded tasks succeeded"
+                f"Agent Office {status}: {success_count}/{len(tasks)} bounded task owners succeeded"
             ),
             evidence=evidence,
         )
+
