@@ -26,9 +26,21 @@ from scripts.video_a_current_contract_recovery import (
     _print_audio_gate, _proven_v4_render_binding,
 )
 
-PREVIOUS_E2E_RUN_ID = 35476105885
-PREVIOUS_E2E_ARTIFACT_ID = 10593683981
-PREVIOUS_RENDER_RUN_ID = 35476135361
+REQUEST_PATH = Path(".run/video-a-current-product-e2e.request.json")
+
+
+def _request() -> dict[str, Any]:
+    value = json.loads(REQUEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("VIDEO A E2E request must be an object")
+    return value
+
+
+def _previous_render_run_id() -> int:
+    value = int(_request().get("previous_render_run_id") or 0)
+    if value <= 0:
+        raise RuntimeError("request previous_render_run_id is required for Job2 resume")
+    return value
 
 
 def _gh_json(command: list[str]) -> Any:
@@ -36,8 +48,9 @@ def _gh_json(command: list[str]) -> Any:
 
 
 def _prove_previous_failure() -> dict[str, Any]:
+    previous_render_run_id = _previous_render_run_id()
     run = _gh_json([
-        "gh", "run", "view", str(PREVIOUS_RENDER_RUN_ID),
+        "gh", "run", "view", str(previous_render_run_id),
         "--repo", os.environ["GITHUB_ACTIONS_REPOSITORY"],
         "--json", "databaseId,status,conclusion,headSha,url",
     ])
@@ -45,7 +58,7 @@ def _prove_previous_failure() -> dict[str, Any]:
         raise RuntimeError("previous Job2 render is not the proven completed failure")
     artifacts = _gh_json([
         "gh", "api",
-        f"repos/{os.environ['GITHUB_ACTIONS_REPOSITORY']}/actions/runs/{PREVIOUS_RENDER_RUN_ID}/artifacts",
+        f"repos/{os.environ['GITHUB_ACTIONS_REPOSITORY']}/actions/runs/{previous_render_run_id}/artifacts",
     ])
     if any(
         item.get("name") == "render-output" and item.get("expired") is not True
@@ -53,7 +66,7 @@ def _prove_previous_failure() -> dict[str, Any]:
     ):
         raise RuntimeError("failed Job2 run has render-output; reconcile instead of retry")
     return {
-        "run_id": PREVIOUS_RENDER_RUN_ID,
+        "run_id": previous_render_run_id,
         "status": "PROVEN_FAILED_BEFORE_RENDER_OUTPUT",
         "head_sha": run.get("headSha"),
         "url": run.get("url"),
@@ -92,6 +105,7 @@ def _replace_render(job_id: int, render: dict[str, Any]) -> dict[str, Any]:
 def prepare_retry(out: Path) -> None:
     initialize_application()
     proof = _prove_previous_failure()
+    previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
     job_path = out / "render-job-handoff" / "render-job.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -101,9 +115,9 @@ def prepare_retry(out: Path) -> None:
         raise RuntimeError("canonical Job2 is not recoverable")
     if int(state.get("VIDEO_ID") or 0) != VIDEO_ID or int(state.get("RENDER_JOB_ID") or 0) != SUCCESSOR_RENDER_JOB_ID:
         raise RuntimeError("checkpoint identity mismatch")
-    if int(state.get("RENDER_RUN_ID") or 0) != PREVIOUS_RENDER_RUN_ID:
+    if int(state.get("RENDER_RUN_ID") or 0) != previous_render_run_id:
         raise RuntimeError("checkpoint render run mismatch")
-    if int((persisted.get("github_execution") or {}).get("run_id") or 0) != PREVIOUS_RENDER_RUN_ID:
+    if int((persisted.get("github_execution") or {}).get("run_id") or 0) != previous_render_run_id:
         raise RuntimeError("Job2 persisted run mismatch")
     artifacts = get_gta6_goal_artifacts(GOAL_ID) or {}
     if artifacts.get("video_id") != VIDEO_ID or artifacts.get("render_job_id") != SUCCESSOR_RENDER_JOB_ID:
@@ -139,7 +153,7 @@ def prepare_retry(out: Path) -> None:
         "CHECKPOINT_REUSE": "YES",
         "VIDEO_ID": VIDEO_ID,
         "RENDER_JOB_ID": SUCCESSOR_RENDER_JOB_ID,
-        "PREVIOUS_RENDER_RUN_ID": PREVIOUS_RENDER_RUN_ID,
+        "PREVIOUS_RENDER_RUN_ID": previous_render_run_id,
         "RENDER_RUN_ID": None,
         "CURRENT_AUDIO_CONTRACT_FINGERPRINT": audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"],
         "previous_render_proof": proof,
@@ -160,7 +174,8 @@ def dispatch_retry(
     source_sha: str,
 ) -> None:
     initialize_application()
-    _prove_previous_failure()
+    proof = _prove_previous_failure()
+    previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
     job_path = out / "render-job-handoff" / "render-job.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -168,7 +183,7 @@ def dispatch_retry(
     persisted = get_render_job(SUCCESSOR_RENDER_JOB_ID)
     if not persisted or persisted.get("status") != "running":
         raise RuntimeError("Job2 is no longer running; reconcile before retry")
-    if int((persisted.get("github_execution") or {}).get("run_id") or 0) != PREVIOUS_RENDER_RUN_ID:
+    if int((persisted.get("github_execution") or {}).get("run_id") or 0) != previous_render_run_id:
         raise RuntimeError("Job2 previous run changed")
     _print_audio_gate(job)
 
@@ -207,7 +222,7 @@ def dispatch_retry(
         "render_job_handoff_artifact_name": artifact_name,
         "render_job_handoff_producer_run_id": producer_run_id,
         "render_job_handoff_source_sha": source_sha,
-        "retry_of_run_id": PREVIOUS_RENDER_RUN_ID,
+        "retry_of_run_id": previous_render_run_id,
         "same_render_job_id": SUCCESSOR_RENDER_JOB_ID,
     }
     update_render_job_payload(SUCCESSOR_RENDER_JOB_ID, github_execution=github_execution)
@@ -215,7 +230,7 @@ def dispatch_retry(
         "status": "RENDER_REDISPATCHED_SAME_JOB",
         "VIDEO_ID": VIDEO_ID,
         "RENDER_JOB_ID": SUCCESSOR_RENDER_JOB_ID,
-        "PREVIOUS_RENDER_RUN_ID": PREVIOUS_RENDER_RUN_ID,
+        "PREVIOUS_RENDER_RUN_ID": previous_render_run_id,
         "RENDER_RUN_ID": dispatched.run_id,
         "github_execution": github_execution,
         "render_job_descriptor": descriptor,
