@@ -32,8 +32,16 @@ AGENT_OFFICE_EXECUTOR_BINDING = (
 DEFAULT_FORBIDDEN_ACTIONS = (
     "youtube_publish",
     "autonomous_schedule",
-    "secret_access",
+    "push",
+    "merge",
+    "canonical_branch_write",
     "policy_mutation",
+    "authority_mutation",
+    "secret_access",
+    "credential_access",
+    "destructive_database_migration",
+    "external_paid_action",
+    "youtube_publish_public",
 )
 
 
