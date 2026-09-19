@@ -290,7 +290,6 @@ YOUTUBE_PACKAGE_PERSIST_RECORD = CapabilityRecord(
     executor_binding="app.services.youtube_package_service.execute_youtube_package_persist_capability",
     version="1",
     provider_id="internal",
-    agent_id="tubegent-production-management",
     side_effects=("canonical YouTube content package persistence",),
 )
 
