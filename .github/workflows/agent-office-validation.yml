@@ -11,12 +11,14 @@ on:
       - "app/services/global_capability_registry.py"
       - "app/services/global_capability_registry_base.py"
       - "app/services/codex_addy_capability_executor.py"
+      - "app/services/addy_harness_service.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
       - "tests/test_agent_office.py"
+      - "tests/test_harness_capability_service.py"
       - ".github/workflows/agent-office-*.yml"
   pull_request:
     paths:
@@ -25,12 +27,14 @@ on:
       - "app/services/global_capability_registry.py"
       - "app/services/global_capability_registry_base.py"
       - "app/services/codex_addy_capability_executor.py"
+      - "app/services/addy_harness_service.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
       - "tests/test_agent_office.py"
+      - "tests/test_harness_capability_service.py"
       - ".github/workflows/agent-office-*.yml"
   workflow_dispatch:
 
