@@ -10,10 +10,11 @@ import time
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from app.database.agent_office_mission_repository import get_mission
+from app.database.agent_office_mission_repository import get_mission, list_mission_events
 from app.database.agent_execution_lease_repository import list_task_events
 from app.database.schema import initialize_schema
 from app.services.agent_office.integration_gate import run_integration_gate, write_integration_artifact
+from app.services.agent_office.task_owner_registry import audit_task_owner_profiles
 from app.services.agent_office.mission_service import (
     execute_delegated_mission,
     reduce_delegated_mission,
@@ -99,10 +100,12 @@ def _inventory() -> dict[str, Any]:
         for capability_id, record in records.items()
         if record is None or not record["available"] or not record["execution_enabled"]
     ]
+    owner_profiles = audit_task_owner_profiles()
     return {
-        "status": "PASS" if not missing else "FAIL",
+        "status": "PASS" if not missing and owner_profiles["status"] == "PASS" else "FAIL",
         "records": records,
         "missing_or_unexecutable": missing,
+        "task_owner_profiles": owner_profiles,
     }
 
 
@@ -469,7 +472,9 @@ def main() -> int:
     by_task = {str(item.get("task_id")): item for item in per_agent}
     evidence = dict(raw_result.get("evidence") or {})
     events = list_task_events(mission_id=MISSION_ID)
+    mission_events = list_mission_events(mission_id=MISSION_ID)
     event_types = {str(item.get("event_type")) for item in events}
+    mission_event_types = {str(item.get("event_type")) for item in mission_events}
     candidate = by_task.get("05-codex-development", {}).get("candidate") or {}
     integration_ok = (
         len(integrations) == 1
@@ -510,6 +515,12 @@ def main() -> int:
             submit.get("status") == "DELEGATED"
             and execution.get("status") == "MISSION_READY_FOR_REDUCTION"
             and {"TASK_CREATED", "TASK_STARTED", "TASK_ARTIFACT_CREATED"} <= event_types
+            and {
+                "MISSION_DELEGATED",
+                "MISSION_EXECUTION_STARTED",
+                "MISSION_READY_FOR_REDUCTION",
+                "MISSION_REDUCED",
+            } <= mission_event_types
         ),
         "PARALLEL_INDEPENDENT_TASKS": int(evidence.get("PARALLEL_TASK_COUNT") or 0) >= 3,
         "STRUCTURED_OUTPUTS": all(
@@ -569,6 +580,7 @@ def main() -> int:
         "reduction": reduction,
         "integration_results": integrations,
         "events": events,
+        "mission_events": mission_events,
         "metrics": {
             "HARNESS_DECISION_COUNT": 1,
             "HARNESS_TOOL_ROUND_TRIPS": 2,
