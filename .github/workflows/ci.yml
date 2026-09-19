@@ -606,12 +606,15 @@ jobs:
               "full_suite": os.environ["FULL_SUITE_RESULT"],
           }
           required_jobs_pass = all(value == "success" for value in results.values())
+          # Coverage preservation is monotonic, not an exact historical count.
+          # New tests must never make a healthy checkpoint fail merely because
+          # coverage grew; regressions still fail closed.
           collection_preserved = (
-              metrics.get("collected") == baseline["collected_tests"]
-              and metrics.get("passed") == baseline["passed_tests"]
+              (metrics.get("collected") or 0) >= baseline["collected_tests"]
+              and (metrics.get("passed") or 0) >= baseline["passed_tests"]
               and metrics.get("failed", 0) == 0
-              and metrics.get("skipped") == baseline["skipped_tests"]
-              and metrics.get("subtests_passed") == baseline["subtests_passed"]
+              and (metrics.get("skipped") or 0) <= baseline["skipped_tests"]
+              and (metrics.get("subtests_passed") or 0) >= baseline["subtests_passed"]
           )
 
           focused_workflows = (
