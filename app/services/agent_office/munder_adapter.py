@@ -80,68 +80,122 @@ def deterministic_read_only_worker(
     }
 
 
-def codex_addy_worker(
+CODEX_READONLY_CAPABILITY = "agent-office.codex.readonly-analysis"
+
+
+def _codex_process(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout_seconds: float,
+) -> subprocess.CompletedProcess[str]:
+    if timeout_seconds <= 0:
+        raise subprocess.TimeoutExpired(command, timeout_seconds)
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        timeout=timeout_seconds,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _codex_agent_text(stdout: str) -> str:
+    final = ""
+    for line in str(stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "agent_message":
+            continue
+        value = item.get("text")
+        if isinstance(value, str):
+            final = value
+    return final[:2_000]
+
+
+def codex_readonly_worker(
     task: AgentOfficeTask,
     workspace: Path,
     timeout_seconds: float,
 ) -> dict[str, Any]:
-    """Reuse the existing bounded Codex/Addy executor; never accept a raw command."""
-    from app.services.codex_addy_capability_executor import execute_codex_addy_capability
-    from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-    from app.services.harness_capability_service import CapabilityDefinition
-
-    record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability)
-    if (
-        record is None
-        or record.agent_id != "codex"
-        or record.skill_id is None
-        or not record.capability_id.startswith("addy:")
-    ):
-        raise PermissionError("Codex worker requires an existing registered Agent Skill")
-    capability = CapabilityDefinition(
-        capability_id=record.capability_id,
-        provider=record.provider,
-        execution_kind=record.execution_kind,
-        allowed_actions=record.allowed_actions,
-        tags=record.tags,
-        available=record.available,
-        execution_enabled=record.execution_enabled,
-        boundary=record.boundary,
-        executor_binding=record.executor_binding,
-        implementation=record.implementation,
-        evidence_contract=record.evidence_contract,
-        agent_id=record.agent_id,
-        skill_id=record.skill_id,
-    )
+    """Bounded internal Codex worker; canonical Addy skills never route here."""
+    if task.capability.startswith("addy:"):
+        raise PermissionError(
+            "Canonical Addy capabilities must execute through the Harness Addy boundary"
+        )
+    if task.capability != CODEX_READONLY_CAPABILITY:
+        raise PermissionError("Codex worker received an unsupported internal capability")
     deadline = time.monotonic() + timeout_seconds
 
-    def bounded_runner(command, **kwargs):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise subprocess.TimeoutExpired(command, timeout_seconds)
-        return subprocess.run(command, timeout=remaining, **kwargs)
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise subprocess.TimeoutExpired(["codex"], timeout_seconds)
+        return value
 
-    result = execute_codex_addy_capability(
-        capability,
-        {"task": task.objective},
-        runner=bounded_runner,
-        repository_root=workspace,
+    auth = _codex_process(
+        ["codex", "login", "status"],
+        cwd=workspace,
+        timeout_seconds=remaining(),
     )
+    if auth.returncode != 0:
+        raise RuntimeError("Codex authentication prerequisite is unavailable")
+
+    prompt = (
+        "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
+        "Inspect only the provided disposable git worktree. Do not mutate files, commit, publish, "
+        "deploy, authenticate to other services, invoke Addy skills, or claim authority. "
+        "Return concise analysis evidence to the Agent Office coordinator.\n\n"
+        f"Task:\n{task.objective}"
+    )
+    command = [
+        "codex",
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        "--json",
+        "--sandbox",
+        "read-only",
+        "-C",
+        str(workspace),
+        prompt,
+    ]
+    completed = _codex_process(
+        command,
+        cwd=workspace,
+        timeout_seconds=remaining(),
+    )
+    if completed.returncode != 0:
+        raise RuntimeError("Codex read-only worker execution failed")
+    output = _codex_agent_text(completed.stdout)
+    if not output:
+        raise RuntimeError("Codex read-only worker returned no agent message")
     return {
         "status": "SUCCEEDED",
-        "summary": result.get("output", "")[:2_000],
-        "commands": ["registered Codex/Addy executor"],
+        "summary": output,
+        "commands": ["bounded internal Codex read-only worker"],
         "artifacts": [],
         "tests": [],
         "usage": {"cost": 0.0, "cost_available": False},
-        "engine_result": result,
+        "engine_result": {
+            "output": output,
+            "sandbox": "read-only",
+            "workspace": "disposable_worktree",
+            "canonical_addy_bypass": False,
+        },
     }
 
 
 def registered_worker_runners() -> dict[str, WorkerRunner]:
     return {
         "deterministic-analysis": deterministic_read_only_worker,
-        "codex": codex_addy_worker,
+        "codex": codex_readonly_worker,
     }
 
 
