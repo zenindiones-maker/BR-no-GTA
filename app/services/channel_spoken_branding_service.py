@@ -47,10 +47,12 @@ CLOSING_DIRECTION = {
 }
 
 TAKE_PROFILES = (
-    {"take_id":"take-1","rate":"+0%","pitch":"+0Hz","role":"legacy-human-baseline"},
-    {"take_id":"take-2","rate":"+3%","pitch":"+1Hz","role":"human-approved-fluid2-prosody"},
-    {"take_id":"take-3","rate":"+2%","pitch":"+0Hz","role":"prosody-variation"},
+    {"take_id":"take-1","rate":"+0%","pitch":"+0Hz","role":"retired-review-baseline","runtime_enabled":False},
+    {"take_id":"take-2","rate":"+3%","pitch":"+1Hz","role":"human-approved-fluid2-prosody","runtime_enabled":True},
+    {"take_id":"take-3","rate":"+2%","pitch":"+0Hz","role":"retired-review-variation","runtime_enabled":False},
 )
+PRODUCTION_OPENING_TAKE_IDS = (SELECTED_OPENING_TAKE_ID,)
+PRODUCTION_CLOSING_POLICY = "immutable-human-approved-G-brand-mixed"
 
 
 class SpokenBrandingContractError(ValueError):
@@ -103,7 +105,9 @@ def get_spoken_branding_standard() -> dict[str, Any]:
         },
         "rate": OFFICIAL_RATE,
         "pitch": OFFICIAL_PITCH,
-        "take_count_per_phrase": len(TAKE_PROFILES),
+        "review_take_count": len(TAKE_PROFILES),
+        "production_opening_take_count": len(PRODUCTION_OPENING_TAKE_IDS),
+        "production_closing_policy": PRODUCTION_CLOSING_POLICY,
         "selected_take_fallback": SELECTED_OPENING_TAKE_ID,
         "selected_opening_take_id": SELECTED_OPENING_TAKE_ID,
         "selected_closing_fallback_take_id": SELECTED_CLOSING_TAKE_ID,
@@ -157,16 +161,17 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "opening_direction":deepcopy(OPENING_DIRECTION),
         "closing_direction":deepcopy(CLOSING_DIRECTION),
         "take_profiles":[dict(item) for item in TAKE_PROFILES],
+        "production_opening_take_ids":list(PRODUCTION_OPENING_TAKE_IDS),
+        "production_closing_policy":PRODUCTION_CLOSING_POLICY,
         "selected_take_id":SELECTED_OPENING_TAKE_ID,
         "selected_opening_take_id":SELECTED_OPENING_TAKE_ID,
         "selected_closing_fallback_take_id":SELECTED_CLOSING_TAKE_ID,
         "human_approved_opening_reference":HUMAN_APPROVED_OPENING_REFERENCE,
         "human_approved_final_end_sample_id":HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
         "selection_rule":(
-            "opening uses the human-approved Fluid 2 prosody profile (+3%, +1Hz); "
-            "closing checkpoint is only a technical fallback because the final end signature "
-            "is the separately locked human-approved G-brand-mixed asset; no automatic "
-            "naturality winner or substitution is allowed"
+            "production synthesizes only the human-approved Fluid 2 opening profile (+3%, +1Hz); "
+            "the closing is the immutable human-approved G-brand-mixed asset; retired review takes "
+            "are metadata only and must never be synthesized in normal production"
         ),
         "cache_policy":{
             "fingerprint_components":[
@@ -201,6 +206,7 @@ def validate_spoken_branding_contract(contract: dict[str,Any]) -> dict[str,Any]:
         "rate","pitch","pronunciation_policy","opening_direction","closing_direction","take_profiles","selected_take_id",
         "selected_opening_take_id","selected_closing_fallback_take_id",
         "human_approved_opening_reference","human_approved_final_end_sample_id",
+        "production_opening_take_ids","production_closing_policy",
         "selection_rule","cache_policy","timeline_order","contract_sha256",
     )
     for key in immutable:
