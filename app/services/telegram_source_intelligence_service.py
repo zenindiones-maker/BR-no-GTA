@@ -92,24 +92,82 @@ def _extract_claims(text: str, *, limit: int = 4) -> list[str]:
     cleaned = " ".join(str(text or "").split())
     if not cleaned:
         return []
-    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+
+    selected: list[str] = []
+
+    release = re.search(
+        r"\bComing\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b",
+        cleaned,
+    )
+    if release:
+        selected.append(
+            f"Rockstar lists Grand Theft Auto VI as coming {release.group(1)}."
+        )
+
+    if "PlayStation 5" in cleaned and "Xbox Series X|S" in cleaned:
+        selected.append(
+            "Rockstar lists Grand Theft Auto VI for PlayStation 5 and Xbox Series X|S."
+        )
+
+    boilerplate = (
+        "skip to main content",
+        "homepage",
+        "expand navigation menu",
+        "pre-order now",
+        "watch trailer",
+        "learn more",
+        "scroll for more content",
+        "label",
+    )
     gta_terms = (
         "gta", "grand theft auto", "rockstar", "take-two", "take two",
-        "lucia", "jason", "vice city", "leonida",
+        "lucia", "jason", "vice city", "leonida", "album", "radio",
     )
-    selected: list[str] = []
-    for sentence in sentences:
+    for sentence in re.split(r"(?<=[.!?])\s+", cleaned):
         sentence = sentence.strip()
-        if len(sentence) < 35 or len(sentence) > 600:
+        if len(sentence) < 35 or len(sentence) > 420:
             continue
         folded = sentence.casefold()
+        if sum(marker in folded for marker in boilerplate) >= 2:
+            continue
         if not any(term in folded for term in gta_terms):
             continue
         if sentence not in selected:
             selected.append(sentence)
         if len(selected) >= limit:
             break
-    return selected
+    return selected[:limit]
+
+
+def _editorial_topic(claims: list[dict[str, Any]]) -> str:
+    statements = [
+        str(item.get("statement") or "").strip()
+        for item in claims
+        if str(item.get("statement") or "").strip()
+    ]
+    for statement in statements:
+        match = re.search(
+            r"\bcoming\s+([A-Z][a-z]+)\s+(\d{1,2}),\s+(\d{4})\b",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            months = {
+                "january": "janeiro", "february": "fevereiro",
+                "march": "março", "april": "abril", "may": "maio",
+                "june": "junho", "july": "julho", "august": "agosto",
+                "september": "setembro", "october": "outubro",
+                "november": "novembro", "december": "dezembro",
+            }
+            month = months.get(match.group(1).casefold(), match.group(1))
+            return (
+                "GTA VI: Rockstar confirma lançamento para "
+                f"{int(match.group(2))} de {month} de {match.group(3)}"
+            )
+    for statement in statements:
+        if "Jason" in statement or "Lucia" in statement or "Leonida" in statement:
+            return "GTA VI: o que a Rockstar revelou sobre Jason, Lucia e Leonida"
+    return statements[0][:160] if statements else "GTA VI: pauta verificada"
 
 
 def _research_sources(packet: dict[str, Any]) -> tuple[ResearchSource, ...]:
@@ -609,7 +667,7 @@ def _editorial_decision(
         elif not explicit_video_intent:
             decision = "STORE_FOR_FUTURE"
         else:
-            title = str(verified[0]["statement"]).strip()[:240]
+            title = _editorial_topic(verified)
             existing_goal = get_active_gta6_goal(topic=title)
             if existing_goal is not None:
                 decision = "MERGE_WITH_EXISTING_GOAL"
