@@ -427,7 +427,7 @@ def probe_video(path):
     return json.loads(result.stdout)
 
 
-def evaluate_probe(probe, expected, qa):
+def evaluate_probe(probe, expected, qa, render_config=None):
     try:
         raw_duration = probe.get("format", {}).get("duration")
         duration = (
@@ -437,7 +437,10 @@ def evaluate_probe(probe, expected, qa):
         )
     except (TypeError, ValueError):
         duration = math.nan
-    kinds = {s.get("codec_type") for s in probe.get("streams", [])}
+    streams = list(probe.get("streams", []))
+    kinds = {s.get("codec_type") for s in streams}
+    video = next((s for s in streams if s.get("codec_type") == "video"), {})
+    audio = next((s for s in streams if s.get("codec_type") == "audio"), {})
     formats = probe.get("format", {}).get("format_name", "").split(",")
     checks = {
         "mp4_container": "mp4" in formats,
@@ -451,6 +454,17 @@ def evaluate_probe(probe, expected, qa):
         "plan_max_duration": qa.max_duration_seconds is None
         or duration <= qa.max_duration_seconds,
     }
+    render_config = dict(render_config or {})
+    if render_config.get("delivery_profile") == "youtube_sdr_1080p30_v1":
+        checks.update({
+            "youtube_master_resolution": video.get("width") == 1920 and video.get("height") == 1080,
+            "youtube_master_video_codec": video.get("codec_name") == "h264",
+            "youtube_master_high_profile": str(video.get("profile") or "").lower() == "high",
+            "youtube_master_chroma_420": str(video.get("pix_fmt") or "") == "yuv420p",
+            "youtube_master_audio_codec": audio.get("codec_name") == "aac",
+            "youtube_master_audio_48khz": str(audio.get("sample_rate") or "") == "48000",
+            "youtube_master_progressive": str(video.get("field_order") or "progressive") in {"progressive", "unknown"},
+        })
     return {
         "status": "PASS" if all(checks.values()) else "FAIL",
         "checks": checks,
@@ -547,8 +561,13 @@ def execute(job, asset_root, output_root, *, source_job=None):
         from vedit.render import RenderOptions, render
 
         qa["stage"] = "render"
-        bound_options = resolve_bound_render_options(job.get("render"))
-        learning_binding = dict((job.get("render") or {}).get("learning_profile") or {})
+        render_config = dict(job.get("render") or {})
+        bound_options = resolve_bound_render_options(render_config)
+        delivery_profile = str(render_config.get("delivery_profile") or "")
+        youtube_master = delivery_profile == "youtube_sdr_1080p30_v1"
+        effective_quality = "max" if youtube_master else bound_options["quality"]
+        effective_audio_bitrate = "384k" if youtube_master else "192k"
+        learning_binding = dict(render_config.get("learning_profile") or {})
         progress_path = folder / "render-progress.json"
         heartbeat = {
             "last_emit": 0.0,
@@ -570,7 +589,9 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "skill_version": learning_binding.get("version", "v1-legacy"),
                 "encoder_policy": {
                     "codec": bound_options["codec"],
-                    "quality": bound_options["quality"],
+                    "quality": effective_quality,
+                    "delivery_profile": delivery_profile or None,
+                    "audio_bitrate": effective_audio_bitrate,
                     "software_preset": bound_options.get("software_preset"),
                     "timeline_placement": bound_options.get("timeline_placement", "legacy_tpad"),
                     "compact_text_overlays": bool(bound_options.get("compact_text_overlays", False)),
@@ -618,7 +639,8 @@ def execute(job, asset_root, output_root, *, source_job=None):
         render_options = RenderOptions(
             output=str(output),
             codec=bound_options["codec"],
-            quality=bound_options["quality"],
+            quality=effective_quality,
+            audio_bitrate=effective_audio_bitrate,
             prefer_hw=bound_options["prefer_hw"],
             hwaccel_decode=bound_options["hwaccel_decode"],
             software_preset=bound_options.get("software_preset"),
@@ -683,7 +705,9 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 },
                 "encoder_policy": {
                     "codec": bound_options["codec"],
-                    "quality": bound_options["quality"],
+                    "quality": effective_quality,
+                    "delivery_profile": delivery_profile or None,
+                    "audio_bitrate": effective_audio_bitrate,
                     "software_preset": bound_options.get("software_preset"),
                     "timeline_placement": bound_options.get("timeline_placement", "legacy_tpad"),
                     "compact_text_overlays": bool(bound_options.get("compact_text_overlays", False)),
@@ -702,7 +726,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
         probe = probe_video(output)
         probe["lineage"] = {key: job[key] for key in LINEAGE_FIELDS}
         write_json(folder / "video-probe.json", probe)
-        qa = evaluate_probe(probe, plan.duration_seconds, plan.qa)
+        qa = evaluate_probe(probe, plan.duration_seconds, plan.qa, job.get("render"))
         qa["stage"] = "probe"
         qa["checks"]["nonempty_file"] = True
         qa["checks"]["exactly_one_mp4"] = True
