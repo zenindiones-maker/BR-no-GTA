@@ -39,6 +39,7 @@ jobs:
       BR_OPENCODE_NATIVE_SOURCE_SHA: ${{ github.sha }}
       BR_OPENCODE_NATIVE_POLL_INTERVAL: "2"
       BR_OPENCODE_NATIVE_RUN_TIMEOUT: "900"
+      BR_OPENCODE_NATIVE_EXECUTION_MODE: "same_runner"
       BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/real-multi-agent-synergy/opencode-artifacts
 
     steps:
