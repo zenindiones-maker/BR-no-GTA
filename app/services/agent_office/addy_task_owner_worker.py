@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +87,9 @@ def addy_specialist_task_owner_worker(
     if task.action not in lease.allowed_actions:
         raise PermissionError("Addy specialist action is outside delegated lease")
 
+    context_started = time.perf_counter_ns()
     context = _task_context(task, workspace, lease)
+    context_build_ms = (time.perf_counter_ns() - context_started) / 1_000_000.0
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent=f"execute delegated specialist task through canonical {task.capability}",
@@ -178,6 +181,7 @@ def addy_specialist_task_owner_worker(
         "usage": {
             "cost": 0,
             "tool_calls": 1,
+            "context_build_ms": round(context_build_ms, 3),
             "provider_latency_seconds": evidence.result.get("provider_evidence", {}).get(
                 "latency_seconds"
             ),
