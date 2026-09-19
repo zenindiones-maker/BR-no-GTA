@@ -1,0 +1,185 @@
+name: VIDEO A Spoken Brand Audio Checkpoint
+run-name: VIDEO A spoken branding · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/video-a-brand-audio.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-spoken-brand-audio
+  cancel-in-progress: false
+
+jobs:
+  brand-audio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+      SOURCE_RENDER_RUN_ID: "35401791023"
+      SOURCE_RENDER_ARTIFACT_ID: "10570522173"
+      BRAND_AUDIO_CACHE_ROOT: runtime/brand-audio-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate exact branding request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          req=json.loads(Path('.run001/video-a-brand-audio.request.json').read_text())
+          expected={
+              'render_job_id':920101,
+              'final_voice':'Voice B',
+              'intro_asset_id':1,
+              'opening_theme':'fatos, vazamentos, tecnologia e rumores de GTA 6',
+              'closing_line':'E BR não dorme em Vice City',
+              'youtube_publication':False,
+              'job18_frozen':True,
+          }
+          for key,value in expected.items():
+              if req.get(key)!=value:
+                  raise SystemExit(f'BRAND_AUDIO_REQUEST_MISMATCH:{key}')
+          print('BRAND_AUDIO_REQUEST=PASS')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - name: Install minimal brand audio runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install "edge-tts==7.2.8" requests pytest
+          ffmpeg -version | head -n1
+          ffprobe -version | head -n1
+
+      - name: Focused spoken branding tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_channel_spoken_branding.py \
+            tests/test_run001_longform_editorial_controller.py
+
+      - name: Restore immutable VIDEO A RenderJob
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_RENDER_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_RENDER_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/brand-audio-source
+          merge-multiple: true
+
+      - name: Restore content-addressed brand audio cache
+        uses: actions/cache@v4
+        with:
+          path: runtime/brand-audio-cache
+          key: brand-audio-v1-${{ runner.os }}-edge-tts-7.2.8
+          restore-keys: |
+            brand-audio-v1-${{ runner.os }}-edge-tts-
+
+      - name: Materialize three opening and three closing takes
+        run: |
+          set -euo pipefail
+          python scripts/prepare_video_a_brand_audio_checkpoint.py \
+            --render-job runtime/brand-audio-source/render-job.json \
+            --video-config .run001/video-a-investigative-longform.json \
+            --work-root runtime/brand-audio-work \
+            --checkpoint-dir runtime/brand-audio-checkpoint \
+            --proof runtime/brand-audio-proof/brand-audio-proof.json
+
+      - name: Prove content-addressed cache reuse with zero new TTS
+        run: |
+          set -euo pipefail
+          rm -rf runtime/brand-audio-reuse-work runtime/brand-audio-reuse-checkpoint
+          python scripts/prepare_video_a_brand_audio_checkpoint.py \
+            --render-job runtime/brand-audio-source/render-job.json \
+            --video-config .run001/video-a-investigative-longform.json \
+            --work-root runtime/brand-audio-reuse-work \
+            --checkpoint-dir runtime/brand-audio-reuse-checkpoint \
+            --proof runtime/brand-audio-proof/brand-audio-reuse-proof.json \
+            | tee runtime/brand-audio-proof/cache-reuse.log
+          grep -Fx 'BRAND_AUDIO_EXTERNAL_CALLS=0' runtime/brand-audio-proof/cache-reuse.log
+          echo 'BRAND_AUDIO_CACHE_REUSE=PASS'
+
+      - name: Deliver six human-audition takes to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          python scripts/send_brand_audio_review.py
+
+      - name: Validate branding evidence contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          proof=json.loads(Path('runtime/brand-audio-proof/brand-audio-proof.json').read_text())
+          reuse=json.loads(Path('runtime/brand-audio-proof/brand-audio-reuse-proof.json').read_text())
+          review=json.loads(Path('runtime/brand-audio-proof/telegram-brand-audio-review.json').read_text())
+          for key in (
+              'OFFICIAL_INTRO_FIRST','SPOKEN_OPENING_AFTER_INTRO','VOICE_B_USED',
+              'OPENING_TEXT_CANONICAL','CLOSING_TEXT_CANONICAL',
+              'BRAND_AUDIO_CACHE_POLICY','EDITORIAL_HOOK_PRESERVED',
+          ):
+              if proof.get(key)!='PASS':
+                  raise SystemExit(f'{key}=FAIL')
+          if reuse['cache']['external_calls']!=0:
+              raise SystemExit('BRAND_AUDIO_CACHE_REUSE=FAIL')
+          if review['sample_count']!=6:
+              raise SystemExit('BRAND_AUDIO_REVIEW_SAMPLE_COUNT=FAIL')
+          if review['automatic_naturality_winner'] is not False:
+              raise SystemExit('AUTOMATIC_NATURALITY_WINNER_FORBIDDEN')
+          print('OFFICIAL_INTRO_FIRST=PASS')
+          print('SPOKEN_OPENING_AFTER_INTRO=PASS')
+          print('VOICE_B_USED=PASS')
+          print('OPENING_TEXT_CANONICAL=PASS')
+          print('CLOSING_TEXT_CANONICAL=PASS')
+          print('BRAND_AUDIO_CACHE_POLICY=PASS')
+          print('EDITORIAL_HOOK_PRESERVED=PASS')
+          print('BRAND_AUDIO_CACHE_REUSE=PASS')
+          print('HUMAN_BRAND_TAKE_REVIEW=PENDING')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - name: Upload QA-passed spoken brand audio checkpoint
+        id: brand_checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-brand-audio-checkpoint-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/brand-audio-checkpoint/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload compact spoken branding proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-brand-audio-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime/brand-audio-proof/*.json
+            runtime/brand-audio-proof/cache-reuse.log
+          if-no-files-found: error
+          retention-days: 30
