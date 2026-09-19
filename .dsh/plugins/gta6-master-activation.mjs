@@ -1,5 +1,3 @@
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
-
 const GTA6_MASTER_SESSION = "gta6-master-session";
 
 const GTA6_MASTER_MISSION = `
@@ -50,12 +48,10 @@ export default function gta6MasterActivation(ctx) {
 
     activated = true;
 
-    agent.followup(
-      createUserMessage({
-        content: GTA6_MASTER_MISSION,
-        source: { kind: "user" },
-      }),
-    );
+    agent.followup({
+      content: [{ type: "text", text: GTA6_MASTER_MISSION }],
+      source: { kind: "user" },
+    });
   };
 
   ctx.on("agent/created", activate);
