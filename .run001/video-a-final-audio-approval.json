@@ -19,5 +19,10 @@
   "automatic_substitution_allowed": false,
   "regeneration_allowed_without_new_human_review": false,
   "youtube_publication": false,
-  "job18_frozen": true
+  "job18_frozen": true,
+  "approved_asset_path": "assets/branding/audio/g-brand-mixed-approved-20260919.mp3",
+  "approved_asset_sha256": "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca",
+  "approval_manifest_path": "assets/branding/audio/human-approval-manifest.json",
+  "artifact_source_preserved_for_provenance": true,
+  "runtime_dependency_on_historical_artifact": false
 }
