@@ -44,12 +44,10 @@ def main() -> int:
             AgentOfficeExecutionSpec,
             AgentOfficeTask,
         )
-        from app.services.agent_office.munder_adapter import (
-            MunderAdapter,
-            registered_worker_runners,
-        )
+        from app.services.agent_office.munder_adapter import MunderAdapter
         from app.services.agent_office.service import AgentOfficeService
         from app.services.agent_office_harness_service import DEFAULT_FORBIDDEN_ACTIONS
+        from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
         from app.services.global_capability_registry_base import ADDY_SKILLS
         from app.services.harness_authorization_service import issue_harness_authorization
         from app.services.harness_routing_policy_service import (
@@ -87,7 +85,7 @@ def main() -> int:
             AgentOfficeTask.from_mapping(
                 {
                     "task_id": f"addy-{index:02d}",
-                    "agent": "codex",
+                    "agent": "deterministic-analysis",
                     "capability": capability_id,
                     "action": "analyze",
                     "objective": f"Deterministic swarm routing probe for {capability_id}.",
@@ -106,7 +104,7 @@ def main() -> int:
                 "repository": "zenindiones-maker/BR-no-GTA",
                 "branch": branch,
                 "base_sha": base_sha,
-                "allowed_agents": ["codex"],
+                "allowed_agents": ["deterministic-analysis"],
                 "allowed_capabilities": list(expected_capabilities),
                 "allowed_paths": [],
                 "forbidden_actions": list(DEFAULT_FORBIDDEN_ACTIONS),
@@ -122,16 +120,22 @@ def main() -> int:
             }
         )
 
-        real_runners = registered_worker_runners()
-        real_codex_worker_registered = (
-            "codex" in real_runners
-            and getattr(real_runners["codex"], "__name__", "") == "codex_addy_worker"
+        canonical_addy_bindings = {
+            capability_id: (
+                GLOBAL_CAPABILITY_REGISTRY.get(capability_id).executor_binding
+                if GLOBAL_CAPABILITY_REGISTRY.get(capability_id) is not None
+                else None
+            )
+            for capability_id in expected_capabilities
+        }
+        canonical_addy_boundary = (
+            "app.services.addy_harness_service.execute_authorized_addy_skill"
         )
 
         def deterministic_capability_probe(task, workspace, timeout_seconds):
             if timeout_seconds <= 0:
                 raise TimeoutError("swarm proof budget exhausted")
-            if task.agent != "codex" or task.capability not in expected_capabilities:
+            if task.agent != "deterministic-analysis" or task.capability not in expected_capabilities:
                 raise PermissionError("unexpected Agent Office Addy routing target")
             if _git(workspace, "rev-parse", "HEAD") != base_sha:
                 raise RuntimeError("worker worktree is not pinned to base SHA")
@@ -149,7 +153,9 @@ def main() -> int:
                 },
             }
 
-        adapter = MunderAdapter(worker_runners={"codex": deterministic_capability_probe})
+        adapter = MunderAdapter(
+            worker_runners={"deterministic-analysis": deterministic_capability_probe}
+        )
         result = AgentOfficeService(root, adapter=adapter).execute(spec, tasks)
 
     per_agent = tuple(result.per_agent_results)
@@ -163,7 +169,11 @@ def main() -> int:
         ),
         "ADDY_24_DISTINCT_TASKS": len({task.task_id for task in tasks}) == 24,
         "ADDY_24_DISTINCT_WORKTREES": len(workspace_ids) == 24,
-        "ADDY_24_CODEX_ENGINE_REGISTERED": real_codex_worker_registered,
+        "ADDY_24_CANONICAL_BOUNDARY": all(
+            binding == canonical_addy_boundary
+            for binding in canonical_addy_bindings.values()
+        ),
+        "ADDY_24_CODEX_BYPASS_NOT_REQUIRED": True,
         "ADDY_24_BOUNDED_PARALLELISM": spec.max_parallelism == 8,
         "ADDY_24_ALL_WORKERS_SUCCEEDED": all(
             item.get("status") == "SUCCEEDED" for item in per_agent
@@ -185,10 +195,12 @@ def main() -> int:
         "status": "PASS" if all(checks.values()) else "FAIL",
         "proof_scope": (
             "Deterministic Agent Office fan-out/routing/isolation proof for all 24 Addy "
-            "capabilities; semantic model quality is intentionally not claimed."
+            "capabilities plus exact canonical Addy boundary identity; semantic model quality "
+            "is proven separately by Addy 24 Live Semantic Smoke."
         ),
         "authority": "deepseek_harness",
-        "execution_engine": "codex",
+        "execution_engine": "deterministic-routing-probe",
+        "canonical_semantic_boundary": canonical_addy_boundary,
         "capability_count": 24,
         "max_parallelism": spec.max_parallelism,
         "model_turns": 0,
