@@ -87,16 +87,9 @@ jobs:
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/state.json"))
-          step=d["render_step"]["result"]
-          result=step.get("result") or {}
-          run_id=(result.get("github_execution") or {}).get("run_id") or result.get("run_id")
-          if not run_id:
-              import sqlite3,os
-              db=sqlite3.connect(os.environ["BR_TEST_DATABASE"]); db.row_factory=sqlite3.Row
-              r=db.execute("select github_execution from render_jobs where id=?",(d["RENDER_JOB_ID"],)).fetchone()
-              x=json.loads(r["github_execution"]) if r and r["github_execution"] else {}
-              run_id=x.get("run_id")
-          if not run_id: raise SystemExit("RENDER_RUN_ID_MISSING")
+          run_id=d.get("RENDER_RUN_ID")
+          if not isinstance(run_id,int) or run_id <= 0:
+              raise SystemExit("RENDER_RUN_ID_MISSING")
           print(f"VIDEO_ID={d['VIDEO_ID']}")
           print(f"RENDER_JOB_ID={d['RENDER_JOB_ID']}")
           print(f"RENDER_RUN_ID={run_id}")
@@ -169,6 +162,7 @@ jobs:
           path: |
             runtime/product-delivery/
             runtime/checkpoint/product-quality-e2e.json
+            runtime/checkpoint/mission.db
             runtime/youtube-upload/results/
           if-no-files-found: warn
           retention-days: 30
