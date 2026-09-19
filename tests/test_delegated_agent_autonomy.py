@@ -246,3 +246,50 @@ def test_integration_gate_never_promotes_canonical_branch(tmp_path):
     assert result.status == "PASS"
     assert result.integration_candidate is True
     assert result.canonical_push_authority == "NONE"
+
+
+def test_task_owner_registry_covers_all_executable_agent_capabilities():
+    from app.services.agent_office.task_owner_registry import audit_task_owner_profiles
+
+    audit = audit_task_owner_profiles()
+    assert audit["status"] == "PASS", audit
+    assert audit["profile_count"] == audit["expected_agent_capability_count"]
+    assert audit["missing"] == []
+    assert audit["invalid"] == []
+
+
+def test_mission_event_stream_reaches_reduction_without_polling_state(tmp_path, monkeypatch):
+    from app.database.agent_office_mission_repository import (
+        claim_mission,
+        complete_mission,
+        create_mission,
+        list_mission_events,
+        mark_ready_for_reduction,
+    )
+
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "missions.db"))
+    initialize_schema()
+    create_mission(
+        mission_id="event-mission",
+        goal_id="event-goal",
+        harness_decision_id="event-decision",
+        authorization_id="event-authorization",
+        execution_id="event-execution",
+        base_sha="a" * 40,
+        request_payload={"spec": {}, "tasks": []},
+    )
+    claim_mission("event-mission", worker_id="worker:1")
+    mark_ready_for_reduction(
+        "event-mission",
+        result_payload={"status": "SUCCEEDED"},
+    )
+    complete_mission(
+        "event-mission",
+        reduction_payload={"status": "READY_FOR_HARNESS_DECISION"},
+    )
+    assert [item["event_type"] for item in list_mission_events(mission_id="event-mission")] == [
+        "MISSION_DELEGATED",
+        "MISSION_EXECUTION_STARTED",
+        "MISSION_READY_FOR_REDUCTION",
+        "MISSION_REDUCED",
+    ]
