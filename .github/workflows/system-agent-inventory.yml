@@ -87,7 +87,8 @@ jobs:
           assert d['NATIVE_HARNESS_SEMANTIC_EXECUTION_PROVEN'] is False
           assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
           assert d['EXECUTOR_BINDINGS_VALID'] is True
-          assert 'codex' in d['AGENT_IDS']
+          assert 'addy-agent-skills' in d['AGENT_IDS']
+          assert 'codex' in d['WORKER_ENGINE_IDS']
           assert 'agent-office-coordinator' in d['AGENT_IDS']
           assert 'gta6-master-agent' in d['AGENT_IDS']
           assert 'gta6-brain' in d['AGENT_IDS']
