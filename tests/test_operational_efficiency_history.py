@@ -24,3 +24,17 @@ def test_history_keeps_cold_and_warm_retry_baselines_separate():
     assert warm["samples"]==1
     assert warm["p50_wall_clock_seconds"]==40
     assert warm["p95_wall_clock_seconds"]==40
+
+
+def test_rejected_candidate_does_not_pollute_baseline_percentiles():
+    history=None
+    baseline=_row("WARM_RETRY",60)
+    baseline["baseline_eligible"]=True
+    rejected=_row("WARM_RETRY",75)
+    rejected["baseline_eligible"]=False
+    history=append_observation(history,baseline)
+    history=append_observation(history,rejected)
+    summary=history["baselines"][0]
+    assert summary["samples"]==1
+    assert summary["p50_wall_clock_seconds"]==60
+    assert summary["p95_wall_clock_seconds"]==60

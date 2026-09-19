@@ -244,15 +244,15 @@ def evaluate_optimization_promotion(
     if not guardrail_pass:
         decision = "REJECTED"
         reason = "guardrail regression exceeded allowed budget"
-    elif human_quality_applicable and human_quality_no_regression is not True:
-        decision = "REJECTED"
-        reason = "human quality non-regression is required for perceptual/editorial changes"
     elif not technical_qa_no_regression:
         decision = "REJECTED"
         reason = "technical QA regression"
     elif not performance_improved:
         decision = "REJECTED"
         reason = "no observed performance improvement"
+    elif human_quality_applicable and human_quality_no_regression is not True:
+        decision = "REJECTED"
+        reason = "human quality non-regression is required for perceptual/editorial changes"
     else:
         decision = "PROMOTED"
         reason = "observed performance improvement with required quality gates"

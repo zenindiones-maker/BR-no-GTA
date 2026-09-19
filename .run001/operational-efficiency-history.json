@@ -1,6 +1,6 @@
 {
   "version": "operational-efficiency-history/v1",
-  "updated_at": "2026-09-19T00:13:30Z",
+  "updated_at": "2026-09-19T00:22:10Z",
   "policy": "br-no-gta.operational-efficiency@v2",
   "observations": [
     {
@@ -11,7 +11,8 @@
       "variant": "baseline",
       "run_id": 35407667152,
       "evidence": "cold-start-baseline-35407667152",
-      "technical_qa": "PASS"
+      "technical_qa": "PASS",
+      "baseline_eligible": false
     },
     {
       "run_class": "COLD_RUN",
@@ -22,7 +23,8 @@
       "run_id": 35407667152,
       "evidence": "cold-start-candidate-35407667152",
       "technical_qa": "PASS",
-      "promotion": "PROMOTED"
+      "promotion": "PROMOTED",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -32,7 +34,8 @@
       "run_id": 35408056905,
       "evidence": "video-a-render-canary-35408056905",
       "technical_qa": "PASS",
-      "voice": "Voice B"
+      "voice": "Voice B",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -40,7 +43,8 @@
       "stage": "decode_only",
       "wall_clock_seconds": 0.43432278600000984,
       "run_id": 35408056905,
-      "evidence": "render-canary-profile.json"
+      "evidence": "render-canary-profile.json",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -48,7 +52,8 @@
       "stage": "filtergraph_command_build",
       "wall_clock_seconds": 0.264099,
       "run_id": 35408056905,
-      "evidence": "render-canary-profile.json"
+      "evidence": "render-canary-profile.json",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -56,7 +61,8 @@
       "stage": "ffmpeg_decode_filtergraph_encode_audio_mix",
       "wall_clock_seconds": 57.44136,
       "run_id": 35408056905,
-      "evidence": "render-canary-profile.json"
+      "evidence": "render-canary-profile.json",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -64,7 +70,8 @@
       "stage": "final_probe_decode_qa",
       "wall_clock_seconds": 3.120791501999996,
       "run_id": 35408056905,
-      "evidence": "render-canary-profile.json"
+      "evidence": "render-canary-profile.json",
+      "baseline_eligible": true
     },
     {
       "run_class": "WARM_RETRY",
@@ -72,7 +79,30 @@
       "stage": "artifact_upload",
       "wall_clock_seconds": 1.976300961,
       "run_id": 35408056905,
-      "evidence": "render-canary-profile.json"
+      "evidence": "render-canary-profile.json",
+      "baseline_eligible": true
+    },
+    {
+      "run_class": "WARM_RETRY",
+      "capability_id": "production.render.execute",
+      "stage": "representative_editplan_canary",
+      "wall_clock_seconds": 75.70465193000001,
+      "run_id": 35408965017,
+      "artifact_id": 10573039406,
+      "variant": "v2-medium",
+      "software_preset": "medium",
+      "baseline_eligible": false,
+      "status": "REJECTED",
+      "performance_improvement_fraction": -0.24451203183031067,
+      "technical_qa": "PASS",
+      "ssim_candidate_vs_baseline": 0.995412,
+      "decoded_audio_pcm_identical": true,
+      "artifact_size_bytes": 31067768,
+      "reason": "no observed performance improvement",
+      "narration_artifact_reused": true,
+      "redundant_tts_requests": 0,
+      "media_valid_assets_reused": true,
+      "redundant_media_downloads": 0
     }
   ],
   "baselines": [
@@ -80,11 +110,11 @@
       "run_class": "COLD_RUN",
       "capability_id": "runtime.cloud-media-stack",
       "stage": "cold_start",
-      "samples": 2,
-      "p50_wall_clock_seconds": 50.273690173,
-      "p95_wall_clock_seconds": 52.8472555459,
+      "samples": 1,
+      "p50_wall_clock_seconds": 47.414173092,
+      "p95_wall_clock_seconds": 47.414173092,
       "min_wall_clock_seconds": 47.414173092,
-      "max_wall_clock_seconds": 53.133207254
+      "max_wall_clock_seconds": 47.414173092
     },
     {
       "run_class": "WARM_RETRY",
@@ -159,8 +189,19 @@
       "guardrail_pass": true
     },
     "render_preset": {
-      "status": "NOT_PROMOTED",
-      "reason": "no candidate benchmark has been run after the new representative EditPlan baseline"
+      "status": "REJECTED",
+      "candidate": "v2-medium",
+      "candidate_run_id": 35408965017,
+      "candidate_artifact_id": 10573039406,
+      "baseline_run_id": 35408056905,
+      "baseline_seconds": 60.830791502,
+      "candidate_seconds": 75.70465193000001,
+      "performance_improvement_fraction": -0.24451203183031067,
+      "technical_qa_no_regression": "PASS",
+      "ssim": 0.995412,
+      "audio_pcm_identical": true,
+      "reason": "no observed performance improvement",
+      "official_profile_remains": "v1-slow"
     }
   },
   "invariants": {

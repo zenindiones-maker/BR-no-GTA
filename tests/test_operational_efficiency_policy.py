@@ -135,3 +135,17 @@ def test_guardrail_budget_blocks_candidate_despite_faster_wall_clock():
     assert decision.guardrail_pass is False
     assert decision.guardrail_violations==("artifact_size_bytes",)
     assert decision.decision=="REJECTED"
+
+
+def test_no_performance_gain_short_circuits_human_quality_gate():
+    decision=evaluate_optimization_promotion(
+        baseline_observation=_obs(wall=10,calls=5,cache=0.8),
+        candidate_observation=_obs(wall=12,calls=5,cache=0.8),
+        technical_qa_no_regression=True,
+        human_quality_applicable=True,
+        human_quality_no_regression=None,
+        evidence_refs=("run:slower-candidate",),
+    )
+    assert decision.decision=="REJECTED"
+    assert decision.performance_improved is False
+    assert decision.reason=="no observed performance improvement"

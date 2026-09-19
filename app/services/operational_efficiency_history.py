@@ -59,6 +59,8 @@ def summarize_history(observations: Iterable[dict[str,Any]]) -> list[dict[str,An
     groups: dict[tuple[str,str,str],list[float]]={}
     for raw in observations:
         row=normalize_observation(raw)
+        if row.get("baseline_eligible") is False:
+            continue
         key=(row["run_class"],row["capability_id"],row["stage"])
         groups.setdefault(key,[]).append(row["wall_clock_seconds"])
     result=[]
