@@ -64,12 +64,24 @@ def capture_canonical_execution_episode(
     receipt = _receipt_from_canonical(canonical)
     required = (
         "mission_id", "task_id", "goal_id", "decision_id", "authorization_id",
-        "agent_id", "skill_id", "capability", "executor", "started_at",
+        "agent_id", "capability", "executor", "started_at",
         "finished_at", "status", "exit_code", "returned_to_harness",
     )
     missing = [key for key in required if receipt.get(key) in (None, "")]
     if missing:
         raise ValueError(f"observed execution receipt missing fields: {missing}")
+
+    selected = routing_decision.policy_metadata.get("selected_implementation")
+    selected_skill_id = (
+        selected.get("skill_id")
+        if isinstance(selected, Mapping)
+        else None
+    )
+    if selected_skill_id:
+        if str(receipt.get("skill_id") or "") != str(selected_skill_id):
+            raise PermissionError("receipt/routing skill identity mismatch")
+    elif receipt.get("skill_id") not in (None, ""):
+        raise PermissionError("receipt declares skill_id for a non-skill implementation")
 
     if str(receipt["decision_id"]) != str(canonical.harness_decision_id):
         raise PermissionError("receipt/canonical Harness decision mismatch")
