@@ -154,6 +154,7 @@ class OpenCodeNativeAIProviderError(AIProviderError):
             "retry_count": int(self.details.get("retry_count") or 0),
             "profile_version": self.details.get("profile_version"),
             "profile_content_ref": self.details.get("profile_content_ref"),
+            "tool_events": self.details.get("tool_events"),
         }
 
 
@@ -310,11 +311,12 @@ class OpenCodeNativeAIProvider:
                 timeout=300,
                 check=False,
                 cwd=tmp,
-                env=build_semantic_text_only_env(),
+                env=dict(os.environ),
             )
 
         parts: list[str] = []
         tool_call_count = 0
+        tool_events: list[dict[str, Any]] = []
         parse_errors = 0
         for raw in process.stdout.splitlines():
             if not raw.strip():
@@ -327,6 +329,24 @@ class OpenCodeNativeAIProvider:
             event_type = str(item.get("type") or "")
             if event_type in {"tool_use", "tool_call", "tool"}:
                 tool_call_count += 1
+                part = item.get("part") if isinstance(item.get("part"), dict) else {}
+                state = part.get("state") if isinstance(part.get("state"), dict) else {}
+                tool_events.append({
+                    "event_type": event_type,
+                    "tool": str(
+                        item.get("tool")
+                        or item.get("name")
+                        or part.get("tool")
+                        or part.get("name")
+                        or ""
+                    )[:120],
+                    "status": str(
+                        item.get("status")
+                        or part.get("status")
+                        or state.get("status")
+                        or ""
+                    )[:80],
+                })
             if event_type == "text":
                 part = item.get("part") or {}
                 value = part.get("text")
@@ -343,6 +363,7 @@ class OpenCodeNativeAIProvider:
                     "canonical_model": canonical_model,
                     "profile_version": self.profile_version,
                     "profile_content_ref": self.profile_content_ref,
+                    "tool_events": tool_events[:8],
                 },
             )
         if process.returncode != 0 or not answer:
