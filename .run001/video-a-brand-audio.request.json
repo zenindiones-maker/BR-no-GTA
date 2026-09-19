@@ -14,8 +14,8 @@
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 3,
-  "retry_reason": "Generate a fresh brand checkpoint with the human-approved Fluid 2 opening profile; preserve G-brand-mixed as the separately locked final end signature.",
+  "attempt": 4,
+  "retry_reason": "Re-run after locking Fluid 2 as selected opening and disabling redundant Telegram audition; final end remains the human-approved G-brand-mixed signature.",
   "selected_opening_take_id": "take-2",
   "selected_opening_profile": {
     "reference": "I-opening-fluid-2.mp3",
@@ -27,5 +27,6 @@
     "sample_id": "G-brand-mixed",
     "status": "HUMAN_APPROVED",
     "automatic_substitution_allowed": false
-  }
+  },
+  "base_head": "71885f8b6e3e10598b6202b6e8cea99a98adf83e"
 }
