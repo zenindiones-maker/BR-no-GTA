@@ -138,7 +138,7 @@ jobs:
           status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-pronunciation-review.json'))['status'])")"
           if [ "$status" != "READY" ]; then exit 0; fi
           sent=0
-          for audio in runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3; do
+          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3; do
             curl --fail-with-body --silent --show-error \
               -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendAudio" \
               -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
