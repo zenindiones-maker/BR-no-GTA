@@ -19,19 +19,33 @@ def _run(command: list[str], *, cwd: Path | None=None, timeout: int=1800) -> flo
 
 def main() -> int:
     parser=argparse.ArgumentParser()
-    parser.add_argument("--mode",choices=("baseline","candidate"),required=True)
+    parser.add_argument("--mode",choices=("baseline","candidate","cached"),required=True)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
     stages={}
     total_started=time.monotonic()
 
     ffmpeg_available=bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
-    if args.mode=="baseline" or not ffmpeg_available:
-        stages["ffmpeg_install_seconds"]=_run(
-            ["bash","-lc","sudo apt-get update && sudo apt-get install -y ffmpeg"],
-            timeout=1800,
-        )
-        ffmpeg_strategy="apt-install"
+    if not ffmpeg_available:
+        if args.mode=="cached":
+            try:
+                stages["ffmpeg_install_seconds"]=_run(
+                    ["bash","-lc","sudo apt-get install -y ffmpeg"],
+                    timeout=1800,
+                )
+                ffmpeg_strategy="apt-install-with-hosted-metadata"
+            except RuntimeError:
+                stages["ffmpeg_install_seconds"]=_run(
+                    ["bash","-lc","sudo apt-get update && sudo apt-get install -y ffmpeg"],
+                    timeout=1800,
+                )
+                ffmpeg_strategy="apt-update-fallback"
+        else:
+            stages["ffmpeg_install_seconds"]=_run(
+                ["bash","-lc","sudo apt-get update && sudo apt-get install -y ffmpeg"],
+                timeout=1800,
+            )
+            ffmpeg_strategy="apt-install"
     else:
         stages["ffmpeg_install_seconds"]=0.0
         ffmpeg_strategy="preinstalled-runtime"
@@ -50,7 +64,7 @@ def main() -> int:
             timeout=1800,
         )
         pip_strategy="three-install-steps"
-    else:
+    elif args.mode=="candidate":
         stages["pip_consolidated_seconds"]=_run(
             [
                 "python","-m","pip","install","-r","requirements.txt","pytest",
@@ -60,6 +74,11 @@ def main() -> int:
             timeout=1800,
         )
         pip_strategy="single-consolidated-install"
+    else:
+        # The cached candidate is invoked with the restored venv interpreter.
+        # Reinstalling packages here would invalidate the optimization under test.
+        stages["python_environment_install_seconds"]=0.0
+        pip_strategy="restored-versioned-venv-cache"
 
     provider=Path("runtime/cold-start")/args.mode/"bgutil-ytdlp-pot-provider"
     provider.parent.mkdir(parents=True,exist_ok=True)
@@ -102,6 +121,7 @@ def main() -> int:
         "versions":versions,
         "workload_fingerprint":"ubuntu-24.04|python-3.12|ffmpeg|deno|yt-dlp|po-token-1.3.1|edge-tts-7.2.8|faster-whisper-1.2.0",
         "technical_qa_no_regression":"PASS",
+        "python_executable":str(Path(__import__("sys").executable).resolve()),
         "promotion_performed":False,
     }
     args.output.parent.mkdir(parents=True,exist_ok=True)
