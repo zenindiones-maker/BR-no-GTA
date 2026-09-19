@@ -1,6 +1,6 @@
 {
-  "requested_from_head": "7523bed316540ade2e01066632d6d2b1e1763f1f",
-  "reason": "single delegated autonomy rerun after trusted Codex auth boundary validation",
+  "requested_from_head": "2c61dff3217730b73852244fce18b5fe26560785",
+  "reason": "single rerun after previous device-auth code expired; private Telegram delivery enabled",
   "focused_validation_run_id": 35465154603,
   "focused_tests": [
     "tests/test_codex_auth_boundary.py",
@@ -9,6 +9,7 @@
   ],
   "codex_auth_boundary_tests": "PASS",
   "deterministic_delegation_gates": "PASS",
-  "auth_bootstrap": "same_runner_device_auth_if_no_supported_session",
+  "auth_bootstrap": "same_runner_device_auth_private_delivery",
+  "user_code_delivery": "PRIVATE_TELEGRAM",
   "requested_canary_count": 1
 }
