@@ -6,6 +6,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - '.github/workflows/addy-24-live-semantic-smoke.yml'
+      - '.run001/addy-24-live-semantic.request.json'
   workflow_dispatch:
 
 permissions:
@@ -23,8 +24,8 @@ jobs:
     env:
       PYTHONPATH: .
       BR_TEST_DATABASE: /tmp/addy-24-live-semantic.db
-      MAX_TOTAL_TOKENS: '1500000'
-      MAX_TOKENS_PER_TURN: '60000'
+      MAX_TOTAL_TOKENS: '192000'
+      MAX_TOKENS_PER_TURN: '8000'
       LIVE_PARALLELISM: '4'
 
     steps:
