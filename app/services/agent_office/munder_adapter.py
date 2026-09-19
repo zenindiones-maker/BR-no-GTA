@@ -28,6 +28,7 @@ from app.services.agent_office.codex_bounded_worker import (
 from app.services.agent_office.addy_task_owner_worker import (
     addy_specialist_task_owner_worker,
 )
+from app.services.performance_telemetry_service import emit_performance_event
 
 
 WorkerRunner = Callable[..., dict[str, Any]]
@@ -315,6 +316,8 @@ class MunderAdapter:
         event_sink: EventSink | None,
     ) -> dict[str, Any]:
         lease.assert_active()
+        task_started_at = _utc_now()
+        task_started_ns = time.perf_counter_ns()
         task_started = time.perf_counter()
         if event_sink:
             event_sink(
@@ -455,6 +458,54 @@ class MunderAdapter:
                     "retry_count": result.get("retry_count", 0),
                 },
             )
+        task_finished_ns = time.perf_counter_ns()
+        specialist = result.get("specialist") if isinstance(result.get("specialist"), dict) else {}
+        emit_performance_event(
+            stage=f"agent-office.task.{task.task_id}",
+            category="AGENT_EXECUTION_TIME",
+            started_at=task_started_at,
+            finished_at=_utc_now(),
+            started_monotonic_ns=task_started_ns,
+            finished_monotonic_ns=task_finished_ns,
+            duration_ms=(task_finished_ns - task_started_ns) / 1_000_000.0,
+            retry_count=int(result.get("retry_count") or 0),
+            attempt_count=int(result.get("attempt_count") or 1),
+            input_size=len(task.objective.encode("utf-8")),
+            output_size=len(json.dumps(result, default=str).encode("utf-8")),
+            provider=specialist.get("semantic_provider") or (
+                "codex" if task.agent in {"codex", "codex-development"} else None
+            ),
+            model=specialist.get("semantic_model"),
+            success=result.get("status") == "SUCCEEDED",
+            failure_type=None if result.get("status") == "SUCCEEDED" else str(result.get("error") or "task_failed")[:160],
+            trace_id=spec.mission_id,
+            span_id=sha256(f"{spec.mission_id}:task:{task.task_id}".encode()).hexdigest()[:32],
+            parent_span_id=sha256(f"{spec.mission_id}:mission".encode()).hexdigest()[:32],
+            goal_id=spec.goal_id,
+            execution_id=spec.execution_id,
+            agent_id=task.agent,
+            capability_id=task.capability,
+            mission_id=spec.mission_id,
+            task_id=task.task_id,
+            delegation_id=lease.delegation_id,
+            authorization_id=lease.authorization_id,
+            depends_on_span_ids=[
+                sha256(f"{spec.mission_id}:task:{dependency}".encode()).hexdigest()[:32]
+                for dependency in task.depends_on
+            ],
+            metadata={
+                "role": lease.role,
+                "owned_task_class": lease.owned_task_class,
+                "artifact_ref": artifact_ref,
+                "tool_call_budget": lease.tool_call_budget,
+                "retry_budget": lease.retry_budget,
+                "context_build_ms": (
+                    result.get("usage", {}).get("context_build_ms")
+                    if isinstance(result.get("usage"), dict)
+                    else None
+                ),
+            },
+        )
         return result
 
     def execute(
@@ -467,6 +518,7 @@ class MunderAdapter:
         event_sink: EventSink | None = None,
     ) -> AgentOfficeExecutionResult:
         started_at = _utc_now()
+        mission_started_ns = time.perf_counter_ns()
         start_tick = self._clock()
         mission_errors: list[str] = []
         per_agent: list[dict[str, Any]] = []
@@ -717,6 +769,39 @@ class MunderAdapter:
                     "TASK_FAILED",
                     {"reason": "mission terminated before task completion"},
                 )
+        mission_finished_ns = time.perf_counter_ns()
+        emit_performance_event(
+            stage="agent-office.mission.execute",
+            category="COORDINATION_OVERHEAD_TIME",
+            started_at=started_at,
+            finished_at=_utc_now(),
+            started_monotonic_ns=mission_started_ns,
+            finished_monotonic_ns=mission_finished_ns,
+            duration_ms=(mission_finished_ns - mission_started_ns) / 1_000_000.0,
+            retry_count=sum(int(item.get("retry_count") or 0) for item in per_agent),
+            attempt_count=1,
+            input_size=len(json.dumps([task.to_dict() for task in tasks], default=str).encode("utf-8")),
+            output_size=len(json.dumps(evidence, default=str).encode("utf-8")),
+            success=status == "SUCCEEDED",
+            failure_type=None if status == "SUCCEEDED" else status,
+            trace_id=spec.mission_id,
+            span_id=sha256(f"{spec.mission_id}:mission".encode()).hexdigest()[:32],
+            goal_id=spec.goal_id,
+            execution_id=spec.execution_id,
+            agent_id="agent-office-coordinator",
+            capability_id="agent-office.execute",
+            mission_id=spec.mission_id,
+            delegation_id=spec.delegation_id,
+            authorization_id=spec.harness_authorization_id,
+            metadata={
+                "critical_path_ms": round(critical_path_ms, 3),
+                "cumulative_work_ms": round(cumulative_task_ms, 3),
+                "parallelism_saved_ms": round(parallelism_saved_ms, 3),
+                "coordination_overhead_ms": round(coordination_overhead_ms, 3),
+                "parallel_task_count": parallel_task_count,
+                "serial_task_count": serial_task_count,
+            },
+        )
         return AgentOfficeExecutionResult(
             execution_id=spec.execution_id,
             status=status,
