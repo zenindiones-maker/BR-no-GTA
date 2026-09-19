@@ -12,6 +12,9 @@ from scripts.telegram_video_review_worker import _sha256, _single_mp4, build_rev
 
 
 READY_FOR_HUMAN_REVIEW = "READY_FOR_HUMAN_REVIEW"
+STANDARD_BOT_API_BASE_URL = "https://api.telegram.org"
+STANDARD_BOT_API_MAX_UPLOAD_BYTES = 49_000_000
+LOCAL_BOT_API_MAX_UPLOAD_BYTES = 2_000_000_000
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -21,11 +24,15 @@ def _load_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _send_video(*, token: str, chat_id: str, video: Path, caption: str) -> dict[str, Any]:
+def _telegram_endpoint(*, api_base_url: str, token: str, method: str) -> str:
+    return f"{api_base_url.rstrip('/')}/bot{token}/{method}"
+
+
+def _send_video(*, token: str, chat_id: str, video: Path, caption: str, api_base_url: str) -> dict[str, Any]:
     try:
         with video.open("rb") as handle:
             response = requests.post(
-                f"https://api.telegram.org/bot{token}/sendVideo",
+                _telegram_endpoint(api_base_url=api_base_url, token=token, method="sendVideo"),
                 data={"chat_id": chat_id, "caption": caption, "supports_streaming": "true"},
                 files={"video": (video.name, handle, "video/mp4")},
                 timeout=180,
@@ -43,6 +50,31 @@ def _send_video(*, token: str, chat_id: str, video: Path, caption: str) -> dict[
     message = payload.get("result")
     if not isinstance(message, dict) or not isinstance(message.get("message_id"), int):
         raise RuntimeError("Telegram render review returned no message identity")
+    return message
+
+
+def _send_document(*, token: str, chat_id: str, document: Path, caption: str, api_base_url: str) -> dict[str, Any]:
+    try:
+        with document.open("rb") as handle:
+            response = requests.post(
+                _telegram_endpoint(api_base_url=api_base_url, token=token, method="sendDocument"),
+                data={"chat_id": chat_id, "caption": caption},
+                files={"document": (document.name, handle, "video/mp4")},
+                timeout=600,
+            )
+    except requests.RequestException:
+        raise RuntimeError("Telegram master document transport failed") from None
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Telegram master document returned HTTP {response.status_code}") from exc
+    if not response.ok or not payload.get("ok"):
+        description = str(payload.get("description") or "Telegram API failure")
+        description = description.replace(token, "***")[:300]
+        raise RuntimeError(f"Telegram master document delivery failed: {description}")
+    message = payload.get("result")
+    if not isinstance(message, dict) or not isinstance(message.get("message_id"), int):
+        raise RuntimeError("Telegram master document returned no message identity")
     return message
 
 
@@ -99,13 +131,25 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
             raise RuntimeError("WATERMARK_QA requires watermark to start after intro")
         gates.update(INTRO_QA="PASS", WATERMARK_QA="PASS")
 
-    proxy, proxy_evidence = build_review_proxy(
-        source,
-        artifact_root.parent / "review-proxy" / str(job.get("execution_id")),
+    api_base_url = (os.getenv("TELEGRAM_BOT_API_BASE_URL") or STANDARD_BOT_API_BASE_URL).strip()
+    max_upload_bytes = (
+        LOCAL_BOT_API_MAX_UPLOAD_BYTES
+        if api_base_url.rstrip("/") != STANDARD_BOT_API_BASE_URL
+        else STANDARD_BOT_API_MAX_UPLOAD_BYTES
     )
+    master_size_bytes = source.stat().st_size
+    master_transport_available = master_size_bytes <= max_upload_bytes
+    proxy = None
+    proxy_evidence = None
+    if not master_transport_available:
+        proxy, proxy_evidence = build_review_proxy(
+            source,
+            artifact_root.parent / "review-proxy" / str(job.get("execution_id")),
+        )
     duration = qa.get("duration_seconds")
     if is_professional:
         review_label = f"VIDEO {product_label} — REVISÃO — NÃO PUBLICAR"
+        transport_label = "MASTER 1080P SEM RECOMPRESSÃO" if master_transport_available else "PREVIEW COMPRIMIDO — MASTER YOUTUBE PRESERVADO"
         gate_lines = "\n".join(f"{name}=PASS" for name in (
             "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "NO_PADDING_QA", "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA"
         ))
@@ -117,6 +161,7 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
             f"run_id={run_id}\n"
             f"duração={duration}s\n"
             f"versão={product_version}\n"
+            f"transporte={transport_label}\n"
             f"{gate_lines}\n"
             "HUMAN_EDITORIAL_APPROVAL=PENDING\n"
             f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
@@ -124,16 +169,36 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         )
     else:
         review_label = "BR NO GTA — REVISÃO DE RENDER — NÃO PUBLICAR"
+        transport_label = "MASTER SEM RECOMPRESSÃO" if master_transport_available else "PREVIEW COMPRIMIDO — MASTER PRESERVADO"
         caption = (
             f"{review_label}\nvideo_id={job.get('video_id')}\nrender_job_id={job.get('render_job_id')}\n"
             f"execution_id={job.get('execution_id')}\nasset_ids=1,2\nrun_id={run_id}\n"
             f"intro={branding.get('intro_duration_seconds')}s\n"
+            f"transporte={transport_label}\n"
             f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
             "PUBLICATION_AUTHORITY=NONE"
         )
 
-    message = _send_video(token=token, chat_id=review_chat_id, video=proxy, caption=caption)
-    telegram_video = message.get("video") if isinstance(message.get("video"), dict) else {}
+    if master_transport_available:
+        message = _send_document(
+            token=token,
+            chat_id=review_chat_id,
+            document=source,
+            caption=caption,
+            api_base_url=api_base_url,
+        )
+        delivery_mode = "MASTER_DOCUMENT_BYTE_IDENTICAL"
+        telegram_media = message.get("document") if isinstance(message.get("document"), dict) else {}
+    else:
+        message = _send_video(
+            token=token,
+            chat_id=review_chat_id,
+            video=proxy,
+            caption=caption,
+            api_base_url=api_base_url,
+        )
+        delivery_mode = "COMPRESSED_REVIEW_PROXY"
+        telegram_media = message.get("video") if isinstance(message.get("video"), dict) else {}
     result = {
         "status": "DELIVERED",
         "telegram_review_delivery": "PASS",
@@ -151,9 +216,15 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         "human_review_state": READY_FOR_HUMAN_REVIEW,
         "review_chat_id": review_chat_id,
         "telegram_message_id": message["message_id"],
-        "telegram_video_file_id": telegram_video.get("file_id"),
-        "telegram_video_file_unique_id": telegram_video.get("file_unique_id"),
+        "telegram_media_file_id": telegram_media.get("file_id"),
+        "telegram_media_file_unique_id": telegram_media.get("file_unique_id"),
+        "delivery_mode": delivery_mode,
+        "api_base_url_mode": "LOCAL" if api_base_url.rstrip("/") != STANDARD_BOT_API_BASE_URL else "OFFICIAL",
+        "max_upload_bytes": max_upload_bytes,
+        "master_size_bytes": master_size_bytes,
         "master_sha256": _sha256(source),
+        "master_delivered_byte_identical": master_transport_available,
+        "master_transport_blocker": None if master_transport_available else "TELEGRAM_BOT_API_UPLOAD_LIMIT",
         "proxy": proxy_evidence,
         "boundary": "REVIEW_ONLY_NO_PUBLICATION_AUTHORITY",
     }
@@ -178,6 +249,8 @@ def main() -> int:
         print("HUMAN_EDITORIAL_APPROVAL=PENDING")
     print(f"HUMAN_REVIEW_STATE={result['human_review_state']}")
     print(f"TELEGRAM_MESSAGE_ID={result['telegram_message_id']}")
+    print(f"TELEGRAM_DELIVERY_MODE={result['delivery_mode']}")
+    print(f"MASTER_DELIVERED_BYTE_IDENTICAL={'YES' if result['master_delivered_byte_identical'] else 'NO'}")
     print("PUBLICATION_AUTHORITY=NONE")
     return 0
 
