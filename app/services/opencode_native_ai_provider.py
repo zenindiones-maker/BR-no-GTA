@@ -319,6 +319,7 @@ class OpenCodeNativeAIProvider:
         process = None
         timed_out = threading.Event()
         stderr_text = ""
+        stdout_log_hasher = sha256()
 
         with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
             stderr_path = Path(tmp) / "stderr.log"
@@ -355,6 +356,7 @@ class OpenCodeNativeAIProvider:
                         )
                     for raw in process.stdout:
                         observed_ns = time.perf_counter_ns()
+                        stdout_log_hasher.update(raw.encode("utf-8", errors="replace"))
                         if not raw.strip():
                             continue
                         parse_started_ns = time.perf_counter_ns()
@@ -496,9 +498,13 @@ class OpenCodeNativeAIProvider:
                 details={
                     "failure_code": "same_runner_native_execution_failed",
                     "exit_code": process.returncode,
-                    "log_sha256": sha256(
-                        (process.stdout + "\n" + safe_stderr).encode("utf-8")
-                    ).hexdigest(),
+                    "log_sha256": (
+                        lambda digest: (
+                            digest.update(b"\n"),
+                            digest.update(safe_stderr.encode("utf-8", errors="replace")),
+                            digest.hexdigest(),
+                        )[-1]
+                    )(stdout_log_hasher.copy()),
                     "canonical_model": canonical_model,
                     "profile_version": self.profile_version,
                     "profile_content_ref": self.profile_content_ref,
