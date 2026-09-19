@@ -12,6 +12,7 @@ from app.services.global_capability_registry import (
 from app.services.global_capability_registry_base import GlobalCapabilityRegistry
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.monetization_observability_service import MONETIZATION_CAPABILITY_ID
+from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
 
 HARNESS_AUTHORITY = "DEEPSEEK_HARNESS"
@@ -213,3 +214,116 @@ def execute_system_improvement_proposal(capability: Any, payload: dict[str, Any]
         required_gates=("evidence", "tests", "human_or_harness_review", "commit", "ci", "explicit_activation"),
     )
     return proposal.to_dict()
+
+
+
+def execute_system_improvement_via_harness(
+    *,
+    authorization: Any,
+    routing_decision: Any,
+    payload: dict[str, Any],
+):
+    """Observed proposal-only improvement execution under the sole Harness boundary."""
+    from app.services.harness_authorization_service import (
+        resolve_harness_authorization,
+        validate_harness_authorization,
+    )
+    from app.services.harness_capability_service import CapabilityEvidence, execute_capability
+    from app.services.harness_episode_capture_service import capture_canonical_execution_episode
+
+    record = SYSTEM_IMPROVEMENT_RECORD
+    auth = resolve_harness_authorization(authorization)
+    auth = validate_harness_authorization(
+        auth,
+        expected_action="DEVELOPMENT",
+        expected_subject=f"capability:{record.capability_id}",
+    )
+    if routing_decision.selected_capability_id != record.capability_id:
+        raise PermissionError("system improvement routing capability mismatch")
+    if routing_decision.selected_executor_binding != record.executor_binding:
+        raise PermissionError("system improvement routing executor mismatch")
+    lineage = dict(auth.lineage or {})
+    if lineage.get("routing_id") != routing_decision.routing_id:
+        raise PermissionError("system improvement authorization routing mismatch")
+    if lineage.get("capability_id") != record.capability_id:
+        raise PermissionError("system improvement authorization capability mismatch")
+
+    mission_id = str(payload.get("mission_id") or "").strip()
+    task_id = str(payload.get("task_id") or "").strip()
+    goal_id = str(payload.get("goal_id") or "").strip()
+    if not mission_id or not task_id or not goal_id:
+        raise ValueError("mission_id, task_id and goal_id are required")
+    gaps = tuple(str(item).strip() for item in (payload.get("gaps") or ()) if str(item).strip())
+    if not gaps:
+        raise ValueError("observed gaps are required")
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    execution = execute_capability(
+        capability_id=record.capability_id,
+        authorization=auth,
+        payload=payload,
+        routing_decision=routing_decision,
+        executor=execute_system_improvement_proposal,
+    )
+    finished_at = datetime.now(timezone.utc).isoformat()
+    evidence_refs = tuple(
+        dict.fromkeys(
+            str(item).strip()
+            for item in (payload.get("evidence_refs") or ())
+            if str(item).strip()
+        )
+    ) or (f"system-improvement-input:{mission_id}:{task_id}",)
+
+    if execution.status != "EXECUTED" or not isinstance(execution.result, dict):
+        raise RuntimeError("system improvement proposal did not execute")
+
+    output_ref = f"system-improvement:{mission_id}:{task_id}"
+    receipt = AgentInvocationReceipt(
+        mission_id=mission_id,
+        task_id=task_id,
+        goal_id=goal_id,
+        decision_id=auth.harness_decision_id,
+        authorization_id=auth.authorization_id,
+        agent_id=str(record.agent_id or "system-improvement-agent"),
+        capability=record.capability_id,
+        executor=str(record.executor_binding),
+        provider=str(record.provider),
+        input_refs=evidence_refs,
+        output_refs=(output_ref,),
+        evidence_refs=evidence_refs,
+        started_at=started_at,
+        finished_at=finished_at,
+        status="COMPLETED",
+        validation_level="LIVE",
+        external_call_performed=False,
+        exit_code=0,
+        returned_to_harness=True,
+    )
+    wrapped = CapabilityEvidence(
+        capability_id=execution.capability_id,
+        provider=execution.provider,
+        status=execution.status,
+        active=execution.active,
+        authority=execution.authority,
+        authorized_action=execution.authorized_action,
+        harness_decision_id=execution.harness_decision_id,
+        execution_id=execution.execution_id,
+        result={**execution.result, "receipt": receipt.to_dict()},
+        boundary=record.security_boundary,
+    )
+    canonical = wrapped.to_canonical_result(
+        authorization_id=auth.authorization_id,
+        routing_id=routing_decision.routing_id,
+        tool="system-improvement",
+        operation="propose",
+        executor=str(record.executor_binding),
+    )
+    capture_canonical_execution_episode(
+        canonical,
+        routing_decision=routing_decision,
+        domain=record.domain,
+        task_class=str(payload.get("task_class") or "system-improvement-review"),
+        skill_version=record.version,
+        source_versions={f"capability:{record.capability_id}": str(record.version)},
+    )
+    return canonical
