@@ -106,5 +106,7 @@ def test_take_profiles_lock_human_approved_fluid2_opening_and_g_final_end():
     assert contract["human_approved_final_end_sample_id"]=="G-brand-mixed"
     assert contract["production_opening_take_ids"]==["take-2"]
     assert contract["production_closing_policy"]=="immutable-human-approved-G-brand-mixed"
-    assert "no automatic" in contract["selection_rule"].lower()
+    rule=contract["selection_rule"].lower()
+    assert "no alternate voice" in rule
+    assert "active runtime contract" in rule
     assert contract["cache_policy"]["closing_fixed_reusable"] is True
