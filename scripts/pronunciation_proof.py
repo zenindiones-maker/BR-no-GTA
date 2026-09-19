@@ -13,6 +13,7 @@ FLUIDITY_PROFILES=(
     {"take_id":"fluid-2","rate":"+3%","pitch":"+1Hz","synthesis_text":"Boa meu povo! Aqui é BR no GTA 6 e vamos ver as novidades de hoje."},
     {"take_id":"fluid-3","rate":"+2%","pitch":"+0Hz","synthesis_text":"Boa, meu povo! Aqui é BR no GTA 6 e vamos ver as novidades de hoje."},
 )
+CANONICAL_FLUID2_PROFILE={"take_id":"fluid-2","rate":"+3%","pitch":"+1Hz"}
 
 SAMPLES=(
     ("A-control-ptbr","A análise separa fatos confirmados de rumores."),
@@ -111,6 +112,25 @@ def main()->int:
             "probe":_probe(output),
         })
 
+    canonical_fluid2_output=samples_dir/"J-opening-canonical-fluid2.mp3"
+    canonical_fluid2_metrics=asyncio.run(synthesize_edge_plan(
+        opening_plan,
+        voice=DEFAULT_VOICE,
+        rate=CANONICAL_FLUID2_PROFILE["rate"],
+        pitch=CANONICAL_FLUID2_PROFILE["pitch"],
+        output=canonical_fluid2_output,
+    ))
+    canonical_fluid2={
+        "take_id":CANONICAL_FLUID2_PROFILE["take_id"],
+        "rate":CANONICAL_FLUID2_PROFILE["rate"],
+        "pitch":CANONICAL_FLUID2_PROFILE["pitch"],
+        "canonical_text":opening_text,
+        "plan":opening_plan.to_dict(),
+        "edge_metrics":canonical_fluid2_metrics,
+        "probe":_probe(canonical_fluid2_output),
+        "basis":"human-approved I-opening-fluid-2 prosody applied to exact canonical opening text",
+    }
+
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
     closing_timing=closing["edge_metrics"]["timing"]
@@ -171,6 +191,14 @@ def main()->int:
             and all(item["plan"]["foreign_span_count"]==0 for item in fluidity_takes)
             and all("gê tê á seis" in "".join(span["synthesis_text"] for span in item["plan"]["spans"]) for item in fluidity_takes)
         ),
+        "OPENING_CANONICAL_FLUID2_GENERATED":(
+            canonical_fluid2["probe"]["size_bytes"]>0
+            and canonical_fluid2["probe"]["full_decode"] is True
+            and canonical_fluid2["plan"]["canonical_text"]==opening_text
+            and canonical_fluid2["plan"]["canonical_text_preserved"] is True
+            and canonical_fluid2["rate"]=="+3%"
+            and canonical_fluid2["pitch"]=="+1Hz"
+        ),
         "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
         "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
@@ -182,7 +210,7 @@ def main()->int:
     if not all(checks.values()): raise RuntimeError("pronunciation proof failed:"+",".join(k for k,v in checks.items() if not v))
     evidence={
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
-        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"checks":checks,
+        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"canonical_opening_fluid2_candidate":canonical_fluid2,"checks":checks,
         "timing_quality":{"vice_city_join_gap_seconds":vice_city_join_gap_seconds,"max_allowed_seconds":0.15},
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
@@ -208,11 +236,17 @@ def main()->int:
                     "basis":"human review required for timing, warmth, energy and naturality; technical metrics cannot auto-select a winner",
                 },
                 "opening-fluidity":{
-                    "status":"PENDING",
+                    "status":"APPROVED_REFERENCE",
+                    "selected_take_id":"fluid-2",
+                    "selected_file":"I-opening-fluid-2.mp3",
+                    "rate":"+3%",
+                    "pitch":"+1Hz",
                     "spoken_words":FLUIDITY_TEXT,
                     "sample_ids":[item["take_id"] for item in fluidity_takes],
                     "files":[f"I-opening-{item['take_id']}.mp3" for item in fluidity_takes],
-                    "basis":"user-supplied smoother opening wording; no automatic promotion until human listening review",
+                    "basis":"human review selected Fluid 2 as the best current fluency reference on 2026-09-19",
+                    "promotion_scope":"prosody reference only; exact canonical opening remains pending final listening review",
+                    "canonical_candidate_file":"J-opening-canonical-fluid2.mp3",
                 },
             },
         },
@@ -227,7 +261,9 @@ def main()->int:
             "opening_take_external_calls":[item["edge_metrics"]["external_calls"] for item in opening_takes],
             "opening_take_durations_seconds":[item["probe"]["duration_seconds"] for item in opening_takes],
             "fluidity_take_external_calls":[item["edge_metrics"]["external_calls"] for item in fluidity_takes],
-            "fluidity_take_durations_seconds":[item["probe"]["duration_seconds"] for item in fluidity_takes]
+            "fluidity_take_durations_seconds":[item["probe"]["duration_seconds"] for item in fluidity_takes],
+            "canonical_fluid2_external_calls":canonical_fluid2["edge_metrics"]["external_calls"],
+            "canonical_fluid2_duration_seconds":canonical_fluid2["probe"]["duration_seconds"]
         },
         "JOB18_UNCHANGED":"YES","PUBLICATION_AUTHORITY_UNCHANGED":"YES",
     }
