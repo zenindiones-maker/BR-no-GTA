@@ -43,7 +43,6 @@ def _sandbox(
         [
             "codex",
             "sandbox",
-            "linux",
             "--permissions-profile",
             permission_profile,
             "-C",
