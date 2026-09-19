@@ -40,6 +40,9 @@ from app.services.render_media_materializer import materialize_scenes
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
 PROFILE = "professional_ptbr_v1"
+YOUTUBE_MASTER_PROFILE = "youtube_sdr_1080p30_v1"
+YOUTUBE_MASTER_RESOLUTION = "1920x1080"
+SUBTITLES_DEFAULT_ENABLED = False
 VOICE_CAPABILITY_ID = "narration.generate.pt-BR"
 VOICE_EXECUTOR = "app.services.narration_pipeline.execute_narration_capability"
 ALLOWED_CLASSES = {"OFFICIAL_FACT", "OFFICIAL_STATEMENT", "STORE_CURRENT", "ANALYSIS", "NOT_CONFIRMED"}
@@ -241,6 +244,24 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
         validate_job_spoken_branding(job)
     except ValueError as exc:
         raise WorkerError(f"spoken branding contract invalid: {exc}") from exc
+
+    render = job.get("render")
+    if not isinstance(render, dict):
+        raise WorkerError("professional render configuration is required")
+    if render.get("resolution") != YOUTUBE_MASTER_RESOLUTION:
+        raise WorkerError("YouTube master must render at 1920x1080")
+    if render.get("fps") != 30.0:
+        raise WorkerError("YouTube master must render at 30 fps")
+    if (render.get("container"), render.get("video_codec"), render.get("audio_codec")) != ("mp4", "h264", "aac"):
+        raise WorkerError("YouTube master must use MP4/H.264/AAC")
+    if render.get("delivery_profile") != YOUTUBE_MASTER_PROFILE:
+        raise WorkerError("professional render must use the governed YouTube master profile")
+    subtitles = job.get("subtitles")
+    if subtitles is not None:
+        if not isinstance(subtitles, dict):
+            raise WorkerError("subtitles configuration must be an object")
+        if subtitles.get("enabled") is True:
+            raise WorkerError("burned/open subtitles are disabled; YouTube captions are the channel default")
 
     narration = job.get("narration")
     if not isinstance(narration, dict):
@@ -599,16 +620,6 @@ def _build_edit_plan(
         role="spoken_channel_opening",
         fit="cover",
     ))
-    texts.append(EditText(
-        text=brand_contract["opening_text"],
-        start_seconds=0.0,
-        duration_seconds=opening_duration,
-        track="BRAND_CAPTIONS",
-        font_size=38,
-        color="white",
-        align="center",
-        box=True,
-    ))
     expanded_scenes.append({
         "order":segment_id,
         "segment_id":segment_id,
@@ -656,30 +667,6 @@ def _build_edit_plan(
             duration_seconds=min(3.5, max(0.8, section_duration - min(4.2, section_duration * 0.2))),
             track="T2", font_size=34, color="white", align="center", box=True,
         ))
-
-        native_cues = list(voice.get("caption_cues") or [])
-        if native_cues:
-            for cue in native_cues:
-                cue_start = section_start + float(cue["start_seconds"])
-                cue_end = section_start + float(cue["end_seconds"])
-                texts.append(EditText(
-                    text=str(cue["text"]), start_seconds=cue_start,
-                    duration_seconds=max(0.35, cue_end - cue_start), track="CAPTIONS", font_size=38,
-                    color="white", align="center", box=True,
-                ))
-        else:
-            sentences = _caption_chunks(section["narration"])
-            sentence_words = [max(1, len(_words(sentence))) for sentence in sentences]
-            total_sentence_words = sum(sentence_words)
-            caption_cursor = section_start
-            for sentence, count in zip(sentences, sentence_words):
-                duration = section_duration * count / total_sentence_words
-                texts.append(EditText(
-                    text=sentence, start_seconds=caption_cursor,
-                    duration_seconds=max(0.35, duration), track="CAPTIONS", font_size=38,
-                    color="white", align="center", box=True,
-                ))
-                caption_cursor += duration
 
         remaining = section_duration
         local_offset = 0.0
@@ -867,6 +854,15 @@ def _build_edit_plan(
             "source_audio_policy": "MUTED_VISUAL_SOURCE_AUDIO_A1_ONLY",
             "semantic_media_selection": "MediaKnowledge/WhisperX evidence-derived visual candidates",
             "spoken_branding_contract": brand_contract,
+            "subtitle_policy": {
+                "enabled": False,
+                "burned_subtitles": False,
+                "open_captions": False,
+                "transcript_overlay": False,
+                "srt_burn_in": False,
+                "caption_provider": "youtube_native_after_upload",
+            },
+            "delivery_profile": YOUTUBE_MASTER_PROFILE,
             "timeline_sequence": [
                 {
                     "order":1,
@@ -919,7 +915,8 @@ def _build_edit_plan(
         "video_full_coverage": abs(video_end - duration) <= 0.01,
         "max_visual_cut_seconds": max_cut <= MAX_VISUAL_CUT_SECONDS + 0.001,
         "semantic_lineage_per_cut": len(semantic_links) == len(video_clips) and all(item["evidence_ids"] for item in semantic_links),
-        "captions_present": any(text.track == "CAPTIONS" for text in texts),
+        "subtitles_default_disabled": SUBTITLES_DEFAULT_ENABLED is False,
+        "burned_subtitles_disabled": not any(text.track in {"CAPTIONS", "BRAND_CAPTIONS"} for text in texts),
         "official_intro_first": plan.metadata["timeline_sequence"][0]["phase"] == "official_intro" and plan.metadata["timeline_sequence"][0]["asset_id"] == 1,
         "spoken_opening_after_intro": plan.metadata["timeline_sequence"][1]["phase"] == "spoken_channel_opening",
         "voice_b_used": brand_contract["official_voice_profile"] == "Voice B",
