@@ -15,6 +15,8 @@ from typing import Any
 
 from app.main import initialize_application
 from app.services.edit_plan_service import EditAudio, EditClip, EditPlan, EditQA, EditText, EditTrack
+from app.services.channel_spoken_branding_service import validate_job_spoken_branding
+from app.services.brand_audio_service import prepare_brand_audio, compose_content_voice_master
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.global_capability_registry_base import (
     AVAILABLE,
@@ -234,6 +236,11 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
     identities = sorted((item.get("asset_id"), item.get("asset_type")) for item in brand_assets if isinstance(item, dict))
     if identities != [(1, "intro"), (2, "watermark")]:
         raise WorkerError("official intro ASSET_ID=1 and watermark ASSET_ID=2 are mandatory")
+
+    try:
+        validate_job_spoken_branding(job)
+    except ValueError as exc:
+        raise WorkerError(f"spoken branding contract invalid: {exc}") from exc
 
     narration = job.get("narration")
     if not isinstance(narration, dict):
@@ -549,17 +556,84 @@ def _caption_chunks(text: str, *, max_words: int = 10) -> list[str]:
     return chunks or [text.strip()]
 
 
-def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], source_paths: dict[str, str], *, narration_master_path: str, narration_duration: float) -> tuple[EditPlan, dict[str, Any], list[dict[str, Any]]]:
+def _build_edit_plan(
+    job: dict[str, Any],
+    voice_sections: list[dict[str, Any]],
+    source_paths: dict[str, str],
+    *,
+    narration_master_path: str,
+    narration_duration: float,
+    brand_audio: dict[str, Any] | None = None,
+) -> tuple[EditPlan, dict[str, Any], list[dict[str, Any]]]:
     section_by_id = {item["section_id"]: item for item in voice_sections}
     video_clips: list[EditClip] = []
     audio: list[EditAudio] = []
     texts: list[EditText] = []
     expanded_scenes: list[dict[str, Any]] = []
-    cursor = 0.0
+    brand_contract = validate_job_spoken_branding(job)
+    brand_audio = dict(brand_audio or {})
+    opening_duration = float(brand_audio.get("opening_duration_seconds") or 0.0)
+    closing_duration = float(brand_audio.get("closing_duration_seconds") or 0.0)
+    if opening_duration <= 0 or closing_duration <= 0:
+        raise WorkerError("EDIT_QA: spoken brand opening and closing durations are required")
+    cursor = opening_duration
     segment_id = 1
     cut_pattern_index = 0
     source_usage: dict[str, float] = {}
     semantic_links = []
+
+    first_section = job["script_sections"][0]
+    opening_candidate = first_section["visual_candidates"][0]
+    opening_asset_ref = opening_candidate["asset_ref"]
+    opening_source_start = float(opening_candidate["start_seconds"])
+    opening_available = float(opening_candidate["end_seconds"]) - opening_source_start
+    if opening_available < opening_duration:
+        raise WorkerError("EDIT_QA: opening visual candidate cannot cover spoken brand opening")
+    video_clips.append(EditClip(
+        segment_id=segment_id,
+        media_path=source_paths[opening_asset_ref],
+        track="V1 MAIN",
+        start_seconds=0.0,
+        source_start_seconds=opening_source_start,
+        duration_seconds=opening_duration,
+        role="spoken_channel_opening",
+        fit="cover",
+    ))
+    texts.append(EditText(
+        text=brand_contract["opening_text"],
+        start_seconds=0.0,
+        duration_seconds=opening_duration,
+        track="BRAND_CAPTIONS",
+        font_size=38,
+        color="white",
+        align="center",
+        box=True,
+    ))
+    expanded_scenes.append({
+        "order":segment_id,
+        "segment_id":segment_id,
+        "content_unit_id":segment_id,
+        "section_id":"BRAND_OPENING",
+        "narrative_block":"spoken_channel_opening",
+        "narration":brand_contract["opening_text"],
+        "classification":"CHANNEL_BRANDING",
+        "evidence_ids":["CHANNEL_BRANDING_STANDARD_V1"],
+        "asset_ref":opening_asset_ref,
+        "source_url":next(item["source_url"] for item in job["media_sources"] if item["asset_ref"]==opening_asset_ref),
+        "source_start_seconds":opening_source_start,
+        "source_end_seconds":opening_source_start+opening_duration,
+        "duration_seconds":opening_duration,
+        "media_path":source_paths[opening_asset_ref],
+    })
+    semantic_links.append({
+        "segment_id":segment_id,
+        "section_id":"BRAND_OPENING",
+        "asset_ref":opening_asset_ref,
+        "source_start_seconds":opening_source_start,
+        "duration_seconds":opening_duration,
+        "evidence_ids":["CHANNEL_BRANDING_STANDARD_V1"],
+    })
+    segment_id += 1
 
     for section in job["script_sections"]:
         voice = section_by_id[section["section_id"]]
@@ -611,7 +685,19 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
         local_offset = 0.0
         candidates = section["visual_candidates"]
         candidate_index = 0
-        candidate_cursor = {index: float(candidate["start_seconds"]) for index, candidate in enumerate(candidates)}
+
+        def candidate_bounds(index: int, candidate: dict[str, Any]) -> tuple[float, float]:
+            start = float(candidate["start_seconds"])
+            end = float(candidate["end_seconds"])
+            if section is job["script_sections"][0] and index == 0:
+                start += opening_duration
+            if section is job["script_sections"][-1] and index == len(candidates) - 1:
+                end -= closing_duration
+            if end <= start:
+                raise WorkerError("EDIT_QA: branding reservation exhausted a semantic visual window")
+            return start, end
+
+        candidate_cursor = {index: candidate_bounds(index, candidate)[0] for index, candidate in enumerate(candidates)}
         while remaining > 0.001:
             desired = TARGET_VISUAL_CUT_SECONDS[cut_pattern_index % len(TARGET_VISUAL_CUT_SECONDS)]
             cut_pattern_index += 1
@@ -623,21 +709,21 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
                 candidate_index += 1
                 candidate = candidates[idx]
                 start = candidate_cursor[idx]
-                end = float(candidate["end_seconds"])
+                _, end = candidate_bounds(idx, candidate)
                 available = end - start
                 if available >= duration - 0.001:
                     chosen = (idx, candidate, start)
                     break
-                candidate_cursor[idx] = float(candidate["start_seconds"])
+                candidate_cursor[idx] = candidate_bounds(idx, candidate)[0]
                 attempts += 1
             if chosen is None:
                 # Candidate windows are editorial hints. When a synthesized section is longer than the
                 # non-repeating hints, deterministically restart at the beginning of the least-used candidate.
                 ranked = sorted(enumerate(candidates), key=lambda pair: source_usage.get(f"{pair[1]['asset_ref']}:{pair[0]}", 0.0))
                 idx, candidate = ranked[0]
-                start = float(candidate["start_seconds"])
-                if float(candidate["end_seconds"]) - start < duration - 0.001:
-                    duration = min(duration, float(candidate["end_seconds"]) - start)
+                start, reserved_end = candidate_bounds(idx, candidate)
+                if reserved_end - start < duration - 0.001:
+                    duration = min(duration, reserved_end - start)
                 chosen = (idx, candidate, start)
             idx, candidate, source_start = chosen
             if duration <= 0.001:
@@ -685,6 +771,60 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
             remaining -= duration
         cursor += section_duration
 
+    last_section = job["script_sections"][-1]
+    closing_candidate = last_section["visual_candidates"][-1]
+    closing_asset_ref = closing_candidate["asset_ref"]
+    closing_start_bound = float(closing_candidate["start_seconds"])
+    closing_end_bound = float(closing_candidate["end_seconds"])
+    closing_source_start = max(closing_start_bound, closing_end_bound - closing_duration)
+    if closing_end_bound - closing_source_start < closing_duration - 0.001:
+        raise WorkerError("EDIT_QA: closing visual candidate cannot cover spoken brand closing")
+    video_clips.append(EditClip(
+        segment_id=segment_id,
+        media_path=source_paths[closing_asset_ref],
+        track="V1 MAIN",
+        start_seconds=cursor,
+        source_start_seconds=closing_source_start,
+        duration_seconds=closing_duration,
+        role="spoken_channel_closing",
+        fit="cover",
+    ))
+    texts.append(EditText(
+        text=brand_contract["closing_line"],
+        start_seconds=cursor,
+        duration_seconds=closing_duration,
+        track="BRAND_CAPTIONS",
+        font_size=38,
+        color="white",
+        align="center",
+        box=True,
+    ))
+    expanded_scenes.append({
+        "order":segment_id,
+        "segment_id":segment_id,
+        "content_unit_id":segment_id,
+        "section_id":"BRAND_CLOSING",
+        "narrative_block":"spoken_channel_closing",
+        "narration":brand_contract["closing_line"],
+        "classification":"CHANNEL_BRANDING",
+        "evidence_ids":["CHANNEL_BRANDING_STANDARD_V1"],
+        "asset_ref":closing_asset_ref,
+        "source_url":next(item["source_url"] for item in job["media_sources"] if item["asset_ref"]==closing_asset_ref),
+        "source_start_seconds":closing_source_start,
+        "source_end_seconds":closing_source_start+closing_duration,
+        "duration_seconds":closing_duration,
+        "media_path":source_paths[closing_asset_ref],
+    })
+    semantic_links.append({
+        "segment_id":segment_id,
+        "section_id":"BRAND_CLOSING",
+        "asset_ref":closing_asset_ref,
+        "source_start_seconds":closing_source_start,
+        "duration_seconds":closing_duration,
+        "evidence_ids":["CHANNEL_BRANDING_STANDARD_V1"],
+    })
+    cursor += closing_duration
+
     duration = cursor
     if abs(duration - narration_duration) > max(0.75, narration_duration * 0.005):
         raise WorkerError("EDIT_QA: section timing does not match governed narration master")
@@ -726,6 +866,47 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
             "primary_audio_track": "A1",
             "source_audio_policy": "MUTED_VISUAL_SOURCE_AUDIO_A1_ONLY",
             "semantic_media_selection": "MediaKnowledge/WhisperX evidence-derived visual candidates",
+            "spoken_branding_contract": brand_contract,
+            "timeline_sequence": [
+                {
+                    "order":1,
+                    "phase":"official_intro",
+                    "asset_id":1,
+                    "composition_stage":"brand-worker-prepend",
+                    "content_start_seconds":None,
+                    "final_start_seconds":0.0,
+                },
+                {
+                    "order":2,
+                    "phase":"spoken_channel_opening",
+                    "text":brand_contract["opening_text"],
+                    "voice":"Voice B",
+                    "content_start_seconds":0.0,
+                    "final_start_seconds":"official_intro_end",
+                    "duration_seconds":opening_duration,
+                },
+                {
+                    "order":3,
+                    "phase":"editorial_hook",
+                    "section_id":job["script_sections"][0]["section_id"],
+                    "content_start_seconds":opening_duration,
+                    "final_start_seconds":"official_intro_end_plus_spoken_opening",
+                },
+                {
+                    "order":4,
+                    "phase":"editorial_content",
+                    "content_start_seconds":opening_duration,
+                    "content_end_seconds":duration-closing_duration,
+                },
+                {
+                    "order":5,
+                    "phase":"spoken_channel_closing",
+                    "text":brand_contract["closing_line"],
+                    "voice":"Voice B",
+                    "content_start_seconds":duration-closing_duration,
+                    "duration_seconds":closing_duration,
+                },
+            ],
         },
     )
 
@@ -739,6 +920,13 @@ def _build_edit_plan(job: dict[str, Any], voice_sections: list[dict[str, Any]], 
         "max_visual_cut_seconds": max_cut <= MAX_VISUAL_CUT_SECONDS + 0.001,
         "semantic_lineage_per_cut": len(semantic_links) == len(video_clips) and all(item["evidence_ids"] for item in semantic_links),
         "captions_present": any(text.track == "CAPTIONS" for text in texts),
+        "official_intro_first": plan.metadata["timeline_sequence"][0]["phase"] == "official_intro" and plan.metadata["timeline_sequence"][0]["asset_id"] == 1,
+        "spoken_opening_after_intro": plan.metadata["timeline_sequence"][1]["phase"] == "spoken_channel_opening",
+        "voice_b_used": brand_contract["official_voice_profile"] == "Voice B",
+        "opening_text_canonical": plan.metadata["timeline_sequence"][1]["text"] == brand_contract["opening_text"],
+        "closing_text_canonical": plan.metadata["timeline_sequence"][-1]["text"] == "E BR não dorme em Vice City",
+        "brand_audio_cache_policy": bool(brand_contract["cache_policy"]["closing_fixed_reusable"]),
+        "editorial_hook_preserved": job["script_sections"][0]["role"] == "hook" and plan.metadata["timeline_sequence"][2]["phase"] == "editorial_hook",
         "source_audio_not_authoritative": plan.metadata["source_audio_policy"] == "MUTED_VISUAL_SOURCE_AUDIO_A1_ONLY",
     }
     edit_qa = {
@@ -849,8 +1037,13 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         source_paths = {str(key): str(value) for key, value in dict(prepared["source_paths"]).items()}
         media_evidence = list(prepared.get("media_evidence") or [])
         voice_sections, voice_qa = execute_ptbr_narration(job, root)
+        brand_audio = dict(prepared.get("brand_audio") or {})
+        content_voice = dict(brand_audio.get("content_voice_master") or {})
+        if brand_audio.get("status") != "PASS" or content_voice.get("status") != "PASS":
+            raise WorkerError("professional input checkpoint is missing QA-passed spoken brand audio")
         print("NARRATION_CHECKPOINT_REUSED=YES", flush=True)
         print("MEDIA_CHECKPOINT_REUSED=YES", flush=True)
+        print("BRAND_AUDIO_CHECKPOINT_REUSED=YES", flush=True)
     else:
         async def prepare_parallel() -> tuple[
             tuple[dict[str, str], list[dict[str, Any]]],
@@ -861,7 +1054,14 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
             return await asyncio.gather(media_task, voice_task)
 
         (source_paths, media_evidence), (voice_sections, voice_qa) = asyncio.run(prepare_parallel())
+        brand_audio = prepare_brand_audio(job, root)
+        content_voice = compose_content_voice_master(
+            root=root,
+            editorial_master_path=voice_qa["master_path"],
+            brand_manifest=brand_audio,
+        )
         print("PARALLEL_NARRATION_MEDIA_PREPARATION=PASS", flush=True)
+        print("BRAND_AUDIO_PREPARATION=PASS", flush=True)
 
     preparation_elapsed = time.monotonic() - preparation_started
     edit_started = time.monotonic()
@@ -869,8 +1069,9 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         job,
         voice_sections,
         source_paths,
-        narration_master_path=voice_qa["master_path"],
-        narration_duration=voice_qa["duration_seconds"],
+        narration_master_path=content_voice["path"],
+        narration_duration=content_voice["duration_seconds"],
+        brand_audio=content_voice,
     )
     effective = dict(job)
     effective["estimated_duration_seconds"] = plan.duration_seconds
@@ -885,21 +1086,30 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         "qa": "narration-bundle/narration-qa.json",
         "reused": bool(voice_qa.get("narration_artifact_reused")),
     }
+    effective["brand_audio_artifact"] = {
+        "bundle_path": "brand-audio-bundle",
+        "manifest": "brand-audio-bundle/brand-audio-manifest.json",
+        "content_voice_master": content_voice["path"],
+        "opening_selected_take": brand_audio["selected"]["opening"]["take_id"],
+        "closing_selected_take": brand_audio["selected"]["closing"]["take_id"],
+        "cache_policy": brand_audio["cache"]["policy"],
+        "bundle_reused": bool(brand_audio.get("bundle_reused")),
+    }
     effective["a1_voice"] = {
         "capability_id": VOICE_CAPABILITY_ID,
         "locale": "pt-BR",
         "qa_status": "PASS",
         "voice": voice_qa["voice"],
-        "media_path": voice_qa["master_path"],
-        "sha256": voice_qa["sha256"],
-        "duration_seconds": voice_qa["duration_seconds"],
+        "media_path": content_voice["path"],
+        "sha256": content_voice["sha256"],
+        "duration_seconds": content_voice["duration_seconds"],
     }
     effective["audio_requirements"] = [{
         "type": "voiceover",
         "track": "A1",
         "language": "pt-BR",
-        "media_path": voice_qa["master_path"],
-        "duration_seconds": voice_qa["duration_seconds"],
+        "media_path": content_voice["path"],
+        "duration_seconds": content_voice["duration_seconds"],
     }]
     effective["voice_execution"] = {
         "status": "PASS",
@@ -913,7 +1123,7 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     render_started = time.monotonic()
     folder = execute(effective, root, output_root, source_job=effective)
     render_elapsed = time.monotonic() - render_started
-    narration_master = root / voice_qa["master_path"]
+    narration_master = root / content_voice["path"]
     final_mix_started = time.monotonic()
     _replace_source_audio_with_voice(folder, narration_master)
     audiovisual_qa = _refresh_final_qa(folder, effective, plan.duration_seconds)
@@ -930,7 +1140,18 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     write_json(folder / "script-ptbr.json", {"status": "PASS", "language": "pt-BR", "sections": job["script_sections"]})
     write_json(folder / "fact-check.json", job["fact_check"])
     write_json(folder / "editorial-qa.json", editorial_qa)
-    write_json(folder / "voice-qa.json", voice_qa)
+    voice_qa_output = dict(voice_qa)
+    voice_qa_output["spoken_branding"] = {
+        "status": brand_audio["status"],
+        "voice": brand_audio["voice"],
+        "opening_text": brand_audio["opening_text"],
+        "closing_text": brand_audio["closing_text"],
+        "selected": brand_audio["selected"],
+        "selection": brand_audio["selection"],
+        "content_voice_master": content_voice,
+    }
+    write_json(folder / "voice-qa.json", voice_qa_output)
+    write_json(folder / "brand-audio-qa.json", brand_audio)
     write_json(folder / "edit-qa.json", edit_qa)
     write_json(folder / "audiovisual-qa.json", audiovisual_qa)
     for name in (
@@ -943,6 +1164,9 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         source = root / "narration-bundle" / name
         if source.is_file():
             shutil.copy2(source, folder / name)
+    brand_manifest_path = root / "brand-audio-bundle" / "brand-audio-manifest.json"
+    if brand_manifest_path.is_file():
+        shutil.copy2(brand_manifest_path, folder / "brand-audio-manifest.json")
     write_json(folder / "media-selection-evidence.json", {
         "status": "PASS",
         "selection_engine": "MediaKnowledge/WhisperX evidence-derived",
@@ -964,7 +1188,7 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
             ["narration-bundle"] if narration_reused else
             [f"narration-segment:{item['segment_id']}" for item in voice_qa.get("section_results", []) if item.get("cache_hit")]
         ),
-        "external_calls": int(voice_stats.get("tts_request_count") or 0) + len(media_evidence),
+        "external_calls": int(voice_stats.get("tts_request_count") or 0) + len(media_evidence) + int((brand_audio.get("cache") or {}).get("external_calls") or 0),
         "output_artifact": output_mp4.name,
         "stage_elapsed": {
             "prepare_narration_media_seconds": preparation_elapsed,
@@ -998,6 +1222,13 @@ def main() -> int:
     print(f"VIDEO_{job['product_label']}_VOICE_PTBR=PASS")
     print(f"VIDEO_{job['product_label']}_EDIT=PASS")
     print(f"VIDEO_{job['product_label']}_AUDIOVISUAL_QA=PASS")
+    print("OFFICIAL_INTRO_FIRST=PASS")
+    print("SPOKEN_OPENING_AFTER_INTRO=PASS")
+    print("VOICE_B_USED=PASS")
+    print("OPENING_TEXT_CANONICAL=PASS")
+    print("CLOSING_TEXT_CANONICAL=PASS")
+    print("BRAND_AUDIO_CACHE_POLICY=PASS")
+    print("EDITORIAL_HOOK_PRESERVED=PASS")
     print("JOB18_UNCHANGED=BY_DESIGN_NO_CANONICAL_DATABASE_ACCESS")
     return 0
 

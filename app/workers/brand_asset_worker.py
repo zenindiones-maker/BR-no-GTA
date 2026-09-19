@@ -10,6 +10,7 @@ import re
 import subprocess
 from typing import Any
 
+from app.services.channel_spoken_branding_service import validate_job_spoken_branding
 from app.services.telegram_brand_asset_materializer import (
     TelegramBrandAssetMaterializationError,
     materialize_telegram_brand_assets,
@@ -296,6 +297,7 @@ def _validate_final(path: Path, expected_duration: float) -> tuple[dict[str, Any
 
 
 def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
+    spoken_branding = validate_job_spoken_branding(job)
     folder = _brand_root(job, runtime_root)
     state = _load_json(folder / "brand-state.json")
     assets = state.get("assets") or []
@@ -391,6 +393,19 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
 
     intro_present = intro is not None
     watermark_present = watermark is not None
+    edit_plan = job.get("edit_plan") or {}
+    edit_metadata = edit_plan.get("metadata") or {}
+    sequence = edit_metadata.get("timeline_sequence") or []
+    spoken_opening_duration = float(
+        next((item.get("duration_seconds") for item in sequence if item.get("phase")=="spoken_channel_opening"),0.0) or 0.0
+    )
+    spoken_closing_duration = float(
+        next((item.get("duration_seconds") for item in sequence if item.get("phase")=="spoken_channel_closing"),0.0) or 0.0
+    )
+    branding["spoken_opening_final_start_seconds"] = branding["intro_duration_seconds"]
+    branding["editorial_hook_final_start_seconds"] = branding["intro_duration_seconds"] + spoken_opening_duration
+    branding["spoken_closing_duration_seconds"] = spoken_closing_duration
+    branding["final_timeline_sequence"] = sequence
     branding_checks = {
         "full_decode": True,
         "brand_assets_materialized_in_cloud": evidence.get("status") == "PASS",
@@ -419,7 +434,24 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         and branding["watermark_margin"]["y"] > 0,
         "watermark_scale_recorded": watermark_present
         and branding["watermark_scale"] > 0,
+        "official_intro_asset_id_1": intro_present and intro.get("asset_id") == 1,
+        "spoken_opening_after_intro": len(sequence) >= 3
+        and sequence[0].get("phase") == "official_intro"
+        and sequence[1].get("phase") == "spoken_channel_opening"
+        and branding["spoken_opening_final_start_seconds"] >= branding["intro_duration_seconds"],
+        "editorial_hook_preserved": any(item.get("phase") == "editorial_hook" for item in sequence),
+        "voice_b_used": spoken_branding["official_voice_profile"] == "Voice B",
+        "opening_text_canonical": any(
+            item.get("phase") == "spoken_channel_opening" and item.get("text") == spoken_branding["opening_text"]
+            for item in sequence
+        ),
+        "closing_text_canonical": sequence
+        and sequence[-1].get("phase") == "spoken_channel_closing"
+        and sequence[-1].get("text") == "E BR não dorme em Vice City",
+        "brand_audio_cache_policy": bool(spoken_branding["cache_policy"]["closing_fixed_reusable"]),
     }
+    if not all(branding_checks.values()):
+        raise BrandAssetWorkerError(f"spoken/visual branding QA failed: {branding_checks}")
     qa = {
         "status": "PASS",
         "stage": "brand-complete",
@@ -448,6 +480,15 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         brand_composition="telegram-cloud-ffmpeg-complete-intro-concat",
         content_duration_semantics="estimated_duration_is_content_base",
         branding=branding,
+        OFFICIAL_INTRO_FIRST="PASS",
+        SPOKEN_OPENING_AFTER_INTRO="PASS",
+        VOICE_B_USED="PASS",
+        OPENING_TEXT_CANONICAL="PASS",
+        CLOSING_TEXT_CANONICAL="PASS",
+        BRAND_AUDIO_CACHE_POLICY="PASS",
+        EDITORIAL_HOOK_PRESERVED="PASS",
+        JOB18_UNCHANGED="YES",
+        PUBLICATION_AUTHORITY_UNCHANGED="YES",
     )
     write_json(render_folder / "render-manifest.json", manifest)
     write_json(render_folder / "brand-assets.json", evidence)

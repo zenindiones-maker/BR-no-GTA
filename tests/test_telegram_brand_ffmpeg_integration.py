@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from app.services.channel_spoken_branding_service import build_spoken_branding_contract
 from app.workers.brand_asset_worker import apply
 
 
@@ -84,6 +85,35 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
         "authorized_action": "EXECUTION",
         "estimated_duration_seconds": 3.0,
         "render": {"resolution": "320x180", "fps": 10},
+        "brand_assets": [
+            {"asset_id": 1, "asset_type": "intro"},
+            {"asset_id": 2, "asset_type": "watermark"},
+        ],
+        "spoken_branding": build_spoken_branding_contract(theme="teste de branding"),
+        "narration": {
+            "voice": "pt-BR-ThalitaMultilingualNeural",
+            "human_quality_baseline": "Voice B",
+        },
+        "script_sections": [{"section_id": "A01", "role": "hook"}],
+        "edit_plan": {
+            "metadata": {
+                "timeline_sequence": [
+                    {"order":1,"phase":"official_intro","asset_id":1},
+                    {
+                        "order":2,"phase":"spoken_channel_opening",
+                        "text":"Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de teste de branding!",
+                        "duration_seconds":0.6,
+                    },
+                    {"order":3,"phase":"editorial_hook","section_id":"A01"},
+                    {"order":4,"phase":"editorial_content"},
+                    {
+                        "order":5,"phase":"spoken_channel_closing",
+                        "text":"E BR não dorme em Vice City",
+                        "duration_seconds":0.4,
+                    },
+                ]
+            }
+        },
     }
     state = {
         "assets": [
@@ -143,6 +173,13 @@ def test_real_ffmpeg_applies_intro_and_watermark_and_preserves_audiovisual_qa(tm
     assert manifest["brand_asset_types"] == ["intro", "watermark"]
     assert manifest["brand_composition"] == "telegram-cloud-ffmpeg-complete-intro-concat"
     assert manifest["content_duration_semantics"] == "estimated_duration_is_content_base"
+    assert manifest["OFFICIAL_INTRO_FIRST"] == "PASS"
+    assert manifest["SPOKEN_OPENING_AFTER_INTRO"] == "PASS"
+    assert manifest["VOICE_B_USED"] == "PASS"
+    assert manifest["OPENING_TEXT_CANONICAL"] == "PASS"
+    assert manifest["CLOSING_TEXT_CANONICAL"] == "PASS"
+    assert manifest["BRAND_AUDIO_CACHE_POLICY"] == "PASS"
+    assert manifest["EDITORIAL_HOOK_PRESERVED"] == "PASS"
     assert qa["checks"]["intro_present"] is True
     assert qa["checks"]["intro_start_zero"] is True
     assert qa["checks"]["intro_duration_measured"] is True

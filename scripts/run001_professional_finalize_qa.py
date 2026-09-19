@@ -77,6 +77,23 @@ def main() -> int:
         raise RuntimeError("final branded render lacks branding evidence")
     gates["AUDIOVISUAL_QA"] = "PASS"
     gates["INTRO_QA"] = "PASS" if branding.get("intro_duration_seconds", 0) > 0 else "FAIL"
+    manifest = load(folder / "render-manifest.json")
+    required_brand_evidence = (
+        "OFFICIAL_INTRO_FIRST",
+        "SPOKEN_OPENING_AFTER_INTRO",
+        "VOICE_B_USED",
+        "OPENING_TEXT_CANONICAL",
+        "CLOSING_TEXT_CANONICAL",
+        "BRAND_AUDIO_CACHE_POLICY",
+        "EDITORIAL_HOOK_PRESERVED",
+    )
+    gates["SPOKEN_BRANDING_QA"] = (
+        "PASS"
+        if all(manifest.get(key) == "PASS" for key in required_brand_evidence)
+        and manifest.get("JOB18_UNCHANGED") == "YES"
+        and manifest.get("PUBLICATION_AUTHORITY_UNCHANGED") == "YES"
+        else "FAIL"
+    )
     gates["WATERMARK_QA"] = (
         "PASS"
         if branding.get("watermark_start_seconds") == branding.get("intro_duration_seconds")
@@ -105,7 +122,7 @@ def main() -> int:
     print("PROFESSIONAL_FINAL_QA=PASS")
     for key in (
         "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "SEMANTIC_PTBR_QA", "NO_PADDING_QA",
-        "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA",
+        "AUDIOVISUAL_QA", "INTRO_QA", "SPOKEN_BRANDING_QA", "WATERMARK_QA",
     ):
         print(f"VIDEO_{job.get('product_label')}_{key}=PASS")
     print("TARGET_LANGUAGE=pt-BR")
@@ -114,6 +131,15 @@ def main() -> int:
     print("FINAL_MIX_CONTAINS_PT_BR_NARRATION=PASS")
     print("HUMAN_EDITORIAL_APPROVAL=PENDING")
     print("YOUTUBE_PUBLICATION=BLOCKED")
+    print("OFFICIAL_INTRO_FIRST=PASS")
+    print("SPOKEN_OPENING_AFTER_INTRO=PASS")
+    print("VOICE_B_USED=PASS")
+    print("OPENING_TEXT_CANONICAL=PASS")
+    print("CLOSING_TEXT_CANONICAL=PASS")
+    print("BRAND_AUDIO_CACHE_POLICY=PASS")
+    print("EDITORIAL_HOOK_PRESERVED=PASS")
+    print("JOB18_UNCHANGED=YES")
+    print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return 0
 
 

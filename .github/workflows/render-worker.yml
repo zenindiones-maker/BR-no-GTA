@@ -43,6 +43,16 @@ on:
         required: false
         default: ""
         type: string
+      brand_audio_artifact_id:
+        description: "Optional QA-passed spoken brand audio checkpoint artifact ID"
+        required: false
+        default: ""
+        type: string
+      brand_audio_producer_run_id:
+        description: "Producer workflow run ID for brand_audio_artifact_id"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -234,7 +244,9 @@ jobs:
             tests/test_narration_pipeline.py \
             tests/test_operational_efficiency_policy.py \
             tests/test_operational_efficiency_history.py \
-            tests/test_media_checkpoint_service.py
+            tests/test_media_checkpoint_service.py \
+            tests/test_channel_spoken_branding.py \
+            tests/test_run001_longform_editorial_controller.py
       - name: Setup ingestion JavaScript runtime
         if: inputs.media_artifact_id == ''
         uses: denoland/setup-deno@v2
@@ -306,6 +318,14 @@ jobs:
           restore-keys: |
             narration-v2-${{ runner.os }}-edge-tts-
 
+      - name: Restore content-addressed spoken brand audio cache
+        uses: actions/cache@v4
+        with:
+          path: runtime/brand-audio-cache
+          key: brand-audio-v1-${{ runner.os }}-edge-tts-7.2.8
+          restore-keys: |
+            brand-audio-v1-${{ runner.os }}-edge-tts-
+
       - name: Validate optional narration checkpoint reference
         env:
           NARRATION_ARTIFACT_ID: ${{ inputs.narration_artifact_id }}
@@ -352,11 +372,35 @@ jobs:
           path: runtime/render/reused-media
           merge-multiple: true
 
+      - name: Validate optional spoken brand audio checkpoint reference
+        env:
+          BRAND_AUDIO_ARTIFACT_ID: ${{ inputs.brand_audio_artifact_id }}
+          BRAND_AUDIO_PRODUCER_RUN_ID: ${{ inputs.brand_audio_producer_run_id }}
+        run: |
+          set -euo pipefail
+          if { [ -n "$BRAND_AUDIO_ARTIFACT_ID" ] && [ -z "$BRAND_AUDIO_PRODUCER_RUN_ID" ]; } || \
+             { [ -z "$BRAND_AUDIO_ARTIFACT_ID" ] && [ -n "$BRAND_AUDIO_PRODUCER_RUN_ID" ]; }; then
+            echo "spoken brand audio checkpoint requires both artifact id and producer run id" >&2
+            exit 1
+          fi
+          echo "BRAND_AUDIO_CHECKPOINT_REFERENCE=PASS"
+
+      - name: Download QA-passed spoken brand audio checkpoint for render retry
+        if: inputs.brand_audio_artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.brand_audio_artifact_id }}
+          run-id: ${{ inputs.brand_audio_producer_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/render/reused-brand-audio
+          merge-multiple: true
+
       - name: Prepare Narration and Media in parallel
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
           NARRATION_CONCURRENCY: "4"
+          BRAND_AUDIO_CACHE_ROOT: runtime/brand-audio-cache
         run: |
           set -euo pipefail
           if python - <<'PY'
@@ -368,17 +412,21 @@ jobs:
           then
             reuse_narration=()
             reuse_media=()
+            reuse_brand_audio=()
             if [ -f runtime/render/reused-narration/narration-manifest.json ]; then
               reuse_narration=(--reuse-narration-dir runtime/render/reused-narration)
             fi
             if [ -f runtime/render/reused-media/media-checkpoint-manifest.json ]; then
               reuse_media=(--reuse-media-dir runtime/render/reused-media)
             fi
+            if [ -f runtime/render/reused-brand-audio/brand-audio-manifest.json ]; then
+              reuse_brand_audio=(--reuse-brand-audio-dir runtime/render/reused-brand-audio)
+            fi
             python scripts/prepare_professional_inputs.py \
               --render-job runtime/render/render-job.json \
               --asset-root runtime/render/input \
               --cache-root runtime/narration-cache \
-              "${reuse_narration[@]}" "${reuse_media[@]}"
+              "${reuse_narration[@]}" "${reuse_media[@]}" "${reuse_brand_audio[@]}"
           else
             echo "NARRATION_STAGE=NOT_APPLICABLE"
           fi
@@ -465,6 +513,46 @@ jobs:
           print(f"NARRATION_WPM={qa.get('words_per_minute')}")
           print(f"NATIVE_TIMING_USED={qa.get('native_timing_used')}")
           PY
+
+      - name: Validate spoken brand audio checkpoint
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path('runtime/render/input').glob('**/brand-audio-bundle/brand-audio-manifest.json'))
+          if not files:
+              print('BRAND_AUDIO_QA=NOT_APPLICABLE')
+              raise SystemExit(0)
+          manifest=json.loads(files[0].read_text(encoding='utf-8'))
+          checks=manifest.get('checks') or {}
+          required=(
+              'voice_b_used','opening_text_canonical','closing_text_canonical',
+              'three_opening_takes','three_closing_takes',
+              'same_text_all_opening_takes','same_text_all_closing_takes',
+              'brand_audio_cache_policy',
+          )
+          if manifest.get('status')!='PASS' or not all(checks.get(k) is True for k in required):
+              raise SystemExit('BRAND_AUDIO_QA=FAIL')
+          target=Path('runtime/render/brand-audio-checkpoint')
+          if target.exists():
+              import shutil; shutil.rmtree(target)
+          import shutil; shutil.copytree(files[0].parent,target)
+          print('BRAND_AUDIO_QA=PASS')
+          print('VOICE_B_USED=PASS')
+          print('OPENING_TEXT_CANONICAL=PASS')
+          print('CLOSING_TEXT_CANONICAL=PASS')
+          print('BRAND_AUDIO_CACHE_POLICY=PASS')
+          PY
+
+      - name: Checkpoint QA-passed spoken brand audio artifact
+        id: brand_audio_checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: brand-audio-bundle-${{ inputs.execution_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/render/brand-audio-checkpoint/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Validate narration operational observability
         run: |
@@ -659,6 +747,8 @@ jobs:
             runtime/render/input/**/narration-bundle/*.json
             runtime/render/narration-checkpoint/*.json
             runtime/render/media-checkpoint/**
+            runtime/render/brand-audio-checkpoint/**
+            runtime/render/input/**/brand-audio-bundle/*.json
             runtime/render/output/**/narration-manifest.json
             runtime/render/output/**/speech-timing.json
             runtime/render/output/**/voice-speed-profile.json

@@ -50,6 +50,13 @@ def test_video_a_uses_human_locked_official_voice_b_profile():
     assert narration["official_profile_sha256"] == "f3bc54c57b0bf57f44eef3c9f5d0fe64945c2a8da46e4d07dd36e927ab741755"
 
 
+def test_video_a_spoken_branding_theme_is_only_editorial_variable():
+    config = _config()
+    assert config["brand_opening_theme"] == "fatos, vazamentos, tecnologia e rumores de GTA 6"
+    controller = (ROOT / "scripts" / "run001_longform_editorial_controller.py").read_text(encoding="utf-8")
+    assert 'build_spoken_branding_contract(theme=config["brand_opening_theme"])' in controller
+
+
 def test_professional_render_config_is_explicit_and_deterministic():
     assert PROFESSIONAL_RENDER_CONFIG == {
         "resolution": "1920x1080",

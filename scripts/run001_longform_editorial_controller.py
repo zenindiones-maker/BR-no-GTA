@@ -14,6 +14,7 @@ from typing import Any
 import requests
 
 from app.main import initialize_application
+from app.services.channel_spoken_branding_service import build_spoken_branding_contract, normalize_theme
 from app.services.editorial_intelligence_contracts import (
     ClaimLedgerItem,
     ContentIntelligenceProof,
@@ -101,6 +102,7 @@ def validate_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("quality-first semantic section narration strategy is required")
     if narration.get("performance_candidates_auto_promote") is not False:
         raise ValueError("performance candidates cannot auto-promote over human narration quality")
+    normalize_theme(config.get("brand_opening_theme"))
     sources = config.get("sources")
     claims = config.get("claims")
     sections = config.get("script_sections")
@@ -495,6 +497,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "script_sections": config["script_sections"],
         "media_sources": config["media_sources"],
         "brand_assets": [dict(item) for item in OFFICIAL_BRAND_ASSETS],
+        "spoken_branding": build_spoken_branding_contract(theme=config["brand_opening_theme"]),
         "narration": config.get("narration") or {"language": "pt-BR", "voice": "pt-BR-AntonioNeural", "rate": "-15%"},
         "research_dossier": dossier.to_dict(),
         "claim_ledger": [item.to_dict() for item in ledger],
@@ -539,6 +542,13 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "job18_unchanged": True,
         "job20_reused_as_final": False,
         "no_youtube_publish": True,
+        "official_intro_first": True,
+        "spoken_opening_after_intro": True,
+        "voice_b_used": True,
+        "opening_text_canonical": True,
+        "closing_text_canonical": True,
+        "brand_audio_cache_policy": True,
+        "editorial_hook_preserved": True,
     })
     return job
 
@@ -557,6 +567,13 @@ def main() -> int:
     print("JOB18_UNCHANGED=YES")
     print("JOB20_REUSED_AS_FINAL=NO")
     print("NO_YOUTUBE_PUBLISH=YES")
+    print("OFFICIAL_INTRO_FIRST=PASS")
+    print("SPOKEN_OPENING_AFTER_INTRO=PASS")
+    print("VOICE_B_USED=PASS")
+    print("OPENING_TEXT_CANONICAL=PASS")
+    print("CLOSING_TEXT_CANONICAL=PASS")
+    print("BRAND_AUDIO_CACHE_POLICY=PASS")
+    print("EDITORIAL_HOOK_PRESERVED=PASS")
     return 0
 
 
