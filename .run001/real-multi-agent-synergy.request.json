@@ -1,15 +1,13 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T14:18:00Z",
-  "base_head": "e0163f29a351d83e397e777f0edc9d157d998a0b",
-  "purpose": "Execute o E2E real final corrigido e audite a qualidade persistida do pacote YouTube sem publicação.",
+  "requested_at": "2026-09-19T14:20:30Z",
+  "base_head": "f2289ee21b967061879093ce0db37dd528a3faf0",
+  "purpose": "Final E2E product-quality proof with native OpenCode summary agent and canonical YouTube package persistence.",
   "require_real_source": true,
   "require_semantic_model_execution": true,
   "require_observed_learning": true,
   "require_product_quality_audit": true,
-  "require_youtube_package_persistence": true,
-  "require_harness_package_authorization": true,
-  "require_structured_youtube_specialists": true,
+  "require_canonical_youtube_package": true,
   "job18_unchanged": true,
   "publication": false
 }
