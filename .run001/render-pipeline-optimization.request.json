@@ -18,9 +18,11 @@
   "thread_tuning": "observed_same_workload_only",
   "job18_frozen": true,
   "youtube_publication": false,
-  "attempt": 3,
-  "retry_reason": "issue #14 scaling diagnosis: benchmark legacy tpad against timestamp placement on 3x representative VIDEO A canary; same codec/CRF/preset and full QA",
+  "attempt": 4,
+  "retry_reason": "fix benchmark-only remux evidence bug: A1 pass atomically replaces the same MP4; preserve 3x timestamp-placement benchmark and all quality gates",
   "candidate": "vedit.longform.render-profile@v3-timestamp-placement",
   "representative_repeats": 3,
-  "root_cause_hypothesis": "per-clip tpad pre-start frame synthesis scales with sum of clip start times"
+  "root_cause_hypothesis": "per-clip tpad pre-start frame synthesis scales with sum of clip start times",
+  "previous_failed_benchmark_run_id": 35415188637,
+  "previous_failure_class": "BENCHMARK_EVIDENCE_PATH_BUG_AFTER_RENDER_COMPLETED"
 }

@@ -324,7 +324,9 @@ def main() -> int:
         assets / "narration-bundle" / "narration-master.flac",
     )
     remux_seconds = time.monotonic() - remux_started
-    remux_after = next(path for path in remux_dir.glob("*.mp4") if path.name != "before.mp4")
+    # _replace_source_audio_with_voice atomically replaces the same MP4 path.
+    # Measure the post-pass file in place; there is intentionally no second MP4.
+    remux_after = remux_before
     remux_decode, _ = _decode(remux_after)
 
     evidence = {
