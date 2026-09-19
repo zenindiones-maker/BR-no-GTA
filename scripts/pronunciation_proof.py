@@ -83,6 +83,16 @@ def main()->int:
 
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
+    closing_timing=closing["edge_metrics"]["timing"]
+    em_word=next(x for x in closing_timing if x["text"].strip().lower()=="em")
+    vice_word=next(x for x in closing_timing if x["text"].strip().lower()=="vice")
+    vice_city_join_gap_seconds=(
+        float(vice_word["offset_seconds"])
+        - (
+            float(em_word["offset_seconds"])
+            + float(em_word["duration_seconds"])
+        )
+    )
     gta_brand=next(x for x in rows if x["sample_id"]=="F-gta6-brand")
     gta=next(x for x in gta_brand["plan"]["spans"] if x.get("pronunciation_identity")=="gta-6")
     mixed_brand=next(x for x in rows if x["sample_id"]=="G-brand-mixed")
@@ -96,6 +106,9 @@ def main()->int:
         "VOICE_B_PRESERVED":True,
         "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
+        "VICE_CITY_JOIN_TIMING_NATURAL":(
+            0.0 <= vice_city_join_gap_seconds <= 0.15
+        ),
         "GTA6_CANONICAL_TEXT_PRESERVED":(
             gta_brand["plan"]["canonical_text"]=="Aqui é BR no GTA 6."
             and gta_brand["plan"]["canonical_text_preserved"] is True
@@ -131,6 +144,7 @@ def main()->int:
     evidence={
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
         "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"checks":checks,
+        "timing_quality":{"vice_city_join_gap_seconds":vice_city_join_gap_seconds,"max_allowed_seconds":0.15},
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
             "status":"PENDING",
