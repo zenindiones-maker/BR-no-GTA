@@ -7,7 +7,7 @@ import re
 import shlex
 import subprocess
 import time
-from typing import Any
+from typing import Any, Mapping
 
 from app.services.agent_office.contracts import AgentOfficeTask
 from app.services.agent_office.delegation import DelegatedTaskLease
@@ -25,11 +25,27 @@ _SAFE_ENV_KEYS = {
     "TMPDIR", "TEMP", "TMP", "TERM", "SHELL", "XDG_CONFIG_HOME",
     "XDG_DATA_HOME", "XDG_CACHE_HOME", "CODEX_HOME",
 }
+_WIF_RUNTIME_KEYS = {
+    "OPENAI_FEDERATION_RULE_ID",
+    "OPENAI_IDENTITY_TOKEN_FILE",
+}
+CODEX_SHELL_ENVIRONMENT_POLICY_ARGS = (
+    "--config",
+    "shell_environment_policy.ignore_default_excludes=false",
+    "--config",
+    'shell_environment_policy.include_only=["PATH","USER","LOGNAME","LANG","LC_ALL","LC_CTYPE","TERM","TMPDIR","TEMP","TMP","PYTHONPATH","SHELL"]',
+)
 
 
-def codex_sanitized_environment() -> dict[str, str]:
+def codex_sanitized_environment(
+    source: Mapping[str, str] | None = None,
+) -> dict[str, str]:
     result: dict[str, str] = {}
-    for key, value in os.environ.items():
+    source = os.environ if source is None else source
+    for key, value in source.items():
+        if key in _WIF_RUNTIME_KEYS:
+            result[key] = value
+            continue
         if key not in _SAFE_ENV_KEYS:
             continue
         if _SENSITIVE_ENV.search(key):
@@ -207,7 +223,9 @@ def codex_bounded_development_worker(
         "Return a concise engineering summary only after local validation."
     )
     command = [
-        "codex", "exec",
+        "codex",
+        *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
+        "exec",
         "--ephemeral",
         "--skip-git-repo-check",
         "--color", "never",
