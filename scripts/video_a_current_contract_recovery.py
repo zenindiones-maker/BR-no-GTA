@@ -36,6 +36,11 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.render_job_handoff_service import build_artifact_descriptor
+from app.services.render_learning_profile_service import (
+    COMPACT_TEXT_RENDER_PROFILE_VERSION,
+    RENDER_PROFILE_SKILL_ID,
+    executable_render_profile,
+)
 from app.workers.professional_audiovisual_worker import (
     PROFILE,
     YOUTUBE_MASTER_PROFILE,
@@ -239,6 +244,51 @@ def _hydrate_historical_identity(old_state: dict[str, Any]) -> tuple[dict[str, A
     return existing_video or {}, existing_old or {}
 
 
+def _proven_v4_render_binding(*, routing_id: str, authorization_id: str) -> dict[str, Any]:
+    promotion_path = Path(".run001/render-issue14-promotion.request.json")
+    promotion = json.loads(promotion_path.read_text(encoding="utf-8"))
+    if promotion.get("candidate") != "vedit.longform.render-profile@v4":
+        raise RuntimeError("Issue #14 promotion no longer identifies render profile v4")
+    if promotion.get("benchmark_status") != "PASS":
+        raise RuntimeError("Issue #14 render profile promotion is not benchmark-PASS")
+    if int(promotion.get("benchmark_run_id") or 0) != 35416910149:
+        raise RuntimeError("Issue #14 benchmark provenance changed unexpectedly")
+    if int(promotion.get("benchmark_artifact_id") or 0) != 10575529314:
+        raise RuntimeError("Issue #14 benchmark artifact provenance changed unexpectedly")
+    if float(promotion.get("latency_reduction_percent") or 0.0) < 20.0:
+        raise RuntimeError("promoted render profile no longer satisfies latency gate")
+    if float(promotion.get("ssim") or 0.0) < 0.98:
+        raise RuntimeError("promoted render profile no longer satisfies SSIM gate")
+
+    profile = executable_render_profile(COMPACT_TEXT_RENDER_PROFILE_VERSION)
+    if profile["skill_id"] != RENDER_PROFILE_SKILL_ID or profile["version"] != "v4":
+        raise RuntimeError("executable promoted render profile identity mismatch")
+    options = dict(profile.get("options") or {})
+    if options.get("timeline_placement") != "timestamp":
+        raise RuntimeError("promoted v4 render profile lost timestamp placement")
+    if options.get("compact_text_overlays") is not True:
+        raise RuntimeError("promoted v4 render profile lost compact text overlays")
+    if options.get("software_preset") != "slow":
+        raise RuntimeError("promoted v4 render profile unexpectedly changed x264 effort")
+
+    return {
+        "skill_id": profile["skill_id"],
+        "version": profile["version"],
+        "content_ref": profile["content_ref"],
+        "checksum": profile["checksum"],
+        "resolved_by": "deepseek_harness",
+        "routing_id": routing_id,
+        "authorization_id": authorization_id,
+        "promotion_evidence": {
+            "issue": 14,
+            "benchmark_run_id": int(promotion["benchmark_run_id"]),
+            "benchmark_artifact_id": int(promotion["benchmark_artifact_id"]),
+            "latency_reduction_percent": float(promotion["latency_reduction_percent"]),
+            "ssim": float(promotion["ssim"]),
+        },
+    }
+
+
 def _build_current_job(product: dict[str, Any], old_state: dict[str, Any]) -> tuple[dict[str, Any], Any]:
     audio = current_audio_contract()
     evidence, fact_check = _research_evidence(product)
@@ -329,6 +379,10 @@ def _build_current_job(product: dict[str, Any], old_state: dict[str, Any]) -> tu
             "video_codec": "h264",
             "audio_codec": "aac",
             "delivery_profile": YOUTUBE_MASTER_PROFILE,
+            "learning_profile": _proven_v4_render_binding(
+                routing_id=route.routing_id,
+                authorization_id=authorization.authorization_id,
+            ),
         },
         "subtitles": {
             "enabled": False,
@@ -393,6 +447,10 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
             and contract.get("selected_closing_fallback_take_id") == "G-brand-mixed"
         ),
         "BURNED_SUBTITLES": job["subtitles"].get("enabled") is False,
+        "RENDER_PROFILE_V4": (
+            (job.get("render") or {}).get("learning_profile", {}).get("version") == "v4"
+            and (job.get("render") or {}).get("learning_profile", {}).get("resolved_by") == "deepseek_harness"
+        ),
     }
     if not all(checks.values()):
         raise RuntimeError(f"CURRENT_AUDIO_PRE_RENDER_GATE failed: {checks}")
@@ -406,6 +464,8 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
     print("OFFICIAL_INTRO_ASSET_ID=1")
     print("WATERMARK_ASSET_ID=2")
     print("BURNED_SUBTITLES=OFF")
+    print("RENDER_PROFILE=v4")
+    print("RENDER_PROFILE_BINDING=PASS")
     print("CURRENT_AUDIO_CONTRACT_FINGERPRINT=" + audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"])
 
 

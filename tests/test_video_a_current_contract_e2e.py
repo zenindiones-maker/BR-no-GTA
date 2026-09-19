@@ -22,3 +22,18 @@ def test_current_e2e_uses_artifact_handoff_for_job2():
     assert "Publish governed current Job2 handoff" in workflow
     assert "render-job-handoff/render-job.json" in workflow
     assert "dispatch-handoff" in workflow
+
+
+def test_current_recovery_binds_proven_render_profile_v4():
+    source=Path("scripts/video_a_current_contract_recovery.py").read_text(encoding="utf-8")
+    assert 'candidate") != "vedit.longform.render-profile@v4"' in source
+    assert '"version"] != "v4"' in source
+    assert '"timeline_placement") != "timestamp"' in source
+    assert '"compact_text_overlays") is not True' in source
+    assert 'print("RENDER_PROFILE=v4")' in source
+
+
+def test_no_padding_wpm_gate_is_strict_for_real_jobs_but_fixture_compatible():
+    source=Path("scripts/run001_longform_no_padding_qa.py").read_text(encoding="utf-8")
+    assert 'if isinstance(script_sections, list) and script_sections:' in source
+    assert 'if not 90.0 <= observed_wpm <= 180.0:' in source

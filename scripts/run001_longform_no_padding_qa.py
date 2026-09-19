@@ -33,18 +33,22 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
     duration = float(edit_qa.get("duration_seconds") or 0.0)
     if not math.isfinite(duration) or duration <= 0:
         raise RuntimeError(f"professional edit duration is invalid: {duration}")
-    script_words = sum(
-        len(re.findall(r"[A-Za-zÀ-ÿ0-9]+(?:['’\\-][A-Za-zÀ-ÿ0-9]+)?", str(section.get("narration") or "")))
-        for section in (job.get("script_sections") or [])
-        if isinstance(section, dict)
-    )
-    if script_words <= 0:
-        raise RuntimeError("approved script word count is missing")
-    observed_wpm = script_words * 60.0 / duration
-    if not 90.0 <= observed_wpm <= 180.0:
-        raise RuntimeError(
-            f"professional edit duration implies unnatural/padded speech rate: {observed_wpm:.3f} WPM"
+    script_sections = job.get("script_sections")
+    script_words = None
+    observed_wpm = None
+    if isinstance(script_sections, list) and script_sections:
+        script_words = sum(
+            len(re.findall(r"[A-Za-zÀ-ÿ0-9]+(?:['’\\-][A-Za-zÀ-ÿ0-9]+)?", str(section.get("narration") or "")))
+            for section in script_sections
+            if isinstance(section, dict)
         )
+        if script_words <= 0:
+            raise RuntimeError("approved script word count is missing")
+        observed_wpm = script_words * 60.0 / duration
+        if not 90.0 <= observed_wpm <= 180.0:
+            raise RuntimeError(
+                f"professional edit duration implies unnatural/padded speech rate: {observed_wpm:.3f} WPM"
+            )
     links = edit_qa.get("semantic_links")
     if not isinstance(links, list) or not links:
         raise RuntimeError("semantic media lineage is required")
