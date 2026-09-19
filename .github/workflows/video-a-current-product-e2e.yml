@@ -74,10 +74,25 @@ jobs:
           echo "BRAIN_RECOMPUTED=NO"
           echo "EDITORIAL_RECOMPUTED=NO"
           echo "MEDIAKNOWLEDGE_REUSED=YES"
-      - name: Reconcile stale Job1 and dispatch current Job2
+      - name: Reconcile stale Job1 and prepare current Job2 handoff
         run: |
           set -euo pipefail
-          python scripts/video_a_current_contract_recovery.py prepare-dispatch             --product runtime/checkpoint/product-quality-e2e.json             --old-state runtime/historical/product-delivery/state.json             --out runtime/product-delivery
+          python scripts/video_a_current_contract_recovery.py prepare-handoff --product runtime/checkpoint/product-quality-e2e.json --old-state runtime/historical/product-delivery/state.json --out runtime/product-delivery
+      - name: Publish governed current Job2 handoff
+        id: render_job_handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-current-render-job-${{ github.run_id }}
+          path: runtime/product-delivery/render-job-handoff/render-job.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Dispatch current Job2 by artifact handoff
+        env:
+          HANDOFF_ARTIFACT_ID: ${{ steps.render_job_handoff.outputs.artifact-id }}
+          HANDOFF_ARTIFACT_NAME: video-a-current-render-job-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/video_a_current_contract_recovery.py dispatch-handoff --out runtime/product-delivery --artifact-id "$HANDOFF_ARTIFACT_ID" --artifact-name "$HANDOFF_ARTIFACT_NAME" --producer-run-id "$GITHUB_RUN_ID" --source-sha "$GITHUB_SHA"
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/state.json"))

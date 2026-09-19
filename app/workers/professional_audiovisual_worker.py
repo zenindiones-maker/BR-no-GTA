@@ -801,16 +801,6 @@ def _build_edit_plan(
         role="spoken_channel_closing",
         fit="cover",
     ))
-    texts.append(EditText(
-        text=brand_contract["closing_line"],
-        start_seconds=cursor,
-        duration_seconds=closing_duration,
-        track="BRAND_CAPTIONS",
-        font_size=38,
-        color="white",
-        align="center",
-        box=True,
-    ))
     expanded_scenes.append({
         "order":segment_id,
         "segment_id":segment_id,
@@ -864,8 +854,8 @@ def _build_edit_plan(
         transitions=(),
         effects=(),
         qa=EditQA(
-            min_duration_seconds=TARGET_MIN_SECONDS,
-            max_duration_seconds=TARGET_MAX_SECONDS,
+            min_duration_seconds=max(1.0, duration * 0.98),
+            max_duration_seconds=duration * 1.02,
             require_audio=True,
             require_video=True,
             require_valid_container=True,

@@ -14,7 +14,12 @@ os.environ.setdefault("GITHUB_ACTIONS_RENDER_REF", "work/gate6f-analytics-learni
 os.environ.setdefault("BR_RENDER_EXECUTOR", "github_actions")
 
 from app.database.gta6_goal_repository import get_gta6_goal_artifacts
-from app.database.render_queue_repository import enqueue_render_job, get_render_job
+from app.database.render_queue_repository import (
+    claim_render_job,
+    enqueue_render_job,
+    get_render_job,
+    update_render_job_payload,
+)
 from app.database.video_repository import get_video, insert_video
 from app.main import initialize_application
 from app.services.channel_spoken_branding_service import (
@@ -24,12 +29,13 @@ from app.services.channel_spoken_branding_service import (
 from app.services.current_audio_contract_service import current_audio_contract
 from app.services.gta6_goal_service import update_artifacts
 from app.services.github_actions_command_runner import run_github_actions_command
+from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.harness_authorization_service import (
     authorization_to_context,
     issue_harness_authorization,
 )
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
-from app.services.render_worker_service import process_render_job
+from app.services.render_job_handoff_service import build_artifact_descriptor
 from app.workers.professional_audiovisual_worker import (
     PROFILE,
     YOUTUBE_MASTER_PROFILE,
@@ -396,7 +402,7 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
     print("CURRENT_AUDIO_CONTRACT_FINGERPRINT=" + audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"])
 
 
-def prepare_dispatch(product_path: Path, old_state_path: Path, out: Path) -> None:
+def prepare_handoff(product_path: Path, old_state_path: Path, out: Path) -> None:
     initialize_application()
     out.mkdir(parents=True, exist_ok=True)
     product = json.loads(product_path.read_text(encoding="utf-8"))
@@ -409,63 +415,155 @@ def prepare_dispatch(product_path: Path, old_state_path: Path, out: Path) -> Non
     _hydrate_historical_identity(old_state)
     existing = get_render_job(SUCCESSOR_RENDER_JOB_ID)
     if existing is not None:
-        expected = current_audio_contract()["CURRENT_AUDIO_CONTRACT_FINGERPRINT"]
-        if existing.get("current_audio_contract_fingerprint") != expected:
-            raise RuntimeError("existing successor RenderJob has stale audio fingerprint")
-        github_execution = existing.get("github_execution") or {}
-        run_id = github_execution.get("run_id")
-        if existing.get("status") in {"running", "completed"} and isinstance(run_id, int):
-            state = {
-                "status": "CHECKPOINT_REUSED",
-                "CHECKPOINT_REUSE": "YES",
-                "VIDEO_ID": VIDEO_ID,
-                "RENDER_JOB_ID": SUCCESSOR_RENDER_JOB_ID,
-                "RENDER_RUN_ID": run_id,
-                "AUDIO_CHECKPOINT_STALE": "YES",
-                "historical": historical,
-            }
-            (out / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-            emit(state)
-            return
-        raise RuntimeError(f"existing successor RenderJob is not safely resumable: {existing.get('status')}")
+        raise RuntimeError(
+            "successor RenderJob already exists in restored checkpoint; "
+            "refusing duplicate preparation"
+        )
 
     job, authorization = _build_current_job(product, old_state)
     _print_audio_gate(job)
     inserted = enqueue_render_job(job)
     if inserted != SUCCESSOR_RENDER_JOB_ID:
         raise RuntimeError(f"successor RenderJob identity mismatch: {inserted}")
-    update_artifacts(goal_id=GOAL_ID, video_id=VIDEO_ID, render_job_id=SUCCESSOR_RENDER_JOB_ID)
-    result = process_render_job(
+    running_job = claim_render_job(
         SUCCESSOR_RENDER_JOB_ID,
         execution_context=authorization_to_context(authorization),
     )
-    github_execution = result.github_execution or {}
-    run_id = github_execution.get("run_id")
-    if not result.pending or not isinstance(run_id, int) or run_id <= 0:
-        raise RuntimeError(f"successor render dispatch did not persist a live run: {result}")
+    if running_job.get("status") != "running" or running_job.get("id") != SUCCESSOR_RENDER_JOB_ID:
+        raise RuntimeError("successor RenderJob was not durably claimed")
+    update_artifacts(goal_id=GOAL_ID, video_id=VIDEO_ID, render_job_id=SUCCESSOR_RENDER_JOB_ID)
+
+    handoff_root = out / "render-job-handoff"
+    handoff_root.mkdir(parents=True, exist_ok=True)
+    render_job_path = handoff_root / "render-job.json"
+    render_job_path.write_text(
+        json.dumps(running_job, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     state = {
-        "status": "RENDER_DISPATCHED",
+        "status": "HANDOFF_PREPARED",
         "CHECKPOINT_REUSE": "NO",
         "VIDEO_ID": VIDEO_ID,
         "RENDER_JOB_ID": SUCCESSOR_RENDER_JOB_ID,
-        "RENDER_RUN_ID": run_id,
         "AUDIO_CHECKPOINT_STALE": "YES",
         "CURRENT_AUDIO_CONTRACT_FINGERPRINT": job["current_audio_contract_fingerprint"],
         "historical": historical,
-        "github_execution": github_execution,
+        "render_job_handoff_path": str(render_job_path),
     }
-    (out / "state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    emit(state)
+
+
+def dispatch_handoff(
+    *,
+    out: Path,
+    artifact_id: int,
+    artifact_name: str,
+    producer_run_id: int,
+    source_sha: str,
+) -> None:
+    initialize_application()
+    state_path = out / "state.json"
+    render_job_path = out / "render-job-handoff" / "render-job.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    job = json.loads(render_job_path.read_text(encoding="utf-8"))
+    persisted = get_render_job(SUCCESSOR_RENDER_JOB_ID)
+    if not persisted or persisted.get("status") != "running":
+        raise RuntimeError("successor RenderJob is not in claimed running state")
+    if persisted.get("github_execution"):
+        raise RuntimeError("successor RenderJob already has a GitHub execution")
+    descriptor = build_artifact_descriptor(
+        render_job_path=render_job_path,
+        job=job,
+        artifact_id=artifact_id,
+        artifact_name=artifact_name,
+        producer_run_id=producer_run_id,
+        producer_workflow="video-a-current-product-e2e.yml",
+        source_sha=source_sha,
+    )
+    descriptor_compact = json.dumps(
+        descriptor,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    dispatcher = GitHubActionsDispatcher(command_runner=run_github_actions_command)
+    dispatched = dispatcher.dispatch(
+        repository=os.environ["GITHUB_ACTIONS_REPOSITORY"],
+        workflow="render-worker.yml",
+        ref=os.environ.get("GITHUB_ACTIONS_RENDER_REF", "work/gate6f-analytics-learning"),
+        inputs={
+            "render_job": "",
+            "render_job_descriptor": descriptor_compact,
+            "brain_decision_id": str(job["brain_decision_id"]),
+            "execution_id": str(job["execution_id"]),
+            "authorized_action": str(job["authorized_action"]),
+        },
+    )
+    github_execution = {
+        "run_id": dispatched.run_id,
+        "repository": dispatched.repository,
+        "workflow": dispatched.workflow,
+        "ref": dispatched.ref,
+        "artifact_name": "render-output",
+        "transport_mode": "artifact",
+        "render_job_handoff_artifact_id": artifact_id,
+        "render_job_handoff_artifact_name": artifact_name,
+        "render_job_handoff_producer_run_id": producer_run_id,
+        "render_job_handoff_source_sha": source_sha,
+    }
+    update_render_job_payload(
+        SUCCESSOR_RENDER_JOB_ID,
+        github_execution=github_execution,
+    )
+    state.update({
+        "status": "RENDER_DISPATCHED",
+        "RENDER_RUN_ID": dispatched.run_id,
+        "github_execution": github_execution,
+        "render_job_descriptor": descriptor,
+    })
+    state_path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out / "render-job-handoff-descriptor.json").write_text(
+        json.dumps(descriptor, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"VIDEO_A_RENDER_JOB_DISPATCH_DESCRIPTOR_BYTES={len(descriptor_compact.encode('utf-8'))}")
+    print("VIDEO_A_RENDER_JOB_TRANSPORT_MODE=artifact")
+    print(f"RENDER_RUN_ID={dispatched.run_id}")
     emit(state)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare-dispatch",))
-    parser.add_argument("--product", type=Path, required=True)
-    parser.add_argument("--old-state", type=Path, required=True)
+    parser.add_argument("action", choices=("prepare-handoff", "dispatch-handoff"))
+    parser.add_argument("--product", type=Path)
+    parser.add_argument("--old-state", type=Path)
     parser.add_argument("--out", type=Path, default=Path("runtime/product-delivery"))
+    parser.add_argument("--artifact-id", type=int)
+    parser.add_argument("--artifact-name")
+    parser.add_argument("--producer-run-id", type=int)
+    parser.add_argument("--source-sha")
     args = parser.parse_args()
-    prepare_dispatch(args.product, args.old_state, args.out)
+    if args.action == "prepare-handoff":
+        if args.product is None or args.old_state is None:
+            raise SystemExit("--product and --old-state are required for prepare-handoff")
+        prepare_handoff(args.product, args.old_state, args.out)
+    else:
+        if not all((args.artifact_id, args.artifact_name, args.producer_run_id, args.source_sha)):
+            raise SystemExit("artifact handoff identity arguments are required")
+        dispatch_handoff(
+            out=args.out,
+            artifact_id=int(args.artifact_id),
+            artifact_name=str(args.artifact_name),
+            producer_run_id=int(args.producer_run_id),
+            source_sha=str(args.source_sha),
+        )
     return 0
 
 
