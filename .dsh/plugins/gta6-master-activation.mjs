@@ -1,4 +1,4 @@
-import { createUserMessage } from "file:///data/data/com.termux/files/home/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-llm/lib/index.js";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 const GTA6_MASTER_SESSION = "gta6-master-session";
 
