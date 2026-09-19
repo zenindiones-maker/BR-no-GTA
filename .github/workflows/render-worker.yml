@@ -236,6 +236,7 @@ jobs:
             tests/test_operational_efficiency_history.py \
             tests/test_media_checkpoint_service.py
       - name: Setup ingestion JavaScript runtime
+        if: inputs.media_artifact_id == ''
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -258,6 +259,7 @@ jobs:
           PY
 
       - name: Setup YouTube PO Token provider
+        if: inputs.media_artifact_id == ''
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
@@ -276,6 +278,7 @@ jobs:
           echo "PO Token provider running on 127.0.0.1:4416"
 
       - name: Prepare YouTube cookies
+        if: inputs.media_artifact_id == ''
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
@@ -295,6 +298,7 @@ jobs:
             --runtime-root runtime/render
 
       - name: Restore content-addressed narration cache
+        if: inputs.narration_artifact_id == ''
         uses: actions/cache@v4
         with:
           path: runtime/narration-cache
@@ -485,6 +489,7 @@ jobs:
           PY
 
       - name: Checkpoint QA-passed narration artifact
+        if: inputs.narration_artifact_id == ''
         id: narration_checkpoint
         uses: actions/upload-artifact@v4
         with:
@@ -517,6 +522,7 @@ jobs:
           PY
 
       - name: Checkpoint QA-passed media artifact
+        if: inputs.media_artifact_id == ''
         id: media_checkpoint
         uses: actions/upload-artifact@v4
         with:
@@ -524,6 +530,20 @@ jobs:
           path: runtime/render/media-checkpoint/
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Report immutable checkpoint reuse
+        if: inputs.narration_artifact_id != '' || inputs.media_artifact_id != ''
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.narration_artifact_id }}" ]; then
+            echo "NARRATION_CHECKPOINT_REUSED=YES"
+            echo "REDUNDANT_NARRATION_ARTIFACT_UPLOADS=0"
+          fi
+          if [ -n "${{ inputs.media_artifact_id }}" ]; then
+            echo "MEDIA_CHECKPOINT_REUSED=YES"
+            echo "REDUNDANT_MEDIA_ARTIFACT_UPLOADS=0"
+            echo "REDUNDANT_MEDIA_DOWNLOADS=0"
+          fi
 
       - name: Build EditPlan and Render Video
         env:
