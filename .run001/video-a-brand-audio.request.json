@@ -14,8 +14,8 @@
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 7,
-  "retry_reason": "Re-run compact single-voice proof after removing stale textual policy assertion; runtime unchanged.",
+  "attempt": 8,
+  "retry_reason": "Explicit user-requested delivery of the two canonical approved audio assets: Fluid 2 opening and G-brand-mixed closing. No alternative voice casting.",
   "selected_opening_take_id": "take-2",
   "selected_opening_profile": {
     "reference": "I-opening-fluid-2.mp3",
@@ -28,9 +28,10 @@
     "status": "HUMAN_APPROVED",
     "automatic_substitution_allowed": false
   },
-  "base_head": "bd12a8db4488f1694aa0663f275b3f8f5d1b7858",
+  "base_head": "a4871e11ea3b1cc46801c78c5328f3f742f71655",
   "selected_closing_asset_id": "G-brand-mixed",
   "runtime_voice_count": 1,
   "allowed_runtime_voice": "pt-BR-ThalitaMultilingualNeural",
-  "alternative_voice_casting_enabled": false
+  "alternative_voice_casting_enabled": false,
+  "send_canonical_voice_proof_to_telegram": true
 }
