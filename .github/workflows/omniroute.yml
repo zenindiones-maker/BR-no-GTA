@@ -156,23 +156,13 @@ jobs:
           test -n "$PROMPT_B64"
           mkdir -p runtime/opencode-native-result runtime/opencode-native-workdir
           python - <<'PY'
-          import base64, json, os
+          import base64, os
           from pathlib import Path
           prompt=base64.b64decode(os.environ["PROMPT_B64"], validate=True).decode("utf-8")
           if not prompt.strip():
               raise SystemExit("empty prompt")
           result_root=Path("runtime/opencode-native-result")
-          work_root=Path("runtime/opencode-native-workdir")
           (result_root/"prompt.txt").write_text(prompt, encoding="utf-8")
-          config={
-              "$schema":"https://opencode.ai/config.json",
-              "model":"opencode/big-pickle",
-              "permission":{"*":"deny"},
-          }
-          (work_root/"opencode.json").write_text(
-              json.dumps(config, separators=(",",":")),
-              encoding="utf-8",
-          )
           PY
           START="$(python - <<'PY'
           import time
@@ -180,17 +170,17 @@ jobs:
           PY
           )"
           set +e
+          ROOT="$PWD"
           PROMPT="$(cat runtime/opencode-native-result/prompt.txt)"
-          OPENCODE_CONFIG="$PWD/runtime/opencode-native-workdir/opencode.json" \
-          timeout 180 opencode run \
-            --standalone \
-            --agent build \
-            --title "BR-no-GTA semantic execution" \
-            --model "opencode/big-pickle" \
-            --format json \
-            "$PROMPT" \
-            > runtime/opencode-native-result/stdout.ndjson \
-            2> runtime/opencode-native-result/stderr.txt
+          (
+            cd runtime/opencode-native-workdir
+            timeout 180 opencode run \
+              --standalone \
+              --model "opencode/big-pickle" \
+              --format json \
+              "$PROMPT"
+          ) > "$ROOT/runtime/opencode-native-result/stdout.ndjson" \
+            2> "$ROOT/runtime/opencode-native-result/stderr.txt"
           RC=$?
           set -e
           END="$(python - <<'PY'
