@@ -23,7 +23,7 @@ CLOSING_LINE = "E BR não dorme em Vice City"
 OFFICIAL_RATE = "+0%"
 OFFICIAL_PITCH = "+0Hz"
 SELECTED_OPENING_TAKE_ID = "take-2"
-SELECTED_CLOSING_TAKE_ID = "take-1"
+SELECTED_CLOSING_TAKE_ID = "G-brand-mixed"
 # Backward-compatible alias: production opening is the human-selected Fluid 2 profile.
 SELECTED_TAKE_ID = SELECTED_OPENING_TAKE_ID
 HUMAN_APPROVED_OPENING_REFERENCE = "I-opening-fluid-2.mp3"
