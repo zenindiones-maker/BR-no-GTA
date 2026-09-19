@@ -1,6 +1,6 @@
 {
   "schema": "video-a-current-product-e2e-request/v1",
-  "requested_from_head": "d54cedc92f372879b1b32e06c64282b7a9518ff8",
+  "requested_from_head": "6851442e6a3febe732dda32f181bdf7c070f79dd",
   "goal_id": "f9dc10d7-dcc4-44dc-b808-444a351b4189",
   "product_label": "A",
   "historical_render_run_id": 35463639061,
@@ -8,14 +8,14 @@
   "successor_render_job_id": 2,
   "current_audio_contract_required": true,
   "render_transport": "artifact",
-  "resume_from_e2e_run_id": 35476105885,
-  "resume_from_e2e_artifact_id": 10593683981,
-  "previous_render_run_id": 35476135361,
-  "previous_failure_class": "MISSING_PYTEST_IN_CONTROLLER_RUNTIME",
+  "resume_from_e2e_run_id": 35476663755,
+  "resume_from_e2e_artifact_id": 10594436517,
+  "previous_render_run_id": 35476691582,
+  "previous_failure_class": "RENDER_HANDOFF_SOURCE_SHA_MISMATCH_DUE_CONCURRENT_BRANCH_ADVANCE",
   "recovery_mode": "REUSE_EXISTING_JOB2",
-  "attempt": 4,
+  "attempt": 5,
   "youtube_privacy": "private",
   "human_review_delivery": "telegram",
-  "requested_at": "2026-09-19T23:39:00Z",
-  "previous_e2e_run_id": 35476603197
+  "previous_e2e_run_id": 35476663755,
+  "requested_at": "2026-09-19T23:41:00Z"
 }
