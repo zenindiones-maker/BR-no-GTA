@@ -59,3 +59,53 @@ def test_unknown_timeline_placement_fails_closed():
         assert "unsupported timeline placement" in str(exc)
     else:
         raise AssertionError("unknown timeline placement must fail closed")
+
+
+def test_compact_static_text_uses_drawtext_without_full_frame_overlay():
+    project = _late_text_project()
+    optimized = compile_project(
+        project,
+        CompileOptions(
+            audio=False,
+            timeline_placement="timestamp",
+            compact_text_overlays=True,
+        ),
+    )
+
+    assert "drawtext=" in optimized.filtergraph
+    assert "overlay=" not in optimized.filtergraph
+    assert "color=c=black@0" not in optimized.filtergraph
+    assert "between(t,10,12)" in optimized.filtergraph
+
+
+def test_compact_text_falls_back_for_transformed_text():
+    project = _late_text_project()
+    project.tracks[0].clips[0].transform.scale = 1.1
+    optimized = compile_project(
+        project,
+        CompileOptions(
+            audio=False,
+            timeline_placement="timestamp",
+            compact_text_overlays=True,
+        ),
+    )
+
+    assert "overlay=" in optimized.filtergraph
+    assert "scale=iw*1.1:ih*1.1" in optimized.filtergraph
+
+
+def test_v4_render_profile_is_versioned_checksummed_and_executable():
+    from app.services.render_learning_profile_service import (
+        executable_render_profile,
+        render_profile_checksum,
+    )
+
+    v3 = executable_render_profile("v3")
+    v4 = executable_render_profile("v4")
+    assert v4["version"] == "v4"
+    assert v4["options"]["timeline_placement"] == "timestamp"
+    assert v4["options"]["compact_text_overlays"] is True
+    assert v4["options"]["software_preset"] == "slow"
+    assert len(v4["checksum"]) == 64
+    assert v4["checksum"] == render_profile_checksum("v4")
+    assert v4["checksum"] != v3["checksum"]

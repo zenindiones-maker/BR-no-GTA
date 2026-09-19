@@ -19,10 +19,13 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "attempt": 4,
-  "retry_reason": "fix benchmark-only remux evidence bug: A1 pass atomically replaces the same MP4; preserve 3x timestamp-placement benchmark and all quality gates",
-  "candidate": "vedit.longform.render-profile@v3-timestamp-placement",
+  "retry_reason": "issue #14 v4: preserve v3 timestamp gain and eliminate full-frame static text overlay fan-out; same codec/quality/x264 preset, full decode, SSIM and professional QA",
+  "candidate": "vedit.longform.render-profile@v4-timestamp-compact-text",
   "representative_repeats": 3,
-  "root_cause_hypothesis": "per-clip tpad pre-start frame synthesis scales with sum of clip start times",
+  "root_cause_hypothesis": "legacy per-clip tpad plus one full-frame transparent source/overlay per static text clip multiplies 1080p filtergraph work",
   "previous_failed_benchmark_run_id": 35415188637,
-  "previous_failure_class": "BENCHMARK_EVIDENCE_PATH_BUG_AFTER_RENDER_COMPLETED"
+  "previous_failure_class": "BENCHMARK_EVIDENCE_PATH_BUG_AFTER_RENDER_COMPLETED",
+  "prior_timestamp_only_run_id": 35415807436,
+  "prior_timestamp_only_latency_reduction_percent": 13.162986,
+  "prior_timestamp_only_ssim": 0.998475
 }

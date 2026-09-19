@@ -60,6 +60,7 @@ class RenderOptions:
     software_preset: str | None = None
     # Long-form placement is versioned independently from codec/CRF quality.
     timeline_placement: str = "legacy_tpad"
+    compact_text_overlays: bool = False
     video: bool = True
     audio: bool = True
     threads: int | None = None
@@ -181,6 +182,7 @@ def build_command(project: Project, opts: RenderOptions, workdir: Path) -> tuple
         start=opts.start, end=opts.end, workdir=str(workdir),
         hwaccel=info.hwaccel if (opts.prefer_hw and opts.hwaccel_decode and info.is_hw(enc)) else "",
         timeline_placement=opts.timeline_placement,
+        compact_text_overlays=opts.compact_text_overlays,
         stab_files=stab,
     )
     c = compile_project(project, copts)
@@ -394,6 +396,7 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
                 **pass_usage,
                 "threads_requested": opts.threads,
                 "timeline_placement": opts.timeline_placement,
+                "compact_text_overlays": opts.compact_text_overlays,
                 "encoder": enc,
             },
         )

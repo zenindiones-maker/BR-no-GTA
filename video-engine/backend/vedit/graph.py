@@ -63,6 +63,9 @@ class CompileOptions:
     # baseline/rollback; timestamp shifts PTS instead of synthesizing all
     # transparent frames from t=0 until clip.start.
     timeline_placement: str = "legacy_tpad"
+    # Static text can be composited directly with drawtext on the current base.
+    # Legacy behavior remains available for reproducible comparison/rollback.
+    compact_text_overlays: bool = False
     stab_files: dict = field(default_factory=dict)  # clip_id -> file .trf di vidstab
 
 
@@ -515,6 +518,46 @@ class _Builder:
             ]
         return "drawtext=" + ":".join(args)
 
+    def _inline_text_eligible(self, clip: Clip) -> bool:
+        if clip.type != "text" or clip.text is None or clip.effects:
+            return False
+        if clip.fade_in > 1e-9 or clip.fade_out > 1e-9:
+            return False
+        if clip.transition_out and clip.transition_out.duration > 1e-9:
+            return False
+        if clip.reverse or abs(float(clip.speed) - 1.0) > 1e-9:
+            return False
+        tf = clip.transform
+        defaults = (
+            (tf.x, 0.0),
+            (tf.y, 0.0),
+            (tf.scale, 1.0),
+            (tf.rotation, 0.0),
+            (tf.opacity, 1.0),
+        )
+        for value, expected in defaults:
+            if kf.is_kf(value):
+                return False
+            if abs(float(kf.sample(value, 0, expected)) - expected) > 1e-9:
+                return False
+        return True
+
+    def _inline_text(self, base: str, clip: Clip) -> str:
+        ctx = fx.Ctx(
+            width=self.w,
+            height=self.h,
+            fps=self.fps,
+            sample_rate=self.sr,
+            tvar="t",
+            duration=clip.duration,
+            scale=self.scale,
+        )
+        draw = self._drawtext(clip, ctx)
+        draw += f":enable={fx.quoted(f'between(t,{n(clip.start)},{n(clip.start + clip_visible(clip))})')}"
+        out = self.label("txt")
+        self.chains.append(f"[{base}]{draw}[{out}]")
+        return out
+
     # -- composizione video ---------------------------------------------
     def build_video(self, duration: float) -> str | None:
         bg = self.p.settings.background or "black"
@@ -536,6 +579,10 @@ class _Builder:
             for clip in sorted(track.clips,
                                key=lambda c: (c.type in ("text", "color"), -clip_origin(c))):
                 if not clip.enabled or clip.duration <= 0:
+                    continue
+                if self.o.compact_text_overlays and self._inline_text_eligible(clip):
+                    base = self._inline_text(base, clip)
+                    drawn += 1
                     continue
                 lab = self.video_clip(clip, track)
                 if lab is None:

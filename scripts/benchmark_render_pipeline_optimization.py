@@ -185,7 +185,14 @@ def _graph_complexity(project) -> dict[str, Any]:
     }
 
 
-def _render_variant(*, name: str, project, output: Path, timeline_placement: str) -> dict[str, Any]:
+def _render_variant(
+    *,
+    name: str,
+    project,
+    output: Path,
+    timeline_placement: str,
+    compact_text_overlays: bool,
+) -> dict[str, Any]:
     from vedit.render import RenderOptions, render
 
     expected_duration = float(project.duration())
@@ -200,6 +207,7 @@ def _render_variant(*, name: str, project, output: Path, timeline_placement: str
             hwaccel_decode=False,
             software_preset="slow",
             timeline_placement=timeline_placement,
+            compact_text_overlays=compact_text_overlays,
         ),
     )
     render_call_seconds = time.monotonic() - started
@@ -222,6 +230,7 @@ def _render_variant(*, name: str, project, output: Path, timeline_placement: str
         "encoder": result.encoder,
         "software_preset": "slow",
         "timeline_placement": timeline_placement,
+        "compact_text_overlays": compact_text_overlays,
         "prefer_hw": False,
         "hwaccel_decode": False,
         "resource_usage": resources,
@@ -273,18 +282,20 @@ def main() -> int:
     complexity = _graph_complexity(representative)
 
     baseline_path = results / "legacy-tpad.mp4"
-    candidate_path = results / "timestamp-placement.mp4"
+    candidate_path = results / "timestamp-compact-text.mp4"
     baseline = _render_variant(
         name="legacy-tpad",
         project=representative,
         output=baseline_path,
         timeline_placement="legacy_tpad",
+        compact_text_overlays=False,
     )
     candidate = _render_variant(
-        name="timestamp-placement",
+        name="timestamp-compact-text",
         project=representative,
         output=candidate_path,
         timeline_placement="timestamp",
+        compact_text_overlays=True,
     )
 
     ssim = _ssim(baseline_path, candidate_path)
@@ -305,6 +316,8 @@ def main() -> int:
             baseline["encoder"] == candidate["encoder"] == "libx264"
             and baseline["software_preset"] == candidate["software_preset"] == "slow"
         ),
+        "timestamp_placement_active": candidate["timeline_placement"] == "timestamp",
+        "compact_text_overlays_active": candidate["compact_text_overlays"] is True,
     }
     promotion_eligible = all(promotion_checks.values())
 
@@ -330,20 +343,30 @@ def main() -> int:
     remux_decode, _ = _decode(remux_after)
 
     evidence = {
-        "version": "render-pipeline-optimization-evidence/v2",
+        "version": "render-pipeline-optimization-evidence/v3",
         "status": "PASS" if promotion_eligible else "FAIL",
         "observed": True,
         "root_cause": {
             "stage": "ffmpeg_decode_filtergraph_encode_audio_mix",
             "mechanism": (
-                "legacy per-clip tpad synthesizes frames from timeline zero "
-                "to every clip start before overlay"
+                "legacy per-clip tpad synthesizes pre-start frames and static text "
+                "is represented as full-frame alpha sources plus overlay filters; "
+                "both multiply 1080p filtergraph work as the long-form clip count grows"
             ),
             "complexity": complexity,
             "production_longform_duration_seconds": 1608.121179,
             "hardware_acceleration_available": hardware_available,
             "hardware_encoder_probe": h264_encoder,
             "preset_change_previously_rejected": True,
+            "prior_timestamp_only_benchmark": {
+                "run_id": 35415807436,
+                "baseline_total_seconds": 322.565321,
+                "candidate_total_seconds": 280.106093,
+                "latency_reduction_percent": 13.162986,
+                "ssim": 0.998475,
+                "qa": "PASS",
+                "promotion": "REJECTED_BELOW_20_PERCENT_GATE",
+            },
         },
         "benchmark": {
             "source_canary_seconds": 60.0,
@@ -377,6 +400,7 @@ def main() -> int:
     print(f"REPRESENTATIVE_DURATION_SECONDS={representative.duration():.6f}")
     print(f"VIDEO_CLIP_COUNT={complexity['video_clip_count']}")
     print(f"TEXT_CLIP_COUNT={complexity['text_clip_count']}")
+    print(f"COMPACT_TEXT_OVERLAYS={'YES' if candidate['compact_text_overlays'] else 'NO'}")
     print(f"LEGACY_PREPAD_SECONDS={complexity['legacy_prepad_seconds']:.6f}")
     print(f"BASELINE_TOTAL_SECONDS={baseline['total_seconds']:.6f}")
     print(f"CANDIDATE_TOTAL_SECONDS={candidate['total_seconds']:.6f}")
@@ -392,7 +416,7 @@ def main() -> int:
     print("JOB18_UNCHANGED=YES")
     print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     if not promotion_eligible:
-        raise SystemExit("timestamp placement did not satisfy promotion gates")
+        raise SystemExit("timestamp + compact text placement did not satisfy promotion gates")
     return 0
 
 

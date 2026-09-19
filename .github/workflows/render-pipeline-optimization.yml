@@ -49,7 +49,7 @@ jobs:
           required={
               'source_canary_run_id':35408056905,
               'source_canary_artifact_id':10572723602,
-              'candidate':'vedit.longform.render-profile@v3-timestamp-placement',
+              'candidate':'vedit.longform.render-profile@v4-timestamp-compact-text',
               'representative_repeats':3,
               'minimum_latency_reduction_percent':20.0,
               'minimum_ssim':0.98,
@@ -140,6 +140,7 @@ jobs:
           bench=d['benchmark']
           assert root['stage']=='ffmpeg_decode_filtergraph_encode_audio_mix'
           assert root['complexity']['legacy_prepad_seconds'] > root['complexity']['timeline_duration_seconds']
+          assert root['complexity']['text_clip_count'] > 0
           assert bench['promotion_eligible'] is True
           assert bench['latency_reduction_fraction'] >= 0.20
           assert bench['ssim'] >= 0.98
@@ -152,14 +153,15 @@ jobs:
           assert candidate['checks']['duration_expected'] is True
           assert candidate['full_decode'] is True
           assert candidate['timeline_placement']=='timestamp'
+          assert candidate['compact_text_overlays'] is True
           a1=d['a1_post_render_remux']
           assert a1['precondition_a1_voice_contract'] is True
           assert a1['video_stream_copy_hash_preserved'] is True
           assert a1['result_full_decode'] is True
-          print('ROOT_CAUSE=LEGACY_TPAD_PRESTART_FRAME_SYNTHESIS')
+          print('ROOT_CAUSE=LEGACY_TPAD_PLUS_FULL_FRAME_STATIC_TEXT_OVERLAYS')
           print('QUALITY_GATES=PASS')
           print('FULL_DECODE=PASS')
-          print('TIMESTAMP_PLACEMENT_PROMOTION=ELIGIBLE')
+          print('V4_RENDER_PROFILE_PROMOTION=ELIGIBLE')
           print('A1_REDUNDANT_REMUX_MEASURED=PASS')
           PY
 
