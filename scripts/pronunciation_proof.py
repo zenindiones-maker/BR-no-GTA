@@ -25,9 +25,25 @@ def _probe(path:Path)->dict:
     if d.returncode!=0 or d.stderr.strip(): raise RuntimeError("full decode failed")
     return {"duration_seconds":duration,"size_bytes":path.stat().st_size,"audio_stream":True,"full_decode":True}
 
+async def _literal_edge_baseline(text:str, output:Path)->dict:
+    import edge_tts
+    output.parent.mkdir(parents=True,exist_ok=True)
+    started=time.monotonic()
+    communicator=edge_tts.Communicate(text=text,voice=DEFAULT_VOICE,rate="+0%",pitch="+0Hz",volume="+0%",boundary="WordBoundary")
+    with output.open("wb") as stream:
+        async for event in communicator.stream():
+            if event.get("type")=="audio":
+                stream.write(event.get("data") or b"")
+    if not output.is_file() or output.stat().st_size<=0:
+        raise RuntimeError("literal Edge baseline returned empty audio")
+    return {"wall_clock_seconds":time.monotonic()-started,"external_calls":1,"probe":_probe(output)}
+
 def main()->int:
     ap=argparse.ArgumentParser(); ap.add_argument("--output-dir",type=Path,required=True); args=ap.parse_args()
     args.output_dir.mkdir(parents=True,exist_ok=True); samples_dir=args.output_dir/"samples"; samples_dir.mkdir(parents=True,exist_ok=True)
+    baseline_text="E BR não dorme em Vice City"
+    baseline_path=samples_dir/"C0-closing-literal-baseline.mp3"
+    baseline=asyncio.run(_literal_edge_baseline(baseline_text,baseline_path))
     rows=[]; total_started=time.monotonic(); resolution=0.0; synthesis=0.0; calls=0
     for sample_id,text in SAMPLES:
         plan=resolve_synthesis_plan(text,voice=DEFAULT_VOICE); resolution+=plan.resolution_wall_clock_seconds
@@ -65,7 +81,15 @@ def main()->int:
         "sample_count":len(rows),"samples":rows,"checks":checks,
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{"critical_term":"vice-city","status":"PENDING","automatic_promotion":False,"target_ipa":vice.get("target_ipa")},
-        "performance":{"resolution_wall_clock_seconds":resolution,"synthesis_wall_clock_seconds":synthesis,"total_wall_clock_seconds":time.monotonic()-total_started,"tts_external_calls":calls,"span_count":sum(len(x["plan"]["spans"]) for x in rows),"foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows)},
+        "performance":{
+            "baseline_literal_closing":{"wall_clock_seconds":baseline["wall_clock_seconds"],"external_calls":baseline["external_calls"],"probe":baseline["probe"]},
+            "candidate_multilingual_closing":{"wall_clock_seconds":closing["edge_metrics"]["wall_clock_seconds"],"external_calls":closing["edge_metrics"]["external_calls"],"probe":closing["probe"]},
+            "comparison_basis":"same canonical closing text; performance is descriptive because candidate changes pronunciation handling quality",
+            "resolution_wall_clock_seconds":resolution,"synthesis_wall_clock_seconds":synthesis,
+            "total_wall_clock_seconds":time.monotonic()-total_started,"tts_external_calls":calls,
+            "span_count":sum(len(x["plan"]["spans"]) for x in rows),
+            "foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows)
+        },
         "JOB18_UNCHANGED":"YES","PUBLICATION_AUTHORITY_UNCHANGED":"YES",
     }
     (args.output_dir/"pronunciation-proof.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding="utf-8")
