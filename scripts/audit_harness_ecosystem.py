@@ -338,6 +338,35 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
             item["LEARNING_RETURN_PATHS"].append(row["LEARNING_RETURN_PATH"])
             item["STATUS"] = merge_status(item["STATUS"], row["STATUS"])
 
+    # Selected Higgsfield skills are real Codex-discoverable skills, while
+    # generation capabilities remain blocked until unattended authentication is proven.
+    higgsfield_skills = sorted(
+        record.capability_id
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "higgsfield"
+    )
+    for skill in higgsfield_skills:
+        item = ensure("SKILL", skill)
+        item["SOURCES"].extend(
+            [
+                "higgsfield-ai/skills pinned runtime pack",
+                "scripts/agent-tooling/bootstrap.sh",
+                "scripts/agent-tooling/check_discovery.py",
+            ]
+        )
+        record = GLOBAL_CAPABILITY_REGISTRY.get(skill)
+        if record is not None:
+            item["CAPABILITY_IDS"].append(record.capability_id)
+            item["DOMAINS"].append(record.domain)
+            item["ALLOWED_ACTIONS"].extend(record.allowed_actions)
+            item["TEST_COVERAGE"].append("GitHub Actions native Codex skills/list discovery")
+            item["EVIDENCE_RETURN_PATHS"].append(record.evidence_contract or "CapabilityEvidence")
+            item["LEARNING_RETURN_PATHS"].append("not applicable while generation is BLOCKED")
+            item["STATUS"] = merge_status(item["STATUS"], "REGISTERED_NOT_EXECUTABLE")
+            item["NOTES"].append(
+                "Skill is installed/discoverable in Codex tooling; external generation remains BLOCKED until unattended auth is proven."
+            )
+
     # The pinned Addy pack is an external runtime source, not 24 checked-in folders.
     for skill in ADDY_SKILLS:
         capability_id = f"addy:{skill}"
@@ -421,6 +450,7 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     coordinator["NOTES"].append(
         "Upstream GOD/Michael authority is not imported; BR boundary is DELEGATED_ONLY"
     )
+    coordinator["SOURCES"].append(".dsh/plugins/gta6-master-activation.mjs")
 
     # Concrete Python agent/brain classes are included even when not Registry identities.
     for discovered in _python_agent_classes():
@@ -487,11 +517,22 @@ def audit() -> dict[str, Any]:
         if row["IDENTITY_KIND"] == "WORKER_ENGINE"
     }
     addy_ids = set(ADDY_SKILLS)
+    higgsfield_ids = {
+        record.capability_id
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "higgsfield"
+    }
     observed_addy = {
         row["AGENT_OR_SKILL_ID"]
         for row in identities
         if row["IDENTITY_KIND"] == "SKILL"
         and row["AGENT_OR_SKILL_ID"] in addy_ids
+    }
+    observed_higgsfield = {
+        row["AGENT_OR_SKILL_ID"]
+        for row in identities
+        if row["IDENTITY_KIND"] == "SKILL"
+        and row["AGENT_OR_SKILL_ID"] in higgsfield_ids
     }
 
     capability_blockers = [
@@ -538,6 +579,9 @@ def audit() -> dict[str, Any]:
         "ADDY_SKILLS_EXPECTED": 24,
         "ADDY_SKILLS_FOUND": len(observed_addy),
         "ADDY_SKILL_IDS": sorted(observed_addy),
+        "HIGGSFIELD_SKILLS_EXPECTED": 4,
+        "HIGGSFIELD_SKILLS_FOUND": len(observed_higgsfield),
+        "HIGGSFIELD_SKILL_IDS": sorted(observed_higgsfield),
         "AGENT_IDS": sorted(agent_ids),
         "SKILL_IDS": sorted(skill_ids),
         "WORKER_ENGINE_IDS": sorted(worker_ids),
@@ -554,7 +598,8 @@ def audit() -> dict[str, Any]:
         "MISSING_EVIDENCE_PATHS_FOUND": capability_counts.get("MISSING_EVIDENCE_PATH", 0),
         "AGENT_INVENTORY_COMPLETE": (
             len(observed_addy) == 24
-            and len(_dsh_skills()) >= 5
+            and len(observed_higgsfield) == 4
+            and len(_dsh_skills()) >= 6
             and "codex" in agent_ids
             and "gta6-master-agent" in agent_ids
             and "gta6-brain" in agent_ids
@@ -599,6 +644,7 @@ def main() -> int:
         "TOTAL_WORKER_ENGINES_FOUND",
         "NATIVE_HARNESS_DECLARED_AGENT_COUNT",
         "ADDY_SKILLS_FOUND",
+        "HIGGSFIELD_SKILLS_FOUND",
         "ACTIVE_EXECUTABLE",
         "REGISTERED_NOT_EXECUTABLE",
         "ORPHANS_FOUND",
@@ -616,6 +662,10 @@ def main() -> int:
         + ("PASS" if result["ADDY_SKILLS_FOUND"] == 24 else "FAIL")
     )
     print(
+        "HIGGSFIELD_4_INVENTORIED="
+        + ("PASS" if result["HIGGSFIELD_SKILLS_FOUND"] == 4 else "FAIL")
+    )
+    print(
         "ALL_ACTIVE_CAPABILITIES_DISCOVERABLE="
         + ("PASS" if result["ALL_ACTIVE_CAPABILITIES_DISCOVERABLE"] else "FAIL")
     )
@@ -623,7 +673,11 @@ def main() -> int:
         "EXECUTOR_BINDINGS_VALID="
         + ("PASS" if result["EXECUTOR_BINDINGS_VALID"] else "FAIL")
     )
-    return 0 if result["AGENT_INVENTORY_COMPLETE"] and result["EXECUTOR_BINDINGS_VALID"] else 2
+    return 0 if (
+        result["AGENT_INVENTORY_COMPLETE"]
+        and result["EXECUTOR_BINDINGS_VALID"]
+        and result["HIGGSFIELD_SKILLS_FOUND"] == 4
+    ) else 2
 
 
 if __name__ == "__main__":
