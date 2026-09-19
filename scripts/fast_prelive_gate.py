@@ -205,6 +205,11 @@ def _assert_learning_route_contract() -> dict[str, Any]:
         raise AssertionError("learning-aware package routing escaped required capability")
     if decision.selected_executor_binding != record.executor_binding:
         raise AssertionError("learning-aware package routing executor mismatch")
+    from app.services.harness_capability_service import CAPABILITY_CATALOG
+    if capability_id not in {item.capability_id for item in CAPABILITY_CATALOG}:
+        raise AssertionError(
+            "youtube.package.persist is routable but absent from Harness execution catalog"
+        )
     metadata = dict(decision.policy_metadata or {})
     learning = dict(metadata.get("learning_context") or {})
     if learning.get("learning_required") is not True:
