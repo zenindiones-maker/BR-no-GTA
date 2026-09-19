@@ -68,7 +68,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
-          python -m pip install "edge-tts==7.2.8" requests pytest
+          python -m pip install -r requirements.txt pytest "edge-tts==7.2.8"
           ffmpeg -version | head -n1
           ffprobe -version | head -n1
 

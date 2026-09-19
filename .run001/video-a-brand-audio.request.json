@@ -13,5 +13,7 @@
   "production_fallback_take_id": "take-1",
   "cache_required": true,
   "youtube_publication": false,
-  "job18_frozen": true
+  "job18_frozen": true,
+  "attempt": 2,
+  "retry_reason": "install canonical project runtime before focused spoken-branding tests; no audio generated in attempt 1"
 }
