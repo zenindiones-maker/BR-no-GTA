@@ -22,6 +22,19 @@ from app.services.gta6_fact_check_service import (
     FACT_CHECK_EXECUTOR_BINDING,
     execute_authorized_gta6_fact_check,
 )
+from app.services.native_capability_adapters import (
+    BINDINGS as NATIVE_BINDINGS,
+    execute_media_discovery_capability,
+    execute_production_plan_capability,
+    execute_qa_preflight_capability,
+    execute_script_generate_capability,
+    execute_vedit_plan_capability,
+)
+from app.services.media_analysis_cloud_service import (
+    MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
+    MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
+    execute_media_analysis_cloud_capability,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -31,6 +44,17 @@ MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     PHONE_CAPABILITY_ID: PHONE_EXECUTOR_BINDING,
     AGENT_OFFICE_CAPABILITY_ID: AGENT_OFFICE_EXECUTOR_BINDING,
     FACT_CHECK_CAPABILITY_ID: FACT_CHECK_EXECUTOR_BINDING,
+    MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
+    **NATIVE_BINDINGS,
+}
+
+_NATIVE_EXECUTORS = {
+    "media.discovery": execute_media_discovery_capability,
+    "production.plan": execute_production_plan_capability,
+    "qa.preflight": execute_qa_preflight_capability,
+    "script.generate": execute_script_generate_capability,
+    "video.edit.vedit": execute_vedit_plan_capability,
+    MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: execute_media_analysis_cloud_capability,
 }
 
 
@@ -66,6 +90,19 @@ def execute_mcp_capability(
             authorization=authorization,
             routing_decision=routing_decision,
             payload=payload,
+        )
+
+    native_executor = _NATIVE_EXECUTORS.get(capability_id)
+    if native_executor is not None:
+        expected_binding = MCP_BOUNDED_EXECUTOR_ALLOWLIST[capability_id]
+        if routing_decision.selected_executor_binding != expected_binding:
+            raise PermissionError("native bounded capability executor binding mismatch")
+        return execute_capability(
+            capability_id=capability_id,
+            authorization=authorization,
+            payload=payload,
+            routing_decision=routing_decision,
+            executor=native_executor,
         )
 
     if implementation_type == "SKILL" and implementation.get("skill_id"):
