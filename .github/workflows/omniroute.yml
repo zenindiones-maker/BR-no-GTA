@@ -147,6 +147,7 @@ jobs:
           PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
           PROMPT_B64: ${{ inputs.prompt_b64 }}
+          OPENCODE_DISABLE_AUTOCOMPACT: "true"
         run: |
           set -euo pipefail
           test -n "$EXECUTION_ID"
@@ -183,6 +184,8 @@ jobs:
           OPENCODE_CONFIG="$PWD/runtime/opencode-native-workdir/opencode.json" \
           timeout 180 opencode run \
             --standalone \
+            --agent build \
+            --title "BR-no-GTA semantic execution" \
             --model "opencode/big-pickle" \
             --format json \
             "$PROMPT" \
