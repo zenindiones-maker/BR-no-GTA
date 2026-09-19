@@ -401,6 +401,8 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     for native in _dsh_declared_agents():
         item = ensure("HARNESS_NATIVE_AGENT", str(native["agent_id"]))
         item["SOURCES"].append(str(native["source"]))
+        if str(native["agent_id"]) == "gta6-master":
+            item["SOURCES"].append(".dsh/plugins/gta6-master-activation.mjs")
         item["DOMAINS"].append("harness-native")
         item["EXECUTOR_BINDINGS"].append(str(native["driver"]))
         item["STATUS"] = merge_status(item["STATUS"], "VALID_SUPPORT_COMPONENT")
@@ -449,7 +451,6 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     coordinator["NOTES"].append(
         "Upstream GOD/Michael authority is not imported; BR boundary is DELEGATED_ONLY"
     )
-    coordinator["SOURCES"].append(".dsh/plugins/gta6-master-activation.mjs")
 
     # Concrete Python agent/brain classes are included even when not Registry identities.
     for discovered in _python_agent_classes():
