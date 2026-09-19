@@ -274,7 +274,9 @@ class OpenCodeNativeAIProvider:
             json.dumps(
                 {
                     "$schema": "https://opencode.ai/config.json",
-                    "permission": {"*": "deny"},
+                    "permissions": [
+                        {"action": "*", "resource": "*", "effect": "deny"}
+                    ],
                 },
                 separators=(",", ":"),
             ),
