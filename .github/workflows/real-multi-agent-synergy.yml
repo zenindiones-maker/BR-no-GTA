@@ -23,6 +23,7 @@ on:
       - 'app/services/performance_telemetry_service.py'
       - 'scripts/youtube_product_quality_e2e.py'
       - 'scripts/github_run_watcher.py'
+      - 'scripts/local_deterministic_integration_gate.py'
       - 'scripts/semantic_smoke_gate.py'
       - 'scripts/fast_prelive_gate.py'
       - 'scripts/hydrate_promoted_opencode_profile.py'
@@ -178,12 +179,8 @@ jobs:
       - name: LOCAL_DETERMINISTIC_INTEGRATION gate
         run: |
           set -euo pipefail
-          pytest -q \
-            tests/test_script_generator_service.py \
-            tests/test_youtube_role_context_service.py \
-            tests/test_harness_ecosystem_inventory.py \
-            tests/test_youtube_department_learning_boundary.py
-          echo "LOCAL_DETERMINISTIC_INTEGRATION=PASS"
+          python scripts/local_deterministic_integration_gate.py \
+            --output runtime/real-multi-agent-synergy/local-deterministic-gate.json
 
       - name: SEMANTIC_SMOKE gate
         run: |
