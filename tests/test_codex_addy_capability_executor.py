@@ -130,44 +130,21 @@ def test_executor_failure_does_not_expose_stderr(tmp_path):
         raise AssertionError("expected CodexCapabilityExecutionError")
 
 
-def test_harness_returns_failed_evidence_without_fallback(tmp_path, monkeypatch):
-    repository = _repository(tmp_path)
-    calls = []
-
-    def failing_runner(command, **kwargs):
-        calls.append(list(command))
-        if command == ["codex", "login", "status"]:
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-        return subprocess.CompletedProcess(
-            command,
-            7,
-            stdout="",
-            stderr="SECRET=must-not-leak",
-        )
-
-    monkeypatch.setattr(addy_executor, "_runtime_runner", failing_runner)
-    monkeypatch.setattr(addy_executor, "_repository_root", lambda: repository)
-
-    evidence = execute_capability(
-        capability_id="addy:code-review-and-quality",
-        authorization=issue_harness_authorization(
-            authorized_action="DEVELOPMENT",
-            subject="capability:addy:code-review-and-quality",
-            harness_decision_id="decision-99",
-            execution_id="execution-99",
-        ),
-        payload={"task": "Review sample.py."},
-        executor=execute_codex_addy_capability,
+def test_legacy_codex_adapter_cannot_replace_canonical_addy_registry_executor():
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject="capability:addy:code-review-and-quality",
+        harness_decision_id="decision-legacy-codex",
+        execution_id="execution-legacy-codex",
     )
-
-    assert calls[0] == ["codex", "login", "status"]
-    assert calls[1][:2] == ["codex", "exec"]
-    assert evidence.status == "FAILED"
-    assert evidence.active is False
-    assert evidence.harness_decision_id == "decision-99"
-    assert evidence.execution_id == "execution-99"
-    assert evidence.result == {
-        "error_type": "CodexCapabilityExecutionError",
-        "error": "Codex capability execution failed",
-    }
-    assert evidence.boundary == "Capability executor failed; no fallback executed"
+    try:
+        execute_capability(
+            capability_id="addy:code-review-and-quality",
+            authorization=authorization,
+            payload={"task": "Review sample.py."},
+            executor=execute_codex_addy_capability,
+        )
+    except PermissionError as exc:
+        assert "Registry binding" in str(exc)
+    else:
+        raise AssertionError("legacy Codex adapter must not replace canonical Addy Harness executor")
