@@ -268,12 +268,25 @@ class OpenCodeNativeAIProvider:
             )
 
         env = dict(os.environ)
-        env.pop("OPENCODE_CONFIG", None)
+        config_path = self.artifact_root / "same-run-opencode.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "$schema": "https://opencode.ai/config.json",
+                    "permission": {"*": "deny"},
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        env["OPENCODE_CONFIG"] = str(config_path.resolve())
         process = subprocess.run(
             [
                 "opencode", "run", "--standalone",
                 "--model", executor_model,
-                "--agent", "summary",
+                "--agent", "build",
+                "--title", "BR-no-GTA semantic execution",
                 "--format", "json",
                 prompt,
             ],
