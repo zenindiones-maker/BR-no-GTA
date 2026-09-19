@@ -80,15 +80,20 @@ def _github_job(run_id: str) -> dict[str, Any]:
     started_at = job.get("started_at")
     completed_at = job.get("completed_at")
     created_at = job.get("created_at")
+    observed_at = datetime.now(timezone.utc).isoformat()
     steps = []
     for step in job.get("steps") or ():
+        effective_completed_at = step.get("completed_at")
+        if not effective_completed_at and step.get("status") == "in_progress":
+            effective_completed_at = observed_at
         steps.append({
             "name": step.get("name"),
             "status": step.get("status"),
             "conclusion": step.get("conclusion"),
             "started_at": step.get("started_at"),
             "completed_at": step.get("completed_at"),
-            "duration_ms": _duration_ms(step.get("started_at"), step.get("completed_at")),
+            "effective_completed_at": effective_completed_at,
+            "duration_ms": _duration_ms(step.get("started_at"), effective_completed_at),
         })
     return {
         "available": True,
@@ -126,7 +131,8 @@ def _span_metrics(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
         if event.get("provider"):
             provider_intervals.append(interval)
         parent = str(event.get("parent_span_id") or "")
-        if parent and parent in by_id:
+        span_id = str(event.get("span_id") or "")
+        if parent and parent in by_id and parent != span_id:
             child_intervals[parent].append(interval)
 
     category_cumulative: dict[str, float] = defaultdict(float)
@@ -216,7 +222,7 @@ def main() -> int:
 
     for step in github.get("steps") or ():
         start = _epoch_ms(step.get("started_at"))
-        end = _epoch_ms(step.get("completed_at"))
+        end = _epoch_ms(step.get("effective_completed_at") or step.get("completed_at"))
         if start is None or end is None or end <= start:
             continue
         interval = (start, end)

@@ -23,6 +23,12 @@ from app.services.youtube_package_service import (
     persist_youtube_content_package,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.youtube_role_context_service import (
+    build_production_packet,
+    build_script_review_packet,
+    build_seo_packet,
+    build_thumbnail_packet,
+)
 from scripts.prove_real_multi_agent_synergy import (
     _claim_context,
     _execute_specialist,
@@ -167,6 +173,59 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     script_ref = f"script:{script_id}"
     plan_ref = f"production-plan:{result.get('production_plan_id')}"
 
+    production_plan_id = result.get("production_plan_id")
+    full_script_review_chars = len(json.dumps({
+        "verified_claims": claims,
+        "content_strategy_analysis": strategy_text,
+        "actual_script": script_text[:18000],
+    }, ensure_ascii=False, sort_keys=True, default=str))
+    full_seo_chars = len(json.dumps({
+        "verified_claims": claims,
+        "actual_title": script.get("title"),
+        "actual_script": script_text[:16000],
+        "content_strategy_analysis": strategy_text,
+    }, ensure_ascii=False, sort_keys=True, default=str))
+    full_production_chars = len(json.dumps({
+        "verified_claims": claims,
+        "script_excerpt": script_text[:12000],
+        "production_plan": production_plan,
+    }, ensure_ascii=False, sort_keys=True, default=str))
+
+    script_review_packet = build_script_review_packet(
+        goal_id=goal_id,
+        content_item_id=content_item_id,
+        script_id=script_id,
+        production_plan_id=production_plan_id,
+        script_text=script_text,
+        production_plan=production_plan,
+        claims=claims,
+        strategy_output=strategy_output,
+        full_context_chars=full_script_review_chars,
+    )
+    seo_packet = build_seo_packet(
+        goal_id=goal_id,
+        content_item_id=content_item_id,
+        script_id=script_id,
+        production_plan_id=production_plan_id,
+        title=str(script.get("title") or ""),
+        script_text=script_text,
+        production_plan=production_plan,
+        claims=claims,
+        strategy_output=strategy_output,
+        full_context_chars=full_seo_chars,
+    )
+    production_packet = build_production_packet(
+        goal_id=goal_id,
+        content_item_id=content_item_id,
+        script_id=script_id,
+        production_plan_id=production_plan_id,
+        script_text=script_text,
+        production_plan=production_plan,
+        claims=claims,
+        strategy_output=strategy_output,
+        full_context_chars=full_production_chars,
+    )
+
     def _script_review():
         return _execute_specialist(
             mission_id=mission_id,
@@ -179,11 +238,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
                 "retention, repetition, transitions and AI-generic phrasing"
             ),
             evidence_refs=[*verified_refs, _output_ref(strategy), script_ref],
-            semantic_context={
-                "verified_claims": claims,
-                "content_strategy_analysis": strategy_text,
-                "actual_script": script_text[:18000],
-            },
+            semantic_context=script_review_packet["context"],
         )
 
     def _seo_review():
@@ -198,12 +253,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
                 "for the actual script without clickbait beyond the verified evidence"
             ),
             evidence_refs=[*verified_refs, script_ref, _output_ref(strategy)],
-            semantic_context={
-                "verified_claims": claims,
-                "actual_title": script.get("title"),
-                "actual_script": script_text[:16000],
-                "content_strategy_analysis": strategy_text,
-            },
+            semantic_context=seo_packet["context"],
         )
 
     def _production_review():
@@ -218,11 +268,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
                 "reinterpreting the narrative, timing, visuals or evidence"
             ),
             evidence_refs=[*verified_refs, script_ref, plan_ref],
-            semantic_context={
-                "verified_claims": claims,
-                "script_excerpt": script_text[:12000],
-                "production_plan": production_plan,
-            },
+            semantic_context=production_packet["context"],
         )
 
     with PerformanceSpan(
@@ -238,6 +284,27 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             seo = seo_future.result()
             production = production_future.result()
 
+    script_review_output = _semantic_output(script_review, "script review")
+    seo_output = _semantic_output(seo, "seo")
+    thumbnail_full_chars = len(json.dumps({
+        "verified_claims": claims,
+        "title": script.get("title"),
+        "script_hook": str((result.get("script_spec") or {}).get("hook") or ""),
+        "seo_analysis": _analysis(seo),
+    }, ensure_ascii=False, sort_keys=True, default=str))
+    thumbnail_packet = build_thumbnail_packet(
+        goal_id=goal_id,
+        content_item_id=content_item_id,
+        script_id=script_id,
+        production_plan_id=production_plan_id,
+        title=str(seo_output.get("title") or script.get("title") or ""),
+        script_text=script_text,
+        production_plan=production_plan,
+        claims=claims,
+        strategy_output=strategy_output,
+        seo_output=seo_output,
+        full_context_chars=thumbnail_full_chars,
+    )
     thumbnail = _execute_specialist(
         mission_id=mission_id,
         goal_id=goal_id,
@@ -249,16 +316,9 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             "and accurately represents the verified promise"
         ),
         evidence_refs=[*verified_refs, script_ref, _output_ref(seo)],
-        semantic_context={
-            "verified_claims": claims,
-            "title": script.get("title"),
-            "script_hook": str((result.get("script_spec") or {}).get("hook") or ""),
-            "seo_analysis": _analysis(seo),
-        },
+        semantic_context=thumbnail_packet["context"],
     )
 
-    script_review_output = _semantic_output(script_review, "script review")
-    seo_output = _semantic_output(seo, "seo")
     thumbnail_output = _semantic_output(thumbnail, "thumbnail")
     production_output = _semantic_output(production, "production management")
 
@@ -358,7 +418,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         "goal_id": goal_id,
         "content_item_id": content_item_id,
         "script_id": script_id,
-        "production_plan_id": result.get("production_plan_id"),
+        "production_plan_id": production_plan_id,
         "youtube_entity_id": package["id"],
         "youtube_publication_id": None,
         "publication_performed": False,
@@ -376,6 +436,12 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         "production_review": production,
         "youtube_package": package,
         "youtube_package_keywords": keywords,
+        "context_packets": {
+            "script_review": script_review_packet["metrics"],
+            "seo": seo_packet["metrics"],
+            "production_management": production_packet["metrics"],
+            "thumbnail": thumbnail_packet["metrics"],
+        },
         "structured_specialist_outputs": {
             "content_strategy": strategy_output,
             "script_review": script_review_output,

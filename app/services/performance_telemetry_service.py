@@ -253,7 +253,7 @@ class PerformanceSpan:
                 metadata={**self.metadata, **dict(self.values.get("metadata") or {})},
                 trace_id=self.trace_id,
                 span_id=self.span_id,
-                parent_span_id=self.parent_span_id,
+                parent_span_id=self.parent_span_id or "",
                 goal_id=self.goal_id,
                 execution_id=self.execution_id,
                 agent_id=self.agent_id,

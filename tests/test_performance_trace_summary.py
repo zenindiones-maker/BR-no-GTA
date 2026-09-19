@@ -59,3 +59,18 @@ def test_parallel_spans_do_not_inflate_critical_path():
     assert metrics["parallelism_saved_ms"] == 600
     assert metrics["provider_critical_path_ms"] == 1000
     assert metrics["provider_cumulative_work_ms"] == 1600
+
+
+def test_self_parent_is_not_counted_as_child_work():
+    events = [
+        _event(
+            span_id="root",
+            parent_span_id="root",
+            start="2026-09-19T00:00:00+00:00",
+            end="2026-09-19T00:00:01+00:00",
+            duration_ms=1000,
+        )
+    ]
+    spans, metrics = _span_metrics(events)
+    assert spans[0]["exclusive_ms"] == 1000
+    assert metrics["trace_cumulative_work_ms"] == 1000
