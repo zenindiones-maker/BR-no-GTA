@@ -108,13 +108,13 @@ def main() -> None:
             "maturity": record.maturity == FUNCTIONAL,
             "execution_enabled": record.execution_enabled,
             "provider": record.provider == "addy-agent-skills",
-            "execution_kind": record.execution_kind == "codex_native_skill",
+            "execution_kind": record.execution_kind == "registered_executor",
             "allowed_action": record.allowed_actions == ("DEVELOPMENT",),
-            "agent_id": record.agent_id == "codex",
+            "agent_id": record.agent_id == "addy-agent-skills",
             "skill_id": record.skill_id == name,
             "executor_binding": (
                 record.executor_binding
-                == "app.services.codex_addy_capability_executor.execute_codex_addy_capability"
+                == "app.services.addy_harness_service.execute_authorized_addy_skill"
             ),
         }
         if not all(checks.values()):
@@ -137,7 +137,8 @@ def main() -> None:
                 "registry_available": True,
                 "registry_functional": True,
                 "execution_enabled": True,
-                "executor": "codex",
+                "executor": "deepseek-harness-semantic-provider",
+                "agent_id": "addy-agent-skills",
                 "authorized_actions": ["DEVELOPMENT"],
             }
         )
