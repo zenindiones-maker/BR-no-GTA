@@ -145,6 +145,13 @@ jobs:
           asyncio.run(main())
           PY
 
+      - name: Materialize pinned Addy skills required by current MCP boundary tests
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap.sh all
+          python scripts/agent-tooling/certify_addy_24.py \
+            --output runtime/deepseek-harness-native/addy-24-certification.json
+
       - name: Run native Harness and GTA6 Brain boundary tests
         run: |
           set -euo pipefail
