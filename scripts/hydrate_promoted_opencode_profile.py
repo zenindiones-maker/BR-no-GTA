@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.database.schema import initialize_schema
 from app.services.harness_learning_service import register_skill_version
+from app.database.harness_learning_repository import get_version
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
@@ -29,24 +30,43 @@ def hydrate() -> dict:
         "github:run:35343942135:official-cli-candidate",
         f"github:run:{PROMOTION_EVIDENCE_RUN_ID}:observed-promotion",
     )
-    register_skill_version(
-        skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+    existing_v1 = get_version(
+        table="harness_skill_versions",
+        identity_field="skill_id",
+        identity=OPENCODE_EXECUTOR_SKILL_ID,
         version=BASELINE_OPENCODE_EXECUTOR_VERSION,
-        parent_version=None,
-        content_ref=v1["content_ref"],
-        checksum=v1["checksum"],
-        status="SUPERSEDED",
-        evidence_refs=evidence,
     )
-    register_skill_version(
-        skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+    if existing_v1 is None:
+        register_skill_version(
+            skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+            version=BASELINE_OPENCODE_EXECUTOR_VERSION,
+            parent_version=None,
+            content_ref=v1["content_ref"],
+            checksum=v1["checksum"],
+            status="SUPERSEDED",
+            evidence_refs=evidence,
+        )
+    elif existing_v1["checksum"] != v1["checksum"] or existing_v1["content_ref"] != v1["content_ref"]:
+        raise RuntimeError("persisted OpenCode v1 profile conflicts with immutable definition")
+
+    existing_v2 = get_version(
+        table="harness_skill_versions",
+        identity_field="skill_id",
+        identity=OPENCODE_EXECUTOR_SKILL_ID,
         version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-        parent_version=BASELINE_OPENCODE_EXECUTOR_VERSION,
-        content_ref=v2["content_ref"],
-        checksum=v2["checksum"],
-        status="ACTIVE",
-        evidence_refs=evidence,
     )
+    if existing_v2 is None:
+        register_skill_version(
+            skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+            parent_version=BASELINE_OPENCODE_EXECUTOR_VERSION,
+            content_ref=v2["content_ref"],
+            checksum=v2["checksum"],
+            status="ACTIVE",
+            evidence_refs=evidence,
+        )
+    elif existing_v2["checksum"] != v2["checksum"] or existing_v2["content_ref"] != v2["content_ref"]:
+        raise RuntimeError("persisted OpenCode v2 profile conflicts with immutable definition")
     active = resolve_active_opencode_executor_profile()
     if active["version"] != CANDIDATE_OPENCODE_EXECUTOR_VERSION:
         raise RuntimeError("promoted OpenCode v2 profile did not become active")
