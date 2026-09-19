@@ -217,9 +217,7 @@ def select_media_segments(
             {
                 "start_seconds": window_start,
                 "end_seconds": window_end,
-                "duration_seconds": float(
-                    target_duration_seconds
-                ),
+                "duration_seconds": window_end - window_start,
             }
         ]
         remaining = 0.0
@@ -265,14 +263,12 @@ def select_media_segments(
             if selected_duration <= 0:
                 continue
 
+            selected_end = candidate_start + selected_duration
             selected.append(
                 {
                     "start_seconds": candidate_start,
-                    "end_seconds": (
-                        candidate_start
-                        + selected_duration
-                    ),
-                    "duration_seconds": selected_duration,
+                    "end_seconds": selected_end,
+                    "duration_seconds": selected_end - candidate_start,
                 }
             )
 
