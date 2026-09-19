@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 from typing import Any
 
 from app.services.ai_provider import AIProviderError, AIResponse
@@ -268,21 +267,22 @@ class OpenCodeNativeAIProvider:
                 details={"failure_code": "cli_version_mismatch"},
             )
 
-        with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
-            process = subprocess.run(
-                [
-                    "opencode", "run", "--standalone",
-                    "--model", executor_model,
-                    "--format", "json",
-                    prompt,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=False,
-                cwd=tmp,
-                env=dict(os.environ),
-            )
+        env = dict(os.environ)
+        env.pop("OPENCODE_CONFIG", None)
+        process = subprocess.run(
+            [
+                "opencode", "run", "--standalone",
+                "--model", executor_model,
+                "--agent", "summary",
+                "--format", "json",
+                prompt,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+            env=env,
+        )
 
         parts: list[str] = []
         tool_call_count = 0
