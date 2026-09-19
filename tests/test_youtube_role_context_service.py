@@ -1,7 +1,9 @@
 from app.services.youtube_role_context_service import (
     MAX_SEMANTIC_CONTEXT_CHARS,
     build_production_packet,
+    build_script_review_packet,
     build_seo_packet,
+    build_thumbnail_packet,
 )
 
 
@@ -92,3 +94,30 @@ def test_seo_packet_uses_dense_summary_without_losing_artifact_reconstruction_re
     assert packet["chapter_summaries"]
     assert packet["content_hashes"]["script_sha256"]
     assert packet["artifact_refs"]["script"] == "db:scripts:8"
+
+
+def test_all_role_packet_builders_share_lineage_without_signature_failure():
+    script = "HOOK\nPromise.\n\nCHAPTER ONE\n" + ("Fact based body. " * 120)
+    common = dict(
+        goal_id="goal-1",
+        content_item_id=7,
+        script_id=8,
+        production_plan_id=10,
+        script_text=script,
+        production_plan=_plan(),
+        claims=_claims(),
+        strategy_output={"audience": "BR", "angle": "verified", "promise": "facts"},
+        full_context_chars=30_000,
+    )
+    script_review = build_script_review_packet(**common)
+    production = build_production_packet(**common)
+    seo = build_seo_packet(title="GTA VI factual update", **common)
+    thumbnail = build_thumbnail_packet(
+        title="GTA VI factual update",
+        seo_output={"search_intent": "gta vi", "keywords": ["gta vi"], "rationale": "verified"},
+        **common,
+    )
+    for packet in (script_review, production, seo, thumbnail):
+        assert packet["metrics"]["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
+        assert packet["context"]["provenance"]["goal_id"] == "goal-1"
+        assert packet["context"]["artifact_refs"]["script"] == "db:scripts:8"

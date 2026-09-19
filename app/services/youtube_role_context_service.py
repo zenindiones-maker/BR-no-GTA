@@ -80,7 +80,6 @@ def _base(
     production_plan: dict[str, Any],
     claims: list[dict[str, Any]],
     strategy_output: dict[str, Any],
-    full_context_chars: int,
 ) -> dict[str, Any]:
     return {
         "packet_version": PACKET_VERSION,

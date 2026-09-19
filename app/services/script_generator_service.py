@@ -168,6 +168,34 @@ def _validate_ai_structure(
     }
 
 
+
+def _parse_ai_json_response(text: str) -> dict[str, Any]:
+    """Normalize only harmless JSON wrappers, then fail closed on extra prose."""
+    normalized = str(text or "").lstrip("\ufeff").strip()
+    if not normalized:
+        raise AIProviderError("AI provider returned an empty response.")
+
+    fence = "```"
+    if normalized.startswith(fence):
+        lines = normalized.splitlines()
+        if not lines or not lines[0].strip().casefold() in {fence, fence + "json"}:
+            raise AIProviderError("AI provider returned invalid JSON.")
+        if len(lines) < 3 or lines[-1].strip() != fence:
+            raise AIProviderError("AI provider returned invalid JSON.")
+        normalized = "\n".join(lines[1:-1]).strip()
+
+    if normalized.casefold().startswith("json\n"):
+        normalized = normalized[5:].strip()
+
+    try:
+        parsed = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        raise AIProviderError("AI provider returned invalid JSON.") from exc
+
+    if not isinstance(parsed, dict):
+        raise AIProviderError("AI response must contain a JSON object.")
+    return parsed
+
 def _generate_ai_structure(
     *,
     title: str,
@@ -192,13 +220,7 @@ def _generate_ai_structure(
             "AI provider returned an empty response."
         )
 
-    try:
-        parsed = json.loads(response.text)
-    except json.JSONDecodeError as exc:
-        raise AIProviderError(
-            "AI provider returned invalid JSON."
-        ) from exc
-
+    parsed = _parse_ai_json_response(response.text)
     return _validate_ai_structure(parsed)
 
 

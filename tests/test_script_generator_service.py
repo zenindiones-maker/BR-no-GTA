@@ -306,3 +306,45 @@ def test_generate_and_save_script_uses_ai_provider():
     assert "INTRO IA" in script["content"]
     assert "CONCLUSÃO IA" in script["content"]
     assert "CTA IA" in script["content"]
+
+
+def test_generate_script_structure_accepts_fenced_ai_json():
+    from app.services.fake_ai_provider import FakeAIProvider
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - JSON fenced",
+        description="Descrição válida.",
+        status="approved",
+        score=9.0,
+    )
+    payload = (
+        '{"hook":"HOOK IA","introduction":"INTRO IA","development":['
+        '{"heading":"A","body":"B"},{"heading":"C","body":"D"},'
+        '{"heading":"E","body":"F"}],"conclusion":"CONCLUSÃO IA","cta":"CTA IA"}'
+    )
+    provider = FakeAIProvider(response="\uFEFF```json\n" + payload + "\n```")
+    structure = generate_script_structure(idea_id, ai_provider=provider)
+    assert structure["hook"] == "HOOK IA"
+    assert structure["development"][2]["heading"] == "E"
+
+
+def test_generate_script_structure_rejects_prose_around_json():
+    from app.services.fake_ai_provider import FakeAIProvider
+    from app.services.ai_provider import AIProviderError
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - prosa extra",
+        description="Descrição válida.",
+        status="approved",
+        score=9.0,
+    )
+    payload = (
+        '{"hook":"HOOK IA","introduction":"INTRO IA","development":['
+        '{"heading":"A","body":"B"},{"heading":"C","body":"D"},'
+        '{"heading":"E","body":"F"}],"conclusion":"CONCLUSÃO IA","cta":"CTA IA"}'
+    )
+    provider = FakeAIProvider(response="Aqui está o JSON:\n" + payload)
+    with pytest.raises(AIProviderError, match="invalid JSON"):
+        generate_script_structure(idea_id, ai_provider=provider)
