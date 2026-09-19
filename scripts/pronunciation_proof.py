@@ -7,6 +7,13 @@ from app.services.pronunciation_service import (
     provider_capabilities,resolve_synthesis_plan,synthesize_edge_plan,
 )
 
+FLUIDITY_TEXT="Boa meu povo, aqui é BR no GTA 6 e vamos ver as novidades de hoje."
+FLUIDITY_PROFILES=(
+    {"take_id":"fluid-1","rate":"+1%","pitch":"+0Hz","synthesis_text":"Boa meu povo, aqui é BR no GTA 6 e vamos ver as novidades de hoje."},
+    {"take_id":"fluid-2","rate":"+3%","pitch":"+1Hz","synthesis_text":"Boa meu povo! Aqui é BR no GTA 6 e vamos ver as novidades de hoje."},
+    {"take_id":"fluid-3","rate":"+2%","pitch":"+0Hz","synthesis_text":"Boa, meu povo! Aqui é BR no GTA 6 e vamos ver as novidades de hoje."},
+)
+
 SAMPLES=(
     ("A-control-ptbr","A análise separa fatos confirmados de rumores."),
     ("B-vice-city","Vice City"),
@@ -81,6 +88,29 @@ def main()->int:
             "probe":_probe(output),
         })
 
+    fluidity_takes=[]
+    for profile in FLUIDITY_PROFILES:
+        synthesis_text=profile["synthesis_text"]
+        fluid_plan=resolve_synthesis_plan(synthesis_text,voice=DEFAULT_VOICE)
+        output=samples_dir/f"I-opening-{profile['take_id']}.mp3"
+        metrics=asyncio.run(synthesize_edge_plan(
+            fluid_plan,
+            voice=DEFAULT_VOICE,
+            rate=profile["rate"],
+            pitch=profile["pitch"],
+            output=output,
+        ))
+        fluidity_takes.append({
+            "take_id":profile["take_id"],
+            "rate":profile["rate"],
+            "pitch":profile["pitch"],
+            "spoken_words":FLUIDITY_TEXT,
+            "synthesis_text":synthesis_text,
+            "plan":fluid_plan.to_dict(),
+            "edge_metrics":metrics,
+            "probe":_probe(output),
+        })
+
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
     closing_timing=closing["edge_metrics"]["timing"]
@@ -132,6 +162,15 @@ def main()->int:
             and {item["take_id"] for item in opening_takes}=={"take-1","take-2","take-3"}
             and all(item["probe"]["size_bytes"]>0 for item in opening_takes)
         ),
+        "OPENING_FLUIDITY_THREE_TAKES_GENERATED":(
+            len(fluidity_takes)==3
+            and {item["take_id"] for item in fluidity_takes}=={"fluid-1","fluid-2","fluid-3"}
+            and all(item["probe"]["size_bytes"]>0 for item in fluidity_takes)
+            and all(item["edge_metrics"]["external_calls"]==1 for item in fluidity_takes)
+            and all(item["edge_metrics"]["synthesis_group_count"]==1 for item in fluidity_takes)
+            and all(item["plan"]["foreign_span_count"]==0 for item in fluidity_takes)
+            and all("gê tê á seis" in item["plan"]["rendered_text"] for item in fluidity_takes)
+        ),
         "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
         "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
@@ -143,7 +182,7 @@ def main()->int:
     if not all(checks.values()): raise RuntimeError("pronunciation proof failed:"+",".join(k for k,v in checks.items() if not v))
     evidence={
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
-        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"checks":checks,
+        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"checks":checks,
         "timing_quality":{"vice_city_join_gap_seconds":vice_city_join_gap_seconds,"max_allowed_seconds":0.15},
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
@@ -168,6 +207,13 @@ def main()->int:
                     "files":[f"H-opening-{item['take_id']}.mp3" for item in opening_takes],
                     "basis":"human review required for timing, warmth, energy and naturality; technical metrics cannot auto-select a winner",
                 },
+                "opening-fluidity":{
+                    "status":"PENDING",
+                    "spoken_words":FLUIDITY_TEXT,
+                    "sample_ids":[item["take_id"] for item in fluidity_takes],
+                    "files":[f"I-opening-{item['take_id']}.mp3" for item in fluidity_takes],
+                    "basis":"user-supplied smoother opening wording; no automatic promotion until human listening review",
+                },
             },
         },
         "performance":{
@@ -179,7 +225,9 @@ def main()->int:
             "span_count":sum(len(x["plan"]["spans"]) for x in rows),
             "foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows),
             "opening_take_external_calls":[item["edge_metrics"]["external_calls"] for item in opening_takes],
-            "opening_take_durations_seconds":[item["probe"]["duration_seconds"] for item in opening_takes]
+            "opening_take_durations_seconds":[item["probe"]["duration_seconds"] for item in opening_takes],
+            "fluidity_take_external_calls":[item["edge_metrics"]["external_calls"] for item in fluidity_takes],
+            "fluidity_take_durations_seconds":[item["probe"]["duration_seconds"] for item in fluidity_takes]
         },
         "JOB18_UNCHANGED":"YES","PUBLICATION_AUTHORITY_UNCHANGED":"YES",
     }
