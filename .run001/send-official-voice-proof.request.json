@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "requested_at": "2026-09-19T13:45:00Z",
+  "base_head": "204d458ebc3380595387adccc6194ba800cdafa5",
+  "purpose": "Send the two exact human-approved Voice B references to the Telegram review channel.",
+  "opening_sample": "samples/I-opening-fluid-2.mp3",
+  "final_signature_sample": "samples/G-brand-mixed.mp3",
+  "source_run_id": 35444013735,
+  "source_artifact_id": 10585440542,
+  "youtube_publication": false,
+  "job18_unchanged": true
+}
