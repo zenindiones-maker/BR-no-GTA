@@ -291,7 +291,7 @@ def deterministic_segment_script(
                 synthesis_text=normalize_text(synthesis_text),
                 text_sha256=hashlib.sha256(original_text.encode("utf-8")).hexdigest(),
                 word_count=len(words(original_text)),
-                synthesis_plan=plan.to_dict(),
+                synthesis_plan=synthesis_plan_cache_payload(plan),
             ))
     return output
 
@@ -318,7 +318,7 @@ def semantic_section_segments(sections: list[dict[str, Any]]) -> list[PhysicalSe
             synthesis_text=normalize_text(synthesis_text),
             text_sha256=hashlib.sha256(original.encode("utf-8")).hexdigest(),
             word_count=len(words(original)),
-            synthesis_plan=plan.to_dict(),
+            synthesis_plan=synthesis_plan_cache_payload(plan),
         ))
     return output
 
