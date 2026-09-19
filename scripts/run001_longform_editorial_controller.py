@@ -48,6 +48,7 @@ PROFESSIONAL_RENDER_CONFIG = {
     "container": "mp4",
     "video_codec": "h264",
     "audio_codec": "aac",
+    "delivery_profile": "youtube_sdr_1080p30_v1",
 }
 
 
@@ -481,6 +482,14 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "objective": config["content_strategy"]["objective"],
         "format": "investigative-longform",
         "render": dict(config.get("render") or PROFESSIONAL_RENDER_CONFIG),
+        "subtitles": {
+            "enabled": False,
+            "mode": "youtube_native_after_upload",
+            "burned_subtitles": False,
+            "open_captions": False,
+            "transcript_overlay": False,
+            "srt_burn_in": False,
+        },
         "research_evidence": render_evidence,
         "fact_check": {"status": "PASS", "phase": "FINAL_SCRIPT", "checks": checks, "receipts": final_receipts},
         "editorial_qa": {
