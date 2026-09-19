@@ -13,10 +13,10 @@
   "rerun_purpose": "System-wide performance Phase E current-HEAD observed baseline/candidate refresh",
   "job18_unchanged": true,
   "youtube_publication": false,
-  "schema_version": 1,
-  "requested_at": "2026-09-19T11:50:00Z",
-  "base_head": "7431655ca7edb6ce277e5727b431bb6b893a503b",
-  "purpose": "Benchmark repeated ephemeral-runner cold start using exact versioned restored media venv cache; measure full GitHub job wall clock and do not auto-promote.",
+  "schema_version": 2,
+  "requested_at": "2026-09-19T12:12:40Z",
+  "base_head": "ebfb2eda1a6da0c69c4bd6499a45b3c9b8a5c10e",
+  "purpose": "Benchmark restored versioned media venv cache candidate using full GitHub job wall clock; do not auto-promote.",
   "quality_regression_allowed": false,
   "publication": false
 }
