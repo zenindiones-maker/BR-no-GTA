@@ -63,10 +63,21 @@ jobs:
           echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
           echo "BOUNDED_ENGINEERING_RUNTIME=PASS"
 
+      - name: Prepare GitHub Linux host for Codex Bubblewrap
+        run: bash scripts/prepare_codex_linux_sandbox.sh
+
+      - name: Codex sandbox preflight
+        run: |
+          set -euo pipefail
+          python scripts/codex_sandbox_preflight.py \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --output artifacts/delegated-autonomy/codex-sandbox-preflight.json
+
       - name: Compile delegated autonomy boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/services/agent_office/delegation.py             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office/munder_adapter.py             app/services/agent_office/codex_bounded_worker.py             app/services/agent_office/codex_auth.py             app/services/agent_office/addy_task_owner_worker.py             app/services/agent_office/integration_gate.py             app/services/agent_office/reducer.py             app/services/agent_office/mission_service.py             app/database/agent_execution_lease_repository.py             app/database/agent_office_mission_repository.py             scripts/codex_auth_bootstrap.py             scripts/delegated_autonomy_canary.py
+          python -m py_compile             app/services/agent_office/delegation.py             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office/munder_adapter.py             app/services/agent_office/codex_bounded_worker.py             app/services/agent_office/codex_auth.py             app/services/agent_office/addy_task_owner_worker.py             app/services/agent_office/integration_gate.py             app/services/agent_office/reducer.py             app/services/agent_office/mission_service.py             app/database/agent_execution_lease_repository.py             app/database/agent_office_mission_repository.py             scripts/codex_auth_bootstrap.py             scripts/codex_sandbox_preflight.py             scripts/delegated_autonomy_canary.py
+          bash -n scripts/prepare_codex_linux_sandbox.sh
           echo "DELEGATED_AUTONOMY_COMPILE=PASS"
 
       - name: Run deterministic lease retry conflict and promotion gates
