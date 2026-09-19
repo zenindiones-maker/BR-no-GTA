@@ -417,3 +417,32 @@ def test_unknown_cost_fallback_is_forbidden_even_when_fallback_is_allowed():
         exc_info.value,
         "ai.provider.tuxevil",
     )
+
+
+def test_youtube_semantic_reasoning_routes_without_publication_authority():
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="youtube seo semantic reasoning over verified evidence",
+            authorized_action="YOUTUBE",
+            domain="ai",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            provider_domain="ai",
+            preferred_providers=("opencode",),
+            allowed_providers=("opencode",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+        )
+    )
+    assert decision.selected_capability_id == "ai.reasoning.text"
+    assert decision.selected_provider == "opencode"
+    assert decision.selected_model == "oc/big-pickle"
+    assert decision.fallback_occurred is False
+    capability = GLOBAL_CAPABILITY_REGISTRY.get("ai.reasoning.text")
+    provider = GLOBAL_CAPABILITY_REGISTRY.get("ai.provider.opencode-free")
+    assert capability is not None and "YOUTUBE" in capability.allowed_actions
+    assert provider is not None and "YOUTUBE" in provider.allowed_actions
+    assert "PUBLICATION" not in capability.allowed_actions
+    assert "PUBLICATION" not in provider.allowed_actions
+    assert capability.side_effects == ()
+    assert provider.side_effects == ()

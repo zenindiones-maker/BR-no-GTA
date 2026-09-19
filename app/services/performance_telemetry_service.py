@@ -12,6 +12,7 @@ from typing import Any
 
 _LOCK = threading.Lock()
 _SENSITIVE_KEY = re.compile(r"(token|secret|password|api[_-]?key|authorization|credential)", re.I)
+_SAFE_TELEMETRY_KEYS = {"model_first_token_ms"}
 
 
 def utcnow_iso() -> str:
@@ -27,7 +28,7 @@ def _safe_value(value: Any) -> Any:
         result: dict[str, Any] = {}
         for key, child in list(value.items())[:128]:
             key_text = str(key)
-            if _SENSITIVE_KEY.search(key_text):
+            if _SENSITIVE_KEY.search(key_text) and key_text not in _SAFE_TELEMETRY_KEYS:
                 continue
             result[key_text] = _safe_value(child)
         return result

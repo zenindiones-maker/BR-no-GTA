@@ -431,7 +431,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             requirements=("Harness provider policy", "provider prerequisites"),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=("ai", "reasoning", "text", "provider-gateway"),
             security_boundary=(
                 "Provider/model execution remains behind Harness authorization "
@@ -489,7 +489,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "opencode", "free", "zero-cost",
                 "learning", "versioned-executor", "no-fallback",
