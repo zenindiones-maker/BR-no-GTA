@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "requested_at": "2026-09-19T13:00:00Z",
+  "source_run_id": 35444013735,
+  "source_artifact_id": 10585440542,
+  "source_file": "samples/G-brand-mixed.mp3",
+  "expected_sha256": "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca",
+  "human_feedback": "G-brand-mixed pode ser o áudio final de branding do vídeo.",
+  "interpretation": {
+    "approved_brand_pronunciation_reference": true,
+    "approved_gta6_pronunciation": true,
+    "approved_vice_city_pronunciation": true,
+    "preserve_exact_closing_text": true,
+    "preserve_fluid2_opening_prosody": true
+  },
+  "job18_unchanged": true,
+  "youtube_publication": false
+}
