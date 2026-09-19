@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from app.database.connection import get_connection
-from app.services.agent_office.delegation import DelegatedTaskLease
+
+if TYPE_CHECKING:
+    from app.services.agent_office.delegation import DelegatedTaskLease
 
 
 def persist_lease(lease: DelegatedTaskLease, *, status: str = "AUTHORIZED") -> None:
