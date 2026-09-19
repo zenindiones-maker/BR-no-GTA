@@ -7,7 +7,7 @@ on:
       - work/gate6f-analytics-learning
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
