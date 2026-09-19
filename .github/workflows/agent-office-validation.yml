@@ -79,7 +79,7 @@ jobs:
       - name: Prove Codex sandbox isolation
         run: |
           mkdir -p agent-office-evidence
-          python scripts/codex_sandbox_preflight.py \
+          PYTHONPATH="$GITHUB_WORKSPACE" python scripts/codex_sandbox_preflight.py \
             --repository-root "$GITHUB_WORKSPACE" \
             --output agent-office-evidence/codex-sandbox-preflight.json
 
