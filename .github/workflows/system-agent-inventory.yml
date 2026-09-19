@@ -79,6 +79,8 @@ jobs:
           assert len(d['ADDY_SKILL_IDS'])==24
           assert d['HIGGSFIELD_SKILLS_FOUND']==4
           assert len(d['HIGGSFIELD_SKILL_IDS'])==4
+          assert d['TOTAL_SKILLS_FOUND'] >= 35
+          assert d['TOTAL_WORKER_ENGINES_FOUND'] == 2
           assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
           assert d['EXECUTOR_BINDINGS_VALID'] is True
           assert 'codex' in d['AGENT_IDS']
@@ -94,6 +96,7 @@ jobs:
           print('AGENT_INVENTORY_COMPLETE=PASS')
           print('ADDY_24_INVENTORIED=PASS')
           print('HIGGSFIELD_4_INVENTORIED=PASS')
+          print('AGENT_OFFICE_WORKER_ENGINES=2')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')
           print('GTA6_BRAIN_BOUNDARY=PASS')
           print('BROKEN_ACTIVE_BINDINGS=0')
