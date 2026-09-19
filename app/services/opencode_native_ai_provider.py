@@ -182,6 +182,11 @@ class OpenCodeNativeAIProvider:
             or os.getenv("GITHUB_ACTIONS_RENDER_REF")
             or "main"
         ).strip()
+        self.source_sha = (
+            os.getenv("BR_OPENCODE_NATIVE_SOURCE_SHA")
+            or os.getenv("GITHUB_SHA")
+            or ""
+        ).strip()
         if not self.repository or not self.ref:
             raise ValueError("OpenCode native GitHub repository/ref are required")
         if self.options.get("executor_kind") != "official_opencode_cli_github_actions":
@@ -235,6 +240,7 @@ class OpenCodeNativeAIProvider:
                 "model": canonical_model,
                 "prompt_b64": base64.b64encode(prompt.encode("utf-8")).decode("ascii"),
                 "zero_cost_operation": "true",
+                "source_sha": self.source_sha,
                 "expected_source_sha": source_sha or "",
             },
         )
