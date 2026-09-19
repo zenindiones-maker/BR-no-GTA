@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T12:12:30Z",
-  "base_head": "e96c6337c6c0bfa3606f2b9c4d4d1d09349b5e19",
-  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW after immutable semantic handoff authorization and canonical Addy boundary fixes.",
+  "requested_at": "2026-09-19T13:40:00Z",
+  "base_head": "94b3feb6959b61982f8d50cbab26cc1a3e83f0b5",
+  "purpose": "Run governed SYSTEM_IMPROVEMENT_REVIEW on current clean single-voice runtime and canonical Addy semantic boundary.",
   "require_observed_semantic_specialists": true,
   "job18_unchanged": true,
   "publication": false,
