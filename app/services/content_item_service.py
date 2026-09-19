@@ -110,8 +110,11 @@ def _build_title(
 
     O título é derivado do roteiro associado quando disponível.
     """
-    script_id = script_spec["script_id"]
+    title = str(script_spec.get("title") or "").strip()
+    if title:
+        return title
 
+    script_id = script_spec["script_id"]
     if script_id:
         return f"Content Item — Script {script_id}"
 
