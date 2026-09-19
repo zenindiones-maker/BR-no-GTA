@@ -30,6 +30,14 @@ def _repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _runtime_runner(
+    command: list[str],
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
+    """Production subprocess boundary; tests may monkeypatch this transport only."""
+    return subprocess.run(command, **kwargs)
+
+
 def _tracked_files(repository_root: Path) -> list[Path]:
     completed = subprocess.run(
         ["git", "-C", str(repository_root), "ls-files", "-z"],
@@ -114,7 +122,7 @@ def execute_codex_addy_capability(
     capability: CapabilityDefinition,
     payload: dict[str, Any],
     *,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Execute one explicitly selected Addy skill in a disposable Codex snapshot."""
@@ -133,6 +141,7 @@ def execute_codex_addy_capability(
 
     skill_name = capability.capability_id.removeprefix("addy:")
     prompt = _payload_prompt(skill_name=skill_name, payload=payload)
+    runner = runner or _runtime_runner
     source_root = (repository_root or _repository_root()).resolve()
 
     # Authentication is a prerequisite, not an execution failure. Check it before
