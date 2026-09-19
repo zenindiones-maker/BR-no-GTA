@@ -283,15 +283,18 @@ def main() -> int:
         "[introv][introa][openv][opena][contentv][contenta][closev][closea]"
         "concat=n=4:v=1:a=1[vout][aout]"
     )
+    encoder_preset="fast"
+    composition_started=time.perf_counter()
     result=subprocess.run([
         "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
         "-i",str(base_mp4),"-i",str(opening),"-i",str(closing),
         "-filter_complex",filtergraph,
         "-map","[vout]","-map","[aout]",
-        "-c:v","libx264","-preset","medium","-crf","16","-pix_fmt","yuv420p",
+        "-c:v","libx264","-preset",encoder_preset,"-crf","16","-pix_fmt","yuv420p",
         "-c:a","aac","-b:a","256k","-ar","48000","-movflags","+faststart",
         str(temporary),
     ],capture_output=True,text=True,timeout=10800)
+    composition_wall_ms=(time.perf_counter()-composition_started)*1000.0
     if result.returncode!=0 or not temporary.is_file() or temporary.stat().st_size<=0:
         raise SpokenBrandFinalizationError("spoken branding final composition failed")
     temporary.replace(output)
@@ -466,6 +469,10 @@ def main() -> int:
         "media_valid_assets_reused":True,
         "redundant_media_downloads":0,
         "core_editplan_render_reused":True,
+        "finalizer_encoder_preset":encoder_preset,
+        "finalizer_crf":16,
+        "composition_wall_ms":round(composition_wall_ms,3),
+        "previous_medium_attempts_interrupted":2,
         "job18_unchanged":True,
         "publication_authority_unchanged":True,
     }
@@ -481,6 +488,8 @@ def main() -> int:
     print("BASE_RENDER_REUSED=YES")
     print("REDUNDANT_LONGFORM_TTS_REQUESTS=0")
     print("REDUNDANT_MEDIA_DOWNLOADS=0")
+    print(f"FINALIZER_ENCODER_PRESET={encoder_preset}")
+    print(f"FINALIZER_COMPOSITION_WALL_MS={composition_wall_ms:.3f}")
     print(f"VISUAL_SSIM_MIN={min_ssim:.6f}")
     print("FULL_DECODE=PASS")
     print("JOB18_UNCHANGED=YES")

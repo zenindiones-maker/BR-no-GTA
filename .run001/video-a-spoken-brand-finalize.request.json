@@ -25,6 +25,11 @@
   "final_end_asset_sha256": "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca",
   "final_end_human_approved": true,
   "runtime_dependency_on_historical_final_end_artifact": false,
-  "retry_reason": "Compose VIDEO A from the existing QA-passed base render using the new Fluid 2 opening checkpoint and immutable human-approved G-brand-mixed final end signature; do not rerender core content or publish.",
-  "requested_at": "2026-09-19T13:15:00Z"
+  "retry_reason": "Retry only the spoken-branding postprocess after two GitHub-hosted runners were interrupted during the medium-preset full re-encode. Use x264 fast at the same CRF16 and preserve full-decode plus SSIM>=0.985 fail-closed quality gates; reuse the existing base render, narration, media and immutable G closing.",
+  "requested_at": "2026-09-19T23:16:00Z",
+  "retry_sequence": 3,
+  "previous_failed_finalizer_run_id": 35445180664,
+  "previous_failed_attempts": 2,
+  "previous_failure_class": "GITHUB_RUNNER_SHUTDOWN_DURING_CPU_BOUND_POSTPROCESS",
+  "quality_guard_unchanged": true
 }
