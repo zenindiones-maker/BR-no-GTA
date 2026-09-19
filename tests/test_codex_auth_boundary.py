@@ -1,6 +1,8 @@
 from pathlib import Path
 import subprocess
 
+import pytest
+
 from app.services.codex_addy_capability_executor import execute_codex_addy_capability
 from app.services.agent_office.codex_auth import CodexAuthenticationProvider
 from app.services.agent_office.codex_bounded_worker import (
@@ -9,7 +11,7 @@ from app.services.agent_office.codex_bounded_worker import (
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_capability_service import (
     CapabilityDefinition,
-    execute_capability,
+    CapabilityExecutionBlocked,
 )
 
 
@@ -46,17 +48,18 @@ def test_missing_codex_auth_is_blocked_before_model_turn(tmp_path):
         calls.append(command)
         assert command == ['codex','login','status']
         return subprocess.CompletedProcess(command,1,stdout='',stderr='sensitive detail')
-    evidence=execute_capability(
-        capability_id='addy:code-review-and-quality', authorization=auth(),
-        payload={'task':'Review sample.py without modifying it.'},
-        executor=lambda c,p: execute_codex_addy_capability(c,p,runner=runner,repository_root=root),
-    )
+    with pytest.raises(CapabilityExecutionBlocked) as caught:
+        execute_codex_addy_capability(
+            capability(),
+            {'task':'Review sample.py without modifying it.'},
+            runner=runner,
+            repository_root=root,
+        )
     assert calls == [['codex','login','status']]
-    assert evidence.status == 'BLOCKED'
-    assert evidence.active is False
-    assert evidence.result == {'stage':'authentication','error':'Codex authentication is not available in the ephemeral runner'}
-    assert evidence.boundary == 'Codex authentication prerequisite missing; no model turn started'
-    assert 'sensitive' not in str(evidence.to_dict())
+    assert caught.value.stage == 'authentication'
+    assert caught.value.safe_message == 'Codex authentication is not available in the ephemeral runner'
+    assert caught.value.boundary == 'Codex authentication prerequisite missing; no model turn started'
+    assert 'sensitive' not in str(caught.value)
 
 
 def test_authenticated_executor_invokes_exactly_one_selected_skill(tmp_path):
@@ -69,15 +72,15 @@ def test_authenticated_executor_invokes_exactly_one_selected_skill(tmp_path):
         assert '@code-review-and-quality' in command[-1]
         assert '@using-agent-skills' not in command[-1]
         return subprocess.CompletedProcess(command,0,stdout='{"item":{"type":"agent_message","text":"bounded review"}}\n',stderr='')
-    evidence=execute_capability(
-        capability_id='addy:code-review-and-quality', authorization=auth(),
-        payload={'task':'Review sample.py without modifying it.'},
-        executor=lambda c,p: execute_codex_addy_capability(c,p,runner=runner,repository_root=root),
+    result=execute_codex_addy_capability(
+        capability(),
+        {'task':'Review sample.py without modifying it.'},
+        runner=runner,
+        repository_root=root,
     )
     assert len(calls) == 2
-    assert evidence.status == 'EXECUTED'
-    assert evidence.active is True
-    assert evidence.result['skill'] == 'code-review-and-quality'
+    assert result['skill'] == 'code-review-and-quality'
+    assert result['output'] == 'bounded review'
     assert not (root/'temporary-change.txt').exists()
 
 
