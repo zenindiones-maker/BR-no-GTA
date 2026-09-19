@@ -53,7 +53,12 @@ def dispatch_render(out):
  kid=int(pre["knowledge_id"])
  first=json.loads(br_execution_process_next(goal_id=GOAL_ID,knowledge_id=kid));a=get_gta6_goal_artifacts(GOAL_ID)
  if not a.get("video_id") or not a.get("render_job_id"): raise RuntimeError("VIDEO/RenderJob not created")
- second=json.loads(br_execution_process_next(goal_id=GOAL_ID));res={"status":"RENDER_DISPATCHED","goal_id":GOAL_ID,"knowledge_id":kid,"VIDEO_ID":a["video_id"],"RENDER_JOB_ID":a["render_job_id"],"PRODUCTION_READINESS":"PASS","PRODUCTION_SEGMENT_PREFLIGHT":"PASS","production_metrics":pre["production_metrics"],"DETERMINISTIC_FAILURE_DETECTION_MS":pre["DETERMINISTIC_FAILURE_DETECTION_MS"],"DISPATCH_WALL_CLOCK_MS":round((time.perf_counter_ns()-started)/1_000_000.0,3),"video_step":first,"render_step":second};(out/"state.json").write_text(json.dumps(res,ensure_ascii=False,indent=2));emit(res)
+ second=json.loads(br_execution_process_next(goal_id=GOAL_ID))
+ evidence_result=((second.get("evidence") or {}).get("result") or {}).get("result") or {}
+ github_execution=evidence_result.get("github_execution") if isinstance(evidence_result,dict) else None
+ run_id=github_execution.get("run_id") if isinstance(github_execution,dict) else None
+ if not isinstance(run_id,int) or run_id<=0: raise RuntimeError("RENDER_RUN_ID_MISSING_AFTER_DISPATCH")
+ res={"status":"RENDER_DISPATCHED","goal_id":GOAL_ID,"knowledge_id":kid,"VIDEO_ID":a["video_id"],"RENDER_JOB_ID":a["render_job_id"],"RENDER_RUN_ID":run_id,"RENDER_GITHUB_EXECUTION":github_execution,"PRODUCTION_READINESS":"PASS","PRODUCTION_SEGMENT_PREFLIGHT":"PASS","production_metrics":pre["production_metrics"],"DETERMINISTIC_FAILURE_DETECTION_MS":pre["DETERMINISTIC_FAILURE_DETECTION_MS"],"DISPATCH_WALL_CLOCK_MS":round((time.perf_counter_ns()-started)/1_000_000.0,3),"video_step":first,"render_step":second};(out/"state.json").write_text(json.dumps(res,ensure_ascii=False,indent=2));emit(res)
 def reconcile_render(out):
  initialize_application();env=json.loads(br_execution_process_next(goal_id=GOAL_ID));a=get_gta6_goal_artifacts(GOAL_ID);v=get_video(int(a["video_id"]));res={"status":"RENDER_RECONCILED","VIDEO_ID":a["video_id"],"RENDER_JOB_ID":a["render_job_id"],"video":v,"envelope":env};(out/"render-reconcile.json").write_text(json.dumps(res,ensure_ascii=False,indent=2));emit(res)
 def create_publication(out):
