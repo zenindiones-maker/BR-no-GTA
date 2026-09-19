@@ -30,7 +30,10 @@ from app.services.harness_learning_service import (
     promote_candidate,
     register_skill_version,
 )
-from app.services.opencode_native_ai_provider import (\n    build_semantic_text_only_env,\n    build_semantic_text_only_prompt,\n)
+from app.services.opencode_native_ai_provider import (
+    build_semantic_text_only_env,
+    build_semantic_text_only_prompt,
+)
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
