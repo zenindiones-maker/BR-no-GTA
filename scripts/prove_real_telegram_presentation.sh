@@ -14,8 +14,12 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "REAL_TELEGRAM_PRESENTATION_PROOF=FAIL tracked worktree changes present" >&2
   exit 3
 fi
-if [[ -n "$(git status --porcelain --untracked-files=normal | grep -v '^?? runtime/' || true)" ]]; then
-  echo "REAL_TELEGRAM_PRESENTATION_PROOF=FAIL untracked files outside runtime/" >&2
+UNSAFE_UNTRACKED="$(
+  git status --porcelain --untracked-files=normal     | grep '^?? '     | grep -Ev '^\?\? (runtime/|data/database/br_no_gta\.db\.backup-[0-9]{8}-[0-9]{6}$)'     || true
+)"
+if [[ -n "${UNSAFE_UNTRACKED}" ]]; then
+  echo "REAL_TELEGRAM_PRESENTATION_PROOF=FAIL unsafe untracked files present" >&2
+  printf '%s\n' "${UNSAFE_UNTRACKED}" >&2
   exit 3
 fi
 LOCAL_HEAD="$(git rev-parse HEAD)"
