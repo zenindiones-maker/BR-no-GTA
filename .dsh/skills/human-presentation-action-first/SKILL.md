@@ -6,6 +6,15 @@ source: ayghri/i-have-adhd
 source_version: 0.3.0
 source_commit: b15d0be58f55b33972ba3e39709e0e5208ef30cb
 upstream_skill_blob_sha: 9138ae4af11065b7971eea17edc48a2498c1af35
+capability_type: PRESENTATION
+authority: NONE
+side_effects: NONE
+memory_write: FORBIDDEN
+routing_authority: NONE
+editorial_authority: NONE
+publication_authority: NONE
+supported_surfaces: [telegram, work, codex, termux, admin]
+presentation_modes: [NORMAL, ACTION_FIRST, TECHNICAL_FULL, MACHINE_READABLE]
 ---
 
 # human.presentation.action-first
