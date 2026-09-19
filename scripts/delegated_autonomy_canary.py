@@ -297,6 +297,24 @@ def main() -> int:
     inventory = _inventory()
     deterministic = _deterministic_proofs(args.junit)
 
+    codex_auth_path = args.output.parent / "codex-auth-status.json"
+    codex_auth = (
+        json.loads(codex_auth_path.read_text(encoding="utf-8"))
+        if codex_auth_path.is_file()
+        else {"available": None, "exit_code": None}
+    )
+    codex_auth_available = codex_auth.get("available") is True
+    codex_auth_blocker = None
+    if not codex_auth_available:
+        codex_auth_blocker = {
+            "type": "CODEX_AUTH_PREREQUISITE",
+            "evidence_ref": str(codex_auth_path),
+            "available": codex_auth.get("available"),
+            "exit_code": codex_auth.get("exit_code"),
+            "account_identity_recorded": bool(codex_auth.get("account_identity_recorded")),
+            "secret_recorded": bool(codex_auth.get("secret_recorded")),
+        }
+
     harness_started = time.perf_counter_ns()
     routing = route_harness_request(
         HarnessRoutingRequest(
@@ -534,6 +552,28 @@ def main() -> int:
         },
     }
 
+    codex_dependent_checks = {
+        "DELEGATED_AUTONOMY",
+        "AGENT_TASK_OWNERSHIP",
+        "AGENT_LOCAL_ITERATION",
+        "CODEX_READONLY_ANALYSIS",
+        "CODEX_BOUNDED_DEVELOPMENT",
+        "CODEX_CANONICAL_PUSH_AUTHORITY",
+        "CANDIDATE_COMMIT_CREATED",
+        "INTEGRATION_GATE",
+    }
+    non_codex_checks_pass = all(
+        passed
+        for name, passed in checks.items()
+        if name not in codex_dependent_checks
+    )
+    if all(checks.values()):
+        report_status = "PASS"
+    elif codex_auth_blocker is not None and non_codex_checks_pass:
+        report_status = "BLOCKED"
+    else:
+        report_status = "FAIL"
+
     harness_active_ms = (
         (harness_submit_finished - harness_started)
         + (reduction_finished - reduction_started)
@@ -546,7 +586,9 @@ def main() -> int:
     )
     report = {
         "schema_version": 1,
-        "status": "PASS" if all(checks.values()) else "FAIL",
+        "status": report_status,
+        "CODEX_AUTH_BLOCKER": codex_auth_blocker,
+        "blockers": [] if codex_auth_blocker is None else [codex_auth_blocker],
         "mission_id": MISSION_ID,
         "goal_id": GOAL_ID,
         "base_sha": args.base_sha,
@@ -612,6 +654,11 @@ def main() -> int:
     )
     for name, passed in checks.items():
         print(f"{name}={'PASS' if passed else 'FAIL'}")
+    if codex_auth_blocker is not None:
+        print(
+            "CODEX_AUTH_BLOCKER="
+            + json.dumps(codex_auth_blocker, ensure_ascii=False, sort_keys=True)
+        )
     for key, value in report["metrics"].items():
         print(f"{key}={value}")
     print(f"DELEGATED_AUTONOMY_FINAL={report['status']}")
