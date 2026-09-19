@@ -10,10 +10,22 @@
   "closing_line": "E BR não dorme em Vice City",
   "take_count_per_phrase": 3,
   "automatic_naturality_winner": false,
-  "production_fallback_take_id": "take-1",
+  "production_fallback_take_id": "take-2",
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 2,
-  "retry_reason": "install canonical project runtime before focused spoken-branding tests; no audio generated in attempt 1"
+  "attempt": 3,
+  "retry_reason": "Generate a fresh brand checkpoint with the human-approved Fluid 2 opening profile; preserve G-brand-mixed as the separately locked final end signature.",
+  "selected_opening_take_id": "take-2",
+  "selected_opening_profile": {
+    "reference": "I-opening-fluid-2.mp3",
+    "rate": "+3%",
+    "pitch": "+1Hz",
+    "status": "HUMAN_APPROVED_REFERENCE"
+  },
+  "final_end_signature": {
+    "sample_id": "G-brand-mixed",
+    "status": "HUMAN_APPROVED",
+    "automatic_substitution_allowed": false
+  }
 }
