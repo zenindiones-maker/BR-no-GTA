@@ -1,0 +1,109 @@
+name: System Agent Inventory Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/system-agent-inventory.yml'
+      - '.run001/system-agent-inventory.request.json'
+      - 'scripts/audit_harness_ecosystem.py'
+      - 'scripts/agent-tooling/**'
+      - 'app/services/global_capability_registry.py'
+      - 'app/services/global_capability_registry_base.py'
+      - 'app/services/agent_office/**'
+      - 'app/services/gta6_master_agent.py'
+      - 'app/services/gta6_brain.py'
+      - '.dsh/skills/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: /tmp/br-system-agent-inventory.db
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install BR runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Restore pinned Addy Agent Skills tooling
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap.sh codex
+
+      - name: Prove 24 Addy skills are materially present and discoverable
+        run: |
+          set -euo pipefail
+          python scripts/agent-tooling/certify_addy_24.py             --output runtime/system-agent-inventory/addy-24-certification.json
+          python scripts/agent-tooling/check_discovery.py             codex runtime/system-agent-inventory/addy-24-discovery.json
+
+      - name: Run system-wide executable inventory
+        run: |
+          set -euo pipefail
+          python scripts/audit_harness_ecosystem.py             --output runtime/system-agent-inventory/ecosystem-inventory.json
+
+      - name: Assert inventory honesty gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('runtime/system-agent-inventory/ecosystem-inventory.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['authority']=='DEEPSEEK_HARNESS'
+          assert d['AGENT_INVENTORY_COMPLETE'] is True
+          assert d['ADDY_SKILLS_FOUND']==24
+          assert len(d['ADDY_SKILL_IDS'])==24
+          assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
+          assert d['EXECUTOR_BINDINGS_VALID'] is True
+          assert 'codex' in d['AGENT_IDS']
+          assert 'agent-office-coordinator' in d['AGENT_IDS']
+          assert 'gta6-master-agent' in d['AGENT_IDS']
+          assert 'gta6-brain' in d['AGENT_IDS']
+          # Do not fake integration: gta6-brain must remain visible as a blocker
+          # until its independent Harness boundary is implemented and proven.
+          brain=[x for x in d['identities'] if x['AGENT_OR_SKILL_ID']=='gta6-brain']
+          assert len(brain)==1
+          assert brain[0]['STATUS']=='MISSING_BOUNDARY'
+          print('AGENT_INVENTORY_COMPLETE=PASS')
+          print('ADDY_24_INVENTORIED=PASS')
+          print('ACTIVE_CAPABILITY_ROUTING=PASS')
+          print('GTA6_BRAIN_MISSING_BOUNDARY=OBSERVED')
+          PY
+
+      - name: Run focused registry and collaboration tests
+        run: |
+          set -euo pipefail
+          pytest -q             tests/test_harness_ecosystem_inventory.py             tests/test_harness_collaboration_service.py             tests/test_system_synergy_service.py             tests/test_addy_24_certification.py             tests/test_agent_office_service.py
+
+      - name: Upload auditable inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-agent-inventory-${{ github.run_id }}
+          path: runtime/system-agent-inventory/
+          if-no-files-found: error
+          retention-days: 30
