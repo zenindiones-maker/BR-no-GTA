@@ -276,6 +276,12 @@ def execute_youtube_specialist_via_harness(
             "Return a concise professional analysis with: findings, risks, recommendation, "
             "and what evidence is still missing. Explicitly separate verified facts from inference."
         )
+        semantic_contract = _semantic_output_contract(capability_id)
+        if semantic_contract is not None:
+            prompt += (
+                "\n\nOUTPUT_CONTRACT: Return ONLY valid JSON, without markdown or extra prose, "
+                "matching exactly this shape: " + semantic_contract
+            )
         try:
             semantic_evidence = execute_harness_ai_generation(
                 prompt=prompt,
@@ -333,6 +339,7 @@ def execute_youtube_specialist_via_harness(
         result = {
             **execution.result,
             "semantic_analysis": semantic_text,
+            "semantic_output": _parse_semantic_output(semantic_text) if semantic_text else None,
             "semantic_provider": semantic_provider,
             "semantic_model": semantic_model,
             "semantic_evidence": semantic_evidence.to_dict() if semantic_evidence is not None else None,
