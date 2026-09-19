@@ -13,6 +13,7 @@ from app.services.agent_office.contracts import (
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
 from app.services.agent_office import munder_adapter
+from app.services.agent_office.codex_bounded_worker import codex_execution_failure
 from app.services.agent_office.munder_adapter import CODEX_READONLY_CAPABILITY, MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.agent_office_harness_service import (
@@ -252,11 +253,27 @@ def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_pat
         calls.append((list(command), cwd, timeout_seconds))
         if command == ["codex", "login", "status"]:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-        stdout = json.dumps(
-            {
-                "type": "item.completed",
-                "item": {"type": "agent_message", "text": "bounded review complete"},
-            }
+        stdout = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": "git status --short",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "agent_message",
+                            "text": "bounded review complete",
+                        },
+                    }
+                ),
+            ]
         )
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
@@ -278,6 +295,67 @@ def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_pat
     assert "--sandbox" in calls[1][0]
     assert calls[1][0][calls[1][0].index("--sandbox") + 1] == "read-only"
     assert result.per_agent_results[0]["engine_result"]["canonical_addy_bypass"] is False
+
+
+def test_codex_sandbox_host_policy_failure_is_classified_without_secret_text():
+    completed = subprocess.CompletedProcess(
+        ["codex"],
+        1,
+        stdout="",
+        stderr="bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted",
+    )
+    failure = codex_execution_failure(
+        completed,
+        failure_stage="bounded_development_exec",
+    )
+    assert failure == {
+        "status": "BLOCKED",
+        "error": "Codex Linux sandbox host policy failure",
+        "exit_code": 1,
+        "failure_stage": "bounded_development_exec",
+        "stderr_class": "SANDBOX_HOST_POLICY_FAILURE",
+        "sandbox_backend": "bubblewrap",
+        "retryability": "DETERMINISTIC_NO_RETRY",
+        "recoverable": False,
+    }
+
+
+def test_codex_readonly_sandbox_block_is_never_success(tmp_path, monkeypatch):
+    root, sha = _repo(tmp_path)
+
+    def blocked_process(command, *, cwd, timeout_seconds):
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        stdout = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": (
+                        "Inspection blocked: bwrap: loopback: Failed RTM_NEWADDR: "
+                        "Operation not permitted. No implementation files were read."
+                    ),
+                },
+            }
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(munder_adapter, "_codex_process", blocked_process)
+    result = AgentOfficeService(root).execute(
+        _spec(
+            root,
+            sha,
+            allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
+        ),
+        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
+    )
+    assert result.status == "FAILED"
+    item = result.per_agent_results[0]
+    assert item["status"] == "BLOCKED"
+    assert item["stderr_class"] == "SANDBOX_HOST_POLICY_FAILURE"
+    assert item["retryability"] == "DETERMINISTIC_NO_RETRY"
+    assert item["attempt_count"] == 1
+    assert item["retry_count"] == 0
 
 
 def test_codex_subprocess_receives_enforced_time_budget(tmp_path, monkeypatch):
