@@ -1,0 +1,153 @@
+name: Promote Human-Approved Brand Audio
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.run001/promote-human-approved-brand-audio.request.json'
+      - '.github/workflows/promote-human-approved-brand-audio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: promote-human-approved-brand-audio
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: "35444013735"
+      SOURCE_ARTIFACT: "pronunciation-proof-35444013735-1"
+      EXPECTED_G_SHA256: "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 0
+
+      - name: Recover exact human-approved review asset
+        run: |
+          set -euo pipefail
+          rm -rf runtime/human-approved-brand-audio
+          mkdir -p runtime/human-approved-brand-audio
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$SOURCE_ARTIFACT" \
+            --dir runtime/human-approved-brand-audio
+          source="runtime/human-approved-brand-audio/samples/G-brand-mixed.mp3"
+          test -s "$source"
+          actual="$(sha256sum "$source" | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_G_SHA256"
+          echo "HUMAN_APPROVED_G_REFERENCE=PASS"
+
+      - name: Materialize canonical closing from approved G
+        run: |
+          set -euo pipefail
+          source="runtime/human-approved-brand-audio/samples/G-brand-mixed.mp3"
+          mkdir -p assets/branding/audio
+          cp "$source" assets/branding/audio/g-brand-mixed-approved-20260919.mp3
+
+          # In the approved G sample, WordBoundary evidence places "E" at 2.000s.
+          # The previous word ("seis") ends at 1.650s. Keep 50ms preroll only,
+          # so the canonical closing starts cleanly without the preceding phrase.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -ss 1.950 -i "$source" \
+            -af "atrim=start=0,asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo" \
+            -c:a flac \
+            assets/branding/audio/closing-from-g-approved-20260919.flac
+
+          ffmpeg -nostdin -v error -xerror \
+            -i assets/branding/audio/closing-from-g-approved-20260919.flac \
+            -map 0:a:0 -f null -
+
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+
+          g=Path("assets/branding/audio/g-brand-mixed-approved-20260919.mp3")
+          closing=Path("assets/branding/audio/closing-from-g-approved-20260919.flac")
+
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def probe(path):
+              out=subprocess.check_output([
+                  "ffprobe","-v","error","-show_streams","-show_format","-of","json",str(path)
+              ],text=True)
+              return json.loads(out)
+
+          manifest={
+              "schema_version":1,
+              "approval_date":"2026-09-19",
+              "approval_type":"HUMAN_EXPLICIT",
+              "source_review_channel":"Telegram",
+              "voice":"Voice B",
+              "voice_short_name":"pt-BR-ThalitaMultilingualNeural",
+              "provider":"edge-tts",
+              "provider_version":"7.2.8",
+              "approved_reference":{
+                  "file":str(g),
+                  "canonical_text":"BR no GTA 6. E BR não dorme em Vice City.",
+                  "sha256":sha(g),
+                  "expected_sha256":"9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca",
+                  "pronunciation":{
+                      "GTA 6":"gê tê á seis",
+                      "Vice City":{"locale":"en-US","target_ipa":"vaɪs ˈsɪti"}
+                  },
+                  "rate":"+0%",
+                  "pitch":"+0Hz",
+                  "source_run_id":35444013735,
+                  "source_artifact_id":10585440542
+              },
+              "canonical_closing_asset":{
+                  "file":str(closing),
+                  "canonical_text":"E BR não dorme em Vice City",
+                  "sha256":sha(closing),
+                  "source_file":str(g),
+                  "source_cut_start_seconds":1.950,
+                  "source_word_boundary_e_seconds":2.000,
+                  "source_previous_word_end_seconds":1.650,
+                  "pre_roll_seconds":0.050,
+                  "probe":probe(closing)
+              },
+              "opening_policy":{
+                  "human_approved_prosody_reference":"I-opening-fluid-2.mp3",
+                  "rate":"+3%",
+                  "pitch":"+1Hz",
+                  "canonical_opening_text_must_remain_exact":True
+              },
+              "job18_unchanged":True,
+              "publication_authority_unchanged":True
+          }
+          Path("assets/branding/audio/human-approval-manifest.json").write_text(
+              json.dumps(manifest,ensure_ascii=False,indent=2)+"\n",encoding="utf-8"
+          )
+          assert manifest["approved_reference"]["sha256"]==manifest["approved_reference"]["expected_sha256"]
+          assert float(manifest["canonical_closing_asset"]["probe"]["format"]["duration"]) > 0
+          print("APPROVED_REFERENCE_HASH=PASS")
+          print("CANONICAL_CLOSING_ASSET=PASS")
+          PY
+
+      - name: Commit immutable approved assets
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            assets/branding/audio/g-brand-mixed-approved-20260919.mp3 \
+            assets/branding/audio/closing-from-g-approved-20260919.flac \
+            assets/branding/audio/human-approval-manifest.json
+          if git diff --cached --quiet; then
+            echo "APPROVED_ASSETS_ALREADY_PRESENT=YES"
+            exit 0
+          fi
+          git commit -m "feat(voice): promote human-approved G branding audio"
+          git push origin HEAD:work/gate6f-analytics-learning
+          echo "HUMAN_APPROVED_BRAND_AUDIO_COMMITTED=PASS"
