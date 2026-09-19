@@ -12,6 +12,7 @@ import time
 from typing import Any, Callable
 
 from app.database.schema import initialize_schema
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_collaboration_service import build_collaboration_plan
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
@@ -24,19 +25,16 @@ ROUTING_CASES = (
     {
         "intent": "verify GTA6 claims against source evidence",
         "authorized_action": "RESEARCH",
-        "domain": "gta6-research",
         "required_capability_id": "gta6.fact-check",
     },
     {
         "intent": "derive YouTube content strategy from verified GTA6 evidence",
         "authorized_action": "EDITORIAL",
-        "domain": "youtube-department",
         "required_capability_id": "youtube.department.content-strategy",
     },
     {
         "intent": "execute governed long-form production render",
         "authorized_action": "EXECUTION",
-        "domain": "production-render",
         "required_capability_id": "production.render.execute",
     },
 )
@@ -138,8 +136,21 @@ def _measure(fn: Callable[[], Any], samples: int, warmups: int) -> tuple[list[in
     return timings, last
 
 
+def _canonical_domain(capability_id: str) -> str:
+    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    if record is None:
+        raise RuntimeError(f"benchmark capability missing from Registry: {capability_id}")
+    if not record.execution_enabled:
+        raise RuntimeError(f"benchmark capability is not executable: {capability_id}")
+    return record.domain
+
+
 def run(*, samples: int, plan_samples: int) -> dict[str, Any]:
     initialize_schema()
+    measured_domains = {
+        case["required_capability_id"]: _canonical_domain(case["required_capability_id"])
+        for case in ROUTING_CASES
+    }
 
     routing_index = 0
     def route_once():
@@ -150,7 +161,7 @@ def run(*, samples: int, plan_samples: int) -> dict[str, Any]:
             HarnessRoutingRequest(
                 intent=case["intent"],
                 authorized_action=case["authorized_action"],
-                domain=case["domain"],
+                domain=measured_domains[case["required_capability_id"]],
                 goal_id="perf-control-plane-routing",
                 required_capability_id=case["required_capability_id"],
                 fallback_allowed=False,
@@ -168,7 +179,7 @@ def run(*, samples: int, plan_samples: int) -> dict[str, Any]:
             intent=case["intent"],
             action=case["authorized_action"],
             required_capability_id=case["required_capability_id"],
-            domain=case["domain"],
+            domain=measured_domains[case["required_capability_id"]],
         )
 
     plan_counter = 0
@@ -216,6 +227,14 @@ def run(*, samples: int, plan_samples: int) -> dict[str, Any]:
         "agent_selection": _summary(selection_times),
         "collaboration_plan": _summary(plan_times),
         "collaboration_task_count": len(COLLABORATION_TASKS),
+        "measured_capabilities": [
+            {
+                "capability_id": case["required_capability_id"],
+                "domain": measured_domains[case["required_capability_id"]],
+                "authorized_action": case["authorized_action"],
+            }
+            for case in ROUTING_CASES
+        ],
         "wall_clock_seconds": wall_seconds,
         "cpu_user_seconds": usage_after.ru_utime - usage_before.ru_utime,
         "cpu_system_seconds": usage_after.ru_stime - usage_before.ru_stime,
