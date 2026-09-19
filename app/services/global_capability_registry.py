@@ -28,7 +28,7 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     implementation=(
         "Harness-subordinated headless Munder Difflin Agent Office coordinator"
     ),
-    input_contract="AgentOfficeExecutionSpec + bounded AgentOfficeTask list",
+    input_contract="Harness-authorized mission + persistent DelegatedTaskLease set + bounded AgentOfficeTask DAG",
     output_contract=(
         "AgentOfficeExecutionResult + CapabilityEvidence/CanonicalExecutionResult"
     ),
@@ -67,10 +67,91 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     executor_binding=(
         "app.services.agent_office_harness_service.execute_agent_office_capability"
     ),
-    version="1",
+    version="2",
     provider_id="munder-difflin-pinned",
     agent_id="agent-office-coordinator",
     side_effects=("ephemeral worktrees", "mission-local mailbox"),
+)
+
+
+AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
+    capability_id="agent-office.codex.readonly-analysis",
+    capability_type="AGENT",
+    domain="development",
+    implementation="Agent Office task-owner Codex read-only analysis in a disposable git worktree",
+    input_contract="DelegatedTaskLease + task-specific context/artifact refs + exact base SHA",
+    output_contract="structured analysis artifact + commands/tests/evidence + AgentOfficeExecutionResult",
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "Agent Office delegated lease",
+        "Codex CLI authenticated",
+        "disposable git worktree",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("agent-office","codex","readonly","analysis","task-owner","delegated-autonomy"),
+    security_boundary=(
+        "DeepSeek Harness sole authority; Agent Office derives a bounded lease; Codex runs read-only "
+        "inside a disposable worktree and cannot mutate repository, push, merge, publish, access secrets or change policy."
+    ),
+    cost_class="BOUNDED_BY_LEASE",
+    quota_class="CODEX_ACCOUNT",
+    latency_class="MODEL_DEPENDENT",
+    quality_class="STRUCTURED_ANALYSIS_WITH_EVIDENCE",
+    evidence_contract="app.services.agent_office.contracts.AgentOfficeExecutionResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service.execute_authorized_agent_office_specialist"
+    ),
+    version="1",
+    provider_id="codex",
+    agent_id="codex-readonly",
+    side_effects=("ephemeral worktree", "structured runtime artifact"),
+)
+
+AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
+    capability_id="agent-office.codex.bounded-development",
+    capability_type="AGENT",
+    domain="development",
+    implementation="Agent Office task-owner Codex workspace-write engineering in a disposable git worktree",
+    input_contract=(
+        "DelegatedTaskLease + exact base SHA + explicit allowed_paths/write_set + command allowlist + "
+        "test/benchmark acceptance criteria"
+    ),
+    output_contract=(
+        "local candidate commit + files/diff/commands/tests/benchmarks/artifact refs + "
+        "CANDIDATE_READY_FOR_INTEGRATION"
+    ),
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "Agent Office delegated lease",
+        "Codex CLI authenticated",
+        "disposable git worktree",
+        "explicit write set",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("agent-office","codex","bounded-development","worktree","candidate","task-owner"),
+    security_boundary=(
+        "DeepSeek Harness sole authority. Codex may edit/test only inside lease-owned paths in a disposable "
+        "workspace-write sandbox and may create only a local candidate commit. No push, merge, canonical branch write, "
+        "network side effect, secret access, policy/authority mutation, deployment or publication."
+    ),
+    cost_class="BOUNDED_BY_LEASE",
+    quota_class="CODEX_ACCOUNT",
+    latency_class="MODEL_AND_TEST_DEPENDENT",
+    quality_class="CANDIDATE_ONLY_INTEGRATION_GATE_REQUIRED",
+    evidence_contract="app.services.agent_office.contracts.AgentOfficeExecutionResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service.execute_authorized_agent_office_specialist"
+    ),
+    version="1",
+    provider_id="codex",
+    agent_id="codex-development",
+    side_effects=("ephemeral worktree mutation", "local candidate commit", "structured runtime artifact"),
 )
 
 PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control", implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP", input_contract="allowlisted phone operation + deterministic parameters", output_contract="sanitized phone control result + Harness evidence", requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE", quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability", version="1", provider_id="mobilerun-local", side_effects=("device UI state change",))
@@ -534,6 +615,8 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
     AGENT_OFFICE_RECORD,
+    AGENT_OFFICE_CODEX_READONLY_RECORD,
+    AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD,
     PHONE_CONTROL_RECORD,
     PRODUCTION_MEDIA_SELECTION_RECORD,
     PRODUCTION_MEDIA_BINDING_RECORD,
