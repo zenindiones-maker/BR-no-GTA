@@ -128,8 +128,14 @@ def _semantic_output_contract(capability_id: str) -> str | None:
 
 def _parse_semantic_output(text: str) -> dict[str, Any] | None:
     normalized = str(text or "").strip()
-    if normalized.startswith("~~~"):
-        normalized = normalized.strip("~").strip()
+    fence = chr(96) * 3
+    if normalized.startswith(fence):
+        lines = normalized.splitlines()
+        if lines and lines[0].strip().startswith(fence):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == fence:
+            lines = lines[:-1]
+        normalized = "\n".join(lines).strip()
     if normalized.startswith("json\n"):
         normalized = normalized[5:].strip()
     try:
