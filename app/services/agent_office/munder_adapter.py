@@ -107,6 +107,11 @@ def codex_addy_worker(
         available=record.available,
         execution_enabled=record.execution_enabled,
         boundary=record.boundary,
+        executor_binding=record.executor_binding,
+        implementation=record.implementation,
+        evidence_contract=record.evidence_contract,
+        agent_id=record.agent_id,
+        skill_id=record.skill_id,
     )
     deadline = time.monotonic() + timeout_seconds
 
