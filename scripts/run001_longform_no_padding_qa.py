@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +31,20 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
         raise RuntimeError("YouTube publication must remain disabled")
 
     duration = float(edit_qa.get("duration_seconds") or 0.0)
-    if not math.isfinite(duration) or not 1200.0 <= duration <= 1800.0:
-        raise RuntimeError(f"long-form edit duration is invalid: {duration}")
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError(f"professional edit duration is invalid: {duration}")
+    script_words = sum(
+        len(re.findall(r"[A-Za-zÀ-ÿ0-9]+(?:['’\\-][A-Za-zÀ-ÿ0-9]+)?", str(section.get("narration") or "")))
+        for section in (job.get("script_sections") or [])
+        if isinstance(section, dict)
+    )
+    if script_words <= 0:
+        raise RuntimeError("approved script word count is missing")
+    observed_wpm = script_words * 60.0 / duration
+    if not 90.0 <= observed_wpm <= 180.0:
+        raise RuntimeError(
+            f"professional edit duration implies unnatural/padded speech rate: {observed_wpm:.3f} WPM"
+        )
     links = edit_qa.get("semantic_links")
     if not isinstance(links, list) or not links:
         raise RuntimeError("semantic media lineage is required")
@@ -96,6 +109,8 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
         "unique_asset_count": len(by_asset),
         "covered_duration_seconds": total,
         "edit_duration_seconds": duration,
+        "approved_script_word_count": script_words,
+        "observed_script_wpm": observed_wpm,
         "job18_unchanged": True,
         "job20_reused_as_final": False,
         "no_youtube_publish": True,
