@@ -211,8 +211,8 @@ def _dsh_declared_agents() -> list[dict[str, Any]]:
     text = path.read_text(encoding="utf-8")
     rows: list[dict[str, Any]] = []
     pattern = re.compile(
-        r"(?m)^      - id: (?P<id>[^\\s]+)\\s*$"
-        r"(?P<body>(?:^        [^\\n]*\\n?)*)"
+        r"(?m)^      - id: (?P<id>[^\s]+)\s*$"
+        r"(?P<body>(?:^        [^\n]*\n?)*)"
     )
     for match in pattern.finditer(text):
         body = match.group("body")
