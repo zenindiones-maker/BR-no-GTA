@@ -142,6 +142,14 @@ CAPABILITY_CATALOG = tuple(
         or record.capability_id.startswith("youtube.department.")
         or record.capability_id == "youtube.monetization.observe"
         or record.capability_id == "system.improvement.propose"
+        or record.capability_id in {
+            "media.discovery",
+            "production.plan",
+            "qa.preflight",
+            "script.generate",
+            "video.edit.vedit",
+            "media.analysis.cloud",
+        }
     )
 )
 _CAPABILITY_BY_ID = {
