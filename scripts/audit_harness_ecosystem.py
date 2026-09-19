@@ -46,14 +46,14 @@ KNOWN_AGENT_CLASS_POLICY = {
     },
     "GTA6Brain": {
         "identity": "gta6-brain",
-        "status": "MISSING_BOUNDARY",
+        "status": "ACTIVE_EXECUTABLE",
         "role": "GTA6_DOMAIN_DECISION_SPECIALIST",
         "authority": "SUBORDINATE_ONLY",
-        "evidence": "BrainDecision returned to GTA6MasterAgent",
-        "learning": "indirect through consuming execution path",
+        "evidence": "gta6.brain.decide BrainDecision + AgentInvocationReceipt",
+        "learning": "observed Harness episode via gta6.brain.decide",
         "note": (
-            "Concrete domain specialist exists and is tested, but is not independently "
-            "discoverable/routable by the global Harness capability registry."
+            "Concrete domain specialist is independently discoverable/routable through "
+            "gta6.brain.decide and cannot authorize or execute its recommended action."
         ),
     },
 }
@@ -102,6 +102,8 @@ def _routing(record) -> tuple[bool, str | None, str | None]:
 
 
 def _capability_status(record, binding_ok: bool, routing_ok: bool) -> str:
+    if str(record.implementation or "").startswith("DEPRECATED SUPPORT PATH:"):
+        return "DEPRECATED"
     if not record.available or not record.execution_enabled:
         return "REGISTERED_NOT_EXECUTABLE"
     if record.capability_type == "PROVIDER":
