@@ -9,7 +9,7 @@ from app.services.pronunciation_service import (
     SynthesisPlan, SynthesisSpan, build_azure_ssml, canonical_lexicon_entries,
     load_pronunciation_lexicon, pronunciation_cache_identity,
     provider_capabilities, resolve_synthesis_plan, synthesis_plan_cache_payload,
-    validate_provider_plan, _edge_synthesis_groups,
+    validate_provider_plan, _edge_synthesis_groups, _edge_trim_window,
 )
 
 def test_lexicon_is_versioned_and_contains_vice_city():
@@ -170,3 +170,33 @@ def test_mixed_branding_uses_one_ptbr_phrase_before_approved_vice_city():
     assert "gê tê á seis" in groups[0]["synthesis_text"]
     assert groups[1]["locale"]=="en-US"
     assert groups[1]["synthesis_text"].startswith("Vice City")
+
+
+def test_language_boundary_trim_removes_provider_padding_without_clipping_words():
+    boundaries=[
+        {"offset_seconds":0.05,"duration_seconds":0.075},
+        {"offset_seconds":1.3625,"duration_seconds":0.2125},
+    ]
+    start,end=_edge_trim_window(
+        boundaries,
+        1.92,
+        trim_leading=False,
+        trim_trailing=True,
+    )
+    assert start==0.0
+    assert 1.62 < end < 1.66
+
+    vice=[
+        {"offset_seconds":0.0875,"duration_seconds":0.4125},
+        {"offset_seconds":0.5,"duration_seconds":0.4},
+    ]
+    start2,end2=_edge_trim_window(
+        vice,
+        1.248,
+        trim_leading=True,
+        trim_trailing=False,
+    )
+    assert 0.04 < start2 < 0.06
+    assert end2==1.248
+    natural_gap=(end-(1.3625+0.2125)) + (0.0875-start2)
+    assert 0.0 < natural_gap <= 0.15
