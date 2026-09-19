@@ -94,21 +94,12 @@ def test_execution_rejects_action_outside_capability_policy():
 
 
 def test_higgsfield_is_blocked_before_adapter_execution():
-    called = False
-
-    def executor(capability, payload):
-        nonlocal called
-        called = True
-        return {"unexpected": True}
-
     evidence = execute_capability(
         capability_id="higgsfield-generate",
         authorization=_authorization("EXECUTION", "higgsfield-generate"),
         payload={"prompt": "do not generate"},
-        executor=executor,
     )
 
-    assert called is False
     assert evidence.status == "BLOCKED"
     assert evidence.active is False
     assert evidence.provider == "higgsfield"
@@ -137,46 +128,33 @@ def test_unknown_capability_state_fails_before_executor():
     assert called is False
 
 
-def test_authorized_addy_executor_returns_evidence_to_harness():
-    calls = []
+def test_addy_rejects_caller_supplied_executor_override():
+    def attacker_executor(capability, payload):
+        return {"unexpected": True}
 
-    def executor(capability, payload):
-        calls.append((capability.capability_id, payload))
-        return {"review": "pass"}
-
-    evidence = execute_capability(
-        capability_id="addy:code-review-and-quality",
-        authorization=_authorization(),
-        payload={"target": "changed-files"},
-        executor=executor,
-    )
-
-    assert calls == [
-        ("addy:code-review-and-quality", {"target": "changed-files"}),
-    ]
-    assert evidence.status == "EXECUTED"
-    assert evidence.active is True
-    assert evidence.result == {"review": "pass"}
-    assert evidence.authorized_action == "DEVELOPMENT"
+    with pytest.raises(PermissionError, match="caller executor is not the Registry binding"):
+        execute_capability(
+            capability_id="addy:code-review-and-quality",
+            authorization=_authorization(),
+            payload={"target": "changed-files"},
+            executor=attacker_executor,
+        )
 
 
-def test_executor_failure_has_no_silent_fallback():
-    def executor(capability, payload):
-        raise RuntimeError("internal detail")
+def test_addy_override_failure_cannot_trigger_silent_fallback():
+    def failing_override(capability, payload):
+        raise RuntimeError("should never run")
 
-    evidence = execute_capability(
-        capability_id="addy:code-review-and-quality",
-        authorization=_authorization(),
-        payload={},
-        executor=executor,
-    )
-
-    assert evidence.status == "FAILED"
-    assert evidence.active is False
-    assert evidence.boundary == "Capability executor failed; no fallback executed"
+    with pytest.raises(PermissionError, match="caller executor is not the Registry binding"):
+        execute_capability(
+            capability_id="addy:code-review-and-quality",
+            authorization=_authorization(),
+            payload={},
+            executor=failing_override,
+        )
 
 
-def test_harness_discovery_authorization_execution_evidence_flow():
+def test_harness_discovery_authorization_preserves_registry_executor_identity():
     discovered = discover_capabilities(
         intent="code review quality",
         authorized_action="DEVELOPMENT",
@@ -187,29 +165,24 @@ def test_harness_discovery_authorization_execution_evidence_flow():
         for item in discovered
         if item["capability_id"] == "addy:code-review-and-quality"
     )
+    assert selected["executor_binding"] == (
+        "app.services.addy_harness_service.execute_authorized_addy_skill"
+    )
     authorization = _authorization(
         "DEVELOPMENT",
         selected["capability_id"],
     )
 
-    evidence = execute_capability(
-        capability_id=selected["capability_id"],
-        authorization=authorization,
-        payload={"task": "review"},
-        executor=lambda capability, payload: {
-            "capability_id": capability.capability_id,
-            "observed": payload["task"],
-        },
-    )
-
-    assert evidence.status == "EXECUTED"
-    assert evidence.authority == "deepseek_harness"
-    assert evidence.harness_decision_id == "decision-1"
-    assert evidence.execution_id == "execution-1"
-    assert evidence.result == {
-        "capability_id": "addy:code-review-and-quality",
-        "observed": "review",
-    }
+    with pytest.raises(PermissionError, match="caller executor is not the Registry binding"):
+        execute_capability(
+            capability_id=selected["capability_id"],
+            authorization=authorization,
+            payload={"task": "review"},
+            executor=lambda capability, payload: {
+                "capability_id": capability.capability_id,
+                "observed": payload["task"],
+            },
+        )
 
 
 def test_generic_execution_catalog_remains_bounded_to_existing_adapters():
