@@ -24,8 +24,8 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 
-MISSION_ID = "addy-24-live-semantic-smoke-v1"
-SCHEMA_VERSION = 1
+MISSION_ID = "addy-24-live-semantic-smoke-v2"
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -42,10 +42,10 @@ SPECS: tuple[SmokeSpec, ...] = (
     SmokeSpec("ci-cd-and-automation", "Pipeline order is build -> test -> deploy. Build passed, tests exited with code 1. Decide whether deploy may run and name the gate that blocks it. Under 70 words.", (("deploy",), ("no", "must not", "should not", "blocked"), ("test",), ("exit", "failure", "failed"))),
     SmokeSpec("code-review-and-quality", "Review this authorization guard: `if request.user_id == owner_id: return 403; delete_resource()`. The owner should be allowed and everyone else denied. Identify the defect and minimal correction. Under 90 words.", (("inverted", "reversed", "wrong", "bug"), ("!=", "not equal", "non-owner"), ("403",), ("owner",))),
     SmokeSpec("code-simplification", "Assume `enabled` is already a bool. Simplify `return True if enabled else False` to the clearest equivalent. Return the simplified Python expression and one short reason.", (("return enabled",), ("redundant", "equivalent", "already", "bool"))),
-    SmokeSpec("constraint-driven-development", "Design the smallest implementation that receives bytes already in memory and returns a SHA-256 digest. Hard constraints: no network and no filesystem writes. State the core implementation approach and why it satisfies the constraints. Under 90 words.", (("sha-256", "sha256"), ("hashlib",), ("memory", "in-memory"), ("network",), ("filesystem", "disk"))),
+    SmokeSpec("constraint-driven-development", "In Python, design the smallest implementation that receives bytes already in memory and returns a SHA-256 digest. Hard constraints: no network and no filesystem writes. State the core implementation approach and why it satisfies both constraints. Under 90 words.", (("sha-256", "sha256"), ("hashlib",), ("memory", "in-memory", "bytes"), ("network", "socket", "fetch"), ("filesystem", "file write", "file writes", "disk", "temp storage"))),
     SmokeSpec("context-engineering", "For a code-review model, candidate context is: git diff, acceptance criteria, architectural constraints, full chat history, API key, unrelated build logs. Select the minimum useful context and explicitly say what sensitive item must be excluded. Under 100 words.", (("diff",), ("acceptance", "criteria"), ("constraint",), ("api key", "api_key"), ("exclude", "omit", "never", "do not"))),
     SmokeSpec("debugging-and-error-recovery", "Python bug: `items = ['3', '4']; total = sum(items)` raises TypeError, intended result integer 7. Give the root cause and minimal robust fix. Under 80 words.", (("str", "string"), ("int",), ("7",), ("map", "conversion", "convert"))),
-    SmokeSpec("deprecation-and-migration", "Rename persisted field `brain_decision_id` to `harness_decision_id` without breaking old clients. Give a safe migration sequence that preserves backward compatibility before final removal. Under 120 words.", (("harness_decision_id",), ("brain_decision_id",), ("dual", "both", "backward"), ("deprecat",), ("remove", "retire", "cleanup"))),
+    SmokeSpec("deprecation-and-migration", "Rename persisted field `brain_decision_id` to `harness_decision_id` without breaking old clients. Give a safe migration sequence that preserves backward compatibility before final removal. Under 120 words.", (("harness_decision_id",), ("brain_decision_id",), ("dual", "both", "backward"), ("deprecat",), ("remove", "removal", "retire", "cleanup", "drop", "contract"))),
     SmokeSpec("documentation-and-adrs", "Write a tiny ADR for choosing SQLite for a single-writer local control-plane database. Include Status, Context, Decision, and Consequences. Under 130 words.", (("status",), ("context",), ("decision",), ("consequence",), ("sqlite",))),
     SmokeSpec("doubt-driven-development", "A teammate says 'deployment is safe because CI is green' but provides no run id, logs, commit SHA, or artifact. Classify the claim and state minimum evidence required before accepting it. Under 90 words.", (("unverified", "not verified", "insufficient"), ("run id", "run_id"), ("commit", "sha"), ("log", "artifact", "evidence"))),
     SmokeSpec("frontend-ui-engineering", "An icon-only HTML delete button has no visible text. Give the minimal accessible markup change so a screen reader announces its purpose. Under 60 words.", (("button",), ("aria-label",), ("delete",))),
