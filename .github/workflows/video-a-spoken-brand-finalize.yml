@@ -19,7 +19,7 @@ concurrency:
 jobs:
   finalize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 210
     env:
       PYTHONPATH: .
     steps:
@@ -52,16 +52,61 @@ jobs:
           for key,value in fixed.items():
               if req.get(key)!=value:
                   raise SystemExit(f'FINALIZE_REQUEST_MISMATCH:{key}')
-          for key in ('base_render_run_id','base_render_artifact_id','brand_audio_run_id','brand_audio_artifact_id'):
+          for key in ('base_render_run_id','brand_audio_run_id','brand_audio_artifact_id'):
               if not isinstance(req.get(key),int) or req[key]<=0:
                   raise SystemExit(f'FINALIZE_REQUEST_INVALID:{key}')
           with Path(os.environ['GITHUB_OUTPUT']).open('a',encoding='utf-8') as out:
-              for key in ('base_render_run_id','base_render_artifact_id','brand_audio_run_id','brand_audio_artifact_id'):
+              for key in ('base_render_run_id','brand_audio_run_id','brand_audio_artifact_id'):
                   out.write(f"{key}={req[key]}\n")
           print('FINALIZE_REQUEST=PASS')
           print('JOB18_UNCHANGED=YES')
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
           PY
+
+      - name: Wait for and resolve reusable base render artifact
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ steps.request.outputs.base_render_run_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 360); do
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+            status="$(printf '%s' "$state" | jq -r '.status')"
+            conclusion="$(printf '%s' "$state" | jq -r '.conclusion // ""')"
+            echo "BASE_RENDER_STATUS=${status} CONCLUSION=${conclusion:-PENDING}"
+            if [ "$status" = "completed" ]; then
+              break
+            fi
+            sleep 20
+          done
+          if [ "$status" != "completed" ]; then
+            echo "BASE_RENDER_TIMEOUT" >&2
+            exit 1
+          fi
+          artifact_id=""
+          artifact_name=""
+          for attempt in $(seq 1 30); do
+            artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100")"
+            artifact_id="$(printf '%s' "$artifacts" | jq -r '.artifacts[] | select(.expired==false and .name=="render-output") | .id' | head -n1)"
+            artifact_name="render-output"
+            if [ -z "$artifact_id" ] || [ "$artifact_id" = "null" ]; then
+              artifact_id="$(printf '%s' "$artifacts" | jq -r --arg run "$SOURCE_RUN_ID" '.artifacts[] | select(.expired==false and (.name|startswith("render-failure-"+$run+"-"))) | .id' | head -n1)"
+              artifact_name="$(printf '%s' "$artifacts" | jq -r --arg run "$SOURCE_RUN_ID" '.artifacts[] | select(.expired==false and (.name|startswith("render-failure-"+$run+"-"))) | .name' | head -n1)"
+            fi
+            if [ -n "$artifact_id" ] && [ "$artifact_id" != "null" ]; then break; fi
+            sleep 10
+          done
+          test -n "$artifact_id"
+          test "$artifact_id" != "null"
+          {
+            echo "base_artifact_id=$artifact_id"
+            echo "base_artifact_name=$artifact_name"
+            echo "source_conclusion=$conclusion"
+          } >> "$GITHUB_OUTPUT"
+          echo "BASE_RENDER_ARTIFACT_ID=$artifact_id"
+          echo "BASE_RENDER_ARTIFACT_NAME=$artifact_name"
+          echo "BASE_RENDER_SOURCE_CONCLUSION=$conclusion"
 
       - name: Install finalization runtime
         run: |
@@ -84,7 +129,7 @@ jobs:
       - name: Restore QA-passed base render
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ steps.request.outputs.base_render_artifact_id }}
+          artifact-ids: ${{ steps.base.outputs.base_artifact_id }}
           run-id: ${{ steps.request.outputs.base_render_run_id }}
           github-token: ${{ github.token }}
           path: runtime/base-render

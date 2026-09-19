@@ -1,0 +1,18 @@
+{
+  "version": "video-a-spoken-brand-finalize/v1",
+  "render_job_id": 920101,
+  "base_render_run_id": 35408593683,
+  "brand_audio_run_id": 35410914365,
+  "brand_audio_artifact_id": 10574067653,
+  "final_voice": "Voice B",
+  "intro_asset_id": 1,
+  "opening_text": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de fatos, vazamentos, tecnologia e rumores de GTA 6!",
+  "closing_line": "E BR não dorme em Vice City",
+  "base_render_reuse_required": true,
+  "redundant_longform_tts_requests_allowed": 0,
+  "redundant_media_downloads_allowed": 0,
+  "core_render_rerun_allowed": false,
+  "visual_ssim_guardrail_min": 0.985,
+  "youtube_publication": false,
+  "job18_frozen": true
+}
