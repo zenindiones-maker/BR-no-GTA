@@ -65,6 +65,8 @@ jobs:
       - name: Install pinned BR MCP client plugin
         run: |
           set -euo pipefail
+          npm install --global pnpm@10
+          pnpm --version | tee runtime/deepseek-harness-native/pnpm-version.txt
           npx --yes @deepseek-ai/dsh plugin --profile headless add             @deepseek-ai/dsh-mcp-client@0.0.1-rc.1
           npx --yes @deepseek-ai/dsh plugin --profile headless list             | tee runtime/deepseek-harness-native/plugins.txt
 
@@ -82,7 +84,8 @@ jobs:
             echo 'DSH_PLUGIN_PORTABILITY=FAIL'
             exit 2
           fi
-          grep -q '@deepseek-ai/dsh-llm' .dsh/plugins/gta6-master-activation.mjs
+          grep -q 'agent.followup' .dsh/plugins/gta6-master-activation.mjs
+          grep -q 'type: "text"' .dsh/plugins/gta6-master-activation.mjs
           echo 'DSH_NATIVE_AGENT_CONFIG=PASS'
           echo 'DSH_PLUGIN_PORTABILITY=PASS'
 
