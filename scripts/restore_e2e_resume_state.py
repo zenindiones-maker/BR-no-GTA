@@ -164,75 +164,82 @@ def main() -> int:
         }
     else:
         sources = _find_source_runs(repo=repo, current_run_id=current_run_id, branch=branch, token=token)
-        source = sources[0] if sources else None
-        if source is None:
+        source_dir = args.runtime_dir / "resume-source"
+        required = {"mission.db", "fresh-research.json", "multi-agent-proof.json", "product-quality-e2e.json"}
+        candidates: list[dict] = []
+        for source in sources:
+            source_run = source["run"]
+            artifact = source["artifact"]
+            try:
+                extracted = _download_artifact_with_gh(
+                    repo=repo,
+                    run_id=int(source_run["id"]),
+                    artifact_name=str(artifact["name"]),
+                    destination=source_dir,
+                )
+            except Exception as exc:
+                candidates.append({
+                    "source_run_id": source_run.get("id"),
+                    "resume_available": False,
+                    "reason": f"ARTIFACT_DOWNLOAD_FAILED:{type(exc).__name__}",
+                })
+                continue
+            if not required <= set(extracted):
+                candidates.append({
+                    "source_run_id": source_run.get("id"),
+                    "resume_available": False,
+                    "reason": "PRIOR_ARTIFACT_INCOMPLETE",
+                    "extracted": extracted,
+                })
+                continue
+            args.runtime_dir.mkdir(parents=True, exist_ok=True)
+            for name in required:
+                (args.runtime_dir / name).write_bytes((source_dir / name).read_bytes())
+            os.environ["BR_TEST_DATABASE"] = str((args.runtime_dir / "mission.db").resolve())
+            initialize_schema()
+            fresh = json.loads((args.runtime_dir / "fresh-research.json").read_text(encoding="utf-8"))
+            proof = json.loads((args.runtime_dir / "multi-agent-proof.json").read_text(encoding="utf-8"))
+            product = json.loads((args.runtime_dir / "product-quality-e2e.json").read_text(encoding="utf-8"))
+            durations = _trace_durations(source_dir / "performance-trace.jsonl")
+            bootstrap = bootstrap_checkpoints(
+                fresh=fresh,
+                proof=proof,
+                product=product,
+                source_commit_sha=str(source_run.get("head_sha") or ""),
+                source_run_id=str(source_run.get("id") or ""),
+                durations_ms=durations,
+            )
+            specs = build_specs_from_artifacts(fresh=fresh, proof=proof, product=product)
+            plan = build_resume_plan(goal_id=bootstrap["goal_id"], specs=specs)
+            reusable_upstream = {
+                "research", "fact-check", "gta6-brain", "content-strategy"
+            } <= set(plan["reused_stages"])
+            candidate = {
+                "mode": "TARGETED_RETRY_RUN",
+                "resume_available": True,
+                "source_run_id": source_run.get("id"),
+                "source_head_sha": source_run.get("head_sha"),
+                "artifact_id": artifact.get("id"),
+                "bootstrap": bootstrap,
+                **plan,
+                "reuse_upstream": reusable_upstream,
+                "reuse_product_package": "youtube-package" in set(plan["reused_stages"]),
+            }
+            candidates.append(candidate)
+            if reusable_upstream:
+                result = candidate
+                break
+        else:
             result = {
                 "mode": "FULL_PROOF_RUN",
                 "resume_available": False,
-                "reason": "NO_PRIOR_ARTIFACT",
+                "reason": "NO_VALID_REUSABLE_CHECKPOINT",
+                "candidate_evaluations": candidates,
                 "RESUME_FROM_STAGE": "research",
                 "REUSED_STAGE_COUNT": 0,
                 "RECOMPUTED_STAGE_COUNT": 10,
                 "REUSED_TIME_SAVED_MS": 0.0,
             }
-        else:
-            source_run = source["run"]
-            artifact = source["artifact"]
-            source_dir = args.runtime_dir / "resume-source"
-            extracted = _download_artifact_with_gh(
-                repo=repo,
-                run_id=int(source_run["id"]),
-                artifact_name=str(artifact["name"]),
-                destination=source_dir,
-            )
-            required = {"mission.db", "fresh-research.json", "multi-agent-proof.json", "product-quality-e2e.json"}
-            if not required <= set(extracted):
-                result = {
-                    "mode": "FULL_PROOF_RUN",
-                    "resume_available": False,
-                    "reason": "PRIOR_ARTIFACT_INCOMPLETE",
-                    "source_run_id": source_run.get("id"),
-                    "extracted": extracted,
-                    "RESUME_FROM_STAGE": "research",
-                    "REUSED_STAGE_COUNT": 0,
-                    "RECOMPUTED_STAGE_COUNT": 10,
-                    "REUSED_TIME_SAVED_MS": 0.0,
-                }
-            else:
-                args.runtime_dir.mkdir(parents=True, exist_ok=True)
-                for name in required:
-                    (args.runtime_dir / name).write_bytes((source_dir / name).read_bytes())
-                os.environ["BR_TEST_DATABASE"] = str((args.runtime_dir / "mission.db").resolve())
-                initialize_schema()
-                fresh = json.loads((args.runtime_dir / "fresh-research.json").read_text(encoding="utf-8"))
-                proof = json.loads((args.runtime_dir / "multi-agent-proof.json").read_text(encoding="utf-8"))
-                product = json.loads((args.runtime_dir / "product-quality-e2e.json").read_text(encoding="utf-8"))
-                durations = _trace_durations(source_dir / "performance-trace.jsonl")
-                bootstrap = bootstrap_checkpoints(
-                    fresh=fresh,
-                    proof=proof,
-                    product=product,
-                    source_commit_sha=str(source_run.get("head_sha") or ""),
-                    source_run_id=str(source_run.get("id") or ""),
-                    durations_ms=durations,
-                )
-                specs = build_specs_from_artifacts(fresh=fresh, proof=proof, product=product)
-                plan = build_resume_plan(goal_id=bootstrap["goal_id"], specs=specs)
-                reusable_upstream = {
-                    "research", "fact-check", "gta6-brain", "content-strategy"
-                } <= set(plan["reused_stages"])
-                result = {
-                    "mode": "TARGETED_RETRY_RUN",
-                    "resume_available": True,
-                    "source_run_id": source_run.get("id"),
-                    "source_head_sha": source_run.get("head_sha"),
-                    "artifact_id": artifact.get("id"),
-                    "bootstrap": bootstrap,
-                    **plan,
-                    "reuse_upstream": reusable_upstream,
-                    "reuse_product_package": "youtube-package" in set(plan["reused_stages"]),
-                }
-
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     for key in (
