@@ -12,6 +12,8 @@ SAMPLES=(
     ("C-closing","E BR não dorme em Vice City"),
     ("D-mixed","A Rockstar mostrou Vice City em GTA 6."),
     ("E-domain","Digital Foundry analisou PlayStation 5, Xbox Series X, NVIDIA e AMD."),
+    ("F-gta6-brand","Aqui é BR no GTA 6."),
+    ("G-brand-mixed","BR no GTA 6. E BR não dorme em Vice City."),
 )
 
 def _probe(path:Path)->dict:
@@ -57,6 +59,9 @@ def main()->int:
         })
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
+    gta_brand=next(x for x in rows if x["sample_id"]=="F-gta6-brand")
+    gta=next(x for x in gta_brand["plan"]["spans"] if x.get("pronunciation_identity")=="gta-6")
+    mixed_brand=next(x for x in rows if x["sample_id"]=="G-brand-mixed")
     strict_plan=resolve_synthesis_plan("E BR não dorme em Vice City",voice=DEFAULT_VOICE)
     azure_ssml=build_azure_ssml(strict_plan)
     edge=provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE)
@@ -67,6 +72,12 @@ def main()->int:
         "VOICE_B_PRESERVED":True,
         "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
+        "GTA6_CANONICAL_TEXT_PRESERVED":gta["text"]=="GTA 6" and gta["synthesis_text"]=="G T A seis",
+        "GTA6_REAL_AUDIO_GENERATED":gta_brand["probe"]["size_bytes"]>0,
+        "GTA6_AND_VICE_CITY_COEXIST":(
+            any(x.get("pronunciation_identity")=="gta-6" for x in mixed_brand["plan"]["spans"])
+            and any(x.get("pronunciation_identity")=="vice-city" for x in mixed_brand["plan"]["spans"])
+        ),
         "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
         "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
@@ -80,7 +91,24 @@ def main()->int:
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
         "sample_count":len(rows),"samples":rows,"checks":checks,
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
-        "human_review":{"critical_term":"vice-city","status":"PENDING","automatic_promotion":False,"target_ipa":vice.get("target_ipa")},
+        "human_review":{
+            "status":"PENDING",
+            "automatic_promotion":False,
+            "terms":{
+                "vice-city":{
+                    "status":"APPROVED",
+                    "sample_id":"C-closing",
+                    "target_ipa":vice.get("target_ipa"),
+                    "basis":"human review in Telegram on 2026-09-19",
+                },
+                "gta-6":{
+                    "status":"PENDING",
+                    "sample_id":"F-gta6-brand",
+                    "candidate_synthesis_text":gta.get("synthesis_text"),
+                    "basis":"latest human review rejected previous GTA 6 pronunciation",
+                },
+            },
+        },
         "performance":{
             "baseline_literal_closing":{"wall_clock_seconds":baseline["wall_clock_seconds"],"external_calls":baseline["external_calls"],"probe":baseline["probe"]},
             "candidate_multilingual_closing":{"wall_clock_seconds":closing["edge_metrics"]["wall_clock_seconds"],"external_calls":closing["edge_metrics"]["external_calls"],"probe":closing["probe"]},
@@ -95,7 +123,8 @@ def main()->int:
     (args.output_dir/"pronunciation-proof.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding="utf-8")
     (args.output_dir/"azure-ssml-boundary.xml").write_text(azure_ssml,encoding="utf-8")
     for key,passed in checks.items(): print(f"{key}={'PASS' if passed else 'FAIL'}")
-    print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PENDING")
+    print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS")
+    print("GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING")
     print("JOB18_UNCHANGED=YES"); print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return 0
 
