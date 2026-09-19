@@ -44,6 +44,16 @@ def _worker_safe_value(value: Any) -> Any:
     return value
 
 
+def build_worker_safe_render_job(render_job: dict[str, Any]) -> dict[str, Any]:
+    """Strip governance-only identifiers and reject credentials before worker transport."""
+    if not isinstance(render_job, dict) or not render_job:
+        raise ValueError("Render Job inválido.")
+    safe = _worker_safe_value(render_job)
+    if not isinstance(safe, dict):
+        raise ValueError("Render Job worker payload must remain an object.")
+    return safe
+
+
 def build_audiovisual_render_request(
     render_job: dict[str, Any],
 ) -> dict[str, str]:
@@ -89,7 +99,7 @@ def build_audiovisual_render_request(
     if type(render_job.get("render_job_id")) is not int or render_job["render_job_id"] <= 0:
         raise ValueError("Persisted render_job_id is required")
 
-    worker_job = _worker_safe_value(render_job)
+    worker_job = build_worker_safe_render_job(render_job)
     return {
         "render_job": json.dumps(
             worker_job,

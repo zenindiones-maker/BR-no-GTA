@@ -22,6 +22,7 @@ from app.database.render_queue_repository import (
 )
 from app.database.video_repository import get_video, insert_video
 from app.main import initialize_application
+from app.services.audiovisual_render_request_service import build_worker_safe_render_job
 from app.services.channel_spoken_branding_service import (
     build_spoken_branding_contract,
     canonical_opening_text,
@@ -503,8 +504,10 @@ def prepare_handoff(product_path: Path, old_state_path: Path, out: Path) -> None
     handoff_root = out / "render-job-handoff"
     handoff_root.mkdir(parents=True, exist_ok=True)
     render_job_path = handoff_root / "render-job.json"
+    worker_handoff = build_worker_safe_render_job(running_job)
+    validate_product_job(worker_handoff)
     render_job_path.write_text(
-        json.dumps(running_job, ensure_ascii=False, indent=2),
+        json.dumps(worker_handoff, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     state = {

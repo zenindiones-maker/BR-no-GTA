@@ -4,6 +4,7 @@ import pytest
 
 from app.services.audiovisual_render_request_service import (
     build_audiovisual_render_request,
+    build_worker_safe_render_job,
 )
 
 
@@ -82,3 +83,28 @@ def test_dispatch_rejects_actual_credential_fields(field):
 
     with pytest.raises(ValueError, match="Credential-bearing fields"):
         build_audiovisual_render_request(job)
+
+
+def test_worker_safe_artifact_payload_strips_governance_receipts_recursively():
+    job = _job()
+    job["render"]["learning_profile"] = {
+        "version": "v4",
+        "authorization_id": "authz-render-receipt",
+        "resolved_by": "deepseek_harness",
+    }
+    safe = build_worker_safe_render_job(job)
+    assert "authorization_id" not in safe
+    assert "authorization_subject" not in safe
+    assert "parent_authorization_id" not in safe["lineage"]
+    assert "authorization_id" not in safe["render"]["learning_profile"]
+    assert safe["brain_decision_id"] == job["brain_decision_id"]
+    assert safe["execution_id"] == job["execution_id"]
+    assert safe["authorized_action"] == "EXECUTION"
+
+
+@pytest.mark.parametrize("field", ["access_token", "client_secret", "authorization_header"])
+def test_worker_safe_artifact_payload_rejects_real_credentials(field):
+    job = _job()
+    job[field] = "must-not-enter-worker-artifact"
+    with pytest.raises(ValueError, match="Credential-bearing fields"):
+        build_worker_safe_render_job(job)

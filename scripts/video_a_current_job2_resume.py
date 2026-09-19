@@ -16,6 +16,7 @@ from app.database.gta6_goal_repository import get_gta6_goal_artifacts
 from app.database.render_queue_repository import get_render_job, update_render_job_payload
 from app.database.video_repository import get_video
 from app.main import initialize_application
+from app.services.audiovisual_render_request_service import build_worker_safe_render_job
 from app.services.current_audio_contract_service import current_audio_contract
 from app.services.github_actions_command_runner import run_github_actions_command
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
@@ -142,8 +143,9 @@ def prepare_retry(out: Path) -> None:
         authorization_id=str(persisted["authorization_id"]),
     )
     rebound = _replace_render(SUCCESSOR_RENDER_JOB_ID, render)
-    handoff = dict(rebound)
-    handoff.pop("github_execution", None)
+    canonical_handoff = dict(rebound)
+    canonical_handoff.pop("github_execution", None)
+    handoff = build_worker_safe_render_job(canonical_handoff)
     validate_product_job(handoff)
     _print_audio_gate(handoff)
     job_path.write_text(json.dumps(handoff, ensure_ascii=False, indent=2), encoding="utf-8")

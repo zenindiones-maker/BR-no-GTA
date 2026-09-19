@@ -191,3 +191,21 @@ def test_render_worker_installs_pytest_before_adapter_validation():
     assert "pytest" in install_block
     assert install_index < validate_index
     assert "python -m pytest -q tests/test_semantic_ptbr_audio_qa.py" in workflow
+
+
+def test_artifact_handoff_rejects_unsanitized_authorization_metadata(tmp_path: Path):
+    job = _job(authorization_subject="action:EXECUTION")
+    root = tmp_path / "unsafe"
+    root.mkdir()
+    path = root / "render-job.json"
+    path.write_text(json.dumps(job), encoding="utf-8")
+    with pytest.raises(RenderJobHandoffError, match="governance-only authorization metadata"):
+        build_artifact_descriptor(
+            render_job_path=path,
+            job=job,
+            artifact_id=45,
+            artifact_name="unsafe-auth-metadata",
+            producer_run_id=8,
+            producer_workflow="producer.yml",
+            source_sha=SOURCE_SHA,
+        )

@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.services.audiovisual_render_request_service import build_worker_safe_render_job
+
 
 class RenderJobHandoffError(ValueError):
     pass
@@ -92,6 +94,14 @@ def _validate_descriptor_shape(descriptor: dict[str, Any]) -> None:
 
 
 def _validate_job_against_descriptor(job: dict[str, Any], descriptor: dict[str, Any]) -> None:
+    try:
+        worker_safe = build_worker_safe_render_job(job)
+    except ValueError as exc:
+        raise RenderJobHandoffError(str(exc)) from exc
+    if worker_safe != job:
+        raise RenderJobHandoffError(
+            "artifact-backed RenderJob contains governance-only authorization metadata"
+        )
     required_job_keys = (
         "render_job_id",
         "video_id",
