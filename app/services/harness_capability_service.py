@@ -129,6 +129,9 @@ CAPABILITY_CATALOG = tuple(
         or record.capability_id == "gta6.fact-check"
         or record.capability_id == "human.presentation.action-first"
         or record.capability_id == "narration.generate.pt-BR"
+        or record.capability_id.startswith("youtube.department.")
+        or record.capability_id == "youtube.monetization.observe"
+        or record.capability_id == "system.improvement.propose"
     )
 )
 _CAPABILITY_BY_ID = {
@@ -227,9 +230,13 @@ def execute_capability(
         if selected.get("skill_id") != record.skill_id:
             raise PermissionError("Harness routing skill mismatch")
 
-    if capability_id == "gta6.fact-check" and executor is not None:
-        if _callable_binding(executor) != record.executor_binding:
-            raise PermissionError("gta6.fact-check caller executor is not the Registry binding")
+    if executor is not None:
+        expected_binding = str(record.executor_binding or "")
+        actual_binding = _callable_binding(executor)
+        if not expected_binding or actual_binding != expected_binding:
+            raise PermissionError(
+                f"{capability_id} caller executor is not the Registry binding"
+            )
 
     if record.availability == BLOCKED:
         return CapabilityEvidence(
