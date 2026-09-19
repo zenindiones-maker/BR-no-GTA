@@ -225,6 +225,33 @@ CREATE TABLE IF NOT EXISTS youtube_publications (
     FOREIGN KEY (content_item_id) REFERENCES content_items(id)
 );
 
+CREATE TABLE IF NOT EXISTS youtube_content_packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_id TEXT NOT NULL UNIQUE,
+    content_item_id INTEGER NOT NULL UNIQUE,
+    script_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    search_intent TEXT NOT NULL,
+    thumbnail_concept TEXT NOT NULL,
+    thumbnail_copy TEXT,
+    strategy_analysis TEXT NOT NULL DEFAULT '',
+    script_review TEXT NOT NULL DEFAULT '',
+    seo_analysis TEXT NOT NULL DEFAULT '',
+    production_analysis TEXT NOT NULL DEFAULT '',
+    evidence_refs TEXT NOT NULL DEFAULT '[]',
+    provenance TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'planned',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (content_item_id) REFERENCES content_items(id),
+    FOREIGN KEY (script_id) REFERENCES scripts(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_youtube_content_packages_status
+ON youtube_content_packages(status, updated_at);
+
 CREATE TABLE IF NOT EXISTS scripts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     idea_id INTEGER NOT NULL,
