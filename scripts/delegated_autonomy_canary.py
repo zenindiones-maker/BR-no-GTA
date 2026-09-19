@@ -304,6 +304,13 @@ def main() -> int:
         else {"available": None, "exit_code": None}
     )
     codex_auth_available = codex_auth.get("available") is True
+    codex_auth_method = str(codex_auth.get("method") or "none")
+    codex_auth_cost_class = str(codex_auth.get("cost_class") or "unknown")
+    codex_auth_user_action_required = bool(codex_auth.get("user_action_required"))
+    codex_auth_secret_leak = (
+        codex_auth.get("secret_leak") is False
+        and codex_auth.get("secret_recorded") is False
+    )
     codex_auth_blocker = None
     if not codex_auth_available:
         codex_auth_blocker = {
@@ -518,6 +525,7 @@ def main() -> int:
         "AGENT_TASK_OWNERSHIP": addy_ok and codex_readonly_ok and codex_dev_ok,
         "AGENT_LOCAL_ITERATION": codex_dev_ok and candidate_ok,
         "AGENT_LOCAL_RETRY": deterministic.get("retry") is True,
+        "CODEX_AUTH_SECRET_LEAK": codex_auth_available and codex_auth_secret_leak,
         "CODEX_READONLY_ANALYSIS": codex_readonly_ok,
         "CODEX_BOUNDED_DEVELOPMENT": codex_dev_ok,
         "CODEX_CANONICAL_PUSH_AUTHORITY": candidate_ok and reduction.get("canonical_push_authority") == "NONE",
@@ -556,6 +564,7 @@ def main() -> int:
         "DELEGATED_AUTONOMY",
         "AGENT_TASK_OWNERSHIP",
         "AGENT_LOCAL_ITERATION",
+        "CODEX_AUTH_SECRET_LEAK",
         "CODEX_READONLY_ANALYSIS",
         "CODEX_BOUNDED_DEVELOPMENT",
         "CODEX_CANONICAL_PUSH_AUTHORITY",
@@ -587,6 +596,13 @@ def main() -> int:
     report = {
         "schema_version": 1,
         "status": report_status,
+        "CODEX_AUTH_PREREQUISITE": "AVAILABLE" if codex_auth_available else "BLOCKED",
+        "CODEX_AUTH_METHOD": codex_auth_method,
+        "CODEX_AUTH_COST_CLASS": codex_auth_cost_class,
+        "CODEX_AUTH_USER_ACTION_REQUIRED": (
+            "YES" if codex_auth_user_action_required else "NO"
+        ),
+        "CODEX_AUTH_SECRET_LEAK": "NO" if codex_auth_secret_leak else "YES",
         "CODEX_AUTH_BLOCKER": codex_auth_blocker,
         "blockers": [] if codex_auth_blocker is None else [codex_auth_blocker],
         "mission_id": MISSION_ID,
@@ -654,6 +670,17 @@ def main() -> int:
     )
     for name, passed in checks.items():
         print(f"{name}={'PASS' if passed else 'FAIL'}")
+    print(
+        "CODEX_AUTH_PREREQUISITE="
+        + ("AVAILABLE" if codex_auth_available else "BLOCKED")
+    )
+    print(f"CODEX_AUTH_METHOD={codex_auth_method}")
+    print(f"CODEX_AUTH_COST_CLASS={codex_auth_cost_class}")
+    print(
+        "CODEX_AUTH_USER_ACTION_REQUIRED="
+        + ("YES" if codex_auth_user_action_required else "NO")
+    )
+    print("CODEX_AUTH_SECRET_LEAK=" + ("NO" if codex_auth_secret_leak else "YES"))
     if codex_auth_blocker is not None:
         print(
             "CODEX_AUTH_BLOCKER="
