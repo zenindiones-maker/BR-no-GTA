@@ -303,6 +303,12 @@ def synthesis_plan_cache_payload(plan: SynthesisPlan) -> dict[str, Any]:
         "resolver_version":plan.resolver_version,
         "lexicon_version":plan.lexicon_version,
         "spans":[span.to_dict() for span in plan.spans],
+        "lexicon_hits":list(plan.lexicon_hits),
+        "explicit_span_count":plan.explicit_span_count,
+        "detected_span_count":plan.detected_span_count,
+        "foreign_span_count":plan.foreign_span_count,
+        "canonical_text_preserved":plan.canonical_text_preserved,
+        "human_approval_required":plan.human_approval_required,
     }
 
 def pronunciation_cache_identity(plan: SynthesisPlan, *, provider_id: str, provider_version: str, voice: str, rate: str, pitch: str = "+0Hz") -> dict[str, Any]:
