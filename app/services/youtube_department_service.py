@@ -297,7 +297,11 @@ def execute_youtube_specialist_via_harness(
         finally:
             consume_harness_authorization(provider_authorization)
         if semantic_evidence.status != "EXECUTED" or not isinstance(semantic_evidence.result, dict):
-            raise RuntimeError("TUBEGENT semantic reasoning provider failed")
+            error_summary = semantic_evidence.error or {}
+            raise RuntimeError(
+                "TUBEGENT semantic reasoning provider failed: "
+                + json.dumps(error_summary, ensure_ascii=False, sort_keys=True, default=str)
+            )
         semantic_text = str(semantic_evidence.result.get("text") or "").strip()
         if not semantic_text:
             raise RuntimeError("TUBEGENT semantic reasoning returned empty output")

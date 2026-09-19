@@ -42,6 +42,21 @@ def build_semantic_text_only_prompt(prompt: str) -> str:
 
 
 
+def build_semantic_text_only_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Force the OpenCode V2 runtime to expose no executable tools for semantic calls."""
+    env = dict(os.environ if base_env is None else base_env)
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
+        {
+            "$schema": "https://opencode.ai/config.json",
+            "permissions": [
+                {"action": "*", "resource": "*", "effect": "deny"},
+            ],
+        },
+        separators=(",", ":"),
+    )
+    return env
+
+
 def _immutable_dispatch_ref(
     *,
     repository: str,
@@ -295,7 +310,7 @@ class OpenCodeNativeAIProvider:
                 timeout=300,
                 check=False,
                 cwd=tmp,
-                env=dict(os.environ),
+                env=build_semantic_text_only_env(),
             )
 
         parts: list[str] = []
