@@ -212,7 +212,6 @@ jobs:
           EXPECTED_BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
           EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
           EXPECTED_AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
-          EXPECTED_SOURCE_SHA: ${{ steps.render_transport.outputs.source_sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -235,7 +234,7 @@ jobs:
                   expected_brain_decision_id=os.environ["EXPECTED_BRAIN_DECISION_ID"],
                   expected_execution_id=os.environ["EXPECTED_EXECUTION_ID"],
                   expected_authorized_action=os.environ["EXPECTED_AUTHORIZED_ACTION"],
-                  expected_source_sha=(os.environ.get("EXPECTED_SOURCE_SHA") or None) if descriptor_text else None,
+                  expected_source_sha=os.environ["GITHUB_SHA"] if descriptor_text else None,
               )
               if job.get("product_profile") == "professional_ptbr_v1":
                   validate_product_job(job)
@@ -258,7 +257,7 @@ jobs:
                   "render_job_id": job.get("render_job_id"),
                   "video_id": job.get("video_id"),
                   "execution_id": job.get("execution_id"),
-                  "source_sha": (os.environ.get("EXPECTED_SOURCE_SHA") or os.environ["GITHUB_SHA"]),
+                  "source_sha": os.environ["GITHUB_SHA"],
               }, ensure_ascii=False, indent=2),
               encoding="utf-8",
           )
