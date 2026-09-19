@@ -14,8 +14,8 @@
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 8,
-  "retry_reason": "Explicit user-requested delivery of the two canonical approved audio assets: Fluid 2 opening and G-brand-mixed closing. No alternative voice casting.",
+  "attempt": 9,
+  "retry_reason": "Regenerate only the small spoken-branding checkpoint because the previous artifact contract_sha256 is stale against the current Voice B / Fluid 2 / immutable G-brand-mixed contract. Preserve base render, long-form narration, media and all human approvals; no redundant Telegram audition.",
   "selected_opening_take_id": "take-2",
   "selected_opening_profile": {
     "reference": "I-opening-fluid-2.mp3",
@@ -33,5 +33,7 @@
   "runtime_voice_count": 1,
   "allowed_runtime_voice": "pt-BR-ThalitaMultilingualNeural",
   "alternative_voice_casting_enabled": false,
-  "send_canonical_voice_proof_to_telegram": true
+  "send_canonical_voice_proof_to_telegram": false,
+  "stale_checkpoint_artifact_id": 10584977710,
+  "stale_contract_sha256": "33d75b46c01ac213e0b885c85a682542520ba2d33214cdd34d24ff39765c13e7"
 }
