@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: work/gate6f-analytics-learning
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -41,7 +41,29 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
+      - name: Resolve VIDEO A recovery mode
+        id: recovery_mode
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          d=json.load(open(".run/video-a-current-product-e2e.request.json"))
+          resume=bool(d.get("resume_from_e2e_artifact_id"))
+          print("resume=" + ("true" if resume else "false"))
+          print("resume_artifact_id=" + str(d.get("resume_from_e2e_artifact_id") or ""))
+          print("resume_run_id=" + str(d.get("resume_from_e2e_run_id") or ""))
+          PY
+      - name: Restore existing Job2 E2E checkpoint
+        if: steps.recovery_mode.outputs.resume == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.recovery_mode.outputs.resume_artifact_id }}
+          run-id: ${{ steps.recovery_mode.outputs.resume_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime
+          merge-multiple: true
       - name: Restore canonical Product Package database checkpoint
+        if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@v4
         with:
           artifact-ids: "10589535732"
@@ -50,6 +72,7 @@ jobs:
           path: runtime/checkpoint
           merge-multiple: true
       - name: Restore content-addressed MediaKnowledge
+        if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@v4
         with:
           artifact-ids: "10590341059"
@@ -58,6 +81,7 @@ jobs:
           path: runtime/media-knowledge-source
           merge-multiple: true
       - name: Restore historical failed render identity
+        if: steps.recovery_mode.outputs.resume != 'true'
         uses: actions/download-artifact@v4
         with:
           artifact-ids: "10590247951"
@@ -66,6 +90,7 @@ jobs:
           path: runtime/historical
           merge-multiple: true
       - name: Reuse Product Package and MediaKnowledge preflight
+        if: steps.recovery_mode.outputs.resume != 'true'
         run: |
           set -euo pipefail
           python scripts/continue_product_to_human_review.py preflight             --product runtime/checkpoint/product-quality-e2e.json             --media-knowledge-dir runtime/media-knowledge-source/product-delivery/media-knowledge             --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json             --out runtime/product-delivery
@@ -75,9 +100,16 @@ jobs:
           echo "EDITORIAL_RECOMPUTED=NO"
           echo "MEDIAKNOWLEDGE_REUSED=YES"
       - name: Reconcile stale Job1 and prepare current Job2 handoff
+        if: steps.recovery_mode.outputs.resume != 'true'
         run: |
           set -euo pipefail
           python scripts/video_a_current_contract_recovery.py prepare-handoff --product runtime/checkpoint/product-quality-e2e.json --old-state runtime/historical/product-delivery/state.json --out runtime/product-delivery
+      - name: Validate and prepare existing Job2 retry handoff
+        if: steps.recovery_mode.outputs.resume == 'true'
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_current_audio_contract.py             tests/test_channel_spoken_branding.py             tests/test_run001_longform_editorial_controller.py             tests/test_video_a_current_contract_e2e.py
+          python scripts/video_a_current_job2_resume.py prepare-retry --out runtime/product-delivery
       - name: Publish governed current Job2 handoff
         id: render_job_handoff
         uses: actions/upload-artifact@v4
@@ -92,7 +124,11 @@ jobs:
           HANDOFF_ARTIFACT_NAME: video-a-current-render-job-${{ github.run_id }}
         run: |
           set -euo pipefail
-          python scripts/video_a_current_contract_recovery.py dispatch-handoff --out runtime/product-delivery --artifact-id "$HANDOFF_ARTIFACT_ID" --artifact-name "$HANDOFF_ARTIFACT_NAME" --producer-run-id "$GITHUB_RUN_ID" --source-sha "$GITHUB_SHA"
+          if [ "${{ steps.recovery_mode.outputs.resume }}" = "true" ]; then
+            python scripts/video_a_current_job2_resume.py dispatch-retry --out runtime/product-delivery --artifact-id "$HANDOFF_ARTIFACT_ID" --artifact-name "$HANDOFF_ARTIFACT_NAME" --producer-run-id "$GITHUB_RUN_ID" --source-sha "$GITHUB_SHA"
+          else
+            python scripts/video_a_current_contract_recovery.py dispatch-handoff --out runtime/product-delivery --artifact-id "$HANDOFF_ARTIFACT_ID" --artifact-name "$HANDOFF_ARTIFACT_NAME" --producer-run-id "$GITHUB_RUN_ID" --source-sha "$GITHUB_SHA"
+          fi
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/state.json"))
