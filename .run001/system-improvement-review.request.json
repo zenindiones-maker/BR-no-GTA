@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T11:55:00Z",
-  "base_head": "24350b0a17528b60982bb10957938b86824922a6",
-  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW with exact child SHA and one-step zero-tool semantic provider after observed 300s tool-loop timeout.",
+  "requested_at": "2026-09-19T12:12:30Z",
+  "base_head": "e96c6337c6c0bfa3606f2b9c4d4d1d09349b5e19",
+  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW after immutable semantic handoff authorization and canonical Addy boundary fixes.",
   "require_observed_semantic_specialists": true,
   "job18_unchanged": true,
   "publication": false,
