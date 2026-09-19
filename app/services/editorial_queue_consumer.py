@@ -215,9 +215,23 @@ def process_next_editorial_queue_item(
         )
 
     script_spec = generate_script_spec(script_id)
+    script_spec = dict(script_spec)
     if target_duration_seconds is not None:
-        script_spec = dict(script_spec)
         script_spec["estimated_duration_seconds"] = target_duration_seconds
+    if editorial_context:
+        verified_claims = editorial_context.get("verified_claims")
+        if isinstance(verified_claims, list):
+            script_spec["verified_claims"] = [dict(item) for item in verified_claims if isinstance(item, dict)]
+        strategy = editorial_context.get("youtube_strategy")
+        if strategy is None:
+            strategy = editorial_context.get("content_strategy_analysis")
+        if strategy is not None:
+            script_spec["youtube_strategy"] = strategy
+        refs = editorial_context.get("content_strategy_evidence_refs")
+        if isinstance(refs, (list, tuple)):
+            script_spec["editorial_evidence_refs"] = [
+                str(item) for item in refs if str(item).strip()
+            ]
     content_item = create_content_item(script_spec)
 
     production_plan = create_production_plan(content_item)
