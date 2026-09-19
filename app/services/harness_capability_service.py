@@ -149,6 +149,7 @@ CAPABILITY_CATALOG = tuple(
             "script.generate",
             "video.edit.vedit",
             "media.analysis.cloud",
+            "gta6.brain.decide",
         }
     )
 )
