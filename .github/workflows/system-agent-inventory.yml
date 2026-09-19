@@ -49,10 +49,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
-      - name: Restore pinned Addy Agent Skills tooling
+      - name: Restore pinned Addy and Higgsfield Agent Skills tooling
         run: |
           set -euo pipefail
-          bash scripts/agent-tooling/bootstrap.sh codex
+          bash scripts/agent-tooling/bootstrap.sh all
 
       - name: Prove 24 Addy skills are materially present and discoverable
         run: |
@@ -77,6 +77,8 @@ jobs:
           assert d['AGENT_INVENTORY_COMPLETE'] is True
           assert d['ADDY_SKILLS_FOUND']==24
           assert len(d['ADDY_SKILL_IDS'])==24
+          assert d['HIGGSFIELD_SKILLS_FOUND']==4
+          assert len(d['HIGGSFIELD_SKILL_IDS'])==4
           assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
           assert d['EXECUTOR_BINDINGS_VALID'] is True
           assert 'codex' in d['AGENT_IDS']
@@ -91,6 +93,7 @@ jobs:
           assert d['MISSING_BOUNDARIES_FOUND'] == 0
           print('AGENT_INVENTORY_COMPLETE=PASS')
           print('ADDY_24_INVENTORIED=PASS')
+          print('HIGGSFIELD_4_INVENTORIED=PASS')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')
           print('GTA6_BRAIN_BOUNDARY=PASS')
           print('BROKEN_ACTIVE_BINDINGS=0')
