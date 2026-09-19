@@ -58,7 +58,6 @@ jobs:
           npm install --global @opencode/cli@2.0.8
           bash scripts/agent-tooling/bootstrap.sh codex
           test "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8"
-          codex --version
           echo "BOUNDED_ENGINEERING_RUNTIME=PASS"
 
       - name: Compile delegated autonomy boundaries
@@ -81,6 +80,8 @@ jobs:
 
       - name: Observe Codex authentication prerequisite without leaking account data
         run: |
+          set -e
+          codex --version
           set +e
           codex login status >/dev/null 2>&1
           rc=$?
