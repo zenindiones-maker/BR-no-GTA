@@ -71,6 +71,7 @@ def generate_script_spec(
     return {
         "script_id": script_id,
         "idea_id": idea_id,
+        "title": str(script.get("title") or "").strip(),
         "objective": objective,
         "audience": audience,
         "estimated_duration_seconds": estimated_duration_seconds,
