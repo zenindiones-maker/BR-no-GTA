@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from app.integrations.gta6.news_feeds import fetch_gta6_news_feeds
+from app.services.performance_telemetry_service import PerformanceSpan
 
 
 OFFICIAL_SOURCES = (
@@ -128,10 +129,18 @@ def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
             "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        final_url = response.geturl()
-        content_type = str(response.headers.get("Content-Type") or "").casefold()
-        raw_bytes = response.read(2_000_000)
+    host = urllib.parse.urlparse(url).hostname or "unknown"
+    with PerformanceSpan(
+        "research.source_fetch",
+        "EXTERNAL_RESEARCH_TIME",
+        input_size=len(url.encode("utf-8")),
+        metadata={"host": host},
+    ) as perf:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            final_url = response.geturl()
+            content_type = str(response.headers.get("Content-Type") or "").casefold()
+            raw_bytes = response.read(2_000_000)
+        perf.set(network_ms=perf.elapsed_ms(), output_size=len(raw_bytes), attempt_count=1)
     if "text/" not in content_type and "json" not in content_type and content_type:
         raise ValueError("submitted source is not textual")
     raw = raw_bytes.decode("utf-8", errors="replace")
@@ -140,7 +149,6 @@ def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
     raw = re.sub(r"<[^>]+>", " ", raw)
     text = " ".join(html.unescape(raw).split())
     return text, final_url
-
 
 def _resolve_submitted_source(source_url: str, *, checked_at: str) -> dict[str, Any]:
     try:

@@ -56,6 +56,7 @@ class HarnessAIProviderEvidence:
     provider_profile_version: str | None = None
     provider_profile_content_ref: str | None = None
     provider_profile_checksum: str | None = None
+    performance: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -301,6 +302,7 @@ def execute_harness_ai_generation(
             provider_profile_version=profile_version,
             provider_profile_content_ref=profile_content_ref,
             provider_profile_checksum=profile_checksum,
+            performance=dict(getattr(provider, "last_performance_metrics", {}) or {}),
         )
     except Exception as exc:
         finished_at = _utcnow()
@@ -335,6 +337,7 @@ def execute_harness_ai_generation(
             provider_profile_version=profile_version,
             provider_profile_content_ref=profile_content_ref,
             provider_profile_checksum=profile_checksum,
+            performance=dict(getattr(provider, "last_performance_metrics", {}) or {}),
         )
 
     finished_at = _utcnow()
@@ -372,6 +375,7 @@ def execute_harness_ai_generation(
             provider_profile_version=profile_version,
             provider_profile_content_ref=profile_content_ref,
             provider_profile_checksum=profile_checksum,
+            performance=dict(getattr(provider, "last_performance_metrics", {}) or {}),
         )
 
     return HarnessAIProviderEvidence(

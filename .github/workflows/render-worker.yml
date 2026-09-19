@@ -64,6 +64,7 @@ jobs:
     timeout-minutes: 240
     env:
       PYTHONPATH: video-engine/backend:.
+      BR_PERFORMANCE_TRACE_FILE: runtime/render/performance-trace.jsonl
     steps:
       - uses: actions/checkout@v4
         with:
@@ -842,6 +843,7 @@ jobs:
           name: render-performance-proof-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             runtime/render/pipeline-stage-clock.json
+            runtime/render/performance-trace.jsonl
             runtime/render/render-pipeline-profile.json
             runtime/render/output/**/operation-observability.json
             runtime/render/output/**/render-runtime.json

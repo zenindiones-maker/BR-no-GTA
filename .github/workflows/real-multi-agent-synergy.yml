@@ -16,6 +16,12 @@ on:
       - 'app/services/harness_collaboration_service.py'
       - 'app/services/harness_learning_service.py'
       - 'app/services/opencode_executor_profile_service.py'
+      - 'app/services/opencode_native_ai_provider.py'
+      - 'app/services/harness_ai_provider_service.py'
+      - 'app/services/performance_telemetry_service.py'
+      - 'scripts/youtube_product_quality_e2e.py'
+      - 'scripts/hydrate_promoted_opencode_profile.py'
+      - 'scripts/summarize_performance_trace.py'
 
 permissions:
   contents: write
@@ -41,6 +47,7 @@ jobs:
       BR_OPENCODE_NATIVE_RUN_TIMEOUT: "900"
       BR_OPENCODE_NATIVE_EXECUTION_MODE: "same_runner"
       BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/real-multi-agent-synergy/opencode-artifacts
+      BR_PERFORMANCE_TRACE_FILE: runtime/real-multi-agent-synergy/performance-trace.jsonl
 
     steps:
       - name: Checkout exact branch state
@@ -53,44 +60,80 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
 
-      - name: Install application and observed provider runtimes
-        run: |
-          set -euo pipefail
-          mkdir -p runtime/real-multi-agent-synergy
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          npm install --global omniroute@3.8.50
-          npm install --global @opencode/cli@2.0.8
-          OMNI="$(omniroute --version | tr -d '\r' | sed -E 's/^[^0-9]*//')"
-          OPEN="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
-          test "$OMNI" = "3.8.50"
-          test "$OPEN" = "2.0.8"
-          gh auth status
+      - name: Restore versioned Python runtime
+        id: synergy_python_runtime
+        uses: actions/cache@v4
+        with:
+          path: .venv-synergy
+          key: synergy-python-v1-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('requirements.txt', 'requirements/**/*.txt', 'pyproject.toml') }}
 
-      - name: Observe baseline/candidate and govern OpenCode promotion
+      - name: Build or validate versioned Python runtime
+        env:
+          PYTHON_RUNTIME_CACHE_HIT: ${{ steps.synergy_python_runtime.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          python scripts/prepare_system_synergy_opencode_profile.py             --output runtime/real-multi-agent-synergy/provider-promotion.json
+          if [ "$PYTHON_RUNTIME_CACHE_HIT" != "true" ]; then
+            rm -rf .venv-synergy
+            python -m venv .venv-synergy
+            .venv-synergy/bin/python -m pip install --upgrade pip
+            .venv-synergy/bin/python -m pip install -r requirements.txt
+          fi
+          .venv-synergy/bin/python - <<'PY'
+          import sys
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit(f"PYTHON_VERSION_MISMATCH:{sys.version}")
+          import requests, pydantic
+          print("PYTHON_RUNTIME=PASS")
+          PY
+          echo "$PWD/.venv-synergy/bin" >> "$GITHUB_PATH"
+          echo "PYTHON_RUNTIME_CACHE_HIT=$PYTHON_RUNTIME_CACHE_HIT"
+
+      - name: Restore versioned OpenCode CLI runtime
+        id: opencode_cli_runtime
+        uses: actions/cache@v4
+        with:
+          path: .runtime/opencode-cli
+          key: synergy-opencode-v1-${{ runner.os }}-${{ runner.arch }}-node24-opencode-2.0.8
+
+      - name: Build or validate versioned OpenCode CLI runtime
+        env:
+          OPENCODE_RUNTIME_CACHE_HIT: ${{ steps.opencode_cli_runtime.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [ "$OPENCODE_RUNTIME_CACHE_HIT" != "true" ]; then
+            rm -rf .runtime/opencode-cli
+            mkdir -p .runtime/opencode-cli
+            npm install --prefix .runtime/opencode-cli @opencode/cli@2.0.8
+          fi
+          OPEN="$PWD/.runtime/opencode-cli/node_modules/.bin/opencode"
+          test -x "$OPEN"
+          VERSION="$("$OPEN" --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
+          test "$VERSION" = "2.0.8"
+          echo "$PWD/.runtime/opencode-cli/node_modules/.bin" >> "$GITHUB_PATH"
+          gh auth status
+          echo "OPENCODE_RUNTIME_CACHE_HIT=$OPENCODE_RUNTIME_CACHE_HIT"
+
+      - name: Rehydrate previously promoted OpenCode profile
+        run: |
+          set -euo pipefail
+          python scripts/hydrate_promoted_opencode_profile.py \
+            --output runtime/real-multi-agent-synergy/provider-promotion.json
           python - <<'PY'
           import json
           from pathlib import Path
           d=json.loads(Path("runtime/real-multi-agent-synergy/provider-promotion.json").read_text())
           assert d["status"]=="PASS", d
-          assert d["evaluation_decision"]=="PROMOTE", d
           assert d["active_profile"]["version"]=="v2", d
           assert d["quality_regression"]=="NO", d
           assert d["fallback_occurred"] is False, d
           assert d["zero_cost"] is True, d
-          print("OBSERVED_PROVIDER_BASELINE=PASS")
-          print("OBSERVED_PROVIDER_CANDIDATE=PASS")
-          print("GOVERNED_PROVIDER_PROMOTION=PASS")
+          print("PROMOTED_PROVIDER_REHYDRATION=PASS")
           print("SEMANTIC_PROVIDER_READY=PASS")
           PY
 
@@ -147,22 +190,18 @@ jobs:
           for key,value in required.items():
               assert c.get(key)==value, (key,c.get(key),value)
           assert d["telegram_transport_live"] is False
-          assert len(d["agents_executed"]) >= 5
+          assert len(d["agents_executed"]) >= 3
           assert "gta6-brain" in d["agents_executed"]
           assert "tubegent-content-strategy" in d["agents_executed"]
-          assert "tubegent-script-review" in d["agents_executed"]
-          assert "tubegent-production-management" in d["agents_executed"]
           receipts=d["agent_invocation_receipts"]
           semantic=[
               r for r in receipts
               if r["capability"] in {
                   "gta6.brain.decide",
                   "youtube.department.content-strategy",
-                  "youtube.department.script-review",
-                  "youtube.department.production-management",
               }
           ]
-          assert len(semantic)==4
+          assert len(semantic)==2
           assert all(r["external_call_performed"] is True for r in semantic)
           assert all(r["returned_to_harness"] is True for r in receipts)
           print("REAL_MISSION_PROOF=PASS")
@@ -194,6 +233,9 @@ jobs:
           assert len(d["youtube_package"]["evidence_refs"]) >= 6, d
           assert d["metrics"]["scene_count"] >= 3, d
           assert d["metrics"]["max_scene_seconds"] <= 30.001, d
+          outputs=d["structured_specialist_outputs"]
+          assert set(outputs) >= {"content_strategy","script_review","seo","thumbnail","production_management"}, outputs
+          assert d["brain_result"]["receipt"]["goal_id"] == d["goal_id"], d
           print("PRODUCT_E2E=PASS")
           print("YOUTUBE_PACKAGE_DATABASE=PASS")
           print("YOUTUBE_PUBLICATION=NO")
@@ -217,6 +259,15 @@ jobs:
           print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
           PY
 
+      - name: Build permanent performance report
+        if: always()
+        run: |
+          set -euo pipefail
+          python scripts/summarize_performance_trace.py \
+            --trace runtime/real-multi-agent-synergy/performance-trace.jsonl \
+            --output runtime/real-multi-agent-synergy/performance-report.json \
+            --run-id "$GITHUB_RUN_ID"
+
       - name: Upload auditable synergy evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -229,5 +280,7 @@ jobs:
             runtime/real-multi-agent-synergy/product-quality-e2e.json
             runtime/real-multi-agent-synergy/mission.db
             runtime/real-multi-agent-synergy/opencode-artifacts/
+            runtime/real-multi-agent-synergy/performance-trace.jsonl
+            runtime/real-multi-agent-synergy/performance-report.json
           if-no-files-found: warn
           retention-days: 30

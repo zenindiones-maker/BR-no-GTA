@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -20,9 +21,9 @@ from app.services.youtube_package_service import (
     YOUTUBE_PACKAGE_CAPABILITY_ID,
     persist_youtube_content_package,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 from scripts.prove_real_multi_agent_synergy import (
     _claim_context,
-    _execute_brain,
     _execute_specialist,
 )
 
@@ -111,35 +112,17 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     source_url = str(synergy.get("source_url") or "")
     source_ref = f"source-candidate:{intelligence['source_candidate']['candidate_id']}"
 
-    brain = _execute_brain(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        evidence_refs=[source_ref, *verified_refs],
-    )
-    brain_ref = str(brain["receipt"]["output_refs"][0])
+    brain = dict(synergy.get("brain_result") or {})
+    if not brain or (brain.get("receipt") or {}).get("goal_id") != goal_id:
+        raise RuntimeError("product E2E requires the same Goal-bound Brain result from upstream synergy")
+    brain_ref = str((brain.get("receipt") or {}).get("output_refs", [""])[0])
 
-    strategy = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="content-strategy-product",
-        capability_id="youtube.department.content-strategy",
-        action="EDITORIAL",
-        objective=(
-            "define a specific Brazilian GTA VI video angle, audience promise, "
-            "retention thesis and differentiation using only verified claims"
-        ),
-        evidence_refs=[source_ref, *verified_refs, brain_ref],
-        semantic_context={
-            "source_url": source_url,
-            "verified_claims": claims,
-            "gta6_brain_decision": brain["brain_decision"],
-            "requirements": {
-                "language": "pt-BR",
-                "avoid_generic_angle": True,
-                "no_unsupported_claims": True,
-            },
-        },
-    )
+    strategy_canonical = dict((synergy.get("specialist_results") or {}).get("content_strategy") or {})
+    strategy_result = dict(strategy_canonical.get("result") or {})
+    strategy_receipt = dict(strategy_result.get("receipt") or {})
+    if not strategy_canonical or strategy_receipt.get("goal_id") != goal_id:
+        raise RuntimeError("product E2E requires the same Goal-bound content strategy from upstream synergy")
+    strategy = {"canonical": strategy_canonical, "receipt": strategy_receipt}
     strategy_text = _analysis(strategy)
     if not strategy_text:
         raise RuntimeError("content strategy produced no semantic analysis")
@@ -153,13 +136,20 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         "content_strategy_analysis": strategy_text,
         "content_strategy_evidence_refs": list(strategy["receipt"].get("evidence_refs") or ()),
     }
-    envelope = json.loads(
-        br_editorial_process_next(
-            goal_id=goal_id,
-            target_duration_seconds=TARGET_DURATION_SECONDS,
-            editorial_context_json=json.dumps(editorial_context, ensure_ascii=False),
+    editorial_context_text = json.dumps(editorial_context, ensure_ascii=False)
+    with PerformanceSpan(
+        "product.editorial_script",
+        "PRODUCTION_PLANNING_TIME",
+        input_size=len(editorial_context_text.encode("utf-8")),
+        metadata={"goal_id": goal_id},
+    ):
+        envelope = json.loads(
+            br_editorial_process_next(
+                goal_id=goal_id,
+                target_duration_seconds=TARGET_DURATION_SECONDS,
+                editorial_context_json=editorial_context_text,
+            )
         )
-    )
     result = dict(envelope.get("result") or {})
     if result.get("status") != "completed":
         raise RuntimeError(f"official editorial boundary did not complete: {result}")
@@ -176,42 +166,76 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     script_ref = f"script:{script_id}"
     plan_ref = f"production-plan:{result.get('production_plan_id')}"
 
-    script_review = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="script-review-product",
-        capability_id="youtube.department.script-review",
-        action="EDITORIAL",
-        objective=(
-            "audit the actual persisted script for hook, natural pt-BR, factual discipline, "
-            "retention, repetition, transitions and AI-generic phrasing"
-        ),
-        evidence_refs=[*verified_refs, _output_ref(strategy), script_ref],
-        semantic_context={
-            "verified_claims": claims,
-            "content_strategy_analysis": strategy_text,
-            "actual_script": script_text[:18000],
-        },
-    )
+    def _script_review():
+        return _execute_specialist(
+            mission_id=mission_id,
+            goal_id=goal_id,
+            task_id="script-review-product",
+            capability_id="youtube.department.script-review",
+            action="EDITORIAL",
+            objective=(
+                "audit the actual persisted script for hook, natural pt-BR, factual discipline, "
+                "retention, repetition, transitions and AI-generic phrasing"
+            ),
+            evidence_refs=[*verified_refs, _output_ref(strategy), script_ref],
+            semantic_context={
+                "verified_claims": claims,
+                "content_strategy_analysis": strategy_text,
+                "actual_script": script_text[:18000],
+            },
+        )
 
-    seo = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="seo-product",
-        capability_id="youtube.department.seo",
-        action="YOUTUBE",
-        objective=(
-            "audit and recommend the final YouTube title, description, tags and search intent "
-            "for the actual script without clickbait beyond the verified evidence"
-        ),
-        evidence_refs=[*verified_refs, script_ref, _output_ref(strategy)],
-        semantic_context={
-            "verified_claims": claims,
-            "actual_title": script.get("title"),
-            "actual_script": script_text[:16000],
-            "content_strategy_analysis": strategy_text,
-        },
-    )
+    def _seo_review():
+        return _execute_specialist(
+            mission_id=mission_id,
+            goal_id=goal_id,
+            task_id="seo-product",
+            capability_id="youtube.department.seo",
+            action="YOUTUBE",
+            objective=(
+                "audit and recommend the final YouTube title, description, tags and search intent "
+                "for the actual script without clickbait beyond the verified evidence"
+            ),
+            evidence_refs=[*verified_refs, script_ref, _output_ref(strategy)],
+            semantic_context={
+                "verified_claims": claims,
+                "actual_title": script.get("title"),
+                "actual_script": script_text[:16000],
+                "content_strategy_analysis": strategy_text,
+            },
+        )
+
+    def _production_review():
+        return _execute_specialist(
+            mission_id=mission_id,
+            goal_id=goal_id,
+            task_id="production-product",
+            capability_id="youtube.department.production-management",
+            action="EXECUTION",
+            objective=(
+                "audit whether the actual production plan can be executed without a human "
+                "reinterpreting the narrative, timing, visuals or evidence"
+            ),
+            evidence_refs=[*verified_refs, script_ref, plan_ref],
+            semantic_context={
+                "verified_claims": claims,
+                "script_excerpt": script_text[:12000],
+                "production_plan": production_plan,
+            },
+        )
+
+    with PerformanceSpan(
+        "product.parallel_reviews",
+        "AI_PROVIDER_TIME",
+        metadata={"parallelism": 3, "dependencies": "script persisted"},
+    ):
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="youtube-product-review") as pool:
+            script_future = pool.submit(_script_review)
+            seo_future = pool.submit(_seo_review)
+            production_future = pool.submit(_production_review)
+            script_review = script_future.result()
+            seo = seo_future.result()
+            production = production_future.result()
 
     thumbnail = _execute_specialist(
         mission_id=mission_id,
@@ -229,24 +253,6 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             "title": script.get("title"),
             "script_hook": str((result.get("script_spec") or {}).get("hook") or ""),
             "seo_analysis": _analysis(seo),
-        },
-    )
-
-    production = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="production-product",
-        capability_id="youtube.department.production-management",
-        action="EXECUTION",
-        objective=(
-            "audit whether the actual production plan can be executed without a human "
-            "reinterpreting the narrative, timing, visuals or evidence"
-        ),
-        evidence_refs=[*verified_refs, script_ref, plan_ref],
-        semantic_context={
-            "verified_claims": claims,
-            "script_excerpt": script_text[:12000],
-            "production_plan": production_plan,
         },
     )
 
@@ -347,6 +353,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "PASS",
         "mission_id": mission_id,
+        "brain_result": brain,
         "goal_id": goal_id,
         "content_item_id": content_item_id,
         "script_id": script_id,

@@ -237,6 +237,32 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     mission_id = f"mission-system-synergy-{run_identity}"
     goal_id = f"goal-system-synergy-{run_identity}"
 
+    ingress = ingest_telegram_input_under_harness(
+        {
+            "telegram_user_id": 900001,
+            "telegram_chat_id": 900001,
+            "telegram_message_id": 900001,
+            "telegram_update_id": 900001,
+            "input_kind": "text",
+            "text": f"Transforme esta fonte em pauta de vídeo se fizer sentido: {source_url}",
+        }
+    )
+    input_record = dict(ingress["input"])
+    fresh_evidence = SimpleNamespace(
+        status="PASS",
+        execution_id=str(fresh.get("execution_id") or mission_id),
+        execution_ref=f"github-actions:{run_identity}:fresh-research",
+        packet=fresh,
+    )
+    intelligence = process_telegram_source_intelligence(
+        input_record=input_record,
+        fresh_evidence=fresh_evidence,
+    )
+    signal = dict(intelligence.get("editorial_signal") or {})
+    goal_id = str(signal.get("goal_id") or "").strip()
+    if not goal_id:
+        raise RuntimeError("real source mission produced no persisted Goal")
+
     plan = build_collaboration_plan(
         mission_id=mission_id,
         goal_id=goal_id,
@@ -260,7 +286,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
                 "task_id": "gta6-brain",
                 "capability_id": "gta6.brain.decide",
                 "action": "DECISION",
-                "objective": "recommend one bounded GTA6 next action from the now-verified canonical context",
+                "objective": "recommend one bounded GTA6 next action from the verified canonical context",
                 "dependencies": ["fact-check"],
                 "expected_output": "BrainDecision",
             },
@@ -268,49 +294,11 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
                 "task_id": "content-strategy",
                 "capability_id": "youtube.department.content-strategy",
                 "action": "EDITORIAL",
-                "objective": "derive a grounded YouTube content angle from verified claims",
+                "objective": "define the product-grade Brazilian YouTube angle from verified claims",
                 "dependencies": ["gta6-brain"],
                 "expected_output": "SemanticYouTubeSpecialistResult",
             },
-            {
-                "task_id": "script-review",
-                "capability_id": "youtube.department.script-review",
-                "action": "EDITORIAL",
-                "objective": "review narrative readiness and factual discipline",
-                "dependencies": ["content-strategy"],
-                "expected_output": "SemanticYouTubeSpecialistResult",
-            },
-            {
-                "task_id": "production-management",
-                "capability_id": "youtube.department.production-management",
-                "action": "EXECUTION",
-                "objective": "assess production readiness without dispatching render",
-                "dependencies": ["script-review"],
-                "expected_output": "SemanticYouTubeSpecialistResult",
-            },
         ],
-    )
-
-    ingress = ingest_telegram_input_under_harness(
-        {
-            "telegram_user_id": 900001,
-            "telegram_chat_id": 900001,
-            "telegram_message_id": 900001,
-            "telegram_update_id": 900001,
-            "input_kind": "text",
-            "text": f"Transforme esta fonte em pauta de vídeo se fizer sentido: {source_url}",
-        }
-    )
-    input_record = dict(ingress["input"])
-    fresh_evidence = SimpleNamespace(
-        status="PASS",
-        execution_id=str(fresh.get("execution_id") or mission_id),
-        execution_ref=f"github-actions:{run_identity}:fresh-research",
-        packet=fresh,
-    )
-    intelligence = process_telegram_source_intelligence(
-        input_record=input_record,
-        fresh_evidence=fresh_evidence,
     )
     fact_receipts = _fact_check_receipts(intelligence)
     if not fact_receipts:
@@ -350,63 +338,25 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         task_id="content-strategy",
         capability_id="youtube.department.content-strategy",
         action="EDITORIAL",
-        objective="derive the strongest grounded content angle from verified GTA VI evidence",
+        objective=(
+            "define a specific Brazilian GTA VI video angle, audience promise, "
+            "retention thesis and differentiation using only verified claims"
+        ),
         evidence_refs=[*grounded_refs, brain_output_ref],
-        semantic_context=base_semantic_context,
-    )
-    content_analysis = str(content["canonical"]["result"].get("semantic_analysis") or "")[:6000]
-
-    script_review = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="script-review",
-        capability_id="youtube.department.script-review",
-        action="EDITORIAL",
-        objective="review narrative readiness, factual discipline and retention risks",
-        evidence_refs=[
-            *grounded_refs,
-            brain_output_ref,
-            content["receipt"]["output_refs"][0],
-        ],
         semantic_context={
             **base_semantic_context,
-            "content_strategy_analysis": content_analysis,
-        },
-    )
-    script_analysis = str(script_review["canonical"]["result"].get("semantic_analysis") or "")[:6000]
-
-    production = _execute_specialist(
-        mission_id=mission_id,
-        goal_id=goal_id,
-        task_id="production-management",
-        capability_id="youtube.department.production-management",
-        action="EXECUTION",
-        objective="assess production readiness without dispatching render or publication",
-        evidence_refs=[
-            *grounded_refs,
-            brain_output_ref,
-            content["receipt"]["output_refs"][0],
-            script_review["receipt"]["output_refs"][0],
-        ],
-        semantic_context={
-            "source_url": source_url,
-            "verified_claims": claims,
-            "gta6_brain_decision": brain["brain_decision"],
-            "content_strategy_analysis": content_analysis,
-            "script_review_analysis": script_analysis,
-            "hard_constraints": {
-                "production_dispatched": False,
-                "youtube_publication": False,
-                "job18_unchanged": True,
+            "requirements": {
+                "language": "pt-BR",
+                "avoid_generic_angle": True,
+                "no_unsupported_claims": True,
             },
         },
     )
+    content_analysis = str(content["canonical"]["result"].get("semantic_analysis") or "")[:6000]
 
     specialist_receipts = [
         brain["receipt"],
         content["receipt"],
-        script_review["receipt"],
-        production["receipt"],
     ]
     all_receipts = [*fact_receipts, *specialist_receipts]
     executed_agents = sorted({str(item["agent_id"]) for item in all_receipts})
@@ -415,8 +365,6 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         "gta6.fact-check",
         "gta6.brain.decide",
         "youtube.department.content-strategy",
-        "youtube.department.script-review",
-        "youtube.department.production-management",
     }
     learning = _observed_learning(required_learning)
 
@@ -426,30 +374,20 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         {"from": "gta6-brain", "to": "tubegent-content-strategy", "refs": [brain_output_ref]},
         {
             "from": "tubegent-content-strategy",
-            "to": "tubegent-script-review",
+            "to": "deepseek-harness",
             "refs": [content["receipt"]["output_refs"][0]],
         },
-        {
-            "from": "tubegent-script-review",
-            "to": "tubegent-production-management",
-            "refs": [script_review["receipt"]["output_refs"][0]],
-        },
-        {
-            "from": "tubegent-production-management",
-            "to": "deepseek-harness",
-            "refs": [production["receipt"]["output_refs"][0]],
-        },
     ]
-    semantic_receipts = [brain["receipt"], content["receipt"], script_review["receipt"], production["receipt"]]
+    semantic_receipts = [brain["receipt"], content["receipt"]]
     semantic_real = all(item.get("external_call_performed") is True for item in semantic_receipts)
 
     checks = {
         "HARNESS": "SOLE_AUTHORITY",
         "AGENT_DISCOVERY": "PASS" if all(task.routing_id for task in plan.tasks) else "FAIL",
         "AGENT_ROUTING": "PASS" if all(task.selected_executor_binding for task in plan.tasks) else "FAIL",
-        "AGENT_SELECTION": "PASS" if len(executed_agents) >= 5 else "FAIL",
-        "MULTI_AGENT_COLLABORATION": "PASS" if len(executed_agents) >= 5 else "FAIL",
-        "AGENT_HANDOFFS": "PASS" if len(handoffs) == 6 else "FAIL",
+        "AGENT_SELECTION": "PASS" if len(executed_agents) >= 3 else "FAIL",
+        "MULTI_AGENT_COLLABORATION": "PASS" if len(executed_agents) >= 3 else "FAIL",
+        "AGENT_HANDOFFS": "PASS" if len(handoffs) == 4 else "FAIL",
         "SEMANTIC_MODEL_EXECUTION": "PASS" if semantic_real else "FAIL",
         "GTA6_BRAIN_EXECUTION": "PASS" if brain["receipt"].get("proven_live") is True else "FAIL",
         "CONFLICT_RESOLUTION": "PASS",
@@ -469,7 +407,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     success = all(value in {"PASS", "SOLE_AUTHORITY", "YES"} for value in required_pass.values())
 
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "status": "PASS" if success else "FAIL",
         "mission_id": mission_id,
         "goal_id": goal_id,
@@ -512,8 +450,6 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         "brain_result": brain,
         "specialist_results": {
             "content_strategy": content["canonical"],
-            "script_review": script_review["canonical"],
-            "production_management": production["canonical"],
         },
         "agent_invocation_receipts": all_receipts,
         "checks": checks,

@@ -11,6 +11,7 @@ from typing import Any
 from app.services.google_youtube_publisher_factory import create_google_youtube_publisher
 from app.services.media_artifact_locator_service import validate_media_artifact_locator
 from app.services.youtube_publisher import YouTubeUploadResult
+from app.services.performance_telemetry_service import PerformanceSpan
 
 
 class YouTubeUploadWorkerError(ValueError):
@@ -220,7 +221,15 @@ def execute(job: dict[str, Any], artifact_root: Path, *, publisher: Any) -> dict
         "privacy_status": "private",
         "file_path": str(media),
     }
-    result = publisher.upload(publication)
+    with PerformanceSpan(
+        "youtube.private_upload",
+        "YOUTUBE_API_TIME",
+        provider="youtube",
+        input_size=int(evidence.get("size_bytes") or 0),
+        metadata={"publication_id": job["publication_id"], "video_id": job["video_id"]},
+    ) as perf:
+        result = publisher.upload(publication)
+        perf.set(network_ms=perf.elapsed_ms(), attempt_count=1)
     if not isinstance(result, YouTubeUploadResult):
         raise TypeError("publisher.upload() must return YouTubeUploadResult")
     if result.success and not result.youtube_video_id:
@@ -231,12 +240,23 @@ def execute(job: dict[str, Any], artifact_root: Path, *, publisher: Any) -> dict
         poll_seconds = float(os.getenv("YOUTUBE_REVIEW_READY_POLL_SECONDS", "30"))
         if timeout_seconds <= 0 or poll_seconds <= 0:
             raise YouTubeUploadWorkerError("YouTube review readiness timing must be positive")
-        processing = _wait_for_private_hd_review(
-            publisher,
-            result.youtube_video_id,
-            timeout_seconds=timeout_seconds,
-            poll_seconds=poll_seconds,
-        )
+        with PerformanceSpan(
+            "youtube.processing_wait",
+            "YOUTUBE_API_TIME",
+            provider="youtube",
+            metadata={"youtube_video_id_present": True},
+        ) as perf:
+            processing = _wait_for_private_hd_review(
+                publisher,
+                result.youtube_video_id,
+                timeout_seconds=timeout_seconds,
+                poll_seconds=poll_seconds,
+            )
+            perf.set(
+                provider_wait_ms=perf.elapsed_ms(),
+                network_ms=perf.elapsed_ms(),
+                attempt_count=int(processing.get("observations") or 1),
+            )
     payload = {
         "publication_id": job["publication_id"],
         "video_id": job["video_id"],

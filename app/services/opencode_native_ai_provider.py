@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import threading
+import time
 from typing import Any
 
 from app.services.ai_provider import AIProviderError, AIResponse
@@ -16,6 +18,7 @@ from app.services.github_actions_command_runner import run_github_actions_comman
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.github_actions_run_tracker import GitHubActionsRunTracker
 from app.services.github_actions_run_watcher import GitHubActionsRunWatcher
+from app.services.performance_telemetry_service import emit_performance_event, utcnow_iso
 
 
 OPENCODE_NATIVE_ARTIFACT_NAME = "opencode-native-result"
@@ -155,6 +158,9 @@ class OpenCodeNativeAIProviderError(AIProviderError):
             "profile_version": self.details.get("profile_version"),
             "profile_content_ref": self.details.get("profile_content_ref"),
             "tool_events": self.details.get("tool_events"),
+            "error_events": self.details.get("error_events"),
+            "safe_stderr_tail": self.details.get("safe_stderr_tail"),
+            "performance": self.details.get("performance"),
         }
 
 
@@ -298,62 +304,176 @@ class OpenCodeNativeAIProvider:
                 details={"failure_code": "cli_version_mismatch"},
             )
 
-        with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
-            process = subprocess.run(
-                [
-                    "opencode", "run", "--standalone",
-                    "--model", executor_model,
-                    "--format", "json",
-                    build_semantic_text_only_prompt(prompt),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=False,
-                cwd=tmp,
-                env=dict(os.environ),
-            )
-
+        perf_started_at = utcnow_iso()
+        provider_started_ns = time.perf_counter_ns()
         parts: list[str] = []
         tool_call_count = 0
         tool_events: list[dict[str, Any]] = []
+        error_events: list[str] = []
         parse_errors = 0
-        for raw in process.stdout.splitlines():
-            if not raw.strip():
-                continue
-            try:
-                item = json.loads(raw)
-            except json.JSONDecodeError:
-                parse_errors += 1
-                continue
-            event_type = str(item.get("type") or "")
-            if event_type in {"tool_use", "tool_call", "tool"}:
-                tool_call_count += 1
-                part = item.get("part") if isinstance(item.get("part"), dict) else {}
-                state = part.get("state") if isinstance(part.get("state"), dict) else {}
-                tool_events.append({
-                    "event_type": event_type,
-                    "tool": str(
-                        item.get("tool")
-                        or item.get("name")
-                        or part.get("tool")
-                        or part.get("name")
-                        or ""
-                    )[:120],
-                    "status": str(
-                        item.get("status")
-                        or part.get("status")
-                        or state.get("status")
-                        or ""
-                    )[:80],
-                })
-            if event_type == "text":
-                part = item.get("part") or {}
-                value = part.get("text")
-                if isinstance(value, str) and value:
-                    parts.append(value)
+        event_count = 0
+        parse_ns = 0
+        first_event_ns = None
+        first_text_ns = None
+        last_event_ns = None
+        process = None
+        timed_out = threading.Event()
+        stderr_text = ""
+
+        with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
+            stderr_path = Path(tmp) / "stderr.log"
+            with stderr_path.open("w+", encoding="utf-8") as stderr_stream:
+                process = subprocess.Popen(
+                    [
+                        "opencode", "run", "--standalone",
+                        "--model", executor_model,
+                        "--format", "json",
+                        build_semantic_text_only_prompt(prompt),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=stderr_stream,
+                    text=True,
+                    bufsize=1,
+                    cwd=tmp,
+                    env=dict(os.environ),
+                )
+                process_launched_ns = time.perf_counter_ns()
+
+                def _kill_timeout() -> None:
+                    timed_out.set()
+                    if process is not None and process.poll() is None:
+                        process.kill()
+
+                timer = threading.Timer(300.0, _kill_timeout)
+                timer.daemon = True
+                timer.start()
+                try:
+                    if process.stdout is None:
+                        raise OpenCodeNativeAIProviderError(
+                            "OpenCode stdout pipe was not created",
+                            details={"failure_code": "missing_stdout_pipe"},
+                        )
+                    for raw in process.stdout:
+                        observed_ns = time.perf_counter_ns()
+                        if not raw.strip():
+                            continue
+                        parse_started_ns = time.perf_counter_ns()
+                        try:
+                            item = json.loads(raw)
+                        except json.JSONDecodeError:
+                            parse_errors += 1
+                            parse_ns += time.perf_counter_ns() - parse_started_ns
+                            continue
+                        parse_ns += time.perf_counter_ns() - parse_started_ns
+                        event_count += 1
+                        if first_event_ns is None:
+                            first_event_ns = observed_ns
+                        last_event_ns = observed_ns
+                        event_type = str(item.get("type") or "")
+                        if event_type in {"tool_use", "tool_call", "tool"}:
+                            tool_call_count += 1
+                            part = item.get("part") if isinstance(item.get("part"), dict) else {}
+                            state = part.get("state") if isinstance(part.get("state"), dict) else {}
+                            tool_events.append({
+                                "event_type": event_type,
+                                "tool": str(
+                                    item.get("tool")
+                                    or item.get("name")
+                                    or part.get("tool")
+                                    or part.get("name")
+                                    or ""
+                                )[:120],
+                                "status": str(
+                                    item.get("status")
+                                    or part.get("status")
+                                    or state.get("status")
+                                    or ""
+                                )[:80],
+                            })
+                        if event_type == "error":
+                            candidate_error = item.get("error") or item.get("message") or item.get("data")
+                            if candidate_error:
+                                safe = re.sub(
+                                    r"(?i)(authorization:|bearer\\s+|api[_-]?key|token=|sk-|ghp_|github_pat_)[^\\s,;]*",
+                                    "[REDACTED]",
+                                    str(candidate_error)[:1600],
+                                )
+                                error_events.append(safe)
+                        if event_type == "text":
+                            part = item.get("part") or {}
+                            value = part.get("text")
+                            if isinstance(value, str) and value:
+                                if first_text_ns is None:
+                                    first_text_ns = observed_ns
+                                parts.append(value)
+                    process.wait()
+                finally:
+                    timer.cancel()
+                process_finished_ns = time.perf_counter_ns()
+                stderr_stream.flush()
+                stderr_stream.seek(0)
+                stderr_text = stderr_stream.read()
 
         answer = "".join(parts).strip()
+        if process is None:
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode process was not created",
+                details={"failure_code": "process_not_created"},
+            )
+        first_event_at = first_event_ns or process_finished_ns
+        first_text_at = first_text_ns or first_event_at
+        last_event_at = last_event_ns or first_event_at
+        performance = {
+            "cli_process_launch_ms": (process_launched_ns - provider_started_ns) / 1_000_000.0,
+            "cli_process_startup_ms": (first_event_at - provider_started_ns) / 1_000_000.0,
+            "model_first_token_ms": (first_text_at - first_event_at) / 1_000_000.0,
+            "model_total_ms": (last_event_at - first_event_at) / 1_000_000.0,
+            "json_parse_ms": parse_ns / 1_000_000.0,
+            "process_teardown_ms": (process_finished_ns - last_event_at) / 1_000_000.0,
+            "provider_total_ms": (process_finished_ns - provider_started_ns) / 1_000_000.0,
+            "event_count": event_count,
+            "tool_call_count": tool_call_count,
+            "parse_errors": parse_errors,
+            "timed_out": timed_out.is_set(),
+        }
+        self.last_performance_metrics = dict(performance)
+        safe_stderr_lines = [
+            line[:500]
+            for line in stderr_text.splitlines()
+            if not re.search(
+                r"(authorization:|bearer |api_key|apikey|token=|sk-|ghp_|github_pat_)",
+                line,
+                flags=re.IGNORECASE,
+            )
+        ][-10:]
+        failure_type = None
+        if tool_call_count:
+            failure_type = "semantic_tools_used"
+        elif timed_out.is_set():
+            failure_type = "provider_timeout"
+        elif process.returncode != 0:
+            failure_type = "provider_nonzero_exit"
+        elif not answer:
+            failure_type = "empty_response"
+        emit_performance_event(
+            stage="opencode.semantic.generate",
+            category="AI_PROVIDER_TIME",
+            started_at=perf_started_at,
+            finished_at=utcnow_iso(),
+            duration_ms=performance["provider_total_ms"],
+            provider_wait_ms=performance["provider_total_ms"],
+            retry_count=0,
+            backoff_ms=0.0,
+            attempt_count=1,
+            cache_hit=False,
+            input_size=len(prompt.encode("utf-8")),
+            output_size=len(answer.encode("utf-8")),
+            provider="opencode",
+            model=canonical_model,
+            success=failure_type is None,
+            failure_type=failure_type,
+            metadata=performance,
+        )
         if tool_call_count:
             raise OpenCodeNativeAIProviderError(
                 "Same-run semantic execution attempted tool use",
@@ -364,18 +484,13 @@ class OpenCodeNativeAIProvider:
                     "profile_version": self.profile_version,
                     "profile_content_ref": self.profile_content_ref,
                     "tool_events": tool_events[:8],
+                    "error_events": error_events[-5:],
+                    "safe_stderr_tail": safe_stderr_lines,
+                    "performance": performance,
                 },
             )
         if process.returncode != 0 or not answer:
-            safe_stderr = "\n".join(
-                line[:500]
-                for line in process.stderr.splitlines()
-                if not re.search(
-                    r"(authorization:|bearer |api_key|apikey|token=|sk-|ghp_|github_pat_)",
-                    line,
-                    flags=re.IGNORECASE,
-                )
-            )
+            safe_stderr = "\n".join(safe_stderr_lines)
             raise OpenCodeNativeAIProviderError(
                 "Governed same-run OpenCode execution failed",
                 details={
@@ -389,6 +504,10 @@ class OpenCodeNativeAIProvider:
                     "profile_content_ref": self.profile_content_ref,
                     "retry_count": 0,
                     "parse_errors": parse_errors,
+                    "tool_events": tool_events[:8],
+                    "error_events": error_events[-5:],
+                    "safe_stderr_tail": safe_stderr_lines,
+                    "performance": performance,
                 },
             )
 

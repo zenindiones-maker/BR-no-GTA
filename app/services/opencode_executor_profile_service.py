@@ -34,8 +34,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "executor_model": "opencode/big-pickle",
         "workflow": "omniroute.yml",
         "cli_version": "2.0.8",
-        "status": "EXECUTABLE_CANDIDATE",
-        "evidence_run_id": 35343942135,
+        "status": "PROMOTED",
+        "evidence_run_id": 35450516329,
     },
 }
 

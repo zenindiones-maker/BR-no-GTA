@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from app.services.performance_telemetry_service import PerformanceSpan
+
 
 def _load_upload_result(path: Path) -> dict[str, Any]:
     result = json.loads(path.read_text(encoding="utf-8"))
@@ -47,16 +49,28 @@ def _telegram_send_review_link(
         ]
     }
     endpoint = f"https://api.telegram.org/bot{token}/sendMessage"
-    response = requests.post(
-        endpoint,
-        data={
-            "chat_id": chat_id,
-            "text": caption,
-            "reply_markup": json.dumps(keyboard, ensure_ascii=False),
-            "disable_web_page_preview": "false",
-        },
-        timeout=60,
-    )
+    with PerformanceSpan(
+        "telegram.review_delivery",
+        "TELEGRAM_TIME",
+        provider="telegram",
+        input_size=len(caption.encode("utf-8")),
+        metadata={"link_only": True},
+    ) as perf:
+        response = requests.post(
+            endpoint,
+            data={
+                "chat_id": chat_id,
+                "text": caption,
+                "reply_markup": json.dumps(keyboard, ensure_ascii=False),
+                "disable_web_page_preview": "false",
+            },
+            timeout=60,
+        )
+        perf.set(
+            network_ms=perf.elapsed_ms(),
+            output_size=len(response.content or b""),
+            attempt_count=1,
+        )
     try:
         payload = response.json()
     except ValueError as exc:

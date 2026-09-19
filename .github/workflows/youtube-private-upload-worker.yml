@@ -35,6 +35,7 @@ concurrency:
 
 env:
   ZERO_COST_OPERATION: "TRUE"
+  BR_PERFORMANCE_TRACE_FILE: runtime/youtube-upload/result/performance-trace.jsonl
 
 jobs:
   upload-private:
