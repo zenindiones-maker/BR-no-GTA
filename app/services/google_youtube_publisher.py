@@ -4,6 +4,7 @@ from typing import Any
 from googleapiclient.http import MediaFileUpload
 
 from app.services.youtube_publisher import (
+    YouTubeProcessingStateResult,
     YouTubeUploadResult,
     YouTubeVisibilityResult,
     YouTubeVisibilityStateResult,
@@ -53,6 +54,35 @@ class GoogleYouTubePublisher:
             )
         except Exception as exc:
             return YouTubeUploadResult(success=False, error=str(exc))
+
+    def get_processing_state(self, youtube_video_id: str) -> YouTubeProcessingStateResult:
+        if not youtube_video_id:
+            return YouTubeProcessingStateResult(success=False, error="youtube_video_id is required")
+        try:
+            response = self.youtube_service.videos().list(
+                part="status,processingDetails,contentDetails",
+                id=youtube_video_id,
+                maxResults=1,
+            ).execute()
+            items = response.get("items") if isinstance(response, dict) else None
+            if not isinstance(items, list) or len(items) != 1:
+                return YouTubeProcessingStateResult(
+                    success=False,
+                    error="YouTube processing query did not return exactly one video",
+                )
+            item = items[0] if isinstance(items[0], dict) else {}
+            status = item.get("status") if isinstance(item.get("status"), dict) else {}
+            processing = item.get("processingDetails") if isinstance(item.get("processingDetails"), dict) else {}
+            content = item.get("contentDetails") if isinstance(item.get("contentDetails"), dict) else {}
+            return YouTubeProcessingStateResult(
+                success=True,
+                privacy_status=status.get("privacyStatus"),
+                upload_status=status.get("uploadStatus"),
+                processing_status=processing.get("processingStatus"),
+                definition=content.get("definition"),
+            )
+        except Exception as exc:
+            return YouTubeProcessingStateResult(success=False, error=str(exc))
 
     def make_public(self, youtube_video_id: str) -> YouTubeVisibilityResult:
         if not youtube_video_id:
