@@ -1460,6 +1460,46 @@ def _migrate_harness_learning_plane(connection) -> None:
                 )
 
 
+
+
+def _migrate_e2e_stage_checkpoints(connection) -> None:
+    """Persist resumable, provenance-preserving checkpoints in the canonical SQLite DB."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS e2e_stage_checkpoints (
+            checkpoint_id TEXT PRIMARY KEY,
+            pipeline_id TEXT NOT NULL,
+            goal_id TEXT NOT NULL,
+            stage_id TEXT NOT NULL,
+            input_fingerprint TEXT NOT NULL,
+            output_hash TEXT NOT NULL,
+            output_payload TEXT NOT NULL DEFAULT '{}',
+            code_version TEXT NOT NULL,
+            contract_version TEXT NOT NULL,
+            provider_profile_version TEXT,
+            freshness TEXT NOT NULL DEFAULT '{}',
+            provenance TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL,
+            duration_ms REAL NOT NULL DEFAULT 0,
+            source_run_id TEXT,
+            source_execution_id TEXT,
+            completed_at TEXT NOT NULL,
+            invalidated_at TEXT,
+            invalidation_reason TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_e2e_stage_checkpoints_goal_stage
+        ON e2e_stage_checkpoints(goal_id, stage_id, completed_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_e2e_stage_checkpoints_status
+        ON e2e_stage_checkpoints(status, completed_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_e2e_stage_checkpoints_pipeline
+        ON e2e_stage_checkpoints(pipeline_id, goal_id, status);
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1491,6 +1531,7 @@ def initialize_schema() -> None:
         _migrate_gta6_media_intelligence(connection)
         _migrate_harness_authorizations(connection)
         _migrate_harness_learning_plane(connection)
+        _migrate_e2e_stage_checkpoints(connection)
         connection.commit()
     finally:
         connection.close()
