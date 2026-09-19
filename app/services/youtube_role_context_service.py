@@ -122,6 +122,7 @@ def build_script_review_packet(
     production_plan: dict[str, Any],
     claims: list[dict[str, Any]],
     strategy_output: dict[str, Any],
+    full_context_chars: int,
 ) -> dict[str, Any]:
     packet = _base(
         role="script-review",
