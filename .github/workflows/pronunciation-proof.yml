@@ -122,10 +122,13 @@ jobs:
               raise SystemExit('VICE_CITY_HUMAN_REVIEW_INVALID')
           if (terms.get('gta-6') or {}).get('status')!='PENDING':
               raise SystemExit('GTA6_HUMAN_REVIEW_INVALID')
+          if (terms.get('voice-b-naturality') or {}).get('status')!='PENDING':
+              raise SystemExit('VOICE_B_NATURALITY_REVIEW_INVALID')
           for key in required:
               print(key+'=PASS')
           print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS')
           print('GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING')
+          print('VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING')
           print('JOB18_UNCHANGED=YES')
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
           PY
@@ -152,6 +155,9 @@ jobs:
               root/'samples'/'D-mixed.mp3',
               root/'samples'/'F-gta6-brand.mp3',
               root/'samples'/'G-brand-mixed.mp3',
+              root/'samples'/'H-opening-take-1.mp3',
+              root/'samples'/'H-opening-take-2.mp3',
+              root/'samples'/'H-opening-take-3.mp3',
           )
           if not all(path.is_file() for path in required): state['reason']='PRONUNCIATION_REVIEW_SAMPLES_UNAVAILABLE'
           elif not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
@@ -163,7 +169,7 @@ jobs:
           status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-pronunciation-review.json'))['status'])")"
           if [ "$status" != "READY" ]; then exit 0; fi
           sent=0
-          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3 runtime/pronunciation-proof/samples/F-gta6-brand.mp3 runtime/pronunciation-proof/samples/G-brand-mixed.mp3; do
+          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3 runtime/pronunciation-proof/samples/F-gta6-brand.mp3 runtime/pronunciation-proof/samples/G-brand-mixed.mp3 runtime/pronunciation-proof/samples/H-opening-take-1.mp3 runtime/pronunciation-proof/samples/H-opening-take-2.mp3 runtime/pronunciation-proof/samples/H-opening-take-3.mp3; do
             curl --fail-with-body --silent --show-error \
               -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendAudio" \
               -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
