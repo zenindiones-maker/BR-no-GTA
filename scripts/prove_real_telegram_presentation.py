@@ -228,16 +228,7 @@ def _static_contract_proof() -> dict[str, Any]:
     )
     if json.loads(technical.text) != insufficient or json.loads(machine.text) != insufficient:
         raise RuntimeError("lossless presentation modes changed canonical payload")
-    source_reduction = (
-        1.0 - (float(source_audit["presented_chars"]) / float(source_audit["canonical_chars"]))
-        if int(source_audit["canonical_chars"]) > 0 else 0.0
-    )
-    test_reduction = (
-        1.0 - (float(test_audit["presented_chars"]) / float(test_audit["canonical_chars"]))
-        if int(test_audit["canonical_chars"]) > 0 else 0.0
-    )
     return {
-        **static,
         "UPSTREAM_PROVENANCE": "PASS",
         "SKILL_REGISTERED": "PASS",
         "ACTION_FIRST_MODE": "PASS",
@@ -272,7 +263,16 @@ def build_proof(
     if test_audit.get("reply_sha256") != expected_hash:
         raise RuntimeError("real TESTE_OK Telegram reply hash mismatch")
 
+    test_reduction = (
+        1.0 - (float(test_audit["presented_chars"]) / float(test_audit["canonical_chars"]))
+        if int(test_audit["canonical_chars"]) > 0 else 0.0
+    )
+
     source_audit, source_auth = _assert_presentation(source_row)
+    source_reduction = (
+        1.0 - (float(source_audit["presented_chars"]) / float(source_audit["canonical_chars"]))
+        if int(source_audit["canonical_chars"]) > 0 else 0.0
+    )
     candidate = get_source_candidate_by_input(int(source_row["id"]))
     if candidate is None:
         raise RuntimeError("real source input lacks SourceCandidate")
