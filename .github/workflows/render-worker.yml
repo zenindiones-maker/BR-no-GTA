@@ -395,6 +395,9 @@ jobs:
           path: runtime/render/reused-brand-audio
           merge-multiple: true
 
+      - name: Start preparation performance clock
+        run: python scripts/render_pipeline_stage_clock.py start preparation_wall --path runtime/render/pipeline-stage-clock.json
+
       - name: Prepare Narration and Media in parallel
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
@@ -430,6 +433,10 @@ jobs:
           else
             echo "NARRATION_STAGE=NOT_APPLICABLE"
           fi
+
+      - name: Finish preparation performance clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end preparation_wall --path runtime/render/pipeline-stage-clock.json
 
       - name: Calibrate Voice
         run: |
@@ -633,6 +640,9 @@ jobs:
             echo "REDUNDANT_MEDIA_DOWNLOADS=0"
           fi
 
+      - name: Start canonical render performance clock
+        run: python scripts/render_pipeline_stage_clock.py start editplan_vedit_ffmpeg --path runtime/render/pipeline-stage-clock.json
+
       - name: Build EditPlan and Render Video
         env:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
@@ -658,6 +668,10 @@ jobs:
               --output-dir runtime/render/output
           fi
 
+      - name: Finish canonical render performance clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end editplan_vedit_ffmpeg --path runtime/render/pipeline-stage-clock.json
+
       - name: Validate render operational observability
         run: |
           set -euo pipefail
@@ -682,6 +696,9 @@ jobs:
           print(f"OUTPUT_ARTIFACT={event.get('output_artifact')}")
           PY
 
+      - name: Start visual branding performance clock
+        run: python scripts/render_pipeline_stage_clock.py start visual_branding --path runtime/render/pipeline-stage-clock.json
+
       - name: Apply governed intro and watermark
         run: |
           set -euo pipefail
@@ -689,6 +706,13 @@ jobs:
             --render-job runtime/render/render-job.json \
             --runtime-root runtime/render \
             --output-dir runtime/render/output
+
+      - name: Finish visual branding performance clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end visual_branding --path runtime/render/pipeline-stage-clock.json
+
+      - name: Start final QA performance clock
+        run: python scripts/render_pipeline_stage_clock.py start final_qa --path runtime/render/pipeline-stage-clock.json
 
       - name: Prove spoken audio is Brazilian Portuguese
         run: |
@@ -708,6 +732,13 @@ jobs:
           python scripts/run001_professional_finalize_qa.py \
             --artifact-root runtime/render/output
 
+      - name: Finish final QA performance clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end final_qa --path runtime/render/pipeline-stage-clock.json
+
+      - name: Start render artifact upload clock
+        run: python scripts/render_pipeline_stage_clock.py start artifact_upload --path runtime/render/pipeline-stage-clock.json
+
       - name: Checkpoint QA-passed render before external review
         uses: actions/upload-artifact@v4
         with:
@@ -715,6 +746,12 @@ jobs:
           path: runtime/render/output/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Finish render artifact upload clock
+        run: python scripts/render_pipeline_stage_clock.py end artifact_upload --path runtime/render/pipeline-stage-clock.json
+
+      - name: Start Telegram delivery clock
+        run: python scripts/render_pipeline_stage_clock.py start telegram_delivery --path runtime/render/pipeline-stage-clock.json
 
       - name: Deliver full-duration branded review to Telegram
         env:
@@ -726,6 +763,37 @@ jobs:
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
           python scripts/telegram_render_review_worker.py \
             --artifact-root runtime/render/output
+
+      - name: Finish Telegram delivery clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end telegram_delivery --path runtime/render/pipeline-stage-clock.json
+
+      - name: Build canonical render pipeline performance profile
+        if: always()
+        run: |
+          set -euo pipefail
+          python scripts/build_render_pipeline_profile.py \
+            --runtime-root runtime/render \
+            --output runtime/render/render-pipeline-profile.json
+
+      - name: Upload compact render performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-performance-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime/render/pipeline-stage-clock.json
+            runtime/render/render-pipeline-profile.json
+            runtime/render/output/**/operation-observability.json
+            runtime/render/output/**/render-runtime.json
+            runtime/render/output/**/brand-performance.json
+            runtime/render/pipeline-stage-clock.json
+            runtime/render/render-pipeline-profile.json
+            runtime/render/output/**/brand-performance.json
+            runtime/render/input/**/professional-inputs.json
+            runtime/render/input/**/narration-bundle/narration-observability.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Upload failure diagnostic JSONs
         if: failure()
         uses: actions/upload-artifact@v4

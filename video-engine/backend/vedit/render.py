@@ -74,6 +74,7 @@ class RenderResult:
     warnings: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
     stage_timings: dict[str, float] = field(default_factory=dict)
+    resource_usage: dict[str, float | int | str | None] = field(default_factory=dict)
 
 
 def _cache_dir() -> Path:
@@ -226,12 +227,50 @@ _TIME_RE = re.compile(r"out_time_us=(\d+)")
 
 
 def _run_pass(args: list[str], duration: float, on_progress: Progress | None,
-              t0: float) -> tuple[int, list[str]]:
-    """Esegue ffmpeg riportando l'avanzamento. Ritorna (codice, righe di log)."""
+              t0: float) -> tuple[int, list[str], dict]:
+    """Esegue ffmpeg, reporta progresso e observa CPU/RSS/I/O reais do processo."""
     proc = ffmpeg.popen(args)
     log_lines: list[str] = []
+    usage = {
+        "pid": proc.pid,
+        "cpu_seconds": 0.0,
+        "peak_rss_bytes": 0,
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "logical_cpu_count": os.cpu_count() or 1,
+    }
+    clk = float(os.sysconf("SC_CLK_TCK")) if hasattr(os, "sysconf") and os.name != "nt" else 100.0
+
+    def sample() -> None:
+        if os.name == "nt":
+            return
+        try:
+            stat = Path(f"/proc/{proc.pid}/stat").read_text().split()
+            usage["cpu_seconds"] = max(usage["cpu_seconds"], (float(stat[13]) + float(stat[14])) / clk)
+        except Exception:
+            pass
+        try:
+            for line in Path(f"/proc/{proc.pid}/status").read_text().splitlines():
+                if line.startswith("VmRSS:"):
+                    rss = int(line.split()[1]) * 1024
+                    usage["peak_rss_bytes"] = max(int(usage["peak_rss_bytes"]), rss)
+                    break
+        except Exception:
+            pass
+        try:
+            values = {}
+            for line in Path(f"/proc/{proc.pid}/io").read_text().splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    values[k.strip()] = int(v.strip())
+            usage["read_bytes"] = max(int(usage["read_bytes"]), int(values.get("read_bytes", 0)))
+            usage["write_bytes"] = max(int(usage["write_bytes"]), int(values.get("write_bytes", 0)))
+        except Exception:
+            pass
+
     assert proc.stdout is not None
     for line in proc.stdout:
+        sample()
         line = line.rstrip()
         if not line:
             continue
@@ -247,7 +286,8 @@ def _run_pass(args: list[str], duration: float, on_progress: Progress | None,
         elif not line.startswith(("frame=", "fps=", "bitrate=", "total_size=", "out_time",
                                   "dup_frames=", "drop_frames=", "speed=", "progress=", "stream_")):
             log_lines.append(line)
-    return proc.wait(), log_lines
+    sample()
+    return proc.wait(), log_lines, usage
 
 
 # Righe di contorno: dicono che qualcosa e' andato storto, non che cosa.
@@ -285,7 +325,7 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
         args, duration, warnings, enc = build_command(project, opts, workdir)
         command_build_seconds += time.monotonic() - build_started
         pass_started = time.monotonic()
-        code, log_lines = _run_pass(args, duration, on_progress, t0)
+        code, log_lines, pass_usage = _run_pass(args, duration, on_progress, t0)
         ffmpeg_pass_seconds += time.monotonic() - pass_started
         warnings = list(warnings)
 
@@ -311,7 +351,11 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
                 project, replace(opts, hwaccel_decode=False), workdir)
             command_build_seconds += time.monotonic() - build_started
             pass_started = time.monotonic()
-            code, log_lines = _run_pass(args, duration, on_progress, t0)
+            code, log_lines, retry_usage = _run_pass(args, duration, on_progress, t0)
+            pass_usage["cpu_seconds"] = float(pass_usage.get("cpu_seconds", 0)) + float(retry_usage.get("cpu_seconds", 0))
+            pass_usage["read_bytes"] = int(pass_usage.get("read_bytes", 0)) + int(retry_usage.get("read_bytes", 0))
+            pass_usage["write_bytes"] = int(pass_usage.get("write_bytes", 0)) + int(retry_usage.get("write_bytes", 0))
+            pass_usage["peak_rss_bytes"] = max(int(pass_usage.get("peak_rss_bytes", 0)), int(retry_usage.get("peak_rss_bytes", 0)))
             ffmpeg_pass_seconds += time.monotonic() - pass_started
 
         if code != 0 and opts.prefer_hw and hw.detect().is_hw(enc):
@@ -323,7 +367,11 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
                 project, replace(opts, prefer_hw=False, hwaccel_decode=False), workdir)
             command_build_seconds += time.monotonic() - build_started
             pass_started = time.monotonic()
-            code, log_lines = _run_pass(args, duration, on_progress, t0)
+            code, log_lines, retry_usage = _run_pass(args, duration, on_progress, t0)
+            pass_usage["cpu_seconds"] = float(pass_usage.get("cpu_seconds", 0)) + float(retry_usage.get("cpu_seconds", 0))
+            pass_usage["read_bytes"] = int(pass_usage.get("read_bytes", 0)) + int(retry_usage.get("read_bytes", 0))
+            pass_usage["write_bytes"] = int(pass_usage.get("write_bytes", 0)) + int(retry_usage.get("write_bytes", 0))
+            pass_usage["peak_rss_bytes"] = max(int(pass_usage.get("peak_rss_bytes", 0)), int(retry_usage.get("peak_rss_bytes", 0)))
             ffmpeg_pass_seconds += time.monotonic() - pass_started
 
         if code != 0:
@@ -338,6 +386,11 @@ def render(project: Project, opts: RenderOptions, on_progress: Progress | None =
             stage_timings={
                 "filtergraph_command_build_seconds": round(command_build_seconds, 6),
                 "ffmpeg_decode_filtergraph_encode_audio_mix_seconds": round(ffmpeg_pass_seconds, 6),
+            },
+            resource_usage={
+                **pass_usage,
+                "threads_requested": opts.threads,
+                "encoder": enc,
             },
         )
     finally:

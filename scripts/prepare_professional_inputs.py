@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -47,28 +48,56 @@ async def _prepare(
     root: Path,
     *,
     reuse_media_dir: Path | None = None,
-) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
-    narration_task = asyncio.to_thread(execute_ptbr_narration, job, root)
-    if reuse_media_dir is not None:
-        media_task = asyncio.to_thread(
-            restore_media_checkpoint,
-            checkpoint_root=reuse_media_dir,
-            target_root=root,
-            job=job,
-        )
-    else:
-        async def materialize_fresh():
-            source_paths, media_evidence = await asyncio.to_thread(_materialize_sources, job, root)
-            return source_paths, media_evidence, {
-                "status": "PASS",
-                "media_valid_assets_reused": False,
-                "redundant_media_downloads": len(source_paths),
-                "asset_count": len(source_paths),
-            }
-        media_task = asyncio.create_task(materialize_fresh())
-    (voice_sections, voice_qa), media_result = await asyncio.gather(narration_task, media_task)
-    source_paths, media_evidence, media_reuse = media_result
-    return source_paths, media_evidence, voice_sections, voice_qa, media_reuse
+) -> tuple[
+    dict[str, str],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, float],
+]:
+    async def timed_narration():
+        started=time.monotonic()
+        result=await asyncio.to_thread(execute_ptbr_narration,job,root)
+        return result,time.monotonic()-started
+
+    async def timed_media():
+        started=time.monotonic()
+        if reuse_media_dir is not None:
+            result=await asyncio.to_thread(
+                restore_media_checkpoint,
+                checkpoint_root=reuse_media_dir,
+                target_root=root,
+                job=job,
+            )
+        else:
+            source_paths,media_evidence=await asyncio.to_thread(_materialize_sources,job,root)
+            result=(
+                source_paths,
+                media_evidence,
+                {
+                    "status":"PASS",
+                    "media_valid_assets_reused":False,
+                    "redundant_media_downloads":len(source_paths),
+                    "asset_count":len(source_paths),
+                },
+            )
+        return result,time.monotonic()-started
+
+    parallel_started=time.monotonic()
+    ((voice_sections,voice_qa),narration_seconds),(
+        media_result,media_seconds
+    )=await asyncio.gather(timed_narration(),timed_media())
+    parallel_wall_seconds=time.monotonic()-parallel_started
+    source_paths,media_evidence,media_reuse=media_result
+    return (
+        source_paths,media_evidence,voice_sections,voice_qa,media_reuse,
+        {
+            "narration_seconds":narration_seconds,
+            "media_materialization_or_restore_seconds":media_seconds,
+            "parallel_narration_media_wall_seconds":parallel_wall_seconds,
+        },
+    )
 
 
 def main() -> int:
@@ -109,9 +138,14 @@ def main() -> int:
 
     print("PREPARE_NARRATION=START", flush=True)
     print("PREPARE_MEDIA=START", flush=True)
-    source_paths, media_evidence, voice_sections, voice_qa, media_reuse = asyncio.run(
-        _prepare(job, root, reuse_media_dir=args.reuse_media_dir)
-    )
+    (
+        source_paths,
+        media_evidence,
+        voice_sections,
+        voice_qa,
+        media_reuse,
+        preparation_timings,
+    ) = asyncio.run(_prepare(job, root, reuse_media_dir=args.reuse_media_dir))
 
     # Contract gate: PREPARE_* may only PASS when every path is render-root-relative
     # and the same resolver used by VEdit can resolve it immediately.
@@ -126,12 +160,16 @@ def main() -> int:
     resolve_asset(voice_qa["master_path"], root)
 
     print("PREPARE_BRAND_AUDIO=START", flush=True)
+    brand_started=time.monotonic()
     brand_audio = prepare_brand_audio(job, root)
+    brand_audio_seconds=time.monotonic()-brand_started
+    content_voice_started=time.monotonic()
     content_voice_master = compose_content_voice_master(
         root=root,
         editorial_master_path=voice_qa["master_path"],
         brand_manifest=brand_audio,
     )
+    content_voice_master_seconds=time.monotonic()-content_voice_started
     resolve_asset(content_voice_master["path"], root)
     print("PREPARE_BRAND_AUDIO=PASS", flush=True)
 
@@ -197,6 +235,14 @@ def main() -> int:
             "content_voice_master": content_voice_master,
         },
         "voice_sections": voice_sections,
+        "performance": {
+            **preparation_timings,
+            "brand_audio_seconds": brand_audio_seconds,
+            "content_voice_master_seconds": content_voice_master_seconds,
+            "narration_artifact_reused": bool(voice_qa.get("narration_artifact_reused")) or reused,
+            "media_checkpoint_reused": bool(media_reuse.get("media_valid_assets_reused")),
+            "brand_audio_reused": bool(brand_audio.get("bundle_reused")) or brand_reused,
+        },
         "parallel_preparation": True,
         "job18_unchanged": True,
         "publication_authority_unchanged": True,
@@ -223,6 +269,7 @@ def main() -> int:
     if payload['narration']['artifact_reused']:
         print("REDUNDANT_TTS_REQUESTS=0", flush=True)
     print("PARALLEL_PREPARATION=PASS", flush=True)
+    print("PREPARE_STAGE_TIMINGS="+json.dumps(payload["performance"],sort_keys=True),flush=True)
     print("JOB18_UNCHANGED=YES", flush=True)
     print("PUBLICATION_AUTHORITY_UNCHANGED=YES", flush=True)
     return 0

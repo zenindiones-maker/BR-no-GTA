@@ -12,6 +12,7 @@ from app.workers.professional_audiovisual_worker import (
     VOICE_NATURAL_RATE_MAX_PERCENT,
     VOICE_NATURAL_RATE_MIN_PERCENT,
     WorkerError,
+    _can_skip_a1_post_render_remux,
     _initial_calibrated_rate_percent,
     _next_calibrated_rate_percent,
     _registry,
@@ -79,6 +80,18 @@ class ProfessionalAudiovisualWorkerTests(unittest.TestCase):
                 actual_seconds=1800.0,
                 target_seconds=1200.0,
             )
+
+    def test_a1_post_render_remux_is_skipped_only_after_both_execution_and_edit_qa_prove_a1(self):
+        base={"status":"PASS","checks":{"a1_voice_contract":True,"full_decode":True}}
+        edit={"checks":{"a1_voice_present":True,"voice_full_coverage":True}}
+        self.assertTrue(_can_skip_a1_post_render_remux(base,edit))
+
+        broken={"status":"PASS","checks":{"a1_voice_contract":False,"full_decode":True}}
+        self.assertFalse(_can_skip_a1_post_render_remux(broken,edit))
+
+        broken_edit={"checks":{"a1_voice_present":True,"voice_full_coverage":False}}
+        self.assertFalse(_can_skip_a1_post_render_remux(base,broken_edit))
+
 
     def test_longform_trailer_audio_cannot_satisfy_a1_voice(self):
         job = {

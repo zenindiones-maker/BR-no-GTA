@@ -517,6 +517,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     "software_preset": bound_options.get("software_preset"),
                     "prefer_hw": bound_options["prefer_hw"],
                     "hwaccel_decode": bound_options["hwaccel_decode"],
+                    "threads": render_threads,
                 },
             })
             write_json(progress_path, payload)
@@ -551,6 +552,15 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     flush=True,
                 )
 
+        threads_raw = (os.environ.get("VEDIT_RENDER_THREADS") or "").strip()
+        render_threads = None
+        if threads_raw:
+            try:
+                render_threads = int(threads_raw)
+            except ValueError as exc:
+                raise WorkerError("VEDIT_RENDER_THREADS must be an integer") from exc
+            if render_threads <= 0 or render_threads > 256:
+                raise WorkerError("VEDIT_RENDER_THREADS is outside safe bounds")
         render_options = RenderOptions(
             output=str(output),
             codec=bound_options["codec"],
@@ -558,6 +568,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
             prefer_hw=bound_options["prefer_hw"],
             hwaccel_decode=bound_options["hwaccel_decode"],
             software_preset=bound_options.get("software_preset"),
+            threads=render_threads,
         )
         render_parameters = inspect.signature(render).parameters
         if "on_progress" in render_parameters:
@@ -596,6 +607,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "size_bytes": render_result.size,
                 "warnings": list(render_result.warnings),
                 "stage_timings": dict(getattr(render_result, "stage_timings", {}) or {}),
+                "resource_usage": dict(getattr(render_result, "resource_usage", {}) or {}),
                 "skill_id": learning_binding.get("skill_id"),
                 "skill_version": learning_binding.get("version", "v1-legacy"),
                 "content_ref": learning_binding.get("content_ref"),

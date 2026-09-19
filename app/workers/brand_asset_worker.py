@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 from typing import Any
 
 from app.services.channel_spoken_branding_service import validate_job_spoken_branding
@@ -297,6 +298,7 @@ def _validate_final(path: Path, expected_duration: float) -> tuple[dict[str, Any
 
 
 def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
+    operation_started = time.monotonic()
     spoken_branding = validate_job_spoken_branding(job)
     folder = _brand_root(job, runtime_root)
     state = _load_json(folder / "brand-state.json")
@@ -342,11 +344,14 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     branding["final_measured_target_seconds"] = (
         content_measured_duration + branding["intro_duration_seconds"]
     )
+    composition_started = time.monotonic()
     process = subprocess.run(command, capture_output=True, text=True, timeout=7200)
+    composition_seconds = time.monotonic() - composition_started
     if process.returncode != 0:
         temporary.unlink(missing_ok=True)
         raise BrandAssetWorkerError("FFmpeg brand composition failed")
 
+    qa_started = time.monotonic()
     probe, validation = _validate_final(
         temporary,
         branding["final_measured_target_seconds"],
@@ -374,6 +379,7 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     if decode.returncode or decode.stderr.strip():
         temporary.unlink(missing_ok=True)
         raise BrandAssetWorkerError("Full decode QA failed after brand composition")
+    qa_seconds = time.monotonic() - qa_started
 
     os.replace(temporary, output)
     intro = next((item for item in assets if item["asset_type"] == "intro"), None)
@@ -492,6 +498,22 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     )
     write_json(render_folder / "render-manifest.json", manifest)
     write_json(render_folder / "brand-assets.json", evidence)
+    write_json(render_folder / "brand-performance.json", {
+        "status":"PASS",
+        "stage":"brand_visual_composition",
+        "composition_seconds":composition_seconds,
+        "qa_seconds":qa_seconds,
+        "elapsed_seconds":time.monotonic()-operation_started,
+        "input_size_bytes":base_probe.get("format",{}).get("size"),
+        "output_size_bytes":output.stat().st_size,
+        "encoder":"libx264",
+        "software_preset":"medium",
+        "resolution":f"{width}x{height}",
+        "fps":fps,
+        "full_decode":"PASS",
+        "job18_unchanged":True,
+        "publication_authority":"NONE",
+    })
     return output
 
 

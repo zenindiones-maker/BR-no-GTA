@@ -942,6 +942,21 @@ def _build_edit_plan(
     return plan, edit_qa, expanded_scenes
 
 
+def _can_skip_a1_post_render_remux(
+    base_render_qa: dict[str, Any],
+    edit_qa: dict[str, Any],
+) -> bool:
+    base_checks = dict(base_render_qa.get("checks") or {})
+    edit_checks = dict(edit_qa.get("checks") or {})
+    return (
+        base_render_qa.get("status") == "PASS"
+        and base_checks.get("a1_voice_contract") is True
+        and base_checks.get("full_decode") is True
+        and edit_checks.get("a1_voice_present") is True
+        and edit_checks.get("voice_full_coverage") is True
+    )
+
+
 def _replace_source_audio_with_voice(folder: Path, narration_master: Path) -> None:
     mp4s = [path for path in folder.glob("*.mp4") if path.is_file()]
     if len(mp4s) != 1:
@@ -1030,8 +1045,10 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     root.mkdir(parents=True, exist_ok=True)
     prepared_path = root / "professional-inputs.json"
     preparation_started = time.monotonic()
+    prepared_performance: dict[str, Any] = {}
     if prepared_path.is_file():
         prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
+        prepared_performance = dict(prepared.get("performance") or {})
         if prepared.get("status") != "PASS":
             raise WorkerError("professional input checkpoint is not PASS")
         source_paths = {str(key): str(value) for key, value in dict(prepared["source_paths"]).items()}
@@ -1124,10 +1141,27 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     folder = execute(effective, root, output_root, source_job=effective)
     render_elapsed = time.monotonic() - render_started
     narration_master = root / content_voice["path"]
-    final_mix_started = time.monotonic()
-    _replace_source_audio_with_voice(folder, narration_master)
+    base_render_qa_path = folder / "render-qa.json"
+    base_render_qa = (
+        json.loads(base_render_qa_path.read_text(encoding="utf-8"))
+        if base_render_qa_path.is_file()
+        else {}
+    )
+    a1_already_proven = _can_skip_a1_post_render_remux(base_render_qa, edit_qa)
+    if a1_already_proven:
+        a1_post_render_remux_elapsed = 0.0
+        print("A1_POST_RENDER_REMUX_SKIPPED=YES", flush=True)
+    else:
+        a1_remux_started = time.monotonic()
+        _replace_source_audio_with_voice(folder, narration_master)
+        a1_post_render_remux_elapsed = time.monotonic() - a1_remux_started
+        print("A1_POST_RENDER_REMUX_SKIPPED=NO", flush=True)
+    professional_qa_started = time.monotonic()
     audiovisual_qa = _refresh_final_qa(folder, effective, plan.duration_seconds)
-    final_mix_qa_elapsed = time.monotonic() - final_mix_started
+    professional_ffprobe_full_decode_qa_elapsed = time.monotonic() - professional_qa_started
+    final_mix_qa_elapsed = (
+        a1_post_render_remux_elapsed + professional_ffprobe_full_decode_qa_elapsed
+    )
 
     editorial_qa = dict(job["editorial_qa"])
     editorial_qa.update({
@@ -1192,11 +1226,21 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         "output_artifact": output_mp4.name,
         "stage_elapsed": {
             "prepare_narration_media_seconds": preparation_elapsed,
+            "narration_seconds": prepared_performance.get("narration_seconds"),
+            "media_materialization_or_restore_seconds": prepared_performance.get("media_materialization_or_restore_seconds"),
+            "parallel_narration_media_wall_seconds": prepared_performance.get("parallel_narration_media_wall_seconds"),
+            "brand_audio_seconds": prepared_performance.get("brand_audio_seconds"),
+            "content_voice_master_seconds": prepared_performance.get("content_voice_master_seconds"),
             "edit_plan_seconds": edit_elapsed,
             "render_seconds": render_elapsed,
+            "a1_post_render_remux_seconds": a1_post_render_remux_elapsed,
+            "professional_ffprobe_full_decode_qa_seconds": professional_ffprobe_full_decode_qa_elapsed,
             "final_mix_qa_seconds": final_mix_qa_elapsed,
         },
-        "encode_count": 1,
+        "encode_count": 1 if a1_already_proven else 2,
+        "video_encode_count": 1,
+        "post_render_audio_encode_count": 0 if a1_already_proven else 1,
+        "a1_post_render_remux_skipped": a1_already_proven,
         "decode_count": 1,
         "download_count": len(media_evidence),
         "policy_id": EFFICIENCY_POLICY_ID,
