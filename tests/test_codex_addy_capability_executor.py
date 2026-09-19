@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 
+from app.services import codex_addy_capability_executor as addy_executor
 from app.services.codex_addy_capability_executor import (
     CodexCapabilityExecutionError,
     execute_codex_addy_capability,
@@ -129,12 +130,23 @@ def test_executor_failure_does_not_expose_stderr(tmp_path):
         raise AssertionError("expected CodexCapabilityExecutionError")
 
 
-def test_harness_returns_failed_evidence_without_fallback():
+def test_harness_returns_failed_evidence_without_fallback(tmp_path, monkeypatch):
+    repository = _repository(tmp_path)
     calls = []
 
-    def failing_executor(capability, payload):
-        calls.append(capability.capability_id)
-        raise CodexCapabilityExecutionError("Codex capability execution failed")
+    def failing_runner(command, **kwargs):
+        calls.append(list(command))
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            7,
+            stdout="",
+            stderr="SECRET=must-not-leak",
+        )
+
+    monkeypatch.setattr(addy_executor, "_runtime_runner", failing_runner)
+    monkeypatch.setattr(addy_executor, "_repository_root", lambda: repository)
 
     evidence = execute_capability(
         capability_id="addy:code-review-and-quality",
@@ -145,10 +157,11 @@ def test_harness_returns_failed_evidence_without_fallback():
             execution_id="execution-99",
         ),
         payload={"task": "Review sample.py."},
-        executor=failing_executor,
+        executor=execute_codex_addy_capability,
     )
 
-    assert calls == ["addy:code-review-and-quality"]
+    assert calls[0] == ["codex", "login", "status"]
+    assert calls[1][:2] == ["codex", "exec"]
     assert evidence.status == "FAILED"
     assert evidence.active is False
     assert evidence.harness_decision_id == "decision-99"
