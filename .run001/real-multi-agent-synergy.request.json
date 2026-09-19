@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "requested_at": "2026-09-19T12:12:20Z",
+  "base_head": "2776d86d3d15457aa43bc99c6e187315315264a4",
+  "purpose": "Re-run real GTA VI multi-agent mission on current immutable semantic handoff implementation.",
+  "require_real_source": true,
+  "require_semantic_model_execution": true,
+  "require_observed_learning": true,
+  "job18_unchanged": true,
+  "publication": false
+}
