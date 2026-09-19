@@ -58,18 +58,22 @@ jobs:
           npm install --global @opencode/cli@2.0.8
           bash scripts/agent-tooling/bootstrap.sh codex
           test "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8"
+          codex_home="$RUNNER_TEMP/br-codex-auth-$GITHUB_RUN_ID"
+          install -d -m 700 "$codex_home"
+          echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
           echo "BOUNDED_ENGINEERING_RUNTIME=PASS"
 
       - name: Compile delegated autonomy boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/services/agent_office/delegation.py             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office/munder_adapter.py             app/services/agent_office/codex_bounded_worker.py             app/services/agent_office/addy_task_owner_worker.py             app/services/agent_office/integration_gate.py             app/services/agent_office/reducer.py             app/services/agent_office/mission_service.py             app/database/agent_execution_lease_repository.py             app/database/agent_office_mission_repository.py             scripts/delegated_autonomy_canary.py
+          python -m py_compile             app/services/agent_office/delegation.py             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office/munder_adapter.py             app/services/agent_office/codex_bounded_worker.py             app/services/agent_office/codex_auth.py             app/services/agent_office/addy_task_owner_worker.py             app/services/agent_office/integration_gate.py             app/services/agent_office/reducer.py             app/services/agent_office/mission_service.py             app/database/agent_execution_lease_repository.py             app/database/agent_office_mission_repository.py             scripts/codex_auth_bootstrap.py             scripts/delegated_autonomy_canary.py
           echo "DELEGATED_AUTONOMY_COMPILE=PASS"
 
       - name: Run deterministic lease retry conflict and promotion gates
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_delegated_agent_autonomy.py             tests/test_agent_office.py             --junitxml=artifacts/delegated-autonomy/deterministic.xml
+          python -m pytest -q             tests/test_codex_auth_boundary.py             tests/test_delegated_agent_autonomy.py             tests/test_agent_office.py             --junitxml=artifacts/delegated-autonomy/deterministic.xml
+          echo "CODEX_AUTH_BOUNDARY_TESTS=PASS"
           echo "DETERMINISTIC_DELEGATION_GATES=PASS"
 
       - name: Rehydrate previously promoted OpenCode profile
@@ -78,29 +82,14 @@ jobs:
           python scripts/hydrate_promoted_opencode_profile.py             --output artifacts/delegated-autonomy/opencode-profile.json
           echo "OPENCODE_PROFILE_REUSE=PASS"
 
-      - name: Observe Codex authentication prerequisite without leaking account data
+      - name: Trusted Codex authentication bootstrap
         run: |
-          set -e
+          set -euo pipefail
           codex --version
-          set +e
-          codex login status >/dev/null 2>&1
-          rc=$?
-          set -e
-          python - "$rc" <<'PY'
-          import json,sys
-          from pathlib import Path
-          rc=int(sys.argv[1])
-          Path("artifacts/delegated-autonomy/codex-auth-status.json").write_text(
-              json.dumps({
-                  "available": rc == 0,
-                  "exit_code": rc,
-                  "account_identity_recorded": False,
-                  "secret_recorded": False,
-              }, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          print("CODEX_AUTH_PREREQUISITE=" + ("AVAILABLE" if rc == 0 else "BLOCKED"))
-          PY
+          python scripts/codex_auth_bootstrap.py \
+            --output artifacts/delegated-autonomy/codex-auth-status.json \
+            --allow-device-auth \
+            --timeout-seconds 2700
 
       - name: Execute one Harness delegation with real specialist task owners
         id: live
@@ -131,6 +120,11 @@ jobs:
           p=Path("artifacts/delegated-autonomy/canary.json")
           d=json.loads(p.read_text())
           print("DELEGATED_AUTONOMY_STATUS="+d["status"])
+          print("CODEX_AUTH_PREREQUISITE="+d["CODEX_AUTH_PREREQUISITE"])
+          print("CODEX_AUTH_METHOD="+str(d["CODEX_AUTH_METHOD"]))
+          print("CODEX_AUTH_COST_CLASS="+str(d["CODEX_AUTH_COST_CLASS"]))
+          print("CODEX_AUTH_USER_ACTION_REQUIRED="+str(d["CODEX_AUTH_USER_ACTION_REQUIRED"]))
+          print("CODEX_AUTH_SECRET_LEAK="+str(d["CODEX_AUTH_SECRET_LEAK"]))
           print("HARNESS_DECISION_COUNT="+str(d["metrics"]["HARNESS_DECISION_COUNT"]))
           print("HARNESS_ACTIVE_MS="+str(d["metrics"]["HARNESS_ACTIVE_MS"]))
           print("HARNESS_WAITING_MS="+str(d["metrics"]["HARNESS_WAITING_MS"]))
