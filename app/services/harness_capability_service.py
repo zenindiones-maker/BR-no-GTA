@@ -40,6 +40,11 @@ class CapabilityDefinition:
     available: bool = True
     execution_enabled: bool = True
     boundary: str | None = None
+    executor_binding: str | None = None
+    implementation: str | None = None
+    evidence_contract: str | None = None
+    agent_id: str | None = None
+    skill_id: str | None = None
 
 
 CapabilityAuthorization = HarnessAuthorization
@@ -113,6 +118,11 @@ def _to_definition(record) -> CapabilityDefinition:
         available=record.available,
         execution_enabled=record.execution_enabled,
         boundary=record.boundary,
+        executor_binding=record.executor_binding,
+        implementation=record.implementation,
+        evidence_contract=record.evidence_contract,
+        agent_id=record.agent_id,
+        skill_id=record.skill_id,
     )
 
 
