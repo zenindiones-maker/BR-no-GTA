@@ -59,3 +59,8 @@ runtime/
 .codex-device-auth/
 .codex/auth.json
 .higgsfield/
+# Durable recovery manifests are canonical versioned state, not runtime JSON.
+!.checkpoints/
+!.checkpoints/current-system-state.json
+!.checkpoints/history/
+!.checkpoints/history/*.json
