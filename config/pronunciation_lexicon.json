@@ -4,7 +4,7 @@
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
-    "priority": ["explicit-span-metadata", "canonical-lexicon", "conservative-detection", "pt-BR-fallback"],
+    "priority": ["canonical-lexicon", "explicit-span-metadata", "conservative-detection", "pt-BR-fallback"],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true
   },
