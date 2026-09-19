@@ -328,6 +328,30 @@ def build_azure_ssml(plan: SynthesisPlan, *, voice: str = DEFAULT_VOICE) -> str:
         pieces.append(f"<lang xml:lang={quoteattr(span.locale)}>{rendered}</lang>" if span.locale!=plan.default_locale else rendered)
     return f"<speak version=\"1.0\" xml:lang={quoteattr(plan.default_locale)}><voice name={quoteattr(voice)}>{''.join(pieces)}</voice></speak>"
 
+def _edge_synthesis_groups(plan: SynthesisPlan) -> list[dict[str, Any]]:
+    """
+    Preserve natural sentence prosody by avoiding TTS resets at same-locale alias
+    boundaries. Edge only needs a separate request when the locale actually changes.
+    """
+    groups: list[dict[str, Any]] = []
+    for index, span in enumerate(plan.spans):
+        if groups and groups[-1]["locale"] == span.locale:
+            groups[-1]["synthesis_text"] += span.synthesis_text
+            groups[-1]["span_indexes"].append(index)
+            if span.pronunciation_identity:
+                groups[-1]["pronunciation_identities"].append(span.pronunciation_identity)
+            continue
+        groups.append({
+            "locale": span.locale,
+            "synthesis_text": span.synthesis_text,
+            "span_indexes": [index],
+            "pronunciation_identities": (
+                [span.pronunciation_identity] if span.pronunciation_identity else []
+            ),
+        })
+    return groups
+
+
 def _probe_duration(path: Path) -> float:
     result=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(path)],capture_output=True,text=True,timeout=120)
     if result.returncode!=0:
@@ -351,9 +375,17 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
     with tempfile.TemporaryDirectory(prefix="pronunciation-",dir=str(output.parent)) as tmp:
         root=Path(tmp)
         cumulative=0.0
-        for index,span in enumerate(plan.spans):
+        groups=_edge_synthesis_groups(plan)
+        for index,group in enumerate(groups):
             chunk=root/f"{index:03d}.mp3"
-            communicator=edge_tts.Communicate(text=span.synthesis_text,voice=voice,rate=rate,pitch=pitch,volume="+0%",boundary="WordBoundary")
+            communicator=edge_tts.Communicate(
+                text=group["synthesis_text"],
+                voice=voice,
+                rate=rate,
+                pitch=pitch,
+                volume="+0%",
+                boundary="WordBoundary",
+            )
             local=[]
             with chunk.open("wb") as stream:
                 async for event in communicator.stream():
@@ -371,13 +403,16 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
             for item in local:
                 timing.append({**item,"offset_seconds":cumulative+float(item["offset_seconds"])})
             rows.append({
-                "index":index,"locale":span.locale,"strategy":span.strategy,
-                "pronunciation_identity":span.pronunciation_identity,
-                "duration_seconds":duration,"bytes":chunk.stat().st_size,
+                "index":index,
+                "locale":group["locale"],
+                "span_indexes":list(group["span_indexes"]),
+                "pronunciation_identities":list(group["pronunciation_identities"]),
+                "duration_seconds":duration,
+                "bytes":chunk.stat().st_size,
             })
             cumulative+=duration
         concat=root/"chunks.txt"
-        concat.write_text("\n".join(f"file '{root / f'{idx:03d}.mp3'}'" for idx in range(len(plan.spans)))+"\n",encoding="utf-8")
+        concat.write_text("\n".join(f"file '{root / f'{idx:03d}.mp3'}'" for idx in range(len(groups)))+"\n",encoding="utf-8")
         result=subprocess.run([
             "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
             "-f","concat","-safe","0","-i",str(concat),
@@ -389,9 +424,12 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
         raise PronunciationError("pronunciation synthesis output missing")
     return {
         "status":"PASS","output":str(output),"bytes_written":output.stat().st_size,
-        "wall_clock_seconds":time.monotonic()-started,"external_calls":len(plan.spans),
-        "span_count":len(plan.spans),"foreign_span_count":plan.foreign_span_count,
+        "wall_clock_seconds":time.monotonic()-started,"external_calls":len(groups),
+        "span_count":len(plan.spans),"synthesis_group_count":len(groups),
+        "foreign_span_count":plan.foreign_span_count,
         "timing":timing,"chunks":rows,"provider_capabilities":caps.to_dict(),
         "canonical_text_preserved":plan.canonical_text_preserved,
-        "join_policy":"zero-added-silence-concat","inserted_silence_seconds":0.0,
+        "join_policy":"same-locale-coalesced-zero-added-silence-concat",
+        "inserted_silence_seconds":0.0,
+        "prosody_continuity_policy":"same-locale spans are synthesized in one request; locale changes alone create TTS boundaries",
     }
