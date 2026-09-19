@@ -1,0 +1,10 @@
+{
+  "requested_at": "2026-09-19T19:02:00Z",
+  "mode": "EXPLICIT_OPERATIONAL_CANARY",
+  "purpose": "prove delegated bounded autonomy after CI GREEN",
+  "ci_run_id": 35463003165,
+  "ci_result": "SUCCESS",
+  "base_sha": "fee62f0d7bc8c2bd338e171f98700bbb961ffa56",
+  "authority": "deepseek_harness",
+  "canonical_push_authority": "NONE"
+}
