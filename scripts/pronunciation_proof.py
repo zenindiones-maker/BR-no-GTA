@@ -169,7 +169,7 @@ def main()->int:
             and all(item["edge_metrics"]["external_calls"]==1 for item in fluidity_takes)
             and all(item["edge_metrics"]["synthesis_group_count"]==1 for item in fluidity_takes)
             and all(item["plan"]["foreign_span_count"]==0 for item in fluidity_takes)
-            and all("gê tê á seis" in item["plan"]["rendered_text"] for item in fluidity_takes)
+            and all("gê tê á seis" in "".join(span["synthesis_text"] for span in item["plan"]["spans"]) for item in fluidity_takes)
         ),
         "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
