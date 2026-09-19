@@ -16,5 +16,7 @@
   "render_preset_candidate_auto_promote": false,
   "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2",
   "job18_frozen": true,
-  "youtube_publication": false
+  "youtube_publication": false,
+  "attempt": 2,
+  "retry_reason": "flatten narration artifact restore; prevent checkpoint miss and redundant TTS in render-worker"
 }

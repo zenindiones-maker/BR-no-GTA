@@ -304,6 +304,7 @@ jobs:
           run-id: ${{ inputs.narration_producer_run_id }}
           github-token: ${{ github.token }}
           path: runtime/render/reused-narration
+          merge-multiple: true
 
       - name: Validate optional media checkpoint reference
         env:
@@ -326,6 +327,7 @@ jobs:
           run-id: ${{ inputs.media_producer_run_id }}
           github-token: ${{ github.token }}
           path: runtime/render/reused-media
+          merge-multiple: true
 
       - name: Prepare Narration and Media in parallel
         env:

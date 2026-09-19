@@ -133,6 +133,7 @@ jobs:
           run-id: ${{ env.NARRATION_RUN_ID }}
           github-token: ${{ github.token }}
           path: runtime/recovery/narration
+          merge-multiple: true
 
       - name: Validate restored RenderJob and narration lineage
         run: |
