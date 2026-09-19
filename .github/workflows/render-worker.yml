@@ -356,9 +356,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: runtime/brand-audio-cache
-          key: brand-audio-v1-${{ runner.os }}-edge-tts-7.2.8
+          key: brand-audio-v3-${{ runner.os }}-edge-tts-7.2.8
           restore-keys: |
-            brand-audio-v1-${{ runner.os }}-edge-tts-
+            brand-audio-v3-${{ runner.os }}-edge-tts-
 
       - name: Validate optional narration checkpoint reference
         env:
@@ -569,10 +569,11 @@ jobs:
           checks=manifest.get('checks') or {}
           required=(
               'voice_b_used','opening_text_canonical','closing_text_canonical',
-              'three_opening_takes','three_closing_takes',
-              'same_text_all_opening_takes','same_text_all_closing_takes',
+              'single_production_opening_take','single_approved_closing_asset',
               'brand_audio_cache_policy','canonical_text_preserved',
               'language_spans_valid','vice_city_language_resolution',
+              'selected_opening_is_human_approved_fluid2',
+              'approved_closing_reused_without_tts',
           )
           if manifest.get('status')!='PASS' or not all(checks.get(k) is True for k in required):
               raise SystemExit('BRAND_AUDIO_QA=FAIL')
@@ -588,6 +589,9 @@ jobs:
           print('CANONICAL_TEXT_PRESERVED=PASS')
           print('LANGUAGE_SPANS_VALID=PASS')
           print('VICE_CITY_LANGUAGE_RESOLUTION=PASS')
+          print('FLUID2_ONLY_RUNTIME=PASS')
+          print('APPROVED_G_CLOSING_REUSED=PASS')
+          print('REDUNDANT_BRAND_TTS_REMOVED=PASS')
           PY
 
       - name: Checkpoint QA-passed spoken brand audio artifact
