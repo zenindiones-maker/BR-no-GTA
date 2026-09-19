@@ -40,7 +40,7 @@ jobs:
       - name: Install controller runtime
         run: |
           set -euo pipefail
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt pytest
       - name: Resolve VIDEO A recovery mode
         id: recovery_mode
         run: |
