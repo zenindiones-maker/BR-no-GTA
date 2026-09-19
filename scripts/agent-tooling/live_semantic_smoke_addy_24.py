@@ -13,13 +13,16 @@ from typing import Any
 from uuid import uuid4
 
 from app.database.schema import initialize_schema
-from app.services.codex_addy_capability_executor import execute_codex_addy_capability
+from app.services.addy_harness_service import execute_authorized_addy_skill
 from app.services.global_capability_registry_base import ADDY_SKILLS
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
 )
-from app.services.harness_capability_service import execute_capability
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 
 MISSION_ID = "addy-24-live-semantic-smoke-v1"
 SCHEMA_VERSION = 1
@@ -142,38 +145,86 @@ def _validate_contract() -> None:
     print("ADDY_24_LIVE_SMOKE_SPEC_COUNT=24/24")
 
 
-def _run_one(index: int, spec: SmokeSpec, authorization: Any, repository_root: Path, output_root: Path, timeout_seconds: int, max_tokens_per_turn: int) -> dict[str, Any]:
+def _run_one(
+    index: int,
+    spec: SmokeSpec,
+    output_root: Path,
+    timeout_seconds: int,
+    max_tokens_per_turn: int,
+) -> dict[str, Any]:
+    del timeout_seconds, max_tokens_per_turn
     started_at = _utc_now()
     started = time.monotonic()
-    runner = CapturingRunner(timeout_seconds)
     capability_id = f"addy:{spec.skill}"
-    evidence = execute_capability(
-        capability_id=capability_id,
-        authorization=authorization,
-        payload={"task": spec.task, "context": {"smoke": "addy-24-live-semantic-v1"}},
-        executor=lambda capability, payload: execute_codex_addy_capability(capability, payload, runner=runner, repository_root=repository_root),
+    goal_id = f"goal:{MISSION_ID}:{index:02d}:{spec.skill}"
+    task_class = f"addy-live-semantic:{spec.skill}"
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=f"execute pinned Addy skill {spec.skill} for live semantic certification",
+            authorized_action="DEVELOPMENT",
+            domain="development",
+            task_class=task_class,
+            goal_id=goal_id,
+            required_capability_id=capability_id,
+            fallback_allowed=False,
+            provider_required=False,
+            learning_required=True,
+        )
     )
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{capability_id}",
+        harness_decision_id=f"decision:{MISSION_ID}:{index:02d}:{uuid4()}",
+        execution_id=f"{MISSION_ID}:{index:02d}:{uuid4()}",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "mission_id": MISSION_ID,
+            "smoke_kind": "LIVE_SEMANTIC",
+            "skill": spec.skill,
+            "index": index,
+            "goal_id": goal_id,
+        },
+    )
+    try:
+        evidence = execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=routing,
+            payload={
+                "mission_id": MISSION_ID,
+                "task_id": f"{index:02d}:{spec.skill}",
+                "goal_id": goal_id,
+                "task_class": task_class,
+                "task": spec.task,
+                "context": {"smoke": "addy-24-live-semantic-v2"},
+                "evidence_refs": [f"smoke-spec:{index:02d}:{spec.skill}"],
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+
     result = evidence.result if isinstance(evidence.result, dict) else {}
     response = str(result.get("output") or "")
-    parsed = _parse_codex_stream(runner.exec_stdout)
-    usage = parsed["usage"]
-    total_tokens = int(usage.get("total_tokens", 0))
     verification = _evaluate(spec, response)
+    canonical_receipt = dict(result.get("receipt") or {})
+    provider_evidence = dict(result.get("provider_evidence") or {})
     checks = {
         "harness_executed": evidence.status == "EXECUTED" and evidence.active is True,
         "authority": evidence.authority == "deepseek_harness",
-        "real_thread_started": bool(parsed.get("thread_id")),
-        "exactly_one_model_turn": parsed.get("turn_started_count") == 1 and parsed.get("turn_completed_count") == 1,
-        "positive_token_usage": int(usage.get("input_tokens", 0)) > 0 and int(usage.get("output_tokens", 0)) > 0 and total_tokens > 0,
-        "within_per_turn_token_budget": 0 < total_tokens <= max_tokens_per_turn,
-        "read_only_sandbox": result.get("sandbox") == "read-only",
-        "disposable_workspace": result.get("workspace") == "disposable_snapshot",
-        "selected_skill": result.get("skill") == spec.skill,
+        "exact_skill_identity": result.get("skill") == spec.skill,
+        "real_semantic_turn": canonical_receipt.get("external_call_performed") is True,
+        "live_receipt": canonical_receipt.get("proven_live") is True,
+        "returned_to_harness": canonical_receipt.get("returned_to_harness") is True,
+        "provider_opencode": result.get("semantic_provider") == "opencode",
+        "explicit_model": result.get("semantic_model") == "oc/big-pickle",
+        "promoted_provider_profile": result.get("provider_profile_version") == "v2",
+        "provider_evidence_executed": provider_evidence.get("status") == "EXECUTED",
         "non_empty_response": bool(response.strip()),
         "semantic_verification": verification["status"] == "PASS",
     }
     receipt = {
-        "receipt_schema_version": SCHEMA_VERSION,
+        "receipt_schema_version": 2,
         "receipt_id": str(uuid4()),
         "mission_id": MISSION_ID,
         "child_mission_id": f"{MISSION_ID}:{index:02d}:{spec.skill}",
@@ -188,26 +239,31 @@ def _run_one(index: int, spec: SmokeSpec, authorization: Any, repository_root: P
         "started_at": started_at,
         "completed_at": _utc_now(),
         "wall_time_ms": int((time.monotonic() - started) * 1000),
-        "sandbox": result.get("sandbox"),
-        "workspace": result.get("workspace"),
         "task_sha256": _sha256_text(spec.task),
         "response_sha256": _sha256_text(response),
         "response": response,
-        "codex_thread_id": parsed.get("thread_id"),
-        "codex_event_types": parsed.get("event_types"),
-        "usage": {**usage, "measurement_basis": "codex_turn_completed_jsonl"},
-        "budget": {"max_tokens_per_turn": max_tokens_per_turn, "timeout_seconds": timeout_seconds},
+        "source_sha": result.get("source_sha"),
+        "skill_sha256": result.get("skill_sha256"),
+        "semantic_provider": result.get("semantic_provider"),
+        "semantic_model": result.get("semantic_model"),
+        "provider_profile_skill_id": result.get("provider_profile_skill_id"),
+        "provider_profile_version": result.get("provider_profile_version"),
+        "provider_evidence_refs": provider_evidence.get("evidence_refs") or [],
+        "usage": {
+            "measurement_basis": "provider_adapter_does_not_expose_token_usage",
+            "token_usage_available": False,
+        },
         "live_checks": checks,
         "semantic_verification": verification,
+        "canonical_agent_receipt": canonical_receipt,
     }
     receipt_path = output_root / "receipts" / f"{index:02d}-{spec.skill}.json"
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    receipt_path.write_text(json.dumps(receipt, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    raw_path = output_root / "raw" / f"{index:02d}-{spec.skill}.jsonl"
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_path.write_text(runner.exec_stdout, encoding="utf-8")
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     return receipt
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -225,48 +281,40 @@ def main() -> None:
         return
     if args.max_turns != 24 or not 1 <= args.parallelism <= 4:
         raise SystemExit("LIVE_SMOKE_ADMISSION=FAIL max_turns=24 and parallelism=1..4 required")
-    if args.max_total_tokens < args.max_turns * args.max_tokens_per_turn:
-        raise SystemExit("LIVE_SMOKE_ADMISSION=FAIL total token budget must cover declared per-turn ceilings")
+    # Token limits are retained as compatibility inputs only. The governed OpenCode
+    # adapter does not expose token accounting, so this smoke must not fabricate it.
 
     output_root = Path(args.output).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     initialize_schema()
-    repository_root = Path.cwd().resolve()
     mission_started = time.monotonic()
-
-    authorizations = []
-    for index, spec in enumerate(SPECS, start=1):
-        capability_id = f"addy:{spec.skill}"
-        authorizations.append(issue_harness_authorization(
-            authorized_action="DEVELOPMENT",
-            subject=f"capability:{capability_id}",
-            harness_decision_id=f"decision:{MISSION_ID}:{index:02d}:{uuid4()}",
-            execution_id=f"{MISSION_ID}:{index:02d}:{uuid4()}",
-            lineage={"mission_id": MISSION_ID, "smoke_kind": "LIVE_SEMANTIC", "skill": spec.skill, "index": index},
-        ))
 
     receipts: list[dict[str, Any]] = []
     failure: BaseException | None = None
     with ThreadPoolExecutor(max_workers=args.parallelism) as pool:
         futures = {
-            pool.submit(_run_one, index, spec, authorization, repository_root, output_root, args.per_turn_timeout_seconds, args.max_tokens_per_turn): (index, authorization)
-            for index, (spec, authorization) in enumerate(zip(SPECS, authorizations), start=1)
+            pool.submit(
+                _run_one,
+                index,
+                spec,
+                output_root,
+                args.per_turn_timeout_seconds,
+                args.max_tokens_per_turn,
+            ): index
+            for index, spec in enumerate(SPECS, start=1)
         }
         for future in as_completed(futures):
-            _, authorization = futures[future]
             try:
                 receipts.append(future.result())
             except BaseException as exc:
                 failure = failure or exc
-            finally:
-                consume_harness_authorization(authorization)
     if failure is not None:
         raise SystemExit(f"ADDY_24_LIVE_SEMANTIC_SMOKE=FAIL executor_exception={type(failure).__name__}")
 
     order = {skill: index for index, skill in enumerate(ADDY_SKILLS, start=1)}
     receipts.sort(key=lambda item: order[item["skill"]])
     elapsed_seconds = time.monotonic() - mission_started
-    total_tokens = sum(int(item["usage"].get("total_tokens", 0)) for item in receipts)
+    total_tokens = None
 
     previous_hash: str | None = None
     chain = []
@@ -281,12 +329,26 @@ def main() -> None:
         "receipt_count_24": len(receipts) == 24,
         "unique_skill_count_24": len({item["skill"] for item in receipts}) == 24,
         "all_receipts_pass": all(item["status"] == "PASS" for item in receipts),
-        "all_real_model_turns": all(item["live_checks"]["real_thread_started"] and item["live_checks"]["exactly_one_model_turn"] and item["live_checks"]["positive_token_usage"] for item in receipts),
-        "all_semantic_verifications_pass": all(item["semantic_verification"]["status"] == "PASS" for item in receipts),
-        "within_total_token_budget": total_tokens <= args.max_total_tokens,
+        "all_real_model_turns": all(
+            item["live_checks"]["real_semantic_turn"]
+            and item["live_checks"]["live_receipt"]
+            and item["live_checks"]["provider_evidence_executed"]
+            for item in receipts
+        ),
+        "all_semantic_verifications_pass": all(
+            item["semantic_verification"]["status"] == "PASS" for item in receipts
+        ),
+        "all_promoted_provider_profile_v2": all(
+            item["provider_profile_version"] == "v2" for item in receipts
+        ),
         "within_wall_budget": elapsed_seconds <= args.max_wall_seconds,
-        "deepseek_harness_authority": all(item["authority"] == "deepseek_harness" for item in receipts),
-        "read_only_everywhere": all(item["sandbox"] == "read-only" and item["workspace"] == "disposable_snapshot" for item in receipts),
+        "deepseek_harness_authority": all(
+            item["authority"] == "deepseek_harness" for item in receipts
+        ),
+        "all_returned_to_harness": all(
+            item["canonical_agent_receipt"].get("returned_to_harness") is True
+            for item in receipts
+        ),
     }
     status = "PASS" if all(checks.values()) else "FAIL"
     summary = {
@@ -300,11 +362,12 @@ def main() -> None:
         "budget": {"max_turns": args.max_turns, "max_total_tokens": args.max_total_tokens, "max_tokens_per_turn": args.max_tokens_per_turn, "max_wall_seconds": args.max_wall_seconds, "per_turn_timeout_seconds": args.per_turn_timeout_seconds, "parallelism": args.parallelism},
         "observed": {
             "total_tokens": total_tokens,
-            "input_tokens": sum(int(item["usage"].get("input_tokens", 0)) for item in receipts),
-            "cached_input_tokens": sum(int(item["usage"].get("cached_input_tokens", 0)) for item in receipts),
-            "output_tokens": sum(int(item["usage"].get("output_tokens", 0)) for item in receipts),
+            "token_usage_available": False,
             "wall_seconds": round(elapsed_seconds, 3),
-            "measurement_basis": "codex_turn_completed_jsonl",
+            "measurement_basis": "HarnessAIProviderEvidence + child GitHub Actions artifacts",
+            "semantic_provider": "opencode",
+            "semantic_model": "oc/big-pickle",
+            "provider_profile_version": "v2",
             "usd_claimed": False,
         },
         "receipt_chain": chain,
@@ -316,10 +379,11 @@ def main() -> None:
     (output_root / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"ADDY_24_LIVE_SEMANTIC_SMOKE={status}")
     print(f"ADDY_24_LIVE_COUNT={len(receipts)}/24")
-    print(f"ADDY_24_LIVE_TOTAL_TOKENS={total_tokens}")
+    print("ADDY_24_LIVE_TOKEN_USAGE=NOT_EXPOSED_BY_PROVIDER_ADAPTER")
     print(f"ADDY_24_LIVE_WALL_SECONDS={elapsed_seconds:.3f}")
     print("ADDY_24_LIVE_AUTHORITY=deepseek_harness")
-    print("ADDY_24_LIVE_SANDBOX=read-only")
+    print("ADDY_24_LIVE_PROVIDER=opencode")
+    print("ADDY_24_LIVE_PROVIDER_PROFILE=v2")
     if status != "PASS":
         failed = [item["skill"] for item in receipts if item["status"] != "PASS"]
         raise SystemExit(f"ADDY_24_LIVE_SEMANTIC_SMOKE=FAIL failed_skills={failed}")
