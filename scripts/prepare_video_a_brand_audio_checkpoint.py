@@ -46,8 +46,12 @@ def main() -> int:
     checks=manifest.get("checks") or {}
     if not all(checks.values()):
         raise SystemExit("BRAND_AUDIO_CHECKS_FAIL")
-    if len(manifest["takes"]["opening"])!=3 or len(manifest["takes"]["closing"])!=3:
-        raise SystemExit("BRAND_AUDIO_TAKE_COUNT_FAIL")
+    if len(manifest["takes"]["opening"])!=1 or len(manifest["takes"]["closing"])!=1:
+        raise SystemExit("BRAND_AUDIO_RUNTIME_ASSET_COUNT_FAIL")
+    if manifest["selected"]["opening"]["take_id"]!="take-2":
+        raise SystemExit("BRAND_AUDIO_OPENING_PROFILE_FAIL")
+    if manifest["selected"]["closing"]["take_id"]!="G-brand-mixed":
+        raise SystemExit("BRAND_AUDIO_CLOSING_ASSET_FAIL")
     if manifest["opening_text"] != (
         "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de "
         "fatos, vazamentos, tecnologia e rumores de GTA 6!"
