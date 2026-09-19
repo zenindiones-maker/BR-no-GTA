@@ -1,7 +1,7 @@
 {
-  "requested_from_head": "2c61dff3217730b73852244fce18b5fe26560785",
-  "reason": "single rerun after previous device-auth code expired; private Telegram delivery enabled",
-  "focused_validation_run_id": 35465154603,
+  "requested_from_head": "feea591f41287a7a456f3783e5c3fa1781b640c2",
+  "reason": "single rerun after ANSI-safe Codex device-code capture, private Telegram receipt, and paired-DM routing correction",
+  "focused_validation_run_id": 35471781105,
   "focused_tests": [
     "tests/test_codex_auth_boundary.py",
     "tests/test_delegated_agent_autonomy.py",
@@ -10,6 +10,8 @@
   "codex_auth_boundary_tests": "PASS",
   "deterministic_delegation_gates": "PASS",
   "auth_bootstrap": "same_runner_device_auth_private_delivery",
-  "user_code_delivery": "PRIVATE_TELEGRAM",
+  "device_code_capture": "ANSI_SAFE",
+  "telegram_delivery_receipt": "MESSAGE_ID_REQUIRED",
+  "telegram_destination_priority": "PAIRED_USER_DM_THEN_REVIEW_DESTINATION",
   "requested_canary_count": 1
 }
