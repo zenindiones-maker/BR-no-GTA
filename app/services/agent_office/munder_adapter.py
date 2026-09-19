@@ -24,7 +24,9 @@ from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
     codex_bounded_development_worker,
+    codex_execution_failure,
     codex_sanitized_environment,
+    is_codex_sandbox_host_policy_failure,
 )
 from app.services.agent_office.addy_task_owner_worker import (
     addy_specialist_task_owner_worker,
@@ -133,6 +135,40 @@ def _codex_agent_text(stdout: str) -> str:
     return final[:2_000]
 
 
+def _codex_commands(stdout: str) -> tuple[str, ...]:
+    commands: list[str] = []
+    for line in str(stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") not in {"command_execution", "command"}:
+            continue
+        command = item.get("command") or item.get("command_line") or item.get("text")
+        if isinstance(command, str) and command.strip():
+            commands.append(command.strip())
+    return tuple(commands)
+
+
+def _codex_inspected_paths(
+    commands: tuple[str, ...],
+    task: AgentOfficeTask,
+) -> tuple[str, ...]:
+    targets = tuple(task.read_set or task.allowed_paths)
+    if not targets:
+        return ("<command-evidence>",) if commands else ()
+    return tuple(
+        sorted(
+            path
+            for path in targets
+            if any(path in command for command in commands)
+        )
+    )
+
+
 def codex_readonly_worker(
     task: AgentOfficeTask,
     workspace: Path,
@@ -165,7 +201,11 @@ def codex_readonly_worker(
         "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
         "Inspect only the provided disposable git worktree. Do not mutate files, commit, publish, "
         "deploy, authenticate to other services, invoke Addy skills, or claim authority. "
-        "Return concise analysis evidence to the Agent Office coordinator.\n\n"
+        "You MUST use shell inspection tooling to read at least one file from READ_SET before "
+        "claiming success. If the sandbox or filesystem prevents inspection, report the block "
+        "and do not claim completion. Return concise analysis evidence to the Agent Office "
+        "coordinator.\n\n"
+        f"READ_SET={json.dumps(task.read_set or task.allowed_paths)}\n"
         f"Task:\n{task.objective}"
     )
     command = [
@@ -188,11 +228,37 @@ def codex_readonly_worker(
         cwd=workspace,
         timeout_seconds=remaining(),
     )
-    if completed.returncode != 0:
-        raise RuntimeError("Codex read-only worker execution failed")
+    failure = codex_execution_failure(
+        completed,
+        failure_stage="readonly_exec",
+    )
+    if failure is not None:
+        return failure
     output = _codex_agent_text(completed.stdout)
+    observed_commands = _codex_commands(completed.stdout)
+    inspected_paths = _codex_inspected_paths(observed_commands, task)
     if not output:
-        raise RuntimeError("Codex read-only worker returned no agent message")
+        return {
+            "status": "FAILED",
+            "error": "Codex read-only worker returned no agent message",
+            "exit_code": int(completed.returncode),
+            "failure_stage": "readonly_result_validation",
+            "stderr_class": "EMPTY_AGENT_MESSAGE",
+            "sandbox_backend": "bubblewrap",
+            "retryability": "DETERMINISTIC_NO_RETRY",
+            "recoverable": False,
+        }
+    if not inspected_paths:
+        return {
+            "status": "FAILED",
+            "error": "Codex read-only inspection evidence missing",
+            "exit_code": int(completed.returncode),
+            "failure_stage": "readonly_result_validation",
+            "stderr_class": "INSPECTION_EVIDENCE_MISSING",
+            "sandbox_backend": "bubblewrap",
+            "retryability": "DETERMINISTIC_NO_RETRY",
+            "recoverable": False,
+        }
     return {
         "status": "SUCCEEDED",
         "summary": output,
@@ -203,8 +269,11 @@ def codex_readonly_worker(
         "engine_result": {
             "output": output,
             "sandbox": "read-only",
+            "sandbox_backend": "bubblewrap",
             "workspace": "disposable_worktree",
             "canonical_addy_bypass": False,
+            "observed_command_count": len(observed_commands),
+            "inspected_paths": list(inspected_paths),
         },
     }
 
@@ -372,12 +441,32 @@ class MunderAdapter:
                         "retry_count": attempt - 1,
                     }
                     break
-                except Exception:
+                except Exception as exc:
+                    if (
+                        task.agent in {"codex", "codex-development"}
+                        and is_codex_sandbox_host_policy_failure(str(exc))
+                    ):
+                        result = {
+                            "status": "BLOCKED",
+                            "error": "Codex Linux sandbox host policy failure",
+                            "exit_code": getattr(exc, "returncode", 1) or 1,
+                            "failure_stage": "worker_exception",
+                            "stderr_class": "SANDBOX_HOST_POLICY_FAILURE",
+                            "sandbox_backend": "bubblewrap",
+                            "retryability": "DETERMINISTIC_NO_RETRY",
+                            "recoverable": False,
+                            "attempt_count": attempt,
+                            "retry_count": attempt - 1,
+                        }
+                        break
                     last_error = "worker execution failed"
                     if attempt > lease.retry_budget:
                         result = {
                             "status": "FAILED",
                             "error": last_error,
+                            "failure_stage": "worker_exception",
+                            "stderr_class": type(exc).__name__,
+                            "retryability": "RETRY_BUDGET_EXHAUSTED",
                             "attempt_count": attempt,
                             "retry_count": attempt - 1,
                         }
