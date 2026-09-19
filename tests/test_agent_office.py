@@ -238,7 +238,10 @@ def test_default_codex_worker_refuses_canonical_addy_bypass(tmp_path):
         [_task(agent="codex", capability="addy:code-review-and-quality")],
     )
     assert result.status == "FAILED"
-    assert "worker execution failed" in result.errors
+    assert (
+        "Canonical Addy capabilities must execute through the Harness Addy boundary"
+        in result.errors
+    )
 
 
 def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_path, monkeypatch):
