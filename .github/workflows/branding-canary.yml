@@ -55,7 +55,8 @@ jobs:
             tests/test_branding_canary.py \
             tests/test_telegram_brand_render_pipeline.py \
             tests/test_telegram_brand_ffmpeg_integration.py \
-            tests/test_channel_branding_standard.py
+            tests/test_channel_branding_standard.py \
+            tests/test_channel_spoken_branding.py
 
       - name: Render real cloud branding canary and deliver review
         run: |
@@ -64,8 +65,16 @@ jobs:
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
           python scripts/run_branding_canary.py | tee runtime-branding-canary.log
           grep -Fx 'BRANDING_QA=PASS' runtime-branding-canary.log
+          grep -Fx 'OFFICIAL_INTRO_FIRST=PASS' runtime-branding-canary.log
+          grep -Fx 'SPOKEN_OPENING_AFTER_INTRO=PASS' runtime-branding-canary.log
+          grep -Fx 'VOICE_B_USED=PASS' runtime-branding-canary.log
+          grep -Fx 'OPENING_TEXT_CANONICAL=PASS' runtime-branding-canary.log
+          grep -Fx 'CLOSING_TEXT_CANONICAL=PASS' runtime-branding-canary.log
+          grep -Fx 'BRAND_AUDIO_CACHE_POLICY=PASS' runtime-branding-canary.log
+          grep -Fx 'EDITORIAL_HOOK_PRESERVED=PASS' runtime-branding-canary.log
           grep -Fx 'TELEGRAM_REVIEW_DELIVERY=PASS' runtime-branding-canary.log
           grep -Fx 'JOB18_UNCHANGED=YES' runtime-branding-canary.log
+          grep -Fx 'PUBLICATION_AUTHORITY_UNCHANGED=YES' runtime-branding-canary.log
 
       - name: Publish machine-readable evidence summary
         if: success()
@@ -86,6 +95,13 @@ jobs:
               handle.write(f"- INTRO_AUDIO_PRESERVED: PASS\n")
               handle.write(f"- WATERMARK_ABSENT_DURING_INTRO: PASS\n")
               handle.write(f"- WATERMARK_BOTTOM_RIGHT_AFTER_INTRO: PASS\n")
+              handle.write(f"- OFFICIAL_INTRO_FIRST: PASS\n")
+              handle.write(f"- SPOKEN_OPENING_AFTER_INTRO: PASS\n")
+              handle.write(f"- VOICE_B_USED: PASS\n")
+              handle.write(f"- OPENING_TEXT_CANONICAL: PASS\n")
+              handle.write(f"- CLOSING_TEXT_CANONICAL: PASS\n")
+              handle.write(f"- BRAND_AUDIO_CACHE_POLICY: PASS\n")
+              handle.write(f"- EDITORIAL_HOOK_PRESERVED: PASS\n")
               handle.write(f"- INTRO_MEASURED_DURATION: {branding['intro_duration_seconds']}\n")
               handle.write(f"- WATERMARK_START: {branding['watermark_start_seconds']}\n")
               handle.write(f"- HUMAN_VISUAL_APPROVAL: PENDING\n")

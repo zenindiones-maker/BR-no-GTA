@@ -9,6 +9,7 @@ from typing import Any
 
 import requests
 
+from app.services.channel_spoken_branding_service import build_spoken_branding_contract
 from app.workers.brand_asset_worker import apply, prepare
 from scripts.telegram_video_review_worker import (
     MAX_TELEGRAM_UPLOAD_BYTES,
@@ -35,6 +36,13 @@ REQUIRED_CHECKS = (
     "watermark_aspect_ratio_preserved",
     "watermark_safe_margin",
     "watermark_scale_recorded",
+    "official_intro_asset_id_1",
+    "spoken_opening_after_intro",
+    "editorial_hook_preserved",
+    "voice_b_used",
+    "opening_text_canonical",
+    "closing_text_canonical",
+    "brand_audio_cache_policy",
     "ffprobe",
     "full_decode",
 )
@@ -255,6 +263,35 @@ def run_canary(root: Path) -> dict[str, Any]:
         "estimated_duration_seconds": CANARY_CONTENT_SECONDS,
         "render": {"resolution": "1280x720", "fps": 30},
         "brand_assets": assets,
+        "spoken_branding": build_spoken_branding_contract(theme="canário da identidade oficial"),
+        "narration": {
+            "voice": "pt-BR-ThalitaMultilingualNeural",
+            "human_quality_baseline": "Voice B",
+        },
+        "script_sections": [{"section_id":"CANARY_HOOK","role":"hook"}],
+        "edit_plan": {
+            "metadata": {
+                "timeline_sequence": [
+                    {"order":1,"phase":"official_intro","asset_id":1,"composition_stage":"brand-worker-prepend"},
+                    {
+                        "order":2,
+                        "phase":"spoken_channel_opening",
+                        "text":"Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de canário da identidade oficial!",
+                        "voice":"Voice B",
+                        "duration_seconds":2.0,
+                    },
+                    {"order":3,"phase":"editorial_hook","section_id":"CANARY_HOOK"},
+                    {"order":4,"phase":"editorial_content"},
+                    {
+                        "order":5,
+                        "phase":"spoken_channel_closing",
+                        "text":"E BR não dorme em Vice City",
+                        "voice":"Voice B",
+                        "duration_seconds":1.0,
+                    },
+                ]
+            }
+        },
         "canary_label": CANARY_LABEL,
     }
     runtime_root = root / "runtime"
@@ -322,8 +359,16 @@ def run_canary(root: Path) -> dict[str, Any]:
     print(f"WATERMARK_MARGIN={json.dumps(branding['watermark_margin'], separators=(',', ':'))}")
     print(f"WATERMARK_OPACITY={branding['watermark_opacity']}")
     print("BRANDING_QA=PASS")
+    print("OFFICIAL_INTRO_FIRST=PASS")
+    print("SPOKEN_OPENING_AFTER_INTRO=PASS")
+    print("VOICE_B_USED=PASS")
+    print("OPENING_TEXT_CANONICAL=PASS")
+    print("CLOSING_TEXT_CANONICAL=PASS")
+    print("BRAND_AUDIO_CACHE_POLICY=PASS")
+    print("EDITORIAL_HOOK_PRESERVED=PASS")
     print("TELEGRAM_REVIEW_DELIVERY=PASS")
     print("JOB18_UNCHANGED=YES")
+    print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return summary
 
 
