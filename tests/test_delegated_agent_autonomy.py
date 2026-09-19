@@ -199,6 +199,48 @@ def test_agent_office_persists_leases_parallelizes_and_retries(tmp_path, monkeyp
     assert {"TASK_CREATED", "TASK_STARTED", "TASK_ARTIFACT_CREATED", "TASK_COMPLETED"} <= event_types
 
 
+def test_deterministic_codex_host_policy_failure_does_not_consume_retry(tmp_path, monkeypatch):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "agent-office.db"))
+    initialize_schema()
+    root, sha = _repo(tmp_path)
+    _, spec = _authorized_spec(root, sha)
+    calls = 0
+
+    def runner(task, workspace, timeout_seconds, lease):
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "BLOCKED",
+            "error": "Codex Linux sandbox host policy failure",
+            "exit_code": 1,
+            "failure_stage": "bounded_development_exec",
+            "stderr_class": "SANDBOX_HOST_POLICY_FAILURE",
+            "sandbox_backend": "bubblewrap",
+            "retryability": "DETERMINISTIC_NO_RETRY",
+            "recoverable": False,
+        }
+
+    task = _task("sandbox-host-policy")
+    task = type(task).from_mapping(
+        {
+            **task.to_dict(),
+            "agent": "codex-development",
+            "retry_budget": 1,
+        }
+    )
+    result = AgentOfficeService(
+        root,
+        adapter=MunderAdapter(worker_runners={"codex-development": runner}),
+    ).execute(spec, [task])
+    assert result.status == "FAILED"
+    assert calls == 1
+    item = result.per_agent_results[0]
+    assert item["status"] == "BLOCKED"
+    assert item["attempt_count"] == 1
+    assert item["retry_count"] == 0
+    assert item["retryability"] == "DETERMINISTIC_NO_RETRY"
+
+
 def test_agent_office_serializes_overlapping_write_sets(tmp_path, monkeypatch):
     monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "agent-office.db"))
     initialize_schema()
