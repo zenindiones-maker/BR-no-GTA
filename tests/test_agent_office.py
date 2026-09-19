@@ -12,7 +12,8 @@ from app.services.agent_office.contracts import (
     AgentOfficeTask,
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
-from app.services.agent_office.munder_adapter import MunderAdapter
+from app.services.agent_office import munder_adapter
+from app.services.agent_office.munder_adapter import CODEX_READONLY_CAPABILITY, MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.agent_office_harness_service import (
     execute_authorized_agent_office,
@@ -230,51 +231,73 @@ def test_codex_requires_a_trusted_registered_runner(tmp_path):
     assert calls == ["addy:code-review-and-quality"]
 
 
-def test_default_codex_worker_reuses_existing_addy_executor(tmp_path, monkeypatch):
+def test_default_codex_worker_refuses_canonical_addy_bypass(tmp_path):
     root, sha = _repo(tmp_path)
-    calls = []
-
-    def fake_existing_executor(capability, payload, *, runner, repository_root):
-        calls.append((capability.capability_id, payload, repository_root))
-        return {"output": "review complete", "exit_code": 0}
-
-    monkeypatch.setattr(
-        "app.services.codex_addy_capability_executor.execute_codex_addy_capability",
-        fake_existing_executor,
-    )
     result = AgentOfficeService(root).execute(
         _spec(root, sha),
         [_task(agent="codex", capability="addy:code-review-and-quality")],
     )
+    assert result.status == "FAILED"
+    assert "worker execution failed" in result.errors
+
+
+def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_path, monkeypatch):
+    root, sha = _repo(tmp_path)
+    calls = []
+
+    def fake_process(command, *, cwd, timeout_seconds):
+        calls.append((list(command), cwd, timeout_seconds))
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        stdout = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "bounded review complete"},
+            }
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(munder_adapter, "_codex_process", fake_process)
+    result = AgentOfficeService(root).execute(
+        _spec(
+            root,
+            sha,
+            allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
+        ),
+        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
+    )
     assert result.status == "SUCCEEDED"
-    assert calls[0][0] == "addy:code-review-and-quality"
-    assert calls[0][1] == {"task": "Inspect tracked files without mutation."}
-    assert calls[0][2] != root
+    assert calls[0][0] == ["codex", "login", "status"]
+    assert calls[1][0][:2] == ["codex", "exec"]
+    assert "--sandbox" in calls[1][0]
+    assert calls[1][0][calls[1][0].index("--sandbox") + 1] == "read-only"
+    assert result.per_agent_results[0]["engine_result"]["canonical_addy_bypass"] is False
 
 
 def test_codex_subprocess_receives_enforced_time_budget(tmp_path, monkeypatch):
     root, sha = _repo(tmp_path)
+    observed = []
 
-    def slow_existing_executor(capability, payload, *, runner, repository_root):
-        runner(
-            ["python", "-c", "import time; time.sleep(5)"],
-            cwd=repository_root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        return {"output": "unexpected", "exit_code": 0}
+    def bounded_process(command, *, cwd, timeout_seconds):
+        observed.append(timeout_seconds)
+        if command == ["codex", "login", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise subprocess.TimeoutExpired(command, timeout_seconds)
 
-    monkeypatch.setattr(
-        "app.services.codex_addy_capability_executor.execute_codex_addy_capability",
-        slow_existing_executor,
-    )
+    monkeypatch.setattr(munder_adapter, "_codex_process", bounded_process)
     result = AgentOfficeService(root).execute(
-        _spec(root, sha, time_budget_seconds=1),
-        [_task(agent="codex", capability="addy:code-review-and-quality")],
+        _spec(
+            root,
+            sha,
+            time_budget_seconds=1,
+            allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
+        ),
+        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
     )
     assert result.status == "FAILED"
     assert "worker execution failed" in result.errors
+    assert observed
+    assert all(0 < value <= 1 for value in observed)
 
 
 def test_timeout_and_cost_budget_fail_closed(tmp_path):
