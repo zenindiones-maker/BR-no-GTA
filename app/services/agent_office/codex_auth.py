@@ -18,6 +18,7 @@ from app.services.agent_office.codex_bounded_worker import codex_sanitized_envir
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 _DEVICE_URL_RE = re.compile(r"https://[^\s]+/codex/device")
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 _DEVICE_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,8}\b")
 
 
@@ -197,12 +198,13 @@ class CodexAuthenticationProvider:
                 if not line:
                     time.sleep(0.05)
                     continue
+                clean_line = _ANSI_SGR_RE.sub("", line)
                 if not verification_url:
-                    match = _DEVICE_URL_RE.search(line)
+                    match = _DEVICE_URL_RE.search(clean_line)
                     if match:
                         verification_url = match.group(0).rstrip(".,;)")
                 if not user_code:
-                    match = _DEVICE_CODE_RE.search(line)
+                    match = _DEVICE_CODE_RE.search(clean_line)
                     if match:
                         user_code = match.group(0)
                 if verification_url and user_code and not delivered:
