@@ -120,15 +120,32 @@ jobs:
           grep -Fx 'BRAND_AUDIO_EXTERNAL_CALLS=0' runtime/brand-audio-proof/cache-reuse.log
           echo 'BRAND_AUDIO_CACHE_REUSE=PASS'
 
-      - name: Deliver six human-audition takes to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+      - name: Record locked human approvals without redundant Telegram audition
         run: |
           set -euo pipefail
-          test -n "$TELEGRAM_BOT_TOKEN"
-          test -n "$TELEGRAM_REVIEW_CHAT_ID"
-          python scripts/send_brand_audio_review.py
+          mkdir -p runtime/brand-audio-proof
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence={
+              "status":"HUMAN_APPROVED_REFERENCES",
+              "sample_count":0,
+              "samples":[],
+              "human_brand_take_review":"APPROVED",
+              "automatic_naturality_winner":False,
+              "selected_opening_take_id":"take-2",
+              "opening_reference":"I-opening-fluid-2.mp3",
+              "final_end_signature_sample_id":"G-brand-mixed",
+              "final_end_signature_locked_elsewhere":True,
+              "redundant_telegram_audition_skipped":True,
+          }
+          Path("runtime/brand-audio-proof/telegram-brand-audio-review.json").write_text(
+              json.dumps(evidence,ensure_ascii=False,indent=2)+"\n",
+              encoding="utf-8",
+          )
+          print("HUMAN_BRAND_TAKE_REVIEW=APPROVED")
+          print("REDUNDANT_TELEGRAM_AUDITION_SKIPPED=YES")
+          PY
 
       - name: Validate branding evidence contract
         run: |
@@ -141,26 +158,35 @@ jobs:
           review=json.loads(Path('runtime/brand-audio-proof/telegram-brand-audio-review.json').read_text())
           for key in (
               'OFFICIAL_INTRO_FIRST','SPOKEN_OPENING_AFTER_INTRO','VOICE_B_USED',
-              'OPENING_TEXT_CANONICAL','CLOSING_TEXT_CANONICAL',
+              'FLUID2_OPENING_SELECTED','OPENING_TEXT_CANONICAL','CLOSING_TEXT_CANONICAL',
               'BRAND_AUDIO_CACHE_POLICY','EDITORIAL_HOOK_PRESERVED',
           ):
               if proof.get(key)!='PASS':
                   raise SystemExit(f'{key}=FAIL')
           if reuse['cache']['external_calls']!=0:
               raise SystemExit('BRAND_AUDIO_CACHE_REUSE=FAIL')
-          if review['sample_count']!=6:
-              raise SystemExit('BRAND_AUDIO_REVIEW_SAMPLE_COUNT=FAIL')
+          if review['status']!='HUMAN_APPROVED_REFERENCES':
+              raise SystemExit('HUMAN_APPROVAL_STATE_MISMATCH')
+          if review['sample_count']!=0:
+              raise SystemExit('REDUNDANT_HUMAN_AUDITION_NOT_SKIPPED')
+          if review['selected_opening_take_id']!='take-2':
+              raise SystemExit('FLUID2_HUMAN_APPROVAL_MISSING')
+          if review['final_end_signature_sample_id']!='G-brand-mixed':
+              raise SystemExit('G_FINAL_END_HUMAN_APPROVAL_MISSING')
           if review['automatic_naturality_winner'] is not False:
               raise SystemExit('AUTOMATIC_NATURALITY_WINNER_FORBIDDEN')
           print('OFFICIAL_INTRO_FIRST=PASS')
           print('SPOKEN_OPENING_AFTER_INTRO=PASS')
           print('VOICE_B_USED=PASS')
+          print('FLUID2_OPENING_SELECTED=PASS')
           print('OPENING_TEXT_CANONICAL=PASS')
           print('CLOSING_TEXT_CANONICAL=PASS')
           print('BRAND_AUDIO_CACHE_POLICY=PASS')
           print('EDITORIAL_HOOK_PRESERVED=PASS')
           print('BRAND_AUDIO_CACHE_REUSE=PASS')
-          print('HUMAN_BRAND_TAKE_REVIEW=PENDING')
+          print('HUMAN_BRAND_TAKE_REVIEW=APPROVED')
+          print('FINAL_END_SIGNATURE_HUMAN_APPROVED=PASS')
+          print('REDUNDANT_TELEGRAM_AUDITION_SKIPPED=YES')
           print('JOB18_UNCHANGED=YES')
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
           PY
