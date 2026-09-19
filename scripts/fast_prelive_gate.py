@@ -111,8 +111,16 @@ def _sample_packets() -> dict[str, Any]:
                 "narrative_block": f"Bloco {index}",
                 "duration_seconds": 30.0,
                 "visual_type": "gameplay",
-                "visual_description": f"Visual específico {index} baseado em evidência.",
-                "narration": "Narração factual de teste.",
+                "visual_description": (
+                    f"Visual específico {index} baseado em evidência oficial, com enquadramento "
+                    "definido, elemento principal, transição e indicação do fato mostrado. " * 2
+                ),
+                "narration": (
+                    "Narração factual de teste com contexto suficiente para representar uma cena "
+                    "real de um roteiro longo sem depender de texto-placeholder. " * 2
+                ),
+                "media_search_terms": [f"GTA VI Rockstar bloco {index}"],
+                "evidence_refs": ["claim:claim-gate-1"],
                 "requirements": ["evidence", "timing"],
                 "segment_id": None,
             }

@@ -199,6 +199,7 @@ def build_production_packet(
     strategy_output: dict[str, Any],
     full_context_chars: int,
 ) -> dict[str, Any]:
+    """Dense production packet; full Script/ProductionPlan stay persisted and hash-addressable."""
     packet = _base(
         role="production-management",
         goal_id=goal_id,
@@ -210,33 +211,60 @@ def build_production_packet(
         claims=claims,
         strategy_output=strategy_output,
     )
-    scenes = list(production_plan.get("scenes") or ())
+    packet["verified_claims"] = [
+        {
+            "claim_id": item.get("claim_id"),
+            "statement": str(item.get("statement") or "")[:360],
+            "verification_status": item.get("verification_status"),
+            "evidence_refs": list(item.get("evidence_refs") or ())[:2],
+        }
+        for item in claims
+        if isinstance(item, dict)
+    ]
+    scenes = [scene for scene in (production_plan.get("scenes") or ()) if isinstance(scene, dict)]
     packet.update(
         {
             "timing": {
                 "estimated_duration_seconds": production_plan.get("estimated_duration_seconds"),
                 "scene_count": len(scenes),
+                "max_scene_seconds": max(
+                    (float(scene.get("duration_seconds") or 0.0) for scene in scenes),
+                    default=0.0,
+                ),
             },
-            "hook": str(production_plan.get("hook") or _script_hook(script_text))[:1800],
+            "hook": str(production_plan.get("hook") or _script_hook(script_text))[:900],
             "scenes": [
                 {
                     "order": scene.get("order"),
-                    "narrative_block": scene.get("narrative_block"),
-                    "duration_seconds": scene.get("duration_seconds"),
+                    "block": str(scene.get("narrative_block") or "")[:140],
+                    "seconds": scene.get("duration_seconds"),
                     "visual_type": scene.get("visual_type"),
-                    "visual_description": scene.get("visual_description"),
-                    "narration_excerpt": str(scene.get("narration") or "")[:220],
-                    "requirements": list(scene.get("requirements") or ())[:3],
+                    "visual": str(scene.get("visual_description") or "")[:260],
+                    "search": list(scene.get("media_search_terms") or ())[:2],
+                    "evidence": list(scene.get("evidence_refs") or ())[:3],
                     "segment_id": scene.get("segment_id"),
                 }
                 for scene in scenes
-                if isinstance(scene, dict)
             ],
-            "audio_requirements": production_plan.get("audio_requirements"),
-            "visual_requirements": production_plan.get("visual_requirements"),
+            "audio_requirements": [
+                str(item)[:220]
+                for item in (production_plan.get("audio_requirements") or ())
+            ][:4],
+            "visual_requirements": [
+                item if isinstance(item, (str, int, float, bool)) else {
+                    key: value
+                    for key, value in dict(item).items()
+                    if key in {"type", "description", "required"}
+                }
+                for item in (production_plan.get("visual_requirements") or ())
+            ][:6],
             "editorial_evidence_refs": list(
                 production_plan.get("editorial_evidence_refs") or ()
-            )[:24],
+            )[:16],
+            "packet_note": (
+                "Full script and ProductionPlan are persisted at artifact_refs with content_hashes; "
+                "this packet intentionally contains only role-relevant production structure."
+            ),
         }
     )
     return finalize_packet(packet, full_context_chars=full_context_chars)
