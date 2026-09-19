@@ -1,6 +1,6 @@
 {
   "schema": "video-a-current-product-e2e-request/v1",
-  "requested_from_head": "6851442e6a3febe732dda32f181bdf7c070f79dd",
+  "requested_from_head": "9d65f295b19b5a261234b6bd400df7609ead0b18",
   "goal_id": "f9dc10d7-dcc4-44dc-b808-444a351b4189",
   "product_label": "A",
   "historical_render_run_id": 35463639061,
@@ -11,11 +11,11 @@
   "resume_from_e2e_run_id": 35476663755,
   "resume_from_e2e_artifact_id": 10594436517,
   "previous_render_run_id": 35476691582,
-  "previous_failure_class": "RENDER_HANDOFF_SOURCE_SHA_MISMATCH_DUE_CONCURRENT_BRANCH_ADVANCE",
+  "previous_failure_class": "RENDER_WORKER_SOURCE_SHA_RACE_AFTER_CHECKPOINT_SAVE",
   "recovery_mode": "REUSE_EXISTING_JOB2",
   "attempt": 5,
   "youtube_privacy": "private",
   "human_review_delivery": "telegram",
   "previous_e2e_run_id": 35476663755,
-  "requested_at": "2026-09-19T23:41:00Z"
+  "requested_at": "2026-09-19T23:42:00Z"
 }
