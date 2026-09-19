@@ -1,34 +1,196 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.1",
+  "version": "2026.09.19.2",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
-    "priority": ["canonical-lexicon", "explicit-span-metadata", "conservative-detection", "pt-BR-fallback"],
+    "priority": [
+      "canonical-lexicon",
+      "explicit-span-metadata",
+      "conservative-detection",
+      "pt-BR-fallback"
+    ],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true
   },
   "entries": [
-    {"identity":"vice-city","term":"Vice City","locale":"en-US","strategy":"isolated-multilingual","critical":true,"target_ipa":"vaɪs ˈsɪti","source":"canonical GTA domain terminology"},
-    {"identity":"rockstar-games","term":"Rockstar Games","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official company name"},
-    {"identity":"rockstar","term":"Rockstar","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official company shorthand"},
-    {"identity":"take-two","term":"Take-Two","aliases":["Take Two"],"locale":"en-US","strategy":"isolated-multilingual","synthesis_text":"Take Two","critical":false,"source":"official company name"},
-    {"identity":"grand-theft-auto","term":"Grand Theft Auto","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official game title"},
-    {"identity":"gta-6","term":"GTA 6","aliases":["GTA VI"],"locale":"pt-BR","strategy":"alias","synthesis_text":"GTA seis","critical":false,"source":"channel Portuguese reading"},
-    {"identity":"jason","term":"Jason","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"GTA VI character name"},
-    {"identity":"lucia","term":"Lucia","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"GTA VI character name"},
-    {"identity":"leonida","term":"Leonida","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"GTA VI fictional place name"},
-    {"identity":"playstation-5","term":"PlayStation 5","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official product name"},
-    {"identity":"playstation","term":"PlayStation","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official brand name"},
-    {"identity":"xbox-series-x","term":"Xbox Series X","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official product name"},
-    {"identity":"xbox-series-s","term":"Xbox Series S","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official product name"},
-    {"identity":"xbox","term":"Xbox","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official brand name"},
-    {"identity":"digital-foundry","term":"Digital Foundry","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"publication/channel name"},
-    {"identity":"nvidia","term":"NVIDIA","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official company name"},
-    {"identity":"amd","term":"AMD","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official company name"},
-    {"identity":"unreal-engine","term":"Unreal Engine","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official technology name"},
-    {"identity":"steam","term":"Steam","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official platform name"},
-    {"identity":"youtube","term":"YouTube","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official platform name"},
-    {"identity":"discord","term":"Discord","locale":"en-US","strategy":"isolated-multilingual","critical":false,"source":"official platform name"}
+    {
+      "identity": "vice-city",
+      "term": "Vice City",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": true,
+      "target_ipa": "vaɪs ˈsɪti",
+      "source": "canonical GTA domain terminology"
+    },
+    {
+      "identity": "rockstar-games",
+      "term": "Rockstar Games",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official company name"
+    },
+    {
+      "identity": "rockstar",
+      "term": "Rockstar",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official company shorthand"
+    },
+    {
+      "identity": "take-two",
+      "term": "Take-Two",
+      "aliases": [
+        "Take Two"
+      ],
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "synthesis_text": "Take Two",
+      "critical": false,
+      "source": "official company name"
+    },
+    {
+      "identity": "grand-theft-auto",
+      "term": "Grand Theft Auto",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official game title"
+    },
+    {
+      "identity": "gta-6",
+      "term": "GTA 6",
+      "aliases": [
+        "GTA VI"
+      ],
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "G T A seis",
+      "critical": true,
+      "source": "channel Portuguese reading; latest human review rejected unspaced acronym synthesis",
+      "review_note": "Candidate spells the acronym letter-by-letter while canonical text remains GTA 6."
+    },
+    {
+      "identity": "jason",
+      "term": "Jason",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "GTA VI character name"
+    },
+    {
+      "identity": "lucia",
+      "term": "Lucia",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "GTA VI character name"
+    },
+    {
+      "identity": "leonida",
+      "term": "Leonida",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "GTA VI fictional place name"
+    },
+    {
+      "identity": "playstation-5",
+      "term": "PlayStation 5",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official product name"
+    },
+    {
+      "identity": "playstation",
+      "term": "PlayStation",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official brand name"
+    },
+    {
+      "identity": "xbox-series-x",
+      "term": "Xbox Series X",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official product name"
+    },
+    {
+      "identity": "xbox-series-s",
+      "term": "Xbox Series S",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official product name"
+    },
+    {
+      "identity": "xbox",
+      "term": "Xbox",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official brand name"
+    },
+    {
+      "identity": "digital-foundry",
+      "term": "Digital Foundry",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "publication/channel name"
+    },
+    {
+      "identity": "nvidia",
+      "term": "NVIDIA",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official company name"
+    },
+    {
+      "identity": "amd",
+      "term": "AMD",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official company name"
+    },
+    {
+      "identity": "unreal-engine",
+      "term": "Unreal Engine",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official technology name"
+    },
+    {
+      "identity": "steam",
+      "term": "Steam",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official platform name"
+    },
+    {
+      "identity": "youtube",
+      "term": "YouTube",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official platform name"
+    },
+    {
+      "identity": "discord",
+      "term": "Discord",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": false,
+      "source": "official platform name"
+    }
   ]
 }
