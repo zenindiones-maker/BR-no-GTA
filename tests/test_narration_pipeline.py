@@ -111,6 +111,8 @@ class NarrationPipelineTests(unittest.TestCase):
         self.assertEqual(len(segments), len(SECTIONS))
         self.assertEqual([item.section_id for item in segments], ["A01", "A02"])
         self.assertTrue(all(item.segment_id.endswith("-semantic-001") for item in segments))
+        self.assertTrue(all(item.synthesis_plan and item.synthesis_plan["canonical_text_preserved"] for item in segments))
+        self.assertTrue(any("vice-city" in item.synthesis_plan["lexicon_hits"] for item in segments))
         self.assertEqual(
             " ".join(item.original_text for item in segments),
             " ".join(section["narration"] for section in SECTIONS),
@@ -122,7 +124,7 @@ class NarrationPipelineTests(unittest.TestCase):
         self.assertEqual(original, "GTA VI é publicado pela Rockstar Games e Take-Two acompanha o negócio.")
         self.assertIn("GTA seis", spoken)
         self.assertIn("Take Two", spoken)
-        self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v1")
+        self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v2")
         self.assertGreaterEqual(len(applied), 2)
 
     def test_fingerprint_changes_only_when_synthesis_identity_changes(self):
