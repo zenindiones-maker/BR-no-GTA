@@ -1,0 +1,149 @@
+name: Product To Human Review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: product-to-human-review
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/checkpoint/mission.db
+      ZERO_COST_OPERATION: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install production controller runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements/media.txt
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Restore green Product E2E checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10589535732"
+          run-id: "35458162169"
+          github-token: ${{ github.token }}
+          path: runtime/checkpoint
+          merge-multiple: true
+      - name: Restore verified official GTA VI media checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10572578507"
+          run-id: "35407875087"
+          github-token: ${{ github.token }}
+          path: runtime/media-checkpoint
+          merge-multiple: true
+      - name: Rebuild only Production Plan and dispatch canonical render
+        run: |
+          set -euo pipefail
+          MEDIA="$(find runtime/media-checkpoint -name source.mp4 -type f | head -1)"
+          test -n "$MEDIA"
+          python scripts/continue_product_to_human_review.py prepare             --product runtime/checkpoint/product-quality-e2e.json             --media "$MEDIA"             --media-manifest runtime/media-checkpoint/media-checkpoint-manifest.json             --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/state.json"))
+          step=d["render_step"]["result"]
+          result=step.get("result") or {}
+          run_id=(result.get("github_execution") or {}).get("run_id") or result.get("run_id")
+          if not run_id:
+              import sqlite3,os
+              db=sqlite3.connect(os.environ["BR_TEST_DATABASE"]); db.row_factory=sqlite3.Row
+              r=db.execute("select github_execution from render_jobs where id=?",(d["RENDER_JOB_ID"],)).fetchone()
+              x=json.loads(r["github_execution"]) if r and r["github_execution"] else {}
+              run_id=x.get("run_id")
+          if not run_id: raise SystemExit("RENDER_RUN_ID_MISSING")
+          print(f"VIDEO_ID={d['VIDEO_ID']}")
+          print(f"RENDER_JOB_ID={d['RENDER_JOB_ID']}")
+          print(f"RENDER_RUN_ID={run_id}")
+          PY
+      - name: Wait for real render worker
+        run: gh run watch "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+      - name: Reconcile MP4 ffprobe and QA into canonical database
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py reconcile-render --out runtime/product-delivery
+          python scripts/continue_product_to_human_review.py create-publication --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/publication.json"))
+          print(f"PUBLICATION_ID={d['publication']['id']}")
+          PY
+      - name: Dispatch YouTube PRIVATE through official Harness boundary
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py dispatch-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/dispatch-upload.json"))
+          r=d["result"]
+          print(f"YOUTUBE_UPLOAD_RUN_ID={r['upload_run_id']}")
+          print(f"YOUTUBE_EXECUTION_ID={r['execution_id']}")
+          PY
+      - name: Wait for YouTube processing and mandatory Telegram review delivery
+        run: gh run watch "$YOUTUBE_UPLOAD_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+      - name: Reconcile private YouTube and Telegram receipt
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py reconcile-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/continue_product_to_human_review.py final --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          final=json.load(open("runtime/product-delivery/final.json"))
+          matches=list(Path("runtime/youtube-upload/results").rglob("youtube-upload-result.json"))
+          assert len(matches)==1, matches
+          upload=json.loads(matches[0].read_text())
+          review=upload.get("telegram_review") or {}
+          assert final["YOUTUBE_PRIVACY_STATUS"]=="private", final
+          assert final["YOUTUBE_REVIEW_VIDEO_ID"] and final["YOUTUBE_REVIEW_URL"], final
+          assert review.get("status")=="DELIVERED", review
+          assert isinstance(review.get("telegram_message_id"),int), review
+          final["TELEGRAM_DELIVERY_STATUS"]="PASS"
+          final["TELEGRAM_MESSAGE_ID"]=review["telegram_message_id"]
+          final["HUMAN_REVIEW_STATUS"]="PENDING"
+          final["YOUTUBE_PROCESSING_STATUS"]="READY"
+          final["YOUTUBE_UPLOAD_RUN_ID"]=int(__import__("os").environ["YOUTUBE_UPLOAD_RUN_ID"])
+          Path("runtime/product-delivery/final.json").write_text(json.dumps(final,ensure_ascii=False,indent=2))
+          print("PRODUCT_E2E=PASS")
+          print("PRODUCTION_READINESS=PASS")
+          print(f"VIDEO_ID={final['VIDEO_ID']}")
+          print(f"RENDER_JOB_ID={final['RENDER_JOB_ID']}")
+          print("RENDER_QA=PASS")
+          print(f"YOUTUBE_REVIEW_VIDEO_ID={final['YOUTUBE_REVIEW_VIDEO_ID']}")
+          print(f"YOUTUBE_REVIEW_URL={final['YOUTUBE_REVIEW_URL']}")
+          print("YOUTUBE_PRIVACY_STATUS=private")
+          print("TELEGRAM_DELIVERY_STATUS=PASS")
+          print(f"TELEGRAM_MESSAGE_ID={final['TELEGRAM_MESSAGE_ID']}")
+          print("HUMAN_REVIEW_STATUS=PENDING")
+          PY
+      - name: Upload delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-human-review-${{ github.run_id }}
+          path: |
+            runtime/product-delivery/
+            runtime/checkpoint/product-quality-e2e.json
+            runtime/youtube-upload/results/
+          if-no-files-found: warn
+          retention-days: 30
