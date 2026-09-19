@@ -30,6 +30,7 @@ from app.services.harness_learning_service import (
     promote_candidate,
     register_skill_version,
 )
+from app.services.opencode_native_ai_provider import build_semantic_text_only_prompt
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
@@ -158,7 +159,7 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         process = subprocess.run(
             [
                 "opencode", "run", "--standalone", "--model", EXECUTOR_MODEL,
-                "--format", "json", prompt,
+                "--format", "json", build_semantic_text_only_prompt(prompt),
             ],
             capture_output=True,
             text=True,

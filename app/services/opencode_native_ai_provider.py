@@ -27,6 +27,20 @@ OPENCODE_NATIVE_EXECUTOR_BINDING = (
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _OPENCODE_HANDOFF_PREFIX = "opencode-handoff"
 
+_SEMANTIC_TEXT_ONLY_HEADER = """EXECUTION MODE: SEMANTIC_TEXT_ONLY
+This task is text-only semantic reasoning. Do not call, request, or attempt any tool, filesystem access, shell command, network request, browser/search action, code execution, file read/write, or external lookup.
+All evidence and context required for the task are already present in this prompt. Produce the requested final answer directly from that context and obey the requested output format.
+""".strip()
+
+
+def build_semantic_text_only_prompt(prompt: str) -> str:
+    """Bind the official OpenCode CLI to the Harness text-only execution contract."""
+    value = str(prompt or "").strip()
+    if not value:
+        raise ValueError("semantic prompt must be non-empty")
+    return f"{_SEMANTIC_TEXT_ONLY_HEADER}\n\nTASK\n{value}"
+
+
 
 def _immutable_dispatch_ref(
     *,
@@ -274,7 +288,7 @@ class OpenCodeNativeAIProvider:
                     "opencode", "run", "--standalone",
                     "--model", executor_model,
                     "--format", "json",
-                    prompt,
+                    build_semantic_text_only_prompt(prompt),
                 ],
                 capture_output=True,
                 text=True,
