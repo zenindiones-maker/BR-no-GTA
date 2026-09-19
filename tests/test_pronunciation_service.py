@@ -9,7 +9,7 @@ from app.services.pronunciation_service import (
     SynthesisPlan, SynthesisSpan, build_azure_ssml, canonical_lexicon_entries,
     load_pronunciation_lexicon, pronunciation_cache_identity,
     provider_capabilities, resolve_synthesis_plan, synthesis_plan_cache_payload,
-    validate_provider_plan,
+    validate_provider_plan, _edge_synthesis_groups,
 )
 
 def test_lexicon_is_versioned_and_contains_vice_city():
@@ -136,3 +136,37 @@ def test_serialized_plan_has_observability_without_editorial_mutation():
     assert payload["canonical_text"]==text and payload["canonical_text_preserved"] is True
     assert payload["foreign_span_count"]>=2
     assert "Váiss" not in encoded and "Vaice" not in encoded
+
+
+def test_gta6_alias_does_not_split_ptbr_sentence_prosody():
+    text="Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de novidades!"
+    plan=resolve_synthesis_plan(text)
+    assert plan.canonical_text==text and plan.canonical_text_preserved
+    groups=_edge_synthesis_groups(plan)
+    assert len(groups)==1
+    assert groups[0]["locale"]=="pt-BR"
+    assert "gê tê á seis" in groups[0]["synthesis_text"]
+    assert groups[0]["synthesis_text"].startswith("Booooa meu povo")
+    assert groups[0]["synthesis_text"].endswith("novidades!")
+
+
+def test_vice_city_keeps_only_required_language_boundary():
+    text="E BR não dorme em Vice City"
+    plan=resolve_synthesis_plan(text)
+    groups=_edge_synthesis_groups(plan)
+    assert len(groups)==2
+    assert [item["locale"] for item in groups]==["pt-BR","en-US"]
+    assert groups[0]["synthesis_text"]=="E BR não dorme em "
+    assert groups[1]["synthesis_text"]=="Vice City"
+    assert groups[1]["pronunciation_identities"]==["vice-city"]
+
+
+def test_mixed_branding_uses_one_ptbr_phrase_before_approved_vice_city():
+    text="BR no GTA 6. E BR não dorme em Vice City."
+    plan=resolve_synthesis_plan(text)
+    groups=_edge_synthesis_groups(plan)
+    assert len(groups)==2
+    assert groups[0]["locale"]=="pt-BR"
+    assert "gê tê á seis" in groups[0]["synthesis_text"]
+    assert groups[1]["locale"]=="en-US"
+    assert groups[1]["synthesis_text"].startswith("Vice City")
