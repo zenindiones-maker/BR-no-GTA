@@ -194,9 +194,12 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
                     "/usr/bin/python3",
                     "-c",
                     (
-                        "import os,sys;"
-                        "names=set(os.listdir('/sys/class/net'));"
-                        "sys.exit(0 if names <= {'lo'} else 23)"
+                        "import pathlib,sys;"
+                        "dev=pathlib.Path('/proc/net/dev').read_text();"
+                        "names={line.split(':',1)[0].strip() for line in dev.splitlines()[2:] if ':' in line};"
+                        "route=pathlib.Path('/proc/net/route').read_text().splitlines()[1:];"
+                        "default_route=any(len(line.split())>1 and line.split()[1]=='00000000' for line in route);"
+                        "sys.exit(0 if names <= {'lo'} and not default_route else 23)"
                     ),
                 ],
             )
