@@ -297,33 +297,41 @@ def _addy_records() -> tuple[CapabilityRecord, ...]:
             capability_id=f"addy:{name}",
             capability_type="SKILL",
             domain="development",
-            implementation="Addy Agent Skill executed by Codex CLI",
-            input_contract="bounded task + optional JSON context",
-            output_contract="bounded agent result",
-            requirements=("Codex CLI", "Codex authentication", "tracked repository"),
+            implementation=(
+                "Pinned Addy Agent Skill executed through the DeepSeek Harness "
+                "semantic-provider boundary"
+            ),
+            input_contract="bounded development task + optional JSON context + evidence refs",
+            output_contract="bounded semantic skill result + provider evidence + live receipt",
+            requirements=(
+                "pinned Addy source checkout",
+                "materialized compatibility skill view",
+                "Harness-authorized ai.reasoning.text provider",
+            ),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
             allowed_actions=("DEVELOPMENT",),
-            policy_tags=("development", *tuple(name.split("-"))),
+            policy_tags=("development", "semantic-skill", *tuple(name.split("-"))),
             security_boundary=(
-                "HarnessAuthorization + disposable read-only Codex snapshot; "
-                "one selected skill only"
+                "HarnessAuthorization + exact pinned Addy skill identity + "
+                "Harness-selected zero-cost semantic provider; no autonomous routing, "
+                "repository mutation, deployment, publication, or silent fallback"
             ),
             executor_binding=(
-                "app.services.codex_addy_capability_executor."
-                "execute_codex_addy_capability"
+                "app.services.addy_harness_service."
+                "execute_authorized_addy_skill"
             ),
             evidence_contract=(
-                "app.services.harness_capability_service.CapabilityEvidence"
+                "CapabilityEvidence + AgentInvocationReceipt + HarnessAIProviderEvidence"
             ),
             provider_id=None,
-            agent_id="codex",
+            agent_id="addy-agent-skills",
             skill_id=name,
             instruction_path=f"tooling/agent-skills/skills/{name}/SKILL.md",
-            cost_class="EXTERNAL_MODEL",
-            quota_class="CODEX_ACCOUNT",
-            latency_class="INTERACTIVE",
-            quality_class="SKILL_DEPENDENT",
+            cost_class="FREE_NO_BILLING",
+            quota_class="HARNESS_PROVIDER_POLICY",
+            latency_class="EXTERNAL_EPHEMERAL",
+            quality_class="SKILL_AND_PROVIDER_DEPENDENT",
         )
         for name in ADDY_SKILLS
     )
