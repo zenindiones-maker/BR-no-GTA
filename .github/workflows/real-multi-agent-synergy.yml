@@ -1,0 +1,203 @@
+name: Real Multi-Agent Synergy Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/real-multi-agent-synergy.yml'
+      - '.run001/real-multi-agent-synergy.request.json'
+      - 'scripts/prepare_system_synergy_opencode_profile.py'
+      - 'scripts/prove_real_multi_agent_synergy.py'
+      - 'scripts/gta6_fresh_research_worker.py'
+      - 'app/services/gta6_brain_harness_service.py'
+      - 'app/services/youtube_department_service.py'
+      - 'app/services/harness_collaboration_service.py'
+      - 'app/services/harness_learning_service.py'
+      - 'app/services/opencode_executor_profile_service.py'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: real-multi-agent-synergy
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/real-multi-agent-synergy/mission.db
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REF: work/gate6f-analytics-learning
+      BR_OPENCODE_NATIVE_POLL_INTERVAL: "2"
+      BR_OPENCODE_NATIVE_RUN_TIMEOUT: "900"
+      BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/real-multi-agent-synergy/opencode-artifacts
+
+    steps:
+      - name: Checkout exact branch state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install application and observed provider runtimes
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/real-multi-agent-synergy
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          npm install --global omniroute@3.8.50
+          npm install --global @opencode/cli@2.0.8
+          OMNI="$(omniroute --version | tr -d '\r' | sed -E 's/^[^0-9]*//')"
+          OPEN="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
+          test "$OMNI" = "3.8.50"
+          test "$OPEN" = "2.0.8"
+          gh auth status
+
+      - name: Observe baseline/candidate and govern OpenCode promotion
+        run: |
+          set -euo pipefail
+          python scripts/prepare_system_synergy_opencode_profile.py             --output runtime/real-multi-agent-synergy/provider-promotion.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/provider-promotion.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["evaluation_decision"]=="PROMOTE", d
+          assert d["active_profile"]["version"]=="v2", d
+          assert d["quality_regression"]=="NO", d
+          assert d["fallback_occurred"] is False, d
+          assert d["zero_cost"] is True, d
+          print("OBSERVED_PROVIDER_BASELINE=PASS")
+          print("OBSERVED_PROVIDER_CANDIDATE=PASS")
+          print("GOVERNED_PROVIDER_PROMOTION=PASS")
+          print("SEMANTIC_PROVIDER_READY=PASS")
+          PY
+
+      - name: Collect current Rockstar source evidence
+        run: |
+          set -euo pipefail
+          QUERY_B64="$(printf '%s' 'Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?' | base64 -w0)"
+          SOURCE_B64="$(printf '%s' 'https://www.rockstargames.com/VI' | base64 -w0)"
+          python scripts/gta6_fresh_research_worker.py             --query-b64 "$QUERY_B64"             --source-url-b64 "$SOURCE_B64"             --execution-id "real-multi-agent-synergy-${GITHUB_RUN_ID}"             --output runtime/real-multi-agent-synergy/fresh-research.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/fresh-research.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["source_content_resolution"]=="PASS", d
+          assert d["submitted_source"]["source_hierarchy"]=="OFFICIAL_PRIMARY", d
+          assert d["submitted_source"]["original_source_retrieved"] is True, d
+          print("REAL_ROCKSTAR_SOURCE=PASS")
+          print("SOURCE_CONTENT_RESOLUTION=PASS")
+          PY
+
+      - name: Execute real governed multi-agent mission
+        run: |
+          set -euo pipefail
+          python scripts/prove_real_multi_agent_synergy.py             --fresh-research runtime/real-multi-agent-synergy/fresh-research.json             --output runtime/real-multi-agent-synergy/multi-agent-proof.json
+
+      - name: Assert evidence-first synergy gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/multi-agent-proof.json").read_text())
+          assert d["status"]=="PASS", d
+          c=d["checks"]
+          required={
+              "HARNESS":"SOLE_AUTHORITY",
+              "AGENT_DISCOVERY":"PASS",
+              "AGENT_ROUTING":"PASS",
+              "AGENT_SELECTION":"PASS",
+              "MULTI_AGENT_COLLABORATION":"PASS",
+              "AGENT_HANDOFFS":"PASS",
+              "SEMANTIC_MODEL_EXECUTION":"PASS",
+              "GTA6_BRAIN_EXECUTION":"PASS",
+              "CONFLICT_RESOLUTION":"PASS",
+              "EVIDENCE_RETURN":"PASS",
+              "KNOWLEDGE_RETURN":"PASS",
+              "LEARNING_RETURN":"PASS",
+              "AGENTS_USED_CORRECTLY":"PASS",
+              "EXTERNAL_RESEARCH_LIVE":"PASS",
+              "PUBLICATION_AUTHORITY_UNCHANGED":"YES",
+              "JOB18_UNCHANGED":"YES",
+          }
+          for key,value in required.items():
+              assert c.get(key)==value, (key,c.get(key),value)
+          assert d["telegram_transport_live"] is False
+          assert len(d["agents_executed"]) >= 5
+          assert "gta6-brain" in d["agents_executed"]
+          assert "tubegent-content-strategy" in d["agents_executed"]
+          assert "tubegent-script-review" in d["agents_executed"]
+          assert "tubegent-production-management" in d["agents_executed"]
+          receipts=d["agent_invocation_receipts"]
+          semantic=[
+              r for r in receipts
+              if r["capability"] in {
+                  "gta6.brain.decide",
+                  "youtube.department.content-strategy",
+                  "youtube.department.script-review",
+                  "youtube.department.production-management",
+              }
+          ]
+          assert len(semantic)==4
+          assert all(r["external_call_performed"] is True for r in semantic)
+          assert all(r["returned_to_harness"] is True for r in receipts)
+          print("REAL_MISSION_PROOF=PASS")
+          print("MULTI_AGENT_SYNERGY=PASS")
+          print("SEMANTIC_MODEL_EXECUTION=PASS")
+          print("LEARNING_RETURN=PASS")
+          print("TELEGRAM_TRANSPORT_LIVE=NOT_CLAIMED")
+          PY
+
+      - name: Prove no production/publication side effect
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/multi-agent-proof.json").read_text())
+          signal=d["source_intelligence"]["editorial_signal"]
+          payload=signal.get("payload") or {}
+          assert payload.get("production_dispatched") is False
+          assert d["checks"]["PUBLICATION_AUTHORITY_UNCHANGED"]=="YES"
+          assert d["checks"]["JOB18_UNCHANGED"]=="YES"
+          print("PRODUCTION_DISPATCHED=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          print("JOB18_UNCHANGED=YES")
+          print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
+          PY
+
+      - name: Upload auditable synergy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-multi-agent-synergy-${{ github.run_id }}
+          path: |
+            runtime/real-multi-agent-synergy/provider-promotion.json
+            runtime/real-multi-agent-synergy/fresh-research.json
+            runtime/real-multi-agent-synergy/multi-agent-proof.json
+            runtime/real-multi-agent-synergy/mission.db
+            runtime/real-multi-agent-synergy/opencode-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
