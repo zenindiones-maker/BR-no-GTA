@@ -512,7 +512,19 @@ def main() -> int:
         and by_task.get(task_id, {}).get("specialist", {}).get("canonical_addy_boundary") is True
         for task_id in ("01-performance", "02-observability", "03-ci")
     )
-    codex_readonly_ok = by_task.get("04-codex-readonly", {}).get("status") == "SUCCEEDED"
+    readonly_item = by_task.get("04-codex-readonly", {})
+    readonly_engine = (
+        readonly_item.get("engine_result")
+        if isinstance(readonly_item.get("engine_result"), dict)
+        else {}
+    )
+    readonly_inspected_paths = readonly_engine.get("inspected_paths") or []
+    codex_readonly_ok = (
+        readonly_item.get("status") == "SUCCEEDED"
+        and int(readonly_engine.get("observed_command_count") or 0) > 0
+        and isinstance(readonly_inspected_paths, list)
+        and len(readonly_inspected_paths) > 0
+    )
     codex_dev_ok = by_task.get("05-codex-development", {}).get("status") == "SUCCEEDED"
     candidate_ok = bool(candidate.get("RESULT_COMMIT_SHA")) and candidate.get(
         "CANDIDATE_READY_FOR_INTEGRATION"
