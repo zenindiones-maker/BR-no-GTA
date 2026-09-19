@@ -324,12 +324,19 @@ def _route_editorial_provider(
 def br_editorial_process_next(
     goal_id: str | None = None,
     target_duration_seconds: float | None = None,
+    editorial_context_json: str | None = None,
 ) -> str:
     """Process the next editorial queue item through Harness routing/policy."""
     goal_id = _normalize_optional_goal_id(goal_id)
     target_duration_seconds = _normalize_optional_target_duration_seconds(
         target_duration_seconds
     )
+    editorial_context = None
+    if editorial_context_json is not None:
+        editorial_context = json.loads(editorial_context_json)
+        if not isinstance(editorial_context, dict):
+            raise ValueError("editorial_context_json must decode to an object")
+
     routing, provider_authorization, ai_provider = _route_editorial_provider(
         goal_id,
         target_duration_seconds,
@@ -357,6 +364,7 @@ def br_editorial_process_next(
         ai_provider=ai_provider,
         execution_context=authorization_to_context(authorization),
         goal_id=goal_id,
+        editorial_context=editorial_context,
     )
 
     if result is None:
