@@ -7,6 +7,12 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - .run001/pronunciation-proof.request.json
+      - .github/workflows/pronunciation-proof.yml
+      - config/pronunciation_lexicon.json
+      - app/services/pronunciation_service.py
+      - scripts/pronunciation_proof.py
+      - tests/test_pronunciation_service.py
+      - tests/test_channel_spoken_branding.py
   workflow_dispatch:
 
 permissions:
