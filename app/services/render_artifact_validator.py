@@ -275,3 +275,11 @@ class RenderArtifactValidator:
             video_stream_count=video_stream_count,
             error=None,
         )
+
+
+
+def validate_render_artifact(
+    output_path: str | Path,
+) -> RenderArtifactValidationResult:
+    """Top-level callable used by the Registry; validation remains side-effect free."""
+    return RenderArtifactValidator().validate(output_path)
