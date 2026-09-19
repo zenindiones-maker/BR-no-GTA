@@ -137,14 +137,35 @@ jobs:
           test "$PROVIDER" = "opencode"
           test "$MODEL" = "oc/big-pickle"
           test -n "$PROMPT_B64"
-          mkdir -p runtime/opencode-native-result
+          mkdir -p runtime/opencode-native-result runtime/opencode-native-workdir
           python - <<'PY'
-          import base64, os
+          import base64, json, os
           from pathlib import Path
           prompt=base64.b64decode(os.environ["PROMPT_B64"], validate=True).decode("utf-8")
           if not prompt.strip():
               raise SystemExit("empty prompt")
-          Path("runtime/opencode-native-result/prompt.txt").write_text(prompt, encoding="utf-8")
+          result_root=Path("runtime/opencode-native-result")
+          work_root=Path("runtime/opencode-native-workdir")
+          (result_root/"prompt.txt").write_text(prompt, encoding="utf-8")
+          config={
+              "$schema":"https://opencode.ai/config.json",
+              "model":"opencode/big-pickle",
+              "default_agent":"bounded-semantic",
+              "agents":{
+                  "bounded-semantic":{
+                      "description":"One-step evidence-bounded semantic reasoning with no tools.",
+                      "mode":"primary",
+                      "steps":1,
+                      "permissions":[
+                          {"action":"*","resource":"*","effect":"deny"}
+                      ],
+                  }
+              },
+          }
+          (work_root/"opencode.json").write_text(
+              json.dumps(config, separators=(",",":")),
+              encoding="utf-8",
+          )
           PY
           START="$(python - <<'PY'
           import time
@@ -152,7 +173,17 @@ jobs:
           PY
           )"
           set +e
-          timeout 300 opencode run             --standalone             --model "opencode/big-pickle"             --format json             "$(cat runtime/opencode-native-result/prompt.txt)"             > runtime/opencode-native-result/stdout.ndjson             2> runtime/opencode-native-result/stderr.txt
+          PROMPT="$(cat runtime/opencode-native-result/prompt.txt)"
+          (
+            cd runtime/opencode-native-workdir
+            timeout 180 opencode run \
+              --standalone \
+              --agent "bounded-semantic" \
+              --model "opencode/big-pickle" \
+              --format json \
+              "$PROMPT"
+          ) > runtime/opencode-native-result/stdout.ndjson \
+            2> runtime/opencode-native-result/stderr.txt
           RC=$?
           set -e
           END="$(python - <<'PY'
@@ -167,7 +198,8 @@ jobs:
           stdout=(root/"stdout.ndjson").read_text(encoding="utf-8", errors="replace")
           stderr=(root/"stderr.txt").read_text(encoding="utf-8", errors="replace")
           rc=int(os.environ["RC"])
-          parts=[]; parse_errors=0
+          parts=[]; parse_errors=0; tool_call_count=0
+          event_types=[]
           for raw in stdout.splitlines():
               if not raw.strip():
                   continue
@@ -176,7 +208,11 @@ jobs:
               except json.JSONDecodeError:
                   parse_errors+=1
                   continue
-              if item.get("type")!="text":
+              event_type=str(item.get("type") or "")
+              event_types.append(event_type)
+              if event_type in {"tool_use","tool_call","tool"}:
+                  tool_call_count+=1
+              if event_type!="text":
                   continue
               part=item.get("part") or {}
               value=part.get("text")
@@ -208,6 +244,11 @@ jobs:
               "stdout_sha256":hashlib.sha256(stdout.encode()).hexdigest(),
               "stderr_sha256":hashlib.sha256(stderr.encode()).hexdigest(),
               "parse_errors":parse_errors,
+              "tool_call_count":tool_call_count,
+              "event_types":event_types,
+              "semantic_agent":"bounded-semantic",
+              "semantic_steps":1,
+              "semantic_tools_policy":"deny-all",
               "safe_stderr":safe_stderr[-20:],
           }
           (root/"result.json").write_text(json.dumps(result,sort_keys=True),encoding="utf-8")
@@ -220,13 +261,21 @@ jobs:
               "elapsed_seconds":result["elapsed_seconds"],
               "exit_code":result["exit_code"],
               "usable_text":bool(answer),
+              "tool_call_count":tool_call_count,
+              "semantic_agent":"bounded-semantic",
               "fallback_occurred":False,
           },sort_keys=True))
+          if tool_call_count != 0:
+              print("OPENCODE_NATIVE_ERROR=semantic_tools_used")
+              raise SystemExit(9)
           if result["status"]!="EXECUTED":
               print("OPENCODE_NATIVE_ERROR=native_execution_failed")
               raise SystemExit(rc or 1)
+          print("OPENCODE_NATIVE_SEMANTIC_TOOLS=DENY_ALL")
+          print("OPENCODE_NATIVE_TOOL_CALL_COUNT=0")
           PY
           rm -f runtime/opencode-native-result/prompt.txt
+          rm -rf runtime/opencode-native-workdir
 
       - name: Upload governed OpenCode native result
         if: ${{ always() && inputs.mode == 'opencode_native' }}
