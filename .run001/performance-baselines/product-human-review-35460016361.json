@@ -1,0 +1,51 @@
+{
+  "schema_version": "product-human-performance-baseline/v1",
+  "baseline_run_id": 35460016361,
+  "baseline_job_id": 105942074868,
+  "baseline_head_sha": "103722e060f3531ffcd508c55189a9f7131479a3",
+  "terminal_status": "FAILURE",
+  "failure_stage": "production_media_selection",
+  "failure_type": "ContentSegmentError",
+  "failure_message": "A duração do Segment não pode exceder a duração do trecho de origem.",
+  "observed_root_cause": {
+    "category": "deterministic_float_contract_mismatch",
+    "reproduced_delta_seconds": 1.4210854715202004e-14,
+    "semantics": "requested duration and source interval are semantically equal; strict IEEE-754 comparison produced a false overrun"
+  },
+  "timings_ms": {
+    "JOB_START_TO_FAILURE": 2482764.014,
+    "CONTROLLER_BOOTSTRAP_ACTIONS_STEP": 220000,
+    "PRODUCT_CHECKPOINT_RESTORE": 2000,
+    "MEDIA_CHECKPOINT_DOWNLOAD": 4000,
+    "PRODUCTION_STEP_TO_FAILURE_ACTIONS": 2251000,
+    "DETERMINISTIC_FAILURE_DETECTION_HIGH_RES": 2250328.654,
+    "STEP_START_TO_MEDIA_KNOWLEDGE_MANIFEST": 2246489.074,
+    "MEDIA_KNOWLEDGE_MANIFEST_TO_FAILURE": 3839.58
+  },
+  "observed_timestamps": {
+    "job_started_at": "2026-09-19T18:04:16Z",
+    "production_step_started_at": "2026-09-19T18:08:08.4353604Z",
+    "media_knowledge_manifest_created_at": "2026-09-19T18:45:34.924434Z",
+    "failure_observed_at": "2026-09-19T18:45:38.7640140Z"
+  },
+  "checkpoint_identity": {
+    "source_sha256": "4186ccdc860590e2b4d2ea28dfb882583b522e0e1cbf1c069ff14693e2195d85",
+    "source_size_bytes": 114871888,
+    "source_duration_seconds": 1608.121179,
+    "media_knowledge_sha256": "fec10b08928f86e2acbb65aa0a72178279b7ad1bd75765fa20ccbb0a70b4bd94",
+    "analyzer_version": "3",
+    "artifact_schema_version": "3",
+    "analysis_profile": "full-media-analysis-v3"
+  },
+  "comparison_rules": {
+    "BASELINE_TIME_TO_TELEGRAM_LINK_MS": "UNAVAILABLE",
+    "reason": "run failed before RenderJob/YouTube/Telegram",
+    "comparable_substages_only": true
+  },
+  "evidence_refs": [
+    "github:run:35460016361",
+    "github:job:105942074868",
+    "github:artifact:10590341059",
+    "github:run:35407875087:artifact:10572578507"
+  ]
+}
