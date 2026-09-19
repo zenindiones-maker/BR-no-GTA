@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.services.google_youtube_publisher import GoogleYouTubePublisher
 from app.services.youtube_publisher import (
+    YouTubeProcessingStateResult,
     YouTubeUploadResult,
     YouTubeVisibilityResult,
 )
@@ -79,6 +80,34 @@ def test_upload_uses_private_visibility(tmp_path: Path) -> None:
             },
         },
         media_body=media_upload.return_value,
+    )
+
+
+def test_get_processing_state_reports_private_hd_ready() -> None:
+    service = MagicMock()
+    request = MagicMock()
+    request.execute.return_value = {
+        "items": [{
+            "status": {"privacyStatus": "private", "uploadStatus": "processed"},
+            "processingDetails": {"processingStatus": "succeeded"},
+            "contentDetails": {"definition": "hd"},
+        }]
+    }
+    service.videos.return_value.list.return_value = request
+    publisher = GoogleYouTubePublisher(service)
+
+    result = publisher.get_processing_state("abc123")
+
+    assert isinstance(result, YouTubeProcessingStateResult)
+    assert result.success is True
+    assert result.privacy_status == "private"
+    assert result.upload_status == "processed"
+    assert result.processing_status == "succeeded"
+    assert result.definition == "hd"
+    service.videos.return_value.list.assert_called_once_with(
+        part="status,processingDetails,contentDetails",
+        id="abc123",
+        maxResults=1,
     )
 
 
