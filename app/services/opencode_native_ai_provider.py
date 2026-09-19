@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 from typing import Any
 
 from app.services.ai_provider import AIProviderError, AIResponse
@@ -267,37 +268,21 @@ class OpenCodeNativeAIProvider:
                 details={"failure_code": "cli_version_mismatch"},
             )
 
-        env = dict(os.environ)
-        config_path = self.artifact_root / "same-run-opencode.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps(
-                {
-                    "$schema": "https://opencode.ai/config.json",
-                    "permissions": [
-                        {"action": "*", "resource": "*", "effect": "deny"}
-                    ],
-                },
-                separators=(",", ":"),
-            ),
-            encoding="utf-8",
-        )
-        env["OPENCODE_CONFIG"] = str(config_path.resolve())
-        process = subprocess.run(
-            [
-                "opencode", "run", "--standalone",
-                "--model", executor_model,
-                "--agent", "build",
-                "--title", "BR-no-GTA semantic execution",
-                "--format", "json",
-                prompt,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
-            env=env,
-        )
+        with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
+            process = subprocess.run(
+                [
+                    "opencode", "run", "--standalone",
+                    "--model", executor_model,
+                    "--format", "json",
+                    prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+                cwd=tmp,
+                env=dict(os.environ),
+            )
 
         parts: list[str] = []
         tool_call_count = 0
