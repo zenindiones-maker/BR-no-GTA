@@ -203,7 +203,13 @@ def test_deterministic_codex_host_policy_failure_does_not_consume_retry(tmp_path
     monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "agent-office.db"))
     initialize_schema()
     root, sha = _repo(tmp_path)
-    _, spec = _authorized_spec(root, sha)
+    _, base_spec = _authorized_spec(root, sha)
+    spec = AgentOfficeExecutionSpec.from_mapping(
+        {
+            **base_spec.to_dict(),
+            "allowed_agents": ["specialist", "codex-development"],
+        }
+    )
     calls = 0
 
     def runner(task, workspace, timeout_seconds, lease):
