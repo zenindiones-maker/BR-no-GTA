@@ -10,7 +10,7 @@ from app.services.global_capability_registry import (
     SYSTEM_IMPROVEMENT_RECORD,
 )
 from app.services.global_capability_registry_base import GlobalCapabilityRegistry
-from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.harness_routing_policy_service import HarnessRoutingRequest, RoutingPolicyError, route_harness_request
 from app.services.monetization_observability_service import MONETIZATION_CAPABILITY_ID
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
@@ -185,11 +185,22 @@ def validate_controlled_plan_routing() -> tuple[dict[str, Any], ...]:
         if item["stage"] == "publication_gate":
             proof.append({**item, "status": "STOPPED_AT_GATE", "authority": HARNESS_AUTHORITY})
             break
-        decision = select_specialist(
-            intent=item["capability"].replace(".", " ").replace("-", " "),
-            action=item["action"],
-            required_capability_id=item["capability"],
-        )
+        try:
+            decision = select_specialist(
+                intent=item["capability"].replace(".", " ").replace("-", " "),
+                action=item["action"],
+                required_capability_id=item["capability"],
+            )
+        except RoutingPolicyError as exc:
+            raise RoutingPolicyError(
+                f"Controlled synergy stage is not routable: {item['stage']} -> {item['capability']}",
+                evidence={
+                    "stage": item["stage"],
+                    "capability": item["capability"],
+                    "action": item["action"],
+                    "cause": exc.evidence,
+                },
+            ) from exc
         proof.append({
             **item,
             "status": "ROUTABLE",
