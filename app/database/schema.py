@@ -1505,6 +1505,32 @@ def _migrate_agent_execution_leases(connection) -> None:
     """Persist Harness-authorized bounded delegation and event-driven task state."""
     connection.executescript(
         """
+        CREATE TABLE IF NOT EXISTS agent_office_missions (
+            mission_id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL,
+            harness_decision_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            execution_id TEXT NOT NULL,
+            base_sha TEXT NOT NULL,
+            status TEXT NOT NULL,
+            request_payload TEXT NOT NULL DEFAULT '{}',
+            result_payload TEXT,
+            reduction_payload TEXT,
+            claimed_by TEXT,
+            claimed_at TEXT,
+            ready_for_reduction_at TEXT,
+            completed_at TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_office_missions_status
+        ON agent_office_missions(status, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_agent_office_missions_authorization
+        ON agent_office_missions(authorization_id, execution_id);
+
         CREATE TABLE IF NOT EXISTS agent_execution_leases (
             delegation_id TEXT PRIMARY KEY,
             mission_id TEXT NOT NULL,
