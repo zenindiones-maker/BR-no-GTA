@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "requested_at": "2026-09-19T11:44:00Z",
+  "base_head": "49c07ae54ee888e4b654571a819c4a70c5411a2c",
+  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW after canonical Addy semantic boundary and exact executor hardening.",
+  "require_observed_semantic_specialists": true,
+  "job18_unchanged": true,
+  "publication": false
+}
