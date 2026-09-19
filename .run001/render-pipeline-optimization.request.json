@@ -8,15 +8,16 @@
   "narration_checkpoint_artifact_id": 10570877480,
   "historical_medium_run_id": 35408965017,
   "historical_medium_artifact_id": 10573039406,
-  "minimum_latency_reduction_percent": 20.0,
+  "minimum_latency_reduction_percent": 20,
   "minimum_ssim": 0.98,
   "required_resolution": "1920x1080",
-  "required_fps": 30.0,
+  "required_fps": 30,
   "required_video_codec": "h264",
   "required_audio_codec": "aac",
   "hardware_acceleration": "benchmark_only_if_runtime_probe_passes",
   "thread_tuning": "observed_same_workload_only",
   "job18_frozen": true,
   "youtube_publication": false,
-  "attempt": 1
+  "attempt": 2,
+  "retry_reason": "fix benchmark-only checkpoint path key and create proof log directory before first encode; attempt 1 performed no candidate render"
 }

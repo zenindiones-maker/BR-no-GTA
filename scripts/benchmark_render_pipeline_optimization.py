@@ -47,7 +47,9 @@ def _copy_assets(media_root: Path,narration_root: Path,target: Path) -> None:
     media_manifest=_single(media_root,"media-checkpoint-manifest.json")
     manifest=_load(media_manifest)
     for item in manifest.get("assets") or []:
-        rel=Path(str(item["media_path"]))
+        rel=Path(str(item.get("checkpoint_path") or item.get("runtime_path") or ""))
+        if not str(rel) or str(rel)==".":
+            raise RuntimeError("media checkpoint asset lacks runtime/checkpoint path")
         source=media_manifest.parent/rel
         dest=target/rel
         dest.parent.mkdir(parents=True,exist_ok=True)

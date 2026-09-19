@@ -126,6 +126,7 @@ jobs:
       - name: Benchmark canonical VEdit runtime tuning and redundant A1 pass
         run: |
           set -euo pipefail
+          mkdir -p runtime/optimization/proof
           python scripts/benchmark_render_pipeline_optimization.py \
             --baseline-artifact-root runtime/optimization/baseline \
             --media-root runtime/optimization/media \
