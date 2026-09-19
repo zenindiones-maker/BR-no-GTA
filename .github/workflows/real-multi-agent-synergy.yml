@@ -218,6 +218,7 @@ jobs:
             --output runtime/real-multi-agent-synergy/local-deterministic-gate.json
 
       - name: SEMANTIC_SMOKE gate
+        if: steps.resume.outputs.reuse_upstream != 'true'
         run: |
           set -euo pipefail
           python scripts/semantic_smoke_gate.py \
