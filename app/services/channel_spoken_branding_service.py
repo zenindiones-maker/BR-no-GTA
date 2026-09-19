@@ -47,9 +47,7 @@ CLOSING_DIRECTION = {
 }
 
 TAKE_PROFILES = (
-    {"take_id":"take-1","rate":"+0%","pitch":"+0Hz","role":"retired-review-baseline","runtime_enabled":False},
     {"take_id":"take-2","rate":"+3%","pitch":"+1Hz","role":"human-approved-fluid2-prosody","runtime_enabled":True},
-    {"take_id":"take-3","rate":"+2%","pitch":"+0Hz","role":"retired-review-variation","runtime_enabled":False},
 )
 PRODUCTION_OPENING_TAKE_IDS = (SELECTED_OPENING_TAKE_ID,)
 PRODUCTION_CLOSING_POLICY = "immutable-human-approved-G-brand-mixed"
@@ -105,7 +103,6 @@ def get_spoken_branding_standard() -> dict[str, Any]:
         },
         "rate": OFFICIAL_RATE,
         "pitch": OFFICIAL_PITCH,
-        "review_take_count": len(TAKE_PROFILES),
         "production_opening_take_count": len(PRODUCTION_OPENING_TAKE_IDS),
         "production_closing_policy": PRODUCTION_CLOSING_POLICY,
         "selected_take_fallback": SELECTED_OPENING_TAKE_ID,
@@ -169,9 +166,9 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "human_approved_opening_reference":HUMAN_APPROVED_OPENING_REFERENCE,
         "human_approved_final_end_sample_id":HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
         "selection_rule":(
-            "production synthesizes only the human-approved Fluid 2 opening profile (+3%, +1Hz); "
-            "the closing is the immutable human-approved G-brand-mixed asset; retired review takes "
-            "are metadata only and must never be synthesized in normal production"
+            "production contains only the human-approved Fluid 2 opening profile (+3%, +1Hz); "
+            "the closing is the immutable human-approved G-brand-mixed asset; no alternate voice "
+            "or retired take is part of the active runtime contract"
         ),
         "cache_policy":{
             "fingerprint_components":[
