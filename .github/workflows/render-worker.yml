@@ -242,6 +242,7 @@ jobs:
           python -m pytest -q tests/test_semantic_ptbr_audio_qa.py tests/test_render_progress_observability.py
           python -m pytest -q \
             tests/test_narration_pipeline.py \
+            tests/test_pronunciation_service.py \
             tests/test_operational_efficiency_policy.py \
             tests/test_operational_efficiency_history.py \
             tests/test_media_checkpoint_service.py \
@@ -537,7 +538,8 @@ jobs:
               'voice_b_used','opening_text_canonical','closing_text_canonical',
               'three_opening_takes','three_closing_takes',
               'same_text_all_opening_takes','same_text_all_closing_takes',
-              'brand_audio_cache_policy',
+              'brand_audio_cache_policy','canonical_text_preserved',
+              'language_spans_valid','vice_city_language_resolution',
           )
           if manifest.get('status')!='PASS' or not all(checks.get(k) is True for k in required):
               raise SystemExit('BRAND_AUDIO_QA=FAIL')
@@ -550,6 +552,9 @@ jobs:
           print('OPENING_TEXT_CANONICAL=PASS')
           print('CLOSING_TEXT_CANONICAL=PASS')
           print('BRAND_AUDIO_CACHE_POLICY=PASS')
+          print('CANONICAL_TEXT_PRESERVED=PASS')
+          print('LANGUAGE_SPANS_VALID=PASS')
+          print('VICE_CITY_LANGUAGE_RESOLUTION=PASS')
           PY
 
       - name: Checkpoint QA-passed spoken brand audio artifact
