@@ -1,0 +1,110 @@
+name: Brand Composition Performance Benchmark
+run-name: brand composition benchmark · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/brand-composition-performance.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: brand-composition-performance
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: video-engine/backend:.
+      BASELINE_RUN_ID: "35408056905"
+      BASELINE_ARTIFACT_ID: "10572723602"
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate branding performance request
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          req=json.loads(Path('.run001/brand-composition-performance.request.json').read_text())
+          expected={
+              'source_canary_run_id':35408056905,
+              'source_canary_artifact_id':10572723602,
+              'minimum_latency_reduction_percent':20.0,
+              'minimum_ssim':0.98,
+              'max_artifact_size_growth_percent':15.0,
+              'job18_frozen':True,
+              'youtube_publication':False,
+          }
+          for key,value in expected.items():
+              if req.get(key)!=value:
+                  raise SystemExit(f'BRAND_PERF_REQUEST_MISMATCH:{key}')
+          print('BRAND_PERF_REQUEST=PASS')
+          PY
+
+      - name: Install benchmark runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install -r requirements.txt pytest
+
+      - name: Focused branding regression tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_channel_spoken_branding.py \
+            tests/test_telegram_brand_render_pipeline.py \
+            tests/test_telegram_brand_ffmpeg_integration.py
+
+      - name: Restore validated 1080p60s content canary
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.BASELINE_ARTIFACT_ID }}
+          run-id: ${{ env.BASELINE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/brand-perf/source
+          merge-multiple: true
+
+      - name: Benchmark real 1080p branding composition
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/brand-perf/proof
+          python scripts/benchmark_brand_composition.py \
+            --baseline-artifact-root runtime/brand-perf/source \
+            --runtime-root runtime/brand-perf/runtime \
+            --output runtime/brand-perf/proof/brand-composition-benchmark.json \
+            | tee runtime/brand-perf/proof/brand-benchmark.log
+          grep -Fx 'BRAND_QA=PASS' runtime/brand-perf/proof/brand-benchmark.log
+          grep -Fx 'BRAND_FULL_DECODE=PASS' runtime/brand-perf/proof/brand-benchmark.log
+          grep -Fx 'JOB18_UNCHANGED=YES' runtime/brand-perf/proof/brand-benchmark.log
+          grep -Fx 'PUBLICATION_AUTHORITY_UNCHANGED=YES' runtime/brand-perf/proof/brand-benchmark.log
+
+      - name: Upload branding performance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: brand-composition-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime/brand-perf/proof/
+            runtime/brand-perf/runtime/brand-benchmark/*.mp4
+          if-no-files-found: error
+          retention-days: 30

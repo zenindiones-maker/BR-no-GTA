@@ -103,12 +103,17 @@ def main() -> int:
 
     source_paths={str(k):str(v) for k,v in prepared["source_paths"].items()}
     voice_sections,voice_qa=execute_ptbr_narration(job,root)
+    brand_audio=dict(prepared.get("brand_audio") or {})
+    content_voice=dict(brand_audio.get("content_voice_master") or {})
+    narration_master_path=content_voice.get("path") or voice_qa["master_path"]
+    narration_duration=float(content_voice.get("duration_seconds") or voice_qa["duration_seconds"])
     plan,edit_qa,expanded=_build_edit_plan(
         job,
         voice_sections,
         source_paths,
-        narration_master_path=voice_qa["master_path"],
-        narration_duration=voice_qa["duration_seconds"],
+        narration_master_path=narration_master_path,
+        narration_duration=narration_duration,
+        brand_audio=content_voice if content_voice else None,
     )
     canary_plan=_trim_plan(plan,seconds)
     canary_scenes=[]
@@ -146,13 +151,13 @@ def main() -> int:
         "locale":"pt-BR",
         "qa_status":"PASS",
         "voice":voice_qa["voice"],
-        "media_path":voice_qa["master_path"],
-        "sha256":voice_qa["sha256"],
+        "media_path":narration_master_path,
+        "sha256":content_voice.get("sha256") or voice_qa["sha256"],
         "duration_seconds":seconds,
     }
     effective["audio_requirements"]=[{
         "type":"voiceover","track":"A1","language":"pt-BR",
-        "media_path":voice_qa["master_path"],"duration_seconds":seconds,
+        "media_path":narration_master_path,"duration_seconds":seconds,
     }]
 
     first_source=(root/next(iter(source_paths.values()))).resolve()

@@ -1,0 +1,17 @@
+{
+  "version": "brand-composition-performance-request/v1",
+  "source_canary_run_id": 35408056905,
+  "source_canary_artifact_id": 10572723602,
+  "baseline_preset": "medium",
+  "candidate_presets": ["fast", "faster"],
+  "minimum_latency_reduction_percent": 20.0,
+  "minimum_ssim": 0.98,
+  "max_artifact_size_growth_percent": 15.0,
+  "required_resolution": "1920x1080",
+  "required_fps": 30.0,
+  "required_video_codec": "h264",
+  "required_audio_codec": "aac",
+  "job18_frozen": true,
+  "youtube_publication": false,
+  "attempt": 1
+}
