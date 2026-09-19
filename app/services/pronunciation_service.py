@@ -11,7 +11,7 @@ import time
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
-PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v3"
+PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v4"
 DEFAULT_LOCALE = "pt-BR"
 DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
@@ -352,6 +352,37 @@ def _edge_synthesis_groups(plan: SynthesisPlan) -> list[dict[str, Any]]:
     return groups
 
 
+_EDGE_INTER_GROUP_LEADING_PAD_SECONDS = 0.035
+_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS = 0.055
+
+
+def _edge_trim_window(
+    word_boundaries: list[dict[str, Any]],
+    duration: float,
+    *,
+    trim_leading: bool,
+    trim_trailing: bool,
+) -> tuple[float, float]:
+    if not word_boundaries:
+        return 0.0, duration
+    first=min(float(item["offset_seconds"]) for item in word_boundaries)
+    last=max(
+        float(item["offset_seconds"])+float(item["duration_seconds"])
+        for item in word_boundaries
+    )
+    start=(
+        max(0.0, first-_EDGE_INTER_GROUP_LEADING_PAD_SECONDS)
+        if trim_leading else 0.0
+    )
+    end=(
+        min(duration, last+_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS)
+        if trim_trailing else duration
+    )
+    if end<=start:
+        raise PronunciationError("invalid pronunciation chunk trim window")
+    return start,end
+
+
 def _probe_duration(path: Path) -> float:
     result=subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(path)],capture_output=True,text=True,timeout=120)
     if result.returncode!=0:
@@ -376,6 +407,7 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
         root=Path(tmp)
         cumulative=0.0
         groups=_edge_synthesis_groups(plan)
+        trim_windows=[]
         for index,group in enumerate(groups):
             chunk=root/f"{index:03d}.mp3"
             communicator=edge_tts.Communicate(
@@ -399,25 +431,65 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
                         })
             if not chunk.is_file() or chunk.stat().st_size<=0:
                 raise PronunciationError("Edge TTS returned empty pronunciation chunk")
-            duration=_probe_duration(chunk)
+            raw_duration=_probe_duration(chunk)
+            trim_start,trim_end=_edge_trim_window(
+                local,
+                raw_duration,
+                trim_leading=index>0,
+                trim_trailing=index<len(groups)-1,
+            )
+            effective_duration=trim_end-trim_start
+            trim_windows.append((trim_start,trim_end))
             for item in local:
-                timing.append({**item,"offset_seconds":cumulative+float(item["offset_seconds"])})
+                timing.append({
+                    **item,
+                    "offset_seconds":cumulative+max(
+                        0.0,
+                        float(item["offset_seconds"])-trim_start,
+                    ),
+                })
             rows.append({
                 "index":index,
                 "locale":group["locale"],
                 "span_indexes":list(group["span_indexes"]),
                 "pronunciation_identities":list(group["pronunciation_identities"]),
-                "duration_seconds":duration,
+                "raw_duration_seconds":raw_duration,
+                "trim_start_seconds":trim_start,
+                "trim_end_seconds":trim_end,
+                "duration_seconds":effective_duration,
+                "trimmed_padding_seconds":raw_duration-effective_duration,
                 "bytes":chunk.stat().st_size,
             })
-            cumulative+=duration
-        concat=root/"chunks.txt"
-        concat.write_text("\n".join(f"file '{root / f'{idx:03d}.mp3'}'" for idx in range(len(groups)))+"\n",encoding="utf-8")
-        result=subprocess.run([
+            cumulative+=effective_duration
+
+        ffmpeg_command=[
             "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
-            "-f","concat","-safe","0","-i",str(concat),
-            "-c:a","libmp3lame","-b:a","48k",str(output),
-        ],capture_output=True,text=True,timeout=600)
+        ]
+        for idx in range(len(groups)):
+            ffmpeg_command.extend(["-i",str(root/f"{idx:03d}.mp3")])
+        filters=[]
+        labels=[]
+        for idx,(trim_start,trim_end) in enumerate(trim_windows):
+            label=f"a{idx}"
+            filters.append(
+                f"[{idx}:a]atrim=start={trim_start:.6f}:end={trim_end:.6f},"
+                f"asetpts=PTS-STARTPTS[{label}]"
+            )
+            labels.append(f"[{label}]")
+        filters.append(
+            "".join(labels)+f"concat=n={len(groups)}:v=0:a=1[outa]"
+        )
+        ffmpeg_command.extend([
+            "-filter_complex",";".join(filters),
+            "-map","[outa]",
+            "-c:a","libmp3lame","-b:a","64k",str(output),
+        ])
+        result=subprocess.run(
+            ffmpeg_command,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
         if result.returncode!=0:
             raise PronunciationError("pronunciation chunk concat failed")
     if not output.is_file() or output.stat().st_size<=0:
@@ -429,7 +501,10 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
         "foreign_span_count":plan.foreign_span_count,
         "timing":timing,"chunks":rows,"provider_capabilities":caps.to_dict(),
         "canonical_text_preserved":plan.canonical_text_preserved,
-        "join_policy":"same-locale-coalesced-zero-added-silence-concat",
+        "join_policy":"same-locale-coalesced-boundary-padding-trimmed-concat",
         "inserted_silence_seconds":0.0,
-        "prosody_continuity_policy":"same-locale spans are synthesized in one request; locale changes alone create TTS boundaries",
+        "trimmed_padding_seconds":sum(float(item["trimmed_padding_seconds"]) for item in rows),
+        "inter_group_leading_pad_seconds":_EDGE_INTER_GROUP_LEADING_PAD_SECONDS,
+        "inter_group_trailing_pad_seconds":_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS,
+        "prosody_continuity_policy":"same-locale spans use one request; locale-change chunks have provider padding trimmed before concat",
     }
