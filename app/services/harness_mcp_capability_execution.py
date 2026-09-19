@@ -15,7 +15,11 @@ from app.services.phone_control_service import PHONE_CAPABILITY_ID, PHONE_EXECUT
 from app.services.agent_office_harness_service import (
     AGENT_OFFICE_CAPABILITY_ID,
     AGENT_OFFICE_EXECUTOR_BINDING,
+    AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING,
+    CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID,
+    CODEX_READONLY_CAPABILITY_ID,
     execute_authorized_agent_office,
+    execute_authorized_agent_office_specialist,
 )
 from app.services.gta6_fact_check_service import (
     FACT_CHECK_CAPABILITY_ID,
@@ -52,6 +56,8 @@ SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
 MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     PHONE_CAPABILITY_ID: PHONE_EXECUTOR_BINDING,
     AGENT_OFFICE_CAPABILITY_ID: AGENT_OFFICE_EXECUTOR_BINDING,
+    CODEX_READONLY_CAPABILITY_ID: AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING,
+    CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID: AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING,
     FACT_CHECK_CAPABILITY_ID: FACT_CHECK_EXECUTOR_BINDING,
     GTA6_BRAIN_CAPABILITY_ID: GTA6_BRAIN_EXECUTOR_BINDING,
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
@@ -99,6 +105,22 @@ def execute_mcp_capability(
         if authorization.authorized_action != "DEVELOPMENT":
             raise PermissionError("Addy requires DEVELOPMENT authorization")
         return execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=routing_decision,
+            payload=payload,
+        )
+
+    if capability_id in {
+        CODEX_READONLY_CAPABILITY_ID,
+        CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID,
+    }:
+        if implementation_type != "AGENT":
+            raise PermissionError("Agent Office Codex specialist implementation type mismatch")
+        if routing_decision.selected_executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
+            raise PermissionError("Agent Office Codex specialist executor binding mismatch")
+        if authorization.authorized_action != "DEVELOPMENT":
+            raise PermissionError("Agent Office Codex specialist requires DEVELOPMENT authorization")
+        return execute_authorized_agent_office_specialist(
             authorization=authorization,
             routing_decision=routing_decision,
             payload=payload,
