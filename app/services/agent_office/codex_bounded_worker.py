@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import time
@@ -17,7 +19,32 @@ _FORBIDDEN_COMMANDS = {
 }
 
 
-def _run(command: list[str], *, cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
+_SENSITIVE_ENV = re.compile(r"(?:token|secret|password|credential|api[_-]?key|github)", re.I)
+_SAFE_ENV_KEYS = {
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE",
+    "TMPDIR", "TEMP", "TMP", "TERM", "SHELL", "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME", "XDG_CACHE_HOME", "CODEX_HOME",
+}
+
+
+def codex_sanitized_environment() -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key, value in os.environ.items():
+        if key not in _SAFE_ENV_KEYS:
+            continue
+        if _SENSITIVE_ENV.search(key):
+            continue
+        result[key] = value
+    return result
+
+
+def _run(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    sanitized_env: bool = False,
+) -> subprocess.CompletedProcess[str]:
     if timeout <= 0:
         raise subprocess.TimeoutExpired(command, timeout)
     return subprocess.run(
@@ -27,6 +54,7 @@ def _run(command: list[str], *, cwd: Path, timeout: float) -> subprocess.Complet
         check=False,
         capture_output=True,
         text=True,
+        env=codex_sanitized_environment() if sanitized_env else None,
     )
 
 
@@ -85,12 +113,13 @@ def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
     if not parts:
         return
     tool = Path(parts[0]).name
+    normalized = " ".join(parts)
     if tool in _FORBIDDEN_COMMANDS:
         raise PermissionError(f"Codex attempted forbidden command: {tool}")
-    if tool == "git" and len(parts) > 1 and parts[1] in {
-        "push", "pull", "fetch", "merge", "rebase", "remote",
-    }:
-        raise PermissionError(f"Codex attempted forbidden git side effect: {parts[1]}")
+    if re.search(r"(?<![A-Za-z0-9_-])(?:curl|wget|ssh|scp|rsync|gh|docker|podman)(?![A-Za-z0-9_-])", normalized):
+        raise PermissionError("Codex attempted forbidden external/network command")
+    if re.search(r"(?<![A-Za-z0-9_-])git\s+(?:push|pull|fetch|merge|rebase|remote)(?![A-Za-z0-9_-])", normalized):
+        raise PermissionError("Codex attempted forbidden git side effect")
     if tool not in allowed_tools:
         raise PermissionError(f"Codex command is outside COMMAND_ALLOWLIST: {tool}")
 
@@ -149,7 +178,12 @@ def codex_bounded_development_worker(
     if head.returncode != 0 or head.stdout.strip() != lease.base_sha:
         raise PermissionError("bounded Codex worktree base SHA mismatch")
 
-    auth = _run(["codex", "login", "status"], cwd=workspace, timeout=remaining())
+    auth = _run(
+        ["codex", "login", "status"],
+        cwd=workspace,
+        timeout=remaining(),
+        sanitized_env=True,
+    )
     if auth.returncode != 0:
         raise RuntimeError("Codex authentication prerequisite is unavailable")
 
@@ -182,7 +216,12 @@ def codex_bounded_development_worker(
         "-C", str(workspace),
         prompt,
     ]
-    completed = _run(command, cwd=workspace, timeout=remaining())
+    completed = _run(
+        command,
+        cwd=workspace,
+        timeout=remaining(),
+        sanitized_env=True,
+    )
     if completed.returncode != 0:
         raise RuntimeError("Codex bounded-development execution failed")
 
