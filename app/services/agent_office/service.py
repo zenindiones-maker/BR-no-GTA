@@ -75,8 +75,27 @@ class AgentOfficeService:
         task_allowed_paths = task.allowed_paths or spec.allowed_paths
         task_allowed_tools = task.allowed_tools or spec.allowed_tools
         task_allowed_actions = task.allowed_actions or (task.action,)
+
+        def path_within_mission(path: str) -> bool:
+            normalized = path.replace("\\", "/").strip("/")
+            return any(
+                normalized == allowed.replace("\\", "/").strip("/")
+                or normalized.startswith(f"{allowed.replace('\\\\', '/').strip('/')}/")
+                for allowed in spec.allowed_paths
+                if allowed.strip("/")
+            )
+
+        if task.allowed_paths and (
+            not spec.allowed_paths
+            or any(not path_within_mission(path) for path in task.allowed_paths)
+        ):
+            raise PermissionError("task allowed_paths exceed mission path scope")
+        if task.allowed_tools and any(tool not in spec.allowed_tools for tool in task.allowed_tools):
+            raise PermissionError("task allowed_tools exceed mission tool scope")
         if any(action not in spec.allowed_actions for action in task_allowed_actions):
             raise PermissionError("task action exceeds mission delegated actions")
+        if spec.allowed_paths and any(not path_within_mission(path) for path in task.read_set):
+            raise PermissionError("task read_set exceeds mission path scope")
         forbidden = tuple(
             sorted(
                 set(spec.forbidden_actions)
