@@ -8,6 +8,9 @@ from app.database.youtube_repository import (
 from app.services.youtube_publish_spec_service import (
     create_youtube_publish_spec,
 )
+from app.database.youtube_package_repository import (
+    get_youtube_content_package_by_content_item_id,
+)
 
 
 def create_youtube_publication(
@@ -41,7 +44,21 @@ def create_youtube_publication(
     - altera o Video.
     """
 
-    publish_spec = create_youtube_publish_spec(video)
+    content_item_id = int(video.get("content_item_id") or 0)
+    package = (
+        get_youtube_content_package_by_content_item_id(content_item_id)
+        if content_item_id > 0
+        else None
+    )
+    enriched_video = dict(video)
+    if package is not None:
+        enriched_video["title"] = package["title"]
+        enriched_video["description"] = package["description"]
+        enriched_video["tags"] = list(package.get("tags") or [])
+        enriched_video["category_id"] = "20"
+        enriched_video["privacy_status"] = "private"
+
+    publish_spec = create_youtube_publish_spec(enriched_video)
 
     video_id = publish_spec["video_id"]
     content_item_id = publish_spec["content_item_id"]
