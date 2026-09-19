@@ -116,6 +116,8 @@ def main() -> int:
     parser.add_argument("--brand-audio-root",type=Path,required=True)
     parser.add_argument("--approved-final-end-audio",type=Path)
     parser.add_argument("--approved-final-end-proof",type=Path)
+    parser.add_argument("--approved-final-end-approval",type=Path)
+    parser.add_argument("--approved-final-end-manifest",type=Path)
     parser.add_argument("--video-config",type=Path,required=True)
     parser.add_argument("--output-root",type=Path,required=True)
     args=parser.parse_args()
@@ -152,38 +154,91 @@ def main() -> int:
     closing=args.brand_audio_root/"takes"/"closing"/f"{selected['closing']['take_id']}.flac"
     final_end_signature=None
     if args.approved_final_end_audio is not None:
-        if args.approved_final_end_proof is None:
-            raise SpokenBrandFinalizationError("approved final-end proof is required")
-        proof=_load(args.approved_final_end_proof)
-        if proof.get("status")!="PASS":
-            raise SpokenBrandFinalizationError("approved final-end pronunciation proof is not PASS")
-        sample=next(
-            (
-                item for item in proof.get("samples",[])
-                if isinstance(item,dict) and item.get("sample_id")=="G-brand-mixed"
-            ),
-            None,
-        )
-        if not sample:
-            raise SpokenBrandFinalizationError("G-brand-mixed proof sample missing")
-        expected_end_signature=f"BR no GTA 6. {contract['closing_line']}."
-        if sample.get("canonical_text")!=expected_end_signature:
-            raise SpokenBrandFinalizationError("approved final-end signature text mismatch")
-        plan=dict(sample.get("plan") or {})
-        identities={
-            str(item.get("pronunciation_identity"))
-            for item in plan.get("spans",[])
-            if isinstance(item,dict) and item.get("pronunciation_identity")
-        }
-        if not {"gta-6","vice-city"} <= identities:
-            raise SpokenBrandFinalizationError("approved final-end pronunciation identities missing")
         if not args.approved_final_end_audio.is_file():
             raise SpokenBrandFinalizationError("approved final-end audio file missing")
+        expected_end_signature=f"BR no GTA 6. {contract['closing_line']}."
+        approved_sha=_sha256(args.approved_final_end_audio)
+
+        if (
+            args.approved_final_end_approval is not None
+            or args.approved_final_end_manifest is not None
+        ):
+            if (
+                args.approved_final_end_approval is None
+                or args.approved_final_end_manifest is None
+            ):
+                raise SpokenBrandFinalizationError(
+                    "both approval and manifest are required for immutable final-end asset"
+                )
+            approval=_load(args.approved_final_end_approval)
+            approval_manifest=_load(args.approved_final_end_manifest)
+            if approval.get("status")!="HUMAN_APPROVED":
+                raise SpokenBrandFinalizationError("final-end approval is not HUMAN_APPROVED")
+            if approval.get("sample_id")!="G-brand-mixed":
+                raise SpokenBrandFinalizationError("final-end approval sample mismatch")
+            if approval.get("canonical_audio_text")!=expected_end_signature:
+                raise SpokenBrandFinalizationError("final-end approved text mismatch")
+            if approval.get("canonical_closing_line")!=contract["closing_line"]:
+                raise SpokenBrandFinalizationError("canonical closing line approval mismatch")
+            if approval.get("voice")!="Voice B":
+                raise SpokenBrandFinalizationError("final-end approval voice mismatch")
+            if approval.get("automatic_substitution_allowed") is not False:
+                raise SpokenBrandFinalizationError("final-end automatic substitution is forbidden")
+            if approval.get("regeneration_allowed_without_new_human_review") is not False:
+                raise SpokenBrandFinalizationError("final-end regeneration policy mismatch")
+            if approval.get("approved_asset_sha256")!=approved_sha:
+                raise SpokenBrandFinalizationError("approved final-end asset SHA mismatch")
+
+            reference=dict(approval_manifest.get("approved_reference") or {})
+            if approval_manifest.get("approval_type")!="HUMAN_EXPLICIT":
+                raise SpokenBrandFinalizationError("final-end approval manifest is not human explicit")
+            if approval_manifest.get("voice")!="Voice B":
+                raise SpokenBrandFinalizationError("final-end approval manifest voice mismatch")
+            if reference.get("canonical_text")!=expected_end_signature:
+                raise SpokenBrandFinalizationError("final-end manifest text mismatch")
+            if reference.get("sha256")!=approved_sha:
+                raise SpokenBrandFinalizationError("final-end manifest SHA mismatch")
+            pronunciation=dict(reference.get("pronunciation") or {})
+            vice=dict(pronunciation.get("Vice City") or {})
+            if pronunciation.get("GTA 6")!="gê tê á seis":
+                raise SpokenBrandFinalizationError("approved GTA 6 pronunciation mismatch")
+            if vice.get("locale")!="en-US" or vice.get("target_ipa")!="vaɪs ˈsɪti":
+                raise SpokenBrandFinalizationError("approved Vice City pronunciation mismatch")
+            evidence_source="immutable-repository-asset"
+        else:
+            if args.approved_final_end_proof is None:
+                raise SpokenBrandFinalizationError("approved final-end proof is required")
+            proof=_load(args.approved_final_end_proof)
+            if proof.get("status")!="PASS":
+                raise SpokenBrandFinalizationError("approved final-end pronunciation proof is not PASS")
+            sample=next(
+                (
+                    item for item in proof.get("samples",[])
+                    if isinstance(item,dict) and item.get("sample_id")=="G-brand-mixed"
+                ),
+                None,
+            )
+            if not sample:
+                raise SpokenBrandFinalizationError("G-brand-mixed proof sample missing")
+            if sample.get("canonical_text")!=expected_end_signature:
+                raise SpokenBrandFinalizationError("approved final-end signature text mismatch")
+            plan=dict(sample.get("plan") or {})
+            identities={
+                str(item.get("pronunciation_identity"))
+                for item in plan.get("spans",[])
+                if isinstance(item,dict) and item.get("pronunciation_identity")
+            }
+            if not {"gta-6","vice-city"} <= identities:
+                raise SpokenBrandFinalizationError("approved final-end pronunciation identities missing")
+            evidence_source="historical-pronunciation-proof"
+
         closing=args.approved_final_end_audio
         final_end_signature={
             "sample_id":"G-brand-mixed",
             "canonical_text":expected_end_signature,
-            "source_file":args.approved_final_end_audio.name,
+            "source_file":str(args.approved_final_end_audio),
+            "sha256":approved_sha,
+            "evidence_source":evidence_source,
             "human_approved":True,
             "automatic_substitution_allowed":False,
             "contains_canonical_closing_line":True,
