@@ -166,7 +166,7 @@ def controlled_end_to_end_plan() -> tuple[dict[str, str], ...]:
         {"stage": "production_plan", "capability": "production.plan", "action": "EXECUTION"},
         {"stage": "media_selection", "capability": "production.media.select-segments", "action": "EXECUTION"},
         {"stage": "edit", "capability": "video.edit.vedit", "action": "EXECUTION"},
-        {"stage": "render", "capability": "video.render", "action": "EXECUTION"},
+        {"stage": "render", "capability": "production.render.execute", "action": "EXECUTION"},
         {"stage": "qa", "capability": "qa.preflight", "action": "EXECUTION"},
         {"stage": "seo", "capability": "youtube.department.seo", "action": "YOUTUBE"},
         {"stage": "thumbnail", "capability": "youtube.department.thumbnail-strategy", "action": "YOUTUBE"},
