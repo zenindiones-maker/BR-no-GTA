@@ -27,6 +27,7 @@ jobs:
       GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
       BR_TEST_DATABASE: ${{ github.workspace }}/runtime/checkpoint/mission.db
       ZERO_COST_OPERATION: "TRUE"
+      BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/product-delivery/performance-trace.jsonl
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +60,7 @@ jobs:
       - name: Deterministic Production segment preflight
         run: |
           set -euo pipefail
+          python scripts/e2e_latency_stage.py start production_preflight --category CONTROL_PLANE_TIME --work-class NECESSARY --cache-hit true --input-file runtime/checkpoint/product-quality-e2e.json --output-artifact runtime/product-delivery/preflight.json
           START_NS="$(python - <<'PY'
           import time
           print(time.perf_counter_ns())
@@ -69,6 +71,7 @@ jobs:
             --media-knowledge-dir runtime/media-knowledge-source/product-delivery/media-knowledge \
             --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json \
             --out runtime/product-delivery
+          python scripts/e2e_latency_stage.py end production_preflight --category CONTROL_PLANE_TIME --work-class NECESSARY --cache-hit true --input-file runtime/checkpoint/product-quality-e2e.json --output-artifact runtime/product-delivery/preflight.json
           python - <<'PY'
           import json
           d=json.load(open("runtime/product-delivery/preflight.json"))
@@ -83,7 +86,9 @@ jobs:
       - name: Dispatch canonical Video and RenderJob
         run: |
           set -euo pipefail
+          python scripts/e2e_latency_stage.py start render_dispatch --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/preflight.json --output-artifact runtime/product-delivery/state.json
           python scripts/continue_product_to_human_review.py dispatch-render --out runtime/product-delivery
+          python scripts/e2e_latency_stage.py end render_dispatch --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/preflight.json --output-artifact runtime/product-delivery/state.json
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/state.json"))
@@ -95,12 +100,18 @@ jobs:
           print(f"RENDER_RUN_ID={run_id}")
           PY
       - name: Wait for real render worker
-        run: gh run watch "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+        run: |
+          set -euo pipefail
+          python scripts/e2e_latency_stage.py start render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
+          python scripts/watch_github_run.py --run-id "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 20 --output runtime/product-delivery/render-watch.json
+          python scripts/e2e_latency_stage.py end render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
       - name: Reconcile MP4 ffprobe and QA into canonical database
         run: |
           set -euo pipefail
+          python scripts/e2e_latency_stage.py start render_reconcile_qa --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/state.json --output-artifact runtime/product-delivery/render-reconcile.json
           python scripts/continue_product_to_human_review.py reconcile-render --out runtime/product-delivery
           python scripts/continue_product_to_human_review.py create-publication --out runtime/product-delivery
+          python scripts/e2e_latency_stage.py end render_reconcile_qa --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/state.json --output-artifact runtime/product-delivery/render-reconcile.json
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/publication.json"))
@@ -109,7 +120,9 @@ jobs:
       - name: Dispatch YouTube PRIVATE through official Harness boundary
         run: |
           set -euo pipefail
+          python scripts/e2e_latency_stage.py start youtube_private_dispatch --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/publication.json --output-artifact runtime/product-delivery/dispatch-upload.json
           python scripts/continue_product_to_human_review.py dispatch-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/e2e_latency_stage.py end youtube_private_dispatch --category CONTROL_PLANE_TIME --work-class NECESSARY --input-file runtime/product-delivery/publication.json --output-artifact runtime/product-delivery/dispatch-upload.json
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/dispatch-upload.json"))
@@ -118,12 +131,18 @@ jobs:
           print(f"YOUTUBE_EXECUTION_ID={r['execution_id']}")
           PY
       - name: Wait for YouTube processing and mandatory Telegram review delivery
-        run: gh run watch "$YOUTUBE_UPLOAD_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+        run: |
+          set -euo pipefail
+          python scripts/e2e_latency_stage.py start youtube_processing_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/youtube-watch.json
+          python scripts/watch_github_run.py --run-id "$YOUTUBE_UPLOAD_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 20 --output runtime/product-delivery/youtube-watch.json
+          python scripts/e2e_latency_stage.py end youtube_processing_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/youtube-watch.json
       - name: Reconcile private YouTube and Telegram receipt
         run: |
           set -euo pipefail
+          python scripts/e2e_latency_stage.py start final_reconcile_telegram --category TELEGRAM_TIME --work-class NECESSARY --input-file runtime/product-delivery/dispatch-upload.json --output-artifact runtime/product-delivery/final.json
           python scripts/continue_product_to_human_review.py reconcile-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
           python scripts/continue_product_to_human_review.py final --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/e2e_latency_stage.py end final_reconcile_telegram --category TELEGRAM_TIME --work-class NECESSARY --input-file runtime/product-delivery/dispatch-upload.json --output-artifact runtime/product-delivery/final.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -154,6 +173,14 @@ jobs:
           print(f"TELEGRAM_MESSAGE_ID={final['TELEGRAM_MESSAGE_ID']}")
           print("HUMAN_REVIEW_STATUS=PENDING")
           PY
+      - name: Build E2E latency profile
+        if: always()
+        run: |
+          set -euo pipefail
+          python scripts/summarize_performance_trace.py \
+            --trace runtime/product-delivery/performance-trace.jsonl \
+            --output runtime/product-delivery/latency-profile.json \
+            --run-id "$GITHUB_RUN_ID"
       - name: Upload delivery evidence
         if: always()
         uses: actions/upload-artifact@v4

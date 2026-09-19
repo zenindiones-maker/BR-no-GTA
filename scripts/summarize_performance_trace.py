@@ -153,6 +153,13 @@ def _span_metrics(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
         cumulative_work_ms += exclusive
         category_cumulative[str(event.get("category") or "IDLE/UNKNOWN_TIME")] += exclusive
         item = dict(event)
+        item.setdefault("start", item.get("started_at"))
+        item.setdefault("end", item.get("finished_at"))
+        item.setdefault("attempt", item.get("attempt_count", 1))
+        item.setdefault("cache_hit", None)
+        item.setdefault("input_fingerprint", None)
+        item.setdefault("output_artifact", None)
+        item.setdefault("work_class", "NECESSARY")
         item["inclusive_ms"] = round(inclusive, 3)
         item["exclusive_ms"] = round(exclusive, 3)
         spans.append(item)
@@ -245,6 +252,34 @@ def main() -> int:
     cumulative_work_ms = step_exclusive_total + trace_metrics["trace_cumulative_work_ms"]
     idle_or_unattributed_ms = max(0.0, wall_clock_ms - queue_ms - step_active_ms)
     retry_ms = sum(float(event.get("backoff_ms") or 0.0) for event in events)
+    waiting_intervals=[]
+    useful_intervals=[]
+    redundant_intervals=[]
+    human_wait_intervals=[]
+    external_wait_intervals=[]
+    for event in events:
+        start=_epoch_ms(event.get("started_at")); end=_epoch_ms(event.get("finished_at"))
+        if start is None or end is None or end <= start:
+            continue
+        interval=(start,end)
+        work_class=str(event.get("work_class") or "NECESSARY").upper()
+        category=str(event.get("category") or "")
+        if work_class in {"WAITING","BLOCKED"}:
+            waiting_intervals.append(interval)
+            if "HUMAN" in category or "AUTH" in category:
+                human_wait_intervals.append(interval)
+            else:
+                external_wait_intervals.append(interval)
+        elif work_class in {"REDUNDANT","REPEATED","INVALIDATED"}:
+            redundant_intervals.append(interval)
+        else:
+            useful_intervals.append(interval)
+    active_work_ms=_union_ms(useful_intervals + redundant_intervals)
+    waiting_ms=_union_ms(waiting_intervals)
+    useful_work_ms=_union_ms(useful_intervals)
+    redundant_work_ms=_union_ms(redundant_intervals)
+    waiting_human_ms=_union_ms(human_wait_intervals)
+    waiting_external_ms=_union_ms(external_wait_intervals)
 
     provider_calls = [
         {
@@ -294,12 +329,23 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "event_count": len(events),
         "WALL_CLOCK_MS": round(wall_clock_ms, 3),
+        "E2E_WALL_CLOCK_MS": round(wall_clock_ms, 3),
+        "ACTIVE_WORK_MS": round(active_work_ms, 3),
+        "WAITING_MS": round(waiting_ms, 3),
         "CUMULATIVE_WORK_MS": round(cumulative_work_ms, 3),
         "CRITICAL_PATH_MS": round(critical_path_ms, 3),
         "EXCLUSIVE_MS": round(cumulative_work_ms, 3),
         "INCLUSIVE_MS": round(sum(float(item.get("inclusive_ms") or 0.0) for item in spans), 3),
         "PARALLELISM_SAVED_MS": round(float(trace_metrics["parallelism_saved_ms"]), 3),
         "IDLE_OR_UNATTRIBUTED_MS": round(idle_or_unattributed_ms, 3),
+        "IDLE_OR_UNKNOWN_MS": round(idle_or_unattributed_ms, 3),
+        "USEFUL_WORK_MS": round(useful_work_ms, 3),
+        "WAITING_EXTERNAL_MS": round(waiting_external_ms, 3),
+        "WAITING_HUMAN_MS": round(waiting_human_ms, 3),
+        "CI_OVERHEAD_MS": round(sum(v for k,v in step_category_exclusive.items() if k in {"GITHUB_SETUP_TIME","DEPENDENCY_INSTALL_TIME"}), 3),
+        "CI_USEFUL_WORK_MS": round(max(0.0, cumulative_work_ms - sum(v for k,v in step_category_exclusive.items() if k in {"GITHUB_SETUP_TIME","DEPENDENCY_INSTALL_TIME"})), 3),
+        "REDUNDANT_WORK_MS": round(redundant_work_ms, 3),
+        "AVOIDABLE_RETRY_MS": round(retry_ms, 3),
         "PROVIDER_CRITICAL_PATH_MS": round(float(trace_metrics["provider_critical_path_ms"]), 3),
         "PROVIDER_CUMULATIVE_WORK_MS": round(float(trace_metrics["provider_cumulative_work_ms"]), 3),
         "GITHUB_QUEUE_TIME_MS": round(queue_ms, 3),
@@ -312,6 +358,16 @@ def main() -> int:
         "slowest_stages": slowest,
         "provider_calls": provider_calls,
         "github_actions": github,
+        "waste_candidates": [
+            {
+                "stage": item.get("stage"),
+                "duration_ms": item.get("inclusive_ms"),
+                "work_class": item.get("work_class"),
+                "category": item.get("category"),
+            }
+            for item in spans
+            if str(item.get("work_class") or "").upper() in {"REDUNDANT","REPEATED","INVALIDATED"}
+        ],
         "methodology": {
             "wall_clock": "GitHub job created_at to completed_at/current time",
             "critical_path": "runner queue plus union of observed GitHub step intervals",
@@ -325,7 +381,9 @@ def main() -> int:
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     for key in (
-        "WALL_CLOCK_MS",
+        "E2E_WALL_CLOCK_MS",
+        "ACTIVE_WORK_MS",
+        "WAITING_MS",
         "CUMULATIVE_WORK_MS",
         "CRITICAL_PATH_MS",
         "PARALLELISM_SAVED_MS",

@@ -15,6 +15,7 @@ from uuid import uuid4
 _LOCK = threading.Lock()
 _SENSITIVE_KEY = re.compile(r"(token|secret|password|api[_-]?key|authorization|credential)", re.I)
 _SAFE_TELEMETRY_KEYS = {"model_first_token_ms"}
+_WORK_CLASSES = {"NECESSARY", "REDUNDANT", "REPEATED", "WAITING", "BLOCKED", "INVALIDATED"}
 _CURRENT_TRACE_ID: ContextVar[str | None] = ContextVar("br_perf_trace_id", default=None)
 _CURRENT_SPAN_ID: ContextVar[str | None] = ContextVar("br_perf_span_id", default=None)
 _CURRENT_LINEAGE: ContextVar[dict[str, str] | None] = ContextVar("br_perf_lineage", default=None)
@@ -92,8 +93,15 @@ def emit_performance_event(
     delegation_id: str | None = None,
     authorization_id: str | None = None,
     depends_on_span_ids: tuple[str, ...] | list[str] = (),
+    work_class: str = "NECESSARY",
+    attempt: int | None = None,
+    input_fingerprint: str | None = None,
+    output_artifact: str | None = None,
 ) -> dict[str, Any]:
     lineage = dict(_CURRENT_LINEAGE.get() or {})
+    normalized_work_class = str(work_class or "NECESSARY").strip().upper()
+    if normalized_work_class not in _WORK_CLASSES:
+        raise ValueError(f"invalid work_class: {work_class!r}")
     trace_id = str(trace_id or _CURRENT_TRACE_ID.get() or _default_trace_id())
     span_id = str(span_id or uuid4().hex)
     if parent_span_id is None:
@@ -108,6 +116,8 @@ def emit_performance_event(
         "category": str(category),
         "started_at": str(started_at),
         "finished_at": str(finished_at),
+        "start": str(started_at),
+        "end": str(finished_at),
         "started_monotonic_ns": started_monotonic_ns,
         "finished_monotonic_ns": finished_monotonic_ns,
         "duration_ms": round(max(0.0, float(duration_ms)), 3),
@@ -117,7 +127,11 @@ def emit_performance_event(
         "retry_count": max(0, int(retry_count)),
         "backoff_ms": round(max(0.0, float(backoff_ms)), 3),
         "attempt_count": max(1, int(attempt_count)),
+        "attempt": max(1, int(attempt if attempt is not None else attempt_count)),
         "cache_hit": cache_hit,
+        "input_fingerprint": input_fingerprint,
+        "output_artifact": output_artifact,
+        "work_class": normalized_work_class,
         "input_size": None if input_size is None else max(0, int(input_size)),
         "output_size": None if output_size is None else max(0, int(output_size)),
         "provider": provider,
@@ -169,6 +183,10 @@ class PerformanceSpan:
         authorization_id: str | None = None,
         span_id: str | None = None,
         depends_on_span_ids: tuple[str, ...] | list[str] = (),
+        work_class: str = "NECESSARY",
+        attempt: int | None = None,
+        input_fingerprint: str | None = None,
+        output_artifact: str | None = None,
     ) -> None:
         self.stage = stage
         self.category = category
@@ -188,6 +206,10 @@ class PerformanceSpan:
         self.delegation_id = delegation_id
         self.authorization_id = authorization_id
         self.depends_on_span_ids = tuple(str(item) for item in depends_on_span_ids if str(item).strip())
+        self.work_class = work_class
+        self.attempt = attempt
+        self.input_fingerprint = input_fingerprint
+        self.output_artifact = output_artifact
         self.started_at = ""
         self.finished_at = ""
         self.started_monotonic_ns = 0
@@ -284,6 +306,10 @@ class PerformanceSpan:
                 delegation_id=self.delegation_id,
                 authorization_id=self.authorization_id,
                 depends_on_span_ids=self.depends_on_span_ids,
+                work_class=self.work_class,
+                attempt=self.attempt,
+                input_fingerprint=self.input_fingerprint,
+                output_artifact=self.output_artifact,
             )
         finally:
             if self._lineage_token is not None:
