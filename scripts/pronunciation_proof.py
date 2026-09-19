@@ -72,7 +72,13 @@ def main()->int:
         "VOICE_B_PRESERVED":True,
         "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
-        "GTA6_CANONICAL_TEXT_PRESERVED":gta["text"]=="GTA 6" and gta["synthesis_text"]=="G T A seis",
+        "GTA6_CANONICAL_TEXT_PRESERVED":(
+            gta_brand["plan"]["canonical_text"]=="Aqui é BR no GTA 6."
+            and gta_brand["plan"]["canonical_text_preserved"] is True
+            and gta["pronunciation_identity"]=="gta-6"
+            and gta["text"].rstrip(" \\t\\r\\n.,!?;:")=="GTA 6"
+            and gta["synthesis_text"].rstrip(" \\t\\r\\n.,!?;:")=="G T A seis"
+        ),
         "GTA6_REAL_AUDIO_GENERATED":gta_brand["probe"]["size_bytes"]>0,
         "GTA6_AND_VICE_CITY_COEXIST":(
             any(x.get("pronunciation_identity")=="gta-6" for x in mixed_brand["plan"]["spans"])
