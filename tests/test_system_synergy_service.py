@@ -52,7 +52,7 @@ def test_ecosystem_registry_contains_existing_and_new_capabilities():
         "production.plan",
         "production.media.select-segments",
         "video.edit.vedit",
-        "video.render",
+        "production.render.execute",
         "qa.preflight",
         "telegram.input.ingest",
         "youtube.analytics.read",
@@ -65,6 +65,12 @@ def test_ecosystem_registry_contains_existing_and_new_capabilities():
         record = registry.get(capability_id)
         assert record is not None, capability_id
         assert record.evidence_contract, capability_id
+
+    legacy_render = registry.get("video.render")
+    assert legacy_render is not None
+    assert legacy_render.available is False
+    assert legacy_render.executor_binding is None
+    assert legacy_render.implementation.startswith("DEPRECATED SUPPORT PATH:")
 
 
 def test_harness_routes_every_controlled_stage_and_stops_at_publication_gate():
