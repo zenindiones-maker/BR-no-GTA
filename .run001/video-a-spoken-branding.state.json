@@ -1,6 +1,6 @@
 {
   "version": "video-a-spoken-branding-state/v1",
-  "captured_at": "2026-09-19T01:02:00Z",
+  "captured_at": "2026-09-19T12:55:00Z",
   "branch": "work/gate6f-analytics-learning",
   "canonical_branding": {
     "standard": "BR_NO_GTA_VIDEO_BRANDING_V2",
@@ -39,7 +39,7 @@
     "warm_wall_clock_seconds": 0.9306,
     "cache_reuse": "PASS",
     "automatic_naturality_winner": false,
-    "human_brand_take_review": "PENDING"
+    "human_brand_take_review": "PARTIALLY_APPROVED"
   },
   "telegram_review": {
     "opening_take_1_message_id": 62,
@@ -79,5 +79,22 @@
     "longform_narration_regeneration_forbidden": true,
     "media_redownload_forbidden_when_checkpoint_valid": true
   },
-  "resume_instruction": "Refresh base run 35408593683 and finalizer run 35411197547. Reuse brand audio artifact 10574067653. Do not regenerate long-form narration, media, six brand takes, or the validated visual canary. If base run is salvageable, continue only spoken-brand finalization."
+  "resume_instruction": "Reuse the QA-passed base render. Preserve Voice B. Use the human-approved G-brand-mixed.mp3 from pronunciation run 35444013735/artifact 10585440542 as the exact final end signature. Do not regenerate or substitute it without new human review. Opening fluency uses Fluid 2 as prosody reference, but the actual VIDEO A canonical opening text still requires its own final review before publication.",
+  "human_approvals": {
+    "opening_fluidity_reference": {
+      "status": "APPROVED_REFERENCE",
+      "sample": "I-opening-fluid-2.mp3",
+      "scope": "prosody_reference_only"
+    },
+    "final_end_signature": {
+      "status": "HUMAN_APPROVED",
+      "sample_id": "G-brand-mixed",
+      "source_run_id": 35444013735,
+      "source_artifact_id": 10585440542,
+      "artifact_relative_path": "samples/G-brand-mixed.mp3",
+      "canonical_audio_text": "BR no GTA 6. E BR não dorme em Vice City.",
+      "automatic_substitution_allowed": false,
+      "regeneration_allowed_without_new_human_review": false
+    }
+  }
 }
