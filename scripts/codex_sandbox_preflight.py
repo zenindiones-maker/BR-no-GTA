@@ -53,6 +53,12 @@ def _sandbox(
     )
 
 
+class SandboxPreflightFailure(RuntimeError):
+    def __init__(self, evidence: dict[str, Any]) -> None:
+        super().__init__(str(evidence.get("stderr_class") or "SANDBOX_PREFLIGHT_FAILURE"))
+        self.evidence = evidence
+
+
 def _require_success(
     completed: subprocess.CompletedProcess[str],
     *,
@@ -63,7 +69,7 @@ def _require_success(
         failure_stage=stage,
     )
     if failure is not None:
-        raise RuntimeError(json.dumps(failure, sort_keys=True))
+        raise SandboxPreflightFailure(failure)
 
 
 def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
@@ -77,6 +83,10 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
         "network_isolation": False,
         "secret_isolation": False,
         "canonical_worktree_mutation": "NONE",
+        "failure_stage": None,
+        "exit_code": None,
+        "stderr_class": None,
+        "retryability": None,
     }
 
     try:
@@ -165,6 +175,26 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
 
         evidence["status"] = "PASS"
         return evidence
+    except SandboxPreflightFailure as exc:
+        evidence.update(
+            {
+                "failure_stage": exc.evidence.get("failure_stage"),
+                "exit_code": exc.evidence.get("exit_code"),
+                "stderr_class": exc.evidence.get("stderr_class"),
+                "retryability": exc.evidence.get("retryability"),
+            }
+        )
+        raise
+    except Exception as exc:
+        evidence.update(
+            {
+                "failure_stage": "preflight_assertion",
+                "exit_code": None,
+                "stderr_class": type(exc).__name__,
+                "retryability": "DETERMINISTIC_NO_RETRY",
+            }
+        )
+        raise
     finally:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
