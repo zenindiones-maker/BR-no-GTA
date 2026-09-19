@@ -48,6 +48,59 @@ def _gh_json(command: list[str]) -> Any:
     return json.loads(run_github_actions_command(command))
 
 
+def _checkpoint_inputs() -> dict[str, int]:
+    req = _request()
+    values = {
+        "producer_run_id": int(req.get("checkpoint_producer_run_id") or 0),
+        "narration_artifact_id": int(req.get("narration_artifact_id") or 0),
+        "brand_audio_artifact_id": int(req.get("brand_audio_artifact_id") or 0),
+        "media_artifact_id": int(req.get("media_artifact_id") or 0),
+    }
+    if any(value <= 0 for value in values.values()):
+        raise RuntimeError("current QA-passed checkpoint artifact identities are required")
+    return values
+
+
+def _prove_checkpoint_artifacts() -> dict[str, Any]:
+    values = _checkpoint_inputs()
+    producer_run_id = values["producer_run_id"]
+    artifacts = _gh_json([
+        "gh", "api",
+        f"repos/{os.environ['GITHUB_ACTIONS_REPOSITORY']}/actions/runs/{producer_run_id}/artifacts",
+    ])
+    by_id = {
+        int(item["id"]): item
+        for item in artifacts.get("artifacts") or []
+        if isinstance(item.get("id"), int)
+    }
+    expected = {
+        "narration_artifact_id": "narration-bundle-",
+        "brand_audio_artifact_id": "brand-audio-bundle-",
+        "media_artifact_id": "media-checkpoint-",
+    }
+    proof: dict[str, Any] = {"producer_run_id": producer_run_id, "artifacts": {}}
+    for field, prefix in expected.items():
+        artifact_id = values[field]
+        item = by_id.get(artifact_id)
+        if item is None:
+            raise RuntimeError(f"{field} does not belong to checkpoint producer run")
+        if item.get("expired") is True:
+            raise RuntimeError(f"{field} is expired")
+        name = str(item.get("name") or "")
+        if not name.startswith(prefix):
+            raise RuntimeError(f"{field} has unexpected artifact type")
+        size = int(item.get("size_in_bytes") or 0)
+        if size <= 0:
+            raise RuntimeError(f"{field} is empty")
+        proof["artifacts"][field] = {
+            "artifact_id": artifact_id,
+            "name": name,
+            "size_in_bytes": size,
+            "expired": False,
+        }
+    return proof
+
+
 def _prove_previous_failure() -> dict[str, Any]:
     previous_render_run_id = _previous_render_run_id()
     run = _gh_json([
@@ -106,6 +159,7 @@ def _replace_render(job_id: int, render: dict[str, Any]) -> dict[str, Any]:
 def prepare_retry(out: Path) -> None:
     initialize_application()
     proof = _prove_previous_failure()
+    checkpoint_proof = _prove_checkpoint_artifacts()
     previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
     job_path = out / "render-job-handoff" / "render-job.json"
@@ -159,6 +213,7 @@ def prepare_retry(out: Path) -> None:
         "RENDER_RUN_ID": None,
         "CURRENT_AUDIO_CONTRACT_FINGERPRINT": audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"],
         "previous_render_proof": proof,
+        "checkpoint_artifact_proof": checkpoint_proof,
     })
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print("RENDER_RETRY_MODE=REUSE_EXISTING_JOB2")
@@ -177,6 +232,8 @@ def dispatch_retry(
 ) -> None:
     initialize_application()
     proof = _prove_previous_failure()
+    checkpoint_proof = _prove_checkpoint_artifacts()
+    checkpoint_inputs = _checkpoint_inputs()
     previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
     job_path = out / "render-job-handoff" / "render-job.json"
@@ -211,6 +268,12 @@ def dispatch_retry(
             "brain_decision_id": str(job["brain_decision_id"]),
             "execution_id": str(job["execution_id"]),
             "authorized_action": str(job["authorized_action"]),
+            "narration_artifact_id": str(checkpoint_inputs["narration_artifact_id"]),
+            "narration_producer_run_id": str(checkpoint_inputs["producer_run_id"]),
+            "media_artifact_id": str(checkpoint_inputs["media_artifact_id"]),
+            "media_producer_run_id": str(checkpoint_inputs["producer_run_id"]),
+            "brand_audio_artifact_id": str(checkpoint_inputs["brand_audio_artifact_id"]),
+            "brand_audio_producer_run_id": str(checkpoint_inputs["producer_run_id"]),
         },
     )
     github_execution = {
@@ -236,12 +299,16 @@ def dispatch_retry(
         "RENDER_RUN_ID": dispatched.run_id,
         "github_execution": github_execution,
         "render_job_descriptor": descriptor,
+        "checkpoint_artifact_proof": checkpoint_proof,
     })
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "render-job-handoff-descriptor.json").write_text(
         json.dumps(descriptor, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("RENDER_RETRY_MODE=REUSE_EXISTING_JOB2")
+    print("NARRATION_CHECKPOINT_REUSE=YES")
+    print("BRAND_AUDIO_CHECKPOINT_REUSE=YES")
+    print("MEDIA_CHECKPOINT_REUSE=YES")
     print(f"RENDER_RUN_ID={dispatched.run_id}")
 
 

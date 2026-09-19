@@ -37,3 +37,13 @@ def test_no_padding_wpm_gate_is_strict_for_real_jobs_but_fixture_compatible():
     source=Path("scripts/run001_longform_no_padding_qa.py").read_text(encoding="utf-8")
     assert 'if isinstance(script_sections, list) and script_sections:' in source
     assert 'if not 90.0 <= observed_wpm <= 180.0:' in source
+
+
+def test_job2_resume_dispatch_reuses_current_qa_passed_checkpoints():
+    source=Path("scripts/video_a_current_job2_resume.py").read_text(encoding="utf-8")
+    assert '"narration_artifact_id": str(checkpoint_inputs["narration_artifact_id"])' in source
+    assert '"media_artifact_id": str(checkpoint_inputs["media_artifact_id"])' in source
+    assert '"brand_audio_artifact_id": str(checkpoint_inputs["brand_audio_artifact_id"])' in source
+    assert "NARRATION_CHECKPOINT_REUSE=YES" in source
+    assert "BRAND_AUDIO_CHECKPOINT_REUSE=YES" in source
+    assert "MEDIA_CHECKPOINT_REUSE=YES" in source
