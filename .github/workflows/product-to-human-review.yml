@@ -36,12 +36,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install production controller runtime
+      - name: Install lightweight production controller runtime
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
-          python -m pip install -r requirements/media.txt
-          sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Restore green Product E2E checkpoint
         uses: actions/download-artifact@v4
         with:
@@ -50,20 +48,42 @@ jobs:
           github-token: ${{ github.token }}
           path: runtime/checkpoint
           merge-multiple: true
-      - name: Restore verified official GTA VI media checkpoint
+      - name: Restore reusable content-addressed MediaKnowledge
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: "10572578507"
-          run-id: "35407875087"
+          artifact-ids: "10590341059"
+          run-id: "35460016361"
           github-token: ${{ github.token }}
-          path: runtime/media-checkpoint
+          path: runtime/media-knowledge-source
           merge-multiple: true
-      - name: Rebuild only Production Plan and dispatch canonical render
+      - name: Deterministic Production segment preflight
         run: |
           set -euo pipefail
-          MEDIA="$(find runtime/media-checkpoint -name source.mp4 -type f | head -1)"
-          test -n "$MEDIA"
-          python scripts/continue_product_to_human_review.py prepare             --product runtime/checkpoint/product-quality-e2e.json             --media "$MEDIA"             --media-manifest runtime/media-checkpoint/media-checkpoint-manifest.json             --out runtime/product-delivery
+          START_NS="$(python - <<'PY'
+          import time
+          print(time.perf_counter_ns())
+          PY
+          )"
+          python scripts/continue_product_to_human_review.py preflight \
+            --product runtime/checkpoint/product-quality-e2e.json \
+            --media-knowledge-dir runtime/media-knowledge-source/product-delivery/media-knowledge \
+            --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json \
+            --out runtime/product-delivery
+          python - <<'PY'
+          import json
+          d=json.load(open("runtime/product-delivery/preflight.json"))
+          assert d["PRODUCTION_SEGMENT_PREFLIGHT"]=="PASS", d
+          assert d["media_checkpoint"]["analysis_executed"] is False, d
+          print("PRODUCTION_SEGMENT_PREFLIGHT=PASS")
+          print(f"DETERMINISTIC_FAILURE_DETECTION_MS={d['DETERMINISTIC_FAILURE_DETECTION_MS']}")
+          print(f"MEDIA_ANALYSIS_CACHE_HIT={str(d['media_checkpoint']['cache_hit']).upper()}")
+          print(f"MEDIA_ANALYSIS_EXECUTED={str(d['media_checkpoint']['analysis_executed']).upper()}")
+          print(f"CHECKPOINT_RESTORE_VALIDATE_MS={d['CHECKPOINT_RESTORE_VALIDATE_MS']}")
+          PY
+      - name: Dispatch canonical Video and RenderJob
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py dispatch-render --out runtime/product-delivery
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/product-delivery/state.json"))
