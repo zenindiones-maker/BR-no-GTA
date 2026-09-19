@@ -11,7 +11,7 @@ import time
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
-PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v2"
+PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v3"
 DEFAULT_LOCALE = "pt-BR"
 DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
