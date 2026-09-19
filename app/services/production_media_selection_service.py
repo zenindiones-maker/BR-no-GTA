@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any
+import math
+import time
 
 from app.database.content_repository import get_content_item
 from app.database.media_knowledge_repository import MediaKnowledgeRepository
@@ -189,6 +191,93 @@ def build_media_pool_plan(
     }
 
 
+def preflight_production_segment_plan(
+    *,
+    scene_durations: list[float],
+    assignments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Validate every requested segment against its source bounds before persistence."""
+    started = time.perf_counter_ns()
+    durations = _validate_scene_durations(scene_durations)
+    if not isinstance(assignments, list) or len(assignments) != len(durations):
+        raise MediaSelectionError(
+            "Production segment preflight: quantidade de assignments incompatível com as cenas."
+        )
+
+    checks: list[dict[str, Any]] = []
+    for scene_index, (requested_duration, assignment) in enumerate(
+        zip(durations, assignments),
+        start=1,
+    ):
+        if not isinstance(assignment, dict):
+            raise MediaSelectionError(
+                f"Production segment preflight: assignment inválido na cena {scene_index}."
+            )
+        start = assignment.get("source_start_seconds")
+        end = assignment.get("source_end_seconds")
+        planned = assignment.get("duration_seconds")
+        for name, value in (
+            ("source_start_seconds", start),
+            ("source_end_seconds", end),
+            ("duration_seconds", planned),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise MediaSelectionError(
+                    f"Production segment preflight: {name} inválido na cena {scene_index}."
+                )
+        start = float(start)
+        end = float(end)
+        planned = float(planned)
+        if start < 0 or end <= start:
+            raise MediaSelectionError(
+                f"Production segment preflight: source bounds inválidos na cena {scene_index}."
+            )
+        source_duration = end - start
+        if planned <= 0 or requested_duration <= 0:
+            raise MediaSelectionError(
+                f"Production segment preflight: duração não positiva na cena {scene_index}."
+            )
+        if planned - source_duration > _GAP_TOLERANCE_SECONDS:
+            raise MediaSelectionError(
+                "Production segment preflight: requested segment duration exceeds "
+                f"available source duration na cena {scene_index}: "
+                f"requested={planned:.9f}s available={source_duration:.9f}s."
+            )
+        if abs(planned - requested_duration) > _GAP_TOLERANCE_SECONDS:
+            raise MediaSelectionError(
+                "Production segment preflight: duração planejada diverge da timeline "
+                f"na cena {scene_index}: requested={requested_duration:.9f}s "
+                f"planned={planned:.9f}s."
+            )
+        checks.append(
+            {
+                "scene_order": int(assignment.get("scene_order") or scene_index),
+                "source_start_seconds": start,
+                "source_end_seconds": end,
+                "source_duration_seconds": source_duration,
+                "requested_segment_duration_seconds": planned,
+                "timeline_duration_seconds": requested_duration,
+                "delta_seconds": planned - source_duration,
+                "status": "PASS",
+            }
+        )
+
+    finished = time.perf_counter_ns()
+    return {
+        "status": "PASS",
+        "scene_count": len(checks),
+        "DETERMINISTIC_FAILURE_DETECTION_MS": round(
+            (finished - started) / 1_000_000.0,
+            3,
+        ),
+        "checks": checks,
+    }
+
+
 def _resolve_media_pool(
     repository: MediaKnowledgeRepository,
     knowledge_id: int,
@@ -293,6 +382,10 @@ def select_production_media(
         scene_durations=scene_durations,
         allocation_seed=content_item_id,
     )
+    segment_preflight = preflight_production_segment_plan(
+        scene_durations=scene_durations,
+        assignments=plan["assignments"],
+    )
 
     segment_ids: list[int] = []
     content_unit_ids: list[int] = []
@@ -371,5 +464,6 @@ def select_production_media(
         "required_seconds": plan["required_seconds"],
         "available_seconds": plan["available_seconds"],
         "selections": selections,
+        "segment_preflight": segment_preflight,
         "status": "selected",
     }
