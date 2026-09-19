@@ -471,6 +471,56 @@ def write_json(path, data):
     )
 
 
+RENDER_HEARTBEAT_INTERVAL_SECONDS = 30.0
+RENDER_STALL_WARNING_SECONDS = 120.0
+
+
+def render_progress_metrics(progress, state, *, now=None):
+    now = time.monotonic() if now is None else float(now)
+    elapsed = float(progress.get("elapsed") or 0.0)
+    media_seconds = float(progress.get("seconds") or 0.0)
+    duration = float(progress.get("duration") or 0.0)
+    percent = float(progress.get("percent") or 0.0)
+
+    last_media = float(state.get("last_media_seconds") or 0.0)
+    last_progress = state.get("last_progress_monotonic")
+    if last_progress is None or media_seconds > last_media + 0.001:
+        last_progress = now
+        state["last_progress_monotonic"] = now
+        state["last_media_seconds"] = media_seconds
+
+    stall_seconds = max(0.0, now - float(last_progress))
+    state["max_stall_seconds"] = max(
+        float(state.get("max_stall_seconds") or 0.0),
+        stall_seconds,
+    )
+    speed_x = media_seconds / elapsed if elapsed > 0 else None
+    remaining_media = max(0.0, duration - media_seconds)
+    eta_seconds = (
+        remaining_media / speed_x
+        if speed_x is not None and speed_x > 0
+        else None
+    )
+    estimated_total_seconds = (
+        elapsed + eta_seconds if eta_seconds is not None else None
+    )
+    state["last_eta_seconds"] = eta_seconds
+    return {
+        "percent": percent,
+        "media_seconds": media_seconds,
+        "elapsed_seconds": elapsed,
+        "render_speed_x": round(speed_x, 6) if speed_x is not None else None,
+        "eta_seconds": round(eta_seconds, 2) if eta_seconds is not None else None,
+        "estimated_total_seconds": (
+            round(estimated_total_seconds, 2)
+            if estimated_total_seconds is not None
+            else None
+        ),
+        "stall_seconds": round(stall_seconds, 2),
+        "stalled": stall_seconds >= RENDER_STALL_WARNING_SECONDS,
+    }
+
+
 def execute(job, asset_root, output_root, *, source_job=None):
     plan = validate_job(job)
     folder = (
@@ -500,7 +550,14 @@ def execute(job, asset_root, output_root, *, source_job=None):
         bound_options = resolve_bound_render_options(job.get("render"))
         learning_binding = dict((job.get("render") or {}).get("learning_profile") or {})
         progress_path = folder / "render-progress.json"
-        heartbeat = {"last_emit": 0.0}
+        heartbeat = {
+            "last_emit": 0.0,
+            "last_media_seconds": 0.0,
+            "last_progress_monotonic": None,
+            "heartbeat_count": 0,
+            "max_stall_seconds": 0.0,
+            "last_eta_seconds": None,
+        }
 
         def _record_progress(progress):
             payload = dict(progress or {})
@@ -524,16 +581,16 @@ def execute(job, asset_root, output_root, *, source_job=None):
             })
             write_json(progress_path, payload)
             now = time.monotonic()
-            percent = float(payload.get("percent") or 0.0)
+            metrics = render_progress_metrics(payload, heartbeat, now=now)
+            percent = metrics["percent"]
             if (
                 heartbeat["last_emit"] == 0.0
-                or now - heartbeat["last_emit"] >= 30.0
+                or now - heartbeat["last_emit"] >= RENDER_HEARTBEAT_INTERVAL_SECONDS
                 or percent >= 100.0
+                or metrics["stalled"]
             ):
                 heartbeat["last_emit"] = now
-                elapsed = float(payload.get("elapsed") or 0.0)
-                media_seconds = float(payload.get("seconds") or 0.0)
-                speed_x = media_seconds / elapsed if elapsed > 0 else None
+                heartbeat["heartbeat_count"] += 1
                 print(
                     json.dumps(
                         {
@@ -542,12 +599,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                             "execution_id": job["execution_id"],
                             "skill_version": learning_binding.get("version", "v1-legacy"),
                             "software_preset": bound_options.get("software_preset"),
-                            "percent": percent,
-                            "media_seconds": media_seconds,
-                            "elapsed_seconds": elapsed,
-                            "render_speed_x": (
-                                round(speed_x, 6) if speed_x is not None else None
-                            ),
+                            **metrics,
                         },
                         sort_keys=True,
                     ),
@@ -616,6 +668,19 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "skill_version": learning_binding.get("version", "v1-legacy"),
                 "content_ref": learning_binding.get("content_ref"),
                 "checksum": learning_binding.get("checksum"),
+                "progress_observability": {
+                    "contract": "render-progress/v2",
+                    "heartbeat_interval_seconds": RENDER_HEARTBEAT_INTERVAL_SECONDS,
+                    "stall_warning_seconds": RENDER_STALL_WARNING_SECONDS,
+                    "heartbeat_count": int(heartbeat.get("heartbeat_count") or 0),
+                    "max_stall_seconds": round(float(heartbeat.get("max_stall_seconds") or 0.0), 2),
+                    "last_eta_seconds": (
+                        round(float(heartbeat["last_eta_seconds"]), 2)
+                        if heartbeat.get("last_eta_seconds") is not None
+                        else None
+                    ),
+                    "actionable_eta": heartbeat.get("last_eta_seconds") is not None,
+                },
                 "encoder_policy": {
                     "codec": bound_options["codec"],
                     "quality": bound_options["quality"],

@@ -239,7 +239,7 @@ jobs:
           git ls-files --error-unmatch video-engine/backend/vedit/render.py
           python -m unittest discover -s tests -p test_cloud_audiovisual_worker.py -v
           python -m unittest discover -s tests -p test_professional_audiovisual_worker.py -v
-          python -m pytest -q tests/test_semantic_ptbr_audio_qa.py
+          python -m pytest -q tests/test_semantic_ptbr_audio_qa.py tests/test_render_progress_observability.py
           python -m pytest -q \
             tests/test_narration_pipeline.py \
             tests/test_operational_efficiency_policy.py \
@@ -694,6 +694,23 @@ jobs:
           print(f"EXTERNAL_CALLS={event.get('external_calls')}")
           print(f"REUSED_ARTIFACTS={len(event.get('reused_artifacts') or [])}")
           print(f"OUTPUT_ARTIFACT={event.get('output_artifact')}")
+          runtime_files=list(Path('runtime/render/output').glob('**/render-runtime.json'))
+          if not runtime_files:
+              raise SystemExit('RENDER_PROGRESS_OBSERVABILITY=MISSING_RUNTIME')
+          runtime=json.loads(runtime_files[0].read_text(encoding='utf-8'))
+          progress=runtime.get('progress_observability') or {}
+          if progress.get('contract')!='render-progress/v2':
+              raise SystemExit('RENDER_PROGRESS_OBSERVABILITY=CONTRACT_MISMATCH')
+          if int(progress.get('heartbeat_count') or 0) < 1:
+              raise SystemExit('RENDER_PROGRESS_OBSERVABILITY=NO_HEARTBEAT')
+          if progress.get('actionable_eta') is not True:
+              raise SystemExit('RENDER_PROGRESS_OBSERVABILITY=NO_ETA')
+          if float(progress.get('stall_warning_seconds') or 0) <= 0:
+              raise SystemExit('RENDER_PROGRESS_OBSERVABILITY=NO_STALL_THRESHOLD')
+          print('RENDER_PROGRESS_OBSERVABILITY=PASS')
+          print('RENDER_HEARTBEAT_COUNT=' + str(progress.get('heartbeat_count')))
+          print('RENDER_MAX_STALL_SECONDS=' + str(progress.get('max_stall_seconds')))
+          print('RENDER_LAST_ETA_SECONDS=' + str(progress.get('last_eta_seconds')))
           PY
 
       - name: Start visual branding performance clock
@@ -786,6 +803,7 @@ jobs:
             runtime/render/render-pipeline-profile.json
             runtime/render/output/**/operation-observability.json
             runtime/render/output/**/render-runtime.json
+            runtime/render/output/**/render-progress.json
             runtime/render/output/**/brand-performance.json
             runtime/render/pipeline-stage-clock.json
             runtime/render/render-pipeline-profile.json
