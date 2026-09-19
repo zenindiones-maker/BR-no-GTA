@@ -14,7 +14,7 @@ on:
       - 'app/services/harness_collaboration_service.py'
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
