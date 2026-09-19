@@ -23,6 +23,7 @@ from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     codex_bounded_development_worker,
+    codex_sanitized_environment,
 )
 from app.services.agent_office.addy_task_owner_worker import (
     addy_specialist_task_owner_worker,
@@ -110,6 +111,7 @@ def _codex_process(
         check=False,
         capture_output=True,
         text=True,
+        env=codex_sanitized_environment(),
     )
 
 
