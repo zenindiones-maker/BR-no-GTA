@@ -17,8 +17,8 @@
   "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2",
   "job18_frozen": true,
   "youtube_publication": false,
-  "attempt": 4,
-  "retry_reason": "resume after validated 60s canary; correct media checkpoint producer lineage; no canary/media/narration repeat",
+  "attempt": 5,
+  "retry_reason": "resume after validated canary; create dispatch proof directory before descriptor write; no repeated heavy stages",
   "media_artifact_id": 10572578507,
   "media_producer_run_id": 35407875087,
   "redundant_media_downloads_allowed": 0,
@@ -28,5 +28,6 @@
   "retry_handoff_artifact_id": 10572763599,
   "retry_handoff_producer_run_id": 35408056905,
   "failed_warm_retry_run_id": 35408204266,
-  "redundant_tts_requests_allowed": 0
+  "redundant_tts_requests_allowed": 0,
+  "failed_resume_run_id": 35408529006
 }

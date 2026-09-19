@@ -350,6 +350,7 @@ jobs:
           MEDIA_PRODUCER_RUN_ID: ${{ env.EXISTING_MEDIA_RUN_ID }}
         run: |
           set -euo pipefail
+          mkdir -p runtime/recovery/proof
           python - <<'PY'
           import json,os
           from pathlib import Path
