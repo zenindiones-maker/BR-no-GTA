@@ -7,7 +7,6 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".run/delegated-autonomy-canary.request.json"
-      - ".github/workflows/delegated-autonomy-canary.yml"
 
 permissions:
   contents: read
