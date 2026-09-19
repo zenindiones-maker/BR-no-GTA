@@ -385,6 +385,13 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
         "CLOSING_TEXT_CANONICAL": contract.get("closing_line") == "E BR não dorme em Vice City",
         "OFFICIAL_INTRO_ASSET_ID": any(item.get("asset_id") == 1 and item.get("asset_type") == "intro" for item in job["brand_assets"]),
         "WATERMARK_ASSET_ID": any(item.get("asset_id") == 2 and item.get("asset_type") == "watermark" for item in job["brand_assets"]),
+        "BRAND_AUDIO_QA": (
+            audio["APPROVED_G_SHA256"] == "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+            and isinstance(audio.get("DERIVED_CLOSING_SHA256"), str)
+            and len(audio["DERIVED_CLOSING_SHA256"]) == 64
+            and contract.get("selected_opening_take_id") == "take-2"
+            and contract.get("selected_closing_fallback_take_id") == "G-brand-mixed"
+        ),
         "BURNED_SUBTITLES": job["subtitles"].get("enabled") is False,
     }
     if not all(checks.values()):
@@ -393,7 +400,7 @@ def _print_audio_gate(job: dict[str, Any]) -> None:
     for key in (
         "VOICE_B_USED", "FLUID2_ONLY_RUNTIME", "APPROVED_G_CLOSING_REUSED",
         "GTA6_PRONUNCIATION_CURRENT", "VICE_CITY_LANGUAGE_RESOLUTION",
-        "OPENING_TEXT_CANONICAL", "CLOSING_TEXT_CANONICAL",
+        "OPENING_TEXT_CANONICAL", "CLOSING_TEXT_CANONICAL", "BRAND_AUDIO_QA",
     ):
         print(f"{key}=PASS")
     print("OFFICIAL_INTRO_ASSET_ID=1")
