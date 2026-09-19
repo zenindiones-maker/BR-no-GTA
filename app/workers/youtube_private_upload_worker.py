@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,61 @@ from app.services.youtube_publisher import YouTubeUploadResult
 
 class YouTubeUploadWorkerError(ValueError):
     pass
+
+
+def _review_ready(state: Any) -> bool:
+    return (
+        getattr(state, "success", False) is True
+        and getattr(state, "privacy_status", None) == "private"
+        and getattr(state, "upload_status", None) == "processed"
+        and getattr(state, "processing_status", None) == "succeeded"
+        and getattr(state, "definition", None) == "hd"
+    )
+
+
+def _wait_for_private_hd_review(
+    publisher: Any,
+    youtube_video_id: str,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> dict[str, Any]:
+    getter = getattr(publisher, "get_processing_state", None)
+    if not callable(getter):
+        raise YouTubeUploadWorkerError("publisher lacks YouTube processing-state boundary")
+    deadline = time.monotonic() + timeout_seconds
+    observations = 0
+    last = None
+    while True:
+        observations += 1
+        state = getter(youtube_video_id)
+        last = state
+        if _review_ready(state):
+            return {
+                "status": "READY",
+                "privacy_status": state.privacy_status,
+                "upload_status": state.upload_status,
+                "processing_status": state.processing_status,
+                "definition": state.definition,
+                "observations": observations,
+            }
+        if getattr(state, "success", False) is False:
+            raise YouTubeUploadWorkerError(
+                f"YouTube processing-state query failed: {getattr(state, 'error', None) or 'unknown error'}"
+            )
+        if getattr(state, "upload_status", None) in {"failed", "rejected", "deleted"}:
+            raise YouTubeUploadWorkerError(
+                f"YouTube upload did not become reviewable: {getattr(state, 'upload_status', None)}"
+            )
+        if getattr(state, "processing_status", None) in {"failed", "terminated"}:
+            raise YouTubeUploadWorkerError(
+                f"YouTube processing did not succeed: {getattr(state, 'processing_status', None)}"
+            )
+        if time.monotonic() >= deadline:
+            raise YouTubeUploadWorkerError(
+                "YouTube private upload did not reach processed HD review readiness before timeout"
+            )
+        time.sleep(poll_seconds)
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -167,6 +223,20 @@ def execute(job: dict[str, Any], artifact_root: Path, *, publisher: Any) -> dict
     result = publisher.upload(publication)
     if not isinstance(result, YouTubeUploadResult):
         raise TypeError("publisher.upload() must return YouTubeUploadResult")
+    if result.success and not result.youtube_video_id:
+        raise YouTubeUploadWorkerError("successful upload result lacks YouTube identity")
+    processing = None
+    if result.success:
+        timeout_seconds = float(os.getenv("YOUTUBE_REVIEW_READY_TIMEOUT_SECONDS", "5400"))
+        poll_seconds = float(os.getenv("YOUTUBE_REVIEW_READY_POLL_SECONDS", "30"))
+        if timeout_seconds <= 0 or poll_seconds <= 0:
+            raise YouTubeUploadWorkerError("YouTube review readiness timing must be positive")
+        processing = _wait_for_private_hd_review(
+            publisher,
+            result.youtube_video_id,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+        )
     payload = {
         "publication_id": job["publication_id"],
         "video_id": job["video_id"],
@@ -181,9 +251,13 @@ def execute(job: dict[str, Any], artifact_root: Path, *, publisher: Any) -> dict
         "youtube_url": result.youtube_url,
         "error": result.error,
         "artifact_evidence": evidence,
+        "review_ready": bool(result.success and processing and processing.get("status") == "READY"),
+        "youtube_processing": processing,
     }
     if result.success and (not result.youtube_video_id or not result.youtube_url):
         raise YouTubeUploadWorkerError("successful upload result lacks YouTube identity")
+    if result.success and payload["review_ready"] is not True:
+        raise YouTubeUploadWorkerError("private upload is not HD review-ready")
     return payload
 
 
