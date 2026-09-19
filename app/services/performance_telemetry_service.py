@@ -87,6 +87,10 @@ def emit_performance_event(
     execution_id: str | None = None,
     agent_id: str | None = None,
     capability_id: str | None = None,
+    mission_id: str | None = None,
+    task_id: str | None = None,
+    delegation_id: str | None = None,
+    authorization_id: str | None = None,
     depends_on_span_ids: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     lineage = dict(_CURRENT_LINEAGE.get() or {})
@@ -125,6 +129,10 @@ def emit_performance_event(
         "execution_id": execution_id or lineage.get("execution_id"),
         "agent_id": agent_id or lineage.get("agent_id"),
         "capability_id": capability_id or lineage.get("capability_id"),
+        "mission_id": mission_id or lineage.get("mission_id"),
+        "task_id": task_id or lineage.get("task_id"),
+        "delegation_id": delegation_id or lineage.get("delegation_id"),
+        "authorization_id": authorization_id or lineage.get("authorization_id"),
         "metadata": _safe_value(metadata or {}),
     }
     trace = str(os.getenv("BR_PERFORMANCE_TRACE_FILE") or "").strip()
@@ -155,6 +163,11 @@ class PerformanceSpan:
         execution_id: str | None = None,
         agent_id: str | None = None,
         capability_id: str | None = None,
+        mission_id: str | None = None,
+        task_id: str | None = None,
+        delegation_id: str | None = None,
+        authorization_id: str | None = None,
+        span_id: str | None = None,
         depends_on_span_ids: tuple[str, ...] | list[str] = (),
     ) -> None:
         self.stage = stage
@@ -170,13 +183,17 @@ class PerformanceSpan:
         self.execution_id = execution_id
         self.agent_id = agent_id
         self.capability_id = capability_id
+        self.mission_id = mission_id
+        self.task_id = task_id
+        self.delegation_id = delegation_id
+        self.authorization_id = authorization_id
         self.depends_on_span_ids = tuple(str(item) for item in depends_on_span_ids if str(item).strip())
         self.started_at = ""
         self.finished_at = ""
         self.started_monotonic_ns = 0
         self.finished_monotonic_ns = 0
         self.trace_id = ""
-        self.span_id = uuid4().hex
+        self.span_id = str(span_id or uuid4().hex)
         self.parent_span_id: str | None = None
         self._trace_token = None
         self._span_token = None
@@ -200,6 +217,10 @@ class PerformanceSpan:
                     "execution_id": self.execution_id,
                     "agent_id": self.agent_id,
                     "capability_id": self.capability_id,
+                    "mission_id": self.mission_id,
+                    "task_id": self.task_id,
+                    "delegation_id": self.delegation_id,
+                    "authorization_id": self.authorization_id,
                 }.items()
                 if value
             },
@@ -258,6 +279,10 @@ class PerformanceSpan:
                 execution_id=self.execution_id,
                 agent_id=self.agent_id,
                 capability_id=self.capability_id,
+                mission_id=self.mission_id,
+                task_id=self.task_id,
+                delegation_id=self.delegation_id,
+                authorization_id=self.authorization_id,
                 depends_on_span_ids=self.depends_on_span_ids,
             )
         finally:
