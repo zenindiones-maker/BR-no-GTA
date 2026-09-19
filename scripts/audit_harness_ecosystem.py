@@ -121,7 +121,7 @@ def _capability_status(record, binding_ok: bool, routing_ok: bool) -> str:
 
 def _instruction_test_path(record) -> str:
     if record.capability_id.startswith("addy:"):
-        return "tests/test_addy_24_certification.py + tests/test_codex_addy_capability_executor.py"
+        return "tests/test_addy_24_certification.py + Addy 24 Live Semantic Smoke + legacy Codex adapter tests"
     if record.capability_id.startswith("youtube.department."):
         return "tests/test_system_synergy_service.py + tests/test_youtube_department_learning_boundary.py"
     if record.capability_id == "gta6.fact-check":
@@ -418,7 +418,7 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
             item["NOTES"].append("Pinned Addy skill missing from global Registry")
         else:
             item["NOTES"].append(
-                "Materialized on cloud runner; one selected skill per bounded Codex execution"
+                "Materialized from pinned source on cloud runner; one selected skill per Harness-governed semantic execution"
             )
 
     for row in _dsh_skills():
@@ -460,9 +460,11 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
         item["HARNESS_ROUTE_AVAILABLE"] = True
         item["EXECUTABLE_NOW"] = True
         if worker_id == "codex":
-            item["CAPABILITY_IDS"].extend(f"addy:{skill}" for skill in ADDY_SKILLS)
             item["STATUS"] = "ACTIVE_EXECUTABLE"
-            item["NOTES"].append("Agent Office worker engine for the 24 Addy skills")
+            item["NOTES"].append(
+                "Agent Office Codex worker engine remains a support executor; "
+                "the canonical 24 Addy semantic capabilities route through addy-agent-skills"
+            )
         else:
             item["STATUS"] = "ACTIVE_EXECUTABLE"
             item["NOTES"].append(
@@ -634,7 +636,8 @@ def audit() -> dict[str, Any]:
             len(observed_addy) == 24
             and len(observed_higgsfield) == 4
             and len(_dsh_skills()) >= 6
-            and "codex" in agent_ids
+            and "addy-agent-skills" in agent_ids
+            and "codex" in worker_ids
             and "gta6-master-agent" in agent_ids
             and "gta6-brain" in agent_ids
             and "agent-office-coordinator" in agent_ids
