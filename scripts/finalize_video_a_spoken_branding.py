@@ -114,6 +114,8 @@ def main() -> int:
     parser=argparse.ArgumentParser()
     parser.add_argument("--base-artifact-root",type=Path,required=True)
     parser.add_argument("--brand-audio-root",type=Path,required=True)
+    parser.add_argument("--approved-final-end-audio",type=Path)
+    parser.add_argument("--approved-final-end-proof",type=Path)
     parser.add_argument("--video-config",type=Path,required=True)
     parser.add_argument("--output-root",type=Path,required=True)
     args=parser.parse_args()
@@ -148,6 +150,44 @@ def main() -> int:
     selected=brand_manifest["selected"]
     opening=args.brand_audio_root/"takes"/"opening"/f"{selected['opening']['take_id']}.flac"
     closing=args.brand_audio_root/"takes"/"closing"/f"{selected['closing']['take_id']}.flac"
+    final_end_signature=None
+    if args.approved_final_end_audio is not None:
+        if args.approved_final_end_proof is None:
+            raise SpokenBrandFinalizationError("approved final-end proof is required")
+        proof=_load(args.approved_final_end_proof)
+        if proof.get("status")!="PASS":
+            raise SpokenBrandFinalizationError("approved final-end pronunciation proof is not PASS")
+        sample=next(
+            (
+                item for item in proof.get("samples",[])
+                if isinstance(item,dict) and item.get("sample_id")=="G-brand-mixed"
+            ),
+            None,
+        )
+        if not sample:
+            raise SpokenBrandFinalizationError("G-brand-mixed proof sample missing")
+        expected_end_signature=f"BR no GTA 6. {contract['closing_line']}."
+        if sample.get("canonical_text")!=expected_end_signature:
+            raise SpokenBrandFinalizationError("approved final-end signature text mismatch")
+        plan=dict(sample.get("plan") or {})
+        identities={
+            str(item.get("pronunciation_identity"))
+            for item in plan.get("spans",[])
+            if isinstance(item,dict) and item.get("pronunciation_identity")
+        }
+        if not {"gta-6","vice-city"} <= identities:
+            raise SpokenBrandFinalizationError("approved final-end pronunciation identities missing")
+        if not args.approved_final_end_audio.is_file():
+            raise SpokenBrandFinalizationError("approved final-end audio file missing")
+        closing=args.approved_final_end_audio
+        final_end_signature={
+            "sample_id":"G-brand-mixed",
+            "canonical_text":expected_end_signature,
+            "source_file":args.approved_final_end_audio.name,
+            "human_approved":True,
+            "automatic_substitution_allowed":False,
+            "contains_canonical_closing_line":True,
+        }
     opening_duration=_duration(_probe(opening))
     closing_duration=_duration(_probe(closing))
 
@@ -217,6 +257,12 @@ def main() -> int:
         "voice_b_used":True,
         "opening_text_canonical":brand_manifest["opening_text"]==contract["opening_text"],
         "closing_text_canonical":brand_manifest["closing_text"]==contract["closing_line"],
+        "final_end_signature_human_approved":(
+            final_end_signature is None or final_end_signature["human_approved"] is True
+        ),
+        "final_end_signature_preserves_closing":(
+            final_end_signature is None or final_end_signature["contains_canonical_closing_line"] is True
+        ),
         "brand_audio_cache_policy":bool(contract["cache_policy"]["closing_fixed_reusable"]),
         "editorial_hook_preserved":True,
         "job18_unchanged":True,
@@ -258,8 +304,20 @@ def main() -> int:
         },
         {
             "order":5,"phase":"spoken_channel_closing","voice":"Voice B",
-            "text":contract["closing_line"],"final_start_seconds":base_duration+opening_duration,
-            "duration_seconds":closing_duration,"take_id":selected["closing"]["take_id"],
+            "text":(
+                final_end_signature["canonical_text"]
+                if final_end_signature is not None
+                else contract["closing_line"]
+            ),
+            "canonical_closing_line":contract["closing_line"],
+            "final_start_seconds":base_duration+opening_duration,
+            "duration_seconds":closing_duration,
+            "take_id":(
+                final_end_signature["sample_id"]
+                if final_end_signature is not None
+                else selected["closing"]["take_id"]
+            ),
+            "human_approved_final_end_audio":final_end_signature is not None,
         },
     ]
     job=dict(base_job)
@@ -278,6 +336,7 @@ def main() -> int:
         "opening_duration_seconds":opening_duration,
         "closing_duration_seconds":closing_duration,
         "final_expected_duration_seconds":expected_duration,
+        "final_end_signature":final_end_signature,
         "core_render_reused":True,
         "media_redownloads":0,
         "longform_tts_requests":0,
@@ -314,6 +373,12 @@ def main() -> int:
         "VOICE_B_USED":"PASS",
         "OPENING_TEXT_CANONICAL":"PASS",
         "CLOSING_TEXT_CANONICAL":"PASS",
+        "FINAL_END_SIGNATURE_HUMAN_APPROVED":(
+            "PASS" if final_end_signature is not None else "NOT_APPLICABLE"
+        ),
+        "FINAL_END_SIGNATURE_SAMPLE_ID":(
+            final_end_signature["sample_id"] if final_end_signature is not None else None
+        ),
         "BRAND_AUDIO_CACHE_POLICY":"PASS",
         "EDITORIAL_HOOK_PRESERVED":"PASS",
         "JOB18_UNCHANGED":"YES",
@@ -334,6 +399,7 @@ def main() -> int:
         "final_duration_seconds":final_duration,
         "opening_duration_seconds":opening_duration,
         "closing_duration_seconds":closing_duration,
+        "final_end_signature":final_end_signature,
         "inserted_silence_seconds":0.0,
         "visual_ssim_samples":ssim,
         "visual_ssim_min":min_ssim,
@@ -363,6 +429,9 @@ def main() -> int:
     print(f"VISUAL_SSIM_MIN={min_ssim:.6f}")
     print("FULL_DECODE=PASS")
     print("JOB18_UNCHANGED=YES")
+    if final_end_signature is not None:
+        print("FINAL_END_SIGNATURE_HUMAN_APPROVED=PASS")
+        print("FINAL_END_SIGNATURE_SAMPLE_ID=G-brand-mixed")
     print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return 0
 
