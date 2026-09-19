@@ -1,10 +1,12 @@
 {
-  "requested_from_head": "354a227ac54fb2a3a9ff6b59fb4f26c333fbbc98",
-  "reason": "rerun after deterministic circular-import fix and focused validation",
-  "focused_validation_run_id": 35463157798,
+  "requested_from_head": "743c197073f9cbbb0d2c56ef8748afd8a43062c7",
+  "reason": "single rerun after circular-import fix and deterministic delegation validation",
+  "focused_validation_run_id": 35463708253,
+  "focused_validation_head": "8bcda1a2331beef3bd8d7f80c1ce77ed958bde5c",
   "focused_tests": [
     "tests/test_delegated_agent_autonomy.py",
     "tests/test_agent_office.py"
   ],
+  "deterministic_delegation_gates": "PASS",
   "requested_canary_count": 1
 }
