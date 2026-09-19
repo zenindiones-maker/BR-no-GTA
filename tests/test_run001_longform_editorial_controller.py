@@ -64,6 +64,7 @@ def test_professional_render_config_is_explicit_and_deterministic():
         "container": "mp4",
         "video_codec": "h264",
         "audio_codec": "aac",
+        "delivery_profile": "youtube_sdr_1080p30_v1",
     }
 
 
