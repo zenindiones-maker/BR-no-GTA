@@ -474,7 +474,11 @@ class OpenCodeNativeAIProvider:
             model=canonical_model,
             success=failure_type is None,
             failure_type=failure_type,
-            metadata=performance,
+            metadata={
+                **performance,
+                "error_events": error_events[-3:],
+                "safe_stderr_tail": safe_stderr_lines[-3:],
+            },
         )
         if tool_call_count:
             raise OpenCodeNativeAIProviderError(
@@ -493,8 +497,16 @@ class OpenCodeNativeAIProvider:
             )
         if process.returncode != 0 or not answer:
             safe_stderr = "\n".join(safe_stderr_lines)
+            safe_cause = (
+                error_events[-1][:600]
+                if error_events
+                else (safe_stderr_lines[-1][:600] if safe_stderr_lines else "no provider diagnostic")
+            )
             raise OpenCodeNativeAIProviderError(
-                "Governed same-run OpenCode execution failed",
+                (
+                    "Governed same-run OpenCode execution failed; "
+                    f"exit_code={process.returncode}; cause={safe_cause}"
+                ),
                 details={
                     "failure_code": "same_runner_native_execution_failed",
                     "exit_code": process.returncode,
