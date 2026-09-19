@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from app.database.schema import initialize_schema
 from app.services.ai_provider import AIProviderError
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
@@ -183,12 +184,48 @@ def _assert_registry_routing() -> dict[str, Any]:
     return {"routes": routes}
 
 
+def _assert_learning_route_contract() -> dict[str, Any]:
+    capability_id = "youtube.package.persist"
+    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    if record is None:
+        raise AssertionError("youtube.package.persist is not registered")
+    decision = route_harness_request(HarnessRoutingRequest(
+        intent="persist the verified pre-publication YouTube content package",
+        authorized_action="YOUTUBE",
+        domain="youtube-department",
+        task_class="youtube-package-persist",
+        required_capability_id=capability_id,
+        provider_required=False,
+        fallback_allowed=False,
+        zero_cost_operation=True,
+        learning_required=True,
+        goal_id="fast-prelive-goal",
+    ))
+    if decision.selected_capability_id != capability_id:
+        raise AssertionError("learning-aware package routing escaped required capability")
+    if decision.selected_executor_binding != record.executor_binding:
+        raise AssertionError("learning-aware package routing executor mismatch")
+    metadata = dict(decision.policy_metadata or {})
+    learning = dict(metadata.get("learning_context") or {})
+    if learning.get("learning_required") is not True:
+        raise AssertionError("package routing did not preserve required Learning Plane participation")
+    return {
+        "capability_id": capability_id,
+        "domain": "youtube-department",
+        "task_class": "youtube-package-persist",
+        "routing_id": decision.routing_id,
+        "learning_required": True,
+        "learning_participated": bool(learning.get("learning_participated")),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     started = time.perf_counter()
     root = Path(__file__).resolve().parents[1]
+    initialize_schema()
 
     _assert_compile([
         root / "app/services/script_generator_service.py",
@@ -208,6 +245,7 @@ def main() -> int:
     signatures = _assert_call_signatures(root / "scripts/youtube_product_quality_e2e.py")
     packets = _sample_packets()
     routing = _assert_registry_routing()
+    learning_route = _assert_learning_route_contract()
     ecosystem = audit_harness_ecosystem()
     required_ecosystem = (
         "ALL_AGENTS_DISCOVERABLE",
@@ -226,12 +264,14 @@ def main() -> int:
         "SIGNATURE_CONTRACT_GATE": "PASS",
         "FAST_STATIC_CONTRACT_GATE": "PASS",
         "REGISTRY_ROUTING_GATE": "PASS",
+        "LEARNING_ROUTE_CONTRACT_GATE": "PASS",
         "SERIALIZATION_GATE": "PASS",
         **{key: "PASS" for key in required_ecosystem},
         "FAST_PRELIVE_GATE_MS": round(elapsed_ms, 3),
         "signature_contract": signatures,
         "context_packets": packets,
         "routing": routing,
+        "learning_route": learning_route,
         "ecosystem_counts": {
             "capabilities": ecosystem["TOTAL_CAPABILITIES_FOUND"],
             "agents": ecosystem["TOTAL_AGENTS_FOUND"],
@@ -245,6 +285,7 @@ def main() -> int:
         "SIGNATURE_CONTRACT_GATE",
         "FAST_STATIC_CONTRACT_GATE",
         "REGISTRY_ROUTING_GATE",
+        "LEARNING_ROUTE_CONTRACT_GATE",
         "SERIALIZATION_GATE",
         *required_ecosystem,
     ):

@@ -346,6 +346,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             intent="persist the verified pre-publication YouTube content package",
             authorized_action="YOUTUBE",
             domain="youtube-department",
+            task_class="youtube-package-persist",
             required_capability_id=YOUTUBE_PACKAGE_CAPABILITY_ID,
             fallback_allowed=False,
             provider_required=False,
