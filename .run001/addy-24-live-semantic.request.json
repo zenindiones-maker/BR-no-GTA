@@ -1,13 +1,13 @@
 {
-  "schema_version": 2,
-  "requested_at": "2026-09-19T11:55:00Z",
+  "schema_version": 3,
+  "requested_at": "2026-09-19T13:40:00Z",
   "purpose": "Prove all 24 pinned Addy skills on the exact parent SHA using the Harness-governed one-step zero-tool OpenCode provider.",
-  "base_head": "24350b0a17528b60982bb10957938b86824922a6",
+  "base_head": "94b3feb6959b61982f8d50cbab26cc1a3e83f0b5",
   "expected_skills": 24,
   "max_total_tokens": 192000,
   "max_tokens_per_turn": 8000,
   "publication": false,
   "job18_unchanged": true,
-  "retry_reason": "Registry base support transport availability contract fixed; rerun required on corrected HEAD.",
+  "retry_reason": "Re-run after semantic verifier accepted observed equivalent correct formulations and canonical Addy boundary is stable.",
   "provider_mode": "bounded-semantic-one-step-zero-tools"
 }
