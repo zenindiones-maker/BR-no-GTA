@@ -1,0 +1,166 @@
+name: VIDEO A Spoken Branding Finalization
+run-name: VIDEO A spoken branding finalization · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/video-a-spoken-brand-finalize.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-spoken-brand-finalization
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate finalization request
+        id: request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          req=json.loads(Path('.run001/video-a-spoken-brand-finalize.request.json').read_text())
+          fixed={
+              'render_job_id':920101,
+              'final_voice':'Voice B',
+              'intro_asset_id':1,
+              'youtube_publication':False,
+              'job18_frozen':True,
+          }
+          for key,value in fixed.items():
+              if req.get(key)!=value:
+                  raise SystemExit(f'FINALIZE_REQUEST_MISMATCH:{key}')
+          for key in ('base_render_run_id','base_render_artifact_id','brand_audio_run_id','brand_audio_artifact_id'):
+              if not isinstance(req.get(key),int) or req[key]<=0:
+                  raise SystemExit(f'FINALIZE_REQUEST_INVALID:{key}')
+          with Path(os.environ['GITHUB_OUTPUT']).open('a',encoding='utf-8') as out:
+              for key in ('base_render_run_id','base_render_artifact_id','brand_audio_run_id','brand_audio_artifact_id'):
+                  out.write(f"{key}={req[key]}\n")
+          print('FINALIZE_REQUEST=PASS')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - name: Install finalization runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install -r requirements.txt pytest
+          ffmpeg -version | head -n1
+
+      - name: Focused spoken branding and final QA tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_channel_spoken_branding.py \
+            tests/test_telegram_brand_ffmpeg_integration.py \
+            tests/test_run001_longform_editorial_controller.py
+
+      - name: Restore QA-passed base render
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.request.outputs.base_render_artifact_id }}
+          run-id: ${{ steps.request.outputs.base_render_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/base-render
+          merge-multiple: true
+
+      - name: Restore QA-passed spoken brand audio checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.request.outputs.brand_audio_artifact_id }}
+          run-id: ${{ steps.request.outputs.brand_audio_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/brand-audio
+          merge-multiple: true
+
+      - name: Finalize VIDEO A by smallest downstream stage only
+        run: |
+          set -euo pipefail
+          python scripts/finalize_video_a_spoken_branding.py \
+            --base-artifact-root runtime/base-render \
+            --brand-audio-root runtime/brand-audio \
+            --video-config .run001/video-a-investigative-longform.json \
+            --output-root runtime/final-render \
+            | tee runtime/spoken-brand-finalization.log
+          grep -Fx 'OFFICIAL_INTRO_FIRST=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'SPOKEN_OPENING_AFTER_INTRO=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'VOICE_B_USED=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'OPENING_TEXT_CANONICAL=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'CLOSING_TEXT_CANONICAL=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'BRAND_AUDIO_CACHE_POLICY=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'EDITORIAL_HOOK_PRESERVED=PASS' runtime/spoken-brand-finalization.log
+          grep -Fx 'BASE_RENDER_REUSED=YES' runtime/spoken-brand-finalization.log
+          grep -Fx 'REDUNDANT_LONGFORM_TTS_REQUESTS=0' runtime/spoken-brand-finalization.log
+          grep -Fx 'REDUNDANT_MEDIA_DOWNLOADS=0' runtime/spoken-brand-finalization.log
+          grep -Fx 'FULL_DECODE=PASS' runtime/spoken-brand-finalization.log
+
+      - name: Re-run final professional gates on composed output
+        run: |
+          set -euo pipefail
+          python scripts/run001_professional_finalize_qa.py \
+            --artifact-root runtime/final-render \
+            | tee runtime/final-professional-qa.log
+          grep -Fx 'PROFESSIONAL_FINAL_QA=PASS' runtime/final-professional-qa.log
+          grep -Fx 'VIDEO_A_SPOKEN_BRANDING_QA=PASS' runtime/final-professional-qa.log
+          grep -Fx 'JOB18_UNCHANGED=YES' runtime/final-professional-qa.log
+          grep -Fx 'PUBLICATION_AUTHORITY_UNCHANGED=YES' runtime/final-professional-qa.log
+
+      - name: Deliver final branded review to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          python scripts/telegram_render_review_worker.py \
+            --artifact-root runtime/final-render
+
+      - name: Upload final QA-passed VIDEO A
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-spoken-brand-final-${{ github.run_id }}
+          path: runtime/final-render/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload compact finalization proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-spoken-brand-proof-${{ github.run_id }}
+          path: |
+            runtime/spoken-brand-finalization.log
+            runtime/final-professional-qa.log
+            runtime/final-render/**/spoken-branding-finalization.json
+            runtime/final-render/**/brand-audio-manifest.json
+            runtime/final-render/**/render-manifest.json
+            runtime/final-render/**/render-qa.json
+            runtime/final-render/**/audiovisual-qa.json
+          if-no-files-found: error
+          retention-days: 30
