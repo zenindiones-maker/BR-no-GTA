@@ -42,58 +42,89 @@ def main() -> int:
     chat=(os.environ.get("TELEGRAM_REVIEW_CHAT_ID") or "").strip()
     if not token or not chat:
         raise RuntimeError("Telegram review credentials unavailable")
+
     bundle=Path("runtime/brand-audio-checkpoint")
     manifest=json.loads((bundle/"brand-audio-manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("voice")!="pt-BR-ThalitaMultilingualNeural":
+        raise RuntimeError("canonical Voice B identity mismatch")
+    selected=manifest.get("selected") or {}
+    opening=selected.get("opening") or {}
+    closing=selected.get("closing") or {}
+    if opening.get("take_id")!="take-2":
+        raise RuntimeError("Fluid 2 opening is not selected")
+    if closing.get("take_id")!="G-brand-mixed":
+        raise RuntimeError("approved G closing is not selected")
+
     review_root=Path("runtime/brand-audio-proof/review")
     rows=[]
-    labels=(("opening","Abertura"),("closing","Fechamento"))
-    for kind,label in labels:
-        for item in manifest["takes"][kind]:
-            take=item["take_id"]
-            source=bundle/"takes"/kind/f"{take}.flac"
-            target=review_root/f"{kind}-{take}.mp3"
-            _mp3(source,target)
-            caption=(
-                f"BR no GTA 6 · Identidade Sonora · {label} · {take.replace('-', ' ').title()}\n"
-                "Mesmo texto canônico. Variação apenas de prosódia."
+    items=(
+        ("opening","Abertura oficial · Fluid 2",opening),
+        ("closing","Fechamento oficial · G-brand-mixed",closing),
+    )
+    for kind,label,item in items:
+        take=str(item["take_id"])
+        source=bundle/"takes"/kind/f"{take}.flac"
+        if not source.is_file() or source.stat().st_size<=0:
+            raise RuntimeError(f"canonical review asset missing: {kind}")
+        target=review_root/f"{kind}-{take}.mp3"
+        _mp3(source,target)
+        caption=(
+            f"BR no GTA 6 · PROVA OFICIAL · {label}\n"
+            "Voice B · pt-BR-ThalitaMultilingualNeural\n"
+            + (
+                "Abertura humana aprovada: Fluid 2 (+3%, +1Hz)."
+                if kind=="opening"
+                else "Fechamento humano aprovado: G-brand-mixed · Vice City correto."
             )
-            with target.open("rb") as stream:
-                payload=_post(
-                    "sendAudio",
-                    token=token,
-                    data={"chat_id":chat,"caption":caption},
-                    files={"audio":(target.name,stream,"audio/mpeg")},
-                )
-            rows.append({
-                "kind":kind,
-                "take_id":take,
-                "telegram_message_id":int(payload["result"]["message_id"]),
-                "review_file":str(target),
-            })
-            time.sleep(1.0)
+        )
+        with target.open("rb") as stream:
+            payload=_post(
+                "sendAudio",
+                token=token,
+                data={"chat_id":chat,"caption":caption},
+                files={"audio":(target.name,stream,"audio/mpeg")},
+            )
+        rows.append({
+            "kind":kind,
+            "take_id":take,
+            "telegram_message_id":int(payload["result"]["message_id"]),
+            "review_file":str(target),
+        })
+        time.sleep(1.0)
+
     control=(
-        "BR no GTA 6 · Identidade Sonora\n"
-        "Os 3 takes de abertura e os 3 de fechamento usam exatamente os textos aprovados e Voice B.\n"
-        "Take 1 permanece fallback de produção por preservar o perfil humano canônico +0%/+0Hz; "
-        "Take 2/3 NÃO são promovidos automaticamente.\n"
-        "HUMAN_BRAND_TAKE_REVIEW=PENDING"
+        "BR no GTA 6 · Identidade sonora oficial\n"
+        "VOICE_COUNT=1\n"
+        "VOICE=Voice B / pt-BR-ThalitaMultilingualNeural\n"
+        "OPENING=Fluid 2\n"
+        "CLOSING=G-brand-mixed\n"
+        "ALTERNATIVE_VOICE_CASTING=OFF\n"
+        "Esses são os dois assets canônicos aprovados para produção."
     )
     control_payload=_post("sendMessage",token=token,data={"chat_id":chat,"text":control})
     evidence={
         "status":"SENT",
-        "sample_count":len(rows),
+        "sample_count":2,
         "samples":rows,
         "control_message_id":int(control_payload["result"]["message_id"]),
-        "human_brand_take_review":"PENDING",
-        "automatic_naturality_winner":False,
-        "production_fallback_take_id":"take-1",
+        "voice_count":1,
+        "voice":"Voice B",
+        "voice_short_name":"pt-BR-ThalitaMultilingualNeural",
+        "opening_reference":"I-opening-fluid-2.mp3",
+        "selected_opening_take_id":"take-2",
+        "final_end_signature_sample_id":"G-brand-mixed",
+        "human_brand_take_review":"APPROVED",
+        "automatic_voice_substitution_allowed":False,
     }
     Path("runtime/brand-audio-proof").mkdir(parents=True,exist_ok=True)
     Path("runtime/brand-audio-proof/telegram-brand-audio-review.json").write_text(
         json.dumps(evidence,ensure_ascii=False,indent=2),encoding="utf-8"
     )
-    print("BRAND_AUDIO_REVIEW_SAMPLES=6")
-    print("HUMAN_BRAND_TAKE_REVIEW=PENDING")
+    print("BRAND_AUDIO_REVIEW_SAMPLES=2")
+    print("VOICE_B_USED=PASS")
+    print("FLUID2_OPENING_SELECTED=PASS")
+    print("G_FINAL_END_SELECTED=PASS")
+    print("TELEGRAM_BRAND_AUDIO_REVIEW=SENT")
     return 0
 
 
