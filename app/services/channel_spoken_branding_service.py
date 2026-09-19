@@ -11,7 +11,7 @@ from app.services.pronunciation_service import (
     pronunciation_lexicon_version,
 )
 
-SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v2"
+SPOKEN_BRANDING_CONTRACT_VERSION = "br-no-gta-spoken-branding/v3"
 OFFICIAL_INTRO_ASSET_ID = 1
 OFFICIAL_VOICE_BLIND_ID = "Voice B"
 OFFICIAL_VOICE_SHORT_NAME = "pt-BR-ThalitaMultilingualNeural"
@@ -22,7 +22,12 @@ OPENING_PREFIX = "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de "
 CLOSING_LINE = "E BR não dorme em Vice City"
 OFFICIAL_RATE = "+0%"
 OFFICIAL_PITCH = "+0Hz"
-SELECTED_TAKE_ID = "take-1"
+SELECTED_OPENING_TAKE_ID = "take-2"
+SELECTED_CLOSING_TAKE_ID = "take-1"
+# Backward-compatible alias: production opening is the human-selected Fluid 2 profile.
+SELECTED_TAKE_ID = SELECTED_OPENING_TAKE_ID
+HUMAN_APPROVED_OPENING_REFERENCE = "I-opening-fluid-2.mp3"
+HUMAN_APPROVED_FINAL_END_SAMPLE_ID = "G-brand-mixed"
 
 OPENING_DIRECTION = {
     "personality": [
@@ -42,9 +47,9 @@ CLOSING_DIRECTION = {
 }
 
 TAKE_PROFILES = (
-    {"take_id":"take-1","rate":"+0%","pitch":"+0Hz","role":"canonical-human-profile"},
-    {"take_id":"take-2","rate":"+2%","pitch":"+2Hz","role":"prosody-variation"},
-    {"take_id":"take-3","rate":"-2%","pitch":"+1Hz","role":"prosody-variation"},
+    {"take_id":"take-1","rate":"+0%","pitch":"+0Hz","role":"legacy-human-baseline"},
+    {"take_id":"take-2","rate":"+3%","pitch":"+1Hz","role":"human-approved-fluid2-prosody"},
+    {"take_id":"take-3","rate":"+2%","pitch":"+0Hz","role":"prosody-variation"},
 )
 
 
@@ -99,7 +104,11 @@ def get_spoken_branding_standard() -> dict[str, Any]:
         "rate": OFFICIAL_RATE,
         "pitch": OFFICIAL_PITCH,
         "take_count_per_phrase": len(TAKE_PROFILES),
-        "selected_take_fallback": SELECTED_TAKE_ID,
+        "selected_take_fallback": SELECTED_OPENING_TAKE_ID,
+        "selected_opening_take_id": SELECTED_OPENING_TAKE_ID,
+        "selected_closing_fallback_take_id": SELECTED_CLOSING_TAKE_ID,
+        "human_approved_opening_reference": HUMAN_APPROVED_OPENING_REFERENCE,
+        "human_approved_final_end_sample_id": HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
         "automatic_naturality_winner": False,
         "cache_policy": {
             "opening": "voice+direction+theme+provider/version+take",
@@ -148,8 +157,17 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
         "opening_direction":deepcopy(OPENING_DIRECTION),
         "closing_direction":deepcopy(CLOSING_DIRECTION),
         "take_profiles":[dict(item) for item in TAKE_PROFILES],
-        "selected_take_id":SELECTED_TAKE_ID,
-        "selection_rule":"canonical Voice B +0%/+0Hz take is the fail-closed baseline; prosody variants never auto-promote on technical score",
+        "selected_take_id":SELECTED_OPENING_TAKE_ID,
+        "selected_opening_take_id":SELECTED_OPENING_TAKE_ID,
+        "selected_closing_fallback_take_id":SELECTED_CLOSING_TAKE_ID,
+        "human_approved_opening_reference":HUMAN_APPROVED_OPENING_REFERENCE,
+        "human_approved_final_end_sample_id":HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
+        "selection_rule":(
+            "opening uses the human-approved Fluid 2 prosody profile (+3%, +1Hz); "
+            "closing checkpoint is only a technical fallback because the final end signature "
+            "is the separately locked human-approved G-brand-mixed asset; no automatic "
+            "naturality winner or substitution is allowed"
+        ),
         "cache_policy":{
             "fingerprint_components":[
                 "kind","text","voice_short_name","provider","provider_version",
@@ -181,6 +199,8 @@ def validate_spoken_branding_contract(contract: dict[str,Any]) -> dict[str,Any]:
         "official_voice_profile","voice_short_name","provider","provider_version","language",
         "opening_template","opening_fixed_prefix","opening_text","closing_template","closing_line",
         "rate","pitch","pronunciation_policy","opening_direction","closing_direction","take_profiles","selected_take_id",
+        "selected_opening_take_id","selected_closing_fallback_take_id",
+        "human_approved_opening_reference","human_approved_final_end_sample_id",
         "selection_rule","cache_policy","timeline_order","contract_sha256",
     )
     for key in immutable:
