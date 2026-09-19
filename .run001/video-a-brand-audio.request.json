@@ -8,14 +8,14 @@
   "opening_theme": "fatos, vazamentos, tecnologia e rumores de GTA 6",
   "opening_template": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de [tema do vídeo]!",
   "closing_line": "E BR não dorme em Vice City",
-  "take_count_per_phrase": 3,
+  "take_count_per_phrase": 1,
   "automatic_naturality_winner": false,
-  "production_fallback_take_id": "take-2",
+  "production_fallback_take_id": null,
   "cache_required": true,
   "youtube_publication": false,
   "job18_frozen": true,
-  "attempt": 5,
-  "retry_reason": "Re-run after aligning focused render-config test with canonical YouTube delivery_profile; require Fluid 2 opening and locked G final signature.",
+  "attempt": 6,
+  "retry_reason": "Re-run after retiring all alternative voices/casting and compacting production branding to Fluid 2 opening + immutable G closing.",
   "selected_opening_take_id": "take-2",
   "selected_opening_profile": {
     "reference": "I-opening-fluid-2.mp3",
@@ -28,5 +28,9 @@
     "status": "HUMAN_APPROVED",
     "automatic_substitution_allowed": false
   },
-  "base_head": "d7a19ab7ae2a37cfca5afc082f5b25ee56079b3c"
+  "base_head": "94d2fd4a36c9cfc050c6d52682aad71ea2388c3e",
+  "selected_closing_asset_id": "G-brand-mixed",
+  "runtime_voice_count": 1,
+  "allowed_runtime_voice": "pt-BR-ThalitaMultilingualNeural",
+  "alternative_voice_casting_enabled": false
 }
