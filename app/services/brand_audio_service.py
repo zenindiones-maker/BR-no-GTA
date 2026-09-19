@@ -24,7 +24,7 @@ from app.services.pronunciation_service import (
 )
 
 
-BUNDLE_VERSION="brand-audio-bundle/v2"
+BUNDLE_VERSION="brand-audio-bundle/v3"
 
 
 class BrandAudioError(RuntimeError):
@@ -251,6 +251,64 @@ def _materialize_take(
     }
 
 
+def _materialize_approved_closing(
+    *,
+    contract: dict[str,Any],
+    bundle_root: Path,
+) -> dict[str,Any]:
+    source=(
+        Path(__file__).resolve().parents[2]
+        /"assets"/"branding"/"audio"/"closing-from-g-approved-20260919.flac"
+    )
+    if not source.is_file() or source.stat().st_size<=0:
+        raise BrandAudioError("approved G closing asset is missing")
+    target=bundle_root/"takes"/"closing"/"G-brand-mixed.flac"
+    target.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(source,target)
+    probe,duration=_probe_audio(target)
+    _full_decode(target)
+    plan=resolve_synthesis_plan(
+        contract["closing_line"],
+        default_locale=contract["language"],
+        voice=contract["voice_short_name"],
+    )
+    vice_ok=any(
+        span.pronunciation_identity=="vice-city"
+        and span.locale=="en-US"
+        and span.text=="Vice City"
+        for span in plan.spans
+    )
+    if not vice_ok:
+        raise BrandAudioError("approved G closing lost Vice City pronunciation contract")
+    return {
+        "kind":"closing",
+        "take_id":"G-brand-mixed",
+        "role":"human-approved-immutable-final-signature",
+        "text":contract["closing_line"],
+        "canonical_audio_text":f"BR no GTA 6. {contract['closing_line']}.",
+        "synthesis_plan":plan.to_dict(),
+        "pronunciation_qa":{
+            "canonical_text_preserved":plan.canonical_text_preserved,
+            "foreign_span_count":plan.foreign_span_count,
+            "lexicon_hits":list(plan.lexicon_hits),
+            "human_approval_required":False,
+            "human_approved":True,
+        },
+        "rate":"human-approved-asset",
+        "pitch":"human-approved-asset",
+        "fingerprint":_sha256(source),
+        "path":str(target.relative_to(bundle_root.parent)),
+        "sha256":_sha256(target),
+        "size_bytes":target.stat().st_size,
+        "duration_seconds":duration,
+        "source":"immutable-repository-asset",
+        "tts_wall_clock_seconds":0.0,
+        "mastering_wall_clock_seconds":0.0,
+        "technical_qa":"PASS",
+        "prosody_selection_score":None,
+    }
+
+
 def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
     contract=validate_job_spoken_branding(job)
     bundle_root=root/"brand-audio-bundle"
@@ -276,21 +334,24 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
     stats={"cache_hit":0,"cache_miss":0,"external_calls":0}
     opening_text=contract["opening_text"]
     closing_text=contract["closing_line"]
-    takes={"opening":[],"closing":[]}
-    for kind,text in (("opening",opening_text),("closing",closing_text)):
-        for take in contract["take_profiles"]:
-            takes[kind].append(_materialize_take(
-                kind=kind,text=text,contract=contract,take=take,bundle_root=bundle_root,stats=stats
-            ))
-
-    selected={
-        "opening":dict(
-            next(x for x in takes["opening"] if x["take_id"]==SELECTED_OPENING_TAKE_ID)
-        ),
-        "closing":dict(
-            next(x for x in takes["closing"] if x["take_id"]==SELECTED_CLOSING_TAKE_ID)
-        ),
-    }
+    opening_profile=next(
+        x for x in contract["take_profiles"]
+        if x["take_id"]==SELECTED_OPENING_TAKE_ID and x.get("runtime_enabled") is True
+    )
+    opening=_materialize_take(
+        kind="opening",
+        text=opening_text,
+        contract=contract,
+        take=opening_profile,
+        bundle_root=bundle_root,
+        stats=stats,
+    )
+    closing=_materialize_approved_closing(
+        contract=contract,
+        bundle_root=bundle_root,
+    )
+    takes={"opening":[opening],"closing":[closing]}
+    selected={"opening":dict(opening),"closing":dict(closing)}
 
     manifest={
         "version":BUNDLE_VERSION,
@@ -310,23 +371,21 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
             "selected_opening_take_id":SELECTED_OPENING_TAKE_ID,
             "selected_closing_fallback_take_id":SELECTED_CLOSING_TAKE_ID,
             "opening_basis":"human-approved Fluid 2 prosody reference applied to exact canonical opening text",
-            "closing_basis":"technical checkpoint fallback only; final end signature is separately human-approved G-brand-mixed",
+            "closing_basis":"immutable repository asset G-brand-mixed; no closing TTS in production",
             "automatic_naturality_winner":False,
             "minimum_time_not_used_as_winner":True,
         },
         "cache":{
             **stats,
-            "policy":"content-addressed canonical text+pronunciation plan+lexicon version+voice+direction+provider/version+take profile",
+            "policy":"selected Fluid 2 opening is content-addressed; approved G closing is immutable repository asset",
             "closing_fixed_reusable":True,
         },
         "checks":{
             "voice_b_used":True,
             "opening_text_canonical":opening_text==contract["opening_text"],
             "closing_text_canonical":closing_text==contract["closing_line"],
-            "three_opening_takes":len(takes["opening"])==3,
-            "three_closing_takes":len(takes["closing"])==3,
-            "same_text_all_opening_takes":len({x["text"] for x in takes["opening"]})==1,
-            "same_text_all_closing_takes":len({x["text"] for x in takes["closing"]})==1,
+            "single_production_opening_take":len(takes["opening"])==1,
+            "single_approved_closing_asset":len(takes["closing"])==1 and selected["closing"]["take_id"]=="G-brand-mixed",
             "brand_audio_cache_policy":True,
             "canonical_text_preserved":all(
                 item["pronunciation_qa"]["canonical_text_preserved"]
@@ -343,14 +402,15 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
                 and selected["opening"]["rate"]=="+3%"
                 and selected["opening"]["pitch"]=="+1Hz"
             ),
-            "vice_city_language_resolution":all(
-                any(
-                    span.get("pronunciation_identity")=="vice-city"
-                    and span.get("locale")=="en-US"
-                    and span.get("text")=="Vice City"
-                    for span in item["synthesis_plan"]["spans"]
-                )
-                for item in takes["closing"]
+            "vice_city_language_resolution":any(
+                span.get("pronunciation_identity")=="vice-city"
+                and span.get("locale")=="en-US"
+                and span.get("text")=="Vice City"
+                for span in selected["closing"]["synthesis_plan"]["spans"]
+            ),
+            "approved_closing_reused_without_tts":(
+                selected["closing"]["source"]=="immutable-repository-asset"
+                and selected["closing"]["tts_wall_clock_seconds"]==0.0
             ),
         },
         "bundle_reused":False,
