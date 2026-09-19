@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
@@ -127,6 +128,8 @@ def execute_youtube_specialist_via_harness(
     and an observed receipt is persisted as a Learning Plane episode.
     """
     from app.services.harness_authorization_service import (
+        consume_harness_authorization,
+        issue_harness_authorization,
         resolve_harness_authorization,
         validate_harness_authorization,
     )
@@ -176,6 +179,95 @@ def execute_youtube_specialist_via_harness(
     if not evidence_refs:
         raise ValueError("specialist execution requires evidence_refs")
 
+    semantic_context = payload.get("semantic_context")
+    semantic_evidence = None
+    semantic_text = None
+    semantic_provider = None
+    semantic_model = None
+    semantic_refs: tuple[str, ...] = ()
+    if semantic_context is not None:
+        from app.services.harness_ai_provider_service import execute_harness_ai_generation
+        from app.services.harness_routing_policy_service import (
+            HarnessRoutingRequest,
+            route_harness_request,
+        )
+
+        context_text = json.dumps(
+            semantic_context,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+        if not context_text.strip() or len(context_text) > 24_000:
+            raise ValueError("semantic_context must be non-empty and <= 24000 serialized characters")
+
+        provider_routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent=f"{capability_id} specialist reasoning over verified YouTube evidence",
+                authorized_action=auth.authorized_action,
+                domain="ai",
+                task_class=f"tubegent-semantic:{capability_id}",
+                goal_id=goal_id,
+                required_capability_id="ai.reasoning.text",
+                provider_required=True,
+                provider_domain="ai",
+                preferred_providers=("opencode",),
+                allowed_providers=("opencode",),
+                fallback_allowed=False,
+                zero_cost_operation=True,
+                learning_required=True,
+            )
+        )
+        if provider_routing.selected_provider != "opencode":
+            raise RuntimeError("Harness did not select the governed zero-cost OpenCode provider")
+        provider_authorization = issue_harness_authorization(
+            authorized_action=auth.authorized_action,
+            subject=f"provider:{provider_routing.selected_provider}",
+            harness_decision_id=auth.harness_decision_id,
+            execution_id=auth.execution_id,
+            lineage={
+                "parent_authorization_id": auth.authorization_id,
+                "routing_id": provider_routing.routing_id,
+                "capability_id": provider_routing.selected_capability_id,
+                "selected_provider": provider_routing.selected_provider,
+                "selected_model": provider_routing.selected_model,
+                "selected_executor_binding": provider_routing.selected_provider_executor_binding,
+                "mission_id": mission_id,
+                "task_id": task_id,
+                "goal_id": goal_id,
+                "specialist_capability_id": capability_id,
+            },
+        )
+        role = str(record.agent_id or capability_id)
+        prompt = (
+            "You are a subordinate BR-no-GTA YouTube specialist. "
+            "DeepSeek Harness is the sole authority. Do not authorize publication, "
+            "do not invent facts, and reason only from the supplied context.\n\n"
+            f"ROLE={role}\n"
+            f"CAPABILITY={capability_id}\n"
+            f"OBJECTIVE={str(payload.get('objective') or '').strip()}\n"
+            f"EVIDENCE_REFS={json.dumps(list(evidence_refs), ensure_ascii=False)}\n"
+            f"SEMANTIC_CONTEXT={context_text}\n\n"
+            "Return a concise professional analysis with: findings, risks, recommendation, "
+            "and what evidence is still missing. Explicitly separate verified facts from inference."
+        )
+        try:
+            semantic_evidence = execute_harness_ai_generation(
+                prompt=prompt,
+                authorization=provider_authorization,
+                routing_decision=provider_routing,
+            )
+        finally:
+            consume_harness_authorization(provider_authorization)
+        if semantic_evidence.status != "EXECUTED" or not isinstance(semantic_evidence.result, dict):
+            raise RuntimeError("TUBEGENT semantic reasoning provider failed")
+        semantic_text = str(semantic_evidence.result.get("text") or "").strip()
+        if not semantic_text:
+            raise RuntimeError("TUBEGENT semantic reasoning returned empty output")
+        semantic_provider = semantic_evidence.provider
+        semantic_model = semantic_evidence.model
+        semantic_refs = tuple(semantic_evidence.evidence_refs)
+
     started_at = datetime.now(timezone.utc).isoformat()
     execution = execute_capability(
         capability_id=capability_id,
@@ -197,19 +289,26 @@ def execute_youtube_specialist_via_harness(
             agent_id=str(execution.result.get("agent_id") or record.agent_id or capability_id),
             capability=capability_id,
             executor=EXECUTOR_BINDING,
-            provider=str(record.provider),
+            provider=str(semantic_provider or record.provider),
             input_refs=evidence_refs,
             output_refs=(output_ref,),
-            evidence_refs=evidence_refs,
+            evidence_refs=tuple(dict.fromkeys((*evidence_refs, *semantic_refs))),
             started_at=started_at,
             finished_at=finished_at,
             status="COMPLETED",
             validation_level="LIVE",
-            external_call_performed=False,
+            external_call_performed=semantic_evidence is not None,
             exit_code=0,
             returned_to_harness=True,
         )
-        result = {**execution.result, "receipt": receipt.to_dict()}
+        result = {
+            **execution.result,
+            "semantic_analysis": semantic_text,
+            "semantic_provider": semantic_provider,
+            "semantic_model": semantic_model,
+            "semantic_evidence": semantic_evidence.to_dict() if semantic_evidence is not None else None,
+            "receipt": receipt.to_dict(),
+        }
         wrapped = CapabilityEvidence(
             capability_id=execution.capability_id,
             provider=execution.provider,
@@ -263,6 +362,7 @@ def execute_youtube_specialist_via_harness(
         routing_id=routing_decision.routing_id,
         tool="tubegent",
         operation=capability_id,
+        model=semantic_model,
         executor=EXECUTOR_BINDING,
     )
     capture_canonical_execution_episode(
