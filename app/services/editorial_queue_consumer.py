@@ -93,6 +93,7 @@ def process_next_editorial_queue_item(
     brain_decision: dict[str, Any] | None = None,
     execution_context: dict[str, Any] | None = None,
     goal_id: str | None = None,
+    editorial_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """
     Consome uma única entrada da fila editorial.
@@ -183,6 +184,7 @@ def process_next_editorial_queue_item(
         else:
             script_id = generate_and_save_script(
                 idea_id,
+                editorial_context=editorial_context,
                 target_duration_seconds=target_duration_seconds,
             )
     else:
@@ -190,11 +192,13 @@ def process_next_editorial_queue_item(
             script_id = generate_and_save_script(
                 idea_id,
                 ai_provider=ai_provider,
+                editorial_context=editorial_context,
             )
         else:
             script_id = generate_and_save_script(
                 idea_id,
                 ai_provider=ai_provider,
+                editorial_context=editorial_context,
                 target_duration_seconds=target_duration_seconds,
             )
 
