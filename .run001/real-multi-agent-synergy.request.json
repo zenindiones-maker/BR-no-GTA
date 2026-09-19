@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T14:18:30Z",
-  "base_head": "155056f0ae0d04c1ea97799c4bd83616375a5123",
-  "purpose": "Final E2E product-quality rerun after same-run OpenCode and canonical claim extraction fixes.",
+  "requested_at": "2026-09-19T14:18:00Z",
+  "base_head": "e0163f29a351d83e397e777f0edc9d157d998a0b",
+  "purpose": "Execute o E2E real final corrigido e audite a qualidade persistida do pacote YouTube sem publicação.",
   "require_real_source": true,
   "require_semantic_model_execution": true,
   "require_observed_learning": true,
   "require_product_quality_audit": true,
-  "require_canonical_youtube_package": true,
+  "require_youtube_package_persistence": true,
+  "require_harness_package_authorization": true,
+  "require_structured_youtube_specialists": true,
   "job18_unchanged": true,
   "publication": false
 }
