@@ -458,14 +458,15 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
         item["DOMAINS"].append("development")
         item["ALLOWED_ACTIONS"].append("DEVELOPMENT")
         item["HARNESS_ROUTE_AVAILABLE"] = True
-        item["EXECUTABLE_NOW"] = True
         if worker_id == "codex":
-            item["STATUS"] = "ACTIVE_EXECUTABLE"
+            item["EXECUTABLE_NOW"] = False
+            item["STATUS"] = "VALID_SUPPORT_COMPONENT"
             item["NOTES"].append(
-                "Agent Office Codex worker engine remains a support executor; "
-                "the canonical 24 Addy semantic capabilities route through addy-agent-skills"
+                "Agent Office Codex worker is an optional read-only support engine and "
+                "requires runtime Codex authentication; canonical Addy capabilities never route through it."
             )
         else:
+            item["EXECUTABLE_NOW"] = True
             item["STATUS"] = "ACTIVE_EXECUTABLE"
             item["NOTES"].append(
                 "Internal deterministic Agent Office worker engine selected only through agent-office.execute"
