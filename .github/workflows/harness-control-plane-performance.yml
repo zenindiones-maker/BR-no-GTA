@@ -1,0 +1,79 @@
+name: Harness Control Plane Performance Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/harness-control-plane-performance.yml'
+      - '.run001/harness-control-plane-performance.request.json'
+      - 'scripts/benchmark_harness_control_plane.py'
+      - 'app/services/harness_routing_policy_service.py'
+      - 'app/services/harness_collaboration_service.py'
+      - 'app/services/system_synergy_service.py'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/harness-control-plane/control-plane.db
+
+    steps:
+      - name: Checkout exact branch state
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install application runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Execute observed control-plane benchmark
+        run: |
+          set -euo pipefail
+          python scripts/benchmark_harness_control_plane.py             --samples 300             --plan-samples 80             --output runtime/harness-control-plane/baseline.json
+
+      - name: Assert baseline contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/harness-control-plane/baseline.json").read_text())
+          assert d["status"]=="PASS"
+          assert d["observed"] is True
+          assert d["authority"]=="DEEPSEEK_HARNESS"
+          assert d["harness_routing"]["samples"]==300
+          assert d["agent_selection"]["samples"]==300
+          assert d["collaboration_plan"]["samples"]==80
+          assert d["external_call_count"]==0
+          assert d["network_io_bytes"]==0
+          assert d["side_effects"]==[]
+          assert d["job18_unchanged"] is True
+          assert d["youtube_publication"] is False
+          print("HARNESS_CONTROL_PLANE_BASELINE=PASS")
+          print("JOB18_UNCHANGED=YES")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
+      - name: Upload baseline evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-control-plane-baseline-${{ github.run_id }}
+          path: runtime/harness-control-plane/baseline.json
+          if-no-files-found: error
+          retention-days: 30
