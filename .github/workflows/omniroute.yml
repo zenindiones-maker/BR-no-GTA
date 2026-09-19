@@ -166,17 +166,9 @@ jobs:
           config={
               "$schema":"https://opencode.ai/config.json",
               "model":"opencode/big-pickle",
-              "default_agent":"bounded-semantic",
-              "agents":{
-                  "bounded-semantic":{
-                      "description":"One-step evidence-bounded semantic reasoning with no tools.",
-                      "mode":"primary",
-                      "steps":1,
-                      "permissions":[
-                          {"action":"*","resource":"*","effect":"deny"}
-                      ],
-                  }
-              },
+              "permissions":[
+                  {"action":"*","resource":"*","effect":"deny"}
+              ],
           }
           (work_root/"opencode.json").write_text(
               json.dumps(config, separators=(",",":")),
@@ -194,7 +186,6 @@ jobs:
             cd runtime/opencode-native-workdir
             timeout 180 opencode run \
               --standalone \
-              --agent "bounded-semantic" \
               --model "opencode/big-pickle" \
               --format json \
               "$PROMPT"
@@ -262,7 +253,7 @@ jobs:
               "parse_errors":parse_errors,
               "tool_call_count":tool_call_count,
               "event_types":event_types,
-              "semantic_agent":"bounded-semantic",
+              "semantic_agent":"build",
               "semantic_steps":1,
               "semantic_tools_policy":"deny-all",
               "safe_stderr":safe_stderr[-20:],
@@ -278,7 +269,7 @@ jobs:
               "exit_code":result["exit_code"],
               "usable_text":bool(answer),
               "tool_call_count":tool_call_count,
-              "semantic_agent":"bounded-semantic",
+              "semantic_agent":"build",
               "fallback_occurred":False,
           },sort_keys=True))
           if tool_call_count != 0:
@@ -287,6 +278,7 @@ jobs:
           if result["status"]!="EXECUTED":
               print("OPENCODE_NATIVE_ERROR=native_execution_failed")
               raise SystemExit(rc or 1)
+          print("OPENCODE_NATIVE_SEMANTIC_AGENT=build")
           print("OPENCODE_NATIVE_SEMANTIC_TOOLS=DENY_ALL")
           print("OPENCODE_NATIVE_TOOL_CALL_COUNT=0")
           PY
