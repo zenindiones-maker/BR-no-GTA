@@ -9,7 +9,6 @@ import tempfile
 from typing import Any
 
 from app.services.agent_office.codex_bounded_worker import (
-    CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
     codex_execution_failure,
     codex_sanitized_environment,
 )
@@ -34,14 +33,19 @@ def _sandbox(
     timeout: float = 30,
 ) -> subprocess.CompletedProcess[str]:
     env_source = dict(os.environ if source_env is None else source_env)
+    permission_profile = {
+        "read-only": ":read-only",
+        "workspace-write": ":workspace",
+    }[mode]
     return subprocess.run(
         [
             "codex",
-            *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
-            "--sandbox",
-            mode,
             "sandbox",
             "linux",
+            "--permissions-profile",
+            permission_profile,
+            "-C",
+            str(cwd),
             *command,
         ],
         cwd=cwd,
