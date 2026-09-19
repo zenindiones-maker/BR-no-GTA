@@ -435,6 +435,39 @@ SYSTEM_IMPROVEMENT_RECORD = CapabilityRecord(
     side_effects=(),
 )
 
+GTA6_BRAIN_DECISION_RECORD = CapabilityRecord(
+    capability_id="gta6.brain.decide",
+    capability_type="AGENT",
+    domain="gta6-decision",
+    implementation="Harness-subordinated GTA6 Brain domain decision specialist",
+    input_contract="canonical GTA6 operational state + optional mission/goal lineage",
+    output_contract="BrainDecision + AgentInvocationReceipt + canonical Harness evidence",
+    requirements=(
+        "persisted Harness DECISION authorization",
+        "Harness-selected ai.reasoning.text provider/model",
+        "canonical BR database observation",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DECISION",),
+    policy_tags=("gta6", "brain", "domain-specialist", "decision", "evidence", "learning"),
+    security_boundary=(
+        "DeepSeek Harness remains sole authority. GTA6 Brain may recommend exactly one bounded action "
+        "but cannot authorize or execute it; provider/model is selected by Harness policy."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="HARNESS_AI_PROVIDER_POLICY",
+    latency_class="REMOTE_AI",
+    quality_class="DOMAIN_DECISION_STRUCTURED_FAIL_CLOSED",
+    evidence_contract="app.services.gta6_brain.BrainDecision + AgentInvocationReceipt",
+    fallback_eligibility=False,
+    executor_binding="app.services.gta6_brain_harness_service.execute_authorized_gta6_brain_decision",
+    version="1",
+    provider_id=None,
+    agent_id="gta6-brain",
+    side_effects=(),
+)
+
 MEDIA_ANALYSIS_CLOUD_RECORD = CapabilityRecord(
     capability_id=MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
     capability_type="EXECUTOR",
@@ -483,6 +516,7 @@ for _record in (
     TELEGRAM_USER_INPUT_RECORD,
     MONETIZATION_RECORD,
     SYSTEM_IMPROVEMENT_RECORD,
+    GTA6_BRAIN_DECISION_RECORD,
     MEDIA_ANALYSIS_CLOUD_RECORD,
     *_YOUTUBE_DEPARTMENT_RECORDS,
 ):
