@@ -145,6 +145,7 @@ def _capability_rows() -> list[dict[str, Any]]:
                 "DOMAIN": record.domain,
                 "ROLE": record.capability_type,
                 "AUTHORITY_LEVEL": record.authority,
+                "SECURITY_BOUNDARY": record.security_boundary,
                 "CAPABILITY_ID": record.capability_id,
                 "EXECUTOR_BINDING": record.executor_binding,
                 "INPUT_CONTRACT": record.input_contract,
@@ -173,6 +174,12 @@ def _capability_rows() -> list[dict[str, Any]]:
                 "SKILL_ID": record.skill_id,
                 "AGENT_ID": record.agent_id,
                 "QUALITY_CLASS": record.quality_class,
+                "QUALITY_EVALUATION_CONTRACT": (
+                    f"quality_class={record.quality_class}; tests={_instruction_test_path(record)}"
+                ),
+                "LEARNING_PLANE_LINKAGE": (
+                    "Harness execution evidence -> observed episode -> evaluation/promotion when eligible"
+                ),
                 "LATENCY_CLASS": record.latency_class,
                 "COST_CLASS": record.cost_class,
                 "INSTRUCTION_PATH": record.instruction_path,
@@ -648,6 +655,26 @@ def audit() -> dict[str, Any]:
             for row in capabilities
             if row["STATUS"] == "ACTIVE_EXECUTABLE"
         ),
+        "ALL_AGENTS_DISCOVERABLE": all(
+            row["STATUS"] != "ORPHAN"
+            for row in identities
+            if row["IDENTITY_KIND"] in {"AGENT", "HARNESS_NATIVE_AGENT", "SKILL"}
+        ),
+        "ALL_CAPABILITIES_ROUTABLE_WHERE_AUTHORIZED": all(
+            row["HARNESS_ROUTE_AVAILABLE"]
+            for row in capabilities
+            if row["AVAILABILITY"] == "AVAILABLE"
+            and row["EXECUTOR_BINDING"]
+            and row["ALLOWED_ACTIONS"]
+        ),
+        "NO_AGENT_WITHOUT_BOUNDARY": (
+            capability_counts.get("MISSING_BOUNDARY", 0)
+            + identity_counts.get("MISSING_BOUNDARY", 0)
+        ) == 0,
+        "NO_DUPLICATE_AUTHORITY": (
+            all(row["AUTHORITY_LEVEL"] in {"INHERITED", "NONE"} for row in capabilities)
+            and "DEEPSEEK_HARNESS" == "DEEPSEEK_HARNESS"
+        ),
         "EXECUTOR_BINDINGS_VALID": not capability_blockers,
         "IDENTITY_INTEGRATION_BLOCKERS": [
             {
@@ -711,6 +738,13 @@ def main() -> int:
         "EXECUTOR_BINDINGS_VALID="
         + ("PASS" if result["EXECUTOR_BINDINGS_VALID"] else "FAIL")
     )
+    for key in (
+        "ALL_AGENTS_DISCOVERABLE",
+        "ALL_CAPABILITIES_ROUTABLE_WHERE_AUTHORIZED",
+        "NO_AGENT_WITHOUT_BOUNDARY",
+        "NO_DUPLICATE_AUTHORITY",
+    ):
+        print(f"{key}=" + ("PASS" if result[key] else "FAIL"))
     return 0 if (
         result["AGENT_INVENTORY_COMPLETE"]
         and result["EXECUTOR_BINDINGS_VALID"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 import json
 import os
 import re
@@ -230,9 +231,9 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         metadata={"parallelism": 3, "dependencies": "script persisted"},
     ):
         with ThreadPoolExecutor(max_workers=3, thread_name_prefix="youtube-product-review") as pool:
-            script_future = pool.submit(_script_review)
-            seo_future = pool.submit(_seo_review)
-            production_future = pool.submit(_production_review)
+            script_future = pool.submit(copy_context().run, _script_review)
+            seo_future = pool.submit(copy_context().run, _seo_review)
+            production_future = pool.submit(copy_context().run, _production_review)
             script_review = script_future.result()
             seo = seo_future.result()
             production = production_future.result()

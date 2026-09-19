@@ -18,6 +18,7 @@ from app.services.harness_authorization_service import (
     issue_harness_authorization,
 )
 from app.services.harness_collaboration_service import build_collaboration_plan
+from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
@@ -70,16 +71,25 @@ def _execute_brain(
         },
     )
     try:
-        evidence = execute_authorized_gta6_brain_decision(
-            authorization=authorization,
-            routing_decision=routing,
-            payload={
-                "mission_id": mission_id,
-                "task_id": "gta6-brain",
-                "goal_id": goal_id,
-                "input_refs": evidence_refs,
-            },
-        )
+        with PerformanceSpan(
+            "agent.gta6-brain",
+            "CONTROL_PLANE_TIME",
+            goal_id=goal_id,
+            execution_id=authorization.execution_id,
+            agent_id=str(record.agent_id or "gta6-brain"),
+            capability_id=capability_id,
+            input_size=sum(len(item.encode("utf-8")) for item in evidence_refs),
+        ):
+            evidence = execute_authorized_gta6_brain_decision(
+                authorization=authorization,
+                routing_decision=routing,
+                payload={
+                    "mission_id": mission_id,
+                    "task_id": "gta6-brain",
+                    "goal_id": goal_id,
+                    "input_refs": evidence_refs,
+                },
+            )
     finally:
         consume_harness_authorization(authorization)
     if evidence.status != "EXECUTED" or not isinstance(evidence.result, dict):
@@ -141,19 +151,28 @@ def _execute_specialist(
         },
     )
     try:
-        canonical = execute_youtube_specialist_via_harness(
-            authorization=authorization,
-            routing_decision=routing,
-            payload={
-                "mission_id": mission_id,
-                "task_id": task_id,
-                "goal_id": goal_id,
-                "task_class": task_class,
-                "objective": objective,
-                "evidence_refs": evidence_refs,
-                "semantic_context": semantic_context,
-            },
-        )
+        with PerformanceSpan(
+            f"agent.{task_id}",
+            "CONTROL_PLANE_TIME",
+            goal_id=goal_id,
+            execution_id=authorization.execution_id,
+            agent_id=str(record.agent_id or capability_id),
+            capability_id=capability_id,
+            input_size=len(json.dumps(semantic_context, ensure_ascii=False, default=str).encode("utf-8")),
+        ):
+            canonical = execute_youtube_specialist_via_harness(
+                authorization=authorization,
+                routing_decision=routing,
+                payload={
+                    "mission_id": mission_id,
+                    "task_id": task_id,
+                    "goal_id": goal_id,
+                    "task_class": task_class,
+                    "objective": objective,
+                    "evidence_refs": evidence_refs,
+                    "semantic_context": semantic_context,
+                },
+            )
     finally:
         consume_harness_authorization(authorization)
     if not canonical.success or not isinstance(canonical.result, dict):

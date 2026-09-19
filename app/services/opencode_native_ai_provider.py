@@ -187,6 +187,42 @@ def _sanitize_failed_log(log_text: str) -> dict[str, Any]:
     return result
 
 
+def _json_candidate_is_complete(text: str) -> bool:
+    normalized = str(text or "").strip()
+    fence = chr(96) * 3
+    if normalized.startswith(fence):
+        lines = normalized.splitlines()
+        if lines and lines[0].strip().startswith(fence):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == fence:
+            lines = lines[:-1]
+        normalized = "\n".join(lines).strip()
+    if normalized.startswith("json\n"):
+        normalized = normalized[5:].strip()
+    try:
+        parsed = json.loads(normalized)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(parsed, (dict, list))
+
+
+def _recoverable_missing_finish_reason(
+    *,
+    answer: str,
+    error_events: list[str],
+    returncode: int | None,
+) -> bool:
+    if not answer.strip() or not returncode:
+        return False
+    protocol_error = any(
+        "provider.invalid-output" in event
+        and "stream ended without finish_reason" in event
+        and ("status': 200" in event or '"status": 200' in event)
+        for event in error_events
+    )
+    return protocol_error and _json_candidate_is_complete(answer)
+
+
 class OpenCodeNativeAIProvider:
     """Official OpenCode CLI executed on a bounded GitHub Actions runner."""
 
@@ -448,12 +484,18 @@ class OpenCodeNativeAIProvider:
                 flags=re.IGNORECASE,
             )
         ][-10:]
+        protocol_recovered = _recoverable_missing_finish_reason(
+            answer=answer,
+            error_events=error_events,
+            returncode=process.returncode,
+        )
+        performance["protocol_recovered"] = protocol_recovered
         failure_type = None
         if tool_call_count:
             failure_type = "semantic_tools_used"
         elif timed_out.is_set():
             failure_type = "provider_timeout"
-        elif process.returncode != 0:
+        elif process.returncode != 0 and not protocol_recovered:
             failure_type = "provider_nonzero_exit"
         elif not answer:
             failure_type = "empty_response"
@@ -479,6 +521,10 @@ class OpenCodeNativeAIProvider:
                 "error_events": error_events[-3:],
                 "safe_stderr_tail": safe_stderr_lines[-3:],
             },
+            started_monotonic_ns=provider_started_ns,
+            finished_monotonic_ns=process_finished_ns,
+            execution_id=self.authorization.execution_id,
+            capability_id="ai.reasoning.text",
         )
         if tool_call_count:
             raise OpenCodeNativeAIProviderError(
@@ -495,6 +541,14 @@ class OpenCodeNativeAIProvider:
                     "performance": performance,
                 },
             )
+        if protocol_recovered:
+            return AIResponse(
+                text=answer,
+                provider="opencode",
+                model=canonical_model,
+                finish_reason="missing_finish_reason_recovered_after_complete_json",
+            )
+
         if process.returncode != 0 or not answer:
             safe_stderr = "\n".join(safe_stderr_lines)
             safe_cause = (
