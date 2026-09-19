@@ -96,6 +96,8 @@ jobs:
           required=(
               'PRONUNCIATION_LAYER','CANONICAL_TEXT_PRESERVED','VOICE_B_PRESERVED',
               'VICE_CITY_LANGUAGE_RESOLUTION','VICE_CITY_REAL_AUDIO_GENERATED',
+              'GTA6_CANONICAL_TEXT_PRESERVED','GTA6_REAL_AUDIO_GENERATED',
+              'GTA6_AND_VICE_CITY_COEXIST',
               'MIXED_LANGUAGE_SYNTHESIS','PRONUNCIATION_LEXICON','CACHE_INVALIDATION',
               'EDGE_CAPABILITY_BOUNDARY','STRICT_PROVIDER_BOUNDARY',
               'FINAL_AUDIO_DECODE','NO_EDITORIAL_TEXT_MUTATION',
@@ -106,11 +108,18 @@ jobs:
               raise SystemExit('PRONUNCIATION_PROOF=FAIL:'+','.join(missing))
           if proof.get('voice')!='pt-BR-ThalitaMultilingualNeural':
               raise SystemExit('VOICE_B_PRESERVED=FAIL')
-          if proof.get('human_review',{}).get('status')!='PENDING':
+          review=proof.get('human_review') or {}
+          if review.get('status')!='PENDING':
               raise SystemExit('HUMAN_REVIEW_GATE_INVALID')
+          terms=review.get('terms') or {}
+          if (terms.get('vice-city') or {}).get('status')!='APPROVED':
+              raise SystemExit('VICE_CITY_HUMAN_REVIEW_INVALID')
+          if (terms.get('gta-6') or {}).get('status')!='PENDING':
+              raise SystemExit('GTA6_HUMAN_REVIEW_INVALID')
           for key in required:
               print(key+'=PASS')
-          print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PENDING')
+          print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS')
+          print('GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING')
           print('JOB18_UNCHANGED=YES')
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
           PY
@@ -135,6 +144,8 @@ jobs:
               root/'samples'/'B-vice-city.mp3',
               root/'samples'/'C-closing.mp3',
               root/'samples'/'D-mixed.mp3',
+              root/'samples'/'F-gta6-brand.mp3',
+              root/'samples'/'G-brand-mixed.mp3',
           )
           if not all(path.is_file() for path in required): state['reason']='PRONUNCIATION_REVIEW_SAMPLES_UNAVAILABLE'
           elif not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
@@ -146,7 +157,7 @@ jobs:
           status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-pronunciation-review.json'))['status'])")"
           if [ "$status" != "READY" ]; then exit 0; fi
           sent=0
-          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3; do
+          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3 runtime/pronunciation-proof/samples/F-gta6-brand.mp3 runtime/pronunciation-proof/samples/G-brand-mixed.mp3; do
             curl --fail-with-body --silent --show-error \
               -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendAudio" \
               -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
