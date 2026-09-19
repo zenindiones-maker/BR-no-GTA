@@ -1363,7 +1363,10 @@ def load_narration_bundle(
     if len(section_results) != len(job.get("script_sections") or []):
         raise NarrationError("narration artifact section timing incomplete")
     restored = dict(qa)
+    # Runtime paths inside QA belong to the producer run and are not portable.
+    # Rebase every checkpoint file to the consumer's materialized bundle root.
     restored["master_path"] = str(master)
+    restored["speech_timing_path"] = str(timing_path)
     restored["narration_artifact_reused"] = True
     restored["cache_hit_rate"] = 1.0
     restored["tts_request_count_on_reuse"] = 0

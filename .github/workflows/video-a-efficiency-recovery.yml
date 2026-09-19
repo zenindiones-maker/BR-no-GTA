@@ -26,6 +26,8 @@ jobs:
       SOURCE_RENDER_ARTIFACT_ID: "10570522173"
       NARRATION_RUN_ID: "35401841031"
       NARRATION_ARTIFACT_ID: "10570877480"
+      EXISTING_MEDIA_RUN_ID: "35407875087"
+      EXISTING_MEDIA_ARTIFACT_ID: "10572578507"
       TARGET_REF: work/gate6f-analytics-learning
       YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
       YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
@@ -135,6 +137,15 @@ jobs:
           path: runtime/recovery/narration
           merge-multiple: true
 
+      - name: Restore existing QA-passed media checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.EXISTING_MEDIA_ARTIFACT_ID }}
+          run-id: ${{ env.EXISTING_MEDIA_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/recovery/media-checkpoint
+          merge-multiple: true
+
       - name: Validate restored RenderJob and narration lineage
         run: |
           set -euo pipefail
@@ -155,14 +166,47 @@ jobs:
           print('NARRATION_QA=PASS')
           PY
 
-      - name: Recover media once and create content-addressed checkpoint
+      - name: Reuse existing media checkpoint or recover only if absent
         run: |
           set -euo pipefail
-          python scripts/prepare_media_checkpoint.py \
-            --render-job runtime/recovery/handoff/render-job.json \
-            --asset-root runtime/recovery/fresh-media-root \
-            --checkpoint-dir runtime/recovery/media-checkpoint \
-            --evidence runtime/recovery/proof/media-materialization.json
+          if [ -f runtime/recovery/media-checkpoint/media-checkpoint-manifest.json ]; then
+            mkdir -p runtime/recovery/proof
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.media_checkpoint_service import validate_media_checkpoint
+          job=json.loads(Path('runtime/recovery/handoff/render-job.json').read_text())
+          manifest=validate_media_checkpoint(
+              checkpoint_root=Path('runtime/recovery/media-checkpoint'),
+              job=job,
+          )
+          proof={
+              'status':'PASS',
+              'run_class':'WARM_RETRY',
+              'capability_id':'media.materialize',
+              'stage':'media_materialization',
+              'source_checkpoint_run_id':35407875087,
+              'source_checkpoint_artifact_id':10572578507,
+              'content_hash':manifest['content_hash'],
+              'asset_count':len(manifest['assets']),
+              'media_valid_assets_reused':True,
+              'redundant_media_downloads':0,
+              'external_calls':0,
+              'download_count':0,
+          }
+          Path('runtime/recovery/proof/media-materialization.json').write_text(
+              json.dumps(proof,indent=2),encoding='utf-8'
+          )
+          print('MEDIA_VALID_ASSETS_REUSED=YES')
+          print('REDUNDANT_MEDIA_DOWNLOADS=0')
+          PY
+          else
+            python scripts/prepare_media_checkpoint.py \
+              --render-job runtime/recovery/handoff/render-job.json \
+              --asset-root runtime/recovery/fresh-media-root \
+              --checkpoint-dir runtime/recovery/media-checkpoint \
+              --evidence runtime/recovery/proof/media-materialization.json
+          fi
 
       - name: Validate recovered media checkpoint
         run: |
@@ -178,14 +222,13 @@ jobs:
           print('MEDIA_CHECKPOINT_CONTENT_HASH='+m['content_hash'])
           PY
 
-      - name: Upload QA-passed media checkpoint
+      - name: Reuse published QA-passed media checkpoint identity
         id: media_checkpoint
-        uses: actions/upload-artifact@v4
-        with:
-          name: video-a-media-checkpoint-${{ github.run_id }}
-          path: runtime/recovery/media-checkpoint/
-          if-no-files-found: error
-          retention-days: 30
+        run: |
+          set -euo pipefail
+          echo "artifact-id=${EXISTING_MEDIA_ARTIFACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "MEDIA_CHECKPOINT_ARTIFACT_REUSED=YES"
+          echo "MEDIA_CHECKPOINT_ARTIFACT_ID=${EXISTING_MEDIA_ARTIFACT_ID}"
 
       - name: Prove warm reuse before canary
         run: |

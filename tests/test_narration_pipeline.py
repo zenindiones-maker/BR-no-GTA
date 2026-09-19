@@ -21,6 +21,7 @@ from app.services.narration_pipeline import (
     script_fingerprint,
     segment_fingerprint,
     semantic_section_segments,
+    load_narration_bundle,
 )
 
 
@@ -275,6 +276,57 @@ class NarrationPipelineTests(unittest.TestCase):
         self.assertTrue(timing["native_timing_used"])
         self.assertEqual(sections[0]["timing_source"], "provider-native")
         self.assertEqual(sections[0]["caption_cues"][0]["timing_source"], "provider-native")
+
+    def test_reused_bundle_rebases_producer_runtime_paths(self):
+        import hashlib
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "consumer" / "narration-bundle"
+            root.mkdir(parents=True)
+            master = root / "narration-master.flac"
+            master.write_bytes(b"portable-master")
+            timing = root / "speech-timing.json"
+            timing.write_text("{}", encoding="utf-8")
+            job = {
+                "script_sections": SECTIONS,
+                "narration": {
+                    "language": "pt-BR",
+                    "voice": "pt-BR-ThalitaMultilingualNeural",
+                    "rate": "+0%",
+                    "rate_locked": True,
+                    "segment_strategy": "semantic-section-v1",
+                    "official_profile_sha256": "profile-sha",
+                },
+            }
+            manifest = {
+                "version": BUNDLE_VERSION,
+                "status": "PASS",
+                "script_fingerprint": script_fingerprint(SECTIONS),
+                "voice": "pt-BR-ThalitaMultilingualNeural",
+                "language": "pt-BR",
+                "segment_strategy": "semantic-section-v1",
+                "effective_rate": "+0%",
+                "official_profile_sha256": "profile-sha",
+                "master": {
+                    "path": master.name,
+                    "sha256": hashlib.sha256(master.read_bytes()).hexdigest(),
+                },
+            }
+            qa = {
+                "status": "PASS",
+                "master_path": "runtime/producer/old/narration-master.flac",
+                "speech_timing_path": "runtime/producer/old/speech-timing.json",
+                "section_results": [
+                    {"section_id": item["section_id"]} for item in SECTIONS
+                ],
+            }
+            (root / "narration-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (root / "narration-qa.json").write_text(json.dumps(qa), encoding="utf-8")
+            _, restored = load_narration_bundle(root, job=job)
+            self.assertEqual(Path(restored["master_path"]), master)
+            self.assertEqual(Path(restored["speech_timing_path"]), timing)
+            self.assertTrue(restored["narration_artifact_reused"])
+            self.assertEqual(restored["tts_request_count_on_reuse"], 0)
 
     def test_contract_versions_and_circuit_breaker_are_bounded(self):
         self.assertEqual(BUNDLE_VERSION, "narration-bundle/v2")
