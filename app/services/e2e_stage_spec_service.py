@@ -130,6 +130,136 @@ def _verified_refs(product: dict[str, Any]) -> list[str]:
     ]
 
 
+
+def build_upstream_specs_from_artifacts(
+    *,
+    fresh: dict[str, Any],
+    proof: dict[str, Any],
+) -> list[StageSpec]:
+    goal_id = str(proof.get("goal_id") or "")
+    source_intelligence = dict(proof.get("source_intelligence") or {})
+    claims = [
+        dict(item)
+        for item in (source_intelligence.get("claims") or ())
+        if isinstance(item, dict)
+    ]
+    verified_refs = [
+        f"claim:{item.get('claim_id')}"
+        for item in claims
+        if str(item.get("verification_status") or "") == "VERIFIED"
+        and str(item.get("claim_id") or "")
+    ]
+    brain = dict(proof.get("brain_result") or {})
+    submitted = dict(fresh.get("submitted_source") or {})
+    checked_at = str(fresh.get("checked_at") or proof.get("source_checked_at") or "")
+    return [
+        StageSpec(
+            stage_id="research",
+            input_payload={
+                "query": fresh.get("query"),
+                "source_url": submitted.get("url") or submitted.get("resolved_url"),
+            },
+            code_paths=STAGE_CODE_PATHS["research"],
+            provider_profile_version="public-web:v1",
+            freshness_policy=research_freshness(checked_at),
+        ),
+        StageSpec(
+            stage_id="fact-check",
+            input_payload={
+                "source_content_sha256": submitted.get("content_sha256"),
+                "source_url": proof.get("source_url"),
+                "claims": claims,
+            },
+            code_paths=STAGE_CODE_PATHS["fact-check"],
+            provider_profile_version="internal:gta6.fact-check:v1",
+            freshness_policy=research_freshness(checked_at),
+        ),
+        StageSpec(
+            stage_id="gta6-brain",
+            input_payload={
+                "goal_id": goal_id,
+                "verified_refs": verified_refs,
+                "claims": claims,
+            },
+            code_paths=STAGE_CODE_PATHS["gta6-brain"],
+            provider_profile_version=SEMANTIC_PROFILE,
+            freshness_policy=research_freshness(checked_at),
+        ),
+        StageSpec(
+            stage_id="content-strategy",
+            input_payload={
+                "goal_id": goal_id,
+                "claims": claims,
+                "brain_decision": brain.get("brain_decision"),
+            },
+            code_paths=STAGE_CODE_PATHS["content-strategy"],
+            provider_profile_version=SEMANTIC_PROFILE,
+            freshness_policy=research_freshness(checked_at),
+        ),
+    ]
+
+
+def bootstrap_upstream_checkpoints(
+    *,
+    fresh: dict[str, Any],
+    proof: dict[str, Any],
+    source_commit_sha: str,
+    source_run_id: str,
+    root: Path | None = None,
+    durations_ms: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    root = root or Path(__file__).resolve().parents[2]
+    specs = build_upstream_specs_from_artifacts(fresh=fresh, proof=proof)
+    source_intelligence = dict(proof.get("source_intelligence") or {})
+    outputs = {
+        "research": fresh,
+        "fact-check": {
+            "claims": source_intelligence.get("claims") or [],
+            "source_intelligence": source_intelligence,
+        },
+        "gta6-brain": dict(proof.get("brain_result") or {}),
+        "content-strategy": dict((proof.get("specialist_results") or {}).get("content_strategy") or {}),
+    }
+    goal_id = str(proof.get("goal_id") or "")
+    if not goal_id:
+        raise RuntimeError("cannot bootstrap upstream checkpoints without goal_id")
+    durations_ms = dict(durations_ms or {})
+    recorded, skipped = [], []
+    for spec in specs:
+        current_code = code_version(spec.code_paths, root=root)
+        source_code = source_code_version_at_commit(
+            stage_id=spec.stage_id,
+            commit_sha=source_commit_sha,
+            root=root,
+        )
+        if current_code != source_code:
+            skipped.append({"stage_id": spec.stage_id, "reason": "CODE_VERSION_CHANGED"})
+            continue
+        output = outputs.get(spec.stage_id)
+        if not isinstance(output, dict) or not output:
+            skipped.append({"stage_id": spec.stage_id, "reason": "MISSING_OUTPUT"})
+            continue
+        checkpoint = record_completed_stage(
+            goal_id=goal_id,
+            spec=spec,
+            output_payload=output,
+            duration_ms=float(durations_ms.get(spec.stage_id) or 0.0),
+            provenance={
+                "bootstrap": True,
+                "source_run_id": source_run_id,
+                "source_commit_sha": source_commit_sha,
+                "artifact_verified": True,
+                "partial_product_failure_resume": True,
+            },
+            source_run_id=source_run_id,
+            source_execution_id=str(proof.get("mission_id") or ""),
+            freshness=spec.freshness_policy,
+            root=root,
+        )
+        recorded.append({"stage_id": spec.stage_id, "checkpoint_id": checkpoint.get("checkpoint_id")})
+    return {"goal_id": goal_id, "recorded": recorded, "skipped": skipped}
+
+
 def build_specs_from_artifacts(
     *,
     fresh: dict[str, Any],
