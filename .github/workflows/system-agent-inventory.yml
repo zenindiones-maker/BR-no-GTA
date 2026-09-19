@@ -111,7 +111,7 @@ jobs:
       - name: Run focused registry and collaboration tests
         run: |
           set -euo pipefail
-          pytest -q             tests/test_harness_ecosystem_inventory.py             tests/test_harness_collaboration_service.py             tests/test_system_synergy_service.py             tests/test_addy_24_certification.py             tests/test_agent_office_service.py             tests/test_native_capability_boundaries.py             tests/test_gta6_brain_harness_boundary.py
+          pytest -q             tests/test_harness_ecosystem_inventory.py             tests/test_harness_collaboration_service.py             tests/test_system_synergy_service.py             tests/test_addy_24_certification.py             tests/test_agent_office.py             tests/test_native_capability_boundaries.py             tests/test_gta6_brain_harness_boundary.py
 
       - name: Upload auditable inventory
         if: always()
