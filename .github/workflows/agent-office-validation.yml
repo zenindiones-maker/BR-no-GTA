@@ -21,6 +21,8 @@ on:
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
+      - "scripts/codex_sandbox_preflight.py"
+      - "scripts/prepare_codex_linux_sandbox.sh"
       - "tests/test_agent_office.py"
       - "tests/test_harness_capability_service.py"
       - ".github/workflows/agent-office-*.yml"
@@ -37,6 +39,8 @@ on:
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
+      - "scripts/codex_sandbox_preflight.py"
+      - "scripts/prepare_codex_linux_sandbox.sh"
       - "tests/test_agent_office.py"
       - "tests/test_harness_capability_service.py"
       - ".github/workflows/agent-office-*.yml"
@@ -46,7 +50,50 @@ permissions:
   contents: read
 
 jobs:
+  sandbox-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout BR-no-GTA
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Codex CLI
+        run: bash scripts/agent-tooling/bootstrap.sh codex
+
+      - name: Prepare GitHub Linux host for Codex Bubblewrap
+        run: bash scripts/prepare_codex_linux_sandbox.sh
+
+      - name: Prove Codex sandbox isolation
+        run: |
+          mkdir -p agent-office-evidence
+          python scripts/codex_sandbox_preflight.py \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --output agent-office-evidence/codex-sandbox-preflight.json
+
+      - name: Upload Codex sandbox evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-sandbox-validation-${{ github.run_id }}
+          path: agent-office-evidence/codex-sandbox-preflight.json
+          if-no-files-found: error
+          retention-days: 14
+
   validate:
+    needs: sandbox-preflight
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -126,7 +173,9 @@ jobs:
             scripts/agent_office_preflight.py \
             scripts/agent_office_canary.py \
             scripts/agent_office_addy_24_canary.py \
-            scripts/codex_auth_bootstrap.py
+            scripts/codex_auth_bootstrap.py \
+            scripts/codex_sandbox_preflight.py
+          bash -n scripts/prepare_codex_linux_sandbox.sh
 
       - name: Test authorization, routing, worktrees and evidence
         run: |
