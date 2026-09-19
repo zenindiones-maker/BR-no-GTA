@@ -1,0 +1,137 @@
+name: Issue 14 Governed Render Promotion
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/render-issue14-promotion.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: issue14-render-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Validate Issue 14 promotion request
+        id: request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          req=json.loads(Path('.run001/render-issue14-promotion.request.json').read_text())
+          if req.get('issue') != 14:
+              raise SystemExit('ISSUE14_PROMOTION_REQUEST=WRONG_ISSUE')
+          if req.get('candidate') != 'vedit.longform.render-profile@v4':
+              raise SystemExit('ISSUE14_PROMOTION_REQUEST=WRONG_PROFILE')
+          if req.get('benchmark_status') != 'PASS':
+              raise SystemExit('ISSUE14_PROMOTION_REQUEST=BENCHMARK_NOT_PASS')
+          if req.get('job18_frozen') is not True or req.get('youtube_publication') is not False:
+              raise SystemExit('ISSUE14_PROMOTION_REQUEST=INVARIANT_MISMATCH')
+          run_id=int(req.get('benchmark_run_id') or 0)
+          artifact_id=int(req.get('benchmark_artifact_id') or 0)
+          if run_id <= 0 or artifact_id <= 0:
+              raise SystemExit('ISSUE14_PROMOTION_REQUEST=MISSING_BENCHMARK_EVIDENCE')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as stream:
+              stream.write(f'run_id={run_id}\n')
+              stream.write(f'artifact_id={artifact_id}\n')
+          print('ISSUE14_PROMOTION_REQUEST=PASS')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - name: Install Learning Plane runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt pytest
+
+      - name: Promotion contract tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_issue14_render_promotion.py \
+            tests/test_harness_learning_system.py \
+            tests/test_render_timeline_placement.py \
+            tests/test_render_progress_observability.py
+
+      - name: Restore observed Issue 14 benchmark
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.request.outputs.artifact_id }}
+          run-id: ${{ steps.request.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/issue14/benchmark
+          merge-multiple: true
+
+      - name: Promote v4 through DeepSeek Harness Learning Plane
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/issue14/promotion
+          EVIDENCE="$(find runtime/issue14/benchmark -name optimization-evidence.json -type f | head -n1)"
+          test -n "$EVIDENCE"
+          test -f "$EVIDENCE"
+          python scripts/promote_issue14_render_profile.py \
+            --benchmark-evidence "$EVIDENCE" \
+            --benchmark-run-id ${{ steps.request.outputs.run_id }} \
+            --benchmark-artifact-id ${{ steps.request.outputs.artifact_id }} \
+            --output-dir runtime/issue14/promotion \
+            | tee runtime/issue14/promotion/promotion.log
+
+      - name: Validate governed promotion and next-run binding
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          proof=json.loads(Path('runtime/issue14/promotion/promotion-proof.json').read_text())
+          required=(
+              'ISSUE14_ROOT_CAUSE_OBSERVED',
+              'ISSUE14_REAL_CLOUD_BENCHMARK',
+              'ISSUE14_QUALITY_NON_REGRESSION',
+              'ISSUE14_GOVERNED_PROMOTION',
+              'ISSUE14_NEXT_RENDER_RETRIEVES_V4',
+          )
+          for key in required:
+              assert proof.get(key)=='PASS', key
+          assert proof['evaluation_decision']=='PROMOTE'
+          assert proof['improvement_mission_status']=='COMPLETED'
+          assert proof['promoted_profile']['version']=='v4'
+          assert proof['next_render_binding']['version']=='v4'
+          assert proof['latency_reduction_fraction'] >= 0.20
+          assert proof['ssim'] >= 0.98
+          assert proof['job18_unchanged'] is True
+          assert proof['publication_authority']=='NONE'
+          print('ISSUE14_GOVERNED_PROMOTION=PASS')
+          print('NEXT_RENDER_PROFILE=v4')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue14-governed-render-promotion-${{ github.run_id }}
+          path: runtime/issue14/promotion/
+          if-no-files-found: error
+          retention-days: 30
