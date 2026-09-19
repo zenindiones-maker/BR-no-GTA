@@ -126,10 +126,18 @@ jobs:
           import json,os
           from pathlib import Path
           root=Path('runtime/pronunciation-proof')
+          root.mkdir(parents=True,exist_ok=True)
           state={'status':'NOT_SENT','reason':None,'sample_count':0,'human_review_status':'PENDING'}
           token=(os.environ.get('TELEGRAM_BOT_TOKEN') or '').strip()
           chat=(os.environ.get('TELEGRAM_REVIEW_CHAT_ID') or '').strip()
-          if not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
+          required=(
+              root/'samples'/'C0-closing-literal-baseline.mp3',
+              root/'samples'/'B-vice-city.mp3',
+              root/'samples'/'C-closing.mp3',
+              root/'samples'/'D-mixed.mp3',
+          )
+          if not all(path.is_file() for path in required): state['reason']='PRONUNCIATION_REVIEW_SAMPLES_UNAVAILABLE'
+          elif not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
           elif not chat: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
           else: state['status']='READY'
           (root/'telegram-pronunciation-review.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
