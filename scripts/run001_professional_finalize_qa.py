@@ -72,6 +72,44 @@ def main() -> int:
     render_qa = load(folder / "render-qa.json")
     if render_qa.get("status") != "PASS":
         raise RuntimeError("final branded render QA is not PASS")
+
+    subtitles = dict(job.get("subtitles") or {})
+    edit_plan = load(folder / "edit-plan.json")
+    burned_tracks = {
+        str(item.get("track") or "")
+        for item in edit_plan.get("texts", [])
+        if isinstance(item, dict)
+        and str(item.get("track") or "") in {"CAPTIONS", "BRAND_CAPTIONS"}
+    }
+    gates["SUBTITLES_QA"] = (
+        "PASS"
+        if subtitles.get("enabled") is False
+        and subtitles.get("burned_subtitles") is False
+        and subtitles.get("open_captions") is False
+        and subtitles.get("transcript_overlay") is False
+        and subtitles.get("srt_burn_in") is False
+        and not burned_tracks
+        else "FAIL"
+    )
+
+    probe = load(folder / "video-probe.json")
+    streams = list(probe.get("streams", []))
+    video = next((item for item in streams if item.get("codec_type") == "video"), {})
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), {})
+    render = dict(job.get("render") or {})
+    gates["YOUTUBE_MASTER_QA"] = (
+        "PASS"
+        if render.get("delivery_profile") == "youtube_sdr_1080p30_v1"
+        and render.get("resolution") == "1920x1080"
+        and video.get("width") == 1920
+        and video.get("height") == 1080
+        and video.get("codec_name") == "h264"
+        and str(video.get("profile") or "").lower() == "high"
+        and video.get("pix_fmt") == "yuv420p"
+        and audio.get("codec_name") == "aac"
+        and str(audio.get("sample_rate") or "") == "48000"
+        else "FAIL"
+    )
     branding = render_qa.get("branding")
     if not isinstance(branding, dict):
         raise RuntimeError("final branded render lacks branding evidence")
@@ -123,12 +161,17 @@ def main() -> int:
     for key in (
         "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "SEMANTIC_PTBR_QA", "NO_PADDING_QA",
         "AUDIOVISUAL_QA", "INTRO_QA", "SPOKEN_BRANDING_QA", "WATERMARK_QA",
+        "SUBTITLES_QA", "YOUTUBE_MASTER_QA",
     ):
         print(f"VIDEO_{job.get('product_label')}_{key}=PASS")
     print("TARGET_LANGUAGE=pt-BR")
     print("SPOKEN_AUDIO_PT_BR=PASS")
     print("NO_ARTIFICIAL_PADDING=PASS")
     print("FINAL_MIX_CONTAINS_PT_BR_NARRATION=PASS")
+    print("SUBTITLES_DEFAULT_DISABLED=PASS")
+    print("BURNED_SUBTITLES_DISABLED=PASS")
+    print("YOUTUBE_MASTER_PROFILE=PASS")
+    print("MASTER_1080P_OR_BETTER=PASS")
     print("HUMAN_EDITORIAL_APPROVAL=PENDING")
     print("YOUTUBE_PUBLICATION=BLOCKED")
     print("OFFICIAL_INTRO_FIRST=PASS")
