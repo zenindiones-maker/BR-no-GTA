@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from typing import Any
@@ -58,6 +59,19 @@ def _sandbox(
     )
 
 
+def _sanitize_diagnostic_text(text: str) -> str:
+    value = str(text or "")
+    value = re.sub(r"https?://\S+", "<URL>", value)
+    value = re.sub(r"/home/runner/\S+", "<RUNNER_PATH>", value)
+    value = re.sub(r"/tmp/\S+", "<TMP_PATH>", value)
+    value = re.sub(
+        r"(?i)(token|secret|password|credential|api[_-]?key)\s*[:=]\s*\S+",
+        r"\1=<REDACTED>",
+        value,
+    )
+    return value[:600]
+
+
 def _diagnostic_flags(completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     text = f"{completed.stdout or ''}\n{completed.stderr or ''}"
     lowered = text.lower()
@@ -78,6 +92,7 @@ def _diagnostic_flags(completed: subprocess.CompletedProcess[str]) -> dict[str, 
         "stderr_sha256": sha256(text.encode("utf-8")).hexdigest(),
         "stderr_chars": len(text),
         "diagnostic_flags": terms,
+        "stderr_excerpt_sanitized": _sanitize_diagnostic_text(text),
     }
 
 
@@ -122,6 +137,7 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
         "stderr_sha256": None,
         "stderr_chars": 0,
         "diagnostic_flags": {},
+        "stderr_excerpt_sanitized": None,
     }
 
     try:
@@ -220,6 +236,7 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
                 "stderr_sha256": exc.evidence.get("stderr_sha256"),
                 "stderr_chars": exc.evidence.get("stderr_chars"),
                 "diagnostic_flags": exc.evidence.get("diagnostic_flags") or {},
+                "stderr_excerpt_sanitized": exc.evidence.get("stderr_excerpt_sanitized"),
             }
         )
         raise
