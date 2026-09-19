@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/agent-tooling/certify_addy_24.py             --output runtime/system-agent-inventory/addy-24-certification.json
-          python scripts/agent-tooling/check_discovery.py             codex runtime/system-agent-inventory/addy-24-discovery.json
+          python scripts/agent-tooling/check_discovery.py             all runtime/system-agent-inventory/addy-24-discovery.json
 
       - name: Run system-wide executable inventory
         run: |
@@ -81,6 +81,9 @@ jobs:
           assert len(d['HIGGSFIELD_SKILL_IDS'])==4
           assert d['TOTAL_SKILLS_FOUND'] >= 35
           assert d['TOTAL_WORKER_ENGINES_FOUND'] == 2
+          assert d['NATIVE_HARNESS_DECLARED_AGENT_COUNT'] == 1
+          assert d['NATIVE_HARNESS_DECLARED_AGENT_IDS'] == ['gta6-master']
+          assert d['NATIVE_HARNESS_SEMANTIC_EXECUTION_PROVEN'] is False
           assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
           assert d['EXECUTOR_BINDINGS_VALID'] is True
           assert 'codex' in d['AGENT_IDS']
@@ -97,6 +100,8 @@ jobs:
           print('ADDY_24_INVENTORIED=PASS')
           print('HIGGSFIELD_4_INVENTORIED=PASS')
           print('AGENT_OFFICE_WORKER_ENGINES=2')
+          print('NATIVE_HARNESS_DECLARED_AGENT=gta6-master')
+          print('NATIVE_HARNESS_SEMANTIC_TURN=PENDING')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')
           print('GTA6_BRAIN_BOUNDARY=PASS')
           print('BROKEN_ACTIVE_BINDINGS=0')
