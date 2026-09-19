@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 import re
 from typing import Any, Mapping
+
+from app.services.agent_office.delegation import MANDATORY_FORBIDDEN_ACTIONS as LEASE_MANDATORY_FORBIDDEN_ACTIONS
 
 
 COORDINATOR_ROLE = "AGENT_OFFICE_COORDINATOR"
 DELEGATED_AUTHORITY = "DELEGATED_ONLY"
 ALLOWED_ACTIONS = {"DEVELOPMENT"}
-MANDATORY_FORBIDDEN_ACTIONS = {
+MANDATORY_FORBIDDEN_ACTIONS = set(LEASE_MANDATORY_FORBIDDEN_ACTIONS) | {
     "youtube_publish",
     "autonomous_schedule",
-    "secret_access",
-    "policy_mutation",
 }
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
@@ -52,17 +53,73 @@ class AgentOfficeTask:
     capability: str
     action: str
     objective: str
+    parent_task_id: str | None = None
+    role: str = "SPECIALIST_TASK_OWNER"
+    owned_task_class: str = "GENERAL_DEVELOPMENT"
+    allowed_paths: tuple[str, ...] = ()
+    allowed_tools: tuple[str, ...] = ()
+    allowed_actions: tuple[str, ...] = ()
+    forbidden_actions: tuple[str, ...] = ()
+    input_artifact_refs: tuple[str, ...] = ()
+    expected_outputs: tuple[str, ...] = ()
+    acceptance_criteria: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = ()
+    read_set: tuple[str, ...] = ()
+    write_set: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
+    tool_call_budget: int = 16
+    retry_budget: int = 1
+    time_budget_seconds: int | None = None
+    cost_budget: float | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "AgentOfficeTask":
         if not isinstance(value, Mapping):
             raise ValueError("task must be an object")
+        parent = value.get("parent_task_id")
+        tool_budget = value.get("tool_call_budget", 16)
+        retry_budget = value.get("retry_budget", 1)
+        if isinstance(tool_budget, bool) or not isinstance(tool_budget, int) or not 0 <= tool_budget <= 1000:
+            raise ValueError("tool_call_budget must be an integer in [0, 1000]")
+        if isinstance(retry_budget, bool) or not isinstance(retry_budget, int) or not 0 <= retry_budget <= 20:
+            raise ValueError("retry_budget must be an integer in [0, 20]")
+        task_time = value.get("time_budget_seconds")
+        if task_time is not None and (
+            isinstance(task_time, bool) or not isinstance(task_time, int) or not 1 <= task_time <= 7200
+        ):
+            raise ValueError("task time_budget_seconds must be in [1, 7200]")
+        task_cost = value.get("cost_budget")
+        if task_cost is not None and (
+            isinstance(task_cost, bool) or not isinstance(task_cost, (int, float)) or task_cost < 0
+        ):
+            raise ValueError("task cost_budget must be non-negative")
         return cls(
             task_id=_identifier(value.get("task_id"), "task_id"),
             agent=_identifier(value.get("agent"), "agent"),
             capability=_identifier(value.get("capability"), "capability"),
             action=_identifier(value.get("action"), "action").lower(),
             objective=_required_text(value.get("objective"), "objective", maximum=4_000),
+            parent_task_id=None if parent in (None, "") else _identifier(parent, "parent_task_id"),
+            role=_identifier(value.get("role") or "SPECIALIST_TASK_OWNER", "role"),
+            owned_task_class=_identifier(
+                value.get("owned_task_class") or "GENERAL_DEVELOPMENT",
+                "owned_task_class",
+            ),
+            allowed_paths=_string_tuple(value.get("allowed_paths") or [], "allowed_paths", allow_empty=True),
+            allowed_tools=_string_tuple(value.get("allowed_tools") or [], "allowed_tools", allow_empty=True),
+            allowed_actions=_string_tuple(value.get("allowed_actions") or [], "allowed_actions", allow_empty=True),
+            forbidden_actions=_string_tuple(value.get("forbidden_actions") or [], "forbidden_actions", allow_empty=True),
+            input_artifact_refs=_string_tuple(value.get("input_artifact_refs") or [], "input_artifact_refs", allow_empty=True),
+            expected_outputs=_string_tuple(value.get("expected_outputs") or [], "expected_outputs", allow_empty=True),
+            acceptance_criteria=_string_tuple(value.get("acceptance_criteria") or [], "acceptance_criteria", allow_empty=True),
+            evidence_requirements=_string_tuple(value.get("evidence_requirements") or [], "evidence_requirements", allow_empty=True),
+            read_set=_string_tuple(value.get("read_set") or [], "read_set", allow_empty=True),
+            write_set=_string_tuple(value.get("write_set") or [], "write_set", allow_empty=True),
+            depends_on=_string_tuple(value.get("depends_on") or [], "depends_on", allow_empty=True),
+            tool_call_budget=tool_budget,
+            retry_budget=retry_budget,
+            time_budget_seconds=task_time,
+            cost_budget=None if task_cost is None else float(task_cost),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +146,16 @@ class AgentOfficeExecutionSpec:
     cost_budget: float
     expected_outputs: tuple[str, ...]
     evidence_requirements: tuple[str, ...]
+    mission_id: str
+    delegation_id: str
+    allowed_tools: tuple[str, ...]
+    allowed_actions: tuple[str, ...]
+    tool_call_budget: int
+    retry_budget: int
+    expires_at: str
+    escalation_conditions: tuple[str, ...]
+    input_artifact_refs: tuple[str, ...]
+    acceptance_criteria: tuple[str, ...]
     coordinator_role: str = COORDINATOR_ROLE
     authority: str = DELEGATED_AUTHORITY
 
@@ -121,6 +188,40 @@ class AgentOfficeExecutionSpec:
             if path.startswith(("/", "\\")) or ".." in path.replace("\\", "/").split("/"):
                 raise ValueError("allowed_paths must be repository-relative and traversal-free")
 
+        mission_id = _identifier(
+            value.get("mission_id") or value.get("execution_id"),
+            "mission_id",
+        )
+        delegation_id = _identifier(
+            value.get("delegation_id") or f"delegation:{mission_id}",
+            "delegation_id",
+        )
+        allowed_tools = _string_tuple(
+            value.get("allowed_tools") or ["git", "python", "pytest"],
+            "allowed_tools",
+        )
+        allowed_actions = _string_tuple(
+            value.get("allowed_actions") or ["analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"],
+            "allowed_actions",
+        )
+        tool_call_budget = value.get("tool_call_budget", 64)
+        retry_budget = value.get("retry_budget", 2)
+        if isinstance(tool_call_budget, bool) or not isinstance(tool_call_budget, int) or not 0 <= tool_call_budget <= 1000:
+            raise ValueError("tool_call_budget must be an integer in [0, 1000]")
+        if isinstance(retry_budget, bool) or not isinstance(retry_budget, int) or not 0 <= retry_budget <= 20:
+            raise ValueError("retry_budget must be an integer in [0, 20]")
+        expires_at = value.get("expires_at")
+        if expires_at is None:
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=time_budget)).isoformat()
+        else:
+            expires_at = _required_text(expires_at, "expires_at", maximum=64)
+            try:
+                parsed_expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("expires_at must be ISO-8601") from exc
+            if parsed_expiry.tzinfo is None:
+                raise ValueError("expires_at must include timezone")
+
         return cls(
             execution_id=_identifier(value.get("execution_id"), "execution_id"),
             goal_id=_identifier(value.get("goal_id"), "goal_id"),
@@ -145,6 +246,27 @@ class AgentOfficeExecutionSpec:
             expected_outputs=_string_tuple(value.get("expected_outputs"), "expected_outputs"),
             evidence_requirements=_string_tuple(
                 value.get("evidence_requirements"), "evidence_requirements"
+            ),
+            mission_id=mission_id,
+            delegation_id=delegation_id,
+            allowed_tools=allowed_tools,
+            allowed_actions=allowed_actions,
+            tool_call_budget=tool_call_budget,
+            retry_budget=retry_budget,
+            expires_at=expires_at,
+            escalation_conditions=_string_tuple(
+                value.get("escalation_conditions")
+                or ["scope_change", "authority_required", "budget_exhausted", "write_conflict", "non_recoverable_error"],
+                "escalation_conditions",
+            ),
+            input_artifact_refs=_string_tuple(
+                value.get("input_artifact_refs") or [],
+                "input_artifact_refs",
+                allow_empty=True,
+            ),
+            acceptance_criteria=_string_tuple(
+                value.get("acceptance_criteria") or ["structured evidence returned", "no forbidden side effects"],
+                "acceptance_criteria",
             ),
         )
 
