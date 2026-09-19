@@ -180,6 +180,12 @@ def _assert_registry_routing() -> dict[str, Any]:
             raise AssertionError(f"routing escaped capability: {capability_id}")
         if decision.selected_executor_binding != record.executor_binding:
             raise AssertionError(f"executor binding mismatch: {capability_id}")
+        from app.services.harness_capability_service import CAPABILITY_CATALOG
+        executable_ids = {item.capability_id for item in CAPABILITY_CATALOG}
+        if capability_id not in executable_ids:
+            raise AssertionError(
+                f"Registry-routable capability missing from Harness execution catalog: {capability_id}"
+            )
         routes.append({"capability_id": capability_id, "routing_id": decision.routing_id})
     return {"routes": routes}
 
