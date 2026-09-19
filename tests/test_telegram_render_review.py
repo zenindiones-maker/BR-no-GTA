@@ -150,14 +150,16 @@ def test_render_review_refuses_swapped_official_asset_types(tmp_path: Path):
         )
 
 
-def test_render_worker_requires_telegram_review_before_success_artifact():
+def test_render_worker_checkpoints_qa_passed_render_before_telegram_review():
     workflow = Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
     apply_index = workflow.index("Apply governed intro and watermark")
+    qa_index = workflow.index("Finalize professional QA gates")
+    artifact_index = workflow.index("Checkpoint QA-passed render before external review")
     review_index = workflow.index("Deliver full-duration branded review to Telegram")
-    artifact_index = workflow.index("Upload QA-passed render")
-    assert apply_index < review_index < artifact_index
+    assert apply_index < qa_index < artifact_index < review_index
     assert "scripts/telegram_render_review_worker.py" in workflow
     assert "TELEGRAM_REVIEW_CHAT_ID" in workflow
+    assert "if-no-files-found: error" in workflow[artifact_index:review_index]
 
 
 def test_render_review_transport_error_does_not_retain_bot_token(
