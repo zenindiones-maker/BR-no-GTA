@@ -184,6 +184,8 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
     finished_at = _utcnow()
     parts: list[str] = []
     parse_errors = 0
+    event_types: list[str] = []
+    error_events: list[str] = []
     for raw in process.stdout.splitlines():
         if not raw.strip():
             continue
@@ -192,7 +194,19 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         except json.JSONDecodeError:
             parse_errors += 1
             continue
-        if item.get("type") != "text":
+        event_type = str(item.get("type") or "")
+        if event_type:
+            event_types.append(event_type)
+        if event_type != "text":
+            candidate_error = item.get("error") or item.get("message") or item.get("data")
+            if candidate_error:
+                safe = str(candidate_error)[:1200]
+                safe = re.sub(
+                    r"(?i)(authorization:|bearer\\s+|api[_-]?key|token=|sk-|ghp_|github_pat_)[^\\s,;]*",
+                    "[REDACTED]",
+                    safe,
+                )
+                error_events.append(safe)
             continue
         part = item.get("part") or {}
         value = part.get("text")
@@ -213,6 +227,16 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         "usable_text": bool(answer),
         "text_matches_expected": answer == EXPECTED_TEXT,
         "parse_errors": parse_errors,
+        "event_types": list(dict.fromkeys(event_types)),
+        "error_events": error_events[-5:],
+        "safe_stderr": [
+            line[:500]
+            for line in process.stderr.splitlines()
+            if not re.search(
+                r"(?i)(authorization:|bearer |api[_-]?key|token=|sk-|ghp_|github_pat_)",
+                line,
+            )
+        ][-10:],
         "latency_seconds": latency,
         "metrics": _metrics(
             success=success,
