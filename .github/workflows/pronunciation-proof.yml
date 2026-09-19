@@ -1,0 +1,166 @@
+name: Pronunciation Proof
+run-name: Pronunciation proof · Voice B · ${{ github.run_attempt }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/pronunciation-proof.request.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pronunciation-proof-voice-b
+  cancel-in-progress: false
+
+jobs:
+  pronunciation-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate immutable proof request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          request=json.loads(Path('.run001/pronunciation-proof.request.json').read_text(encoding='utf-8'))
+          expected={
+              'mission':'br-no-gta-professional-multilingual-pronunciation-v1',
+              'voice':'pt-BR-ThalitaMultilingualNeural',
+              'job18_frozen':True,
+              'youtube_publication':False,
+              'human_approval_required_for_vice_city':True,
+          }
+          for key,value in expected.items():
+              if request.get(key)!=value:
+                  raise SystemExit(f'PRONUNCIATION_PROOF_REQUEST_MISMATCH:{key}')
+          base=request.get('base_head')
+          if not base:
+              raise SystemExit('PRONUNCIATION_PROOF_REQUEST_MISSING_BASE_HEAD')
+          print('PRONUNCIATION_PROOF_REQUEST=PASS')
+          print('BASE_HEAD='+base)
+          print('JOB18_UNCHANGED=YES')
+          print('NO_YOUTUBE_PUBLISH=YES')
+          PY
+          base="$(python -c "import json;print(json.load(open('.run001/pronunciation-proof.request.json'))['base_head'])")"
+          git merge-base --is-ancestor "$base" HEAD
+
+      - name: Install proof runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          python -m pip install "edge-tts==7.2.8"
+          ffmpeg -version | head -n1
+          ffprobe -version | head -n1
+
+      - name: Focused pronunciation and integration tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_pronunciation_service.py \
+            tests/test_narration_pipeline.py \
+            tests/test_channel_spoken_branding.py
+
+      - name: Generate real Voice B pronunciation proof
+        run: |
+          set -euo pipefail
+          python scripts/pronunciation_proof.py --output-dir runtime/pronunciation-proof
+
+      - name: Validate proof contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          proof=json.loads(Path('runtime/pronunciation-proof/pronunciation-proof.json').read_text(encoding='utf-8'))
+          required=(
+              'PRONUNCIATION_LAYER','CANONICAL_TEXT_PRESERVED','VOICE_B_PRESERVED',
+              'VICE_CITY_LANGUAGE_RESOLUTION','VICE_CITY_REAL_AUDIO_GENERATED',
+              'MIXED_LANGUAGE_SYNTHESIS','PRONUNCIATION_LEXICON','CACHE_INVALIDATION',
+              'EDGE_CAPABILITY_BOUNDARY','STRICT_PROVIDER_BOUNDARY',
+              'FINAL_AUDIO_DECODE','NO_EDITORIAL_TEXT_MUTATION',
+          )
+          checks=proof.get('checks') or {}
+          missing=[key for key in required if checks.get(key) is not True]
+          if proof.get('status')!='PASS' or missing:
+              raise SystemExit('PRONUNCIATION_PROOF=FAIL:'+','.join(missing))
+          if proof.get('voice')!='pt-BR-ThalitaMultilingualNeural':
+              raise SystemExit('VOICE_B_PRESERVED=FAIL')
+          if proof.get('human_review',{}).get('status')!='PENDING':
+              raise SystemExit('HUMAN_REVIEW_GATE_INVALID')
+          for key in required:
+              print(key+'=PASS')
+          print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PENDING')
+          print('JOB18_UNCHANGED=YES')
+          print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
+          PY
+
+      - name: Deliver critical pronunciation samples to Telegram when available
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('runtime/pronunciation-proof')
+          state={'status':'NOT_SENT','reason':None,'sample_count':0,'human_review_status':'PENDING'}
+          token=(os.environ.get('TELEGRAM_BOT_TOKEN') or '').strip()
+          chat=(os.environ.get('TELEGRAM_REVIEW_CHAT_ID') or '').strip()
+          if not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
+          elif not chat: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
+          else: state['status']='READY'
+          (root/'telegram-pronunciation-review.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
+          print(state['status']); print(state['reason'] or 'TELEGRAM_PRONUNCIATION_REVIEW_READY')
+          PY
+          status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-pronunciation-review.json'))['status'])")"
+          if [ "$status" != "READY" ]; then exit 0; fi
+          sent=0
+          for audio in runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3; do
+            curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendAudio" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "audio=@$audio" \
+              -F "caption=BR no GTA 6 · revisão de pronúncia · $(basename "$audio")" >/dev/null
+            sent=$((sent+1))
+          done
+          SENT_COUNT="$sent" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path('runtime/pronunciation-proof/telegram-pronunciation-review.json')
+          state=json.loads(path.read_text())
+          state.update({'status':'SENT','sample_count':int(os.environ['SENT_COUNT']),'human_review_status':'PENDING'})
+          path.write_text(json.dumps(state,indent=2),encoding='utf-8')
+          print('PRONUNCIATION_REVIEW_SAMPLES_SENT='+os.environ['SENT_COUNT'])
+          PY
+
+      - name: Upload pronunciation proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pronunciation-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/pronunciation-proof/
+          if-no-files-found: error
+          retention-days: 30
