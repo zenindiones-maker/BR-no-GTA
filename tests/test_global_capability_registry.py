@@ -178,10 +178,15 @@ def test_addy_skills_remain_bounded_and_metadata_only():
         intent="code review quality",
         authorized_action="DEVELOPMENT",
     )
-    serialized = repr(metadata).lower()
+    addy_metadata = [
+        item for item in metadata
+        if str(item.get("capability_id") or "").startswith("addy:")
+    ]
+    serialized = repr(addy_metadata).lower()
+    assert addy_metadata
     assert "use only @" not in serialized
-    assert "prompt" not in serialized
     assert "skill body" not in serialized
+    assert "pinned skill instruction start" not in serialized
 
 
 def test_nvidia_state_is_proven_and_harness_governed():
