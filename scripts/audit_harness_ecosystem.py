@@ -416,22 +416,21 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
     # Worker engines are concrete execution identities inside Agent Office.
     workers = registered_worker_runners()
     for worker_id, runner in sorted(workers.items()):
-        kind = "AGENT" if worker_id == "codex" else "WORKER_ENGINE"
-        item = ensure(kind, worker_id)
+        item = ensure("WORKER_ENGINE", worker_id)
         item["SOURCES"].append("app.services.agent_office.munder_adapter.registered_worker_runners")
         item["EXECUTOR_BINDINGS"].append(f"{runner.__module__}.{runner.__name__}")
         item["DOMAINS"].append("development")
         item["ALLOWED_ACTIONS"].append("DEVELOPMENT")
+        item["HARNESS_ROUTE_AVAILABLE"] = True
+        item["EXECUTABLE_NOW"] = True
         if worker_id == "codex":
             item["CAPABILITY_IDS"].extend(f"addy:{skill}" for skill in ADDY_SKILLS)
-            item["HARNESS_ROUTE_AVAILABLE"] = True
-            item["EXECUTABLE_NOW"] = True
             item["STATUS"] = "ACTIVE_EXECUTABLE"
-            item["NOTES"].append("Agent Office engine for the 24 Addy skills")
+            item["NOTES"].append("Agent Office worker engine for the 24 Addy skills")
         else:
-            item["STATUS"] = merge_status(item["STATUS"], "VALID_SUPPORT_COMPONENT")
+            item["STATUS"] = "ACTIVE_EXECUTABLE"
             item["NOTES"].append(
-                "Internal Agent Office worker engine; selected only through agent-office.execute"
+                "Internal deterministic Agent Office worker engine selected only through agent-office.execute"
             )
         item["TEST_COVERAGE"].append("tests/test_agent_office_service.py")
         item["EVIDENCE_RETURN_PATHS"].append(
