@@ -203,6 +203,37 @@ def _python_agent_classes() -> list[dict[str, str]]:
     return discovered
 
 
+def _dsh_declared_agents() -> list[dict[str, Any]]:
+    """Inventory declarative DeepSeek Harness agent-loop entries from the canonical patch."""
+    path = ROOT / ".dsh" / "cordis.patch.yml"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    rows: list[dict[str, Any]] = []
+    pattern = re.compile(
+        r"(?m)^      - id: (?P<id>[^\\s]+)\\s*$"
+        r"(?P<body>(?:^        [^\\n]*\\n?)*)"
+    )
+    for match in pattern.finditer(text):
+        body = match.group("body")
+        def field(name: str) -> str | None:
+            found = re.search(rf"(?m)^        {re.escape(name)}: ([^\\n]+)$", body)
+            return found.group(1).strip() if found else None
+        rows.append(
+            {
+                "agent_id": match.group("id").strip(),
+                "session_id": field("sessionId"),
+                "provider": field("provider"),
+                "model": field("model"),
+                "source": ".dsh/cordis.patch.yml",
+                "driver": "@deepseek-ai/dsh-agent-loop",
+                "boot_declared": True,
+                "semantic_turn_proven": False,
+            }
+        )
+    return rows
+
+
 def _dsh_skills() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     root = ROOT / ".dsh" / "skills"
@@ -336,6 +367,22 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
             item["NOTES"].append("SKILL.md is empty")
         if not row["registry_capabilities"]:
             item["NOTES"].append("Local DSH skill has no Registry mapping")
+
+    # Native DeepSeek Harness agents declared in agent-loop config.
+    for native in _dsh_declared_agents():
+        item = ensure("HARNESS_NATIVE_AGENT", str(native["agent_id"]))
+        item["SOURCES"].append(str(native["source"]))
+        item["DOMAINS"].append("harness-native")
+        item["EXECUTOR_BINDINGS"].append(str(native["driver"]))
+        item["STATUS"] = merge_status(item["STATUS"], "VALID_SUPPORT_COMPONENT")
+        item["EXECUTABLE_NOW"] = False
+        item["NOTES"].append(
+            "Declaratively booted by dsh-agent-loop when the configured model provider is reachable; "
+            "inventory does not claim a semantic model turn."
+        )
+        item["EVIDENCE_RETURN_PATHS"].append("DeepSeek Harness session/event log")
+        item["LEARNING_RETURN_PATHS"].append("DeepSeek Harness durable session + BR Harness evidence")
+        item["TEST_COVERAGE"].append(".github/workflows/deepseek-harness.yml")
 
     # Worker engines are concrete execution identities inside Agent Office.
     workers = registered_worker_runners()
@@ -477,12 +524,17 @@ def audit() -> dict[str, Any]:
             "pinned_addy_agent_skills": True,
             "agent_office_worker_engines": True,
             "python_agent_brain_classes": True,
+            "deepseek_harness_agent_loop_config": True,
             "munder_dynamic_upstream_agents_counted_as_active": False,
         },
         "TOTAL_CAPABILITIES_FOUND": len(capabilities),
         "TOTAL_AGENTS_FOUND": len(agent_ids),
         "TOTAL_SKILLS_FOUND": len(skill_ids),
         "TOTAL_WORKER_ENGINES_FOUND": len(worker_ids),
+        "NATIVE_HARNESS_DECLARED_AGENT_COUNT": len(_dsh_declared_agents()),
+        "NATIVE_HARNESS_DECLARED_AGENT_IDS": sorted(item["agent_id"] for item in _dsh_declared_agents()),
+        "NATIVE_HARNESS_AGENT_RUNTIME": "DSH_AGENT_LOOP_DECLARATIVE",
+        "NATIVE_HARNESS_SEMANTIC_EXECUTION_PROVEN": False,
         "ADDY_SKILLS_EXPECTED": 24,
         "ADDY_SKILLS_FOUND": len(observed_addy),
         "ADDY_SKILL_IDS": sorted(observed_addy),
@@ -545,6 +597,7 @@ def main() -> int:
         "TOTAL_AGENTS_FOUND",
         "TOTAL_SKILLS_FOUND",
         "TOTAL_WORKER_ENGINES_FOUND",
+        "NATIVE_HARNESS_DECLARED_AGENT_COUNT",
         "ADDY_SKILLS_FOUND",
         "ACTIVE_EXECUTABLE",
         "REGISTERED_NOT_EXECUTABLE",
