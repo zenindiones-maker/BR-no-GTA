@@ -1,7 +1,7 @@
 {
-  "version": "official-narration-profile/v1",
+  "version": "official-narration-profile/v2",
   "profile_id": "br-no-gta-ptbr-official-voice-b-v1",
-  "status": "AVAILABLE",
+  "status": "LOCKED_HUMAN_APPROVED",
   "channel": "BR no GTA 6",
   "language": "pt-BR",
   "provider": "edge-tts",
@@ -9,8 +9,9 @@
   "voice": {
     "blind_id": "Voice B",
     "short_name": "pt-BR-ThalitaMultilingualNeural",
-    "human_role": "canonical_narrator_baseline",
-    "selection": "HUMAN_FINAL_VOICE"
+    "human_role": "sole_canonical_narrator",
+    "selection": "HUMAN_FINAL_VOICE",
+    "runtime_enabled": true
   },
   "rate": {
     "value": "+0%",
@@ -61,16 +62,12 @@
     ]
   },
   "human_evidence": {
-    "round1_top2": [
-      "Voice B",
-      "Voice C"
-    ],
-    "round1_rank_1": "Voice B",
-    "round1_note_voice_c": "melhor_diccao",
     "final_voice": "Voice B",
-    "voice_quality_reference": "Voice B",
-    "round2_configuration_specific_human_approval": "NOT_PROVIDED",
-    "policy": "Do not replace Voice B, rate, pitch, or prosody configuration automatically on performance metrics."
+    "voice_quality_reference": "I-opening-fluid-2.mp3",
+    "final_end_reference": "G-brand-mixed",
+    "final_selection": "HUMAN_EXPLICIT",
+    "legacy_casting_state": "RETIRED_FROM_RUNTIME",
+    "policy": "Do not enumerate, synthesize, benchmark, or substitute alternative voices in production."
   },
   "qa_evidence": {
     "round1_run_id": 35390107713,
@@ -83,20 +80,20 @@
     "rate_tuning": "PASS",
     "automatic_winner": null
   },
-  "source_checkpoint": ".run001/voice-casting-round2.checkpoint.json",
-  "source_checkpoint_head": "6207234755b98db61579b3e76bcc57afec6b9fbf",
+  "source_checkpoint": null,
+  "source_checkpoint_head": null,
   "promotion": {
     "voice_selection": "PROMOTED_BY_HUMAN",
     "performance_candidate": "NONE",
     "technical_qa_no_regression": "PASS",
-    "human_quality_no_regression_for_faster_configuration": "NOT_PROVEN",
-    "fallback": "this profile"
+    "human_quality_no_regression_for_faster_configuration": "NOT_APPLICABLE_TO_VOICE_SUBSTITUTION",
+    "fallback": "FAIL_CLOSED_NO_ALTERNATIVE_VOICE"
   },
   "stale_if": [
     "edge-tts provider version changes",
-    "voice identity becomes unavailable",
+    "pt-BR-ThalitaMultilingualNeural becomes unavailable",
     "pronunciation profile changes materially",
-    "human review supersedes Voice B",
+    "human review explicitly supersedes Fluid 2 or G-brand-mixed",
     "provider behavior contradicts observed QA"
   ],
   "invariants": {
@@ -104,5 +101,15 @@
     "job18_frozen": true,
     "publication_authority_unchanged": true,
     "youtube_publish": false
+  },
+  "runtime_voice_policy": {
+    "single_voice_only": true,
+    "allowed_short_names": [
+      "pt-BR-ThalitaMultilingualNeural"
+    ],
+    "alternative_voice_casting_enabled": false,
+    "automatic_voice_substitution_allowed": false,
+    "production_opening_reference": "I-opening-fluid-2.mp3",
+    "production_closing_reference": "G-brand-mixed"
   }
 }
