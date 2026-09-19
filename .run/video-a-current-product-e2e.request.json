@@ -1,6 +1,6 @@
 {
   "schema": "video-a-current-product-e2e-request/v1",
-  "requested_from_head": "b8601b5221e4a18417024c9b894d1b0b6ca10c31",
+  "requested_from_head": "0a7689a9bf00e9a9269e1010bc67932d44f7edc6",
   "goal_id": "f9dc10d7-dcc4-44dc-b808-444a351b4189",
   "product_label": "A",
   "historical_render_run_id": 35463639061,
@@ -8,14 +8,18 @@
   "successor_render_job_id": 2,
   "current_audio_contract_required": true,
   "render_transport": "artifact",
-  "resume_from_e2e_run_id": 35476663755,
-  "resume_from_e2e_artifact_id": 10594436517,
-  "previous_render_run_id": 35476691582,
-  "previous_failure_class": "MALFORMED_RENDER_WORKER_SOURCE_PIN_PATCH",
+  "resume_from_e2e_run_id": 35476904832,
+  "resume_from_e2e_artifact_id": 10594926223,
+  "previous_render_run_id": 35476930608,
+  "previous_failure_class": "ARTIFACT_WORKER_HANDOFF_GOVERNANCE_METADATA_UNSANITIZED",
   "recovery_mode": "REUSE_EXISTING_JOB2",
-  "attempt": 6,
+  "checkpoint_producer_run_id": 35476930608,
+  "narration_artifact_id": 10594412061,
+  "brand_audio_artifact_id": 10594342124,
+  "media_artifact_id": 10594791560,
+  "attempt": 7,
   "youtube_privacy": "private",
   "human_review_delivery": "telegram",
-  "previous_e2e_run_id": 35476796563,
-  "requested_at": "2026-09-19T23:45:00Z"
+  "previous_e2e_run_id": 35476904832,
+  "requested_at": "2026-09-19T23:59:00Z"
 }
