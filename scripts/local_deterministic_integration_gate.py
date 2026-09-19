@@ -15,6 +15,8 @@ from app.services.e2e_stage_checkpoint_service import (
     record_completed_stage,
 )
 from app.services.script_generator_service import _generate_ai_structure
+from app.services.script_spec_service import _build_narrative_blocks
+from app.services.production_plan_service import create_production_plan
 from app.services.youtube_department_service import (
     _semantic_output_contract,
     execute_youtube_specialist_capability,
@@ -160,6 +162,49 @@ def _checkpoint_resume_contract() -> None:
     assert after["reusable"] is False
     assert after["reason"] == "MISSING_CHECKPOINT"
 
+
+def _production_plan_structure_contract() -> None:
+    content = (
+        "INTRODUÇÃO\nAbrimos com contexto factual sobre a Rockstar.\n\n"
+        "BLOCO DINÂMICO SOBRE O ÁLBUM\nA Rockstar anunciou 34 faixas originais e energia de Vice City e Leonida.\n\n"
+        "OUTRO HEADING ESPECÍFICO\nEste bloco separa fato verificado de interpretação editorial.\n\n"
+        "CONCLUSÃO\nFechamos recapitulando os fatos verificados."
+    )
+    blocks = _build_narrative_blocks(content)
+    headings = [item["heading"] for item in blocks]
+    assert any("Bloco Dinâmico" in item for item in headings), headings
+    assert any("Outro Heading" in item for item in headings), headings
+    plan = create_production_plan({
+        "id": 1,
+        "script_id": 1,
+        "idea_id": 1,
+        "title": "GTA VI",
+        "description": "d",
+        "objective": "o",
+        "audience": "pt-BR",
+        "format": "YouTube editorial",
+        "tone": "factual",
+        "hook": "h",
+        "cta": "c",
+        "facts_sources": [],
+        "verified_claims": [{
+            "claim_id": "c1",
+            "statement": "A Rockstar anunciou 34 faixas originais para GTA VI.",
+        }],
+        "youtube_strategy": {"angle": "official facts"},
+        "editorial_evidence_refs": ["claim:c1"],
+        "estimated_duration_seconds": 120.0,
+        "narrative_blocks": blocks,
+        "visual_requirements": [{"type": "context", "description": "official"}],
+    })
+    scenes = plan["scenes"]
+    assert len(scenes) >= len(blocks)
+    assert abs(sum(float(item["duration_seconds"]) for item in scenes) - 120.0) < 0.001
+    assert all(float(item["duration_seconds"]) <= 30.001 for item in scenes)
+    assert all(item.get("media_search_terms") for item in scenes)
+    assert all("Visual relacionado diretamente ao tema" not in item["visual_description"] for item in scenes)
+    assert sum(1 for item in scenes if item["visual_type"] == "title_card") <= 1
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -169,6 +214,7 @@ def main() -> int:
     _script_contract()
     _specialist_contracts()
     _context_packet_contracts()
+    _production_plan_structure_contract()
     _checkpoint_resume_contract()
 
     elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -176,12 +222,14 @@ def main() -> int:
         "status": "PASS",
         "LOCAL_DETERMINISTIC_INTEGRATION": "PASS",
         "specialists_checked": list(PRODUCT_SPECIALISTS),
+        "PRODUCTION_PLAN_STRUCTURE_CONTRACT": "PASS",
         "CHECKPOINT_RESUME_CONTRACT": "PASS",
         "elapsed_ms": round(elapsed_ms, 3),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("LOCAL_DETERMINISTIC_INTEGRATION=PASS")
+    print("PRODUCTION_PLAN_STRUCTURE_CONTRACT=PASS")
     print("CHECKPOINT_RESUME_CONTRACT=PASS")
     print(f"LOCAL_DETERMINISTIC_INTEGRATION_MS={elapsed_ms:.3f}")
     return 0

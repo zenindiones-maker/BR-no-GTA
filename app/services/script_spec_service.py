@@ -109,39 +109,49 @@ def _build_narrative_blocks(
     content: str,
 ) -> list[dict[str, str]]:
     """
-    Converte as seções narrativas persistidas em blocos
-    estruturados para produção.
+    Preserve every real development section emitted by the governed script.
+
+    Reserved envelope sections (HOOK/INTRODUÇÃO/CONCLUSÃO/CTA) are handled
+    separately. Development headings are intentionally open-ended because the
+    semantic writer is allowed to choose topic-specific headings.
     """
 
-    block_mapping = {
-        "INTRODUÇÃO": "apresentar a pauta e estabelecer o contexto",
+    known_purpose = {
         "CONTEXTO": "explicar o contexto necessário para compreender o tema",
         "O QUE SABEMOS": "apresentar as informações conhecidas sobre o tema",
         "IMPACTO": "explicar possíveis consequências e relevância para o público",
-        "CONCLUSÃO": "consolidar os principais pontos apresentados",
     }
-
+    reserved = {"HOOK", "CTA"}
     blocks: list[dict[str, str]] = []
 
     for section in content.split("\n\n"):
         if "\n" not in section:
             continue
-
         heading, body = section.split("\n", 1)
-
-        if heading not in block_mapping:
+        normalized = heading.strip().upper()
+        body = body.strip()
+        if not normalized or not body or normalized in reserved:
             continue
+
+        if normalized == "INTRODUÇÃO":
+            purpose = "apresentar a pauta e estabelecer o contexto"
+        elif normalized == "CONCLUSÃO":
+            purpose = "consolidar os principais pontos apresentados"
+        else:
+            purpose = known_purpose.get(
+                normalized,
+                f"desenvolver o argumento editorial específico do bloco: {heading.strip()}",
+            )
 
         blocks.append(
             {
-                "heading": heading.title(),
-                "content": body.strip(),
-                "purpose": block_mapping[heading],
+                "heading": heading.strip().title(),
+                "content": body,
+                "purpose": purpose,
             }
         )
 
     return blocks
-
 
 def _get_research_sources(
     idea_id: int,

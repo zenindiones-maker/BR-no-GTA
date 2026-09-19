@@ -23,6 +23,7 @@ from app.services.youtube_package_service import (
     persist_youtube_content_package,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.production_plan_refresh_service import refresh_production_plan_from_persisted_script
 from app.services.youtube_role_context_service import (
     build_production_packet,
     build_script_review_packet,
@@ -168,6 +169,17 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     content_item_id = int(content_item.get("id") or 0)
     if script_id <= 0 or content_item_id <= 0 or not production_plan.get("scenes"):
         raise RuntimeError("editorial result lacks persisted script/content/production plan")
+
+    refreshed = refresh_production_plan_from_persisted_script(
+        content_item_id=content_item_id,
+        script_id=script_id,
+        existing_plan=production_plan,
+        target_duration_seconds=TARGET_DURATION_SECONDS,
+    )
+    production_plan = dict(refreshed["production_plan"])
+    result["production_plan"] = production_plan
+    result["script_spec"] = dict(refreshed["script_spec"])
+    content_item = {**content_item, **dict(refreshed["content_item"])}
 
     script_text = str(script.get("content") or "")
     script_ref = f"script:{script_id}"
@@ -321,6 +333,28 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
 
     thumbnail_output = _semantic_output(thumbnail, "thumbnail")
     production_output = _semantic_output(production, "production management")
+    if str(production_output.get("readiness") or "").strip().upper() == "MAJOR_REWORK":
+        raise RuntimeError(
+            "Production Management rejected the refreshed plan with MAJOR_REWORK: "
+            + json.dumps(production_output.get("gaps") or [], ensure_ascii=False)
+        )
+
+    scenes_for_quality = list(production_plan.get("scenes") or [])
+    generic_markers = ("visual relacionado diretamente ao tema", "reforçando a narração")
+    generic_scene_count = sum(
+        1 for scene in scenes_for_quality
+        if any(marker in str(scene.get("visual_description") or "").casefold() for marker in generic_markers)
+    )
+    resolvable_scene_count = sum(
+        1 for scene in scenes_for_quality if scene.get("media_search_terms")
+    )
+    evidence_scene_count = sum(
+        1 for scene in scenes_for_quality if scene.get("evidence_refs")
+    )
+    if generic_scene_count:
+        raise RuntimeError("ProductionPlan still contains generic visual placeholders")
+    if resolvable_scene_count != len(scenes_for_quality):
+        raise RuntimeError("ProductionPlan contains scenes without media_search_terms")
 
     title = str(seo_output.get("title") or "").strip()
     description = str(seo_output.get("description") or "").strip()
@@ -458,6 +492,10 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             "scene_count": len(scenes),
             "max_scene_seconds": max(float(x.get("duration_seconds") or 0) for x in scenes),
             "package_evidence_refs": len(package.get("evidence_refs") or []),
+            "generic_scene_ratio": round(generic_scene_count / len(scenes), 4) if scenes else 1.0,
+            "title_card_ratio": round(sum(1 for x in scenes if str(x.get("visual_type") or "").casefold()=="title_card") / len(scenes), 4) if scenes else 1.0,
+            "media_resolvable_ratio": round(resolvable_scene_count / len(scenes), 4) if scenes else 0.0,
+            "evidence_to_scene_coverage": round(evidence_scene_count / len(scenes), 4) if scenes else 0.0,
         },
     }
 

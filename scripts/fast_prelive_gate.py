@@ -236,6 +236,9 @@ def main() -> int:
         root / "app/services/script_generator_service.py",
         root / "app/services/youtube_role_context_service.py",
         root / "scripts/youtube_product_quality_e2e.py",
+        root / "app/services/script_spec_service.py",
+        root / "app/services/production_plan_service.py",
+        root / "app/services/production_plan_refresh_service.py",
     ])
 
     raw='{"hook":"h","introduction":"i","development":[{"heading":"a","body":"b"},{"heading":"c","body":"d"},{"heading":"e","body":"f"}],"conclusion":"c","cta":"x"}'

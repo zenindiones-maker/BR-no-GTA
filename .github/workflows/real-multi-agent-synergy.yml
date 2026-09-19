@@ -15,6 +15,9 @@ on:
       - 'app/services/youtube_department_service.py'
       - 'app/services/youtube_role_context_service.py'
       - 'app/services/script_generator_service.py'
+      - 'app/services/production_plan_refresh_service.py'
+      - 'app/services/production_plan_service.py'
+      - 'app/services/script_spec_service.py'
       - 'app/services/harness_collaboration_service.py'
       - 'app/services/harness_learning_service.py'
       - 'app/services/opencode_executor_profile_service.py'
@@ -328,6 +331,9 @@ jobs:
           assert len(d["youtube_package"]["evidence_refs"]) >= 6, d
           assert d["metrics"]["scene_count"] >= 3, d
           assert d["metrics"]["max_scene_seconds"] <= 30.001, d
+          assert d["metrics"]["generic_scene_ratio"] == 0.0, d
+          assert d["metrics"]["media_resolvable_ratio"] == 1.0, d
+          assert d["structured_specialist_outputs"]["production_management"]["readiness"] != "MAJOR_REWORK", d
           outputs=d["structured_specialist_outputs"]
           assert set(outputs) >= {"content_strategy","script_review","seo","thumbnail","production_management"}, outputs
           assert d["brain_result"]["receipt"]["goal_id"] == d["goal_id"], d

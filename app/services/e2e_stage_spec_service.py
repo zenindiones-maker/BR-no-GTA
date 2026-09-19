@@ -42,7 +42,10 @@ STAGE_CODE_PATHS: dict[str, tuple[str, ...]] = {
         "app/integrations/deepseek_harness/server.py",
         "app/services/editorial_queue_consumer.py",
         "app/services/script_generator_service.py",
+        "app/services/script_spec_service.py",
         "app/services/production_plan_service.py",
+        "app/services/production_plan_refresh_service.py",
+        "scripts/youtube_product_quality_e2e.py",
     ),
     "script-review": (
         "app/services/youtube_department_service.py",
@@ -227,11 +230,15 @@ def bootstrap_upstream_checkpoints(
     recorded, skipped = [], []
     for spec in specs:
         current_code = code_version(spec.code_paths, root=root)
-        source_code = source_code_version_at_commit(
-            stage_id=spec.stage_id,
-            commit_sha=source_commit_sha,
-            root=root,
-        )
+        try:
+            source_code = source_code_version_at_commit(
+                stage_id=spec.stage_id,
+                commit_sha=source_commit_sha,
+                root=root,
+            )
+        except RuntimeError:
+            skipped.append({"stage_id": spec.stage_id, "reason": "SOURCE_CODE_PATH_MISSING"})
+            continue
         if current_code != source_code:
             skipped.append({"stage_id": spec.stage_id, "reason": "CODE_VERSION_CHANGED"})
             continue
@@ -492,11 +499,15 @@ def bootstrap_checkpoints(
     skipped = []
     for spec in specs:
         current_code = code_version(spec.code_paths, root=root)
-        source_code = source_code_version_at_commit(
-            stage_id=spec.stage_id,
-            commit_sha=source_commit_sha,
-            root=root,
-        )
+        try:
+            source_code = source_code_version_at_commit(
+                stage_id=spec.stage_id,
+                commit_sha=source_commit_sha,
+                root=root,
+            )
+        except RuntimeError:
+            skipped.append({"stage_id": spec.stage_id, "reason": "SOURCE_CODE_PATH_MISSING"})
+            continue
         if current_code != source_code:
             skipped.append({"stage_id": spec.stage_id, "reason": "CODE_VERSION_CHANGED"})
             continue
