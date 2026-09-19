@@ -8,7 +8,8 @@ from app.services.pronunciation_service import (
     DEFAULT_VOICE, PRONUNCIATION_LAYER_VERSION, PronunciationError,
     SynthesisPlan, SynthesisSpan, build_azure_ssml, canonical_lexicon_entries,
     load_pronunciation_lexicon, pronunciation_cache_identity,
-    provider_capabilities, resolve_synthesis_plan, validate_provider_plan,
+    provider_capabilities, resolve_synthesis_plan, synthesis_plan_cache_payload,
+    validate_provider_plan,
 )
 
 def test_lexicon_is_versioned_and_contains_vice_city():
