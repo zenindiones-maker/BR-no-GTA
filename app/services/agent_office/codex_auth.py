@@ -98,7 +98,7 @@ class CodexAuthenticationProvider:
         *,
         verification_url: str,
         user_code: str,
-    ) -> None:
+    ) -> int:
         token = self._environ.get("TELEGRAM_BOT_TOKEN", "").strip()
         chat_id = self._environ.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
         run_id = self._environ.get("GITHUB_RUN_ID", "").strip()
@@ -129,6 +129,35 @@ class CodexAuthenticationProvider:
             ) from None
         if not isinstance(payload, dict) or payload.get("ok") is not True:
             raise RuntimeError("private Telegram device-auth delivery was rejected")
+        result = payload.get("result")
+        message_id = result.get("message_id") if isinstance(result, dict) else None
+        if not isinstance(message_id, int) or message_id <= 0:
+            raise RuntimeError("private Telegram device-auth delivery returned no message identity")
+        evidence_path = Path(
+            self._environ.get(
+                "CODEX_AUTH_DELIVERY_EVIDENCE_FILE",
+                "artifacts/delegated-autonomy/device-auth-delivery.json",
+            )
+        )
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "destination_configured": True,
+                    "destination_class": "review_channel_or_group",
+                    "delivery_accepted": True,
+                    "telegram_message_id": message_id,
+                    "user_code_recorded": False,
+                    "credential_recorded": False,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return message_id
 
     def _device_auth_private(
         self,
@@ -172,11 +201,20 @@ class CodexAuthenticationProvider:
                     if match:
                         user_code = match.group(0)
                 if verification_url and user_code and not delivered:
-                    self._deliver_device_auth_private(
-                        verification_url=verification_url,
-                        user_code=user_code,
-                    )
+                    try:
+                        message_id = self._deliver_device_auth_private(
+                            verification_url=verification_url,
+                            user_code=user_code,
+                        )
+                    except Exception:
+                        print("TELEGRAM_DESTINATION_CONFIGURED=YES", flush=True)
+                        print("TELEGRAM_DELIVERY_ACCEPTED=NO", flush=True)
+                        raise
                     delivered = True
+                    print("TELEGRAM_DESTINATION_CONFIGURED=YES", flush=True)
+                    print("TELEGRAM_DESTINATION=REVIEW_CHANNEL_OR_GROUP", flush=True)
+                    print("TELEGRAM_DELIVERY_ACCEPTED=YES", flush=True)
+                    print(f"TELEGRAM_MESSAGE_ID={message_id}", flush=True)
                     print("USER_CODE_DELIVERY=PRIVATE", flush=True)
                     print("WAITING_FOR_USER_AUTH=YES", flush=True)
             return int(process.returncode or 0)
@@ -255,14 +293,15 @@ class CodexAuthenticationProvider:
                 env=trusted_env,
             )
         else:
-            device = self._run(
-                ["codex", "login", "--device-auth"],
-                cwd=cwd,
-                timeout=timeout,
-                env=trusted_env,
-                passthrough=True,
+            print("TELEGRAM_DESTINATION_CONFIGURED=NO", flush=True)
+            print("TELEGRAM_DELIVERY_ACCEPTED=NO", flush=True)
+            return CodexAuthenticationState(
+                available=False,
+                method="device_auth",
+                cost_class="subscription_or_workspace",
+                user_action_required=True,
+                exit_code=4,
             )
-            device_returncode = device.returncode
         if device_returncode != 0:
             return CodexAuthenticationState(
                 available=False,
