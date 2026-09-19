@@ -1,11 +1,8 @@
 {
-  "mission": "system-agent-inventory",
-  "requested_at": "2026-09-19",
-  "reason": "rerun after exact native bindings, Addy handoff fix, cloud media capability and gta6.brain.decide",
-  "expected": {
-    "addy_skills": 24,
-    "broken_active_bindings": 0,
-    "harness_authority": "DEEPSEEK_HARNESS",
-    "job18_untouched": true
-  }
+  "schema_version": 1,
+  "requested_at": "2026-09-19T04:25:00Z",
+  "base_head": "c22dd45efe4a0ba3722dd2779e138ea81fd3bb09",
+  "purpose": "Re-run full system agent inventory after exact Addy Registry executor test fix.",
+  "job18_unchanged": true,
+  "publication": false
 }
