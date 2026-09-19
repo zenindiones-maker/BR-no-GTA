@@ -87,7 +87,14 @@ def test_authenticated_executor_invokes_exactly_one_selected_skill(tmp_path):
 class _StubAuthProvider(CodexAuthenticationProvider):
     def __init__(self, statuses, *, environ=None):
         super().__init__(
-            environ=environ or {"PATH": "/usr/bin", "ZERO_COST_OPERATION": "TRUE"}
+            environ=environ
+            or {
+                "PATH": "/usr/bin",
+                "ZERO_COST_OPERATION": "TRUE",
+                "TELEGRAM_BOT_TOKEN": "test-only-token",
+                "TELEGRAM_REVIEW_CHAT_ID": "test-only-review",
+                "GITHUB_RUN_ID": "1",
+            }
         )
         self.statuses = list(statuses)
         self.commands = []
@@ -101,6 +108,10 @@ class _StubAuthProvider(CodexAuthenticationProvider):
     def _run(self, command, *, cwd: Path, timeout: float, env, passthrough=False):
         self.commands.append(list(command))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    def _device_auth_private(self, *, cwd: Path, timeout: float, env):
+        self.commands.append(["codex", "login", "--device-auth"])
+        return 0
 
 
 def test_agent_office_missing_auth_blocks_before_model_turn(tmp_path):
