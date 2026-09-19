@@ -167,3 +167,50 @@ def test_select_media_segments_rejects_invalid_metadata(monkeypatch):
         raise AssertionError(
             "MediaSelectionError era esperado para metadata inválido."
         )
+
+
+def test_continuous_window_derives_duration_from_materialized_bounds(monkeypatch):
+    captured = {}
+
+    def fake_create_unit(**kwargs):
+        return {"id": 42}
+
+    def fake_create_segment(**kwargs):
+        captured.update(kwargs)
+        return {"id": 1, **kwargs}
+
+    monkeypatch.setattr(service, "create_and_persist_content_unit", fake_create_unit)
+    monkeypatch.setattr(service, "create_and_persist_content_segment", fake_create_segment)
+
+    # Exact floating-point pattern observed in Product To Human Review run 35460016361.
+    start = 140.10876954452755
+    requested = 26.614547926580556
+    end = start + requested
+    assert requested > end - start
+
+    result = service.select_media_segments(
+        knowledge={
+            "source_path": "remote://media-worker/gta6-extended-look-official-20260827",
+            "metadata": {"source_url": "https://example.invalid/source"},
+            "scenes": [
+                {"start_seconds": 0.0, "end_seconds": 200.0},
+            ],
+        },
+        content_item_id=1,
+        script_id=2,
+        idea_id=3,
+        title="GTA VI",
+        objective="Informar",
+        hook="Hook",
+        narration="Narração",
+        target_duration_seconds=requested,
+        max_segments=1,
+        source_cursor_seconds=start,
+        continuous_window=True,
+    )
+
+    segment = result["segments"][0]
+    assert segment["source_start_seconds"] == start
+    assert segment["source_end_seconds"] == end
+    assert segment["duration_seconds"] == end - start
+    assert abs(segment["duration_seconds"] - requested) < 0.001
