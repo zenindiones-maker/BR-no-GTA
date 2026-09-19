@@ -109,6 +109,23 @@ def _extract_claims(text: str, *, limit: int = 4) -> list[str]:
             "Rockstar lists Grand Theft Auto VI for PlayStation 5 and Xbox Series X|S."
         )
 
+    if (
+        "Jason and Lucia have always known the deck is stacked against them" in cleaned
+        and "criminal conspiracy stretching across the state of Leonida" in cleaned
+    ):
+        selected.append(
+            "Rockstar describes Jason and Lucia being drawn into a criminal conspiracy "
+            "across Leonida after an easy score goes wrong."
+        )
+
+    if "34 original tracks" in cleaned and "GRAND THEFT AUTO VI: THE ALBUM" in cleaned:
+        selected.append(
+            "Rockstar says Grand Theft Auto VI: The Album features 34 original tracks."
+        )
+
+    if len(selected) >= limit:
+        return selected[:limit]
+
     boilerplate = (
         "skip to main content",
         "homepage",
@@ -118,6 +135,10 @@ def _extract_claims(text: str, *, limit: int = 4) -> list[str]:
         "learn more",
         "scroll for more content",
         "label",
+        "pre-order bonuses",
+        "explore more",
+        "see all featured news",
+        "view all newswire posts",
     )
     gta_terms = (
         "gta", "grand theft auto", "rockstar", "take-two", "take two",
@@ -128,7 +149,7 @@ def _extract_claims(text: str, *, limit: int = 4) -> list[str]:
         if len(sentence) < 35 or len(sentence) > 420:
             continue
         folded = sentence.casefold()
-        if sum(marker in folded for marker in boilerplate) >= 2:
+        if any(marker in folded for marker in boilerplate):
             continue
         if not any(term in folded for term in gta_terms):
             continue
