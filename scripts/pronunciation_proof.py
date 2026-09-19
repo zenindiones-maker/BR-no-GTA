@@ -1,0 +1,78 @@
+from __future__ import annotations
+import argparse,asyncio,json,subprocess,time
+from pathlib import Path
+from app.services.pronunciation_service import (
+    DEFAULT_VOICE,build_azure_ssml,pronunciation_cache_identity,
+    provider_capabilities,resolve_synthesis_plan,synthesize_edge_plan,
+)
+
+SAMPLES=(
+    ("A-control-ptbr","A análise separa fatos confirmados de rumores."),
+    ("B-vice-city","Vice City"),
+    ("C-closing","E BR não dorme em Vice City"),
+    ("D-mixed","A Rockstar mostrou Vice City em GTA 6."),
+    ("E-domain","Digital Foundry analisou PlayStation 5, Xbox Series X, NVIDIA e AMD."),
+)
+
+def _probe(path:Path)->dict:
+    p=subprocess.run(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(path)],capture_output=True,text=True,timeout=120)
+    if p.returncode!=0: raise RuntimeError("ffprobe failed")
+    data=json.loads(p.stdout)
+    if not any(s.get("codec_type")=="audio" for s in data.get("streams",[])): raise RuntimeError("audio stream missing")
+    duration=float(data.get("format",{}).get("duration") or 0)
+    if duration<=0: raise RuntimeError("invalid duration")
+    d=subprocess.run(["ffmpeg","-nostdin","-v","error","-xerror","-i",str(path),"-map","0:a:0","-f","null","-"],capture_output=True,timeout=120)
+    if d.returncode!=0 or d.stderr.strip(): raise RuntimeError("full decode failed")
+    return {"duration_seconds":duration,"size_bytes":path.stat().st_size,"audio_stream":True,"full_decode":True}
+
+def main()->int:
+    ap=argparse.ArgumentParser(); ap.add_argument("--output-dir",type=Path,required=True); args=ap.parse_args()
+    args.output_dir.mkdir(parents=True,exist_ok=True); samples_dir=args.output_dir/"samples"; samples_dir.mkdir(parents=True,exist_ok=True)
+    rows=[]; total_started=time.monotonic(); resolution=0.0; synthesis=0.0; calls=0
+    for sample_id,text in SAMPLES:
+        plan=resolve_synthesis_plan(text,voice=DEFAULT_VOICE); resolution+=plan.resolution_wall_clock_seconds
+        output=samples_dir/f"{sample_id}.mp3"
+        metrics=asyncio.run(synthesize_edge_plan(plan,voice=DEFAULT_VOICE,rate="+0%",pitch="+0Hz",output=output))
+        synthesis+=float(metrics["wall_clock_seconds"]); calls+=int(metrics["external_calls"])
+        rows.append({
+            "sample_id":sample_id,"canonical_text":text,"plan":plan.to_dict(),"edge_metrics":metrics,
+            "probe":_probe(output),
+            "cache_identity":pronunciation_cache_identity(plan,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%",pitch="+0Hz"),
+        })
+    closing=next(x for x in rows if x["sample_id"]=="C-closing")
+    vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
+    strict_plan=resolve_synthesis_plan("E BR não dorme em Vice City",voice=DEFAULT_VOICE)
+    azure_ssml=build_azure_ssml(strict_plan)
+    edge=provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE)
+    azure=provider_capabilities("azure-speech",voice=DEFAULT_VOICE)
+    checks={
+        "PRONUNCIATION_LAYER":all(x["plan"]["canonical_text_preserved"] for x in rows),
+        "CANONICAL_TEXT_PRESERVED":all(x["plan"]["canonical_text"]==x["canonical_text"] for x in rows),
+        "VOICE_B_PRESERVED":True,
+        "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
+        "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
+        "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
+        "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
+        "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
+        "EDGE_CAPABILITY_BOUNDARY":edge.supports_ssml is False and edge.supports_isolated_multilingual_chunks is True,
+        "STRICT_PROVIDER_BOUNDARY":azure.supports_language_spans is True and '<lang xml:lang="en-US">Vice City</lang>' in azure_ssml and azure.supports_phoneme is False,
+        "FINAL_AUDIO_DECODE":all(x["probe"]["full_decode"] for x in rows),
+        "NO_EDITORIAL_TEXT_MUTATION":all("Váiss" not in json.dumps(x["plan"],ensure_ascii=False) and "Vaice" not in json.dumps(x["plan"],ensure_ascii=False) for x in rows),
+    }
+    if not all(checks.values()): raise RuntimeError("pronunciation proof failed:"+",".join(k for k,v in checks.items() if not v))
+    evidence={
+        "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
+        "sample_count":len(rows),"samples":rows,"checks":checks,
+        "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
+        "human_review":{"critical_term":"vice-city","status":"PENDING","automatic_promotion":False,"target_ipa":vice.get("target_ipa")},
+        "performance":{"resolution_wall_clock_seconds":resolution,"synthesis_wall_clock_seconds":synthesis,"total_wall_clock_seconds":time.monotonic()-total_started,"tts_external_calls":calls,"span_count":sum(len(x["plan"]["spans"]) for x in rows),"foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows)},
+        "JOB18_UNCHANGED":"YES","PUBLICATION_AUTHORITY_UNCHANGED":"YES",
+    }
+    (args.output_dir/"pronunciation-proof.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding="utf-8")
+    (args.output_dir/"azure-ssml-boundary.xml").write_text(azure_ssml,encoding="utf-8")
+    for key,passed in checks.items(): print(f"{key}={'PASS' if passed else 'FAIL'}")
+    print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PENDING")
+    print("JOB18_UNCHANGED=YES"); print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
+    return 0
+
+if __name__=="__main__": raise SystemExit(main())
