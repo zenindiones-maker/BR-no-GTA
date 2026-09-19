@@ -260,6 +260,40 @@ FRESH_GTA6_RESEARCH_RECORD = CapabilityRecord(
     side_effects=(),
 )
 
+YOUTUBE_PACKAGE_PERSIST_RECORD = CapabilityRecord(
+    capability_id="youtube.package.persist",
+    capability_type="CAPABILITY",
+    domain="youtube-department",
+    implementation="Harness-governed persistence of the canonical pre-publication YouTube content package",
+    input_contract="verified Goal/Script/ContentItem + YouTube specialist outputs + evidence refs + exact Harness YOUTUBE lineage",
+    output_contract="persisted youtube_content_packages row + CapabilityEvidence",
+    requirements=(
+        "persisted Harness YOUTUBE authorization",
+        "Harness Routing/Policy decision",
+        "exact Global Capability Registry executor binding",
+        "verified evidence lineage",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("YOUTUBE",),
+    policy_tags=("youtube", "package", "metadata", "persistence", "evidence", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness routing + persisted capability authorization + exact Registry executor binding; "
+        "persists planned metadata only and cannot upload or make a video public"
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="EVIDENCE_GROUNDED_PACKAGE_PERSISTENCE",
+    evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
+    fallback_eligibility=False,
+    executor_binding="app.services.youtube_package_service.execute_youtube_package_persist_capability",
+    version="1",
+    provider_id="internal",
+    agent_id="tubegent-production-management",
+    side_effects=("canonical YouTube content package persistence",),
+)
+
 YOUTUBE_ANALYTICS_READ_RECORD = CapabilityRecord(capability_id="youtube.analytics.read", capability_type="EXECUTOR", domain="youtube-analytics", implementation="Harness-authorized read-only YouTube Analytics API v2 executor", input_contract="persisted publication_id + governed date window", output_contract="normalized metrics/provenance + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "persisted youtube_video_id", "Google OAuth yt-analytics.readonly scope"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("youtube", "analytics", "read-only", "metrics", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted authorization + exact Registry executor binding; publication identity resolves youtube_video_id; read-only analytics; no caller-selected executor or video override", cost_class="FREE_NO_BILLING", quota_class="GOOGLE_API_QUOTA", latency_class="REMOTE_API", quality_class="STRUCTURALLY_VALIDATED_RUNTIME_UNPROVEN", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_service.execute_youtube_analytics_read_capability", version="1", provider_id="google-youtube-analytics", side_effects=())
 
 YOUTUBE_ANALYTICS_LEARNING_RECORD = CapabilityRecord(capability_id="knowledge.learn.youtube-analytics", capability_type="EXECUTOR", domain="knowledge/learning", implementation="Harness-authorized deterministic YouTube Analytics learning persistence", input_contract="normalized youtube.analytics.read evidence + authorization lineage", output_contract="idempotent existing Memory Event Log observation + CapabilityEvidence/CanonicalExecutionResult", requirements=("persisted Harness EXECUTION authorization", "Harness Routing/Policy decision", "exact Global Capability Registry executor binding", "normalized analytics provenance"), maturity=FUNCTIONAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("knowledge", "learning", "youtube", "analytics", "zero-cost"), security_boundary="DeepSeek Harness authority + persisted authorization + exact routing/Registry binding; deterministic append-only Memory Event Log reuse; no editorial or publication authority", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DETERMINISTIC", latency_class="LOCAL", quality_class="DETERMINISTIC_BOUNDARY", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.youtube_analytics_learning_service.execute_youtube_analytics_learning_capability", version="1", provider_id="internal", side_effects=("Memory Event Log append",))
@@ -508,6 +542,7 @@ for _record in (
     PRODUCTION_RENDER_RECORD,
     NARRATION_GENERATE_PTBR_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
+    YOUTUBE_PACKAGE_PERSIST_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
     MARKITDOWN_NORMALIZE_RECORD,
