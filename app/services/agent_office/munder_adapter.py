@@ -827,4 +827,3 @@ class MunderAdapter:
             ),
             evidence=evidence,
         )
-
