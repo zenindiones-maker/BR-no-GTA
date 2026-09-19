@@ -165,7 +165,14 @@ def test_addy_skills_remain_bounded_and_metadata_only():
     assert all(item.allowed_actions == ("DEVELOPMENT",) for item in addy)
     assert all(item.skill_id for item in addy)
     assert all(item.instruction_path for item in addy)
-    assert all("read-only Codex snapshot" in item.security_boundary for item in addy)
+    assert all("HarnessAuthorization" in item.security_boundary for item in addy)
+    assert all("zero-cost semantic provider" in item.security_boundary for item in addy)
+    assert all("no autonomous routing" in item.security_boundary for item in addy)
+    assert all(
+        item.executor_binding
+        == "app.services.addy_harness_service.execute_authorized_addy_skill"
+        for item in addy
+    )
 
     metadata = GLOBAL_CAPABILITY_REGISTRY.discover(
         intent="code review quality",
