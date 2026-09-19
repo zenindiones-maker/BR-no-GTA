@@ -149,18 +149,34 @@ def _baseline_probe(prompt: str, root: Path) -> dict[str, Any]:
     }
 
 
-def _candidate_probe(prompt: str) -> dict[str, Any]:
+def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
     started_at = _utcnow()
     started = time.monotonic()
+    config_path = root / "opencode-candidate.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "permission": {"*": "deny"},
+            },
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["OPENCODE_CONFIG"] = str(config_path.resolve())
     process = subprocess.run(
         [
             "opencode", "run", "--standalone", "--model", EXECUTOR_MODEL,
+            "--agent", "build",
+            "--title", "BR-no-GTA provider benchmark",
             "--format", "json", prompt,
         ],
         capture_output=True,
         text=True,
         timeout=300,
         check=False,
+        env=env,
     )
     latency = time.monotonic() - started
     finished_at = _utcnow()
@@ -225,7 +241,7 @@ def prepare(output: Path) -> dict[str, Any]:
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     baseline = _baseline_probe(prompt, output.parent)
-    candidate = _candidate_probe(prompt)
+    candidate = _candidate_probe(prompt, output.parent)
     baseline["workload_fingerprint"] = fingerprint
     candidate["workload_fingerprint"] = fingerprint
     baseline["evidence_refs"] = [
