@@ -228,11 +228,21 @@ def test_youtube_publish_reconcile_targets_exact_publication(monkeypatch):
     assert payload["result"]["publication"]["id"] == 43
 
 
-def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):
-    captured={}
-    def fake_executor(capability,payload): captured["payload"]=payload; return {"ok":True}
-    monkeypatch.setattr(server,"execute_codex_addy_capability",fake_executor)
-    payload=json.loads(server.br_capability_execute(capability_id="addy:code-review-and-quality",authorized_action="DEVELOPMENT",payload_json='{"task":"review"}'))
+def test_capability_execute_generates_ids_inside_harness_boundary():
+    payload=json.loads(server.br_capability_execute(
+        capability_id="media.discovery",
+        authorized_action="EXECUTION",
+        payload_json=json.dumps({
+            "topic": "Vice City",
+            "results": [{
+                "title": "Grand Theft Auto VI Trailer 2",
+                "url": "https://www.youtube.com/watch?v=example",
+                "source": "youtube",
+                "description": "GTA VI Vice City Lucia Jason",
+                "source_authority": "official",
+            }],
+        }),
+    ))
     evidence=payload["result"]
     canonical=payload["evidence"]
     assert evidence["authority"] == "deepseek_harness"
@@ -241,9 +251,22 @@ def test_capability_execute_generates_ids_inside_harness_boundary(monkeypatch):
     assert canonical["execution_id"] == evidence["execution_id"]
     assert canonical["authorization_id"] == evidence["authorization_id"]
     assert canonical["routing_id"] == evidence["harness_routing"]["routing_id"]
-    assert canonical["capability_id"] == "addy:code-review-and-quality"
-    assert canonical["result"] == {"ok": True}
-    assert captured["payload"] == {"task":"review"}
+    assert canonical["capability_id"] == "media.discovery"
+    assert canonical["result"]["status"] == "EXECUTED"
+    assert canonical["result"]["candidate_count"] == 1
+
+
+def test_capability_execute_rejects_substituted_addy_executor(monkeypatch):
+    def fake_executor(capability, payload):
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "execute_codex_addy_capability", fake_executor)
+    with pytest.raises(PermissionError, match="Registry binding"):
+        server.br_capability_execute(
+            capability_id="addy:code-review-and-quality",
+            authorized_action="DEVELOPMENT",
+            payload_json='{"task":"review"}',
+        )
 
 
 def test_higgsfield_remains_blocked_under_persisted_harness_authorization():
