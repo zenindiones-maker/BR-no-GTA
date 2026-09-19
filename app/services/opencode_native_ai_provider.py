@@ -269,22 +269,6 @@ class OpenCodeNativeAIProvider:
             )
 
         with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
-            config_path = Path(tmp) / "opencode.json"
-            config_path.write_text(
-                json.dumps(
-                    {
-                        "$schema": "https://opencode.ai/config.json",
-                        "model": executor_model,
-                        "permissions": [
-                            {"action": "*", "resource": "*", "effect": "deny"}
-                        ],
-                    },
-                    separators=(",", ":"),
-                ),
-                encoding="utf-8",
-            )
-            env = dict(os.environ)
-            env["OPENCODE_CONFIG"] = str(config_path)
             process = subprocess.run(
                 [
                     "opencode", "run", "--standalone",
@@ -296,7 +280,8 @@ class OpenCodeNativeAIProvider:
                 text=True,
                 timeout=300,
                 check=False,
-                env=env,
+                cwd=tmp,
+                env=dict(os.environ),
             )
 
         parts: list[str] = []
