@@ -12,7 +12,8 @@ import time
 from typing import Any
 
 from app.services.channel_spoken_branding_service import (
-    SELECTED_TAKE_ID,
+    SELECTED_CLOSING_TAKE_ID,
+    SELECTED_OPENING_TAKE_ID,
     validate_job_spoken_branding,
 )
 from app.services.narration_pipeline import MASTER_TARGET_LUFS, MASTER_TRUE_PEAK_DB
@@ -23,7 +24,7 @@ from app.services.pronunciation_service import (
 )
 
 
-BUNDLE_VERSION="brand-audio-bundle/v1"
+BUNDLE_VERSION="brand-audio-bundle/v2"
 
 
 class BrandAudioError(RuntimeError):
@@ -282,10 +283,14 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
                 kind=kind,text=text,contract=contract,take=take,bundle_root=bundle_root,stats=stats
             ))
 
-    selected={}
-    for kind in ("opening","closing"):
-        item=next(x for x in takes[kind] if x["take_id"]==SELECTED_TAKE_ID)
-        selected[kind]=dict(item)
+    selected={
+        "opening":dict(
+            next(x for x in takes["opening"] if x["take_id"]==SELECTED_OPENING_TAKE_ID)
+        ),
+        "closing":dict(
+            next(x for x in takes["closing"] if x["take_id"]==SELECTED_CLOSING_TAKE_ID)
+        ),
+    }
 
     manifest={
         "version":BUNDLE_VERSION,
@@ -301,8 +306,11 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
         "takes":takes,
         "selected":selected,
         "selection":{
-            "selected_take_id":SELECTED_TAKE_ID,
-            "basis":"canonical human-approved Voice B profile (+0%, +0Hz); alternate takes remain unpromoted prosody candidates",
+            "selected_take_id":SELECTED_OPENING_TAKE_ID,
+            "selected_opening_take_id":SELECTED_OPENING_TAKE_ID,
+            "selected_closing_fallback_take_id":SELECTED_CLOSING_TAKE_ID,
+            "opening_basis":"human-approved Fluid 2 prosody reference applied to exact canonical opening text",
+            "closing_basis":"technical checkpoint fallback only; final end signature is separately human-approved G-brand-mixed",
             "automatic_naturality_winner":False,
             "minimum_time_not_used_as_winner":True,
         },
@@ -329,6 +337,11 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
                 all(span.get("locale") for span in item["synthesis_plan"]["spans"])
                 for kind in ("opening","closing")
                 for item in takes[kind]
+            ),
+            "selected_opening_is_human_approved_fluid2":(
+                selected["opening"]["take_id"]==SELECTED_OPENING_TAKE_ID
+                and selected["opening"]["rate"]=="+3%"
+                and selected["opening"]["pitch"]=="+1Hz"
             ),
             "vice_city_language_resolution":all(
                 any(
