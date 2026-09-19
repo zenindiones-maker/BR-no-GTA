@@ -38,6 +38,17 @@ def _analysis(result: dict[str, Any]) -> str:
     return str(payload.get("semantic_analysis") or "").strip()
 
 
+def _semantic_output(result: dict[str, Any], label: str) -> dict[str, Any]:
+    canonical = dict(result.get("canonical") or {})
+    payload = canonical.get("result")
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label} returned no canonical result")
+    output = payload.get("semantic_output")
+    if not isinstance(output, dict) or not output:
+        raise RuntimeError(f"{label} returned no structured semantic output")
+    return dict(output)
+
+
 def _output_ref(result: dict[str, Any]) -> str:
     receipt = dict(result.get("receipt") or {})
     refs = list(receipt.get("output_refs") or ())
@@ -132,11 +143,13 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
     strategy_text = _analysis(strategy)
     if not strategy_text:
         raise RuntimeError("content strategy produced no semantic analysis")
+    strategy_output = _semantic_output(strategy, "content strategy")
 
     editorial_context = {
         "authority": "DEEPSEEK_HARNESS",
         "goal_id": goal_id,
         "verified_claims": claims,
+        "youtube_strategy": strategy_output,
         "content_strategy_analysis": strategy_text,
         "content_strategy_evidence_refs": list(strategy["receipt"].get("evidence_refs") or ()),
     }
@@ -237,15 +250,30 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         },
     )
 
-    title = str(script.get("title") or content_item.get("title") or "").strip()
-    if not title:
-        raise RuntimeError("final product has no title")
-    description = (
-        _clean_script_excerpt(script_text, 900)
-        + "\n\nFontes e fatos foram verificados antes da produção. "
-        + "Canal: BR no GTA 6."
-    )
-    tags = _tags_for(title, script_text)
+    script_review_output = _semantic_output(script_review, "script review")
+    seo_output = _semantic_output(seo, "seo")
+    thumbnail_output = _semantic_output(thumbnail, "thumbnail")
+    production_output = _semantic_output(production, "production management")
+
+    title = str(seo_output.get("title") or "").strip()
+    description = str(seo_output.get("description") or "").strip()
+    tags = [
+        str(item).strip()
+        for item in (seo_output.get("tags") or ())
+        if str(item).strip()
+    ]
+    keywords = [
+        str(item).strip()
+        for item in (seo_output.get("keywords") or ())
+        if str(item).strip()
+    ]
+    search_intent = str(seo_output.get("search_intent") or "").strip()
+    thumbnail_concept = str(thumbnail_output.get("concept") or "").strip()
+    thumbnail_copy = str(thumbnail_output.get("copy") or "").strip() or None
+    if not title or not description or not tags or not search_intent:
+        raise RuntimeError("SEO specialist returned an incomplete YouTube package")
+    if not thumbnail_concept:
+        raise RuntimeError("thumbnail specialist returned no concrete concept")
     package_routing = route_harness_request(
         HarnessRoutingRequest(
             intent="persist the verified pre-publication YouTube content package",
@@ -283,9 +311,9 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         title=title,
         description=description,
         tags=tags,
-        search_intent=_search_intent(title),
-        thumbnail_concept=_analysis(thumbnail),
-        thumbnail_copy=_thumbnail_copy(title),
+        search_intent=search_intent,
+        thumbnail_concept=thumbnail_concept,
+        thumbnail_copy=thumbnail_copy,
         strategy_analysis=strategy_text,
         script_review=_analysis(script_review),
         seo_analysis=_analysis(seo),
@@ -339,6 +367,14 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         "thumbnail": thumbnail,
         "production_review": production,
         "youtube_package": package,
+        "youtube_package_keywords": keywords,
+        "structured_specialist_outputs": {
+            "content_strategy": strategy_output,
+            "script_review": script_review_output,
+            "seo": seo_output,
+            "thumbnail": thumbnail_output,
+            "production_management": production_output,
+        },
         "youtube_package_execution": package_execution["capability_evidence"],
         "youtube_package_routing": package_routing.to_dict(),
         "metrics": {
