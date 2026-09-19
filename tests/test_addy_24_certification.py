@@ -1,45 +1,30 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-import subprocess
-
 import pytest
 
-from app.services import codex_addy_capability_executor as addy_executor
-from app.services.codex_addy_capability_executor import execute_codex_addy_capability
+from app.services import addy_harness_service
+from app.services.addy_harness_service import (
+    ADDY_EXECUTOR_BINDING,
+    execute_authorized_addy_skill,
+)
 from app.services.global_capability_registry_base import (
     ADDY_SKILLS,
     GLOBAL_CAPABILITY_REGISTRY,
 )
-from app.services.harness_authorization_service import issue_harness_authorization
-from app.services.harness_capability_service import execute_capability
-
-
-@pytest.fixture()
-def tiny_repository(tmp_path: Path) -> Path:
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    subprocess.run(
-        ["git", "init"],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    )
-    (repository / "proof.txt").write_text("addy-24-certification\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "proof.txt"],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    )
-    return repository
+from app.services.harness_ai_provider_service import HarnessAIProviderEvidence
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 
 
 @pytest.mark.parametrize("skill_name", ADDY_SKILLS)
 def test_each_addy_skill_has_governed_harness_execution_contract(
     skill_name: str,
-    tiny_repository: Path,
     monkeypatch,
 ):
     capability_id = f"addy:{skill_name}"
@@ -47,69 +32,105 @@ def test_each_addy_skill_has_governed_harness_execution_contract(
     assert record is not None
     assert record.available is True
     assert record.execution_enabled is True
-    assert record.agent_id == "codex"
+    assert record.agent_id == "addy-agent-skills"
     assert record.skill_id == skill_name
+    assert record.executor_binding == ADDY_EXECUTOR_BINDING
 
-    decision_id = f"addy-24-decision-{skill_name}"
-    execution_id = f"addy-24-execution-{skill_name}"
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=f"execute pinned Addy skill {skill_name}",
+            authorized_action="DEVELOPMENT",
+            domain="development",
+            task_class=f"test-addy:{skill_name}",
+            goal_id=f"goal-addy-{skill_name}",
+            required_capability_id=capability_id,
+            fallback_allowed=False,
+            provider_required=False,
+            learning_required=True,
+        )
+    )
     authorization = issue_harness_authorization(
         authorized_action="DEVELOPMENT",
         subject=f"capability:{capability_id}",
-        harness_decision_id=decision_id,
-        execution_id=execution_id,
+        harness_decision_id=f"addy-24-decision-{skill_name}",
+        execution_id=f"addy-24-execution-{skill_name}",
         lineage={
-            "certification": "addy-24",
-            "skill": skill_name,
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "goal_id": f"goal-addy-{skill_name}",
         },
     )
 
-    calls: list[tuple[list[str], dict]] = []
-
-    def runner(command, **kwargs):
-        calls.append((list(command), kwargs))
-        if command == ["codex", "login", "status"]:
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-        stdout = json.dumps(
-            {
-                "type": "item.completed",
-                "item": {
-                    "type": "agent_message",
-                    "text": f"certified:{skill_name}",
-                },
-            }
-        )
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(addy_executor, "_runtime_runner", runner)
-    monkeypatch.setattr(addy_executor, "_repository_root", lambda: tiny_repository)
-    evidence = execute_capability(
-        capability_id=capability_id,
-        authorization=authorization,
-        payload={"task": f"Certification probe for {skill_name}."},
-        executor=execute_codex_addy_capability,
+    monkeypatch.setattr(
+        addy_harness_service,
+        "resolve_pinned_addy_skill",
+        lambda name: (
+            f"# {name}\nUse evidence-first engineering and return a bounded result.",
+            "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39",
+            "0" * 64,
+        ),
     )
+
+    def fake_generate(*, prompt, authorization, routing_decision, **kwargs):
+        assert f"SELECTED_SKILL={skill_name}" in prompt
+        assert routing_decision.selected_provider == "opencode"
+        assert routing_decision.selected_model == "oc/big-pickle"
+        return HarnessAIProviderEvidence(
+            provider="opencode",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            authorization_id=authorization.authorization_id,
+            result={"text": f"certified:{skill_name}", "model": "oc/big-pickle"},
+            routing=routing_decision.to_dict(),
+            model="oc/big-pickle",
+            executor_binding=routing_decision.selected_provider_executor_binding,
+            latency_seconds=0.01,
+            evidence_refs=(f"provider-routing:{skill_name}",),
+            provider_profile_skill_id="ai.reasoning.opencode-executor-profile",
+            provider_profile_version="v2",
+            provider_profile_content_ref="python:test:v2",
+            provider_profile_checksum="1" * 64,
+        )
+
+    monkeypatch.setattr(addy_harness_service, "execute_harness_ai_generation", fake_generate)
+    monkeypatch.setattr(
+        addy_harness_service,
+        "capture_canonical_execution_episode",
+        lambda *args, **kwargs: {"status": "captured"},
+    )
+
+    try:
+        evidence = execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=routing,
+            payload={
+                "mission_id": "mission-addy-24-unit",
+                "task_id": skill_name,
+                "goal_id": f"goal-addy-{skill_name}",
+                "task": f"Certification probe for {skill_name}.",
+                "evidence_refs": [f"test:{skill_name}"],
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
 
     assert evidence.status == "EXECUTED"
     assert evidence.active is True
     assert evidence.authority == "deepseek_harness"
-    assert evidence.harness_decision_id == decision_id
-    assert evidence.execution_id == execution_id
     assert evidence.result["skill"] == skill_name
-    assert evidence.result["sandbox"] == "read-only"
-    assert evidence.result["workspace"] == "disposable_snapshot"
-
-    assert calls[0][0] == ["codex", "login", "status"]
-    command = calls[1][0]
-    assert command[:2] == ["codex", "exec"]
-    assert "--ephemeral" in command
-    assert command[command.index("--sandbox") + 1] == "read-only"
-
-    prompt = command[-1]
-    assert f"@{skill_name}" in prompt
-    for other_skill in ADDY_SKILLS:
-        if other_skill != skill_name:
-            assert f"@{other_skill}" not in prompt
+    assert evidence.result["output"] == f"certified:{skill_name}"
+    assert evidence.result["semantic_provider"] == "opencode"
+    assert evidence.result["semantic_model"] == "oc/big-pickle"
+    receipt = evidence.result["receipt"]
+    assert receipt["skill_id"] == skill_name
+    assert receipt["external_call_performed"] is True
+    assert receipt["returned_to_harness"] is True
+    assert receipt["proven_live"] is True
 
 
 def test_addy_certification_inventory_is_exactly_24_unique_skills():
