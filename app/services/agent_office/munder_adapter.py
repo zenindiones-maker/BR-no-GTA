@@ -22,6 +22,7 @@ from app.services.agent_office.evidence import evidence_digest, sanitize_evidenc
 from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+    CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
     codex_bounded_development_worker,
     codex_sanitized_environment,
 )
@@ -169,6 +170,7 @@ def codex_readonly_worker(
     )
     command = [
         "codex",
+        *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
         "exec",
         "--ephemeral",
         "--skip-git-repo-check",
