@@ -1,0 +1,134 @@
+name: System Improvement Review
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - '.github/workflows/system-improvement-review.yml'
+      - '.run001/system-improvement-review.request.json'
+      - 'scripts/run_system_improvement_review.py'
+      - 'app/services/addy_harness_service.py'
+      - 'app/services/system_synergy_service.py'
+      - 'app/services/harness_collaboration_service.py'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: system-improvement-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/system-improvement-review/review.db
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REF: work/gate6f-analytics-learning
+      BR_OPENCODE_NATIVE_POLL_INTERVAL: '2'
+      BR_OPENCODE_NATIVE_RUN_TIMEOUT: '900'
+      BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/system-improvement-review/opencode-artifacts
+
+    steps:
+      - name: Checkout exact branch state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install review runtime
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/system-improvement-review
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          npm install --global omniroute@3.8.50
+          npm install --global @opencode/cli@2.0.8
+          gh auth status
+
+      - name: Restore pinned Addy source
+        run: bash scripts/agent-tooling/bootstrap.sh codex
+
+      - name: Validate review boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/run_system_improvement_review.py
+          pytest -q             tests/test_addy_24_certification.py             tests/test_system_synergy_service.py             tests/test_harness_collaboration_service.py
+
+      - name: Observe provider baseline/candidate and promote only if eligible
+        run: |
+          set -euo pipefail
+          python scripts/prepare_system_synergy_opencode_profile.py             --output runtime/system-improvement-review/provider-promotion.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/system-improvement-review/provider-promotion.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["evaluation_decision"]=="PROMOTE", d
+          assert d["active_profile"]["version"]=="v2", d
+          assert d["quality_regression"]=="NO", d
+          print("SYSTEM_REVIEW_PROVIDER_PROMOTION=PASS")
+          PY
+
+      - name: Execute governed SYSTEM_IMPROVEMENT_REVIEW
+        run: |
+          set -euo pipefail
+          before="$(git status --porcelain --untracked-files=no)"
+          python scripts/run_system_improvement_review.py             --snapshot-output runtime/system-improvement-review/static-snapshot.json             --output runtime/system-improvement-review/review-report.json
+          after="$(git status --porcelain --untracked-files=no)"
+          test "$before" = "$after"
+          echo 'SYSTEM_REVIEW_REPOSITORY_MUTATION=NONE'
+
+      - name: Assert review evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/system-improvement-review/review-report.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["authority"]=="DEEPSEEK_HARNESS"
+          assert len(d["skills_selected"])==7
+          assert len(set(d["skills_selected"]))==7
+          assert len(d["specialist_reviews"])==7
+          assert all(x["receipt"]["proven_live"] is True for x in d["specialist_reviews"])
+          assert all(x["receipt"]["external_call_performed"] is True for x in d["specialist_reviews"])
+          assert d["aggregate"]["canonical"]["result"]["status"]=="PROPOSAL_ONLY"
+          assert d["auto_modification_performed"] is False
+          assert d["promotion_performed"] is False
+          assert d["job18_unchanged"] is True
+          assert d["youtube_publication"] is False
+          print("SYSTEM_IMPROVEMENT_REVIEW=PASS")
+          print("CONTEXTUAL_AGENT_SELECTION=PASS")
+          print("EVIDENCE_FIRST_REVIEW=PASS")
+          print("AUTO_MODIFICATION_PERFORMED=NO")
+          print("JOB18_UNCHANGED=YES")
+          print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
+          PY
+
+      - name: Upload auditable review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-improvement-review-${{ github.run_id }}
+          path: runtime/system-improvement-review/
+          if-no-files-found: warn
+          retention-days: 30
