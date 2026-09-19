@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse,asyncio,json,subprocess,time
 from pathlib import Path
+from app.services.channel_spoken_branding_service import TAKE_PROFILES, canonical_opening_text
 from app.services.pronunciation_service import (
     DEFAULT_VOICE,build_azure_ssml,pronunciation_cache_identity,
     provider_capabilities,resolve_synthesis_plan,synthesize_edge_plan,
@@ -57,6 +58,29 @@ def main()->int:
             "probe":_probe(output),
             "cache_identity":pronunciation_cache_identity(plan,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%",pitch="+0Hz"),
         })
+    opening_text=canonical_opening_text("as novidades de hoje")
+    opening_plan=resolve_synthesis_plan(opening_text,voice=DEFAULT_VOICE)
+    opening_takes=[]
+    for take in TAKE_PROFILES:
+        output=samples_dir/f"H-opening-{take['take_id']}.mp3"
+        metrics=asyncio.run(synthesize_edge_plan(
+            opening_plan,
+            voice=DEFAULT_VOICE,
+            rate=take["rate"],
+            pitch=take["pitch"],
+            output=output,
+        ))
+        opening_takes.append({
+            "take_id":take["take_id"],
+            "rate":take["rate"],
+            "pitch":take["pitch"],
+            "role":take["role"],
+            "canonical_text":opening_text,
+            "plan":opening_plan.to_dict(),
+            "edge_metrics":metrics,
+            "probe":_probe(output),
+        })
+
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
     gta_brand=next(x for x in rows if x["sample_id"]=="F-gta6-brand")
@@ -84,6 +108,17 @@ def main()->int:
             any(x.get("pronunciation_identity")=="gta-6" for x in mixed_brand["plan"]["spans"])
             and any(x.get("pronunciation_identity")=="vice-city" for x in mixed_brand["plan"]["spans"])
         ),
+        "NATURAL_PTBR_PROSODY_CONTINUITY":(
+            opening_plan.foreign_span_count==0
+            and all(item["edge_metrics"]["external_calls"]==1 for item in opening_takes)
+            and all(item["edge_metrics"]["synthesis_group_count"]==1 for item in opening_takes)
+            and "gê tê á seis" in opening_plan.rendered_text
+        ),
+        "OPENING_THREE_TAKES_GENERATED":(
+            len(opening_takes)==3
+            and {item["take_id"] for item in opening_takes}=={"take-1","take-2","take-3"}
+            and all(item["probe"]["size_bytes"]>0 for item in opening_takes)
+        ),
         "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
         "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
@@ -95,7 +130,7 @@ def main()->int:
     if not all(checks.values()): raise RuntimeError("pronunciation proof failed:"+",".join(k for k,v in checks.items() if not v))
     evidence={
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
-        "sample_count":len(rows),"samples":rows,"checks":checks,
+        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"checks":checks,
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
             "status":"PENDING",
@@ -113,6 +148,12 @@ def main()->int:
                     "candidate_synthesis_text":gta.get("synthesis_text"),
                     "basis":"latest human review rejected provider-driven GTA 6 pronunciation; current candidate uses explicit PT-BR letter names",
                 },
+                "voice-b-naturality":{
+                    "status":"PENDING",
+                    "sample_ids":[item["take_id"] for item in opening_takes],
+                    "files":[f"H-opening-{item['take_id']}.mp3" for item in opening_takes],
+                    "basis":"human review required for timing, warmth, energy and naturality; technical metrics cannot auto-select a winner",
+                },
             },
         },
         "performance":{
@@ -122,7 +163,9 @@ def main()->int:
             "resolution_wall_clock_seconds":resolution,"synthesis_wall_clock_seconds":synthesis,
             "total_wall_clock_seconds":time.monotonic()-total_started,"tts_external_calls":calls,
             "span_count":sum(len(x["plan"]["spans"]) for x in rows),
-            "foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows)
+            "foreign_span_count":sum(x["plan"]["foreign_span_count"] for x in rows),
+            "opening_take_external_calls":[item["edge_metrics"]["external_calls"] for item in opening_takes],
+            "opening_take_durations_seconds":[item["probe"]["duration_seconds"] for item in opening_takes]
         },
         "JOB18_UNCHANGED":"YES","PUBLICATION_AUTHORITY_UNCHANGED":"YES",
     }
@@ -131,6 +174,7 @@ def main()->int:
     for key,passed in checks.items(): print(f"{key}={'PASS' if passed else 'FAIL'}")
     print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS")
     print("GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING")
+    print("VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING")
     print("JOB18_UNCHANGED=YES"); print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return 0
 
