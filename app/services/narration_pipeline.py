@@ -18,6 +18,14 @@ from app.services.operational_efficiency_policy import (
     POLICY_VERSION as EFFICIENCY_POLICY_VERSION,
     validate_observability_event,
 )
+from app.services.pronunciation_service import (
+    DEFAULT_VOICE as PRONUNCIATION_DEFAULT_VOICE,
+    canonical_lexicon_entries,
+    provider_capabilities as pronunciation_provider_capabilities,
+    resolve_synthesis_plan,
+    synthesis_plan_from_dict,
+    synthesize_edge_plan,
+)
 
 CAPABILITY_ID = "narration.generate.pt-BR"
 EXECUTOR_BINDING = "app.services.narration_pipeline.execute_narration_capability"
@@ -25,7 +33,7 @@ BUNDLE_VERSION = "narration-bundle/v2"
 PROVIDER_ID = "edge-tts"
 PROVIDER_VERSION = "7.2.8"
 RATE_SEMANTICS_VERSION = "edge-percent-v1"
-PRONUNCIATION_PROFILE_VERSION = "br-no-gta-ptbr-v1"
+PRONUNCIATION_PROFILE_VERSION = "br-no-gta-ptbr-v2"
 OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
 MASTER_TARGET_LUFS = -16.0
 MASTER_TRUE_PEAK_DB = -1.5
@@ -54,6 +62,7 @@ class PhysicalSegment:
     synthesis_text: str
     text_sha256: str
     word_count: int
+    synthesis_plan: dict[str, Any] | None = None
     pronunciation_profile_version: str = PRONUNCIATION_PROFILE_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -90,6 +99,10 @@ class EdgeTTSProvider:
     supports_native_timing = True
     supports_ssml = False
     supports_pronunciation_control = False
+    supports_language_spans = False
+    supports_isolated_multilingual_chunks = True
+    supports_custom_lexicon = False
+    supports_same_voice_multilingual = True
     supports_batch = False
     supports_long_form = False
     cost_class = "FREE_NO_BILLING"
@@ -123,21 +136,24 @@ class EdgeTTSProvider:
             wall_clock_seconds=time.monotonic() - started,
         )
 
+    async def synthesize_plan(self, *, plan_payload: dict[str, Any], voice: str, rate: str, output: Path) -> ProviderResult:
+        plan = synthesis_plan_from_dict(plan_payload)
+        metrics = await synthesize_edge_plan(
+            plan,
+            voice=voice,
+            rate=rate,
+            pitch="+0Hz",
+            output=output,
+        )
+        return ProviderResult(
+            audio_path=output,
+            bytes_written=int(metrics["bytes_written"]),
+            timing=tuple(metrics.get("timing") or ()),
+            wall_clock_seconds=float(metrics["wall_clock_seconds"]),
+        )
 
-PRONUNCIATION_ENTRIES: tuple[dict[str, str], ...] = (
-    {"term": "Rockstar Games", "strategy": "preserve", "spoken": "Rockstar Games"},
-    {"term": "Rockstar", "strategy": "preserve", "spoken": "Rockstar"},
-    {"term": "Take-Two", "strategy": "substitution", "spoken": "Take Two"},
-    {"term": "GTA VI", "strategy": "substitution", "spoken": "GTA seis"},
-    {"term": "GTA 6", "strategy": "substitution", "spoken": "GTA seis"},
-    {"term": "Vice City", "strategy": "preserve", "spoken": "Vice City"},
-    {"term": "Leonida", "strategy": "preserve", "spoken": "Leonida"},
-    {"term": "Jason", "strategy": "preserve", "spoken": "Jason"},
-    {"term": "Lucia", "strategy": "preserve", "spoken": "Lucia"},
-    {"term": "PlayStation 5", "strategy": "preserve", "spoken": "PlayStation 5"},
-    {"term": "Xbox Series X", "strategy": "preserve", "spoken": "Xbox Series X"},
-    {"term": "Xbox Series S", "strategy": "preserve", "spoken": "Xbox Series S"},
-)
+
+PRONUNCIATION_ENTRIES: tuple[dict[str, Any], ...] = canonical_lexicon_entries()
 
 _ABBREVIATIONS = (
     "Sr.", "Sra.", "Dr.", "Dra.", "Prof.", "etc.", "ex.", "vs.", "EUA.", "U.S.", "S.A."
@@ -152,17 +168,21 @@ def normalize_text(text: str) -> str:
     return _SPACE_RE.sub(" ", text.strip())
 
 
-def apply_pronunciation_profile(text: str) -> tuple[str, list[dict[str, str]]]:
-    rendered = text
-    applied: list[dict[str, str]] = []
-    for entry in PRONUNCIATION_ENTRIES:
-        if entry["strategy"] != "substitution":
-            continue
-        pattern = re.compile(re.escape(entry["term"]), flags=re.IGNORECASE)
-        if pattern.search(rendered):
-            rendered = pattern.sub(entry["spoken"], rendered)
-            applied.append(dict(entry))
-    return rendered, applied
+def apply_pronunciation_profile(text: str) -> tuple[str, list[dict[str, Any]]]:
+    plan = resolve_synthesis_plan(text, voice=PRONUNCIATION_DEFAULT_VOICE)
+    applied = [
+        {
+            "identity": span.pronunciation_identity,
+            "term": span.text,
+            "locale": span.locale,
+            "strategy": span.strategy,
+            "spoken": span.synthesis_text,
+            "source": span.source,
+        }
+        for span in plan.spans
+        if span.pronunciation_identity
+    ]
+    return plan.rendered_text, applied
 
 
 def _sentence_units(text: str) -> list[str]:
@@ -260,7 +280,8 @@ def deterministic_segment_script(
         for local_index, segment_text in enumerate(grouped, start=1):
             order += 1
             original_text = normalize_text(segment_text)
-            synthesis_text, _ = apply_pronunciation_profile(original_text)
+            plan = resolve_synthesis_plan(original_text, voice=PRONUNCIATION_DEFAULT_VOICE)
+            synthesis_text = plan.rendered_text
             output.append(PhysicalSegment(
                 order=order,
                 segment_id=f"{section_id}-tts-{local_index:03d}",
@@ -269,6 +290,7 @@ def deterministic_segment_script(
                 synthesis_text=normalize_text(synthesis_text),
                 text_sha256=hashlib.sha256(original_text.encode("utf-8")).hexdigest(),
                 word_count=len(words(original_text)),
+                synthesis_plan=plan.to_dict(),
             ))
     return output
 
@@ -285,7 +307,8 @@ def semantic_section_segments(sections: list[dict[str, Any]]) -> list[PhysicalSe
         original = normalize_text(str(section.get("narration") or ""))
         if not section_id or not original:
             raise NarrationError("every narration section requires section_id and narration")
-        synthesis_text, _ = apply_pronunciation_profile(original)
+        plan = resolve_synthesis_plan(original, voice=PRONUNCIATION_DEFAULT_VOICE)
+        synthesis_text = plan.rendered_text
         output.append(PhysicalSegment(
             order=order,
             segment_id=f"{section_id}-semantic-001",
@@ -294,6 +317,7 @@ def semantic_section_segments(sections: list[dict[str, Any]]) -> list[PhysicalSe
             synthesis_text=normalize_text(synthesis_text),
             text_sha256=hashlib.sha256(original.encode("utf-8")).hexdigest(),
             word_count=len(words(original)),
+            synthesis_plan=plan.to_dict(),
         ))
     return output
 
@@ -316,6 +340,7 @@ def segment_fingerprint(
         "provider": provider_id,
         "provider_version": provider_version,
         "pronunciation_profile_version": segment.pronunciation_profile_version,
+        "synthesis_plan": segment.synthesis_plan,
         "output_format": output_format,
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -561,8 +586,22 @@ async def _synthesize_provider_with_retry(
             stats["retried_segments"].add(segment.segment_id)
         try:
             request_started = time.monotonic()
-            stats["tts_request_count"] += 1
-            result = await provider.synthesize_segment(text=segment.synthesis_text, voice=voice, rate=rate, output=output)
+            plan_payload = segment.synthesis_plan or {}
+            use_mixed = (
+                isinstance(provider, EdgeTTSProvider)
+                and int(plan_payload.get("foreign_span_count") or 0) > 0
+            )
+            if use_mixed:
+                stats["tts_request_count"] += max(1, len(plan_payload.get("spans") or []))
+                result = await provider.synthesize_plan(
+                    plan_payload=plan_payload,
+                    voice=voice,
+                    rate=rate,
+                    output=output,
+                )
+            else:
+                stats["tts_request_count"] += 1
+                result = await provider.synthesize_segment(text=segment.synthesis_text, voice=voice, rate=rate, output=output)
             stats["remote_tts_wall_clock"] += result.wall_clock_seconds
             stats["tts_bytes"] += result.bytes_written
             if not _valid_mp3_header(result.audio_path):
@@ -1171,6 +1210,10 @@ async def generate_narration_bundle_async(
             "native_timing": provider.supports_native_timing,
             "ssml": provider.supports_ssml,
             "pronunciation_control": provider.supports_pronunciation_control,
+            "language_spans": getattr(provider, "supports_language_spans", False),
+            "isolated_multilingual_chunks": getattr(provider, "supports_isolated_multilingual_chunks", False),
+            "custom_lexicon": getattr(provider, "supports_custom_lexicon", False),
+            "same_voice_multilingual": getattr(provider, "supports_same_voice_multilingual", False),
             "batch": provider.supports_batch,
             "long_form": provider.supports_long_form,
             "rate_control": True,
@@ -1203,6 +1246,14 @@ async def generate_narration_bundle_async(
         "speech_timing_path": str(speech_timing_path),
         "pronunciation_profile_version": PRONUNCIATION_PROFILE_VERSION,
         "pronunciation_profile": list(PRONUNCIATION_ENTRIES),
+        "pronunciation_provider_capabilities": pronunciation_provider_capabilities(
+            provider.provider_id,
+            provider_version=provider.provider_version,
+            voice=voice,
+        ).to_dict(),
+        "pronunciation_plans": [
+            item.get("synthesis_plan") for item in records if item.get("synthesis_plan")
+        ],
         "segment_strategy": segment_strategy,
         "rate_locked": rate_locked,
         "official_profile_id": official_profile_id or None,
