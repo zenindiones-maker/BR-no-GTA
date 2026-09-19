@@ -69,6 +69,41 @@ def _canonical_hash(payload: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def get_spoken_branding_standard() -> dict[str, Any]:
+    return {
+        "component": "spoken_channel_identity",
+        "parent_standard": "BR_NO_GTA_VIDEO_BRANDING_V2",
+        "authority": "deepseek_harness",
+        "intro_asset_id": OFFICIAL_INTRO_ASSET_ID,
+        "spoken_opening_after_intro": True,
+        "official_voice_profile": OFFICIAL_VOICE_BLIND_ID,
+        "voice_short_name": OFFICIAL_VOICE_SHORT_NAME,
+        "provider": OFFICIAL_PROVIDER,
+        "provider_version": OFFICIAL_PROVIDER_VERSION,
+        "language": OFFICIAL_LANGUAGE,
+        "opening_template": f"{OPENING_PREFIX}[tema do vídeo]!",
+        "closing_template": "fixed",
+        "closing_line": CLOSING_LINE,
+        "rate": OFFICIAL_RATE,
+        "pitch": OFFICIAL_PITCH,
+        "take_count_per_phrase": len(TAKE_PROFILES),
+        "selected_take_fallback": SELECTED_TAKE_ID,
+        "automatic_naturality_winner": False,
+        "cache_policy": {
+            "opening": "voice+direction+theme+provider/version+take",
+            "closing": "voice+direction+provider/version+take",
+            "closing_fixed_reusable": True,
+        },
+        "timeline_order": [
+            "official_intro",
+            "spoken_channel_opening",
+            "editorial_hook",
+            "editorial_content",
+            "spoken_channel_closing",
+        ],
+    }
+
+
 def build_spoken_branding_contract(*, theme: str) -> dict[str,Any]:
     theme=normalize_theme(theme)
     opening=canonical_opening_text(theme)

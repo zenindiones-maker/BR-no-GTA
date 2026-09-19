@@ -8,6 +8,7 @@ from app.database.channel_branding_standard_repository import (
     get_channel_branding_standard,
 )
 from app.database.telegram_brand_asset_repository import list_active_brand_assets
+from app.services.channel_spoken_branding_service import get_spoken_branding_standard
 
 
 def _active_asset_summary() -> list[dict[str, Any]]:
@@ -35,9 +36,10 @@ def get_channel_branding_readiness() -> dict[str, Any]:
     ]
     return {
         "authority": "deepseek_harness",
-        "standard": "BR_NO_GTA_VIDEO_BRANDING_V1",
+        "standard": "BR_NO_GTA_VIDEO_BRANDING_V2",
         "active": bool(standard["active"]),
         "required_asset_types": list(REQUIRED_ASSET_TYPES),
+        "spoken_branding": get_spoken_branding_standard(),
         "ready": not missing,
         "missing_asset_types": missing,
         "assets": assets,

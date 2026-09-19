@@ -75,6 +75,14 @@ def test_channel_standard_activates_only_after_both_official_assets_exist():
     assert readiness["ready"] is True
     assert readiness["missing_asset_types"] == []
     assert readiness["required_asset_types"] == ["intro", "watermark"]
+    assert readiness["standard"] == "BR_NO_GTA_VIDEO_BRANDING_V2"
+    assert readiness["spoken_branding"]["intro_asset_id"] == 1
+    assert readiness["spoken_branding"]["spoken_opening_after_intro"] is True
+    assert readiness["spoken_branding"]["official_voice_profile"] == "Voice B"
+    assert readiness["spoken_branding"]["opening_template"] == (
+        "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de [tema do vídeo]!"
+    )
+    assert readiness["spoken_branding"]["closing_line"] == "E BR não dorme em Vice City"
     assert readiness["enforcement"] == "FAIL_CLOSED_ON_NEW_PRODUCTION"
     persisted = get_channel_branding_standard()
     assert persisted["active"] is True
@@ -100,6 +108,12 @@ def test_active_channel_standard_binds_exact_intro_and_watermark_into_new_produc
 
     assert result["status"] == "channel_standard_bound"
     assert result["channel_branding_standard_active"] is True
+    assert result["channel_branding_standard"] == "BR_NO_GTA_VIDEO_BRANDING_V2"
+    assert result["spoken_branding"]["official_voice_profile"] == "Voice B"
+    assert result["spoken_branding"]["timeline_order"][:3] == [
+        "official_intro", "spoken_channel_opening", "editorial_hook"
+    ]
+    assert result["spoken_branding"]["closing_line"] == "E BR não dorme em Vice City"
     assert result["asset_count"] == 2
     assert {item["asset_type"] for item in result["brand_assets"]} == {"intro", "watermark"}
     assert all(item["remote_verified"] for item in result["brand_assets"])

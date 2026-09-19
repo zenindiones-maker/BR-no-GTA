@@ -8,6 +8,7 @@ from app.database.channel_branding_standard_repository import (
 )
 from app.database.telegram_brand_asset_repository import list_active_brand_assets
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.channel_spoken_branding_service import get_spoken_branding_standard
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
     validate_harness_authorization,
@@ -81,6 +82,8 @@ def execute_production_brand_asset_binding_capability(
         "status": status,
         "channel_branding_standard_active": bool(standard["active"]),
         "required_asset_types": list(REQUIRED_ASSET_TYPES),
+        "channel_branding_standard": "BR_NO_GTA_VIDEO_BRANDING_V2",
+        "spoken_branding": get_spoken_branding_standard(),
     }
 
 
@@ -141,6 +144,8 @@ def bind_active_brand_assets(
             "status": result["status"],
             "channel_branding_standard_active": result["channel_branding_standard_active"],
             "required_asset_types": result["required_asset_types"],
+            "channel_branding_standard": result["channel_branding_standard"],
+            "spoken_branding": result["spoken_branding"],
         },
         boundary=record.security_boundary,
     )
