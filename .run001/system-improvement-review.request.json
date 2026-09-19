@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T11:44:00Z",
-  "base_head": "49c07ae54ee888e4b654571a819c4a70c5411a2c",
-  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW after canonical Addy semantic boundary and exact executor hardening.",
+  "requested_at": "2026-09-19T11:55:00Z",
+  "base_head": "24350b0a17528b60982bb10957938b86824922a6",
+  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW with exact child SHA and one-step zero-tool semantic provider after observed 300s tool-loop timeout.",
   "require_observed_semantic_specialists": true,
   "job18_unchanged": true,
-  "publication": false
+  "publication": false,
+  "provider_mode": "bounded-semantic-one-step-zero-tools"
 }
