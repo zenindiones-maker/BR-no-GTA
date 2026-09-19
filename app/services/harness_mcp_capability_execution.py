@@ -35,6 +35,11 @@ from app.services.media_analysis_cloud_service import (
     MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
     execute_media_analysis_cloud_capability,
 )
+from app.services.gta6_brain_harness_service import (
+    GTA6_BRAIN_CAPABILITY_ID,
+    GTA6_BRAIN_EXECUTOR_BINDING,
+    execute_authorized_gta6_brain_decision,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -44,6 +49,7 @@ MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     PHONE_CAPABILITY_ID: PHONE_EXECUTOR_BINDING,
     AGENT_OFFICE_CAPABILITY_ID: AGENT_OFFICE_EXECUTOR_BINDING,
     FACT_CHECK_CAPABILITY_ID: FACT_CHECK_EXECUTOR_BINDING,
+    GTA6_BRAIN_CAPABILITY_ID: GTA6_BRAIN_EXECUTOR_BINDING,
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
     **NATIVE_BINDINGS,
 }
@@ -87,6 +93,19 @@ def execute_mcp_capability(
         if authorization.authorized_action not in {"RESEARCH", "EDITORIAL"}:
             raise PermissionError("gta6.fact-check authorization action mismatch")
         return execute_authorized_gta6_fact_check(
+            authorization=authorization,
+            routing_decision=routing_decision,
+            payload=payload,
+        )
+
+    if capability_id == GTA6_BRAIN_CAPABILITY_ID:
+        if implementation_type != "AGENT":
+            raise PermissionError("gta6.brain.decide implementation type mismatch")
+        if routing_decision.selected_executor_binding != GTA6_BRAIN_EXECUTOR_BINDING:
+            raise PermissionError("gta6.brain.decide executor binding mismatch")
+        if authorization.authorized_action != "DECISION":
+            raise PermissionError("gta6.brain.decide requires DECISION authorization")
+        return execute_authorized_gta6_brain_decision(
             authorization=authorization,
             routing_decision=routing_decision,
             payload=payload,
