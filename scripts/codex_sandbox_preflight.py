@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -57,10 +58,37 @@ def _sandbox(
     )
 
 
+def _diagnostic_flags(completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    text = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+    lowered = text.lower()
+    terms = {
+        "bwrap": "bwrap" in lowered,
+        "rtm_newaddr": "rtm_newaddr" in lowered,
+        "operation_not_permitted": "operation not permitted" in lowered,
+        "panic": "panicked at" in lowered or "thread 'main' panicked" in lowered,
+        "user_namespace": "user namespace" in lowered or "userns" in lowered,
+        "uid_map": "uid_map" in lowered,
+        "setgroups": "setgroups" in lowered,
+        "seccomp": "seccomp" in lowered,
+        "profile": "permission profile" in lowered or "permissions profile" in lowered,
+        "not_found": "no such file or directory" in lowered or "not found" in lowered,
+        "invalid_argument": "invalid argument" in lowered or "unexpected argument" in lowered,
+    }
+    return {
+        "stderr_sha256": sha256(text.encode("utf-8")).hexdigest(),
+        "stderr_chars": len(text),
+        "diagnostic_flags": terms,
+    }
+
+
 class SandboxPreflightFailure(RuntimeError):
-    def __init__(self, evidence: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        evidence: dict[str, Any],
+        completed: subprocess.CompletedProcess[str],
+    ) -> None:
         super().__init__(str(evidence.get("stderr_class") or "SANDBOX_PREFLIGHT_FAILURE"))
-        self.evidence = evidence
+        self.evidence = {**evidence, **_diagnostic_flags(completed)}
 
 
 def _require_success(
@@ -73,7 +101,7 @@ def _require_success(
         failure_stage=stage,
     )
     if failure is not None:
-        raise SandboxPreflightFailure(failure)
+        raise SandboxPreflightFailure(failure, completed)
 
 
 def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
@@ -91,6 +119,9 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
         "exit_code": None,
         "stderr_class": None,
         "retryability": None,
+        "stderr_sha256": None,
+        "stderr_chars": 0,
+        "diagnostic_flags": {},
     }
 
     try:
@@ -186,6 +217,9 @@ def run_preflight(repository_root: Path, output: Path) -> dict[str, Any]:
                 "exit_code": exc.evidence.get("exit_code"),
                 "stderr_class": exc.evidence.get("stderr_class"),
                 "retryability": exc.evidence.get("retryability"),
+                "stderr_sha256": exc.evidence.get("stderr_sha256"),
+                "stderr_chars": exc.evidence.get("stderr_chars"),
+                "diagnostic_flags": exc.evidence.get("diagnostic_flags") or {},
             }
         )
         raise
