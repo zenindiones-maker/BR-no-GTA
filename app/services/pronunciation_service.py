@@ -129,7 +129,7 @@ def _match_lexicon(text: str, lexicon: dict[str, Any]) -> list[dict[str, Any]]:
                     "pronunciation_identity":entry["identity"],
                     "synthesis_text":entry.get("synthesis_text"),
                     "confidence":1.0,"critical":bool(entry.get("critical")),
-                    "target_ipa":entry.get("target_ipa"),"priority":1,
+                    "target_ipa":entry.get("target_ipa"),"priority":0,
                 })
     return out
 
@@ -153,7 +153,7 @@ def _match_explicit(text: str, explicit_spans: list[dict[str, Any]] | None) -> l
             "strategy":str(item.get("strategy") or "explicit-locale"),
             "source":"explicit","pronunciation_identity":item.get("pronunciation_identity"),
             "synthesis_text":item.get("synthesis_text"),"confidence":1.0,
-            "critical":bool(item.get("critical")),"target_ipa":item.get("target_ipa"),"priority":0,
+            "critical":bool(item.get("critical")),"target_ipa":item.get("target_ipa"),"priority":1,
         })
     return out
 
@@ -294,10 +294,20 @@ def validate_provider_plan(plan: SynthesisPlan, capabilities: ProviderCapabiliti
     ):
         raise PronunciationError("provider cannot preserve requested multilingual pronunciation")
 
+def synthesis_plan_cache_payload(plan: SynthesisPlan) -> dict[str, Any]:
+    """Deterministic synthesis identity; runtime telemetry is intentionally excluded."""
+    return {
+        "canonical_text":plan.canonical_text,
+        "default_locale":plan.default_locale,
+        "voice":plan.voice,
+        "resolver_version":plan.resolver_version,
+        "lexicon_version":plan.lexicon_version,
+        "spans":[span.to_dict() for span in plan.spans],
+    }
+
 def pronunciation_cache_identity(plan: SynthesisPlan, *, provider_id: str, provider_version: str, voice: str, rate: str, pitch: str = "+0Hz") -> dict[str, Any]:
     payload={
-        "canonical_text":plan.canonical_text,"resolver_version":plan.resolver_version,
-        "lexicon_version":plan.lexicon_version,"spans":[span.to_dict() for span in plan.spans],
+        **synthesis_plan_cache_payload(plan),
         "provider":provider_id,"provider_version":provider_version,"voice":voice,"rate":rate,"pitch":pitch,
     }
     canonical=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"))
