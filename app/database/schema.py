@@ -1531,6 +1531,20 @@ def _migrate_agent_execution_leases(connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_agent_office_missions_authorization
         ON agent_office_missions(authorization_id, execution_id);
 
+        CREATE TABLE IF NOT EXISTS agent_office_mission_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mission_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (mission_id)
+                REFERENCES agent_office_missions(mission_id)
+                ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_office_mission_events_mission
+        ON agent_office_mission_events(mission_id, id);
+
         CREATE TABLE IF NOT EXISTS agent_execution_leases (
             delegation_id TEXT PRIMARY KEY,
             mission_id TEXT NOT NULL,
