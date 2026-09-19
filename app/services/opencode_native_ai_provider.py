@@ -22,6 +22,80 @@ OPENCODE_NATIVE_EXECUTOR_BINDING = (
     "app.services.opencode_native_ai_provider.OpenCodeNativeAIProvider"
 )
 
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_OPENCODE_HANDOFF_PREFIX = "opencode-handoff"
+
+
+def _immutable_dispatch_ref(
+    *,
+    repository: str,
+    configured_ref: str,
+    command_runner,
+) -> tuple[str, str | None]:
+    """Resolve one immutable workflow_dispatch tag to the exact parent GitHub SHA.
+
+    Outside GitHub Actions, preserve the explicitly configured ref for local/unit
+    callers. Inside Actions, never dispatch a semantic child on a moving branch.
+    """
+    source_sha = str(os.getenv("GITHUB_SHA") or "").strip().lower()
+    in_actions = str(os.getenv("GITHUB_ACTIONS") or "").strip().lower() == "true"
+    if not in_actions:
+        return configured_ref, source_sha if _GIT_SHA_RE.fullmatch(source_sha) else None
+    if not _GIT_SHA_RE.fullmatch(source_sha):
+        raise OpenCodeNativeAIProviderError(
+            "GitHub-hosted OpenCode execution requires an exact parent source SHA",
+            details={"failure_code": "missing_parent_source_sha"},
+        )
+
+    tag = f"{_OPENCODE_HANDOFF_PREFIX}-{source_sha}"
+    endpoint = f"repos/{repository}/git/ref/tags/{tag}"
+
+    def read_target() -> str:
+        value = command_runner([
+            "gh", "api", endpoint, "--jq", ".object.sha",
+        ]).strip().lower()
+        if not _GIT_SHA_RE.fullmatch(value):
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode handoff tag returned an invalid Git object SHA",
+                details={"failure_code": "invalid_handoff_tag_target"},
+            )
+        return value
+
+    try:
+        target = read_target()
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "404" not in message and "not found" not in message and "does not exist" not in message:
+            raise OpenCodeNativeAIProviderError(
+                "Unable to verify OpenCode immutable handoff tag",
+                details={"failure_code": "handoff_tag_lookup_failed"},
+            ) from exc
+        try:
+            command_runner([
+                "gh", "api", "--method", "POST",
+                f"repos/{repository}/git/refs",
+                "-f", f"ref=refs/tags/{tag}",
+                "-f", f"sha={source_sha}",
+                "--jq", ".object.sha",
+            ])
+        except RuntimeError as create_exc:
+            # Parallel semantic calls may race to create the same commit tag.
+            race = str(create_exc).lower()
+            if "422" not in race and "already exists" not in race and "reference exists" not in race:
+                raise OpenCodeNativeAIProviderError(
+                    "Unable to create OpenCode immutable handoff tag",
+                    details={"failure_code": "handoff_tag_create_failed"},
+                ) from create_exc
+        target = read_target()
+
+    if target != source_sha:
+        raise OpenCodeNativeAIProviderError(
+            "OpenCode immutable handoff tag does not match the parent source SHA",
+            details={"failure_code": "handoff_tag_sha_mismatch"},
+        )
+    return tag, source_sha
+
+
 
 class OpenCodeNativeAIProviderError(AIProviderError):
     def __init__(self, message: str, *, details: dict[str, Any] | None = None):
@@ -145,10 +219,15 @@ class OpenCodeNativeAIProvider:
         executor_model = str(self.options["executor_model"])
         cli_version = str(self.options["cli_version"])
         workflow = str(self.options.get("workflow") or OPENCODE_NATIVE_WORKFLOW)
+        dispatch_ref, source_sha = _immutable_dispatch_ref(
+            repository=self.repository,
+            configured_ref=self.ref,
+            command_runner=self.command_runner,
+        )
         dispatched = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=workflow,
-            ref=self.ref,
+            ref=dispatch_ref,
             inputs={
                 "mode": "opencode_native",
                 "execution_id": self.authorization.execution_id,
@@ -156,6 +235,7 @@ class OpenCodeNativeAIProvider:
                 "model": canonical_model,
                 "prompt_b64": base64.b64encode(prompt.encode("utf-8")).decode("ascii"),
                 "zero_cost_operation": "true",
+                "expected_source_sha": source_sha or "",
             },
         )
         watched = self.watcher.wait_for_completion(
