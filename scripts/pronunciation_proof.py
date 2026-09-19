@@ -77,7 +77,7 @@ def main()->int:
             and gta_brand["plan"]["canonical_text_preserved"] is True
             and gta["pronunciation_identity"]=="gta-6"
             and gta["text"].rstrip(" \\t\\r\\n.,!?;:")=="GTA 6"
-            and gta["synthesis_text"].rstrip(" \\t\\r\\n.,!?;:")=="G T A seis"
+            and gta["synthesis_text"].rstrip(" \\t\\r\\n.,!?;:")=="gê tê á seis"
         ),
         "GTA6_REAL_AUDIO_GENERATED":gta_brand["probe"]["size_bytes"]>0,
         "GTA6_AND_VICE_CITY_COEXIST":(
@@ -111,7 +111,7 @@ def main()->int:
                     "status":"PENDING",
                     "sample_id":"F-gta6-brand",
                     "candidate_synthesis_text":gta.get("synthesis_text"),
-                    "basis":"latest human review rejected previous GTA 6 pronunciation",
+                    "basis":"latest human review rejected provider-driven GTA 6 pronunciation; current candidate uses explicit PT-BR letter names",
                 },
             },
         },

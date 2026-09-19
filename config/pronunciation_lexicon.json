@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.2",
+  "version": "2026.09.19.3",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
@@ -67,10 +67,10 @@
       ],
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "G T A seis",
+      "synthesis_text": "gê tê á seis",
       "critical": true,
-      "source": "channel Portuguese reading; latest human review rejected unspaced acronym synthesis",
-      "review_note": "Candidate spells the acronym letter-by-letter while canonical text remains GTA 6."
+      "source": "channel Portuguese reading; human review rejected provider-driven acronym pronunciation",
+      "review_note": "PT-BR synthesis uses explicit Portuguese letter names; canonical/editorial text remains GTA 6."
     },
     {
       "identity": "jason",

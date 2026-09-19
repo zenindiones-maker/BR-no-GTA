@@ -1,6 +1,6 @@
 {
   "mission": "br-no-gta-professional-multilingual-pronunciation-v1",
-  "base_head": "997c9856aaa7226314a9f44c4c6bf1524892ef83",
+  "base_head": "dcec5ff3e9b256b2be266e6735bf4dd549b53c13",
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "acceptance_term": "Vice City",
   "target_locale": "en-US",
@@ -8,8 +8,8 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
-  "proof_attempt": 4,
-  "retry_reason": "Run corrected letter-by-letter GTA 6 candidate on current HEAD while preserving human-approved Vice City strategy.",
+  "proof_attempt": 5,
+  "retry_reason": "Human review: Vice City remains approved; GTA 6 must be spoken in natural Brazilian Portuguese as gê tê á seis. Canonical text must remain GTA 6.",
   "human_feedback": {
     "vice-city": {
       "status": "APPROVED",
@@ -18,10 +18,11 @@
     },
     "gta-6": {
       "status": "PENDING_NEW_REVIEW",
-      "evidence": "previous latest audio pronounced GTA 6 incorrectly",
-      "candidate": "G T A seis",
+      "evidence": "user explicitly rejected latest GTA 6 pronunciation and clarified desired Brazilian reading",
+      "candidate": "gê tê á seis",
+      "canonical_text": "GTA 6",
       "next_gate": "PENDING_HUMAN_REVIEW"
     }
   },
-  "requested_at": "2026-09-19T12:12:00Z"
+  "requested_at": "2026-09-19T12:18:00Z"
 }

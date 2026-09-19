@@ -14,7 +14,7 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_is_versioned_and_contains_vice_city():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.09.19.2"
+    assert lexicon["version"]=="2026.09.19.3"
     vice=next(item for item in lexicon["entries"] if item["identity"]=="vice-city")
     assert vice["term"]=="Vice City" and vice["locale"]=="en-US"
     assert vice["target_ipa"]=="vaɪs ˈsɪti" and vice["critical"] is True
@@ -68,7 +68,7 @@ def test_gta6_alias_spells_acronym_without_mutating_canonical_text():
     text="GTA 6 chega depois."
     plan=resolve_synthesis_plan(text)
     gta=next(span for span in plan.spans if span.pronunciation_identity=="gta-6")
-    assert gta.text=="GTA 6" and gta.synthesis_text=="G T A seis"
+    assert gta.text=="GTA 6" and gta.synthesis_text=="gê tê á seis"
     assert gta.locale=="pt-BR" and gta.strategy=="alias"
     assert plan.canonical_text==text and plan.canonical_text_preserved
     assert plan.human_approval_required is True

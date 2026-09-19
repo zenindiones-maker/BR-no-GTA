@@ -122,7 +122,7 @@ class NarrationPipelineTests(unittest.TestCase):
         original = "GTA VI é publicado pela Rockstar Games e Take-Two acompanha o negócio."
         spoken, applied = apply_pronunciation_profile(original)
         self.assertEqual(original, "GTA VI é publicado pela Rockstar Games e Take-Two acompanha o negócio.")
-        self.assertIn("G T A seis", spoken)
+        self.assertIn("gê tê á seis", spoken)
         self.assertIn("Take Two", spoken)
         self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v2")
         self.assertGreaterEqual(len(applied), 2)
