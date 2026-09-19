@@ -4,7 +4,7 @@
   "runner": "ubuntu-24.04",
   "python": "3.12",
   "baseline": "current-render-worker-setup",
-  "candidate": "preinstalled-ffmpeg-when-valid-plus-consolidated-pip",
+  "candidate": "restored-versioned-media-venv-cache-v2",
   "promotion_performed": false,
   "quality_guard": "technical runtime parity required",
   "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2",
@@ -12,5 +12,11 @@
   "rerun_base_head": "546ac2c7ea21b9e2652f3fa70a8dfbbc6f9526fd",
   "rerun_purpose": "System-wide performance Phase E current-HEAD observed baseline/candidate refresh",
   "job18_unchanged": true,
-  "youtube_publication": false
+  "youtube_publication": false,
+  "schema_version": 1,
+  "requested_at": "2026-09-19T11:50:00Z",
+  "base_head": "7431655ca7edb6ce277e5727b431bb6b893a503b",
+  "purpose": "Benchmark repeated ephemeral-runner cold start using exact versioned restored media venv cache; measure full GitHub job wall clock and do not auto-promote.",
+  "quality_regression_allowed": false,
+  "publication": false
 }
