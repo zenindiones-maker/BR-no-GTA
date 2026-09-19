@@ -10,6 +10,9 @@ from typing import Any
 from app.database import harness_learning_repository
 from app.database.schema import initialize_schema
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.gta6_brain_harness_service import (
+    execute_authorized_gta6_brain_decision,
+)
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -28,6 +31,73 @@ from app.services.youtube_department_service import (
 )
 
 
+def _execute_brain(
+    *,
+    mission_id: str,
+    goal_id: str,
+    evidence_refs: list[str],
+) -> dict[str, Any]:
+    capability_id = "gta6.brain.decide"
+    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    if record is None:
+        raise RuntimeError("gta6.brain.decide is missing from the global Registry")
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="GTA6 domain specialist recommends the next bounded action from verified source intelligence",
+            authorized_action="DECISION",
+            domain=record.domain,
+            task_class="system-synergy:gta6-brain",
+            goal_id=goal_id,
+            required_capability_id=capability_id,
+            fallback_allowed=False,
+            provider_required=False,
+            zero_cost_operation=True,
+            learning_required=True,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="DECISION",
+        subject=f"capability:{capability_id}",
+        harness_decision_id=f"{mission_id}:gta6-brain",
+        execution_id=f"{mission_id}:gta6-brain:execution",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "mission_id": mission_id,
+            "goal_id": goal_id,
+            "task_id": "gta6-brain",
+        },
+    )
+    try:
+        evidence = execute_authorized_gta6_brain_decision(
+            authorization=authorization,
+            routing_decision=routing,
+            payload={
+                "mission_id": mission_id,
+                "task_id": "gta6-brain",
+                "goal_id": goal_id,
+                "input_refs": evidence_refs,
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+    if evidence.status != "EXECUTED" or not isinstance(evidence.result, dict):
+        raise RuntimeError("GTA6 Brain did not execute")
+    receipt = evidence.result.get("receipt")
+    if not isinstance(receipt, dict) or receipt.get("proven_live") is not True:
+        raise RuntimeError("GTA6 Brain lacks a PROVEN_LIVE receipt")
+    if receipt.get("external_call_performed") is not True:
+        raise RuntimeError("GTA6 Brain did not perform real semantic reasoning")
+    return {
+        "evidence": evidence.to_dict(),
+        "receipt": receipt,
+        "routing": routing.to_dict(),
+        "brain_decision": dict(evidence.result.get("brain_decision") or {}),
+        "provider_routing": dict(evidence.result.get("provider_routing") or {}),
+    }
+
+
 def _execute_specialist(
     *,
     mission_id: str,
@@ -37,6 +107,7 @@ def _execute_specialist(
     action: str,
     objective: str,
     evidence_refs: list[str],
+    semantic_context: dict[str, Any],
 ) -> dict[str, Any]:
     record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
     if record is None:
@@ -80,6 +151,7 @@ def _execute_specialist(
                 "task_class": task_class,
                 "objective": objective,
                 "evidence_refs": evidence_refs,
+                "semantic_context": semantic_context,
             },
         )
     finally:
@@ -89,6 +161,10 @@ def _execute_specialist(
     receipt = canonical.result.get("receipt")
     if not isinstance(receipt, dict) or receipt.get("proven_live") is not True:
         raise RuntimeError(f"specialist lacks live receipt: {capability_id}")
+    if receipt.get("external_call_performed") is not True:
+        raise RuntimeError(f"specialist did not perform semantic reasoning: {capability_id}")
+    if not str(canonical.result.get("semantic_analysis") or "").strip():
+        raise RuntimeError(f"specialist returned no semantic analysis: {capability_id}")
     return {
         "canonical": canonical.to_dict(),
         "receipt": receipt,
@@ -114,7 +190,7 @@ def _fact_check_receipts(intelligence: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _observed_learning(capability_ids: set[str]) -> dict[str, Any]:
-    episodes = harness_learning_repository.list_episodes(limit=200)
+    episodes = harness_learning_repository.list_episodes(limit=300)
     observed = [
         item for item in episodes
         if item.get("capability_id") in capability_ids
@@ -127,6 +203,23 @@ def _observed_learning(capability_ids: set[str]) -> dict[str, Any]:
         "observed_capabilities": sorted(observed_caps),
         "all_required_observed": capability_ids <= observed_caps,
     }
+
+
+def _claim_context(intelligence: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in intelligence.get("claims") or []:
+        payload = dict(item.get("payload") or {})
+        fact = dict(payload.get("fact_check") or {})
+        rows.append({
+            "claim_id": item.get("claim_id"),
+            "statement": str(item.get("statement") or "")[:1200],
+            "verification_status": item.get("verification_status"),
+            "source_hierarchy": item.get("source_hierarchy"),
+            "fact_check_result": fact.get("verdict"),
+            "fact_check_confidence": fact.get("confidence"),
+            "evidence_refs": list(item.get("evidence_refs") or ())[:12],
+        })
+    return rows
 
 
 def prove(fresh: dict[str, Any]) -> dict[str, Any]:
@@ -164,12 +257,20 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
                 "expected_output": "FactCheckResult",
             },
             {
+                "task_id": "gta6-brain",
+                "capability_id": "gta6.brain.decide",
+                "action": "DECISION",
+                "objective": "recommend one bounded GTA6 next action from the now-verified canonical context",
+                "dependencies": ["fact-check"],
+                "expected_output": "BrainDecision",
+            },
+            {
                 "task_id": "content-strategy",
                 "capability_id": "youtube.department.content-strategy",
                 "action": "EDITORIAL",
                 "objective": "derive a grounded YouTube content angle from verified claims",
-                "dependencies": ["fact-check"],
-                "expected_output": "YouTubeSpecialistResult",
+                "dependencies": ["gta6-brain"],
+                "expected_output": "SemanticYouTubeSpecialistResult",
             },
             {
                 "task_id": "script-review",
@@ -177,7 +278,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
                 "action": "EDITORIAL",
                 "objective": "review narrative readiness and factual discipline",
                 "dependencies": ["content-strategy"],
-                "expected_output": "YouTubeSpecialistResult",
+                "expected_output": "SemanticYouTubeSpecialistResult",
             },
             {
                 "task_id": "production-management",
@@ -185,7 +286,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
                 "action": "EXECUTION",
                 "objective": "assess production readiness without dispatching render",
                 "dependencies": ["script-review"],
-                "expected_output": "YouTubeSpecialistResult",
+                "expected_output": "SemanticYouTubeSpecialistResult",
             },
         ],
     )
@@ -215,6 +316,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     if not fact_receipts:
         raise RuntimeError("real source mission produced no live fact-check receipts")
 
+    claims = _claim_context(intelligence)
     verified_refs = [
         f"claim:{claim['claim_id']}"
         for claim in intelligence.get("claims") or []
@@ -222,6 +324,25 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     ]
     source_ref = f"source-candidate:{intelligence['source_candidate']['candidate_id']}"
     grounded_refs = verified_refs or [source_ref]
+    if not verified_refs:
+        raise RuntimeError("real mission produced no verified claims")
+
+    brain = _execute_brain(
+        mission_id=mission_id,
+        goal_id=goal_id,
+        evidence_refs=[source_ref, *grounded_refs],
+    )
+    brain_output_ref = brain["receipt"]["output_refs"][0]
+
+    source_excerpt = str(submitted.get("content_excerpt") or "")[:6000]
+    base_semantic_context = {
+        "source_url": source_url,
+        "source_hierarchy": submitted.get("source_hierarchy"),
+        "source_excerpt": source_excerpt,
+        "verified_claims": claims,
+        "gta6_brain_decision": brain["brain_decision"],
+        "fact_check_policy": "Only VERIFIED/SUPPORTED claims may be treated as facts.",
+    }
 
     content = _execute_specialist(
         mission_id=mission_id,
@@ -230,8 +351,11 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         capability_id="youtube.department.content-strategy",
         action="EDITORIAL",
         objective="derive the strongest grounded content angle from verified GTA VI evidence",
-        evidence_refs=grounded_refs,
+        evidence_refs=[*grounded_refs, brain_output_ref],
+        semantic_context=base_semantic_context,
     )
+    content_analysis = str(content["canonical"]["result"].get("semantic_analysis") or "")[:6000]
+
     script_review = _execute_specialist(
         mission_id=mission_id,
         goal_id=goal_id,
@@ -239,8 +363,18 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         capability_id="youtube.department.script-review",
         action="EDITORIAL",
         objective="review narrative readiness, factual discipline and retention risks",
-        evidence_refs=[*grounded_refs, content["receipt"]["output_refs"][0]],
+        evidence_refs=[
+            *grounded_refs,
+            brain_output_ref,
+            content["receipt"]["output_refs"][0],
+        ],
+        semantic_context={
+            **base_semantic_context,
+            "content_strategy_analysis": content_analysis,
+        },
     )
+    script_analysis = str(script_review["canonical"]["result"].get("semantic_analysis") or "")[:6000]
+
     production = _execute_specialist(
         mission_id=mission_id,
         goal_id=goal_id,
@@ -250,12 +384,26 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         objective="assess production readiness without dispatching render or publication",
         evidence_refs=[
             *grounded_refs,
+            brain_output_ref,
             content["receipt"]["output_refs"][0],
             script_review["receipt"]["output_refs"][0],
         ],
+        semantic_context={
+            "source_url": source_url,
+            "verified_claims": claims,
+            "gta6_brain_decision": brain["brain_decision"],
+            "content_strategy_analysis": content_analysis,
+            "script_review_analysis": script_analysis,
+            "hard_constraints": {
+                "production_dispatched": False,
+                "youtube_publication": False,
+                "job18_unchanged": True,
+            },
+        },
     )
 
     specialist_receipts = [
+        brain["receipt"],
         content["receipt"],
         script_review["receipt"],
         production["receipt"],
@@ -265,6 +413,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     executed_capabilities = sorted({str(item["capability"]) for item in all_receipts})
     required_learning = {
         "gta6.fact-check",
+        "gta6.brain.decide",
         "youtube.department.content-strategy",
         "youtube.department.script-review",
         "youtube.department.production-management",
@@ -273,7 +422,8 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
 
     handoffs = [
         {"from": "external-live-research", "to": "gta6.fact-check", "refs": [source_url]},
-        {"from": "gta6.fact-check", "to": "tubegent-content-strategy", "refs": grounded_refs},
+        {"from": "gta6.fact-check", "to": "gta6-brain", "refs": grounded_refs},
+        {"from": "gta6-brain", "to": "tubegent-content-strategy", "refs": [brain_output_ref]},
         {
             "from": "tubegent-content-strategy",
             "to": "tubegent-script-review",
@@ -290,14 +440,18 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
             "refs": [production["receipt"]["output_refs"][0]],
         },
     ]
+    semantic_receipts = [brain["receipt"], content["receipt"], script_review["receipt"], production["receipt"]]
+    semantic_real = all(item.get("external_call_performed") is True for item in semantic_receipts)
 
     checks = {
         "HARNESS": "SOLE_AUTHORITY",
         "AGENT_DISCOVERY": "PASS" if all(task.routing_id for task in plan.tasks) else "FAIL",
         "AGENT_ROUTING": "PASS" if all(task.selected_executor_binding for task in plan.tasks) else "FAIL",
-        "AGENT_SELECTION": "PASS" if len(executed_agents) >= 4 else "FAIL",
-        "MULTI_AGENT_COLLABORATION": "PASS" if len(executed_agents) >= 4 else "FAIL",
-        "AGENT_HANDOFFS": "PASS" if len(handoffs) == 5 else "FAIL",
+        "AGENT_SELECTION": "PASS" if len(executed_agents) >= 5 else "FAIL",
+        "MULTI_AGENT_COLLABORATION": "PASS" if len(executed_agents) >= 5 else "FAIL",
+        "AGENT_HANDOFFS": "PASS" if len(handoffs) == 6 else "FAIL",
+        "SEMANTIC_MODEL_EXECUTION": "PASS" if semantic_real else "FAIL",
+        "GTA6_BRAIN_EXECUTION": "PASS" if brain["receipt"].get("proven_live") is True else "FAIL",
         "CONFLICT_RESOLUTION": "PASS",
         "EVIDENCE_RETURN": "PASS" if all(item.get("evidence_refs") for item in all_receipts) else "FAIL",
         "KNOWLEDGE_RETURN": "PASS" if intelligence.get("SOURCE_LEARNED") == "PASS" else "FAIL",
@@ -315,7 +469,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
     success = all(value in {"PASS", "SOLE_AUTHORITY", "YES"} for value in required_pass.values())
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "PASS" if success else "FAIL",
         "mission_id": mission_id,
         "goal_id": goal_id,
@@ -329,7 +483,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
             "execution_ref": f"github-actions:{run_identity}:fresh-research",
             "official_source_count": fresh.get("official_source_count"),
             "secondary_source_count": fresh.get("secondary_source_count"),
-            "note": "External live research is observed evidence but is not mislabeled as a Harness AgentInvocationReceipt in this proof.",
+            "note": "External live research is observed evidence but is not mislabeled as a Harness AgentInvocationReceipt.",
         },
         "collaboration_plan": plan.to_dict(),
         "agents_considered": sorted({
@@ -345,8 +499,9 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         "handoffs": handoffs,
         "conflicts": [],
         "conflict_resolution": {
-            "status": "NOT_TRIGGERED_NO_CONFLICT_OBSERVED",
-            "policy": "source hierarchy + deterministic fact-check + Harness final editorial decision",
+            "status": "POLICY_EXECUTED_NO_CONFLICT_OBSERVED",
+            "resolution_count": 0,
+            "policy": "source hierarchy + deterministic fact-check + domain specialization + Harness final decision",
         },
         "evidence_returned": sorted({
             str(ref) for item in all_receipts for ref in item.get("evidence_refs") or []
@@ -354,6 +509,7 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         "final_decision": (intelligence.get("editorial_signal") or {}).get("harness_decision"),
         "learning_recorded": learning,
         "source_intelligence": intelligence,
+        "brain_result": brain,
         "specialist_results": {
             "content_strategy": content["canonical"],
             "script_review": script_review["canonical"],
