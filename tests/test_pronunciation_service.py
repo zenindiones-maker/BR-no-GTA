@@ -40,10 +40,13 @@ def test_punctuation_is_preserved():
     assert plan.canonical_text_preserved
     assert "," in "".join(span.text for span in plan.spans)
 
-def test_explicit_metadata_overrides_lexicon_for_same_span():
+def test_canonical_lexicon_overrides_explicit_metadata_for_known_term():
     text="Vice City"
     plan=resolve_synthesis_plan(text,explicit_spans=[{"start":0,"end":len(text),"text":text,"locale":"en-GB","strategy":"explicit-locale"}])
-    assert len(plan.spans)==1 and plan.spans[0].source=="explicit" and plan.spans[0].locale=="en-GB"
+    assert len(plan.spans)==1
+    assert plan.spans[0].source=="lexicon"
+    assert plan.spans[0].locale=="en-US"
+    assert plan.spans[0].pronunciation_identity=="vice-city"
 
 def test_bad_explicit_span_fails_closed():
     with pytest.raises(PronunciationError):
@@ -86,7 +89,7 @@ def test_azure_ssml_uses_lang_for_vice_city_without_mutating_text():
     assert '<lang xml:lang="en-US">Vice City</lang>' in ssml
     assert "Váiss" not in ssml and "Vaice" not in ssml
 
-def test_provider_fails_closed_if_phoneme_requested_but_unsupported():
+def test_edge_fails_closed_if_phoneme_requested_but_unsupported():
     plan=SynthesisPlan(
         canonical_text="Vice City",default_locale="pt-BR",voice=DEFAULT_VOICE,
         resolver_version=PRONUNCIATION_LAYER_VERSION,lexicon_version="test",
@@ -94,7 +97,7 @@ def test_provider_fails_closed_if_phoneme_requested_but_unsupported():
         lexicon_hits=(),explicit_span_count=1,detected_span_count=0,resolution_wall_clock_seconds=0.0,
     )
     with pytest.raises(PronunciationError,match="phoneme"):
-        validate_provider_plan(plan,provider_capabilities("azure-speech",voice=DEFAULT_VOICE))
+        validate_provider_plan(plan,provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE))
 
 def test_cache_identity_changes_when_lexicon_version_changes():
     plan=resolve_synthesis_plan("Vice City")
@@ -102,6 +105,14 @@ def test_cache_identity_changes_when_lexicon_version_changes():
     changed=replace(plan,lexicon_version=plan.lexicon_version+".next")
     second=pronunciation_cache_identity(changed,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%")
     assert first["sha256"]!=second["sha256"]
+
+def test_cache_payload_excludes_runtime_resolution_time():
+    plan=resolve_synthesis_plan("E BR não dorme em Vice City")
+    changed=replace(plan,resolution_wall_clock_seconds=plan.resolution_wall_clock_seconds+99.0)
+    assert synthesis_plan_cache_payload(plan)==synthesis_plan_cache_payload(changed)
+    first=pronunciation_cache_identity(plan,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%")
+    second=pronunciation_cache_identity(changed,provider_id="edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE,rate="+0%")
+    assert first["sha256"]==second["sha256"]
 
 def test_cache_identity_contains_full_contract():
     plan=resolve_synthesis_plan("E BR não dorme em Vice City")
