@@ -149,7 +149,6 @@ def create_production_plan(
     return {
         "content_item_id": content_item["id"],
         "script_id": content_item["script_id"],
-        "title": str(content_item.get("title") or "").strip() or None,
         "idea_id": content_item["idea_id"],
         "title": str(content_item.get("title") or "").strip() or None,
         "description": str(content_item.get("description") or "").strip(),
