@@ -16,6 +16,10 @@ from app.services.channel_spoken_branding_service import (
     validate_job_spoken_branding,
 )
 from app.services.narration_pipeline import MASTER_TARGET_LUFS, MASTER_TRUE_PEAK_DB
+from app.services.pronunciation_service import (
+    resolve_synthesis_plan,
+    synthesize_edge_plan,
+)
 
 
 BUNDLE_VERSION="brand-audio-bundle/v1"
@@ -108,7 +112,7 @@ def _cache_root() -> Path:
     return path
 
 
-def _take_identity(*, kind: str, text: str, contract: dict[str,Any], take: dict[str,Any]) -> dict[str,Any]:
+def _take_identity(*, kind: str, text: str, contract: dict[str,Any], take: dict[str,Any], plan: Any) -> dict[str,Any]:
     return {
         "bundle_version":BUNDLE_VERSION,
         "kind":kind,
@@ -119,6 +123,7 @@ def _take_identity(*, kind: str, text: str, contract: dict[str,Any], take: dict[
         "language":contract["language"],
         "direction":contract[f"{kind}_direction"],
         "take_profile":take,
+        "pronunciation_plan":plan.to_dict(),
     }
 
 
@@ -154,7 +159,12 @@ def _materialize_take(
     bundle_root: Path,
     stats: dict[str,Any],
 ) -> dict[str,Any]:
-    identity=_take_identity(kind=kind,text=text,contract=contract,take=take)
+    plan=resolve_synthesis_plan(
+        text,
+        default_locale=contract["language"],
+        voice=contract["voice_short_name"],
+    )
+    identity=_take_identity(kind=kind,text=text,contract=contract,take=take,plan=plan)
     fingerprint=_canonical_sha(identity)
     cache_dir=_cache_root()/fingerprint
     cached=_valid_cached_take(cache_dir,identity)
@@ -172,14 +182,15 @@ def _materialize_take(
         cache_dir.mkdir(parents=True,exist_ok=True)
         raw=cache_dir/"raw.mp3"
         mastered=cache_dir/"audio.flac"
-        tts_seconds=asyncio.run(_edge_synthesize(
-            text=text,
+        tts_metrics=asyncio.run(synthesize_edge_plan(
+            plan,
             voice=contract["voice_short_name"],
             rate=take["rate"],
             pitch=take["pitch"],
             output=raw,
         ))
-        stats["external_calls"]+=1
+        tts_seconds=float(tts_metrics["wall_clock_seconds"])
+        stats["external_calls"]+=int(tts_metrics["external_calls"])
         mastering_seconds=_master(raw,mastered)
         probe,duration=_probe_audio(mastered)
         _full_decode(mastered)
@@ -199,6 +210,8 @@ def _materialize_take(
                 "true_peak_ceiling_db":MASTER_TRUE_PEAK_DB,
                 "text_exact":True,
                 "voice_b_used":True,
+                "canonical_text_preserved":plan.canonical_text_preserved,
+                "language_spans_valid":all(span.locale for span in plan.spans),
             },
         }
         (cache_dir/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
@@ -214,6 +227,13 @@ def _materialize_take(
         "take_id":take["take_id"],
         "role":take["role"],
         "text":text,
+        "synthesis_plan":plan.to_dict(),
+        "pronunciation_qa":{
+            "canonical_text_preserved":plan.canonical_text_preserved,
+            "foreign_span_count":plan.foreign_span_count,
+            "lexicon_hits":list(plan.lexicon_hits),
+            "human_approval_required":plan.human_approval_required,
+        },
         "rate":take["rate"],
         "pitch":take["pitch"],
         "fingerprint":fingerprint,
@@ -287,7 +307,7 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
         },
         "cache":{
             **stats,
-            "policy":"content-addressed voice+direction+text+provider/version+take profile",
+            "policy":"content-addressed canonical text+pronunciation plan+lexicon version+voice+direction+provider/version+take profile",
             "closing_fixed_reusable":True,
         },
         "checks":{
@@ -299,6 +319,25 @@ def prepare_brand_audio(job: dict[str,Any], root: Path) -> dict[str,Any]:
             "same_text_all_opening_takes":len({x["text"] for x in takes["opening"]})==1,
             "same_text_all_closing_takes":len({x["text"] for x in takes["closing"]})==1,
             "brand_audio_cache_policy":True,
+            "canonical_text_preserved":all(
+                item["pronunciation_qa"]["canonical_text_preserved"]
+                for kind in ("opening","closing")
+                for item in takes[kind]
+            ),
+            "language_spans_valid":all(
+                all(span.get("locale") for span in item["synthesis_plan"]["spans"])
+                for kind in ("opening","closing")
+                for item in takes[kind]
+            ),
+            "vice_city_language_resolution":all(
+                any(
+                    span.get("pronunciation_identity")=="vice-city"
+                    and span.get("locale")=="en-US"
+                    and span.get("text")=="Vice City"
+                    for span in item["synthesis_plan"]["spans"]
+                )
+                for item in takes["closing"]
+            ),
         },
         "bundle_reused":False,
         "redundant_tts_requests":stats["external_calls"],
