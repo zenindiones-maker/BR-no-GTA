@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 from typing import Any
+import json
+from pathlib import Path
 
 from app.database import harness_learning_repository as repository
 from app.services.operational_efficiency_policy import policy_metadata as operational_efficiency_policy_metadata
 
 
 MIN_COMPETENCE_CASES = 2
+_EFFICIENCY_HISTORY_PATH = Path(__file__).resolve().parents[2] / ".run001" / "operational-efficiency-history.json"
+
+
+def _load_operational_efficiency_history() -> dict[str, Any]:
+    if not _EFFICIENCY_HISTORY_PATH.is_file():
+        return {"version": "operational-efficiency-history/v1", "observations": [], "baselines": []}
+    payload = json.loads(_EFFICIENCY_HISTORY_PATH.read_text(encoding="utf-8"))
+    if payload.get("version") != "operational-efficiency-history/v1":
+        raise ValueError("operational efficiency history version mismatch")
+    if not isinstance(payload.get("observations"), list) or not isinstance(payload.get("baselines"), list):
+        raise ValueError("operational efficiency history is malformed")
+    return payload
+
 
 
 def _competence_metrics(record: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +98,7 @@ def load_operational_learning_context(
     )
     skills = repository.list_active_versions(table="harness_skill_versions")
     policies = repository.list_active_versions(table="harness_policy_versions")
+    efficiency_history = _load_operational_efficiency_history()
 
     return {
         "domain": domain,
@@ -110,7 +126,9 @@ def load_operational_learning_context(
             for item in policies
         ],
         "mandatory_operational_policies": [operational_efficiency_policy_metadata()],
+        "operational_efficiency_history": efficiency_history,
         "learning_participated": bool(
             memories or failures or feedback or usable_competence or skills or policies
+            or efficiency_history.get("observations")
         ),
     }

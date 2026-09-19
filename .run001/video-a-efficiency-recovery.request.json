@@ -17,9 +17,16 @@
   "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2",
   "job18_frozen": true,
   "youtube_publication": false,
-  "attempt": 3,
-  "retry_reason": "rebase portable narration checkpoint paths and reuse already QA-passed media checkpoint",
+  "attempt": 4,
+  "retry_reason": "resume after validated 60s canary; correct media checkpoint producer lineage; no canary/media/narration repeat",
   "media_artifact_id": 10572578507,
   "media_producer_run_id": 35407875087,
-  "redundant_media_downloads_allowed": 0
+  "redundant_media_downloads_allowed": 0,
+  "resume_after_canary": true,
+  "validated_canary_run_id": 35408056905,
+  "validated_canary_artifact_id": 10572723602,
+  "retry_handoff_artifact_id": 10572763599,
+  "retry_handoff_producer_run_id": 35408056905,
+  "failed_warm_retry_run_id": 35408204266,
+  "redundant_tts_requests_allowed": 0
 }
