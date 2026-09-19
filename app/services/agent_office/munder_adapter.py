@@ -315,7 +315,7 @@ class MunderAdapter:
         event_sink: EventSink | None,
     ) -> dict[str, Any]:
         lease.assert_active()
-        task_started = self._clock()
+        task_started = time.perf_counter()
         if event_sink:
             event_sink(
                 task.task_id,
@@ -394,7 +394,7 @@ class MunderAdapter:
         )
         if outside:
             result["status"] = "FAILED"
-            result["error"] = "worker changed files outside delegated write_set"
+            result["error"] = "worker changed files outside allowed_paths/write_set"
             result["outside_allowed_paths"] = list(outside)
 
         commands = [
@@ -419,7 +419,10 @@ class MunderAdapter:
         result["delegation_id"] = lease.delegation_id
         result["role"] = lease.role
         result["owned_task_class"] = lease.owned_task_class
-        result["task_duration_ms"] = round(max(0.0, (self._clock() - task_started) * 1000.0), 3)
+        result["task_duration_ms"] = round(
+            max(0.0, (time.perf_counter() - task_started) * 1000.0),
+            3,
+        )
         artifact_ref, artifact_sha = _persist_task_artifact(
             repository_root,
             spec,
