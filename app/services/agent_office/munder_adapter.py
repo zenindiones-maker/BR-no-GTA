@@ -24,6 +24,9 @@ from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     codex_bounded_development_worker,
 )
+from app.services.agent_office.addy_task_owner_worker import (
+    addy_specialist_task_owner_worker,
+)
 
 
 WorkerRunner = Callable[..., dict[str, Any]]
@@ -206,6 +209,7 @@ def registered_worker_runners() -> dict[str, WorkerRunner]:
         "deterministic-analysis": deterministic_read_only_worker,
         "codex": codex_readonly_worker,
         "codex-development": codex_bounded_development_worker,
+        "addy-specialist": addy_specialist_task_owner_worker,
     }
 
 
