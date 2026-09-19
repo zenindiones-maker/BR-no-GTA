@@ -83,15 +83,17 @@ jobs:
           assert 'agent-office-coordinator' in d['AGENT_IDS']
           assert 'gta6-master-agent' in d['AGENT_IDS']
           assert 'gta6-brain' in d['AGENT_IDS']
-          # Do not fake integration: gta6-brain must remain visible as a blocker
-          # until its independent Harness boundary is implemented and proven.
           brain=[x for x in d['identities'] if x['AGENT_OR_SKILL_ID']=='gta6-brain']
           assert len(brain)==1
-          assert brain[0]['STATUS']=='MISSING_BOUNDARY'
+          assert brain[0]['STATUS']=='ACTIVE_EXECUTABLE'
+          assert 'gta6.brain.decide' in brain[0]['CAPABILITY_IDS']
+          assert d['BROKEN_BINDINGS_FOUND'] == 0
+          assert d['MISSING_BOUNDARIES_FOUND'] == 0
           print('AGENT_INVENTORY_COMPLETE=PASS')
           print('ADDY_24_INVENTORIED=PASS')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')
-          print('GTA6_BRAIN_MISSING_BOUNDARY=OBSERVED')
+          print('GTA6_BRAIN_BOUNDARY=PASS')
+          print('BROKEN_ACTIVE_BINDINGS=0')
           PY
 
       - name: Run focused registry and collaboration tests
