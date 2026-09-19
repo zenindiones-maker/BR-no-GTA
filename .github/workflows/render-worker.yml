@@ -708,6 +708,14 @@ jobs:
           python scripts/run001_professional_finalize_qa.py \
             --artifact-root runtime/render/output
 
+      - name: Checkpoint QA-passed render before external review
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-output
+          path: runtime/render/output/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Deliver full-duration branded review to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -718,14 +726,6 @@ jobs:
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
           python scripts/telegram_render_review_worker.py \
             --artifact-root runtime/render/output
-
-      - name: Upload QA-passed render
-        uses: actions/upload-artifact@v4
-        with:
-          name: render-output
-          path: runtime/render/output/
-          if-no-files-found: error
-          retention-days: 30
       - name: Upload failure diagnostic JSONs
         if: failure()
         uses: actions/upload-artifact@v4
