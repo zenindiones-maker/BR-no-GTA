@@ -9,6 +9,8 @@ from app.services.channel_spoken_branding_service import (
     OFFICIAL_INTRO_ASSET_ID,
     OFFICIAL_VOICE_SHORT_NAME,
     OPENING_PREFIX,
+    SELECTED_CLOSING_TAKE_ID,
+    SELECTED_OPENING_TAKE_ID,
     build_spoken_branding_contract,
     validate_job_spoken_branding,
     validate_spoken_branding_contract,
@@ -90,9 +92,17 @@ def test_editorial_hook_is_distinct_and_required_after_brand_opening():
         validate_job_spoken_branding(job)
 
 
-def test_take_profiles_keep_same_text_and_no_auto_naturality_winner():
+def test_take_profiles_lock_human_approved_fluid2_opening_and_g_final_end():
     contract=build_spoken_branding_contract(theme=THEME)
     assert [x["take_id"] for x in contract["take_profiles"]]==["take-1","take-2","take-3"]
-    assert contract["selected_take_id"]=="take-1"
-    assert "never auto-promote" in contract["selection_rule"]
+    fluid2=next(x for x in contract["take_profiles"] if x["take_id"]=="take-2")
+    assert fluid2["rate"]=="+3%"
+    assert fluid2["pitch"]=="+1Hz"
+    assert fluid2["role"]=="human-approved-fluid2-prosody"
+    assert contract["selected_take_id"]==SELECTED_OPENING_TAKE_ID=="take-2"
+    assert contract["selected_opening_take_id"]=="take-2"
+    assert contract["selected_closing_fallback_take_id"]==SELECTED_CLOSING_TAKE_ID=="take-1"
+    assert contract["human_approved_opening_reference"]=="I-opening-fluid-2.mp3"
+    assert contract["human_approved_final_end_sample_id"]=="G-brand-mixed"
+    assert "no automatic" in contract["selection_rule"].lower()
     assert contract["cache_policy"]["closing_fixed_reusable"] is True
