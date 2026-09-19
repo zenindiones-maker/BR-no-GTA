@@ -147,3 +147,15 @@ def test_reasoning_failure_presentation_preserves_real_telegram_input_lineage():
     assert auth["lineage"]["telegram_input_id"] == 77
     assert auth["lineage"]["episode_id"] == "episode-real-failure"
     assert auth["lineage"]["failure_memory_id"] == "memory-real-failure"
+
+
+def test_static_presentation_contract_proof_is_executable():
+    result = proof._static_contract_proof()
+    assert result["UPSTREAM_PROVENANCE"] == "PASS"
+    assert result["SKILL_REGISTERED"] == "PASS"
+    assert result["ACTION_FIRST_MODE"] == "PASS"
+    assert result["TECHNICAL_FULL_MODE"] == "PASS"
+    assert result["MACHINE_READABLE_MODE"] == "PASS"
+    assert result["NO_MEMORY_AUTHORITY"] == "PASS"
+    assert result["NO_ROUTING_AUTHORITY"] == "PASS"
+    assert result["NO_PUBLICATION_AUTHORITY"] == "PASS"
