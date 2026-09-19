@@ -131,8 +131,14 @@ def main() -> None:
                 }
             )
 
+        higgs_discovered = sorted(
+            str(skill["name"])
+            for skill in higgs
+            if skill.get("enabled")
+            and str(skill.get("name", "")) in higgs_expected
+        )
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "PASS",
             "plugin_id": PLUGIN_ID,
             "expected_count": 24,
@@ -140,6 +146,10 @@ def main() -> None:
             "expected_skills": sorted(expected),
             "discovered_skills": sorted(discovered),
             "skills": per_skill,
+            "higgsfield_expected_count": 4,
+            "higgsfield_expected_skills": sorted(higgs_expected),
+            "higgsfield_discovered_enabled_count": len(higgs_discovered),
+            "higgsfield_discovered_skills": higgs_discovered,
             "model_turns": 0,
             "generation_requests": 0,
         }
@@ -151,6 +161,8 @@ def main() -> None:
             )
         print(json.dumps(report, ensure_ascii=False))
         print("ADDY_24_NATIVE_DISCOVERY=PASS")
+        if mode == "all":
+            print("HIGGSFIELD_4_NATIVE_DISCOVERY=PASS")
     finally:
         process.terminate()
         try:
