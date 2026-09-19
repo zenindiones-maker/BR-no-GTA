@@ -112,7 +112,7 @@ def submit_delegated_mission(
         "base_sha": spec.base_sha,
         "harness_reactivation_required": False,
         "next_event": "MISSION_READY_FOR_REDUCTION",
-        "mission": mission,
+        "mission_status": mission["status"],
     }
 
 
@@ -209,5 +209,5 @@ def reduce_delegated_mission(
         "authority": reduction.authority,
         "canonical_push_authority": reduction.canonical_push_authority,
         "reduction": reduction.to_dict(),
-        "mission": completed,
+        "mission_status": completed["status"],
     }
