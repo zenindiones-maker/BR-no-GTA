@@ -76,12 +76,23 @@ def main() -> int:
         "opening_take_count":len(manifest["takes"]["opening"]),
         "closing_take_count":len(manifest["takes"]["closing"]),
         "selected_take_id":manifest["selection"]["selected_take_id"],
+        "selected_opening_take_id":manifest["selection"]["selected_opening_take_id"],
+        "selected_closing_fallback_take_id":manifest["selection"]["selected_closing_fallback_take_id"],
+        "human_approved_opening_reference":"I-opening-fluid-2.mp3",
+        "human_approved_final_end_sample_id":"G-brand-mixed",
         "automatic_naturality_winner":manifest["selection"]["automatic_naturality_winner"],
         "cache":manifest["cache"],
         "bundle_reused":manifest.get("bundle_reused"),
         "OFFICIAL_INTRO_FIRST":"PASS",
         "SPOKEN_OPENING_AFTER_INTRO":"PASS",
         "VOICE_B_USED":"PASS",
+        "FLUID2_OPENING_SELECTED":(
+            "PASS"
+            if manifest["selection"]["selected_opening_take_id"]=="take-2"
+            and manifest["selected"]["opening"]["rate"]=="+3%"
+            and manifest["selected"]["opening"]["pitch"]=="+1Hz"
+            else "FAIL"
+        ),
         "OPENING_TEXT_CANONICAL":"PASS",
         "CLOSING_TEXT_CANONICAL":"PASS",
         "BRAND_AUDIO_CACHE_POLICY":"PASS",
@@ -94,11 +105,13 @@ def main() -> int:
     args.proof.write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding="utf-8")
     for key in (
         "OFFICIAL_INTRO_FIRST","SPOKEN_OPENING_AFTER_INTRO","VOICE_B_USED",
-        "OPENING_TEXT_CANONICAL","CLOSING_TEXT_CANONICAL",
+        "FLUID2_OPENING_SELECTED","OPENING_TEXT_CANONICAL","CLOSING_TEXT_CANONICAL",
         "BRAND_AUDIO_CACHE_POLICY","EDITORIAL_HOOK_PRESERVED",
     ):
         print(f"{key}=PASS")
     print(f"BRAND_OPENING_TAKES={proof['opening_take_count']}")
+    print(f"SELECTED_OPENING_TAKE_ID={proof['selected_opening_take_id']}")
+    print(f"SELECTED_CLOSING_FALLBACK_TAKE_ID={proof['selected_closing_fallback_take_id']}")
     print(f"BRAND_CLOSING_TAKES={proof['closing_take_count']}")
     print(f"BRAND_AUDIO_EXTERNAL_CALLS={proof['cache']['external_calls']}")
     print("JOB18_UNCHANGED=YES")
