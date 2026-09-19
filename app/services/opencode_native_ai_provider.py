@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 from typing import Any
 
 from app.services.ai_provider import AIProviderError, AIResponse
@@ -216,6 +218,152 @@ class OpenCodeNativeAIProvider:
             )
         )
 
+    def _generate_on_current_runner(
+        self,
+        *,
+        prompt: str,
+        canonical_model: str,
+        executor_model: str,
+        cli_version: str,
+    ) -> AIResponse:
+        """Run the already-promoted official CLI in the current GitHub runner.
+
+        The promotion benchmark executes this exact CLI successfully in the parent
+        runner. Nested workflow dispatch is not an authority boundary and is
+        avoided here because the upstream free tier rejects that child runtime.
+        """
+        if str(os.getenv("GITHUB_ACTIONS") or "").strip().lower() != "true":
+            raise OpenCodeNativeAIProviderError(
+                "Same-run OpenCode execution is allowed only on GitHub Actions",
+                details={"failure_code": "same_runner_requires_github_actions"},
+            )
+
+        expected_sha = str(self.source_sha or os.getenv("GITHUB_SHA") or "").strip().lower()
+        if not _GIT_SHA_RE.fullmatch(expected_sha):
+            raise OpenCodeNativeAIProviderError(
+                "Same-run OpenCode execution requires exact source SHA",
+                details={"failure_code": "missing_parent_source_sha"},
+            )
+        observed_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip().lower()
+        if observed_sha != expected_sha:
+            raise OpenCodeNativeAIProviderError(
+                "Same-run OpenCode source SHA mismatch",
+                details={"failure_code": "semantic_source_sha_mismatch"},
+            )
+
+        version = subprocess.run(
+            ["opencode", "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip().split()[-1].lstrip("v")
+        if version != cli_version:
+            raise OpenCodeNativeAIProviderError(
+                "Same-run OpenCode CLI version mismatch",
+                details={"failure_code": "cli_version_mismatch"},
+            )
+
+        with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
+            config_path = Path(tmp) / "opencode.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://opencode.ai/config.json",
+                        "model": executor_model,
+                        "permissions": [
+                            {"action": "*", "resource": "*", "effect": "deny"}
+                        ],
+                    },
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            env = dict(os.environ)
+            env["OPENCODE_CONFIG"] = str(config_path)
+            process = subprocess.run(
+                [
+                    "opencode", "run", "--standalone",
+                    "--model", executor_model,
+                    "--format", "json",
+                    prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+                env=env,
+            )
+
+        parts: list[str] = []
+        tool_call_count = 0
+        parse_errors = 0
+        for raw in process.stdout.splitlines():
+            if not raw.strip():
+                continue
+            try:
+                item = json.loads(raw)
+            except json.JSONDecodeError:
+                parse_errors += 1
+                continue
+            event_type = str(item.get("type") or "")
+            if event_type in {"tool_use", "tool_call", "tool"}:
+                tool_call_count += 1
+            if event_type == "text":
+                part = item.get("part") or {}
+                value = part.get("text")
+                if isinstance(value, str) and value:
+                    parts.append(value)
+
+        answer = "".join(parts).strip()
+        if tool_call_count:
+            raise OpenCodeNativeAIProviderError(
+                "Same-run semantic execution attempted tool use",
+                details={
+                    "failure_code": "semantic_tools_used",
+                    "exit_code": process.returncode,
+                    "canonical_model": canonical_model,
+                    "profile_version": self.profile_version,
+                    "profile_content_ref": self.profile_content_ref,
+                },
+            )
+        if process.returncode != 0 or not answer:
+            safe_stderr = "\n".join(
+                line[:500]
+                for line in process.stderr.splitlines()
+                if not re.search(
+                    r"(authorization:|bearer |api_key|apikey|token=|sk-|ghp_|github_pat_)",
+                    line,
+                    flags=re.IGNORECASE,
+                )
+            )
+            raise OpenCodeNativeAIProviderError(
+                "Governed same-run OpenCode execution failed",
+                details={
+                    "failure_code": "same_runner_native_execution_failed",
+                    "exit_code": process.returncode,
+                    "log_sha256": sha256(
+                        (process.stdout + "\n" + safe_stderr).encode("utf-8")
+                    ).hexdigest(),
+                    "canonical_model": canonical_model,
+                    "profile_version": self.profile_version,
+                    "profile_content_ref": self.profile_content_ref,
+                    "retry_count": 0,
+                    "parse_errors": parse_errors,
+                },
+            )
+
+        return AIResponse(
+            text=answer,
+            provider="opencode",
+            model=canonical_model,
+            finish_reason="stop",
+        )
+
     def generate(self, prompt: str) -> AIResponse:
         if not isinstance(prompt, str) or not prompt.strip():
             raise AIProviderError("OpenCode prompt must be non-empty")
@@ -224,6 +372,13 @@ class OpenCodeNativeAIProvider:
         executor_model = str(self.options["executor_model"])
         cli_version = str(self.options["cli_version"])
         workflow = str(self.options.get("workflow") or OPENCODE_NATIVE_WORKFLOW)
+        if str(os.getenv("BR_OPENCODE_NATIVE_EXECUTION_MODE") or "").strip() == "same_runner":
+            return self._generate_on_current_runner(
+                prompt=prompt,
+                canonical_model=canonical_model,
+                executor_model=executor_model,
+                cli_version=cli_version,
+            )
         dispatch_ref, parent_source_sha = _immutable_dispatch_ref(
             repository=self.repository,
             configured_ref=self.ref,
