@@ -148,6 +148,25 @@ jobs:
           print("REDUNDANT_TELEGRAM_AUDITION_SKIPPED=YES")
           PY
 
+      - name: Deliver canonical two-asset voice proof to Telegram when requested
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          enabled="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('.run001/video-a-brand-audio.request.json').read_text())
+          print('true' if d.get('send_canonical_voice_proof_to_telegram') is True else 'false')
+          PY
+          )"
+          if [ "$enabled" != "true" ]; then
+            echo "TELEGRAM_CANONICAL_VOICE_PROOF=SKIPPED"
+            exit 0
+          fi
+          python scripts/send_brand_audio_review.py
+
       - name: Validate branding evidence contract
         run: |
           set -euo pipefail
