@@ -32,7 +32,7 @@ def _get_json(url: str, token: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _find_source_run(*, repo: str, current_run_id: int, branch: str, token: str) -> dict | None:
+def _find_source_runs(*, repo: str, current_run_id: int, branch: str, token: str) -> list[dict]:
     current = _get_json(f"https://api.github.com/repos/{repo}/actions/runs/{current_run_id}", token)
     workflow_id = current.get("workflow_id")
     if not workflow_id:
@@ -42,6 +42,7 @@ def _find_source_run(*, repo: str, current_run_id: int, branch: str, token: str)
         f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_id}/runs?{query}",
         token,
     )
+    found: list[dict] = []
     for run in payload.get("workflow_runs") or ():
         run_id = int(run.get("id") or 0)
         if run_id <= 0 or run_id == current_run_id:
@@ -59,8 +60,8 @@ def _find_source_run(*, repo: str, current_run_id: int, branch: str, token: str)
             None,
         )
         if artifact is not None:
-            return {"run": run, "artifact": artifact}
-    return None
+            found.append({"run": run, "artifact": artifact})
+    return found
 
 
 def _download_artifact_with_gh(
@@ -162,7 +163,8 @@ def main() -> int:
             "REUSED_TIME_SAVED_MS": 0.0,
         }
     else:
-        source = _find_source_run(repo=repo, current_run_id=current_run_id, branch=branch, token=token)
+        sources = _find_source_runs(repo=repo, current_run_id=current_run_id, branch=branch, token=token)
+        source = sources[0] if sources else None
         if source is None:
             result = {
                 "mode": "FULL_PROOF_RUN",
