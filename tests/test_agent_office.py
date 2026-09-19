@@ -271,7 +271,10 @@ def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_pat
     )
     assert result.status == "SUCCEEDED"
     assert calls[0][0] == ["codex", "login", "status"]
-    assert calls[1][0][:2] == ["codex", "exec"]
+    assert calls[1][0][0] == "codex"
+    assert "exec" in calls[1][0]
+    assert "shell_environment_policy.ignore_default_excludes=false" in calls[1][0]
+    assert any("shell_environment_policy.include_only" in item for item in calls[1][0])
     assert "--sandbox" in calls[1][0]
     assert calls[1][0][calls[1][0].index("--sandbox") + 1] == "read-only"
     assert result.per_agent_results[0]["engine_result"]["canonical_addy_bypass"] is False
