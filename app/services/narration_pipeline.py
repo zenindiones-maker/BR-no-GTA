@@ -23,6 +23,7 @@ from app.services.pronunciation_service import (
     canonical_lexicon_entries,
     provider_capabilities as pronunciation_provider_capabilities,
     resolve_synthesis_plan,
+    synthesis_plan_cache_payload,
     synthesis_plan_from_dict,
     synthesize_edge_plan,
 )
@@ -340,7 +341,10 @@ def segment_fingerprint(
         "provider": provider_id,
         "provider_version": provider_version,
         "pronunciation_profile_version": segment.pronunciation_profile_version,
-        "synthesis_plan": segment.synthesis_plan,
+        "synthesis_plan": (
+            synthesis_plan_cache_payload(synthesis_plan_from_dict(segment.synthesis_plan))
+            if segment.synthesis_plan else None
+        ),
         "output_format": output_format,
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
