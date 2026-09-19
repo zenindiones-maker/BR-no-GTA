@@ -68,9 +68,8 @@ jobs:
           with Path(os.environ['GITHUB_OUTPUT']).open('a',encoding='utf-8') as out:
               for key in ('base_render_run_id','brand_audio_run_id','brand_audio_artifact_id'):
                   out.write(f"{key}={req[key]}\n")
-              out.write(f"final_end_run_id={approval['source_run_id']}\n")
-              out.write(f"final_end_artifact_id={approval['source_artifact_id']}\n")
-              out.write(f"final_end_file={approval['artifact_relative_path']}\n")
+              out.write(f"final_end_asset={approval['approved_asset_path']}\n")
+              out.write(f"final_end_manifest={approval['approval_manifest_path']}\n")
           print('FINALIZE_REQUEST=PASS')
           print('JOB18_UNCHANGED=YES')
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
@@ -158,23 +157,15 @@ jobs:
           path: runtime/brand-audio
           merge-multiple: true
 
-      - name: Restore exact human-approved final end audio
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ steps.request.outputs.final_end_artifact_id }}
-          run-id: ${{ steps.request.outputs.final_end_run_id }}
-          github-token: ${{ github.token }}
-          path: runtime/final-end-audio
-          merge-multiple: true
-
       - name: Finalize VIDEO A by smallest downstream stage only
         run: |
           set -euo pipefail
           python scripts/finalize_video_a_spoken_branding.py \
             --base-artifact-root runtime/base-render \
             --brand-audio-root runtime/brand-audio \
-            --approved-final-end-audio "runtime/final-end-audio/${{ steps.request.outputs.final_end_file }}" \
-            --approved-final-end-proof runtime/final-end-audio/pronunciation-proof.json \
+            --approved-final-end-audio "${{ steps.request.outputs.final_end_asset }}" \
+            --approved-final-end-approval .run001/video-a-final-audio-approval.json \
+            --approved-final-end-manifest "${{ steps.request.outputs.final_end_manifest }}" \
             --video-config .run001/video-a-investigative-longform.json \
             --output-root runtime/final-render \
             | tee runtime/spoken-brand-finalization.log
