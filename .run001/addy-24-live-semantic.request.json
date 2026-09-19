@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19",
+  "requested_at": "2026-09-19T04:17:00Z",
   "purpose": "Prove all 24 pinned Addy Agent Skills perform one real semantic Codex turn under DeepSeek Harness authority.",
-  "base_head": "f3e924251a7ea3727fd84890bfc10c38ae4c419f",
+  "base_head": "0d4935123b664ab31e6258be978a5b2d584f8715",
   "expected_skills": 24,
   "max_total_tokens": 192000,
   "max_tokens_per_turn": 8000,
   "publication": false,
-  "job18_unchanged": true
+  "job18_unchanged": true,
+  "retry_reason": "Registry base support transport availability contract fixed; rerun required on corrected HEAD."
 }
