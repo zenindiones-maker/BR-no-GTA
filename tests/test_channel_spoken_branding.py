@@ -60,7 +60,7 @@ def test_only_theme_is_variable_in_opening_template():
 @pytest.mark.parametrize("field,value",[
     ("opening_text","Olá pessoal, hoje vamos falar de GTA!"),
     ("closing_line","Até o próximo vídeo"),
-    ("voice_short_name","pt-BR-AntonioNeural"),
+    ("voice_short_name","__forbidden_alternate_voice__"),
     ("intro_asset_id",99),
 ])
 def test_contract_fails_closed_on_brand_mutation(field,value):
@@ -94,15 +94,17 @@ def test_editorial_hook_is_distinct_and_required_after_brand_opening():
 
 def test_take_profiles_lock_human_approved_fluid2_opening_and_g_final_end():
     contract=build_spoken_branding_contract(theme=THEME)
-    assert [x["take_id"] for x in contract["take_profiles"]]==["take-1","take-2","take-3"]
+    assert [x["take_id"] for x in contract["take_profiles"]]==["take-2"]
     fluid2=next(x for x in contract["take_profiles"] if x["take_id"]=="take-2")
     assert fluid2["rate"]=="+3%"
     assert fluid2["pitch"]=="+1Hz"
     assert fluid2["role"]=="human-approved-fluid2-prosody"
     assert contract["selected_take_id"]==SELECTED_OPENING_TAKE_ID=="take-2"
     assert contract["selected_opening_take_id"]=="take-2"
-    assert contract["selected_closing_fallback_take_id"]==SELECTED_CLOSING_TAKE_ID=="take-1"
+    assert contract["selected_closing_fallback_take_id"]==SELECTED_CLOSING_TAKE_ID=="G-brand-mixed"
     assert contract["human_approved_opening_reference"]=="I-opening-fluid-2.mp3"
     assert contract["human_approved_final_end_sample_id"]=="G-brand-mixed"
+    assert contract["production_opening_take_ids"]==["take-2"]
+    assert contract["production_closing_policy"]=="immutable-human-approved-G-brand-mixed"
     assert "no automatic" in contract["selection_rule"].lower()
     assert contract["cache_policy"]["closing_fixed_reusable"] is True
