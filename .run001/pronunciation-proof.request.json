@@ -1,6 +1,6 @@
 {
   "mission": "br-no-gta-professional-multilingual-pronunciation-v1",
-  "base_head": "064c0d53b154faefb99173a8f84d39fe59cc8075",
+  "base_head": "997c9856aaa7226314a9f44c4c6bf1524892ef83",
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "acceptance_term": "Vice City",
   "target_locale": "en-US",
@@ -8,19 +8,20 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
-  "proof_attempt": 3,
-  "retry_reason": "human review approved Vice City in C but rejected GTA 6 pronunciation; test letter-by-letter GTA 6 candidate without regressing Vice City",
+  "proof_attempt": 4,
+  "retry_reason": "Run corrected letter-by-letter GTA 6 candidate on current HEAD while preserving human-approved Vice City strategy.",
   "human_feedback": {
     "vice-city": {
       "status": "APPROVED",
-      "evidence": "user confirmed Vice City pronunciation is correct in the C review audio",
+      "evidence": "user confirmed Vice City pronunciation is correct in C-closing review audio",
       "preserve_strategy": "isolated-multilingual en-US with Voice B"
     },
     "gta-6": {
-      "status": "REJECTED_PREVIOUS",
-      "evidence": "user reported GTA 6 pronunciation is wrong in the latest review audio",
+      "status": "PENDING_NEW_REVIEW",
+      "evidence": "previous latest audio pronounced GTA 6 incorrectly",
       "candidate": "G T A seis",
       "next_gate": "PENDING_HUMAN_REVIEW"
     }
-  }
+  },
+  "requested_at": "2026-09-19T12:12:00Z"
 }
