@@ -13,6 +13,18 @@ class YouTubeUploadResult:
 
 
 @dataclass(frozen=True)
+class YouTubeProcessingStateResult:
+    """Estado read-only do processamento remoto para revisão privada em qualidade final."""
+
+    success: bool
+    privacy_status: str | None = None
+    upload_status: str | None = None
+    processing_status: str | None = None
+    definition: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class YouTubeVisibilityResult:
     """Resultado explícito de uma tentativa de alteração de visibilidade."""
 
@@ -33,6 +45,10 @@ class YouTubePublisher(Protocol):
     """Contrato de execução YouTube; não concede autoridade editorial/publicação."""
 
     def upload(self, publication: Any) -> YouTubeUploadResult:
+        ...
+
+    def get_processing_state(self, youtube_video_id: str) -> YouTubeProcessingStateResult:
+        """Consulta processamento/definição sem alterar o vídeo."""
         ...
 
     def make_public(self, youtube_video_id: str) -> YouTubeVisibilityResult:
