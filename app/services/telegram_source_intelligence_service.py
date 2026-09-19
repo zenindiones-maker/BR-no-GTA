@@ -780,6 +780,17 @@ def _editorial_decision(
                     "memory_event_id": input_record.get("memory_event_id"),
                     "source_url": candidate["source_url"],
                     "verified_claim_ids": [item["claim_id"] for item in verified],
+                    "verified_claims": [
+                        {
+                            "claim_id": item["claim_id"],
+                            "statement": item["statement"],
+                            "verification_status": item["verification_status"],
+                            "source_hierarchy": item["source_hierarchy"],
+                            "source_refs": list(item.get("source_refs") or ()),
+                            "evidence_refs": list(item.get("evidence_refs") or ()),
+                        }
+                        for item in verified
+                    ],
                     "research_dossier_id": dossier_id,
                     "research_item_id": research_item_id,
                     "knowledge_id": knowledge_id,
