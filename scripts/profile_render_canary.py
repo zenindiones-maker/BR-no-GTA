@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.main import initialize_application
 from app.services.edit_plan_service import EditPlan
+from app.services.render_learning_profile_service import executable_render_profile
 from app.workers.audiovisual_worker import execute, probe_video
 from app.workers.professional_audiovisual_worker import (
     _build_edit_plan,
@@ -78,6 +79,7 @@ def main() -> int:
     parser.add_argument("--output-dir",type=Path,required=True)
     parser.add_argument("--profile-output",type=Path,required=True)
     parser.add_argument("--seconds",type=float,default=60.0)
+    parser.add_argument("--render-profile-version")
     args=parser.parse_args()
 
     initialize_application()
@@ -125,6 +127,20 @@ def main() -> int:
     effective["edit_plan"]=canary_plan
     effective["scenes"]=canary_scenes or [{"segment_id":1,"content_unit_id":1,"media_path":next(iter(source_paths.values()))}]
     effective["qa_profile"]="representative-editplan-canary"
+    candidate_profile = None
+    if args.render_profile_version:
+        candidate_profile = executable_render_profile(args.render_profile_version)
+        effective["render"] = dict(effective.get("render") or {})
+        effective["render"]["learning_profile"] = {
+            "skill_id": candidate_profile["skill_id"],
+            "version": candidate_profile["version"],
+            "content_ref": candidate_profile["content_ref"],
+            "checksum": candidate_profile["checksum"],
+            "resolved_by": "deepseek_harness",
+            "routing_id": "efficiency-candidate-benchmark",
+            "authorization_id": "efficiency-candidate-benchmark",
+            "evaluation_only": True,
+        }
     effective["a1_voice"]={
         "capability_id":"narration.generate.pt-BR",
         "locale":"pt-BR",
@@ -181,6 +197,8 @@ def main() -> int:
         "output_size_bytes":manifest.get("size_bytes"),
         "technical_qa_no_regression":"PASS",
         "human_quality_change":"NONE",
+        "render_profile_version": (candidate_profile or {}).get("version", "v1-legacy"),
+        "render_profile_content_ref": (candidate_profile or {}).get("content_ref"),
         "render_preset_candidate_promoted":False,
         "output_artifact":str(folder),
         "job18_unchanged":True,

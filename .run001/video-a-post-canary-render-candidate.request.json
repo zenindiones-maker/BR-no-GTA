@@ -1,0 +1,20 @@
+{
+  "version": "video-a-post-canary-render-candidate/v1",
+  "baseline_canary_run_id": 35408056905,
+  "baseline_canary_artifact_id": 10572723602,
+  "candidate_profile_version": "v2",
+  "candidate_software_preset": "medium",
+  "baseline_software_preset": "slow",
+  "narration_artifact_id": 10570877480,
+  "narration_producer_run_id": 35401841031,
+  "media_artifact_id": 10572578507,
+  "media_producer_run_id": 35407875087,
+  "final_voice": "Voice B",
+  "same_editplan_seconds": 60,
+  "auto_promotion": false,
+  "human_quality_gate_required": true,
+  "minimum_ssim": 0.98,
+  "artifact_size_guardrail_fraction": 0.15,
+  "job18_frozen": true,
+  "youtube_publication": false
+}

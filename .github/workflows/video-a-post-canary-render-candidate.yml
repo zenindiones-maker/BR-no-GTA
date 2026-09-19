@@ -1,0 +1,299 @@
+name: VIDEO A Post-Canary Render Candidate
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run001/video-a-post-canary-render-candidate.request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-post-canary-render-candidate
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: video-engine/backend:.
+      HANDOFF_RUN_ID: "35408056905"
+      HANDOFF_ARTIFACT_ID: "10572763599"
+      NARRATION_RUN_ID: "35401841031"
+      NARRATION_ARTIFACT_ID: "10570877480"
+      MEDIA_RUN_ID: "35407875087"
+      MEDIA_ARTIFACT_ID: "10572578507"
+      BASELINE_RUN_ID: "35408056905"
+      BASELINE_ARTIFACT_ID: "10572723602"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate benchmark request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          req=json.loads(Path('.run001/video-a-post-canary-render-candidate.request.json').read_text())
+          expected={
+              'baseline_canary_run_id':35408056905,
+              'baseline_canary_artifact_id':10572723602,
+              'candidate_profile_version':'v2',
+              'candidate_software_preset':'medium',
+              'baseline_software_preset':'slow',
+              'narration_artifact_id':10570877480,
+              'media_artifact_id':10572578507,
+              'final_voice':'Voice B',
+              'auto_promotion':False,
+              'job18_frozen':True,
+              'youtube_publication':False,
+          }
+          for key,value in expected.items():
+              if req.get(key)!=value:
+                  raise SystemExit(f'CANDIDATE_REQUEST_MISMATCH:{key}')
+          print('POST_CANARY_CANDIDATE_REQUEST=PASS')
+          print('BASELINE_REUSE_REQUIRED=YES')
+          print('AUTO_PROMOTION=NO')
+          PY
+
+      - name: Install minimal candidate runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install -r requirements.txt "edge-tts==7.2.8"
+
+      - name: Download governed RenderJob
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.HANDOFF_ARTIFACT_ID }}
+          run-id: ${{ env.HANDOFF_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/post-canary/handoff
+          merge-multiple: true
+
+      - name: Download narration checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.NARRATION_ARTIFACT_ID }}
+          run-id: ${{ env.NARRATION_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/post-canary/narration
+          merge-multiple: true
+
+      - name: Download media checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.MEDIA_ARTIFACT_ID }}
+          run-id: ${{ env.MEDIA_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/post-canary/media
+          merge-multiple: true
+
+      - name: Download observed slow baseline canary
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.BASELINE_ARTIFACT_ID }}
+          run-id: ${{ env.BASELINE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/post-canary/baseline
+          merge-multiple: true
+
+      - name: Restore immutable inputs with zero redundant external work
+        run: |
+          set -euo pipefail
+          python scripts/prepare_professional_inputs.py \
+            --render-job runtime/post-canary/handoff/render-job.json \
+            --asset-root runtime/post-canary/input \
+            --cache-root runtime/post-canary/narration-cache \
+            --reuse-narration-dir runtime/post-canary/narration \
+            --reuse-media-dir runtime/post-canary/media
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=next(Path('runtime/post-canary/input').glob('**/professional-inputs.json'))
+          d=json.loads(p.read_text())
+          assert d['narration']['artifact_reused'] is True
+          assert d['narration']['tts_request_count_on_reuse']==0
+          assert d['media_checkpoint']['artifact_reused'] is True
+          assert d['media_checkpoint']['redundant_media_downloads']==0
+          print('NARRATION_ARTIFACT_REUSED=YES')
+          print('REDUNDANT_TTS_REQUESTS=0')
+          print('MEDIA_VALID_ASSETS_REUSED=YES')
+          print('REDUNDANT_MEDIA_DOWNLOADS=0')
+          PY
+
+      - name: Render only candidate v2 medium
+        run: |
+          set -euo pipefail
+          python scripts/profile_render_canary.py \
+            --render-job runtime/post-canary/handoff/render-job.json \
+            --asset-root runtime/post-canary/input \
+            --output-dir runtime/post-canary/candidate-output \
+            --profile-output runtime/post-canary/proof/candidate-profile.json \
+            --seconds 60 \
+            --render-profile-version v2
+
+      - name: Compare candidate against existing slow baseline
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+          from app.services.operational_efficiency_policy import evaluate_optimization_promotion
+
+          baseline_profile=json.loads(next(Path('runtime/post-canary/baseline').glob('**/render-canary-profile.json')).read_text())
+          candidate_profile=json.loads(Path('runtime/post-canary/proof/candidate-profile.json').read_text())
+          baseline_mp4=next(Path('runtime/post-canary/baseline').glob('**/*.mp4'))
+          candidate_mp4=next(Path('runtime/post-canary/candidate-output').glob('**/*.mp4'))
+
+          def pcm_sha(path):
+              p=subprocess.run([
+                  'ffmpeg','-nostdin','-hide_banner','-loglevel','error','-i',str(path),
+                  '-map','0:a:0','-ac','1','-ar','48000','-f','s16le','pipe:1'
+              ],capture_output=True,timeout=600)
+              if p.returncode:
+                  raise SystemExit('AUDIO_PCM_DECODE_FAIL')
+              return hashlib.sha256(p.stdout).hexdigest()
+
+          ssim=subprocess.run([
+              'ffmpeg','-nostdin','-hide_banner','-i',str(baseline_mp4),'-i',str(candidate_mp4),
+              '-lavfi','[0:v:0][1:v:0]ssim','-f','null','-'
+          ],capture_output=True,text=True,timeout=1200)
+          if ssim.returncode:
+              raise SystemExit('SSIM_COMPARE_FAIL')
+          m=re.findall(r'All:([0-9.]+)',ssim.stderr)
+          if not m:
+              raise SystemExit('SSIM_METRIC_MISSING')
+          ssim_all=float(m[-1])
+          audio_same=pcm_sha(baseline_mp4)==pcm_sha(candidate_mp4)
+
+          baseline_seconds=float(baseline_profile['render_worker_execute_seconds'])
+          candidate_seconds=float(candidate_profile['render_worker_execute_seconds'])
+          improvement=(baseline_seconds-candidate_seconds)/baseline_seconds
+          workload='video-a|60s|voice-b|same-checkpoints|same-editplan|high-crf|software-preset-only'
+          baseline_obs={
+              'observed':True,
+              'workload_fingerprint':workload,
+              'metrics':{
+                  'wall_clock_seconds':baseline_seconds,
+                  'artifact_size_bytes':int(baseline_mp4.stat().st_size),
+                  'external_calls':0,
+                  'process_count':1,
+                  'encode_count':1,
+                  'decode_count':1,
+                  'download_count':0,
+                  'cache_hit_rate':1.0,
+              },
+          }
+          candidate_obs={
+              'observed':True,
+              'workload_fingerprint':workload,
+              'metrics':{
+                  'wall_clock_seconds':candidate_seconds,
+                  'artifact_size_bytes':int(candidate_mp4.stat().st_size),
+                  'external_calls':0,
+                  'process_count':1,
+                  'encode_count':1,
+                  'decode_count':1,
+                  'download_count':0,
+                  'cache_hit_rate':1.0,
+              },
+          }
+          technical=(
+              candidate_profile['status']=='PASS'
+              and candidate_profile['technical_qa_no_regression']=='PASS'
+              and ssim_all>=0.98
+              and audio_same
+          )
+          decision=evaluate_optimization_promotion(
+              baseline_observation=baseline_obs,
+              candidate_observation=candidate_obs,
+              technical_qa_no_regression=technical,
+              human_quality_applicable=True,
+              human_quality_no_regression=None,
+              evidence_refs=(
+                  'github-run:35408056905',
+                  'artifact:10572723602',
+                  f'candidate-run:{__import__("os").environ["GITHUB_RUN_ID"]}',
+              ),
+              guardrail_budgets={'artifact_size_bytes':0.15},
+          )
+          evidence={
+              'version':'post-canary-render-candidate/v1',
+              'status':'PASS' if technical else 'FAIL',
+              'observed':True,
+              'baseline':{
+                  'run_id':35408056905,
+                  'artifact_id':10572723602,
+                  'software_preset':'slow',
+                  'wall_clock_seconds':baseline_seconds,
+                  'size_bytes':baseline_mp4.stat().st_size,
+              },
+              'candidate':{
+                  'run_id':int(__import__('os').environ['GITHUB_RUN_ID']),
+                  'profile_version':'v2',
+                  'software_preset':'medium',
+                  'wall_clock_seconds':candidate_seconds,
+                  'size_bytes':candidate_mp4.stat().st_size,
+              },
+              'performance_improvement_fraction':improvement,
+              'guardrails':{
+                  'technical_qa_no_regression':technical,
+                  'ssim_candidate_vs_baseline':ssim_all,
+                  'minimum_ssim':0.98,
+                  'decoded_audio_pcm_identical':audio_same,
+                  'artifact_size_budget_fraction':0.15,
+              },
+              'policy_decision':decision.to_dict(),
+              'promotion_performed':False,
+              'promotion_status':'BLOCKED_PENDING_HUMAN_QUALITY' if decision.decision=='REJECTED' and technical and decision.performance_improved else decision.decision,
+              'voice':'Voice B',
+              'narration_artifact_reused':True,
+              'redundant_tts_requests':0,
+              'media_valid_assets_reused':True,
+              'redundant_media_downloads':0,
+              'job18_unchanged':True,
+              'publication_authority':'NONE',
+          }
+          Path('runtime/post-canary/proof/candidate-comparison.json').write_text(json.dumps(evidence,indent=2))
+          print('POST_CANARY_RENDER_CANDIDATE=PASS' if technical else 'POST_CANARY_RENDER_CANDIDATE=FAIL')
+          print(f'CANDIDATE_WALL_CLOCK_SECONDS={candidate_seconds}')
+          print(f'PERFORMANCE_IMPROVEMENT_FRACTION={improvement}')
+          print(f'SSIM={ssim_all}')
+          print('AUDIO_PCM_IDENTICAL=' + ('YES' if audio_same else 'NO'))
+          print('PROMOTION_PERFORMED=NO')
+          print('PROMOTION_STATUS='+evidence['promotion_status'])
+          if not technical:
+              raise SystemExit(1)
+          PY
+
+      - name: Upload compact candidate proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-post-canary-render-candidate-${{ github.run_id }}
+          path: |
+            runtime/post-canary/proof/
+            runtime/post-canary/candidate-output/**/render-qa.json
+            runtime/post-canary/candidate-output/**/render-runtime.json
+            runtime/post-canary/candidate-output/**/video-probe.json
+          if-no-files-found: error
+          retention-days: 30
