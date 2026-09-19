@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T14:20:30Z",
-  "base_head": "f2289ee21b967061879093ce0db37dd528a3faf0",
-  "purpose": "Final E2E product-quality proof with native OpenCode summary agent and canonical YouTube package persistence.",
+  "requested_at": "2026-09-19T14:23:00Z",
+  "base_head": "d7f6241d37f4bbe3cb93b25213375d798e621571",
+  "purpose": "Final E2E product-quality proof on latest preserved HEAD with selectable deny-all OpenCode build agent and canonical YouTube package lineage.",
   "require_real_source": true,
   "require_semantic_model_execution": true,
   "require_observed_learning": true,
