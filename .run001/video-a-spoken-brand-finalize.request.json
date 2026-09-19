@@ -1,9 +1,9 @@
 {
-  "version": "video-a-spoken-brand-finalize/v1",
+  "version": "video-a-spoken-brand-finalize/v2",
   "render_job_id": 920101,
   "base_render_run_id": 35408593683,
-  "brand_audio_run_id": 35410914365,
-  "brand_audio_artifact_id": 10574067653,
+  "brand_audio_run_id": 35445063380,
+  "brand_audio_artifact_id": 10584977710,
   "final_voice": "Voice B",
   "intro_asset_id": 1,
   "opening_text": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de fatos, vazamentos, tecnologia e rumores de GTA 6!",
@@ -14,5 +14,17 @@
   "core_render_rerun_allowed": false,
   "visual_ssim_guardrail_min": 0.985,
   "youtube_publication": false,
-  "job18_frozen": true
+  "job18_frozen": true,
+  "base_head": "ca13963f3877b5c5e9fa8740ef640274ebc4a084",
+  "selected_opening_take_id": "take-2",
+  "opening_human_reference": "I-opening-fluid-2.mp3",
+  "opening_rate": "+3%",
+  "opening_pitch": "+1Hz",
+  "final_end_signature_sample_id": "G-brand-mixed",
+  "final_end_asset_path": "assets/branding/audio/g-brand-mixed-approved-20260919.mp3",
+  "final_end_asset_sha256": "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca",
+  "final_end_human_approved": true,
+  "runtime_dependency_on_historical_final_end_artifact": false,
+  "retry_reason": "Compose VIDEO A from the existing QA-passed base render using the new Fluid 2 opening checkpoint and immutable human-approved G-brand-mixed final end signature; do not rerender core content or publish.",
+  "requested_at": "2026-09-19T13:15:00Z"
 }
