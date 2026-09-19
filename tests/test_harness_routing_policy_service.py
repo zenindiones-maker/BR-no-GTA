@@ -240,7 +240,7 @@ def test_higgsfield_blocked_is_not_selected_as_ai_provider():
     assert decision.selected_provider != "higgsfield"
 
 
-def test_addy_codex_remains_bounded_to_selected_skill_executor():
+def test_addy_remains_bounded_to_selected_harness_semantic_executor():
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="code review quality",
@@ -250,7 +250,10 @@ def test_addy_codex_remains_bounded_to_selected_skill_executor():
         )
     )
     assert decision.selected_capability_id == "addy:code-review-and-quality"
-    assert "codex_addy_capability_executor" in decision.selected_executor_binding
+    assert (
+        decision.selected_executor_binding
+        == "app.services.addy_harness_service.execute_authorized_addy_skill"
+    )
     assert decision.selected_provider is None
 
 
