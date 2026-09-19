@@ -22,6 +22,9 @@ on:
       - 'app/services/harness_ai_provider_service.py'
       - 'app/services/performance_telemetry_service.py'
       - 'scripts/youtube_product_quality_e2e.py'
+      - 'scripts/github_run_watcher.py'
+      - 'scripts/semantic_smoke_gate.py'
+      - 'scripts/fast_prelive_gate.py'
       - 'scripts/hydrate_promoted_opencode_profile.py'
       - 'scripts/summarize_performance_trace.py'
 
@@ -31,7 +34,7 @@ permissions:
 
 concurrency:
   group: real-multi-agent-synergy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   prove:
@@ -166,63 +169,28 @@ jobs:
           print("SEMANTIC_PROVIDER_READY=PASS")
           PY
 
-      - name: Fast deterministic semantic-contract gate
+      - name: FAST_STATIC/CONTRACT gate
         run: |
           set -euo pipefail
-          python -m compileall -q \
-            app/services/script_generator_service.py \
-            app/services/youtube_role_context_service.py \
-            scripts/youtube_product_quality_e2e.py
-          python - <<'PY'
-          import inspect
-          from app.services.ai_provider import AIProviderError
-          from app.services.script_generator_service import _parse_ai_json_response
-          from app.services.youtube_role_context_service import (
-              build_production_packet,
-              build_script_review_packet,
-              build_seo_packet,
-              build_thumbnail_packet,
-          )
+          python scripts/fast_prelive_gate.py \
+            --output runtime/real-multi-agent-synergy/fast-prelive-gate.json
 
-          raw='{"hook":"h","introduction":"i","development":[{"heading":"a","body":"b"},{"heading":"c","body":"d"},{"heading":"e","body":"f"}],"conclusion":"c","cta":"x"}'
-          assert _parse_ai_json_response("\ufeff```json\n"+raw+"\n```")["hook"] == "h"
-          try:
-              _parse_ai_json_response("prose\n"+raw)
-          except AIProviderError:
-              pass
-          else:
-              raise AssertionError("parser accepted prose wrapper")
+      - name: LOCAL_DETERMINISTIC_INTEGRATION gate
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_script_generator_service.py \
+            tests/test_youtube_role_context_service.py \
+            tests/test_harness_ecosystem_inventory.py \
+            tests/test_youtube_department_learning_boundary.py
+          echo "LOCAL_DETERMINISTIC_INTEGRATION=PASS"
 
-          assert "full_context_chars" in inspect.signature(build_script_review_packet).parameters
-          plan={
-              "estimated_duration_seconds":60.0,
-              "hook":"h",
-              "scenes":[
-                  {"order":1,"narrative_block":"A","duration_seconds":30.0,"visual_type":"gameplay","visual_description":"Specific visual A","narration":"n"},
-                  {"order":2,"narrative_block":"B","duration_seconds":30.0,"visual_type":"gameplay","visual_description":"Specific visual B","narration":"n"},
-              ],
-          }
-          common=dict(
-              goal_id="gate-goal",
-              content_item_id=1,
-              script_id=1,
-              production_plan_id=1,
-              script_text="HOOK\nh\n\nA\nbody",
-              production_plan=plan,
-              claims=[],
-              strategy_output={"audience":"BR","promise":"facts"},
-              full_context_chars=30000,
-          )
-          assert build_script_review_packet(**common)["context"]["role"] == "script-review"
-          assert build_production_packet(**common)["context"]["role"] == "production-management"
-          assert build_seo_packet(title="GTA VI", **common)["context"]["role"] == "seo"
-          assert build_thumbnail_packet(
-              title="GTA VI",
-              seo_output={"search_intent":"gta vi"},
-              **common,
-          )["context"]["role"] == "thumbnail"
-          print("FAST_SEMANTIC_CONTRACT_GATE=PASS")
-          PY
+      - name: SEMANTIC_SMOKE gate
+        run: |
+          set -euo pipefail
+          python scripts/semantic_smoke_gate.py \
+            --output runtime/real-multi-agent-synergy/semantic-smoke.json
+          echo "PRE_LIVE_GATES=PASS"
 
       - name: Collect current Rockstar source evidence
         run: |
