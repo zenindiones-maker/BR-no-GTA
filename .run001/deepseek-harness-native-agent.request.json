@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T12:07:00Z",
-  "base_head": "26bd9ee7d6daba3fabe9a1053145e2328c13f119",
-  "purpose": "Audit and complete native DeepSeek Harness gta6-master semantic execution on cloud-only governed runtime; preserve sole Harness authority and do not fabricate provider success.",
+  "requested_at": "2026-09-19T12:12:10Z",
+  "base_head": "56cdbdb164cdff0f71657b829eb0b3af268fad33",
+  "purpose": "Re-run native DeepSeek Harness proof after materializing pinned Addy skills required by current MCP boundary tests.",
   "job18_unchanged": true,
   "publication": false
 }
