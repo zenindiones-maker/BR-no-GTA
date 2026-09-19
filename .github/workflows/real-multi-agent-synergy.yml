@@ -18,7 +18,7 @@ on:
       - 'app/services/opencode_executor_profile_service.py'
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
