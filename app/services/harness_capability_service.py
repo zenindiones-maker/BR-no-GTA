@@ -135,7 +135,7 @@ CAPABILITY_CATALOG = tuple(
     if (
         record.capability_id.startswith("addy:")
         or record.provider_id == "higgsfield"
-        or record.capability_id == "agent-office.execute"
+        or record.capability_id.startswith("agent-office.")
         or record.capability_id == "gta6.fact-check"
         or record.capability_id == "human.presentation.action-first"
         or record.capability_id == "narration.generate.pt-BR"
