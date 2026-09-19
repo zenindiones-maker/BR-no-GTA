@@ -1,0 +1,167 @@
+name: Delegated Autonomy Operational Canary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/delegated-autonomy-canary.request.json"
+      - ".github/workflows/delegated-autonomy-canary.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: delegated-autonomy-operational-canary
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: .
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/delegated-autonomy/canary.db
+  BR_OPENCODE_NATIVE_EXECUTION_MODE: same_runner
+  BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+  BR_OPENCODE_NATIVE_REF: ${{ github.ref_name }}
+  BR_OPENCODE_NATIVE_SOURCE_SHA: ${{ github.sha }}
+  BR_OPENCODE_NATIVE_ARTIFACT_ROOT: ${{ github.workspace }}/artifacts/delegated-autonomy/opencode
+  AGENT_OFFICE_ARTIFACT_ROOT: ${{ github.workspace }}/artifacts/delegated-autonomy/task-artifacts
+  ZERO_COST_OPERATION: "TRUE"
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact canary revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install bounded engineering runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/delegated-autonomy
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          npm install --global @opencode/cli@2.0.8
+          bash scripts/agent-tooling/bootstrap.sh codex
+          test "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8"
+          codex --version
+          echo "BOUNDED_ENGINEERING_RUNTIME=PASS"
+
+      - name: Compile delegated autonomy boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile             app/services/agent_office/delegation.py             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office/munder_adapter.py             app/services/agent_office/codex_bounded_worker.py             app/services/agent_office/addy_task_owner_worker.py             app/services/agent_office/integration_gate.py             app/services/agent_office/reducer.py             app/services/agent_office/mission_service.py             app/database/agent_execution_lease_repository.py             app/database/agent_office_mission_repository.py             scripts/delegated_autonomy_canary.py
+          echo "DELEGATED_AUTONOMY_COMPILE=PASS"
+
+      - name: Run deterministic lease retry conflict and promotion gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_delegated_agent_autonomy.py             tests/test_agent_office.py             --junitxml=artifacts/delegated-autonomy/deterministic.xml
+          echo "DETERMINISTIC_DELEGATION_GATES=PASS"
+
+      - name: Rehydrate previously promoted OpenCode profile
+        run: |
+          set -euo pipefail
+          python scripts/hydrate_promoted_opencode_profile.py             --output artifacts/delegated-autonomy/opencode-profile.json
+          echo "OPENCODE_PROFILE_REUSE=PASS"
+
+      - name: Observe Codex authentication prerequisite without leaking account data
+        run: |
+          set +e
+          codex login status >/dev/null 2>&1
+          rc=$?
+          set -e
+          python - "$rc" <<'PY'
+          import json,sys
+          from pathlib import Path
+          rc=int(sys.argv[1])
+          Path("artifacts/delegated-autonomy/codex-auth-status.json").write_text(
+              json.dumps({
+                  "available": rc == 0,
+                  "exit_code": rc,
+                  "account_identity_recorded": False,
+                  "secret_recorded": False,
+              }, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print("CODEX_AUTH_PREREQUISITE=" + ("AVAILABLE" if rc == 0 else "BLOCKED"))
+          PY
+
+      - name: Execute one Harness delegation with real specialist task owners
+        id: live
+        run: |
+          set -o pipefail
+          before="$(git status --porcelain --untracked-files=no)"
+          set +e
+          python scripts/delegated_autonomy_canary.py             --repository-root "$GITHUB_WORKSPACE"             --branch "$GITHUB_REF_NAME"             --base-sha "$GITHUB_SHA"             --junit artifacts/delegated-autonomy/deterministic.xml             --output artifacts/delegated-autonomy/canary.json             2>&1 | tee artifacts/delegated-autonomy/canary.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          after="$(git status --porcelain --untracked-files=no)"
+          if [ "$before" != "$after" ]; then
+            echo "CANONICAL_WORKTREE_MUTATION=FAIL" >&2
+            git status --short
+            exit 1
+          fi
+          echo "CANONICAL_WORKTREE_MUTATION=NONE"
+          echo "canary_exit_code=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Validate structured canary result
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s artifacts/delegated-autonomy/canary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/delegated-autonomy/canary.json")
+          d=json.loads(p.read_text())
+          print("DELEGATED_AUTONOMY_STATUS="+d["status"])
+          print("HARNESS_DECISION_COUNT="+str(d["metrics"]["HARNESS_DECISION_COUNT"]))
+          print("HARNESS_ACTIVE_MS="+str(d["metrics"]["HARNESS_ACTIVE_MS"]))
+          print("HARNESS_WAITING_MS="+str(d["metrics"]["HARNESS_WAITING_MS"]))
+          print("CONTEXT_BYTES_THROUGH_HARNESS="+str(d["metrics"]["CONTEXT_BYTES_THROUGH_HARNESS"]))
+          print("WALL_CLOCK_MS="+str(d["metrics"]["WALL_CLOCK_MS"]))
+          print("CRITICAL_PATH_MS="+str(d["metrics"]["CRITICAL_PATH_MS"]))
+          print("PARALLELISM_SAVED_MS="+str(d["metrics"]["PARALLELISM_SAVED_MS"]))
+          for key,value in d["checks"].items():
+              print(f"{key}={'PASS' if value else 'FAIL'}")
+          PY
+
+      - name: Upload complete autonomy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegated-autonomy-canary-${{ github.run_id }}
+          path: |
+            artifacts/delegated-autonomy/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce operational canary result
+        if: always()
+        env:
+          CANARY_RC: ${{ steps.live.outputs.canary_exit_code }}
+        run: |
+          set -euo pipefail
+          test "${CANARY_RC:-99}" = "0"
+          python - <<'PY'
+          import json
+          d=json.load(open("artifacts/delegated-autonomy/canary.json"))
+          assert d["status"]=="PASS", d["checks"]
+          print("DELEGATED_AUTONOMY_OPERATIONAL_CANARY=PASS")
+          PY
