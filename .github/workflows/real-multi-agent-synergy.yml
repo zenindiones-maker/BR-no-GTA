@@ -13,6 +13,8 @@ on:
       - 'scripts/gta6_fresh_research_worker.py'
       - 'app/services/gta6_brain_harness_service.py'
       - 'app/services/youtube_department_service.py'
+      - 'app/services/youtube_role_context_service.py'
+      - 'app/services/script_generator_service.py'
       - 'app/services/harness_collaboration_service.py'
       - 'app/services/harness_learning_service.py'
       - 'app/services/opencode_executor_profile_service.py'
