@@ -11,6 +11,11 @@ from app.services.global_capability_registry_base import (
     CapabilityRecord,
     GLOBAL_CAPABILITY_REGISTRY as _REGISTRY,
 )
+from app.services.monetization_observability_service import (
+    MONETIZATION_CAPABILITY_ID,
+    MONETIZATION_EXECUTOR_BINDING,
+)
+from app.services.youtube_department_service import youtube_department_records
 
 AGENT_OFFICE_RECORD = CapabilityRecord(
     capability_id="agent-office.execute",
@@ -374,6 +379,60 @@ TELEGRAM_USER_INPUT_RECORD = CapabilityRecord(
     side_effects=("canonical Telegram ingress persistence", "Memory Event append", "bounded semantic memory learning"),
 )
 
+MONETIZATION_RECORD = CapabilityRecord(
+    capability_id=MONETIZATION_CAPABILITY_ID,
+    capability_type="EXECUTOR",
+    domain="youtube-monetization",
+    implementation="Harness-governed official YouTube Analytics monetary observability adapter",
+    input_contract="governed date window + owner OAuth credentials or normalized API response",
+    output_contract="ChannelMonetizationSnapshot with availability/limitations/provenance",
+    requirements=("YouTube Analytics API v2", "yt-analytics-monetary.readonly for monetary metrics"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("youtube", "analytics", "monetization", "revenue", "observability"),
+    security_boundary="DeepSeek Harness selects and authorizes read-only observation; no credentials in evidence; no publication authority",
+    cost_class="FREE_NO_BILLING",
+    quota_class="GOOGLE_API_QUOTA",
+    latency_class="REMOTE_API",
+    quality_class="GRACEFUL_MISSING_METRICS",
+    evidence_contract="app.services.monetization_observability_service.ChannelMonetizationSnapshot",
+    fallback_eligibility=False,
+    executor_binding=MONETIZATION_EXECUTOR_BINDING,
+    version="1",
+    provider_id="google-youtube-analytics",
+    agent_id="tubegent-monetization",
+    side_effects=(),
+)
+
+SYSTEM_IMPROVEMENT_RECORD = CapabilityRecord(
+    capability_id="system.improvement.propose",
+    capability_type="AGENT",
+    domain="system-improvement",
+    implementation="Harness-subordinated evidence-driven system improvement proposal generator",
+    input_contract="health, failure, latency, cost and test evidence",
+    output_contract="bounded proposal requiring review/tests/commit/CI gate",
+    requirements=("DeepSeek Harness routing", "evidence package"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("system", "improvement", "proposal", "tests", "review"),
+    security_boundary="Proposal only; never self-modifies production. Structural change requires evidence, tests, review/gate, commit and CI.",
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="PROPOSAL_ONLY_FAIL_CLOSED",
+    evidence_contract="app.services.system_synergy_service.SystemImprovementProposal",
+    fallback_eligibility=False,
+    executor_binding="app.services.system_synergy_service.execute_system_improvement_proposal",
+    version="1",
+    provider_id="internal",
+    agent_id="system-improvement-agent",
+    side_effects=(),
+)
+
+_YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
+
 for _record in (
     AGENT_OFFICE_RECORD,
     PHONE_CONTROL_RECORD,
@@ -389,6 +448,9 @@ for _record in (
     HUMAN_PRESENTATION_ACTION_FIRST_RECORD,
     TELEGRAM_BRAND_ASSET_RECORD,
     TELEGRAM_USER_INPUT_RECORD,
+    MONETIZATION_RECORD,
+    SYSTEM_IMPROVEMENT_RECORD,
+    *_YOUTUBE_DEPARTMENT_RECORDS,
 ):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
