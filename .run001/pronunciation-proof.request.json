@@ -1,6 +1,6 @@
 {
   "mission": "br-no-gta-professional-multilingual-pronunciation-v1",
-  "base_head": "dcec5ff3e9b256b2be266e6735bf4dd549b53c13",
+  "base_head": "dbe86fff7bb48e22df9b7cdb8d61230261ea9062",
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "acceptance_term": "Vice City",
   "target_locale": "en-US",
@@ -8,8 +8,8 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
-  "proof_attempt": 5,
-  "retry_reason": "Human review: Vice City remains approved; GTA 6 must be spoken in natural Brazilian Portuguese as gê tê á seis. Canonical text must remain GTA 6.",
+  "proof_attempt": 6,
+  "retry_reason": "Human review selected I-opening-fluid-2.mp3 as the best current Voice B fluency reference. Preserve its prosody/timing while applying the exact canonical opening text; do not change editorial wording.",
   "human_feedback": {
     "vice-city": {
       "status": "APPROVED",
@@ -22,7 +22,18 @@
       "candidate": "gê tê á seis",
       "canonical_text": "GTA 6",
       "next_gate": "PENDING_HUMAN_REVIEW"
+    },
+    "opening-fluidity": {
+      "status": "APPROVED_REFERENCE",
+      "selected_sample": "I-opening-fluid-2.mp3",
+      "selected_take_id": "fluid-2",
+      "rate": "+3%",
+      "pitch": "+1Hz",
+      "evidence": "user explicitly selected Fluid 2 as the best current opening fluency candidate",
+      "promotion_scope": "prosody_reference_only",
+      "canonical_text_mutation_allowed": false,
+      "next_gate": "APPLY_TO_EXACT_CANONICAL_OPENING_AND_DELIVER_FOR_REVIEW"
     }
   },
-  "requested_at": "2026-09-19T12:18:00Z"
+  "requested_at": "2026-09-19T12:40:00Z"
 }
