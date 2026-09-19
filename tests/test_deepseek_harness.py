@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from app.services.harness_capability_service import CapabilityEvidence
+from app.services import harness_mcp_capability_execution
 from app.services.harness_authorization_service import (
     authorization_to_context,
     validate_harness_authorization,
@@ -256,17 +258,43 @@ def test_capability_execute_generates_ids_inside_harness_boundary():
     assert canonical["result"]["candidate_count"] == 1
 
 
-def test_capability_execute_rejects_substituted_addy_executor(monkeypatch):
-    def fake_executor(capability, payload):
-        return {"ok": True}
+def test_capability_execute_uses_canonical_addy_boundary_not_generic_executor(monkeypatch):
+    calls = {"legacy": 0, "canonical": 0}
 
-    monkeypatch.setattr(server, "execute_codex_addy_capability", fake_executor)
-    with pytest.raises(PermissionError, match="Registry binding"):
-        server.br_capability_execute(
-            capability_id="addy:code-review-and-quality",
-            authorized_action="DEVELOPMENT",
-            payload_json='{"task":"review"}',
+    def substituted_legacy_executor(capability, payload):
+        calls["legacy"] += 1
+        raise AssertionError("generic Addy executor must never receive canonical Addy execution")
+
+    def canonical_addy_executor(*, authorization, routing_decision, payload):
+        calls["canonical"] += 1
+        return CapabilityEvidence(
+            capability_id=routing_decision.selected_capability_id,
+            provider="opencode",
+            status="EXECUTED",
+            active=True,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={"boundary_test": "canonical_addy"},
+            boundary="test canonical Addy boundary",
         )
+
+    monkeypatch.setattr(server, "execute_codex_addy_capability", substituted_legacy_executor)
+    monkeypatch.setattr(
+        harness_mcp_capability_execution,
+        "execute_authorized_addy_skill",
+        canonical_addy_executor,
+    )
+    payload=json.loads(server.br_capability_execute(
+        capability_id="addy:code-review-and-quality",
+        authorized_action="DEVELOPMENT",
+        payload_json='{"task":"review"}',
+    ))
+    assert calls == {"legacy": 0, "canonical": 1}
+    assert payload["result"]["status"] == "EXECUTED"
+    assert payload["result"]["result"]["boundary_test"] == "canonical_addy"
+    assert payload["evidence"]["success"] is True
 
 
 def test_higgsfield_remains_blocked_under_persisted_harness_authorization():
