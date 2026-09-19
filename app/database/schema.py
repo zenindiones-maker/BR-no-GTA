@@ -635,6 +635,41 @@ def _migrate_youtube_publication_cloud_execution(connection) -> None:
         )
 
 
+
+def _migrate_youtube_content_packages(connection) -> None:
+    """Create the canonical pre-publication YouTube package table."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS youtube_content_packages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            goal_id TEXT NOT NULL UNIQUE,
+            content_item_id INTEGER NOT NULL UNIQUE,
+            script_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            search_intent TEXT NOT NULL,
+            thumbnail_concept TEXT NOT NULL,
+            thumbnail_copy TEXT,
+            strategy_analysis TEXT NOT NULL DEFAULT '',
+            script_review TEXT NOT NULL DEFAULT '',
+            seo_analysis TEXT NOT NULL DEFAULT '',
+            production_analysis TEXT NOT NULL DEFAULT '',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            provenance TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'planned',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(content_item_id) REFERENCES content_items(id),
+            FOREIGN KEY(script_id) REFERENCES scripts(id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_youtube_content_packages_status "
+        "ON youtube_content_packages(status, updated_at)"
+    )
+
 def _migrate_media_knowledge(connection) -> None:
     """Cria a persistência dos resultados de análise multimídia."""
 
@@ -1413,6 +1448,7 @@ def initialize_schema() -> None:
         _migrate_memory_events(connection)
         _migrate_youtube_publication_file_path(connection)
         _migrate_youtube_publication_cloud_execution(connection)
+        _migrate_youtube_content_packages(connection)
         _migrate_content_segment_asset_identity(connection)
         _migrate_gta6_knowledge(connection)
         _migrate_media_knowledge(connection)
