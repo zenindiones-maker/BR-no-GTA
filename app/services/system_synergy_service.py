@@ -4,67 +4,17 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.global_capability_registry_base import AVAILABLE, FUNCTIONAL, CapabilityRecord, GlobalCapabilityRegistry
+from app.services.global_capability_registry import (
+    GLOBAL_CAPABILITY_REGISTRY,
+    MONETIZATION_RECORD,
+    SYSTEM_IMPROVEMENT_RECORD,
+)
+from app.services.global_capability_registry_base import GlobalCapabilityRegistry
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
-from app.services.monetization_observability_service import MONETIZATION_CAPABILITY_ID, MONETIZATION_EXECUTOR_BINDING
-from app.services.youtube_department_service import youtube_department_records
+from app.services.monetization_observability_service import MONETIZATION_CAPABILITY_ID
 
 
 HARNESS_AUTHORITY = "DEEPSEEK_HARNESS"
-
-MONETIZATION_RECORD = CapabilityRecord(
-    capability_id=MONETIZATION_CAPABILITY_ID,
-    capability_type="EXECUTOR",
-    domain="youtube-monetization",
-    implementation="Harness-governed official YouTube Analytics monetary observability adapter",
-    input_contract="governed date window + owner OAuth credentials or normalized API response",
-    output_contract="ChannelMonetizationSnapshot with availability/limitations/provenance",
-    requirements=("YouTube Analytics API v2", "yt-analytics-monetary.readonly for monetary metrics"),
-    maturity=FUNCTIONAL,
-    availability=AVAILABLE,
-    allowed_actions=("EXECUTION",),
-    policy_tags=("youtube", "analytics", "monetization", "revenue", "observability"),
-    security_boundary="DeepSeek Harness selects and authorizes read-only observation; no credentials in evidence; no publication authority",
-    cost_class="FREE_NO_BILLING",
-    quota_class="GOOGLE_API_QUOTA",
-    latency_class="REMOTE_API",
-    quality_class="GRACEFUL_MISSING_METRICS",
-    evidence_contract="app.services.monetization_observability_service.ChannelMonetizationSnapshot",
-    fallback_eligibility=False,
-    executor_binding=MONETIZATION_EXECUTOR_BINDING,
-    version="1",
-    provider_id="google-youtube-analytics",
-    agent_id="tubegent-monetization",
-    side_effects=(),
-)
-
-SYSTEM_IMPROVEMENT_RECORD = CapabilityRecord(
-    capability_id="system.improvement.propose",
-    capability_type="AGENT",
-    domain="system-improvement",
-    implementation="Harness-subordinated evidence-driven system improvement proposal generator",
-    input_contract="health, failure, latency, cost and test evidence",
-    output_contract="bounded proposal requiring review/tests/commit/CI gate",
-    requirements=("DeepSeek Harness routing", "evidence package"),
-    maturity=FUNCTIONAL,
-    availability=AVAILABLE,
-    allowed_actions=("DEVELOPMENT",),
-    policy_tags=("system", "improvement", "proposal", "tests", "review"),
-    security_boundary="Proposal only; never self-modifies production. Structural change requires evidence, tests, review/gate, commit and CI.",
-    cost_class="FREE_NO_BILLING",
-    quota_class="LOCAL_DETERMINISTIC",
-    latency_class="LOCAL",
-    quality_class="PROPOSAL_ONLY_FAIL_CLOSED",
-    evidence_contract="app.services.system_synergy_service.SystemImprovementProposal",
-    fallback_eligibility=False,
-    executor_binding="app.services.system_synergy_service.execute_system_improvement_proposal",
-    version="1",
-    provider_id="internal",
-    agent_id="system-improvement-agent",
-    side_effects=(),
-)
-
 
 @dataclass(frozen=True)
 class AgentCapabilityHealth:
@@ -129,10 +79,8 @@ class HarnessTraceEvent:
 
 
 def ecosystem_registry() -> GlobalCapabilityRegistry:
-    """Read-only routing view; authority remains in Harness routing/authorization."""
-    additions = (*youtube_department_records(), MONETIZATION_RECORD, SYSTEM_IMPROVEMENT_RECORD)
-    existing_ids = {record.capability_id for record in GLOBAL_CAPABILITY_REGISTRY.all()}
-    return GlobalCapabilityRegistry((*GLOBAL_CAPABILITY_REGISTRY.all(), *(item for item in additions if item.capability_id not in existing_ids)))
+    """Single global routing view; authority remains in Harness routing/authorization."""
+    return GLOBAL_CAPABILITY_REGISTRY
 
 
 def select_specialist(*, intent: str, action: str, required_capability_id: str | None = None, domain: str | None = None):
