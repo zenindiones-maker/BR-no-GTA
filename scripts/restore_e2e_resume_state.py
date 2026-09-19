@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import io
 import json
 import os
 from pathlib import Path
 import urllib.parse
 import urllib.request
-import zipfile
+import shutil
+import subprocess
 
 from app.database.schema import initialize_schema
 from app.services.e2e_stage_checkpoint_service import build_resume_plan
@@ -30,20 +30,6 @@ def _get_json(url: str, token: str) -> dict:
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
-
-
-def _download(url: str, token: str) -> bytes:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "BR-no-GTA-e2e-resume/1.0",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=90) as response:
-        return response.read()
 
 
 def _find_source_run(*, repo: str, current_run_id: int, branch: str, token: str) -> dict | None:
@@ -77,8 +63,34 @@ def _find_source_run(*, repo: str, current_run_id: int, branch: str, token: str)
     return None
 
 
-def _extract_state(blob: bytes, destination: Path) -> list[str]:
+def _download_artifact_with_gh(
+    *,
+    repo: str,
+    run_id: int,
+    artifact_name: str,
+    destination: Path,
+) -> list[str]:
+    if destination.exists():
+        shutil.rmtree(destination)
     destination.mkdir(parents=True, exist_ok=True)
+    process = subprocess.run(
+        [
+            "gh", "run", "download", str(run_id),
+            "--repo", repo,
+            "--name", artifact_name,
+            "--dir", str(destination),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        safe = "\n".join(
+            line
+            for line in (process.stderr or "").splitlines()
+            if "token" not in line.casefold() and "authorization" not in line.casefold()
+        )[-2000:]
+        raise RuntimeError(f"artifact download failed via gh: {safe or 'unknown error'}")
     allowed = {
         "mission.db",
         "fresh-research.json",
@@ -87,16 +99,13 @@ def _extract_state(blob: bytes, destination: Path) -> list[str]:
         "performance-report.json",
         "performance-trace.jsonl",
     }
-    extracted = []
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-        for info in archive.infolist():
-            name = Path(info.filename).name
-            if name not in allowed:
-                continue
+    found = sorted({path.name for path in destination.rglob("*") if path.is_file() and path.name in allowed})
+    for name in found:
+        source = next(destination.rglob(name))
+        if source.parent != destination:
             target = destination / name
-            target.write_bytes(archive.read(info))
-            extracted.append(name)
-    return sorted(extracted)
+            target.write_bytes(source.read_bytes())
+    return found
 
 
 def _trace_durations(path: Path) -> dict[str, float]:
@@ -168,8 +177,12 @@ def main() -> int:
             source_run = source["run"]
             artifact = source["artifact"]
             source_dir = args.runtime_dir / "resume-source"
-            blob = _download(str(artifact["archive_download_url"]), token)
-            extracted = _extract_state(blob, source_dir)
+            extracted = _download_artifact_with_gh(
+                repo=repo,
+                run_id=int(source_run["id"]),
+                artifact_name=str(artifact["name"]),
+                destination=source_dir,
+            )
             required = {"mission.db", "fresh-research.json", "multi-agent-proof.json", "product-quality-e2e.json"}
             if not required <= set(extracted):
                 result = {

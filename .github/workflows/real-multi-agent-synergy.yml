@@ -376,5 +376,6 @@ jobs:
             runtime/real-multi-agent-synergy/opencode-artifacts/
             runtime/real-multi-agent-synergy/performance-trace.jsonl
             runtime/real-multi-agent-synergy/performance-report.json
+            runtime/real-multi-agent-synergy/resume-state.json
           if-no-files-found: warn
           retention-days: 30
