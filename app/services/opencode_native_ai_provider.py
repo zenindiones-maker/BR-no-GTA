@@ -224,11 +224,17 @@ class OpenCodeNativeAIProvider:
         executor_model = str(self.options["executor_model"])
         cli_version = str(self.options["cli_version"])
         workflow = str(self.options.get("workflow") or OPENCODE_NATIVE_WORKFLOW)
-        dispatch_ref, source_sha = _immutable_dispatch_ref(
+        dispatch_ref, parent_source_sha = _immutable_dispatch_ref(
             repository=self.repository,
             configured_ref=self.ref,
             command_runner=self.command_runner,
         )
+        source_sha = str(self.source_sha or parent_source_sha or "").strip().lower()
+        if parent_source_sha is not None and source_sha != parent_source_sha:
+            raise OpenCodeNativeAIProviderError(
+                "Configured OpenCode source SHA does not match the parent GitHub SHA",
+                details={"failure_code": "semantic_source_sha_mismatch"},
+            )
         dispatched = self.dispatcher.dispatch(
             repository=self.repository,
             workflow=workflow,
@@ -240,8 +246,7 @@ class OpenCodeNativeAIProvider:
                 "model": canonical_model,
                 "prompt_b64": base64.b64encode(prompt.encode("utf-8")).decode("ascii"),
                 "zero_cost_operation": "true",
-                "source_sha": self.source_sha,
-                "expected_source_sha": source_sha or "",
+                "source_sha": source_sha,
             },
         )
         watched = self.watcher.wait_for_completion(
