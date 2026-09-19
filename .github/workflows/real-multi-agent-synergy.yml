@@ -171,6 +171,33 @@ jobs:
           print("TELEGRAM_TRANSPORT_LIVE=NOT_CLAIMED")
           PY
 
+      - name: Execute real product E2E into YouTube package database
+        run: |
+          set -euo pipefail
+          python scripts/youtube_product_quality_e2e.py \
+            --synergy-proof runtime/real-multi-agent-synergy/multi-agent-proof.json \
+            --output runtime/real-multi-agent-synergy/product-quality-e2e.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/product-quality-e2e.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["publication_performed"] is False, d
+          assert d["goal_id"], d
+          assert int(d["script_id"]) > 0, d
+          assert int(d["content_item_id"]) > 0, d
+          assert int(d["production_plan_id"]) > 0, d
+          assert int(d["youtube_entity_id"]) > 0, d
+          assert len(d["claims"]) >= 1, d
+          assert d["youtube_package"]["status"]=="planned", d
+          assert len(d["youtube_package"]["evidence_refs"]) >= 6, d
+          assert d["metrics"]["scene_count"] >= 3, d
+          assert d["metrics"]["max_scene_seconds"] <= 30.001, d
+          print("PRODUCT_E2E=PASS")
+          print("YOUTUBE_PACKAGE_DATABASE=PASS")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
       - name: Prove no production/publication side effect
         run: |
           set -euo pipefail
@@ -198,6 +225,7 @@ jobs:
             runtime/real-multi-agent-synergy/provider-promotion.json
             runtime/real-multi-agent-synergy/fresh-research.json
             runtime/real-multi-agent-synergy/multi-agent-proof.json
+            runtime/real-multi-agent-synergy/product-quality-e2e.json
             runtime/real-multi-agent-synergy/mission.db
             runtime/real-multi-agent-synergy/opencode-artifacts/
           if-no-files-found: warn
