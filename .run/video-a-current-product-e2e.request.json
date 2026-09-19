@@ -1,0 +1,13 @@
+{
+  "schema": "video-a-current-product-e2e-request/v1",
+  "requested_from_head": "7b5a13d6d7b943f87d4f924f1c57a63b6f44e0d7",
+  "goal_id": "f9dc10d7-dcc4-44dc-b808-444a351b4189",
+  "product_label": "A",
+  "historical_render_run_id": 35463639061,
+  "historical_render_job_id": 1,
+  "successor_render_job_id": 2,
+  "current_audio_contract_required": true,
+  "youtube_privacy": "private",
+  "human_review_delivery": "telegram",
+  "requested_at": "2026-09-19T23:20:00Z"
+}
