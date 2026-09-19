@@ -18,6 +18,7 @@ from app.services.channel_spoken_branding_service import (
 from app.services.narration_pipeline import MASTER_TARGET_LUFS, MASTER_TRUE_PEAK_DB
 from app.services.pronunciation_service import (
     resolve_synthesis_plan,
+    synthesis_plan_cache_payload,
     synthesize_edge_plan,
 )
 
@@ -123,7 +124,7 @@ def _take_identity(*, kind: str, text: str, contract: dict[str,Any], take: dict[
         "language":contract["language"],
         "direction":contract[f"{kind}_direction"],
         "take_profile":take,
-        "pronunciation_plan":plan.to_dict(),
+        "pronunciation_plan":synthesis_plan_cache_payload(plan),
     }
 
 
