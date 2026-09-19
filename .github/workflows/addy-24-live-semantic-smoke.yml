@@ -38,7 +38,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
       BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
-      BR_OPENCODE_NATIVE_REF: work/gate6f-analytics-learning
+      BR_OPENCODE_NATIVE_REF: ${{ github.sha }}
       BR_OPENCODE_NATIVE_POLL_INTERVAL: '2'
       BR_OPENCODE_NATIVE_RUN_TIMEOUT: '900'
       BR_OPENCODE_NATIVE_ARTIFACT_ROOT: artifacts/addy-24-live/opencode-artifacts
