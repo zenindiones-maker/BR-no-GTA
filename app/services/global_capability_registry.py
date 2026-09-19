@@ -16,6 +16,10 @@ from app.services.monetization_observability_service import (
     MONETIZATION_EXECUTOR_BINDING,
 )
 from app.services.youtube_department_service import youtube_department_records
+from app.services.media_analysis_cloud_service import (
+    MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
+    MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
+)
 
 AGENT_OFFICE_RECORD = CapabilityRecord(
     capability_id="agent-office.execute",
@@ -431,6 +435,35 @@ SYSTEM_IMPROVEMENT_RECORD = CapabilityRecord(
     side_effects=(),
 )
 
+MEDIA_ANALYSIS_CLOUD_RECORD = CapabilityRecord(
+    capability_id=MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
+    capability_type="EXECUTOR",
+    domain="media-analysis",
+    implementation="Harness-governed fixed GitHub Actions MediaKnowledge and Whisper analysis dispatcher",
+    input_contract="public HTTPS media source + bounded logical source name",
+    output_contract="GitHub Actions run identity for media-knowledge/speech-analysis artifacts",
+    requirements=("GitHub Actions", "media-worker.yml", "heavy execution stays off A15"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("media", "analysis", "cloud", "whisperx", "knowledge", "github-actions"),
+    security_boundary=(
+        "DeepSeek Harness authorization + exact Registry binding; fixed media-worker workflow only; "
+        "caller cannot provide shell commands or arbitrary workflow; no publication authority"
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="GITHUB_ACTIONS",
+    latency_class="REMOTE_HEAVY",
+    quality_class="CLOUD_MEDIAKNOWLEDGE_WHISPER_QA",
+    evidence_contract="GitHub Actions run + media-knowledge/speech-analysis artifact lineage",
+    fallback_eligibility=False,
+    executor_binding=MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
+    version="1",
+    provider_id="github-actions",
+    agent_id="audiovisual-worker",
+    side_effects=("GitHub Actions workflow dispatch",),
+)
+
 _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
@@ -450,12 +483,74 @@ for _record in (
     TELEGRAM_USER_INPUT_RECORD,
     MONETIZATION_RECORD,
     SYSTEM_IMPROVEMENT_RECORD,
+    MEDIA_ANALYSIS_CLOUD_RECORD,
     *_YOUTUBE_DEPARTMENT_RECORDS,
 ):
     if _record.capability_id in _REGISTRY._by_id:
         raise ValueError(f"Duplicate capability_id: {_record.capability_id}")
     _REGISTRY._by_id[_record.capability_id] = _record
     _REGISTRY._records = tuple(sorted((*_REGISTRY._records, _record), key=lambda item: item.capability_id))
+
+# Normalize legacy Registry records. Active records must point to exact callables;
+# superseded/internal implementation details must not pretend to be standalone
+# Harness capabilities.
+_NATIVE_ADAPTER_BINDINGS = {
+    "media.discovery": "app.services.native_capability_adapters.execute_media_discovery_capability",
+    "production.plan": "app.services.native_capability_adapters.execute_production_plan_capability",
+    "qa.preflight": "app.services.native_capability_adapters.execute_qa_preflight_capability",
+    "script.generate": "app.services.native_capability_adapters.execute_script_generate_capability",
+    "video.edit.vedit": "app.services.native_capability_adapters.execute_vedit_plan_capability",
+}
+for _capability_id, _binding in _NATIVE_ADAPTER_BINDINGS.items():
+    _existing = _REGISTRY._by_id.get(_capability_id)
+    if _existing is None:
+        raise ValueError(f"Missing native capability Registry record: {_capability_id}")
+    _normalized = replace(
+        _existing,
+        executor_binding=_binding,
+        security_boundary=(
+            _existing.security_boundary
+            + "; exact bounded native adapter invoked only after Harness routing and persisted authorization"
+        ),
+    )
+    _REGISTRY._by_id[_capability_id] = _normalized
+    _REGISTRY._records = tuple(
+        sorted(
+            (_normalized if record.capability_id == _capability_id else record for record in _REGISTRY._records),
+            key=lambda item: item.capability_id,
+        )
+    )
+
+_LEGACY_SUPERSEDED_CAPABILITIES = {
+    "cloud.github-actions": "infrastructure primitive; use specific cloud capability such as media.analysis.cloud or production.render.execute",
+    "media.ffmpeg": "internal render-engine implementation; use production.render.execute",
+    "media.select": "superseded by production.media.select-segments",
+    "media.technical-analysis": "superseded by media.analysis.cloud",
+    "video.render": "superseded by production.render.execute",
+}
+for _capability_id, _reason in _LEGACY_SUPERSEDED_CAPABILITIES.items():
+    _existing = _REGISTRY._by_id.get(_capability_id)
+    if _existing is None:
+        raise ValueError(f"Missing legacy capability Registry record: {_capability_id}")
+    _deprecated = replace(
+        _existing,
+        availability=UNKNOWN,
+        executor_binding=None,
+        implementation=f"DEPRECATED SUPPORT PATH: {_reason}",
+        quality_class="DEPRECATED_NOT_DIRECTLY_ROUTABLE",
+        security_boundary=(
+            "Not directly executable. " + _reason
+            + ". DeepSeek Harness must select the canonical bounded replacement."
+        ),
+        fallback_eligibility=False,
+    )
+    _REGISTRY._by_id[_capability_id] = _deprecated
+    _REGISTRY._records = tuple(
+        sorted(
+            (_deprecated if record.capability_id == _capability_id else record for record in _REGISTRY._records),
+            key=lambda item: item.capability_id,
+        )
+    )
 
 # Real runtime proof: GitHub Actions run 35033861020 executed the explicit
 # OpenCode Free model through OmniRoute 3.8.50 on a standard public runner,
