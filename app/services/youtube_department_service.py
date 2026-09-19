@@ -115,6 +115,30 @@ def execute_youtube_specialist_capability(capability: Any, payload: dict[str, An
 
 
 
+def _semantic_output_contract(capability_id: str) -> str | None:
+    contracts = {
+        "youtube.department.content-strategy": '{"audience":"string","angle":"string","promise":"string","differentiation":"string","title_direction":"string"}',
+        "youtube.department.script-review": '{"strengths":["string"],"risks":["string"],"required_changes":["string"],"retention_notes":["string"],"factual_risks":["string"]}',
+        "youtube.department.seo": '{"title":"string","description":"string","keywords":["string"],"tags":["string"],"search_intent":"string","rationale":"string"}',
+        "youtube.department.thumbnail-strategy": '{"concept":"string","copy":"string","visual_focus":"string","title_relationship":"string","clickbait_risk":"string"}',
+        "youtube.department.production-management": '{"readiness":"READY|MINOR_REWORK|MAJOR_REWORK","gaps":["string"],"media_needs":["string"],"timing_notes":["string"],"narration_notes":["string"]}',
+    }
+    return contracts.get(capability_id)
+
+
+def _parse_semantic_output(text: str) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    if normalized.startswith("~~~"):
+        normalized = normalized.strip("~").strip()
+    if normalized.startswith("json\n"):
+        normalized = normalized[5:].strip()
+    try:
+        parsed = json.loads(normalized)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def execute_youtube_specialist_via_harness(
     *,
     authorization: Any,
