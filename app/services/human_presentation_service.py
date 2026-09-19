@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+import re
 from typing import Any, Mapping
 
 from app.services.harness_authorization_service import (
@@ -42,6 +43,14 @@ class PresentationResult:
     canonical_chars: int
     presented_chars: int
     canonical_unchanged: bool
+    canonical_lines: int
+    presented_lines: int
+    canonical_internal_id_mentions: int
+    presented_internal_id_mentions: int
+    conclusion_present: bool
+    next_action_present: bool
+    material_warnings_preserved: bool
+    evidence_access_present: bool
     capability_id: str = PRESENTATION_CAPABILITY_ID
     skill_id: str = PRESENTATION_SKILL_ID
     upstream_repository: str = UPSTREAM_REPOSITORY
@@ -63,9 +72,17 @@ def _canonical_json(value: Mapping[str, Any], *, pretty: bool = False) -> str:
     )
 
 
-def _mode_for_surface(surface: str, requested_mode: str | None) -> str:
-    if requested_mode is not None:
-        mode = str(requested_mode).strip().upper()
+def resolve_presentation_mode(
+    *,
+    surface: str,
+    canonical_result: Mapping[str, Any] | None = None,
+    user_intent: str | None = None,
+    explicit_mode: str | None = None,
+) -> str:
+    """Deterministic presentation policy; never performs execution/editorial routing."""
+    del canonical_result, user_intent
+    if explicit_mode is not None:
+        mode = str(explicit_mode).strip().upper()
         if mode not in PRESENTATION_MODES:
             raise ValueError("unsupported presentation mode")
         return mode
@@ -75,6 +92,13 @@ def _mode_for_surface(surface: str, requested_mode: str | None) -> str:
     if normalized in {"artifact", "machine", "api", "json"}:
         return MACHINE_READABLE
     return NORMAL
+
+
+def _mode_for_surface(surface: str, requested_mode: str | None) -> str:
+    return resolve_presentation_mode(
+        surface=surface,
+        explicit_mode=requested_mode,
+    )
 
 
 def _failure_state(result: Mapping[str, Any]) -> str | None:
@@ -154,10 +178,12 @@ def _answer(result: Mapping[str, Any]) -> str:
     return ""
 
 
-def _source_status(result: Mapping[str, Any]) -> tuple[str | None, str | None, str | None]:
+def _source_status(
+    result: Mapping[str, Any],
+) -> tuple[str | None, str | None, str | None, str | None]:
     intelligence = result.get("source_intelligence")
     if not isinstance(intelligence, Mapping):
-        return None, None, None
+        return None, None, None, None
     signal = intelligence.get("editorial_signal")
     decision = None
     if isinstance(signal, Mapping):
@@ -177,13 +203,18 @@ def _source_status(result: Mapping[str, Any]) -> tuple[str | None, str | None, s
         elif statuses and statuses == {"VERIFIED"}:
             verification = "VERIFIED"
     resolution = str(intelligence.get("SOURCE_CONTENT_RESOLVED") or "").upper() or None
-    return resolution, verification, decision
+    hierarchy = str(
+        intelligence.get("source_hierarchy")
+        or result.get("source_hierarchy")
+        or ""
+    ).strip().upper() or None
+    return resolution, verification, decision, hierarchy
 
 
 def _action_first(result: Mapping[str, Any]) -> str:
     failure = _failure_state(result)
     answer = _answer(result)
-    resolution, verification, decision = _source_status(result)
+    resolution, verification, decision, hierarchy = _source_status(result)
     warnings = _material_warnings(result)
 
     if failure:
@@ -214,6 +245,15 @@ def _action_first(result: Mapping[str, Any]) -> str:
             lines.append(f"Resultado: {answer}")
         if verification:
             lines.append(f"Verificação: {verification}")
+        if hierarchy:
+            hierarchy_labels = {
+                "OFFICIAL_PRIMARY": "fonte primária oficial",
+                "PRIMARY_STATEMENT_REPORTED_BY_SECONDARY": (
+                    "declaração primária relatada por fonte secundária"
+                ),
+                "MULTIPLE_INDEPENDENT_REPORTS": "múltiplas fontes independentes",
+            }
+            lines.append("Evidência: " + hierarchy_labels.get(hierarchy, hierarchy))
         if decision:
             lines.append(f"Ação do Harness: {decision}")
             lines.append(
@@ -235,6 +275,56 @@ def _action_first(result: Mapping[str, Any]) -> str:
     return base
 
 
+_INTERNAL_TELEMETRY_PATTERN = re.compile(
+    r"(?i)\\b(?:routing_id|authorization_id|memory_id|competence(?:_id)?|"
+    r"executor_binding|provider(?:_id)?|model(?:_id)?|artifact_id|database_id|"
+    r"episode_id|claim_id|signal_id|sha256)\\b"
+)
+
+
+def _line_count(text: str) -> int:
+    return 0 if text == "" else text.count("\n") + 1
+
+
+def _internal_id_mentions(text: str) -> int:
+    return len(_INTERNAL_TELEMETRY_PATTERN.findall(text))
+
+
+def _presentation_metrics(
+    canonical_result: Mapping[str, Any],
+    *,
+    canonical_pretty: str,
+    presented_text: str,
+    mode: str,
+) -> dict[str, Any]:
+    warnings = _material_warnings(canonical_result)
+    conclusion_present = bool(
+        _answer(canonical_result)
+        or _failure_state(canonical_result)
+        or any(_source_status(canonical_result))
+        or str(canonical_result.get("status") or "").strip()
+    )
+    next_action_present = (
+        "Ação:" in presented_text
+        or "Ação do Harness:" in presented_text
+        or "Próximo passo:" in presented_text
+        or "/evidence" in presented_text
+    )
+    return {
+        "canonical_lines": _line_count(canonical_pretty),
+        "presented_lines": _line_count(presented_text),
+        "canonical_internal_id_mentions": _internal_id_mentions(canonical_pretty),
+        "presented_internal_id_mentions": _internal_id_mentions(presented_text),
+        "conclusion_present": conclusion_present,
+        "next_action_present": next_action_present,
+        "material_warnings_preserved": all(item in presented_text for item in warnings),
+        "evidence_access_present": (
+            mode in {TECHNICAL_FULL, MACHINE_READABLE}
+            or "/evidence" in presented_text
+        ),
+    }
+
+
 def render_human_presentation(
     canonical_result: Mapping[str, Any],
     *,
@@ -245,7 +335,11 @@ def render_human_presentation(
         raise TypeError("canonical_result must be a mapping")
     canonical_copy = deepcopy(dict(canonical_result))
     before = _canonical_json(canonical_copy)
-    selected_mode = _mode_for_surface(surface, mode)
+    selected_mode = resolve_presentation_mode(
+        surface=surface,
+        canonical_result=canonical_copy,
+        explicit_mode=mode,
+    )
 
     if selected_mode == MACHINE_READABLE:
         text = before
@@ -257,6 +351,12 @@ def render_human_presentation(
         text = _answer(canonical_copy) or _action_first(canonical_copy)
 
     after = _canonical_json(canonical_copy)
+    metrics = _presentation_metrics(
+        canonical_copy,
+        canonical_pretty=_canonical_json(canonical_copy, pretty=True),
+        presented_text=text,
+        mode=selected_mode,
+    )
     return PresentationResult(
         mode=selected_mode,
         surface=str(surface or "unknown"),
@@ -265,6 +365,14 @@ def render_human_presentation(
         canonical_chars=len(before),
         presented_chars=len(text),
         canonical_unchanged=before == after,
+        canonical_lines=metrics["canonical_lines"],
+        presented_lines=metrics["presented_lines"],
+        canonical_internal_id_mentions=metrics["canonical_internal_id_mentions"],
+        presented_internal_id_mentions=metrics["presented_internal_id_mentions"],
+        conclusion_present=metrics["conclusion_present"],
+        next_action_present=metrics["next_action_present"],
+        material_warnings_preserved=metrics["material_warnings_preserved"],
+        evidence_access_present=metrics["evidence_access_present"],
     )
 
 
@@ -289,7 +397,11 @@ def present_canonical_result_under_harness(
     mode: str | None = None,
     lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    selected_mode = _mode_for_surface(surface, mode)
+    selected_mode = resolve_presentation_mode(
+        surface=surface,
+        canonical_result=canonical_result,
+        explicit_mode=mode,
+    )
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent=f"present canonical result to human surface={surface} mode={selected_mode}",

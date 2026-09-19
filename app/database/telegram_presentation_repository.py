@@ -22,6 +22,14 @@ def _ensure_schema(connection) -> None:
             authority TEXT NOT NULL,
             routing_id TEXT NOT NULL,
             authorization_id TEXT NOT NULL UNIQUE,
+            canonical_lines INTEGER NOT NULL DEFAULT 0,
+            presented_lines INTEGER NOT NULL DEFAULT 0,
+            canonical_internal_id_mentions INTEGER NOT NULL DEFAULT 0,
+            presented_internal_id_mentions INTEGER NOT NULL DEFAULT 0,
+            conclusion_present INTEGER NOT NULL DEFAULT 0,
+            next_action_present INTEGER NOT NULL DEFAULT 0,
+            material_warnings_preserved INTEGER NOT NULL DEFAULT 1,
+            evidence_access_present INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -32,13 +40,38 @@ def _ensure_schema(connection) -> None:
         ON telegram_presentation_audits(telegram_input_id, id DESC)
         """
     )
+    existing = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(telegram_presentation_audits)").fetchall()
+    }
+    for name, ddl in {
+        "canonical_lines": "INTEGER NOT NULL DEFAULT 0",
+        "presented_lines": "INTEGER NOT NULL DEFAULT 0",
+        "canonical_internal_id_mentions": "INTEGER NOT NULL DEFAULT 0",
+        "presented_internal_id_mentions": "INTEGER NOT NULL DEFAULT 0",
+        "conclusion_present": "INTEGER NOT NULL DEFAULT 0",
+        "next_action_present": "INTEGER NOT NULL DEFAULT 0",
+        "material_warnings_preserved": "INTEGER NOT NULL DEFAULT 1",
+        "evidence_access_present": "INTEGER NOT NULL DEFAULT 0",
+    }.items():
+        if name not in existing:
+            connection.execute(
+                f"ALTER TABLE telegram_presentation_audits ADD COLUMN {name} {ddl}"
+            )
 
 
 def _row(row) -> dict[str, Any] | None:
     if row is None:
         return None
     result = dict(row)
-    result["canonical_unchanged"] = bool(result.get("canonical_unchanged"))
+    for key in (
+        "canonical_unchanged",
+        "conclusion_present",
+        "next_action_present",
+        "material_warnings_preserved",
+        "evidence_access_present",
+    ):
+        result[key] = bool(result.get(key))
     return result
 
 
@@ -61,8 +94,29 @@ def record_telegram_presentation_audit(
     canonical_chars = int(presentation.get("canonical_chars"))
     presented_chars = int(presentation.get("presented_chars"))
     canonical_unchanged = bool(presentation.get("canonical_unchanged"))
-    if canonical_chars < 0 or presented_chars < 0:
-        raise ValueError("presentation audit lengths must be non-negative")
+    canonical_lines = int(presentation.get("canonical_lines") or 0)
+    presented_lines = int(presentation.get("presented_lines") or 0)
+    canonical_internal_id_mentions = int(
+        presentation.get("canonical_internal_id_mentions") or 0
+    )
+    presented_internal_id_mentions = int(
+        presentation.get("presented_internal_id_mentions") or 0
+    )
+    conclusion_present = bool(presentation.get("conclusion_present"))
+    next_action_present = bool(presentation.get("next_action_present"))
+    material_warnings_preserved = bool(
+        presentation.get("material_warnings_preserved", True)
+    )
+    evidence_access_present = bool(presentation.get("evidence_access_present"))
+    if min(
+        canonical_chars,
+        presented_chars,
+        canonical_lines,
+        presented_lines,
+        canonical_internal_id_mentions,
+        presented_internal_id_mentions,
+    ) < 0:
+        raise ValueError("presentation audit metrics must be non-negative")
     if not canonical_unchanged:
         raise PermissionError("presentation audit refuses mutated canonical result")
     reply_sha256 = sha256(str(reply_text).encode("utf-8")).hexdigest()
@@ -76,13 +130,20 @@ def record_telegram_presentation_audit(
                 telegram_input_id, presentation_mode, surface,
                 canonical_sha256, canonical_chars, presented_chars,
                 reply_sha256, canonical_unchanged, authority,
-                routing_id, authorization_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                routing_id, authorization_id, canonical_lines, presented_lines,
+                canonical_internal_id_mentions, presented_internal_id_mentions,
+                conclusion_present, next_action_present,
+                material_warnings_preserved, evidence_access_present
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 telegram_input_id, mode, surface, canonical_sha256,
                 canonical_chars, presented_chars, reply_sha256,
                 1, authority, routing_id, authorization_id,
+                canonical_lines, presented_lines,
+                canonical_internal_id_mentions, presented_internal_id_mentions,
+                int(conclusion_present), int(next_action_present),
+                int(material_warnings_preserved), int(evidence_access_present),
             ),
         )
         connection.commit()
@@ -108,6 +169,14 @@ def record_telegram_presentation_audit(
             "authority": authority,
             "routing_id": routing_id,
             "authorization_id": authorization_id,
+            "canonical_lines": canonical_lines,
+            "presented_lines": presented_lines,
+            "canonical_internal_id_mentions": canonical_internal_id_mentions,
+            "presented_internal_id_mentions": presented_internal_id_mentions,
+            "conclusion_present": conclusion_present,
+            "next_action_present": next_action_present,
+            "material_warnings_preserved": material_warnings_preserved,
+            "evidence_access_present": evidence_access_present,
         }
         for key, value in expected.items():
             if result.get(key) != value:

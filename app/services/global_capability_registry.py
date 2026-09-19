@@ -259,7 +259,7 @@ MARKITDOWN_NORMALIZE_RECORD = CapabilityRecord(capability_id="content.normalize.
 
 HUMAN_PRESENTATION_ACTION_FIRST_RECORD = CapabilityRecord(
     capability_id="human.presentation.action-first",
-    capability_type="SKILL",
+    capability_type="PRESENTATION",
     domain="human-presentation",
     implementation=(
         "Deterministic action-first presentation renderer adapted from "
@@ -300,6 +300,11 @@ HUMAN_PRESENTATION_ACTION_FIRST_RECORD = CapabilityRecord(
     skill_id="human.presentation.action-first",
     instruction_path=".dsh/skills/human-presentation-action-first/SKILL.md",
     side_effects=(),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
 )
 
 TELEGRAM_BRAND_ASSET_RECORD = CapabilityRecord(

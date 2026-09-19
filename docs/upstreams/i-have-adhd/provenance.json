@@ -25,5 +25,28 @@
     "editorial authority",
     "publication authority"
   ],
-  "upstream_eval_note": "Upstream evals/RESULTS.md records a failed release gate; BR-no-GTA therefore treats the source as presentation guidance only and adds fail-closed semantic-preservation tests."
+  "upstream_eval_note": "Upstream evals/RESULTS.md records a failed release gate; BR-no-GTA therefore treats the source as presentation guidance only and adds fail-closed semantic-preservation tests.",
+  "upstream_commit_date": "2026-09-16T15:30:25Z",
+  "integration_audited_at": "2026-09-18",
+  "audited_files": [
+    "skills/i-have-adhd/SKILL.md",
+    ".codex-plugin/plugin.json",
+    "skills/i-have-adhd/agents/openai.yaml",
+    "hooks/hooks.json",
+    "hooks/always-on.mjs",
+    "evals/rubric.md",
+    "evals/README.md",
+    "evals/RESULTS.md",
+    "evals/cases.jsonl",
+    "LICENSE"
+  ],
+  "local_adaptations": [
+    "Harness-subordinated deterministic presentation capability",
+    "ACTION_FIRST defaults for Telegram/Termux/Work/Codex/admin surfaces",
+    "TECHNICAL_FULL and MACHINE_READABLE lossless projections",
+    "fail-closed semantic preservation for FAIL/INSUFFICIENT_EVIDENCE/policy warnings",
+    "observed-cause-only error wording to avoid the upstream partial-success regression",
+    "no always-on hook/session-global state",
+    "no memory/routing/editorial/publication authority"
+  ]
 }

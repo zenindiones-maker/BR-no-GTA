@@ -17,6 +17,14 @@ def _presentation(auth: str = "auth-presentation-1"):
         "authority": "deepseek_harness",
         "routing_id": "route-presentation-1",
         "authorization_id": auth,
+        "canonical_lines": 18,
+        "presented_lines": 4,
+        "canonical_internal_id_mentions": 6,
+        "presented_internal_id_mentions": 0,
+        "conclusion_present": True,
+        "next_action_present": True,
+        "material_warnings_preserved": True,
+        "evidence_access_present": True,
     }
 
 
@@ -38,6 +46,14 @@ def test_presentation_audit_is_idempotent_and_stores_no_reply_text():
     assert second["canonical_unchanged"] is True
     assert second["canonical_chars"] == 500
     assert second["presented_chars"] == 120
+    assert second["canonical_lines"] == 18
+    assert second["presented_lines"] == 4
+    assert second["canonical_internal_id_mentions"] == 6
+    assert second["presented_internal_id_mentions"] == 0
+    assert second["conclusion_present"] is True
+    assert second["next_action_present"] is True
+    assert second["material_warnings_preserved"] is True
+    assert second["evidence_access_present"] is True
     assert second["reply_sha256"]
     assert "reply_text" not in second
 

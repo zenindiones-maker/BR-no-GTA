@@ -311,6 +311,48 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         for item in list_recent_harness_authorizations(limit=200)
         if (item.get("lineage") or {}).get("telegram_input_id") == record.get("id")
     ]
+    episode_lineage = dict((episode or {}).get("lineage") or {})
+    actual_outcome = dict((episode or {}).get("actual_outcome") or {})
+    source_versions = dict((episode or {}).get("source_versions") or {})
+    executor_binding = next(
+        (
+            (item.get("lineage") or {}).get("selected_executor_binding")
+            or (item.get("lineage") or {}).get("executor_binding")
+            for item in authorizations
+            if (item.get("lineage") or {}).get("selected_executor_binding")
+            or (item.get("lineage") or {}).get("executor_binding")
+        ),
+        None,
+    )
+    provider = (
+        (episode or {}).get("provider")
+        or actual_outcome.get("provider")
+        or episode_lineage.get("provider")
+    )
+    model = (
+        actual_outcome.get("model")
+        or source_versions.get("model")
+        or episode_lineage.get("model")
+    )
+    competence = []
+    if episode is not None:
+        competence = harness_learning_repository.list_competence(
+            capability_id=episode.get("capability_id"),
+            agent_id=episode.get("agent_id"),
+            limit=20,
+        )
+    fact_check_results = [
+        {
+            "claim_id": item.get("claim_id"),
+            "statement": item.get("statement"),
+            "fact_check_result": item.get("fact_check_result"),
+            "verification_status": item.get("verification_status"),
+            "source_hierarchy": item.get("source_hierarchy"),
+            "source_refs": item.get("source_refs"),
+            "evidence_refs": item.get("evidence_refs"),
+        }
+        for item in claims
+    ]
     return {
         "INPUT_CAPTURED": "PASS" if record.get("memory_event_id") else "FAIL",
         "SOURCE_LEARNED": (
@@ -341,7 +383,48 @@ def _source_evidence_payload(input_id: int | None = None) -> dict[str, Any]:
         "claims": claims,
         "editorial_signal": signal,
         "reasoning_episode": episode,
+        "routing": [dict(item.get("lineage") or {}) for item in authorizations],
         "harness_authorizations": authorizations,
+        "execution": {
+            "execution_id": (episode or {}).get("execution_id"),
+            "provider": provider,
+            "model": model,
+            "executor_binding": executor_binding,
+            "capability_id": (episode or {}).get("capability_id"),
+            "agent_id": (episode or {}).get("agent_id"),
+            "skill_id": (episode or {}).get("skill_id"),
+            "skill_version": (episode or {}).get("skill_version"),
+            "status": (episode or {}).get("status"),
+            "error": (episode or {}).get("error"),
+            "tool_calls": (episode or {}).get("tool_calls"),
+            "artifact_refs": (episode or {}).get("artifact_refs"),
+            "timestamps": {
+                "started_at": (episode or {}).get("started_at"),
+                "finished_at": (episode or {}).get("finished_at"),
+                "created_at": (episode or {}).get("created_at"),
+            },
+        },
+        "source_provenance": {
+            "source_url": (candidate or {}).get("source_url"),
+            "source_content_resolution": (candidate or {}).get("source_content_resolution"),
+            "source_hierarchy": (candidate or {}).get("source_hierarchy"),
+            "research_dossier_id": (candidate or {}).get("research_dossier_id"),
+            "evidence_refs": (candidate or {}).get("evidence_refs"),
+            "state_history": (candidate or {}).get("state_history"),
+        },
+        "ResearchDossier": {
+            "research_dossier_id": (candidate or {}).get("research_dossier_id"),
+            "payload": ((candidate or {}).get("payload") or {}).get("research_dossier"),
+        },
+        "FactCheckResult": fact_check_results,
+        "ClaimLedger": claims,
+        "LearningContext": {
+            "episode": episode,
+            "competence": competence,
+            "memory_event_id": record.get("memory_event_id"),
+            "memory_id": record.get("memory_id"),
+            "execution_failure_memory_id": record.get("execution_failure_memory_id"),
+        },
         "presentation_audit": get_latest_telegram_presentation_audit(int(record["id"])),
         "AUDIT_DETAILS_PRESERVED": "PASS",
         "EVIDENCE_COMMAND_AVAILABLE": "PASS",

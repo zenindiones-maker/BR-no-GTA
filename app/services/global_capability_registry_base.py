@@ -13,7 +13,7 @@ FUNCTIONAL = "FUNCTIONAL"
 PARTIAL = "PARTIAL"
 UNPROVEN = "UNKNOWN/UNPROVEN"
 
-CAPABILITY_TYPES = {"CAPABILITY", "AGENT", "SKILL", "PROVIDER", "EXECUTOR"}
+CAPABILITY_TYPES = {"CAPABILITY", "AGENT", "SKILL", "PRESENTATION", "PROVIDER", "EXECUTOR"}
 AVAILABILITY_STATES = {AVAILABLE, BLOCKED, UNKNOWN}
 MATURITY_STATES = {PROVEN, FUNCTIONAL, PARTIAL, UNPROVEN}
 
@@ -46,6 +46,11 @@ class CapabilityRecord:
     skill_id: str | None = None
     side_effects: tuple[str, ...] = ()
     instruction_path: str | None = None
+    authority: str = "INHERITED"
+    memory_write: str = "INHERITED"
+    routing_authority: str = "INHERITED"
+    editorial_authority: str = "INHERITED"
+    publication_authority: str = "INHERITED"
 
     @property
     def provider(self) -> str:

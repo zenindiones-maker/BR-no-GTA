@@ -20,12 +20,17 @@ from app.services.human_presentation_service import (
 def test_action_first_presentation_skill_is_registered_without_authority():
     record = GLOBAL_CAPABILITY_REGISTRY.get(PRESENTATION_CAPABILITY_ID)
     assert record is not None
-    assert record.capability_type == "SKILL"
+    assert record.capability_type == "PRESENTATION"
     assert record.domain == "human-presentation"
     assert record.allowed_actions == ("DECISION",)
     assert record.skill_id == PRESENTATION_CAPABILITY_ID
     assert record.instruction_path == ".dsh/skills/human-presentation-action-first/SKILL.md"
     assert record.side_effects == ()
+    assert record.authority == "NONE"
+    assert record.memory_write == "FORBIDDEN"
+    assert record.routing_authority == "NONE"
+    assert record.editorial_authority == "NONE"
+    assert record.publication_authority == "NONE"
     assert record.fallback_eligibility is False
     assert "no-authority" in record.policy_tags
     assert "publication authority" in record.security_boundary
@@ -184,6 +189,33 @@ def test_priority_human_surfaces_default_to_action_first():
         result = render_human_presentation(canonical, surface=surface)
         assert result.mode == ACTION_FIRST
         assert result.text == "AÇÃO_PRIMEIRO"
+
+
+def test_action_first_metrics_measure_noise_reduction_without_storing_new_truth():
+    canonical = {
+        "status": "COMPLETED",
+        "answer": "Fonte analisada com ressalvas.",
+        "routing_id": "route-secret-ish-internal",
+        "authorization_id": "auth-internal",
+        "memory_id": "memory-internal",
+        "warnings": ["Revisão humana necessária."],
+        "source_intelligence": {
+            "SOURCE_CONTENT_RESOLVED": "PASS",
+            "claims": [{"verification_status": "INSUFFICIENT_EVIDENCE"}],
+            "editorial_signal": {"harness_decision": "REJECT_LOW_EVIDENCE"},
+        },
+    }
+    result = render_human_presentation(canonical, surface="telegram")
+    assert result.canonical_lines > result.presented_lines
+    assert result.canonical_internal_id_mentions >= 3
+    assert result.presented_internal_id_mentions == 0
+    assert result.conclusion_present is True
+    assert result.next_action_present is True
+    assert result.material_warnings_preserved is True
+    assert result.evidence_access_present is True
+    assert "route-secret-ish-internal" not in result.text
+    assert "auth-internal" not in result.text
+    assert "memory-internal" not in result.text
 
 
 def test_artifact_surface_defaults_to_machine_readable_passthrough():
