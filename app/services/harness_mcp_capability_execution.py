@@ -40,6 +40,10 @@ from app.services.gta6_brain_harness_service import (
     GTA6_BRAIN_EXECUTOR_BINDING,
     execute_authorized_gta6_brain_decision,
 )
+from app.services.addy_harness_service import (
+    ADDY_EXECUTOR_BINDING,
+    execute_authorized_addy_skill,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -74,14 +78,31 @@ def execute_mcp_capability(
 ) -> CapabilityEvidence:
     """Dispatch only MCP-supported capability classes after Harness authorization.
 
-    Generic SKILL execution keeps the existing bounded skill path. gta6.fact-check
-    is explicitly intercepted and dispatched to its deterministic Registry-bound
+    Addy semantic skills, GTA6 Brain and gta6.fact-check are explicitly intercepted
+    and dispatched through their exact Registry-bound Harness adapters. Other generic
+    SKILL execution keeps the established bounded skill path. gta6.fact-check is
     executor so a caller-supplied skill executor can never replace the fact-check
     implementation. Side-effecting EXECUTOR capabilities are denied by default
     and must be explicitly allowlisted here.
     """
     capability_id = routing_decision.selected_capability_id
     implementation_type = implementation.get("type")
+
+    if capability_id.startswith("addy:"):
+        if implementation_type != "SKILL":
+            raise PermissionError("Addy implementation type mismatch")
+        expected_skill = capability_id.removeprefix("addy:")
+        if implementation.get("skill_id") != expected_skill:
+            raise PermissionError("Addy skill identity mismatch")
+        if routing_decision.selected_executor_binding != ADDY_EXECUTOR_BINDING:
+            raise PermissionError("Addy executor binding mismatch")
+        if authorization.authorized_action != "DEVELOPMENT":
+            raise PermissionError("Addy requires DEVELOPMENT authorization")
+        return execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=routing_decision,
+            payload=payload,
+        )
 
     if capability_id == FACT_CHECK_CAPABILITY_ID:
         if implementation_type != "SKILL":
