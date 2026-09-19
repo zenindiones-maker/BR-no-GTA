@@ -49,6 +49,11 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup pnpm for DeepSeek Harness plugin management
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install BR runtime
         run: |
           set -euo pipefail
