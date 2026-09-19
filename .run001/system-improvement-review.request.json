@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
-  "requested_at": "2026-09-19T13:40:00Z",
-  "base_head": "94b3feb6959b61982f8d50cbab26cc1a3e83f0b5",
-  "purpose": "Run governed SYSTEM_IMPROVEMENT_REVIEW on current clean single-voice runtime and canonical Addy semantic boundary.",
+  "schema_version": 2,
+  "requested_at": "2026-09-19T13:49:30Z",
+  "base_head": "ee0e0cfebeff43e77a8367bfce378a25285d0665",
+  "purpose": "Re-run governed SYSTEM_IMPROVEMENT_REVIEW after native OpenCode build-agent fix with deny-all tools and zero-tool-call gate.",
   "require_observed_semantic_specialists": true,
   "job18_unchanged": true,
   "publication": false,
