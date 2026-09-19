@@ -179,6 +179,7 @@ def execute_youtube_specialist_via_harness(
     if not evidence_refs:
         raise ValueError("specialist execution requires evidence_refs")
 
+    started_at = datetime.now(timezone.utc).isoformat()
     semantic_context = payload.get("semantic_context")
     semantic_evidence = None
     semantic_text = None
@@ -268,7 +269,6 @@ def execute_youtube_specialist_via_harness(
         semantic_model = semantic_evidence.model
         semantic_refs = tuple(semantic_evidence.evidence_refs)
 
-    started_at = datetime.now(timezone.utc).isoformat()
     execution = execute_capability(
         capability_id=capability_id,
         authorization=auth,
@@ -299,6 +299,11 @@ def execute_youtube_specialist_via_harness(
             validation_level="LIVE",
             external_call_performed=semantic_evidence is not None,
             exit_code=0,
+            latency_seconds=(
+                semantic_evidence.latency_seconds
+                if semantic_evidence is not None
+                else None
+            ),
             returned_to_harness=True,
         )
         result = {
@@ -339,8 +344,13 @@ def execute_youtube_specialist_via_harness(
             finished_at=finished_at,
             status="FAILED",
             validation_level="LIVE",
-            external_call_performed=False,
+            external_call_performed=semantic_evidence is not None,
             exit_code=1,
+            latency_seconds=(
+                semantic_evidence.latency_seconds
+                if semantic_evidence is not None
+                else None
+            ),
             error=str((execution.result or {}).get("error") if isinstance(execution.result, dict) else "specialist execution failed"),
             returned_to_harness=True,
         )
