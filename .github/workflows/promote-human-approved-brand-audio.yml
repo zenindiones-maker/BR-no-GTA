@@ -32,6 +32,16 @@ jobs:
           ref: work/gate6f-analytics-learning
           fetch-depth: 0
 
+      - name: Install audio checkpoint tooling
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n1
+          ffprobe -version | head -n1
+
       - name: Recover exact human-approved review asset
         run: |
           set -euo pipefail
