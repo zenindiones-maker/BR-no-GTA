@@ -36,6 +36,51 @@ CODEX_SHELL_ENVIRONMENT_POLICY_ARGS = (
     'shell_environment_policy.include_only=["PATH","USER","LOGNAME","LANG","LC_ALL","LC_CTYPE","TERM","TMPDIR","TEMP","TMP","PYTHONPATH","SHELL"]',
 )
 
+_SANDBOX_HOST_POLICY_PATTERNS = (
+    "bwrap:",
+    "failed rtm_newaddr",
+    "apparmor_restrict_unprivileged_userns",
+    "unprivileged user namespace",
+    "/proc/self/uid_map",
+)
+
+
+def is_codex_sandbox_host_policy_failure(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return any(pattern in lowered for pattern in _SANDBOX_HOST_POLICY_PATTERNS)
+
+
+def codex_execution_failure(
+    completed: subprocess.CompletedProcess[str],
+    *,
+    failure_stage: str,
+    sandbox_backend: str = "bubblewrap",
+) -> dict[str, Any] | None:
+    combined = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+    if is_codex_sandbox_host_policy_failure(combined):
+        return {
+            "status": "BLOCKED",
+            "error": "Codex Linux sandbox host policy failure",
+            "exit_code": int(completed.returncode),
+            "failure_stage": failure_stage,
+            "stderr_class": "SANDBOX_HOST_POLICY_FAILURE",
+            "sandbox_backend": sandbox_backend,
+            "retryability": "DETERMINISTIC_NO_RETRY",
+            "recoverable": False,
+        }
+    if completed.returncode != 0:
+        return {
+            "status": "FAILED",
+            "error": "Codex process execution failed",
+            "exit_code": int(completed.returncode),
+            "failure_stage": failure_stage,
+            "stderr_class": "CODEX_PROCESS_FAILURE",
+            "sandbox_backend": sandbox_backend,
+            "retryability": "TRANSIENT_RETRYABLE",
+            "recoverable": True,
+        }
+    return None
+
 
 def codex_sanitized_environment(
     source: Mapping[str, str] | None = None,
@@ -240,8 +285,12 @@ def codex_bounded_development_worker(
         timeout=remaining(),
         sanitized_env=True,
     )
-    if completed.returncode != 0:
-        raise RuntimeError("Codex bounded-development execution failed")
+    failure = codex_execution_failure(
+        completed,
+        failure_stage="bounded_development_exec",
+    )
+    if failure is not None:
+        return failure
 
     observed_commands = _commands(completed.stdout)
     if len(observed_commands) > lease.tool_call_budget:
