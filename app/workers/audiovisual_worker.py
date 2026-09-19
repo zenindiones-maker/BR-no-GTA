@@ -515,6 +515,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     "codec": bound_options["codec"],
                     "quality": bound_options["quality"],
                     "software_preset": bound_options.get("software_preset"),
+                    "timeline_placement": bound_options.get("timeline_placement", "legacy_tpad"),
                     "prefer_hw": bound_options["prefer_hw"],
                     "hwaccel_decode": bound_options["hwaccel_decode"],
                     "threads": render_threads,
@@ -568,6 +569,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
             prefer_hw=bound_options["prefer_hw"],
             hwaccel_decode=bound_options["hwaccel_decode"],
             software_preset=bound_options.get("software_preset"),
+            timeline_placement=bound_options.get("timeline_placement", "legacy_tpad"),
             threads=render_threads,
         )
         render_parameters = inspect.signature(render).parameters
@@ -616,6 +618,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     "codec": bound_options["codec"],
                     "quality": bound_options["quality"],
                     "software_preset": bound_options.get("software_preset"),
+                    "timeline_placement": bound_options.get("timeline_placement", "legacy_tpad"),
                     "prefer_hw": bound_options["prefer_hw"],
                     "hwaccel_decode": bound_options["hwaccel_decode"],
                 },

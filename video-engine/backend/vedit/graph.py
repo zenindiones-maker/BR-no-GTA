@@ -59,6 +59,10 @@ class CompileOptions:
     # metodo di decodifica accelerata gia' verificato ("" = decodifica software).
     # Mai "auto": la scelta la fa hw.detect() provandola davvero.
     hwaccel: str = ""
+    # Long-form placement strategy. legacy_tpad is retained for reproducible
+    # baseline/rollback; timestamp shifts PTS instead of synthesizing all
+    # transparent frames from t=0 until clip.start.
+    timeline_placement: str = "legacy_tpad"
     stab_files: dict = field(default_factory=dict)  # clip_id -> file .trf di vidstab
 
 
@@ -185,6 +189,8 @@ class _Builder:
         # (posizioni, corpo del testo, raggi di sfocatura) va riscalato
         self.scale = self.w / float(s.width or self.w)
         self.sr = int(s.sample_rate)
+        if opts.timeline_placement not in {"legacy_tpad", "timestamp"}:
+            raise ValueError(f"unsupported timeline placement: {opts.timeline_placement}")
         self.inputs: list[str] = []
         self.chains: list[str] = []
         self.warnings: list[str] = []
@@ -298,9 +304,16 @@ class _Builder:
 
         # limite di durata e posizionamento in timeline
         f.append(f"trim={n(off)}:{n(off + clip_visible(clip))}")
-        f.append("setpts=PTS-STARTPTS")
-        if clip.start > 1e-6:
-            f.append(f"tpad=start_duration={n(clip.start)}:start_mode=add:color=black@0")
+        # legacy_tpad materializes transparent 1080p frames for [0, clip.start).
+        # Across hundreds of B-roll/caption clips this scales with the sum of
+        # every clip start. Timestamp placement expresses the same global time
+        # without generating those invisible pre-start frames.
+        if self.o.timeline_placement == "timestamp" and clip.start > 1e-6:
+            f.append(f"setpts=PTS-STARTPTS+{n(clip.start)}/TB")
+        else:
+            f.append("setpts=PTS-STARTPTS")
+            if clip.start > 1e-6:
+                f.append(f"tpad=start_duration={n(clip.start)}:start_mode=add:color=black@0")
 
         out = self.label("v")
         if src is None:

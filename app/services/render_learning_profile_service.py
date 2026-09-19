@@ -10,6 +10,7 @@ from app.database import harness_learning_repository as learning_repository
 RENDER_PROFILE_SKILL_ID = "vedit.longform.render-profile"
 BASELINE_RENDER_PROFILE_VERSION = "v1"
 CANDIDATE_RENDER_PROFILE_VERSION = "v2"
+TIMESTAMP_RENDER_PROFILE_VERSION = "v3"
 
 # Executable, audited bindings. The candidate changes encode speed only; the
 # quality target (H.264 / high / CRF mapping), timeline and QA remain unchanged.
@@ -27,6 +28,16 @@ _RENDER_PROFILES: dict[str, dict[str, Any]] = {
         "prefer_hw": False,
         "hwaccel_decode": False,
         "software_preset": "medium",
+    },
+    # v3 changes only timeline placement. Codec, CRF/quality and x264 effort
+    # remain identical to v1 so benchmark attribution is isolated.
+    "v3": {
+        "codec": "h264",
+        "quality": "high",
+        "prefer_hw": False,
+        "hwaccel_decode": False,
+        "software_preset": "slow",
+        "timeline_placement": "timestamp",
     },
 }
 

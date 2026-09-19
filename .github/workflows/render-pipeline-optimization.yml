@@ -28,8 +28,6 @@ jobs:
       MEDIA_ARTIFACT_ID: "10572578507"
       NARRATION_RUN_ID: "35401841031"
       NARRATION_ARTIFACT_ID: "10570877480"
-      MEDIUM_RUN_ID: "35408965017"
-      MEDIUM_ARTIFACT_ID: "10573039406"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,8 +49,8 @@ jobs:
           required={
               'source_canary_run_id':35408056905,
               'source_canary_artifact_id':10572723602,
-              'historical_medium_run_id':35408965017,
-              'historical_medium_artifact_id':10573039406,
+              'candidate':'vedit.longform.render-profile@v3-timestamp-placement',
+              'representative_repeats':3,
               'minimum_latency_reduction_percent':20.0,
               'minimum_ssim':0.98,
               'job18_frozen':True,
@@ -85,7 +83,8 @@ jobs:
           pytest -q \
             tests/test_operational_efficiency_policy.py \
             tests/test_operational_efficiency_history.py \
-            tests/test_professional_audiovisual_worker.py
+            tests/test_professional_audiovisual_worker.py \
+            tests/test_render_timeline_placement.py
 
       - name: Restore validated slow baseline canary
         uses: actions/download-artifact@v4
@@ -114,16 +113,7 @@ jobs:
           path: runtime/optimization/narration
           merge-multiple: true
 
-      - name: Restore historical medium candidate evidence
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ env.MEDIUM_ARTIFACT_ID }}
-          run-id: ${{ env.MEDIUM_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: runtime/optimization/medium
-          merge-multiple: true
-
-      - name: Benchmark canonical VEdit runtime tuning and redundant A1 pass
+      - name: Benchmark long-form timeline placement and redundant A1 pass
         run: |
           set -euo pipefail
           mkdir -p runtime/optimization/proof
@@ -131,9 +121,9 @@ jobs:
             --baseline-artifact-root runtime/optimization/baseline \
             --media-root runtime/optimization/media \
             --narration-root runtime/optimization/narration \
-            --medium-evidence-root runtime/optimization/medium \
             --work-root runtime/optimization/work \
             --output runtime/optimization/proof/optimization-evidence.json \
+            --repeats 3 \
             | tee runtime/optimization/proof/benchmark.log
           grep -Fx 'JOB18_UNCHANGED=YES' runtime/optimization/proof/benchmark.log
           grep -Fx 'PUBLICATION_AUTHORITY_UNCHANGED=YES' runtime/optimization/proof/benchmark.log
@@ -146,24 +136,30 @@ jobs:
           from pathlib import Path
           d=json.loads(Path('runtime/optimization/proof/optimization-evidence.json').read_text())
           assert d['status']=='PASS' and d['observed'] is True
-          hist=d['historical_slow_vs_medium']
-          assert hist['status']=='REJECTED'
-          assert hist['candidate_seconds'] > hist['baseline_seconds']
-          assert hist['ssim'] >= 0.98
-          for row in d['candidates']:
-              assert row['qa_status']=='PASS'
-              assert row['checks']['resolution_1920x1080'] is True
-              assert row['checks']['fps_30'] is True
-              assert row['checks']['video_codec_h264'] is True
-              assert row['checks']['audio_codec_aac'] is True
-              assert row['full_decode'] is True
+          root=d['root_cause']
+          bench=d['benchmark']
+          assert root['stage']=='ffmpeg_decode_filtergraph_encode_audio_mix'
+          assert root['complexity']['legacy_prepad_seconds'] > root['complexity']['timeline_duration_seconds']
+          assert bench['promotion_eligible'] is True
+          assert bench['latency_reduction_fraction'] >= 0.20
+          assert bench['ssim'] >= 0.98
+          candidate=bench['candidate']
+          assert candidate['qa_status']=='PASS'
+          assert candidate['checks']['resolution_1920x1080'] is True
+          assert candidate['checks']['fps_30'] is True
+          assert candidate['checks']['video_codec_h264'] is True
+          assert candidate['checks']['audio_codec_aac'] is True
+          assert candidate['checks']['duration_expected'] is True
+          assert candidate['full_decode'] is True
+          assert candidate['timeline_placement']=='timestamp'
           a1=d['a1_post_render_remux']
           assert a1['precondition_a1_voice_contract'] is True
           assert a1['video_stream_copy_hash_preserved'] is True
           assert a1['result_full_decode'] is True
-          print('SLOW_VS_MEDIUM_CONCLUSION=REJECT_MEDIUM')
+          print('ROOT_CAUSE=LEGACY_TPAD_PRESTART_FRAME_SYNTHESIS')
           print('QUALITY_GATES=PASS')
           print('FULL_DECODE=PASS')
+          print('TIMESTAMP_PLACEMENT_PROMOTION=ELIGIBLE')
           print('A1_REDUNDANT_REMUX_MEASURED=PASS')
           PY
 
