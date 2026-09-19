@@ -2,6 +2,11 @@ name: Product To Human Review
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run/product-human-review.request.json
 
 permissions:
   contents: read
