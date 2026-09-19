@@ -14,7 +14,9 @@ from app.database.schema import initialize_schema
 from app.services.e2e_stage_checkpoint_service import build_resume_plan
 from app.services.e2e_stage_spec_service import (
     bootstrap_checkpoints,
+    bootstrap_upstream_checkpoints,
     build_specs_from_artifacts,
+    build_upstream_specs_from_artifacts,
 )
 
 
@@ -184,32 +186,48 @@ def main() -> int:
                     "reason": f"ARTIFACT_DOWNLOAD_FAILED:{type(exc).__name__}",
                 })
                 continue
-            if not required <= set(extracted):
+            upstream_required = {"mission.db", "fresh-research.json", "multi-agent-proof.json"}
+            if not upstream_required <= set(extracted):
                 candidates.append({
                     "source_run_id": source_run.get("id"),
                     "resume_available": False,
-                    "reason": "PRIOR_ARTIFACT_INCOMPLETE",
+                    "reason": "PRIOR_UPSTREAM_ARTIFACT_INCOMPLETE",
                     "extracted": extracted,
                 })
                 continue
             args.runtime_dir.mkdir(parents=True, exist_ok=True)
-            for name in required:
+            for name in upstream_required:
                 (args.runtime_dir / name).write_bytes((source_dir / name).read_bytes())
+            has_product = "product-quality-e2e.json" in set(extracted)
+            if has_product:
+                (args.runtime_dir / "product-quality-e2e.json").write_bytes(
+                    (source_dir / "product-quality-e2e.json").read_bytes()
+                )
             os.environ["BR_TEST_DATABASE"] = str((args.runtime_dir / "mission.db").resolve())
             initialize_schema()
             fresh = json.loads((args.runtime_dir / "fresh-research.json").read_text(encoding="utf-8"))
             proof = json.loads((args.runtime_dir / "multi-agent-proof.json").read_text(encoding="utf-8"))
-            product = json.loads((args.runtime_dir / "product-quality-e2e.json").read_text(encoding="utf-8"))
             durations = _trace_durations(source_dir / "performance-trace.jsonl")
-            bootstrap = bootstrap_checkpoints(
-                fresh=fresh,
-                proof=proof,
-                product=product,
-                source_commit_sha=str(source_run.get("head_sha") or ""),
-                source_run_id=str(source_run.get("id") or ""),
-                durations_ms=durations,
-            )
-            specs = build_specs_from_artifacts(fresh=fresh, proof=proof, product=product)
+            if has_product:
+                product = json.loads((args.runtime_dir / "product-quality-e2e.json").read_text(encoding="utf-8"))
+                bootstrap = bootstrap_checkpoints(
+                    fresh=fresh,
+                    proof=proof,
+                    product=product,
+                    source_commit_sha=str(source_run.get("head_sha") or ""),
+                    source_run_id=str(source_run.get("id") or ""),
+                    durations_ms=durations,
+                )
+                specs = build_specs_from_artifacts(fresh=fresh, proof=proof, product=product)
+            else:
+                bootstrap = bootstrap_upstream_checkpoints(
+                    fresh=fresh,
+                    proof=proof,
+                    source_commit_sha=str(source_run.get("head_sha") or ""),
+                    source_run_id=str(source_run.get("id") or ""),
+                    durations_ms=durations,
+                )
+                specs = build_upstream_specs_from_artifacts(fresh=fresh, proof=proof)
             plan = build_resume_plan(goal_id=bootstrap["goal_id"], specs=specs)
             reusable_upstream = {
                 "research", "fact-check", "gta6-brain", "content-strategy"
@@ -223,7 +241,7 @@ def main() -> int:
                 "bootstrap": bootstrap,
                 **plan,
                 "reuse_upstream": reusable_upstream,
-                "reuse_product_package": "youtube-package" in set(plan["reused_stages"]),
+                "reuse_product_package": has_product and "youtube-package" in set(plan["reused_stages"]),
             }
             candidates.append(candidate)
             if reusable_upstream:
