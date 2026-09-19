@@ -4,13 +4,21 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+import time
 from typing import Any, Callable, Mapping
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from app.services.agent_office.codex_bounded_worker import codex_sanitized_environment
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+_DEVICE_URL_RE = re.compile(r"https://[^\s]+/codex/device")
+_DEVICE_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,8}\b")
 
 
 @dataclass(frozen=True)
@@ -85,6 +93,98 @@ class CodexAuthenticationProvider:
             env=env,
         )
 
+    def _deliver_device_auth_private(
+        self,
+        *,
+        verification_url: str,
+        user_code: str,
+    ) -> None:
+        token = self._environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = self._environ.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+        run_id = self._environ.get("GITHUB_RUN_ID", "").strip()
+        if not token or not chat_id or not run_id:
+            raise RuntimeError("private Telegram device-auth delivery is not configured")
+        endpoint = f"https://api.telegram.org/bot{token}/sendMessage"
+        message = (
+            "BR no GTA — Codex device auth\n"
+            f"VERIFICATION_URL={verification_url}\n"
+            f"USER_CODE={user_code}\n"
+            f"RUN_ID={run_id}\n\n"
+            "Código temporário de uso único. Autorize agora; o mesmo runner está aguardando."
+        )
+        request = urllib.request.Request(
+            endpoint,
+            data=urllib.parse.urlencode(
+                {"chat_id": chat_id, "text": message, "disable_web_page_preview": "true"}
+            ).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"private Telegram device-auth delivery failed with HTTP {exc.code}"
+            ) from None
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            raise RuntimeError("private Telegram device-auth delivery was rejected")
+
+    def _device_auth_private(
+        self,
+        *,
+        cwd: Path,
+        timeout: float,
+        env: Mapping[str, str],
+    ) -> int:
+        process = subprocess.Popen(
+            ["codex", "login", "--device-auth"],
+            cwd=cwd,
+            env=dict(env),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if process.stdout is None:
+            process.kill()
+            raise RuntimeError("Codex device-auth output stream is unavailable")
+
+        verification_url = ""
+        user_code = ""
+        delivered = False
+        deadline = time.monotonic() + timeout
+        try:
+            while process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    return 124
+                line = process.stdout.readline()
+                if not line:
+                    time.sleep(0.05)
+                    continue
+                if not verification_url:
+                    match = _DEVICE_URL_RE.search(line)
+                    if match:
+                        verification_url = match.group(0).rstrip(".,;)")
+                if not user_code:
+                    match = _DEVICE_CODE_RE.search(line)
+                    if match:
+                        user_code = match.group(0)
+                if verification_url and user_code and not delivered:
+                    self._deliver_device_auth_private(
+                        verification_url=verification_url,
+                        user_code=user_code,
+                    )
+                    delivered = True
+                    print("USER_CODE_DELIVERY=PRIVATE", flush=True)
+                    print("WAITING_FOR_USER_AUTH=YES", flush=True)
+            return int(process.returncode or 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
     def bootstrap(
         self,
         *,
@@ -143,20 +243,33 @@ class CodexAuthenticationProvider:
         print("CODEX_DEVICE_AUTH_REQUIRED=YES", flush=True)
         print("CODEX_AUTH_METHOD_SELECTED=device_auth", flush=True)
         print("CODEX_AUTH_COST_CLASS=subscription_or_workspace", flush=True)
-        device = self._run(
-            ["codex", "login", "--device-auth"],
-            cwd=cwd,
-            timeout=timeout,
-            env=trusted_env,
-            passthrough=True,
+        private_delivery = bool(
+            source.get("TELEGRAM_BOT_TOKEN", "").strip()
+            and source.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+            and source.get("GITHUB_RUN_ID", "").strip()
         )
-        if device.returncode != 0:
+        if private_delivery:
+            device_returncode = self._device_auth_private(
+                cwd=cwd,
+                timeout=timeout,
+                env=trusted_env,
+            )
+        else:
+            device = self._run(
+                ["codex", "login", "--device-auth"],
+                cwd=cwd,
+                timeout=timeout,
+                env=trusted_env,
+                passthrough=True,
+            )
+            device_returncode = device.returncode
+        if device_returncode != 0:
             return CodexAuthenticationState(
                 available=False,
                 method="device_auth",
                 cost_class="subscription_or_workspace",
                 user_action_required=True,
-                exit_code=device.returncode,
+                exit_code=device_returncode,
             )
         status = self._status(cwd=cwd, timeout=timeout, env=trusted_env)
         return CodexAuthenticationState(
