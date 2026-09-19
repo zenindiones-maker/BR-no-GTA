@@ -100,7 +100,12 @@ class CodexAuthenticationProvider:
         user_code: str,
     ) -> int:
         token = self._environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-        chat_id = self._environ.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+        paired_user_id = self._environ.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
+        review_chat_id = self._environ.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+        chat_id = paired_user_id or review_chat_id
+        destination_class = (
+            "paired_user_dm" if paired_user_id else "review_channel_or_group"
+        )
         run_id = self._environ.get("GITHUB_RUN_ID", "").strip()
         if not token or not chat_id or not run_id:
             raise RuntimeError("private Telegram device-auth delivery is not configured")
@@ -145,7 +150,7 @@ class CodexAuthenticationProvider:
                 {
                     "run_id": run_id,
                     "destination_configured": True,
-                    "destination_class": "review_channel_or_group",
+                    "destination_class": destination_class,
                     "delivery_accepted": True,
                     "telegram_message_id": message_id,
                     "user_code_recorded": False,
@@ -212,7 +217,12 @@ class CodexAuthenticationProvider:
                         raise
                     delivered = True
                     print("TELEGRAM_DESTINATION_CONFIGURED=YES", flush=True)
-                    print("TELEGRAM_DESTINATION=REVIEW_CHANNEL_OR_GROUP", flush=True)
+                    destination = (
+                        "PAIRED_USER_DM"
+                        if self._environ.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
+                        else "REVIEW_CHANNEL_OR_GROUP"
+                    )
+                    print(f"TELEGRAM_DESTINATION={destination}", flush=True)
                     print("TELEGRAM_DELIVERY_ACCEPTED=YES", flush=True)
                     print(f"TELEGRAM_MESSAGE_ID={message_id}", flush=True)
                     print("USER_CODE_DELIVERY=PRIVATE", flush=True)
@@ -283,7 +293,10 @@ class CodexAuthenticationProvider:
         print("CODEX_AUTH_COST_CLASS=subscription_or_workspace", flush=True)
         private_delivery = bool(
             source.get("TELEGRAM_BOT_TOKEN", "").strip()
-            and source.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+            and (
+                source.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
+                or source.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
+            )
             and source.get("GITHUB_RUN_ID", "").strip()
         )
         if private_delivery:
