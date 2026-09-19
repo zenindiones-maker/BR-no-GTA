@@ -157,7 +157,9 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         json.dumps(
             {
                 "$schema": "https://opencode.ai/config.json",
-                "permission": {"*": "deny"},
+                "permissions": [
+                    {"action": "*", "resource": "*", "effect": "deny"}
+                ],
             },
             separators=(",", ":"),
         ),
