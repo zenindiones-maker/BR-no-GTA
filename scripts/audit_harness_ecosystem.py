@@ -204,33 +204,67 @@ def _python_agent_classes() -> list[dict[str, str]]:
 
 
 def _dsh_declared_agents() -> list[dict[str, Any]]:
-    """Inventory declarative DeepSeek Harness agent-loop entries from the canonical patch."""
+    """Inventory declarative DeepSeek Harness agent-loop entries from canonical config."""
     path = ROOT / ".dsh" / "cordis.patch.yml"
     if not path.is_file():
         return []
-    text = path.read_text(encoding="utf-8")
+
+    lines = path.read_text(encoding="utf-8").splitlines()
     rows: list[dict[str, Any]] = []
-    pattern = re.compile(
-        r"(?m)^      - id: (?P<id>[^\s]+)\s*$"
-        r"(?P<body>(?:^        [^\n]*\n?)*)"
-    )
-    for match in pattern.finditer(text):
-        body = match.group("body")
-        def field(name: str) -> str | None:
-            found = re.search(rf"(?m)^        {re.escape(name)}: ([^\\n]+)$", body)
-            return found.group(1).strip() if found else None
-        rows.append(
-            {
-                "agent_id": match.group("id").strip(),
-                "session_id": field("sessionId"),
-                "provider": field("provider"),
-                "model": field("model"),
+    in_agent_loop = False
+    in_agents = False
+    current: dict[str, Any] | None = None
+
+    for raw in lines:
+        stripped = raw.strip()
+        indent = len(raw) - len(raw.lstrip(" "))
+
+        if stripped == "- id: agent-loop":
+            in_agent_loop = True
+            in_agents = False
+            current = None
+            continue
+
+        if in_agent_loop and indent == 4 and stripped == "agents:":
+            in_agents = True
+            continue
+
+        if not in_agents:
+            continue
+
+        if indent <= 2 and stripped.startswith("- "):
+            break
+
+        if indent == 6 and stripped.startswith("- id: "):
+            if current is not None:
+                rows.append(current)
+            current = {
+                "agent_id": stripped.split(":", 1)[1].strip(),
+                "session_id": None,
+                "provider": None,
+                "model": None,
                 "source": ".dsh/cordis.patch.yml",
                 "driver": "@deepseek-ai/dsh-agent-loop",
                 "boot_declared": True,
                 "semantic_turn_proven": False,
             }
-        )
+            continue
+
+        if current is None or indent != 8 or ":" not in stripped:
+            continue
+
+        key, value = stripped.split(":", 1)
+        value = value.strip()
+        if key == "sessionId":
+            current["session_id"] = value
+        elif key == "provider":
+            current["provider"] = value
+        elif key == "model":
+            current["model"] = value
+
+    if current is not None:
+        rows.append(current)
+
     return rows
 
 
@@ -504,7 +538,7 @@ def audit() -> dict[str, Any]:
     agent_ids = {
         row["AGENT_OR_SKILL_ID"]
         for row in identities
-        if row["IDENTITY_KIND"] == "AGENT"
+        if row["IDENTITY_KIND"] in {"AGENT", "HARNESS_NATIVE_AGENT"}
     }
     skill_ids = {
         row["AGENT_OR_SKILL_ID"]
