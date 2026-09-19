@@ -1,0 +1,23 @@
+{
+  "version": "video-a-final-audio-approval/v1",
+  "status": "HUMAN_APPROVED",
+  "approved_at": "2026-09-19T12:55:00Z",
+  "approved_by": "channel-owner-human-review",
+  "role": "FINAL_END_SIGNATURE",
+  "sample_id": "G-brand-mixed",
+  "source_run_id": 35444013735,
+  "source_artifact_id": 10585440542,
+  "source_artifact_name": "pronunciation-proof-35444013735-1",
+  "artifact_relative_path": "samples/G-brand-mixed.mp3",
+  "canonical_audio_text": "BR no GTA 6. E BR não dorme em Vice City.",
+  "canonical_closing_line": "E BR não dorme em Vice City",
+  "voice": "Voice B",
+  "voice_short_name": "pt-BR-ThalitaMultilingualNeural",
+  "gta6_pronunciation_human_approved": true,
+  "vice_city_pronunciation_human_approved": true,
+  "contains_canonical_closing_line": true,
+  "automatic_substitution_allowed": false,
+  "regeneration_allowed_without_new_human_review": false,
+  "youtube_publication": false,
+  "job18_frozen": true
+}
