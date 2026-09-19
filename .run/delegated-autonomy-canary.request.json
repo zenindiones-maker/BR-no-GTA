@@ -1,7 +1,7 @@
 {
-  "requested_from_head": "feea591f41287a7a456f3783e5c3fa1781b640c2",
-  "reason": "single rerun after ANSI-safe Codex device-code capture, private Telegram receipt, and paired-DM routing correction",
-  "focused_validation_run_id": 35471781105,
+  "requested_from_head": "71b57319447ac6ac83d5a46e73c2119a1c61dd96",
+  "reason": "single delegated autonomy rerun after GitHub-hosted Codex Bubblewrap sandbox preflight and truthful worker-status validation",
+  "focused_validation_run_id": 35473544399,
   "focused_tests": [
     "tests/test_codex_auth_boundary.py",
     "tests/test_delegated_agent_autonomy.py",
@@ -9,9 +9,12 @@
   ],
   "codex_auth_boundary_tests": "PASS",
   "deterministic_delegation_gates": "PASS",
-  "auth_bootstrap": "same_runner_device_auth_private_delivery",
-  "device_code_capture": "ANSI_SAFE",
-  "telegram_delivery_receipt": "MESSAGE_ID_REQUIRED",
-  "telegram_destination_priority": "PAIRED_USER_DM_THEN_REVIEW_DESTINATION",
+  "codex_sandbox_preflight": "PASS",
+  "codex_sandbox_readonly_preflight": "PASS",
+  "codex_sandbox_workspace_write_preflight": "PASS",
+  "codex_sandbox_network_isolation": "PASS",
+  "codex_secret_isolation": "PASS",
+  "canonical_worktree_mutation": "NONE",
+  "sandbox_backend": "bubblewrap",
   "requested_canary_count": 1
 }
