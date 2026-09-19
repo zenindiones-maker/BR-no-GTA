@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+from app.services import codex_addy_capability_executor as addy_executor
 from app.services.codex_addy_capability_executor import execute_codex_addy_capability
 from app.services.global_capability_registry_base import (
     ADDY_SKILLS,
@@ -39,6 +40,7 @@ def tiny_repository(tmp_path: Path) -> Path:
 def test_each_addy_skill_has_governed_harness_execution_contract(
     skill_name: str,
     tiny_repository: Path,
+    monkeypatch,
 ):
     capability_id = f"addy:{skill_name}"
     record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
@@ -79,16 +81,13 @@ def test_each_addy_skill_has_governed_harness_execution_contract(
         )
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
+    monkeypatch.setattr(addy_executor, "_runtime_runner", runner)
+    monkeypatch.setattr(addy_executor, "_repository_root", lambda: tiny_repository)
     evidence = execute_capability(
         capability_id=capability_id,
         authorization=authorization,
         payload={"task": f"Certification probe for {skill_name}."},
-        executor=lambda capability, payload: execute_codex_addy_capability(
-            capability,
-            payload,
-            runner=runner,
-            repository_root=tiny_repository,
-        ),
+        executor=execute_codex_addy_capability,
     )
 
     assert evidence.status == "EXECUTED"
