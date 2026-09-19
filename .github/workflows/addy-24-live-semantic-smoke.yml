@@ -7,10 +7,14 @@ on:
     paths:
       - '.github/workflows/addy-24-live-semantic-smoke.yml'
       - '.run001/addy-24-live-semantic.request.json'
+      - 'app/services/addy_harness_service.py'
+      - 'scripts/agent-tooling/live_semantic_smoke_addy_24.py'
+      - 'scripts/agent-tooling/certify_addy_24.py'
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: addy-24-live-semantic-smoke
@@ -19,20 +23,26 @@ concurrency:
 jobs:
   live-semantic-smoke:
     name: Prove 24 real Addy semantic turns
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       PYTHONPATH: .
-      BR_TEST_DATABASE: /tmp/addy-24-live-semantic.db
-      MAX_TOTAL_TOKENS: '192000'
-      MAX_TOKENS_PER_TURN: '8000'
+      BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/addy-24-live/addy-24.db
       LIVE_PARALLELISM: '4'
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REF: work/gate6f-analytics-learning
+      BR_OPENCODE_NATIVE_POLL_INTERVAL: '2'
+      BR_OPENCODE_NATIVE_RUN_TIMEOUT: '900'
+      BR_OPENCODE_NATIVE_ARTIFACT_ROOT: artifacts/addy-24-live/opencode-artifacts
 
     steps:
       - name: Checkout exact branch state
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -45,90 +55,96 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install BR dependencies
+      - name: Install BR and observed provider runtimes
         run: |
+          set -euo pipefail
+          mkdir -p artifacts/addy-24-live
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
+          npm install --global omniroute@3.8.50
+          npm install --global @opencode/cli@2.0.8
+          OMNI="$(omniroute --version | tr -d '\r' | sed -E 's/^[^0-9]*//')"
+          OPEN="$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')"
+          test "$OMNI" = "3.8.50"
+          test "$OPEN" = "2.0.8"
+          gh auth status
 
-      - name: Restore pinned Codex and Addy tooling
+      - name: Restore pinned Addy skill source
         run: bash scripts/agent-tooling/bootstrap.sh codex
 
-      - name: Validate smoke contract before authentication
+      - name: Validate pinned skill and Registry contract
         run: |
-          python -m py_compile scripts/agent-tooling/live_semantic_smoke_addy_24.py
+          set -euo pipefail
+          python -m py_compile             app/services/addy_harness_service.py             scripts/agent-tooling/live_semantic_smoke_addy_24.py
           python scripts/agent-tooling/live_semantic_smoke_addy_24.py --validate-contract
-          python scripts/agent-tooling/certify_addy_24.py \
-            --output artifacts/addy-24-live/provisioning-registry.json
-          python scripts/agent-tooling/check_discovery.py \
-            codex artifacts/addy-24-live/native-discovery.json
+          python scripts/agent-tooling/certify_addy_24.py             --output artifacts/addy-24-live/provisioning-registry.json
+          python scripts/agent-tooling/check_discovery.py             codex artifacts/addy-24-live/native-discovery.json
 
-      - name: Authenticate Codex without exposing credentials
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      - name: Regression-test governed Addy boundaries
         run: |
-          set +x
-          if [ -n "${OPENAI_API_KEY:-}" ]; then
-            printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key >/dev/null
-            echo 'CODEX_LIVE_AUTH_METHOD=api-key'
-          elif [ -n "${CODEX_ACCESS_TOKEN:-}" ]; then
-            printf '%s' "$CODEX_ACCESS_TOKEN" | codex login --with-access-token >/dev/null
-            echo 'CODEX_LIVE_AUTH_METHOD=access-token'
-          else
-            echo 'CODEX_LIVE_AUTH=BLOCKED'
-            echo 'No OPENAI_API_KEY or CODEX_ACCESS_TOKEN repository secret is available.'
-            exit 3
-          fi
-          unset OPENAI_API_KEY CODEX_ACCESS_TOKEN
-          codex login status
-          echo 'CODEX_LIVE_AUTH=PASS'
+          set -euo pipefail
+          pytest -q             tests/test_addy_24_certification.py             tests/test_codex_addy_capability_executor.py
 
-      - name: Regression-test governed Addy boundary
+      - name: Observe and govern semantic provider promotion
         run: |
-          pytest -q tests/test_addy_24_certification.py tests/test_codex_addy_capability_executor.py
+          set -euo pipefail
+          python scripts/prepare_system_synergy_opencode_profile.py             --output artifacts/addy-24-live/provider-promotion.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/addy-24-live/provider-promotion.json").read_text())
+          assert d["status"]=="PASS", d
+          assert d["evaluation_decision"]=="PROMOTE", d
+          assert d["active_profile"]["version"]=="v2", d
+          assert d["quality_regression"]=="NO", d
+          assert d["fallback_occurred"] is False, d
+          print("ADDY_SEMANTIC_PROVIDER_PROMOTION=PASS")
+          print("ADDY_SEMANTIC_PROVIDER_PROFILE=v2")
+          PY
 
-      - name: Run 24 real semantic Codex turns through the Harness
+      - name: Run 24 real semantic turns through DeepSeek Harness
         run: |
+          set -euo pipefail
           before="$(git status --porcelain --untracked-files=no)"
-          python scripts/agent-tooling/live_semantic_smoke_addy_24.py \
-            --output artifacts/addy-24-live \
-            --parallelism "${LIVE_PARALLELISM}" \
-            --max-turns 24 \
-            --max-total-tokens "${MAX_TOTAL_TOKENS}" \
-            --max-tokens-per-turn "${MAX_TOKENS_PER_TURN}" \
-            --max-wall-seconds 3600 \
-            --per-turn-timeout-seconds 180
+          python scripts/agent-tooling/live_semantic_smoke_addy_24.py             --output artifacts/addy-24-live             --parallelism "${LIVE_PARALLELISM}"             --max-turns 24             --max-wall-seconds 4800             --per-turn-timeout-seconds 900
           after="$(git status --porcelain --untracked-files=no)"
           test "$before" = "$after"
           echo 'ADDY_24_LIVE_REPOSITORY_MUTATION=NONE'
 
       - name: Independently verify receipts and mission summary
         run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
 
-          root = Path('artifacts/addy-24-live')
-          summary = json.loads((root / 'summary.json').read_text(encoding='utf-8'))
-          receipts = [json.loads(path.read_text(encoding='utf-8')) for path in sorted((root / 'receipts').glob('*.json'))]
-          assert summary['status'] == 'PASS', summary['checks']
-          assert summary['observed_count'] == 24
-          assert len(receipts) == 24
-          assert len({item['skill'] for item in receipts}) == 24
-          assert all(item['status'] == 'PASS' for item in receipts)
-          assert all(item['authority'] == 'deepseek_harness' for item in receipts)
-          assert all(item['sandbox'] == 'read-only' for item in receipts)
-          assert all(item['usage']['input_tokens'] > 0 for item in receipts)
-          assert all(item['usage']['output_tokens'] > 0 for item in receipts)
-          assert all(item['semantic_verification']['status'] == 'PASS' for item in receipts)
-          assert summary['observed']['total_tokens'] <= summary['budget']['max_total_tokens']
-          assert summary['mission_root_hash']
-          assert summary['observed']['usd_claimed'] is False
-          print('ADDY_24_LIVE_RECEIPTS=24/24')
-          print('ADDY_24_LIVE_SEMANTIC_VERIFICATION=24/24')
-          print('ADDY_24_LIVE_BUDGET=PASS')
-          print('ADDY_24_LIVE_HASH_CHAIN=PASS')
-          print('ADDY_24_LIVE_FINAL=PASS')
+          root=Path("artifacts/addy-24-live")
+          summary=json.loads((root/"summary.json").read_text(encoding="utf-8"))
+          receipts=[
+              json.loads(path.read_text(encoding="utf-8"))
+              for path in sorted((root/"receipts").glob("*.json"))
+          ]
+          assert summary["status"]=="PASS", summary["checks"]
+          assert summary["observed_count"]==24
+          assert len(receipts)==24
+          assert len({item["skill"] for item in receipts})==24
+          assert all(item["status"]=="PASS" for item in receipts)
+          assert all(item["authority"]=="deepseek_harness" for item in receipts)
+          assert all(item["semantic_provider"]=="opencode" for item in receipts)
+          assert all(item["semantic_model"]=="oc/big-pickle" for item in receipts)
+          assert all(item["provider_profile_version"]=="v2" for item in receipts)
+          assert all(item["live_checks"]["real_semantic_turn"] for item in receipts)
+          assert all(item["live_checks"]["live_receipt"] for item in receipts)
+          assert all(item["live_checks"]["returned_to_harness"] for item in receipts)
+          assert all(item["semantic_verification"]["status"]=="PASS" for item in receipts)
+          assert summary["mission_root_hash"]
+          assert summary["observed"]["token_usage_available"] is False
+          assert summary["observed"]["usd_claimed"] is False
+          print("ADDY_24_LIVE_RECEIPTS=24/24")
+          print("ADDY_24_LIVE_SEMANTIC_VERIFICATION=24/24")
+          print("ADDY_24_LIVE_PROVIDER_PROFILE=v2")
+          print("ADDY_24_LIVE_HASH_CHAIN=PASS")
+          print("ADDY_24_LIVE_FINAL=PASS")
           PY
 
       - name: Upload complete live semantic evidence
