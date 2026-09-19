@@ -16,6 +16,11 @@ def test_g_brand_mixed_is_locked_as_human_approved_final_end_signature():
     assert data["source_run_id"] == 35444013735
     assert data["source_artifact_id"] == 10585440542
     assert data["artifact_relative_path"] == "samples/G-brand-mixed.mp3"
+    assert data["approved_asset_path"] == "assets/branding/audio/g-brand-mixed-approved-20260919.mp3"
+    assert data["approved_asset_sha256"] == "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+    assert data["approval_manifest_path"] == "assets/branding/audio/human-approval-manifest.json"
+    assert data["artifact_source_preserved_for_provenance"] is True
+    assert data["runtime_dependency_on_historical_artifact"] is False
     assert data["canonical_audio_text"] == "BR no GTA 6. E BR não dorme em Vice City."
     assert data["canonical_closing_line"] == "E BR não dorme em Vice City"
     assert data["voice"] == "Voice B"
