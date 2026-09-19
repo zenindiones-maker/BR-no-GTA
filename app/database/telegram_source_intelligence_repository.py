@@ -392,3 +392,19 @@ def get_editorial_signal_by_candidate(candidate_id: str) -> dict[str, Any] | Non
         )
     finally:
         connection.close()
+
+
+def get_editorial_signal_by_goal_id(goal_id: str) -> dict[str, Any] | None:
+    if not isinstance(goal_id, str) or not goal_id.strip():
+        raise ValueError("goal_id must be a non-empty string")
+    connection = get_connection()
+    try:
+        _ensure_schema(connection)
+        return _signal(
+            connection.execute(
+                "SELECT * FROM telegram_editorial_signals WHERE goal_id = ? ORDER BY updated_at DESC LIMIT 1",
+                (goal_id.strip(),),
+            ).fetchone()
+        )
+    finally:
+        connection.close()
