@@ -140,6 +140,7 @@ CAPABILITY_CATALOG = tuple(
         or record.capability_id == "human.presentation.action-first"
         or record.capability_id == "narration.generate.pt-BR"
         or record.capability_id.startswith("youtube.department.")
+        or record.capability_id == "youtube.package.persist"
         or record.capability_id == "youtube.monetization.observe"
         or record.capability_id == "system.improvement.propose"
         or record.capability_id in {
