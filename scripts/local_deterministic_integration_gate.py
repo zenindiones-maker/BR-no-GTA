@@ -6,7 +6,14 @@ from pathlib import Path
 import time
 from types import SimpleNamespace
 
+from app.database.schema import initialize_schema
 from app.services.fake_ai_provider import FakeAIProvider
+from app.services.e2e_stage_checkpoint_service import (
+    StageSpec,
+    evaluate_reuse,
+    invalidate_stage_and_descendants,
+    record_completed_stage,
+)
 from app.services.script_generator_service import _generate_ai_structure
 from app.services.youtube_department_service import (
     _semantic_output_contract,
@@ -119,6 +126,40 @@ def _context_packet_contracts() -> None:
         json.loads(json.dumps(result, ensure_ascii=False))
 
 
+
+def _checkpoint_resume_contract() -> None:
+    initialize_schema()
+    spec = StageSpec(
+        stage_id="research",
+        input_payload={"query": "checkpoint contract gate", "source_url": "https://example.invalid"},
+        code_paths=("scripts/local_deterministic_integration_gate.py",),
+        provider_profile_version="deterministic-gate:v1",
+        freshness_policy={"reusable": True},
+    )
+    goal_id = "local-deterministic-checkpoint-gate"
+    checkpoint = record_completed_stage(
+        goal_id=goal_id,
+        spec=spec,
+        output_payload={"status": "PASS", "value": 1},
+        duration_ms=1234.5,
+        provenance={"gate": "LOCAL_DETERMINISTIC_INTEGRATION"},
+        source_run_id="local-gate",
+        source_execution_id="local-gate",
+    )
+    assert checkpoint["stage_id"] == "research"
+    reuse = evaluate_reuse(goal_id=goal_id, spec=spec)
+    assert reuse["reusable"] is True, reuse
+    assert float(reuse["checkpoint"]["duration_ms"]) == 1234.5
+    invalidated = invalidate_stage_and_descendants(
+        goal_id=goal_id,
+        stage_id="research",
+        reason="contract-gate-invalidation",
+    )
+    assert invalidated >= 1
+    after = evaluate_reuse(goal_id=goal_id, spec=spec)
+    assert after["reusable"] is False
+    assert after["reason"] == "MISSING_CHECKPOINT"
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -128,17 +169,20 @@ def main() -> int:
     _script_contract()
     _specialist_contracts()
     _context_packet_contracts()
+    _checkpoint_resume_contract()
 
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     result = {
         "status": "PASS",
         "LOCAL_DETERMINISTIC_INTEGRATION": "PASS",
         "specialists_checked": list(PRODUCT_SPECIALISTS),
+        "CHECKPOINT_RESUME_CONTRACT": "PASS",
         "elapsed_ms": round(elapsed_ms, 3),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("LOCAL_DETERMINISTIC_INTEGRATION=PASS")
+    print("CHECKPOINT_RESUME_CONTRACT=PASS")
     print(f"LOCAL_DETERMINISTIC_INTEGRATION_MS={elapsed_ms:.3f}")
     return 0
 

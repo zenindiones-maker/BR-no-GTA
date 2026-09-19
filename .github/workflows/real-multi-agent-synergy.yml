@@ -28,6 +28,10 @@ on:
       - 'scripts/fast_prelive_gate.py'
       - 'scripts/hydrate_promoted_opencode_profile.py'
       - 'scripts/summarize_performance_trace.py'
+      - 'app/database/e2e_stage_checkpoint_repository.py'
+      - 'app/services/e2e_stage_spec_service.py'
+      - 'app/services/e2e_stage_checkpoint_service.py'
+      - 'scripts/restore_e2e_resume_state.py'
 
 permissions:
   contents: write
@@ -55,6 +59,8 @@ jobs:
       BR_OPENCODE_NATIVE_ARTIFACT_ROOT: runtime/real-multi-agent-synergy/opencode-artifacts
       BR_PERFORMANCE_TRACE_FILE: runtime/real-multi-agent-synergy/performance-trace.jsonl
       BR_PERFORMANCE_TRACE_ID: "github:${{ github.run_id }}:${{ github.run_attempt }}"
+      BR_E2E_RESEARCH_FRESHNESS_SECONDS: "900"
+      BR_E2E_FORCE_FULL: "${{ contains(github.event.head_commit.message, '[full-proof]') }}"
 
     steps:
       - name: Checkout exact branch state
@@ -152,6 +158,35 @@ jobs:
         run: |
           echo "BR_OPENCODE_RUNTIME_CACHE_HIT=${OPENCODE_RUNTIME_CACHE_HIT:-false}" >> "$GITHUB_ENV"
 
+      - name: Restore validated stage checkpoints
+        id: resume
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --output runtime/real-multi-agent-synergy/resume-state.json
+            --runtime-dir runtime/real-multi-agent-synergy
+          )
+          if [ "${BR_E2E_FORCE_FULL,,}" = "true" ]; then
+            ARGS+=(--force-full)
+          fi
+          python scripts/restore_e2e_resume_state.py "${ARGS[@]}"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-multi-agent-synergy/resume-state.json").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"mode={d.get('mode','FULL_PROOF_RUN')}\n")
+              out.write(f"reuse_upstream={str(bool(d.get('reuse_upstream'))).lower()}\n")
+              out.write(f"reuse_product_package={str(bool(d.get('reuse_product_package'))).lower()}\n")
+              out.write(f"resume_from_stage={d.get('RESUME_FROM_STAGE','research')}\n")
+              out.write(f"source_run_id={d.get('source_run_id','')}\n")
+          print(f"E2E_RUN_MODE={d.get('mode')}")
+          print(f"RESUME_FROM_STAGE={d.get('RESUME_FROM_STAGE')}")
+          print(f"REUSED_STAGE_COUNT={d.get('REUSED_STAGE_COUNT')}")
+          print(f"RECOMPUTED_STAGE_COUNT={d.get('RECOMPUTED_STAGE_COUNT')}")
+          print(f"REUSED_TIME_SAVED_MS={d.get('REUSED_TIME_SAVED_MS')}")
+          PY
+
       - name: Rehydrate previously promoted OpenCode profile
         run: |
           set -euo pipefail
@@ -190,6 +225,7 @@ jobs:
           echo "PRE_LIVE_GATES=PASS"
 
       - name: Collect current Rockstar source evidence
+        if: steps.resume.outputs.reuse_upstream != 'true'
         run: |
           set -euo pipefail
           QUERY_B64="$(printf '%s' 'Quais fatos oficiais atuais sobre GTA VI podem sustentar uma pauta editorial do BR no GTA 6?' | base64 -w0)"
@@ -208,6 +244,7 @@ jobs:
           PY
 
       - name: Execute real governed multi-agent mission
+        if: steps.resume.outputs.reuse_upstream != 'true'
         run: |
           set -euo pipefail
           python scripts/prove_real_multi_agent_synergy.py             --fresh-research runtime/real-multi-agent-synergy/fresh-research.json             --output runtime/real-multi-agent-synergy/multi-agent-proof.json
@@ -266,9 +303,14 @@ jobs:
       - name: Execute real product E2E into YouTube package database
         run: |
           set -euo pipefail
-          python scripts/youtube_product_quality_e2e.py \
-            --synergy-proof runtime/real-multi-agent-synergy/multi-agent-proof.json \
-            --output runtime/real-multi-agent-synergy/product-quality-e2e.json
+          if [ "${{ steps.resume.outputs.reuse_product_package }}" = "true" ]; then
+            echo "PRODUCT_E2E=REUSED_FROM_CHECKPOINT"
+            echo "TARGETED_RETRY_RUN=PASS"
+          else
+            python scripts/youtube_product_quality_e2e.py \
+              --synergy-proof runtime/real-multi-agent-synergy/multi-agent-proof.json \
+              --output runtime/real-multi-agent-synergy/product-quality-e2e.json
+          fi
           python - <<'PY'
           import json
           from pathlib import Path
