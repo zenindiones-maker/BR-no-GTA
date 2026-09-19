@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -153,34 +154,19 @@ def _baseline_probe(prompt: str, root: Path) -> dict[str, Any]:
 def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
     started_at = _utcnow()
     started = time.monotonic()
-    config_path = root / "opencode-candidate.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "$schema": "https://opencode.ai/config.json",
-                "permissions": [
-                    {"action": "*", "resource": "*", "effect": "deny"}
-                ],
-            },
-            separators=(",", ":"),
-        ),
-        encoding="utf-8",
-    )
-    env = dict(os.environ)
-    env["OPENCODE_CONFIG"] = str(config_path.resolve())
-    process = subprocess.run(
-        [
-            "opencode", "run", "--standalone", "--model", EXECUTOR_MODEL,
-            "--agent", "build",
-            "--title", "BR-no-GTA provider benchmark",
-            "--format", "json", prompt,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=300,
-        check=False,
-        env=env,
-    )
+    with tempfile.TemporaryDirectory(prefix="br-opencode-probe-") as tmp:
+        process = subprocess.run(
+            [
+                "opencode", "run", "--standalone", "--model", EXECUTOR_MODEL,
+                "--format", "json", prompt,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+            cwd=tmp,
+            env=dict(os.environ),
+        )
     latency = time.monotonic() - started
     finished_at = _utcnow()
     parts: list[str] = []
