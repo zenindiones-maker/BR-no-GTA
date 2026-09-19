@@ -90,6 +90,17 @@ class _Publisher:
             youtube_url="https://www.youtube.com/watch?v=yt-private-41",
         )
 
+    def get_processing_state(self, youtube_video_id):
+        assert youtube_video_id == "yt-private-41"
+        return SimpleNamespace(
+            success=True,
+            privacy_status="private",
+            upload_status="processed",
+            processing_status="succeeded",
+            definition="hd",
+            error=None,
+        )
+
 
 def test_worker_uploads_only_after_exact_artifact_evidence_passes(tmp_path):
     root, media = _artifact(tmp_path)
@@ -102,6 +113,8 @@ def test_worker_uploads_only_after_exact_artifact_evidence_passes(tmp_path):
     assert result["video_id"] == 31
     assert result["youtube_video_id"] == "yt-private-41"
     assert result["artifact_evidence"]["qa_status"] == "PASS"
+    assert result["review_ready"] is True
+    assert result["youtube_processing"]["definition"] == "hd"
     assert result["artifact_evidence"]["sha256"] == hashlib.sha256(media.read_bytes()).hexdigest()
     assert publisher.calls[0]["file_path"] == str(media)
     assert publisher.calls[0]["privacy_status"] == "private"
