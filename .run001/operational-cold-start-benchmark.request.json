@@ -7,5 +7,10 @@
   "candidate": "preinstalled-ffmpeg-when-valid-plus-consolidated-pip",
   "promotion_performed": false,
   "quality_guard": "technical runtime parity required",
-  "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2"
+  "operational_efficiency_policy": "br-no-gta.operational-efficiency@v2",
+  "rerun_requested_at": "2026-09-19T11:39:30Z",
+  "rerun_base_head": "546ac2c7ea21b9e2652f3fa70a8dfbbc6f9526fd",
+  "rerun_purpose": "System-wide performance Phase E current-HEAD observed baseline/candidate refresh",
+  "job18_unchanged": true,
+  "youtube_publication": false
 }
