@@ -166,9 +166,7 @@ jobs:
           config={
               "$schema":"https://opencode.ai/config.json",
               "model":"opencode/big-pickle",
-              "permissions":[
-                  {"action":"*","resource":"*","effect":"deny"}
-              ],
+              "permission":{"*":"deny"},
           }
           (work_root/"opencode.json").write_text(
               json.dumps(config, separators=(",",":")),
@@ -182,14 +180,13 @@ jobs:
           )"
           set +e
           PROMPT="$(cat runtime/opencode-native-result/prompt.txt)"
-          (
-            cd runtime/opencode-native-workdir
-            timeout 180 opencode run \
-              --standalone \
-              --model "opencode/big-pickle" \
-              --format json \
-              "$PROMPT"
-          ) > runtime/opencode-native-result/stdout.ndjson \
+          OPENCODE_CONFIG="$PWD/runtime/opencode-native-workdir/opencode.json" \
+          timeout 180 opencode run \
+            --standalone \
+            --model "opencode/big-pickle" \
+            --format json \
+            "$PROMPT" \
+            > runtime/opencode-native-result/stdout.ndjson \
             2> runtime/opencode-native-result/stderr.txt
           RC=$?
           set -e
