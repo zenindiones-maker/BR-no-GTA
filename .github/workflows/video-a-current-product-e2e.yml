@@ -1,0 +1,177 @@
+name: VIDEO A Current Contract E2E
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run/video-a-current-product-e2e.request.json
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: video-a-current-product-e2e
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      BR_RENDER_EXECUTOR: github_actions
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/checkpoint/mission.db
+      BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/product-delivery/performance-trace.jsonl
+      ZERO_COST_OPERATION: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install controller runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Restore canonical Product Package database checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10589535732"
+          run-id: "35458162169"
+          github-token: ${{ github.token }}
+          path: runtime/checkpoint
+          merge-multiple: true
+      - name: Restore content-addressed MediaKnowledge
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10590341059"
+          run-id: "35460016361"
+          github-token: ${{ github.token }}
+          path: runtime/media-knowledge-source
+          merge-multiple: true
+      - name: Restore historical failed render identity
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10590247951"
+          run-id: "35463603082"
+          github-token: ${{ github.token }}
+          path: runtime/historical
+          merge-multiple: true
+      - name: Reuse Product Package and MediaKnowledge preflight
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py preflight             --product runtime/checkpoint/product-quality-e2e.json             --media-knowledge-dir runtime/media-knowledge-source/product-delivery/media-knowledge             --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json             --out runtime/product-delivery
+          echo "CHECKPOINT_REUSE=YES"
+          echo "RESEARCH_RECOMPUTED=NO"
+          echo "BRAIN_RECOMPUTED=NO"
+          echo "EDITORIAL_RECOMPUTED=NO"
+          echo "MEDIAKNOWLEDGE_REUSED=YES"
+      - name: Reconcile stale Job1 and dispatch current Job2
+        run: |
+          set -euo pipefail
+          python scripts/video_a_current_contract_recovery.py prepare-dispatch             --product runtime/checkpoint/product-quality-e2e.json             --old-state runtime/historical/product-delivery/state.json             --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/state.json"))
+          print(f"VIDEO_ID={d['VIDEO_ID']}")
+          print(f"RENDER_JOB_ID={d['RENDER_JOB_ID']}")
+          print(f"RENDER_RUN_ID={d['RENDER_RUN_ID']}")
+          PY
+      - name: Wait only for current professional render
+        run: |
+          set -euo pipefail
+          python scripts/e2e_latency_stage.py start render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
+          python scripts/watch_github_run.py --run-id "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/product-delivery/render-watch.json
+          python scripts/e2e_latency_stage.py end render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
+      - name: Reconcile QA-passed render into canonical database
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py reconcile-render --out runtime/product-delivery
+          python scripts/continue_product_to_human_review.py create-publication --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/publication.json"))
+          print(f"PUBLICATION_ID={d['publication']['id']}")
+          PY
+      - name: Dispatch YouTube PRIVATE through Harness
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py dispatch-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/product-delivery/dispatch-upload.json"))
+          r=d["result"]
+          print(f"YOUTUBE_UPLOAD_RUN_ID={r['upload_run_id']}")
+          PY
+      - name: Wait only for private HD review readiness
+        run: |
+          set -euo pipefail
+          python scripts/e2e_latency_stage.py start youtube_processing_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/youtube-watch.json
+          python scripts/watch_github_run.py --run-id "$YOUTUBE_UPLOAD_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/product-delivery/youtube-watch.json
+          python scripts/e2e_latency_stage.py end youtube_processing_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/youtube-watch.json
+      - name: Reconcile private YouTube and Telegram receipt
+        run: |
+          set -euo pipefail
+          python scripts/continue_product_to_human_review.py reconcile-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python scripts/continue_product_to_human_review.py final --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          final=json.load(open("runtime/product-delivery/final.json"))
+          matches=list(Path("runtime/youtube-upload/results").rglob("youtube-upload-result.json"))
+          assert len(matches)==1, matches
+          upload=json.loads(matches[0].read_text())
+          review=upload.get("telegram_review") or {}
+          processing=upload.get("youtube_processing") or {}
+          assert final["YOUTUBE_PRIVACY_STATUS"]=="private", final
+          assert final["YOUTUBE_REVIEW_VIDEO_ID"] and final["YOUTUBE_REVIEW_URL"], final
+          assert upload.get("review_ready") is True, upload
+          assert processing.get("privacy_status")=="private", processing
+          assert processing.get("upload_status")=="processed", processing
+          assert processing.get("processing_status")=="succeeded", processing
+          assert processing.get("definition")=="hd", processing
+          assert review.get("status")=="DELIVERED", review
+          assert isinstance(review.get("telegram_message_id"),int), review
+          final["YOUTUBE_PROCESSING_STATUS"]="READY"
+          final["TELEGRAM_DELIVERY_STATUS"]="PASS"
+          final["TELEGRAM_MESSAGE_ID"]=review["telegram_message_id"]
+          final["HUMAN_REVIEW_STATUS"]="PENDING"
+          Path("runtime/product-delivery/final.json").write_text(json.dumps(final,ensure_ascii=False,indent=2))
+          print("PRODUCT_E2E=PASS")
+          print("PRODUCTION_READINESS=PASS")
+          print(f"VIDEO_ID={final['VIDEO_ID']}")
+          print(f"RENDER_JOB_ID={final['RENDER_JOB_ID']}")
+          print("RENDER_QA=PASS")
+          print(f"YOUTUBE_REVIEW_VIDEO_ID={final['YOUTUBE_REVIEW_VIDEO_ID']}")
+          print(f"YOUTUBE_REVIEW_URL={final['YOUTUBE_REVIEW_URL']}")
+          print("YOUTUBE_PRIVACY_STATUS=private")
+          print("YOUTUBE_PROCESSING_STATUS=READY")
+          print("TELEGRAM_DELIVERY_STATUS=PASS")
+          print(f"TELEGRAM_MESSAGE_ID={final['TELEGRAM_MESSAGE_ID']}")
+          print("HUMAN_REVIEW_STATUS=PENDING")
+          PY
+      - name: Build latency profile
+        if: always()
+        run: |
+          set -euo pipefail
+          python scripts/summarize_performance_trace.py             --trace runtime/product-delivery/performance-trace.jsonl             --output runtime/product-delivery/latency-profile.json             --run-id "$GITHUB_RUN_ID"
+      - name: Upload complete VIDEO A delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-current-product-e2e-${{ github.run_id }}
+          path: |
+            runtime/product-delivery/
+            runtime/checkpoint/product-quality-e2e.json
+            runtime/checkpoint/mission.db
+            runtime/youtube-upload/results/
+          if-no-files-found: warn
+          retention-days: 30

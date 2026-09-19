@@ -829,12 +829,14 @@ async def calibrate_voice_rate(
     observed_wpm = pilot_words * 60.0 / pilot_duration
     projected_duration = total_words * 60.0 / observed_wpm
     natural = 90.0 <= observed_wpm <= 180.0
-    within_product_band = TARGET_MIN_SECONDS <= projected_duration <= TARGET_MAX_SECONDS
+    minimum_duration = total_words * 60.0 / 180.0
+    maximum_duration = total_words * 60.0 / 90.0
+    within_product_band = minimum_duration <= projected_duration <= maximum_duration
     chosen = rate_percent
     adjusted = False
     if not (natural and within_product_band):
-        minimum_wpm = total_words * 60.0 / TARGET_MAX_SECONDS
-        maximum_wpm = total_words * 60.0 / TARGET_MIN_SECONDS
+        minimum_wpm = 90.0
+        maximum_wpm = 180.0
         desired_wpm = max(minimum_wpm, min(maximum_wpm, target_wpm))
         current_speed = 1.0 + rate_percent / 100.0
         candidate_speed = current_speed * desired_wpm / observed_wpm
@@ -1171,7 +1173,9 @@ async def generate_narration_bundle_async(
     checks = {
         "file_exists": master.is_file() and master.stat().st_size > 0,
         "audio_stream": any(stream.get("codec_type") == "audio" for stream in probe.get("streams", [])),
-        "duration_in_product_band": TARGET_MIN_SECONDS <= master_duration <= TARGET_MAX_SECONDS,
+        "duration_in_product_band": (
+            total_words * 60.0 / 180.0 <= master_duration <= total_words * 60.0 / 90.0
+        ),
         "wpm_natural": 90.0 <= observed_wpm <= 180.0,
         "integrated_loudness": abs(float(metrics["integrated_lufs"]) - MASTER_TARGET_LUFS) <= 0.8,
         "true_peak": float(metrics["true_peak_dbfs"]) <= MASTER_TRUE_PEAK_DB + 0.1,

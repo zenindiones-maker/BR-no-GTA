@@ -16,6 +16,7 @@ from typing import Any
 from app.main import initialize_application
 from app.services.edit_plan_service import EditAudio, EditClip, EditPlan, EditQA, EditText, EditTrack
 from app.services.channel_spoken_branding_service import validate_job_spoken_branding
+from app.services.current_audio_contract_service import current_audio_contract
 from app.services.brand_audio_service import prepare_brand_audio, compose_content_voice_master
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.global_capability_registry_base import (
@@ -212,8 +213,17 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
             raise WorkerError("first section must be the hook")
     if sections[-1].get("role") != "cta":
         raise WorkerError("last section must be the CTA")
-    if not (MIN_SCRIPT_WORDS <= total_words <= MAX_SCRIPT_WORDS):
-        raise WorkerError(f"professional script word count out of range: {total_words}")
+    target_seconds = float(job.get("estimated_duration_seconds") or 0.0)
+    if target_seconds > 0:
+        minimum_words = max(450, int(math.floor((target_seconds / 60.0) * 90.0)))
+        maximum_words = max(minimum_words, int(math.ceil((target_seconds / 60.0) * 180.0)))
+    else:
+        minimum_words, maximum_words = MIN_SCRIPT_WORDS, MAX_SCRIPT_WORDS
+    if not (minimum_words <= total_words <= maximum_words):
+        raise WorkerError(
+            "professional script word count out of range for approved duration: "
+            f"{total_words} not in [{minimum_words},{maximum_words}]"
+        )
 
     sources = job.get("media_sources")
     if not isinstance(sources, list) or not sources:
@@ -268,10 +278,25 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
         raise WorkerError("narration configuration is required")
     if narration.get("language") != "pt-BR":
         raise WorkerError("narration language must be pt-BR")
+    audio_contract = current_audio_contract()
+    if job.get("current_audio_contract_fingerprint") != audio_contract["CURRENT_AUDIO_CONTRACT_FINGERPRINT"]:
+        raise WorkerError("CURRENT_AUDIO_CONTRACT_FINGERPRINT mismatch")
     voice = narration.get("voice")
-    if not isinstance(voice, str) or not voice.startswith("pt-BR-") or not voice.endswith("Neural"):
-        raise WorkerError("a pt-BR neural voice identity is required")
-    return {"word_count": total_words, "section_count": len(sections)}
+    if voice != audio_contract["VOICE_SHORT_NAME"]:
+        raise WorkerError("Voice B official identity cannot be substituted")
+    if narration.get("human_quality_baseline") != audio_contract["OFFICIAL_VOICE"]:
+        raise WorkerError("Voice B human quality baseline is required")
+    if narration.get("single_voice_only") is not True:
+        raise WorkerError("SINGLE_VOICE_ONLY must remain true")
+    if narration.get("alternative_voice_casting_enabled") is not False:
+        raise WorkerError("alternative voice casting must remain disabled")
+    return {
+        "word_count": total_words,
+        "section_count": len(sections),
+        "minimum_words": minimum_words,
+        "maximum_words": maximum_words,
+        "audio_contract_fingerprint": audio_contract["CURRENT_AUDIO_CONTRACT_FINGERPRINT"],
+    }
 
 
 def _probe_audio(path: Path) -> tuple[dict[str, Any], float]:
