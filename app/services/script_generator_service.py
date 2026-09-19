@@ -14,6 +14,7 @@ def _build_ai_prompt(
     title: str,
     description: str,
     research_context: dict[str, Any] | None,
+    editorial_context: dict[str, Any] | None = None,
     target_duration_seconds: float | None = None,
 ) -> str:
     research_text = "Nenhuma fonte de pesquisa adicional disponível."
@@ -23,6 +24,14 @@ def _build_ai_prompt(
             f"Título da pesquisa: {research_context.get('title', '')}\n"
             f"Conteúdo da pesquisa: {research_context.get('content', '')}\n"
             f"URL: {research_context.get('url', '')}"
+        )
+
+    editorial_text = ""
+    if editorial_context:
+        editorial_text = (
+            "\nCONTEXTO EDITORIAL DO YOUTUBE DEPARTMENT\n"
+            + json.dumps(editorial_context, ensure_ascii=False, sort_keys=True)
+            + "\n"
         )
 
     duration_instruction = ""
@@ -50,12 +59,14 @@ Descrição:
 
 CONTEXTO DE PESQUISA
 {research_text}
+{editorial_text}
 {duration_instruction}
 
 REGRAS
 - Não invente fatos.
 - Não apresente especulação como confirmação.
-- Use somente as informações fornecidas.
+- Use somente as informações fornecidas e as claims explicitamente verificadas.
+- Considere o contexto editorial do YouTube Department quando fornecido, mas ele não pode substituir evidência factual.
 - Escreva em português brasileiro.
 - O roteiro deve ser adequado para narração em vídeo.
 - O hook deve despertar curiosidade sem usar clickbait enganoso.
@@ -163,12 +174,14 @@ def _generate_ai_structure(
     description: str,
     research_context: dict[str, Any] | None,
     ai_provider: AIProvider,
+    editorial_context: dict[str, Any] | None = None,
     target_duration_seconds: float | None = None,
 ) -> dict[str, Any]:
     prompt = _build_ai_prompt(
         title=title,
         description=description,
         research_context=research_context,
+        editorial_context=editorial_context,
         target_duration_seconds=target_duration_seconds,
     )
 
@@ -193,6 +206,7 @@ def generate_script_structure(
     idea_id: int,
     *,
     ai_provider: AIProvider | None = None,
+    editorial_context: dict[str, Any] | None = None,
     target_duration_seconds: float | None = None,
 ) -> dict[str, Any]:
     """
@@ -239,6 +253,7 @@ def generate_script_structure(
             description=normalized_description,
             research_context=research_context,
             ai_provider=ai_provider,
+            editorial_context=editorial_context,
             target_duration_seconds=target_duration_seconds,
         )
 
@@ -337,6 +352,7 @@ def generate_and_save_script(
     idea_id: int,
     *,
     ai_provider: AIProvider | None = None,
+    editorial_context: dict[str, Any] | None = None,
     target_duration_seconds: float | None = None,
 ) -> int:
     """
@@ -348,6 +364,7 @@ def generate_and_save_script(
     structure = generate_script_structure(
         idea_id,
         ai_provider=ai_provider,
+        editorial_context=editorial_context,
         target_duration_seconds=target_duration_seconds,
     )
 
