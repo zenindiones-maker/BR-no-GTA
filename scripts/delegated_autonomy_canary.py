@@ -10,7 +10,7 @@ import time
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from app.database.agent_office_mission_repository import get_mission, list_task_events if False else get_mission
+from app.database.agent_office_mission_repository import get_mission
 from app.database.agent_execution_lease_repository import list_task_events
 from app.database.schema import initialize_schema
 from app.services.agent_office.integration_gate import run_integration_gate, write_integration_artifact
