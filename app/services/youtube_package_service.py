@@ -4,6 +4,10 @@ from typing import Any
 
 from app.database.youtube_package_repository import upsert_youtube_content_package
 from app.services.harness_capability_service import execute_capability
+from app.services.harness_authorization_service import (
+    resolve_harness_authorization,
+    validate_harness_authorization,
+)
 
 
 YOUTUBE_PACKAGE_CAPABILITY_ID = "youtube.package.persist"
@@ -111,6 +115,24 @@ def persist_youtube_content_package(
     evidence_refs: list[str] | tuple[str, ...] = (),
     provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    auth = resolve_harness_authorization(authorization)
+    auth = validate_harness_authorization(
+        auth,
+        expected_action="YOUTUBE",
+        expected_subject=f"capability:{YOUTUBE_PACKAGE_CAPABILITY_ID}",
+    )
+    lineage = dict(auth.lineage or {})
+    expected_lineage = {
+        "goal_id": goal_id,
+        "content_item_id": content_item_id,
+        "script_id": script_id,
+    }
+    for field, expected in expected_lineage.items():
+        if lineage.get(field) != expected:
+            raise PermissionError(
+                f"YouTube package authorization {field} lineage mismatch"
+            )
+
     payload = {
         "goal_id": goal_id,
         "content_item_id": content_item_id,
@@ -130,7 +152,7 @@ def persist_youtube_content_package(
     }
     execution = execute_capability(
         capability_id=YOUTUBE_PACKAGE_CAPABILITY_ID,
-        authorization=authorization,
+        authorization=auth,
         payload=payload,
         routing_decision=routing_decision,
         executor=execute_youtube_package_persist_capability,
