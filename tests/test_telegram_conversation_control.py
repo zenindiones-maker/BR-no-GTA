@@ -115,6 +115,27 @@ def test_multiturn_pronoun_feedback_binds_human_decision_and_learning():
     assert correction["HARNESS_AUTHORITY_PRESERVED"] == "PASS"
 
 
+def test_file_submission_is_a_first_class_conversation_intent():
+    result = handle_telegram_conversation(
+        "arquivo enviado: referencia.mp4",
+        telegram_chat_id=9988,
+        telegram_message_id=701,
+        input_record={
+            "id": 701,
+            "telegram_chat_id": 9988,
+            "telegram_message_id": 701,
+            "classification": "reference_media",
+            "input_kind": "video",
+            "remote_verified": True,
+        },
+        has_attachment=True,
+        chat_handler=_chat_stub,
+        presenter=_presenter,
+    )
+    assert result["intent"] == "FILE_SUBMISSION"
+    assert result["conversation_state"]["last_human_intent"] == "FILE_SUBMISSION"
+
+
 def test_natural_language_research_routes_without_slash_command():
     result = handle_telegram_conversation(
         "pesquisa as últimas informações do GTA 6 e me diz se muda nosso roteiro",
