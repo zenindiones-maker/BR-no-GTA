@@ -67,9 +67,11 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_hermes_multiagent_boundary.py             tests/test_hermes_kanban_live_core.py             tests/test_harness_routing_policy_service.py             tests/test_global_capability_registry.py             tests/test_system_synergy_service.py             --junitxml=artifacts/hermes-multiagent/focused.xml
+          python -m pytest -q             tests/test_hermes_multiagent_boundary.py             tests/test_hermes_kanban_live_core.py             tests/test_harness_routing_policy_service.py             tests/test_global_capability_registry.py             tests/test_system_synergy_service.py             tests/test_telegram_harness_integration.py             tests/test_opencode_executor_profile_learning.py             tests/test_opencode_semantic_text_profile.py             tests/test_harness_ai_provider_service.py             --junitxml=artifacts/hermes-multiagent/focused.xml
           echo "HERMES_FOCUSED_TESTS=PASS"
+          echo "HERMES_TIMEOUT_DIAGNOSTICS=PASS"
           echo "HUMAN_IN_THE_LOOP_BOUNDARY=PASS"
+          echo "GATE6F_FOCUSED=PASS"
           echo "SYSTEM_SYNERGY_FOCUSED=PASS"
 
       - name: Run VIDEO A real multi-agent mission
@@ -91,6 +93,11 @@ jobs:
           assert proof["status"]=="PASS",proof
           checks=proof["checks"]
           required_true=[
+              "ROOT_TASK_READY",
+              "DEPENDENCY_GATING",
+              "DISPATCH_CLAIM",
+              "RUNNING_TRANSITION",
+              "ALL_MISSION_TASKS_TERMINAL",
               "HERMES_UPSTREAM_PINNED",
               "HERMES_UNDER_HARNESS",
               "GLOBAL_REGISTRY_REMAINS_CANONICAL",
@@ -125,6 +132,7 @@ jobs:
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
           print("YOUTUBE_PUBLICATION=NO")
+          print("GATE6F_FOCUSED=PASS")
           print("SYSTEM_SYNERGY=PASS")
           PY
 
