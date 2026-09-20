@@ -65,6 +65,27 @@ class HermesProfileFactory:
             allowed_tools=HERMES_COORDINATION_TOOLS,
         )
 
+    def project_orchestrator(self) -> HermesRuntimeProfile:
+        record = self.registry.get("collaboration.hermes.execute")
+        if record is None:
+            raise RuntimeError("Hermes runtime capability is not registered")
+        return HermesRuntimeProfile(
+            profile_name="hermes-orchestrator",
+            task_id="__mission__",
+            runtime_role="hermes-orchestrator",
+            capability_id=record.capability_id,
+            domain=record.domain,
+            action="EXECUTION",
+            canonical_agent_id=record.agent_id,
+            canonical_skill_id=record.skill_id,
+            executor_binding=str(record.executor_binding or ""),
+            input_contract=record.input_contract,
+            output_contract=record.output_contract,
+            evidence_contract=str(record.evidence_contract or ""),
+            evidence_expectations=("CollaborationPlan fidelity", "board lifecycle evidence"),
+            allowed_tools=HERMES_COORDINATION_TOOLS,
+        )
+
     def project_plan(
         self,
         plan: CollaborationPlan,
