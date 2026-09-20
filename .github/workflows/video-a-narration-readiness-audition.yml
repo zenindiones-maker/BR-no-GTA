@@ -12,6 +12,8 @@ on:
       - "config/video_a_production_readiness_human.json"
       - "config/video_a_production_readiness_state.json"
       - "config/pronunciation_evidence_registry.json"
+      - "config/pronunciation_ptbr_candidate.json"
+      - "config/pronunciation_lexicon.json"
       - "tests/test_video_a_production_readiness.py"
       - ".github/workflows/video-a-narration-readiness-audition.yml"
   workflow_dispatch:
@@ -98,8 +100,15 @@ jobs:
           assert report["UNPLANNED_TEXT_OVERLAY"]=="OFF",report
           assert report["CLAIM_EVIDENCE_COVERAGE"]==100.0,report
           assert report["PRONUNCIATION_COVERAGE_PERCENT"]<100.0,report
+          assert report["FOREIGN_LANGUAGE_CHUNKS"]=="OFF",report
+          assert report["NO_NAME_FRAGMENTATION"]=="PASS",report
+          inv=json.loads((root/"pronunciation-inventory.json").read_text(encoding="utf-8"))
+          assert inv["ALL_CONFIGURED_TERMS_PTBR"]=="PASS",inv
+          assert inv["FOREIGN_LANGUAGE_CHUNKS_ALLOWED"]=="NO",inv
+          assert inv["PTBR_CANDIDATE_CONFIGURATION_PERCENT"]==100.0,inv
           print("AUDITION_PACK_TECHNICAL_EXECUTION=PASS")
           print("TEXT_FIDELITY="+str(report["TEXT_FIDELITY"]))
+          print("FOREIGN_LANGUAGE_CHUNKS=OFF")
           print("GLOBAL_PRONUNCIATION_STATUS=FAIL")
           print("HUMAN_VOICE_REVIEW=PENDING")
           print("PRODUCTION_READINESS=FAIL")
@@ -143,7 +152,7 @@ jobs:
               -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
               -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
               -F "document=@$audio" \
-              -F "caption=VIDEO A · Voice B audition · $variant · $block · MESMO TEXTO · sem full render · HUMAN_VOICE_REVIEW=PENDING")"
+              -F "caption=VIDEO A · Voice B · PT-BR ONLY · $variant · $block · sem chunk estrangeiro · HUMAN_VOICE_REVIEW=PENDING")"
             RESPONSE="$response" FILE="$audio" python - <<'PY' >> "$root/telegram-audition-message-ids.txt"
           import json,os
           d=json.loads(os.environ["RESPONSE"])
