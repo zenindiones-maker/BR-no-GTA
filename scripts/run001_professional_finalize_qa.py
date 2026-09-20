@@ -21,6 +21,47 @@ def single_folder(root: Path) -> Path:
     return unique[0]
 
 
+def subtitles_qa_pass(
+    *,
+    job: dict[str, Any],
+    edit_qa: dict[str, Any],
+    probe: dict[str, Any],
+    edit_plan: dict[str, Any] | None,
+) -> bool:
+    subtitles = dict(job.get("subtitles") or {})
+    edit_checks = dict(edit_qa.get("checks") or {})
+    streams = list(probe.get("streams") or [])
+    no_subtitle_stream = not any(item.get("codec_type") == "subtitle" for item in streams)
+    no_closed_captions = all(
+        int(item.get("closed_captions") or 0) == 0
+        for item in streams
+        if item.get("codec_type") == "video"
+    )
+    persisted_edit_proof = (
+        edit_qa.get("status") == "PASS"
+        and edit_checks.get("subtitles_default_disabled") is True
+        and edit_checks.get("burned_subtitles_disabled") is True
+    )
+    configured_off = (
+        subtitles.get("enabled") is False
+        and subtitles.get("burned_subtitles") is False
+        and subtitles.get("open_captions") is False
+        and subtitles.get("transcript_overlay") is False
+        and subtitles.get("srt_burn_in") is False
+    )
+    if not (configured_off and persisted_edit_proof and no_subtitle_stream and no_closed_captions):
+        return False
+    if edit_plan is None:
+        return True
+    burned_tracks = {
+        str(item.get("track") or "")
+        for item in edit_plan.get("texts", [])
+        if isinstance(item, dict)
+        and str(item.get("track") or "") in {"CAPTIONS", "BRAND_CAPTIONS"}
+    }
+    return not burned_tracks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-root", required=True)
@@ -73,26 +114,20 @@ def main() -> int:
     if render_qa.get("status") != "PASS":
         raise RuntimeError("final branded render QA is not PASS")
 
-    subtitles = dict(job.get("subtitles") or {})
-    edit_plan = load(folder / "edit-plan.json")
-    burned_tracks = {
-        str(item.get("track") or "")
-        for item in edit_plan.get("texts", [])
-        if isinstance(item, dict)
-        and str(item.get("track") or "") in {"CAPTIONS", "BRAND_CAPTIONS"}
-    }
+    probe = load(folder / "video-probe.json")
+    edit_plan_path = folder / "edit-plan.json"
+    edit_plan = load(edit_plan_path) if edit_plan_path.is_file() else None
     gates["SUBTITLES_QA"] = (
         "PASS"
-        if subtitles.get("enabled") is False
-        and subtitles.get("burned_subtitles") is False
-        and subtitles.get("open_captions") is False
-        and subtitles.get("transcript_overlay") is False
-        and subtitles.get("srt_burn_in") is False
-        and not burned_tracks
+        if subtitles_qa_pass(
+            job=job,
+            edit_qa=load(folder / "edit-qa.json"),
+            probe=probe,
+            edit_plan=edit_plan,
+        )
         else "FAIL"
     )
 
-    probe = load(folder / "video-probe.json")
     streams = list(probe.get("streams", []))
     video = next((item for item in streams if item.get("codec_type") == "video"), {})
     audio = next((item for item in streams if item.get("codec_type") == "audio"), {})
