@@ -81,7 +81,7 @@ class HermesBoardAdapter:
         assignee: str,
         parents: tuple[str, ...] = (),
         idempotency_key: str | None = None,
-        initial_status: str = "running",
+        initial_status: str = "ready",
     ) -> str:
         with self.connection() as (kb, _kbd, conn):
             return kb.create_task(
@@ -175,6 +175,12 @@ class HermesBoardAdapter:
     def worker_context(self, task_id: str) -> str:
         with self.connection() as (kb, _kbd, conn):
             return kb.build_worker_context(conn, task_id)
+
+    def list_runs(self, task_id: str) -> list[dict[str, Any]]:
+        with self.connection() as (kb, _kbd, conn):
+            if kb.get_task(conn, task_id) is None:
+                raise ValueError(f"unknown Hermes task: {task_id}")
+            return [dict(vars(row)) for row in kb.list_runs(conn, task_id)]
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         with self.connection() as (kb, _kbd, conn):
