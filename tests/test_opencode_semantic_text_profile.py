@@ -11,7 +11,10 @@ from app.services.opencode_executor_profile_service import (
     _DisprovenSemanticProvider,
     executable_opencode_executor_profile,
 )
-from app.services.opencode_native_ai_provider import build_semantic_text_only_env
+from app.services.opencode_native_ai_provider import (
+    _same_runner_cli_command,
+    build_semantic_text_only_env,
+)
 from app.services.opencode_semantic_profile import (
     OPENCODE_SEMANTIC_AGENT_ID,
     OPENCODE_SEMANTIC_CONTRACT,
@@ -54,6 +57,29 @@ def _failed_opencode_evidence() -> HarnessAIProviderEvidence:
         provider_profile_checksum="checksum-v2",
     )
 
+
+
+
+
+def test_keyless_opencode_console_uses_official_shared_client_not_standalone():
+    command, mode = _same_runner_cli_command(
+        executor_model="opencode/big-pickle",
+        prompt="Responda apenas: TESTE_OK",
+    )
+    assert command[:2] == ["opencode", "run"]
+    assert "--standalone" not in command
+    assert mode == "shared_client"
+    assert command[command.index("--agent") + 1] == "build"
+    assert command[command.index("--format") + 1] == "json"
+
+
+def test_external_provider_keeps_documented_standalone_ci_mode():
+    command, mode = _same_runner_cli_command(
+        executor_model="anthropic/claude-sonnet-4-5",
+        prompt="Responda apenas: TESTE_OK",
+    )
+    assert command[:3] == ["opencode", "run", "--standalone"]
+    assert mode == "standalone"
 
 def test_semantic_v3_uses_dedicated_primary_agent_one_step_and_deny_all():
     config = semantic_text_only_config()
