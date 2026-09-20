@@ -62,6 +62,45 @@ def subtitles_qa_pass(
     return not burned_tracks
 
 
+def spoken_branding_qa_pass(
+    *,
+    render_qa: dict[str, Any],
+    no_padding: dict[str, Any],
+    manifest: dict[str, Any] | None,
+) -> bool:
+    required_manifest = (
+        "OFFICIAL_INTRO_FIRST",
+        "SPOKEN_OPENING_AFTER_INTRO",
+        "VOICE_B_USED",
+        "OPENING_TEXT_CANONICAL",
+        "CLOSING_TEXT_CANONICAL",
+        "BRAND_AUDIO_CACHE_POLICY",
+        "EDITORIAL_HOOK_PRESERVED",
+    )
+    if manifest is not None:
+        return (
+            all(manifest.get(key) == "PASS" for key in required_manifest)
+            and manifest.get("JOB18_UNCHANGED") == "YES"
+            and manifest.get("PUBLICATION_AUTHORITY_UNCHANGED") == "YES"
+        )
+    checks = dict(render_qa.get("checks") or {})
+    required_render_checks = (
+        "intro_present",
+        "spoken_opening_after_intro",
+        "voice_b_used",
+        "opening_text_canonical",
+        "closing_text_canonical",
+        "brand_audio_cache_policy",
+        "editorial_hook_preserved",
+    )
+    return (
+        render_qa.get("status") == "PASS"
+        and all(checks.get(key) is True for key in required_render_checks)
+        and no_padding.get("job18_unchanged") is True
+        and no_padding.get("no_youtube_publish") is True
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-root", required=True)
@@ -150,21 +189,15 @@ def main() -> int:
         raise RuntimeError("final branded render lacks branding evidence")
     gates["AUDIOVISUAL_QA"] = "PASS"
     gates["INTRO_QA"] = "PASS" if branding.get("intro_duration_seconds", 0) > 0 else "FAIL"
-    manifest = load(folder / "render-manifest.json")
-    required_brand_evidence = (
-        "OFFICIAL_INTRO_FIRST",
-        "SPOKEN_OPENING_AFTER_INTRO",
-        "VOICE_B_USED",
-        "OPENING_TEXT_CANONICAL",
-        "CLOSING_TEXT_CANONICAL",
-        "BRAND_AUDIO_CACHE_POLICY",
-        "EDITORIAL_HOOK_PRESERVED",
-    )
+    manifest_path = folder / "render-manifest.json"
+    manifest = load(manifest_path) if manifest_path.is_file() else None
     gates["SPOKEN_BRANDING_QA"] = (
         "PASS"
-        if all(manifest.get(key) == "PASS" for key in required_brand_evidence)
-        and manifest.get("JOB18_UNCHANGED") == "YES"
-        and manifest.get("PUBLICATION_AUTHORITY_UNCHANGED") == "YES"
+        if spoken_branding_qa_pass(
+            render_qa=render_qa,
+            no_padding=no_padding,
+            manifest=manifest,
+        )
         else "FAIL"
     )
     gates["WATERMARK_QA"] = (

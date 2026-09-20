@@ -1,4 +1,4 @@
-from scripts.run001_professional_finalize_qa import subtitles_qa_pass
+from scripts.run001_professional_finalize_qa import spoken_branding_qa_pass, subtitles_qa_pass
 
 
 def _job():
@@ -55,3 +55,37 @@ def test_subtitles_gate_rejects_subtitle_stream_or_closed_captions():
     probe=_probe()
     probe["streams"].append({"codec_type": "subtitle"})
     assert not subtitles_qa_pass(job=_job(), edit_qa=_edit_qa(), probe=probe, edit_plan=None)
+
+
+def test_spoken_branding_gate_accepts_persisted_render_qa_when_manifest_is_omitted():
+    render_qa={
+        "status":"PASS",
+        "checks":{
+            "intro_present":True,
+            "spoken_opening_after_intro":True,
+            "voice_b_used":True,
+            "opening_text_canonical":True,
+            "closing_text_canonical":True,
+            "brand_audio_cache_policy":True,
+            "editorial_hook_preserved":True,
+        },
+    }
+    no_padding={"job18_unchanged":True,"no_youtube_publish":True}
+    assert spoken_branding_qa_pass(render_qa=render_qa,no_padding=no_padding,manifest=None)
+
+
+def test_spoken_branding_gate_rejects_incomplete_persisted_render_qa():
+    render_qa={
+        "status":"PASS",
+        "checks":{
+            "intro_present":True,
+            "spoken_opening_after_intro":True,
+            "voice_b_used":False,
+            "opening_text_canonical":True,
+            "closing_text_canonical":True,
+            "brand_audio_cache_policy":True,
+            "editorial_hook_preserved":True,
+        },
+    }
+    no_padding={"job18_unchanged":True,"no_youtube_publish":True}
+    assert not spoken_branding_qa_pass(render_qa=render_qa,no_padding=no_padding,manifest=None)
