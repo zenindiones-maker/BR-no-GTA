@@ -630,3 +630,51 @@ def update_render_job_status(
     )
 
     return True
+
+
+def replace_queued_render_job_payload(job_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Replace only the contract payload of one still-queued RenderJob.
+
+    This is used when a newly allocated database identity must be embedded into
+    the immutable worker contract before the job is claimed. It cannot mutate a
+    running/completed job and it never changes attempt/status.
+    """
+    if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id <= 0:
+        raise ValueError("job_id must be a positive integer")
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("payload must be a non-empty object")
+    for field in REQUIRED_FIELDS:
+        if field not in payload:
+            raise ValueError(f"replacement RenderJob lacks required field: {field}")
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT id,status,attempt FROM render_jobs WHERE id=? LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Render job não encontrado: {job_id}")
+        if row["status"] != "queued":
+            raise ValueError(
+                f"Render job {job_id} não está em estado queued: {row['status']}"
+            )
+        normalized = dict(payload)
+        normalized["id"] = job_id
+        normalized["render_job_id"] = job_id
+        normalized["status"] = "queued"
+        normalized["attempt"] = int(row["attempt"])
+        cursor = connection.execute(
+            "UPDATE render_jobs SET payload=?, updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND status='queued'",
+            (json.dumps(normalized, ensure_ascii=False), job_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError(f"Render job {job_id} changed concurrently")
+        connection.commit()
+        return {**normalized}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
