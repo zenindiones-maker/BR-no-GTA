@@ -770,6 +770,12 @@ class OpenCodeNativeAIProvider:
             "elapsed_seconds",
             "fallback_occurred",
             "retry_count",
+            "tool_call_count",
+            "tools_exposed",
+            "semantic_agent",
+            "semantic_profile_version",
+            "semantic_contract",
+            "semantic_text_only_pass",
         }
         if not isinstance(payload, dict) or not required.issubset(payload):
             raise OpenCodeNativeAIProviderError(
@@ -805,6 +811,78 @@ class OpenCodeNativeAIProvider:
             raise PermissionError("OpenCode native CLI version mismatch")
         if payload["fallback_occurred"] is not False:
             raise PermissionError("OpenCode native executor reported fallback")
+        if payload["semantic_agent"] != OPENCODE_SEMANTIC_AGENT_ID:
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode semantic executor used the wrong agent",
+                details={
+                    "execution_ref": f"github-actions:{dispatched.run_id}",
+                    "run_id": dispatched.run_id,
+                    "canonical_model": canonical_model,
+                    "profile_version": self.profile_version,
+                    "profile_content_ref": self.profile_content_ref,
+                    "failure_code": "semantic_agent_mismatch",
+                    "semantic_agent": payload.get("semantic_agent"),
+                    "semantic_profile_version": payload.get("semantic_profile_version"),
+                },
+            )
+        if payload["semantic_profile_version"] != OPENCODE_SEMANTIC_PROFILE_VERSION:
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode semantic profile version mismatch",
+                details={
+                    "execution_ref": f"github-actions:{dispatched.run_id}",
+                    "run_id": dispatched.run_id,
+                    "canonical_model": canonical_model,
+                    "profile_version": self.profile_version,
+                    "profile_content_ref": self.profile_content_ref,
+                    "failure_code": "semantic_profile_mismatch",
+                    "semantic_agent": payload.get("semantic_agent"),
+                    "semantic_profile_version": payload.get("semantic_profile_version"),
+                },
+            )
+        if payload["semantic_contract"] != OPENCODE_SEMANTIC_CONTRACT:
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode semantic contract mismatch",
+                details={
+                    "execution_ref": f"github-actions:{dispatched.run_id}",
+                    "run_id": dispatched.run_id,
+                    "canonical_model": canonical_model,
+                    "failure_code": "semantic_contract_mismatch",
+                    "semantic_contract": payload.get("semantic_contract"),
+                },
+            )
+        if (
+            int(payload["tool_call_count"] or 0) != 0
+            or int(payload["tools_exposed"] or 0) != 0
+            or payload["semantic_text_only_pass"] is not True
+        ):
+            raise OpenCodeNativeAIProviderError(
+                "OpenCode semantic execution violated zero-tool contract",
+                details={
+                    "execution_ref": f"github-actions:{dispatched.run_id}",
+                    "run_id": dispatched.run_id,
+                    "canonical_model": canonical_model,
+                    "profile_version": self.profile_version,
+                    "profile_content_ref": self.profile_content_ref,
+                    "failure_code": "semantic_tools_used",
+                    "semantic_agent": payload.get("semantic_agent"),
+                    "semantic_profile_version": payload.get("semantic_profile_version"),
+                    "semantic_contract": payload.get("semantic_contract"),
+                    "semantic_text_only_pass": payload.get("semantic_text_only_pass"),
+                    "tool_call_count": payload.get("tool_call_count"),
+                    "tools_exposed": payload.get("tools_exposed"),
+                    "tool_events": payload.get("tool_events"),
+                    "error_events": payload.get("error_events"),
+                    "safe_stderr_tail": payload.get("safe_stderr"),
+                },
+            )
+        self.last_performance_metrics = {
+            "tool_call_count": int(payload["tool_call_count"] or 0),
+            "tools_exposed": int(payload["tools_exposed"] or 0),
+            "semantic_text_only_pass": bool(payload["semantic_text_only_pass"]),
+            "semantic_agent": payload["semantic_agent"],
+            "semantic_profile_version": payload["semantic_profile_version"],
+            "elapsed_seconds": payload.get("elapsed_seconds"),
+        }
         text = str(payload["text"] or "").strip()
         if not text:
             raise OpenCodeNativeAIProviderError(
