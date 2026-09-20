@@ -86,7 +86,7 @@ jobs:
 
           while IFS= read -r filename; do
             test -n "$filename" || continue
-            if grep -Fq "^$filename=" "$root/telegram-editorial-message-ids.txt"; then
+            if awk -F= -v f="$filename" '$1==f {found=1} END {exit !found}' "$root/telegram-editorial-message-ids.txt"; then
               echo "TELEGRAM_RESUME_SKIP=$filename"
               continue
             fi
