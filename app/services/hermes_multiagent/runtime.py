@@ -67,7 +67,6 @@ def materialize_board_from_plan(
         for plan_task_id in level:
             routed = spec.task(plan_task_id)
             profile = profile_by_task[plan_task_id]
-            parent_board_ids = tuple(board_ids[parent] for parent in routed.dependencies)
             body = json.dumps(
                 {
                     "mission_id": spec.mission_id,
@@ -93,10 +92,14 @@ def materialize_board_from_plan(
                 title=f"[{plan_task_id}] {routed.objective}",
                 body=body,
                 assignee=profile.profile_name,
-                parents=parent_board_ids,
+                parents=(),
                 idempotency_key=f"{spec.mission_id}:{plan_task_id}",
                 initial_status="running",
             )
+    for routed in spec.collaboration_plan.tasks:
+        child_id = board_ids[routed.task_id]
+        for parent_task_id in routed.dependencies:
+            board.link(board_ids[parent_task_id], child_id)
     return board_ids, profiles
 
 
