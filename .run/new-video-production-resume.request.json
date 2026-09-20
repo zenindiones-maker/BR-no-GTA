@@ -1,0 +1,18 @@
+{
+  "requested_from_head": "9e664c107774380eb149fee6ad1ab310937608ad",
+  "baseline_run_id": 35513582812,
+  "baseline_artifact_id": 10606072935,
+  "focused_validation_run_id": 35514364109,
+  "resume_from": "persisted_script_content_item_production_plan",
+  "reuse": {
+    "fresh_research": true,
+    "fact_check": true,
+    "goal": true,
+    "script": true,
+    "production_plan": true
+  },
+  "rerun_research": false,
+  "rerun_fact_check": false,
+  "rerun_goal_creation": false,
+  "requested_resume_count": 1
+}
