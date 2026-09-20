@@ -1,0 +1,141 @@
+name: VIDEO A Narration Fluency Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - app/services/narration_pipeline.py
+      - app/services/pronunciation_service.py
+      - scripts/video_a_narration_fluency_proof.py
+      - tests/test_narration_pipeline.py
+      - tests/test_pronunciation_service.py
+      - .github/workflows/video-a-narration-fluency-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-narration-fluency-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install focused audio runtime
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install -r requirements.txt pytest "edge-tts==7.2.8"
+
+      - name: Focused narration and pronunciation regressions
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_narration_pipeline.py \
+            tests/test_narration_timing_contract.py \
+            tests/test_pronunciation_service.py
+          echo "NARRATION_FLUENCY_FOCUSED_TESTS=PASS"
+
+      - name: Restore exact rejected narration evidence
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10606237268"
+          run-id: "35514545427"
+          github-token: \${{ github.token }}
+          path: runtime/rejected-narration
+          merge-multiple: true
+
+      - name: Restore exact rejected RenderJob
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10607268845"
+          run-id: "35519368513"
+          github-token: \${{ github.token }}
+          path: runtime/rejected-render-job
+          merge-multiple: true
+
+      - name: Produce real baseline versus candidate continuous-audio proof
+        run: |
+          set -euo pipefail
+          python scripts/video_a_narration_fluency_proof.py \
+            --baseline-root runtime/rejected-narration \
+            --render-job-root runtime/rejected-render-job \
+            --output-dir runtime/narration-fluency-proof
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("runtime/narration-fluency-proof/narration-fluency-proof.json").read_text())
+          for key in (
+              "NARRATION_FLUENCY",
+              "NO_AUDIBLE_CHUNK_BOUNDARIES",
+              "NO_UNPLANNED_PAUSES",
+              "CONTINUOUS_PTBR_PROSODY",
+              "MEASURABLE_BASELINE_CANDIDATE_IMPROVEMENT",
+          ):
+              if p.get(key)!="PASS":
+                  raise SystemExit(key+"=FAIL")
+              print(key+"=PASS")
+          print("FULL_VIDEO_RENDER=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          print("HUMAN_AUDIO_REVIEW_STATUS=PENDING")
+          PY
+
+      - name: Deliver A/B continuous audio as Telegram documents
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: \${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          mkdir -p runtime/narration-fluency-proof/telegram
+          : > runtime/narration-fluency-proof/telegram/message-ids.txt
+          for audio in runtime/narration-fluency-proof/*/*.mp3; do
+            test -s "$audio"
+            name="$(basename "$(dirname "$audio")")/$(basename "$audio")"
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "document=@$audio" \
+              -F "caption=VIDEO A · fluidez A/B real · $name · Voice B · revisão humana")"
+            RESPONSE="$response" NAME="$name" python - <<'PY' >> runtime/narration-fluency-proof/telegram/message-ids.txt
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          if d.get("ok") is not True:
+              raise SystemExit("TELEGRAM_FLUENCY_REVIEW=FAIL")
+          print(f"{os.environ['NAME']},{(d.get('result') or {}).get('message_id')}")
+          PY
+          done
+          echo "TELEGRAM_FLUENCY_REVIEW=SENT"
+          echo "HUMAN_AUDIO_REVIEW_STATUS=PENDING"
+
+      - name: Upload fluency proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-narration-fluency-proof-\${{ github.run_id }}
+          path: runtime/narration-fluency-proof/
+          if-no-files-found: error
+          retention-days: 30
