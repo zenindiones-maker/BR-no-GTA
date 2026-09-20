@@ -70,7 +70,7 @@ def capture_hermes_harness_episodes(
             agent_id=str(run.get("profile") or profile.profile_name),
             capability_id=routed.capability_id,
             domain=record.domain,
-            task_class=f"hermes.{profile.runtime_role}",
+            task_class=f"hermes.{str(run.get('profile') or profile.runtime_role)}",
             started_at=_iso(started),
             finished_at=_iso(ended),
             duration_seconds=max(0.0, float(ended - started)),
