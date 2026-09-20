@@ -23,5 +23,7 @@
   "previous_controller_attempt_run_id": 35519368513,
   "recovery_mode": "POST_BRANDING_ONLY",
   "post_branding_producer_run_id": 35519387625,
-  "post_branding_artifact_id": 10608103282
+  "post_branding_artifact_id": 10608103282,
+  "post_branding_dispatch_attempt": 2,
+  "previous_recovery_controller_run_id": 35520912373
 }

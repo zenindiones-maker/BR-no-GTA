@@ -196,7 +196,8 @@ def _prove_post_branding_source(request: dict[str, Any]) -> dict[str, Any]:
     run=_gh_json(["gh","run","view",str(run_id),"--repo",repo,"--json","databaseId,status,conclusion,event,headSha,name,url"])
     if run.get("status")!="completed" or run.get("conclusion")!="failure":
         raise RuntimeError(f"post-render source run is not a terminal failed render: {run}")
-    if str(run.get("name") or "")!="Render Worker":
+    run_name=str(run.get("name") or "")
+    if not (run_name=="Render Worker" or run_name.startswith("Render Worker · ")):
         raise RuntimeError(f"post-render source is not Render Worker: {run}")
     artifacts=_gh_json(["gh","api",f"repos/{repo}/actions/runs/{run_id}/artifacts"])
     by_id={int(a["id"]):a for a in artifacts.get("artifacts") or []}
