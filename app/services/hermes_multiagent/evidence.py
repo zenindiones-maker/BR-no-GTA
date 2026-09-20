@@ -39,6 +39,10 @@ def capture_hermes_harness_episodes(
     plan_tasks = {task.task_id: task for task in spec.collaboration_plan.tasks}
     episode_ids: list[str] = []
 
+    runs_by_task: dict[str, list[dict[str, Any]]] = {}
+    for observed_run in board_snapshot.get("runs") or ():
+        runs_by_task.setdefault(str(observed_run.get("task_id") or ""), []).append(observed_run)
+
     for run in board_snapshot.get("runs") or ():
         if not run.get("ended_at"):
             continue
@@ -53,6 +57,16 @@ def capture_hermes_harness_episodes(
             raise RuntimeError("Hermes episode lost canonical capability")
         outcome = str(run.get("outcome") or run.get("status") or "observed")
         failed = bool(run.get("error")) or outcome in {"crashed", "timed_out", "failed"}
+        task_runs = runs_by_task.get(board_task_id, [])
+        run_index = next(
+            (index for index, item in enumerate(task_runs) if item.get("id") == run.get("id")),
+            0,
+        )
+        canonical_agent_id = (
+            routed.selected_agent_id
+            or routed.selected_skill_id
+            or str(run.get("profile") or profile.profile_name)
+        )
         started = int(run.get("started_at") or 0)
         ended = int(run.get("ended_at") or started)
         evidence_refs = (
@@ -67,10 +81,10 @@ def capture_hermes_harness_episodes(
             decision_id=spec.harness_decision_id,
             execution_id=f"hermes:{spec.mission_id}:{run.get('id')}",
             task_id=plan_task_id,
-            agent_id=str(run.get("profile") or profile.profile_name),
+            agent_id=str(canonical_agent_id),
             capability_id=routed.capability_id,
             domain=record.domain,
-            task_class=f"hermes.{str(run.get('profile') or profile.runtime_role)}",
+            task_class=f"hermes.{plan_task_id}",
             started_at=_iso(started),
             finished_at=_iso(ended),
             duration_seconds=max(0.0, float(ended - started)),
@@ -83,6 +97,9 @@ def capture_hermes_harness_episodes(
                 "summary": run.get("summary"),
                 "metadata": run.get("metadata"),
                 "profile": run.get("profile"),
+                "runtime": "hermes",
+                "canonical_agent_id": canonical_agent_id,
+                "review_rejection": outcome == "changes_requested",
             },
             outcome_evidence=evidence_refs,
             skill_id="nousresearch/hermes-agent",
@@ -92,7 +109,7 @@ def capture_hermes_harness_episodes(
             output_refs=(output_ref,),
             evidence_refs=evidence_refs,
             error=str(run.get("error") or "") or None,
-            retry_count=0,
+            retry_count=max(0, run_index),
             human_intervention=outcome in {"blocked", "changes_requested"},
             cost=0.0,
             latency_seconds=max(0.0, float(ended - started)),
@@ -107,6 +124,10 @@ def capture_hermes_harness_episodes(
                 "canonical_agent_id": routed.selected_agent_id,
                 "canonical_skill_id": routed.selected_skill_id,
                 "authority": "DELEGATED_ONLY",
+                "runtime": "hermes",
+                "runtime_profile": str(run.get("profile") or profile.profile_name),
+                "evidence_quality": "KANBAN_RUN_PLUS_REGISTRY_LINEAGE",
+                "policy_violations": 0,
             },
         )
         persisted = persist_episode(episode)
