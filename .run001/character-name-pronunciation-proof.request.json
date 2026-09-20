@@ -1,7 +1,8 @@
 {
-  "mission": "character-name-pronunciation-ptbr-continuity-v1",
+  "mission": "character-name-pronunciation-ptbr-acoustic-v2",
   "base_head": "a73026f487ec0f49e7d531fe51c982cf5263973e",
-  "requested_at": "2026-09-20T02:21:00Z",
+  "continuation_head": "038a8887ab0ad0e02dff61444f4bb56047a22039",
+  "requested_at": "2026-09-20T02:40:00Z",
   "video_a_rerender": false,
   "automatic_promotion": false,
   "default_narration_locale": "pt-BR",
@@ -12,26 +13,16 @@
   "canonical_product_artifact_id": 10589535732,
   "canonical_product_run_id": 35458162169,
   "script_sha256": "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea",
-  "current_script_character_inventory": [
-    "Jason",
-    "Lucia"
-  ],
-  "candidate_lexicon_version": "2026.09.19.4-character-candidate.1",
-  "official_ground_truth": {
-    "rockstar_page": "https://www.rockstargames.com/VI/trailer-2",
-    "youtube_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
-    "youtube_video_id": "VQRLujxTm3c",
-    "player_provenance": "Rockstar official Trailer 2 page / official Rockstar YouTube",
-    "jason_reference_window_seconds": [
-      23,
-      29.5
-    ],
-    "lucia_reference_window_seconds": [
-      49,
-      55
-    ]
-  },
+  "current_script_character_inventory": ["Jason","Lucia"],
+  "candidate_lexicon_version": "2026.09.19.5-ptbr-dub-acoustic.1",
+  "reference_source": "PTBR_DUBBED_TRAILER",
+  "reference_url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
+  "reference_video_id": "f8IZhKcuEts",
+  "reference_title": "GTA 6 | Trailer 2 - DUBLADO - Grand Theft Auto VI",
+  "reference_channel": "YouDubbing",
+  "reference_authority_scope": "pronunciation adaptation only; Rockstar remains canonical identity authority",
   "human_character_name_review": "PENDING",
-  "proof_attempt": 6,
-  "retry_reason": "Fix local canonical-script sentence selector escaping after official Trailer 2 materialization succeeded; no alias/source/production change."
+  "reference_clips_delivery": "INTERNAL_ONLY",
+  "proof_attempt": 7,
+  "retry_reason": "Use YouDubbing PT-BR Trailer 2 as acoustic pronunciation reference; keep canonical text, PT-BR prosody, Vice City en-US exception, and production lexicon unchanged."
 }
