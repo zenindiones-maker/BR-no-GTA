@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.8-ptbr-full-script-candidate",
+  "version": "2026.09.20.9-ptbr-complete-script-candidate",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -549,6 +549,105 @@
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "official page title rendered in pt-BR voice lane"
+    },
+    {
+      "identity": "gta",
+      "term": "GTA",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Brazilian letter-name reading"
+    },
+    {
+      "identity": "vintage-vice-city",
+      "term": "Vintage Vice City",
+      "category": "BRAND",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Víntidj Váis Síti",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR phonetic candidate"
+    },
+    {
+      "identity": "lori",
+      "term": "Lori",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Lóri",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "leonida-penitentiary-pt",
+      "term": "Penitenciária de Leonida",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Penitenciária de Leônida",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Portuguese phrase with Leonida synthesis target"
+    },
+    {
+      "identity": "guarda-costeira",
+      "term": "Guarda Costeira",
+      "category": "ORGANIZATION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Guarda Costeira",
+      "critical": false,
+      "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
+      "source": "native Portuguese phrase"
+    },
+    {
+      "identity": "florida",
+      "term": "Flórida",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Flórida",
+      "critical": false,
+      "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
+      "source": "standard pt-BR pronunciation"
+    },
+    {
+      "identity": "br",
+      "term": "BR",
+      "category": "ACRONYM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "bê érre",
+      "critical": true,
+      "validation_status": "HUMAN_APPROVED_REFERENCE",
+      "source": "channel brand Brazilian letter reading"
+    },
+    {
+      "identity": "video-a",
+      "term": "VIDEO A",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "vídeo á",
+      "critical": false,
+      "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
+      "source": "production label"
+    },
+    {
+      "identity": "telegram",
+      "term": "Telegram",
+      "category": "BRAND",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Telegram",
+      "critical": false,
+      "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
+      "source": "established pt-BR rendering"
     }
   ]
 }
