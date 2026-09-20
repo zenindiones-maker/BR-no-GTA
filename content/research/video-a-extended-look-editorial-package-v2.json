@@ -1,0 +1,291 @@
+{
+  "schema": "video-a-editorial-package/v2",
+  "version": "2026.09.20.1-extended-look-primary",
+  "candidate_id": "video-a-extended-look-primary-rebuild-20260920",
+  "replaces_candidate_id": "video-a-next-candidate-20260920-social-vice-city",
+  "human_rejection_basis": {
+    "latest_voice_run_id": 35530605895,
+    "latest_voice_artifact_id": 10611203499,
+    "script_editorial_quality": "FAIL"
+  },
+  "research_cutoff": "2026-09-20",
+  "central_question": "O que os 27 minutos do Extended Look realmente revelam sobre como GTA VI funciona, além da aparência e dos trailers?",
+  "answer_thesis": "O Extended Look mostra repetidamente um jogo que alterna combate, vida cotidiana, interiores, atividades, polícia, direção, socialização e exploração sem tratar essas camadas como mundos separados.",
+  "working_title": "GTA 6: o que 27 minutos realmente revelaram sobre como o jogo funciona",
+  "editorial_novelty": "PASS",
+  "editorial_novelty_basis": "Reorients VIDEO A from social-ecosystem/bios/music thesis to primary-source Extended Look gameplay evidence.",
+  "angles": [
+    {
+      "angle_id": "A1",
+      "title": "Como GTA VI funciona na prática",
+      "audience_value": 10,
+      "evidence_strength": 10,
+      "freshness": 10,
+      "narrative_potential": 10,
+      "selected": true
+    },
+    {
+      "angle_id": "A2",
+      "title": "31 detalhes que passaram despercebidos",
+      "audience_value": 9,
+      "evidence_strength": 10,
+      "freshness": 9,
+      "narrative_potential": 7,
+      "selected": false
+    },
+    {
+      "angle_id": "A3",
+      "title": "Por que o mundo parece mais vivo",
+      "audience_value": 8,
+      "evidence_strength": 9,
+      "freshness": 8,
+      "narrative_potential": 9,
+      "selected": false
+    }
+  ],
+  "script": {
+    "sections": [
+      {
+        "section_id": "S01",
+        "role": "hook",
+        "heading": "O que 27 minutos mostraram de verdade",
+        "evidence_ids": [
+          "EL002",
+          "EL011",
+          "EL014",
+          "EL017",
+          "EL019",
+          "EL026",
+          "EL029"
+        ],
+        "audience_value": "Entrega imediatamente novidade, importância e promessa concreta.",
+        "narration": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de um raio-x do Extended Look! A Rockstar mostrou quase vinte e sete minutos de GTA VI rodando no PlayStation 5, e no meio de tanta cena bonita tem coisa muito mais importante: combate longo, polícia reagindo, corrida com interface, atividades, paraquedas, interiores exploráveis e momentos comuns entre Jason e Lucia. A pergunta é simples: o que esse material realmente prova sobre como o jogo funciona, e quais detalhes passam batido quando a gente olha só para gráfico e mapa?"
+      },
+      {
+        "section_id": "S02",
+        "role": "body",
+        "heading": "A primeira revelação é o ritmo do jogo",
+        "evidence_ids": [
+          "EL001",
+          "EL002",
+          "EL003",
+          "EL005",
+          "EL006",
+          "EL007",
+          "EL008"
+        ],
+        "audience_value": "Mostra como o jogo alterna estados de ação e cotidiano, algo que só um material longo permite observar.",
+        "narration": "A primeira coisa que o Extended Look revela não é uma feature isolada. É o ritmo. Em poucos minutos, GTA VI sai de ambientes internos apertados, entra num tiroteio que dura tempo suficiente para a câmera acompanhar posição e deslocamento, volta para cenas domésticas, coloca personagens dentro de carro, mostra uma briga de rua e depois abre espaço para vida noturna. Isso parece simples até você pensar no que faz um GTA funcionar por dezenas de horas. O jogo precisa trocar de velocidade o tempo todo sem parecer uma coleção de minigames separados. Se tudo vira perseguição, a perseguição perde peso; se tudo vira passeio, a cidade perde tensão. O Extended Look insiste nessa alternância. Há momentos em que a câmera permanece num cômodo, deixa os personagens respirarem e só depois acelera. Há deslocamentos que servem apenas para atravessar o mundo. Há espaços sociais que não começam como arenas de combate. E há situações em que a violência explode dentro de lugares que, segundos antes, pareciam parte da rotina. Isso não prova que toda transição será livre ou totalmente sistêmica. Algumas cenas podem estar ligadas a missões específicas. Mas prova algo mais concreto: a Rockstar está apresentando GTA VI como uma experiência que vive do contraste entre rotina, deslocamento, convivência e ação. A cidade não é mostrada apenas como pano de fundo para tiroteios. Ela precisa sustentar os intervalos entre eles. E é justamente nesses intervalos que o Extended Look começa a mostrar um jogo bem mais denso do que um trailer de dois minutos consegue sugerir."
+      },
+      {
+        "section_id": "S03",
+        "role": "body",
+        "heading": "Combate prolongado em espaços diferentes",
+        "evidence_ids": [
+          "EL002",
+          "EL009",
+          "EL011",
+          "EL012",
+          "EL027",
+          "EL029",
+          "EL030"
+        ],
+        "audience_value": "Usa sequências longas para mostrar variedade espacial do combate sem inventar sistemas.",
+        "narration": "O combate é o primeiro lugar em que essa diferença aparece com clareza. A Rockstar não mostra apenas cortes de meio segundo com arma disparando. Existem blocos longos em que o confronto atravessa ambientes e deixa a gente observar como o espaço participa da ação. Em uma sequência, a câmera acompanha o personagem por interior e área externa. Mais adiante, personagens mascarados entram num roubo armado dentro de um estabelecimento. E perto do final, um interior sofisticado vira palco para uma sequência de combate que passa por salas, corredores e acessos diferentes. O que está comprovado aqui é variedade de geometria. Há combate em distância curta, mudanças de linha de visão, portas, móveis, corredores e áreas mais abertas. Isso importa porque interior bonito e interior jogável não são a mesma coisa. Para funcionar durante uma luta, o lugar precisa permitir leitura de espaço, navegação e posicionamento. O Extended Look também mostra a ação deixando consequências visíveis. Em um trecho, um veículo pega fogo e explode dentro de uma estrutura de estacionamento. Em outro, o conflito escala até envolver polícia. O que não dá para afirmar é balística revolucionária, inteligência artificial avançada ou um novo sistema de cobertura sem explicação oficial. A imagem não sustenta esse salto. Mas ela sustenta uma conclusão forte: GTA VI está apresentando confrontos que duram, mudam de ambiente e usam arquitetura com identidade. Isso é mais interessante do que contar quantas armas aparecem, porque fala sobre como o jogo pretende transformar lugares comuns em espaços de ação sem precisar construir uma arena separada para cada missão."
+      },
+      {
+        "section_id": "S04",
+        "role": "body",
+        "heading": "Polícia e wanted aparecem dentro do gameplay",
+        "evidence_ids": [
+          "EL011",
+          "EL012"
+        ],
+        "audience_value": "Separa resposta policial observável de rumores sobre IA e perseguição.",
+        "narration": "A sequência policial é outro ponto em que vale ser extremamente preciso. O Extended Look mostra um confronto armado escalando para resposta da polícia, e elementos de procurado aparecem na interface. Isso confirma uma camada clássica de GTA funcionando dentro da apresentação jogável: crime, reação e aumento de pressão ocupam a mesma sequência. O interessante não é descobrir que GTA tem polícia; isso ninguém precisava de vinte e sete minutos para saber. O interessante é observar como a Rockstar escolhe encaixar essa reação no fluxo. A situação não corta imediatamente para uma montagem cinematográfica. O risco passa a fazer parte da leitura do HUD enquanto o personagem ainda precisa lidar com o espaço e com o confronto. Para um GTA, esse sistema é quase um regulador do caos: ele decide quanto tempo você consegue insistir numa ação antes de o mundo começar a responder de forma mais agressiva. Mas é justamente aqui que surgem os exageros. O Extended Look não confirma reconhecimento permanente de roupa, leitura de placa, memória policial, flanqueamento avançado ou qualquer outra teoria que circula na internet. Algumas dessas ideias podem até existir, mas esse material não é prova. O que ele prova é mais simples: a camada de procurado está integrada a situações de gameplay e a resposta policial aparece como consequência visível da escalada. Essa base já é suficiente para uma pergunta boa para os próximos materiais: quais comportamentos novos a polícia realmente terá além dessa estrutura clássica que já conseguimos enxergar?"
+      },
+      {
+        "section_id": "S05",
+        "role": "body",
+        "heading": "Atividades: corrida, motocross, paraquedas e uma lista na interface",
+        "evidence_ids": [
+          "EL014",
+          "EL017",
+          "EL018",
+          "EL019",
+          "EL023"
+        ],
+        "audience_value": "Entrega variedade jogável confirmada fora do eixo crime principal.",
+        "narration": "Se a polícia e o combate mostram o lado mais esperado de GTA, as atividades são onde o Extended Look começa a abrir a rotina. A Rockstar mostra corrida com leitura de progresso na interface, motocross, paraquedas e uma tela que apresenta uma lista de atividades. Esses detalhes são valiosos porque não dependem de uma interpretação abstrata. A corrida não é apenas um carro acelerando numa montagem: existe informação na tela indicando competição. O motocross aparece como ação praticada, não como uma moto parada para foto. O paraquedas coloca o personagem em deslocamento aéreo claramente jogável. E a lista de atividades sugere que o jogo organiza parte desse conteúdo de maneira explícita para o jogador. Isso não diz quantas provas existem, quais recompensas oferecem, se há campeonatos, progressão própria ou desbloqueio por nível. Mas já responde uma questão prática: Leonida não está sendo apresentada somente como a distância entre uma missão criminosa e outra. Há coisas para fazer que mudam o tipo de movimento e a forma como você usa o mapa. Essa variedade também ajuda a entender por que a geografia precisa ser maior do que Vice City. Motocross e paraquedas pedem espaços diferentes de uma corrida urbana. Quando essas atividades aparecem no mesmo material que clubes, lojas e tiroteios em interiores, a promessa deixa de ser apenas um mapa grande. Ela passa a ser um mundo capaz de sustentar experiências diferentes sem obrigar o jogador a sair da mesma lógica de controle. O que falta descobrir é profundidade. Ver uma atividade confirma existência; só jogar ou receber mais detalhes oficiais vai revelar se ela é uma distração de cinco minutos ou um sistema que realmente prende por horas."
+      },
+      {
+        "section_id": "S06",
+        "role": "body",
+        "heading": "Interiores podem ser a maior pista de densidade",
+        "evidence_ids": [
+          "EL001",
+          "EL003",
+          "EL008",
+          "EL009",
+          "EL021",
+          "EL024",
+          "EL026",
+          "EL027",
+          "EL030"
+        ],
+        "audience_value": "Mostra quantidade, função e transformação de interiores observados no material.",
+        "narration": "Talvez a pista mais importante para a densidade do mundo esteja dentro dos prédios. O Extended Look passa muito tempo em interiores: residência, espaço de trabalho, estabelecimento comercial, vida noturna, ambiente de luxo e um prédio de vários cômodos que depois vira cenário de combate. Não dá para transformar isso na frase mágica de que todo prédio de Vice City será acessível. O vídeo não prova isso. Mas ele prova que os interiores escolhidos pela Rockstar têm funções diferentes e, em alguns casos, mudam de função durante a própria sequência. Um espaço pode começar como local de conversa ou exploração e depois virar terreno de confronto. Isso é uma diferença grande em relação a interiores que existem somente para uma cutscene. Quando a câmera acompanha o personagem por corredores, salas e acessos, a arquitetura precisa funcionar para navegação. Quando o combate entra nesse mesmo ambiente, ela também precisa funcionar para visibilidade, distância e movimento. Há elevadores, corredores, ambientes conectados, áreas abertas e espaços pequenos. O ponto não é contar portas; é perceber que a Rockstar está usando volume interno como parte do gameplay apresentado. Para uma série em que boa parte da cidade historicamente funciona como fachada, esse é um detalhe enorme. O Extended Look também mostra interiores sociais com bastante gente, o que adiciona outra exigência: não basta desenhar o prédio, é preciso preencher o lugar com comportamento, iluminação, som e circulação. A pergunta que fica para depois é quantos desses locais estarão disponíveis fora de missões e quantos são construídos para momentos específicos. Mesmo sem essa resposta, já é possível afirmar que GTA VI está sendo vendido como um jogo em que uma parcela relevante da experiência acontece dentro, e não só nas avenidas."
+      },
+      {
+        "section_id": "S07",
+        "role": "body",
+        "heading": "Jason e Lucia existem também fora do tiroteio",
+        "evidence_ids": [
+          "EL003",
+          "EL005",
+          "EL020",
+          "EL025",
+          "EL031"
+        ],
+        "audience_value": "Mostra cenas cotidianas que criam contraste e caracterização sem prometer simulação de rotina.",
+        "narration": "Outro detalhe que muda completamente o tom é a quantidade de situações comuns. Jason e Lucia aparecem em ambientes domésticos. Há personagem comendo. Há gente bebendo e conversando. Há festa, convivência, momentos em que ninguém está correndo da polícia e até uma cena de barco que devolve a apresentação para um ritmo mais aberto depois de muita ação. Isso pode parecer menos importante do que uma explosão, mas é exatamente o contrário quando falamos de um mundo aberto longo. Se o jogo não tem momentos normais, ele não consegue criar contraste. A tensão funciona porque existe algo calmo antes e depois. O Extended Look usa minutos preciosos para mostrar personagens ocupando espaços e vivendo situações que não são imediatamente violentas. Isso não confirma sistema de fome, rotina diária para cada NPC ou um simulador doméstico. A gente não precisa inventar nada disso para reconhecer o valor do que aparece. A Rockstar está dizendo, através da seleção de cenas, que a vida dos protagonistas não será apresentada apenas por assaltos e perseguições. Casa, comida, conversa e relacionamento fazem parte da textura. Isso também ajuda Jason e Lucia a parecerem pessoas com uma vida compartilhada, não apenas dois avatares unidos pela missão principal. O quanto dessas cenas será interativo ainda está aberto. Mas a intenção de ritmo é clara: GTA VI quer que a gente passe tempo com os personagens quando o mundo não está explodindo. E, se a Rockstar conseguir equilibrar essa camada com liberdade de jogo, ela pode fazer as sequências de ação parecerem ainda mais intensas porque existe uma rotina real para interromper."
+      },
+      {
+        "section_id": "S08",
+        "role": "body",
+        "heading": "Redes sociais deixaram de ser só estética de trailer",
+        "evidence_ids": [
+          "EL016",
+          "EL028",
+          "EL025"
+        ],
+        "audience_value": "Mostra evidência concreta de linguagem social dentro da apresentação sem afirmar sistema não confirmado.",
+        "narration": "A camada de redes sociais também aparece de forma mais concreta. Em um trecho, uma personagem posa para selfie. Mais tarde, o Extended Look mostra uma interface ou postagem com linguagem claramente inspirada em rede social. Isso conversa com os trailers, que já usavam vídeos verticais, gravações de celular e comportamento viral como parte da identidade de Leonida. A diferença agora é que essa gramática aparece dentro de uma apresentação longa do jogo. Ainda não sabemos o que o jogador controla. Não há confirmação de perfil com seguidores, algoritmo, publicação manual ou sistema de reputação baseado em postagem. Transformar uma interface em todas essas features seria exatamente o tipo de extrapolação que faz a análise envelhecer mal. O que podemos afirmar é que a cultura digital não está só na campanha de marketing. Ela faz parte da maneira como o mundo é representado. E isso é importante para um GTA contemporâneo. Em 2026, espetáculo público passa por câmera de celular, viralização, performance e registro constante. A própria ideia de uma pessoa fazer algo absurdo em Vice City e isso virar conteúdo combina naturalmente com a sátira que GTA sempre fez. O Extended Look ainda não explica a mecânica, mas mostra que essa linguagem está integrada ao universo visual. A pergunta certa daqui para frente é simples: a rede social será apenas uma janela para observar Leonida ou também um sistema que reage ao que Jason e Lucia fazem? Por enquanto, a primeira parte está comprovada. A segunda continua em aberto."
+      },
+      {
+        "section_id": "S09",
+        "role": "body",
+        "heading": "Leonida muda de função quando a geografia encontra atividades",
+        "evidence_ids": [
+          "EL004",
+          "EL006",
+          "EL013",
+          "EL018",
+          "EL019",
+          "EL031"
+        ],
+        "audience_value": "Liga variedade de ambientes a usos jogáveis observados, sem depender de tamanho especulativo do mapa.",
+        "narration": "A geografia fica muito mais interessante quando a gente para de tratar o mapa como uma lista de regiões. O Extended Look passa por cidade densa, praia, áreas naturais, estradas, espaços costeiros e água. Em meio a isso, mostra vida selvagem, motocross, paraquedas, direção e barco. A combinação é mais informativa do que qualquer estimativa de quilômetros quadrados porque revela uso. Uma região natural não precisa competir com Vice City em número de prédios se ela sustenta outro tipo de deslocamento e atividade. Uma costa não precisa existir apenas como borda do mapa se o jogo coloca personagens e veículos na água. A praia pode ser um lugar de convivência, não apenas uma textura bonita vista de longe. O material não informa a escala final dessas áreas e não confirma que tudo estará conectado sem qualquer transição. Também não diz quanto tempo o jogador levará para atravessar Leonida. Mas mostra contrastes de propósito. A Rockstar quer que o jogador perceba mudanças de ambiente e de ritmo. Isso ajuda a explicar por que motocross e paraquedas aparecem no mesmo Extended Look que clubes, casas e combates fechados. O mundo aberto precisa fazer essas experiências coexistirem. Por isso, a melhor pergunta deixa de ser 'quantas vezes o mapa de GTA V cabe aqui?'. A pergunta mais útil é: quantos tipos de experiência esse espaço consegue sustentar sem virar um vazio entre ícones? O Extended Look não responde tudo, mas entrega uma evidência que screenshot nenhuma consegue: pessoas se movendo, atividades acontecendo e ambientes sendo usados."
+      },
+      {
+        "section_id": "S10",
+        "role": "body",
+        "heading": "Dirigir não é a mesma coisa que correr",
+        "evidence_ids": [
+          "EL006",
+          "EL010",
+          "EL014",
+          "EL023"
+        ],
+        "audience_value": "Separa condução livre de competição e mostra duas funções comprovadas para veículos.",
+        "narration": "Os veículos aparecem em dois papéis bem diferentes. Em vários trechos, dirigir serve simplesmente para atravessar o mundo: trânsito, ponte, cidade, estrada e deslocamento entre situações. Em outros, o carro entra numa corrida com progresso visível na interface. Essa diferença é útil porque demonstra que o Extended Look não está usando automóvel apenas como montagem cinematográfica. Há condução apresentada como rotina e condução apresentada como competição. Na corrida noturna, a interface deixa claro que existe um objetivo específico. Nos trechos de deslocamento normal, o foco está no espaço ao redor, no tráfego e na continuidade da cidade. Isso não nos permite medir física, peso, aderência ou nível de personalização. Nenhum vídeo substitui colocar a mão no controle. Também não dá para cravar que o handling está mais realista ou mais arcade só pela animação. O que dá para dizer é que os carros continuam funcionando como cola entre as outras camadas. Eles levam o jogador de uma atividade para outra e, em certos momentos, viram a própria atividade. Essa dupla função é central num GTA porque um mapa grande depende de direção agradável mesmo quando nada extraordinário está acontecendo. A Rockstar escolheu mostrar esses minutos de deslocamento, e isso é um sinal interessante: o percurso importa. Se a cidade só servisse para conectar missões, o Extended Look poderia cortar tudo e mostrar apenas destino. Em vez disso, ele deixa o carro existir dentro do fluxo."
+      },
+      {
+        "section_id": "S11",
+        "role": "body",
+        "heading": "O jogo mostra ação vertical e mudança de perspectiva",
+        "evidence_ids": [
+          "EL019",
+          "EL015",
+          "EL026",
+          "EL027"
+        ],
+        "audience_value": "Destaca paraquedas, visão próxima/primeira pessoa e verticalidade espacial sem extrapolar controles.",
+        "narration": "Há ainda um detalhe menos chamativo, mas importante para a sensação de espaço: o Extended Look muda bastante a relação da câmera com o mundo. O paraquedas coloca o personagem acima do mapa e transforma altura em navegação. Em outro trecho, a apresentação assume uma visão muito próxima, parecida com primeira pessoa, enquanto o personagem atravessa um espaço urbano ou comercial. Mais tarde, o interior de vários cômodos usa corredores, salas e mudanças de nível antes de virar combate. Isso cria uma sensação de verticalidade e escala que não depende apenas de arranha-céu no horizonte. A experiência acontece acima, abaixo e dentro. É importante não afirmar que a visão em primeira pessoa está confirmada como modo completo só por um trecho que lembra essa perspectiva. O enquadramento precisa ser tratado como evidência visual, não como anúncio de opção de menu. Mas ele mostra que a Rockstar está confortável em aproximar a câmera e apresentar detalhes do espaço de uma forma diferente do terceiro pessoa tradicional. O paraquedas, por sua vez, é uma atividade claramente reconhecível e muda a leitura do terreno. Ver Leonida de cima não serve só para panorama; existe deslocamento. Quando esse tipo de mobilidade aparece junto de motocross, barco e carro, o mapa deixa de ser uma superfície plana. Ele passa a ser um conjunto de rotas e alturas. Isso pode ter impacto enorme na exploração, mesmo sem qualquer promessa de que todo telhado ou prédio seja acessível."
+      },
+      {
+        "section_id": "S12",
+        "role": "body",
+        "heading": "O que ainda não foi provado",
+        "evidence_ids": [
+          "EL011",
+          "EL017",
+          "EL028",
+          "EL026",
+          "EL009"
+        ],
+        "audience_value": "Evita transformar evidência em rumor e cria uma lista objetiva de lacunas.",
+        "narration": "Com tanta coisa aparecendo, a parte mais importante é saber parar. O Extended Look não confirma que todos os prédios são acessíveis. Não confirma rotina completa para cada NPC. Não confirma um sistema de disfarces apenas porque personagens aparecem mascarados. Não confirma reconhecimento policial permanente de roupa ou placa. Não confirma que a rede social tenha seguidores controláveis. Não confirma que cada atividade tenha progressão profunda. E não confirma que qualquer objeto visto numa cena possa ser usado livremente fora dela. GTA VI virou um ímã de interpretação, então qualquer detalhe de dois segundos rapidamente recebe uma história inteira em cima. O problema é que isso enfraquece justamente o material que já é forte. A Rockstar mostrou polícia em gameplay, corrida com interface, motocross, paraquedas, roubo, combate prolongado, exploração interna, situações domésticas, festa, praia, natureza e linguagem de rede social. Não precisamos inventar nada para ter assunto. A melhor análise é usar essas observações como base e transformar o que falta em perguntas verificáveis. Quantos interiores funcionam fora de missão? Como as atividades são descobertas? O que a polícia faz além do comportamento mostrado? A rede social reage às ações do jogador? Essas dúvidas são honestas porque nascem da evidência. E quando a Rockstar publicar algo novo, a gente consegue atualizar a resposta sem precisar apagar uma teoria apresentada como certeza."
+      },
+      {
+        "section_id": "S13",
+        "role": "body",
+        "heading": "A grande novidade é a integração das camadas",
+        "evidence_ids": [
+          "EL002",
+          "EL003",
+          "EL006",
+          "EL008",
+          "EL011",
+          "EL014",
+          "EL017",
+          "EL019",
+          "EL026",
+          "EL028",
+          "EL030"
+        ],
+        "audience_value": "Converte dezenas de achados em uma tese concreta sobre integração e ritmo.",
+        "narration": "Juntando tudo, a descoberta mais forte do Extended Look não é uma feature secreta. É a quantidade de camadas que aparecem na mesma apresentação e a frequência com que elas encostam umas nas outras. Interiores servem para convivência e depois para combate. Veículos servem para deslocamento e competição. A cidade comporta festa e polícia. Áreas abertas recebem atividades. A linguagem social aparece perto de situações presenciais. O jogo alterna conversa e violência sem tratar cada uma como um universo separado. Essa integração é muito mais concreta do que dizer apenas que Vice City parece viva. Dá para apontar onde ela acontece. Quando um interior sofisticado vira espaço de tiroteio, worldbuilding e gameplay ocupam o mesmo lugar. Quando o wanted surge no meio do confronto, crime e resposta do mundo se conectam. Quando corrida, motocross e paraquedas aparecem na mesma apresentação, geografia e atividade se conectam. Quando Jason e Lucia passam por momentos domésticos entre situações perigosas, narrativa e rotina se conectam. A grande incógnita é até onde essas ligações são dinâmicas e até onde dependem de missões desenhadas. Essa é uma das perguntas decisivas para o jogo final. Mas a Rockstar claramente escolheu mostrar um GTA VI em que o jogador parece mudar constantemente de estado: ação, deslocamento, convivência, atividade lateral, exploração e volta para ação. É isso que faz vinte e sete minutos de movimento valerem mais do que uma pilha de imagens estáticas."
+      },
+      {
+        "section_id": "S14",
+        "role": "body",
+        "heading": "As biografias agora entram no lugar certo",
+        "evidence_ids": [
+          "EL003",
+          "EL020",
+          "EL021",
+          "EL025",
+          "EL026"
+        ],
+        "audience_value": "Usa personagens como contexto para o gameplay, em vez de esticar bios para preencher duração.",
+        "narration": "As biografias de Jason, Lucia e dos coadjuvantes continuam úteis, mas agora elas entram no lugar certo. Elas dão contexto para as cenas em vez de sustentar sozinhas vinte minutos de análise. Jason e Lucia aparecem em momentos privados, deslocamentos e situações de risco. Isso conversa com a parceria que a Rockstar já apresentou, mas o Extended Look acrescenta duração e linguagem corporal. Ambientes de luxo, festa e criminalidade ganham contexto quando lembramos que diferentes personagens ocupam posições diferentes dentro de Leonida. Só que existe uma regra importante: biografia não pode virar substituto de gameplay. Se uma ficha oficial diz que Brian trabalha com contrabando, isso informa quem ele é; não confirma automaticamente um sistema de contrabando disponível para o jogador. Se Boobie administra negócios, isso não prova uma mecânica de gestão empresarial. Se Real Dimez vive de música e rede social, isso não prova que Jason pode construir carreira digital. Cada fonte tem um trabalho. O Extended Look prova o que aparece em movimento. As páginas de personagens explicam relações e histórico. Os anúncios musicais mostram parte da cultura que a Rockstar quer associar ao universo. Quando essas fontes se cruzam, a análise ganha força. Quando uma delas é esticada além do que sustenta, o conteúdo vira repetição. Por isso, daqui para frente, o material de gameplay precisa ser a espinha; biografias e anúncios entram apenas quando ajudam a responder o que a cena significa."
+      },
+      {
+        "section_id": "S15",
+        "role": "body",
+        "heading": "Cinco perguntas que o próximo material precisa responder",
+        "evidence_ids": [
+          "EL006",
+          "EL011",
+          "EL017",
+          "EL026",
+          "EL028"
+        ],
+        "audience_value": "Transforma lacunas em agenda concreta para próximos anúncios.",
+        "narration": "Depois desse raio-x, ficam cinco perguntas muito objetivas para o próximo material oficial. Primeira: quantos interiores continuam acessíveis fora de missões? O Extended Look prova que eles existem e são usados, mas não explica o grau de liberdade. Segunda: como a lista de atividades organiza descoberta, repetição e recompensa? A interface aparece; a estrutura completa ainda não. Terceira: até onde a polícia reage de forma sistêmica e o que muda quando o nível de procurado cresce? Quarta: a linguagem de rede social serve só para observar Leonida ou também cria ações para o jogador? Quinta: como o jogo decide a passagem entre rotina doméstica, exploração livre e missão? Essas perguntas são melhores do que rumor porque começam em algo documentado. A gente viu os elementos; falta medir a profundidade deles. E isso cria uma maneira muito mais inteligente de acompanhar GTA VI até o lançamento. Se a Rockstar mostrar mais polícia, já sabemos o que comparar. Se detalhar interiores, sabemos qual lacuna preencher. Se explicar atividades, podemos confrontar com o que a interface já apresentou. Se falar de rede social, conseguimos separar ambientação de sistema. O Extended Look não encerra a investigação. Ele finalmente dá uma base sólida para ela — e uma base que não depende de vazamento, mapa fan-made ou interpretação de um pixel perdido numa screenshot."
+      },
+      {
+        "section_id": "S16",
+        "role": "cta",
+        "heading": "O que realmente mudou na nossa leitura de GTA VI",
+        "evidence_ids": [
+          "EL002",
+          "EL011",
+          "EL014",
+          "EL017",
+          "EL019",
+          "EL026",
+          "EL028"
+        ],
+        "audience_value": "Fecha com síntese factual e pergunta clara para engajamento.",
+        "narration": "Se eu tivesse que resumir o Extended Look em uma frase, seria esta: GTA VI está mostrando variedade, mas o detalhe mais promissor é como essa variedade parece caber no mesmo fluxo. A gente viu combate prolongado, polícia, direção, corrida, motocross, paraquedas, interiores, vida noturna, momentos domésticos, praia, natureza e linguagem de rede social sem transformar rumor em fato. Agora eu quero saber qual dessas camadas mais mudou a sua expectativa: os interiores, as atividades, a polícia ou os momentos de vida cotidiana entre uma missão e outra? E BR não dorme em Vice City"
+      }
+    ]
+  },
+  "script_human_review": "PENDING",
+  "human_voice_review": "REJECTED",
+  "production_readiness": "FAIL",
+  "full_render_authorized": "NO",
+  "youtube_publication": "NO"
+}
