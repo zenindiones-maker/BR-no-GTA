@@ -1,7 +1,7 @@
 {
   "request": "opencode-semantic-text-v3-proof",
   "branch": "work/gate6f-analytics-learning",
-  "source_head": "e80d93add49d7b48b374433108856273488f9760",
+  "source_head": "ab648a66520e4df7c2529b60a421a53f5e9a6135",
   "root_cause_run_id": 35537494044,
   "root_cause_artifact_id": 10612603412,
   "attempts": [
@@ -17,10 +17,14 @@
       "run_id": 35539019776,
       "child_run_id": 35539078475,
       "result": "custom_semantic_agent_zero_tools_but_free_tier_403"
+    },
+    {
+      "trigger": "shared-client-zero-tool-proof",
+      "source_head": "ab648a66520e4df7c2529b60a421a53f5e9a6135"
     }
   ],
-  "attempt": 4,
-  "execution_mode": "child_workflow",
+  "attempt": 5,
+  "execution_mode": "same_runner_shared_client",
   "semantic_profile": "opencode-semantic-text-v3",
   "semantic_agent_identity": "build",
   "semantic_agent_override": {
