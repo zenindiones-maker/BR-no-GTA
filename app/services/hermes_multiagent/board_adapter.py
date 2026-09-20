@@ -24,12 +24,14 @@ class HermesBoardAdapter:
     @contextmanager
     def _runtime(self) -> Iterator[tuple[Any, Any, Any]]:
         old_home = os.environ.get("HERMES_KANBAN_HOME")
+        old_runtime_home = os.environ.get("HERMES_HOME")
         old_board = os.environ.get("HERMES_KANBAN_BOARD")
         root = str(self.upstream_root)
         inserted = root not in sys.path
         if inserted:
             sys.path.insert(0, root)
         os.environ["HERMES_KANBAN_HOME"] = str(self.hermes_home)
+        os.environ["HERMES_HOME"] = str(self.hermes_home)
         os.environ["HERMES_KANBAN_BOARD"] = self.board_id
         try:
             from hermes_cli import kanban_db as kb
@@ -51,6 +53,10 @@ class HermesBoardAdapter:
                 os.environ.pop("HERMES_KANBAN_HOME", None)
             else:
                 os.environ["HERMES_KANBAN_HOME"] = old_home
+            if old_runtime_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = old_runtime_home
             if old_board is None:
                 os.environ.pop("HERMES_KANBAN_BOARD", None)
             else:
