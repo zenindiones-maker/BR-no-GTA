@@ -503,6 +503,14 @@ class OpenCodeNativeAIProvider:
             "parse_errors": parse_errors,
             "timed_out": timed_out.is_set(),
         }
+        performance.update(semantic_profile_evidence())
+        performance["tools_exposed"] = 0 if tool_call_count == 0 else tool_call_count
+        performance["semantic_text_only_pass"] = (
+            process.returncode == 0
+            and bool(answer)
+            and tool_call_count == 0
+            and not timed_out.is_set()
+        )
         self.last_performance_metrics = dict(performance)
         safe_stderr_lines = [
             line[:500]
