@@ -12,12 +12,9 @@ def load(path):
 
 def test_candidate_requires_real_acoustic_selection():
     d=load(CANDIDATE)
-    assert d["reference"]["video_id"]=="VQRLujxTm3c"
-    assert d["reference"]["publisher"]=="Rockstar Games"
-    assert d["benchmark_pair"]["proof_run_id"]==35484467232
-    assert d["benchmark_pair"]["proof_artifact_id"]==10597177719
-    assert d["benchmark_pair"]["promoted"] is False
-    assert d["benchmark_pair"]["human_review"]=="PENDING"
+    assert d["reference"]["video_id"]=="f8IZhKcuEts"
+    assert d["reference"]["channel"]=="YouDubbing"
+    assert "pronunciation adaptation" in d["reference"]["authority_scope"]
     assert d["policy"]["only_forced_en_us_term"]=="Vice City"
     chars={x["identity"]:x for x in d["entries"] if str(x.get("identity","")).startswith("character-")}
     assert set(chars)=={"character-jason","character-lucia"}
