@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import threading
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -13,9 +14,14 @@ from typing import Any
 from app.main import initialize_application
 from app.services.telegram_harness_service import (
     build_harness_connection_proof,
-    chat_under_harness,
     list_governed_brand_assets,
     register_telegram_brand_asset_under_harness,
+)
+from app.services.telegram_conversation_service import handle_telegram_conversation
+from app.services.telegram_learning_service import ingest_telegram_input_under_harness
+from app.database.telegram_conversation_repository import (
+    get_or_create_conversation_state,
+    update_conversation_state,
 )
 
 
@@ -32,6 +38,91 @@ MAX_REPLY_CHARS = 3800
 
 class TelegramApiError(RuntimeError):
     pass
+
+
+class TelegramProgressReporter:
+    """Stage-aware Telegram progress plus low-noise heartbeat for long operations."""
+
+    def __init__(self, api: "TelegramApi", chat_id: int) -> None:
+        self.api = api
+        self.chat_id = int(chat_id)
+        self.heartbeat_seconds = max(
+            30.0,
+            float(os.getenv("TELEGRAM_HEARTBEAT_SECONDS", "75")),
+        )
+        self.progress_min_seconds = max(
+            5.0,
+            float(os.getenv("TELEGRAM_PROGRESS_MIN_SECONDS", "20")),
+        )
+        self._stage = "STARTING"
+        self._message = ""
+        self._last_sent = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name=f"telegram-heartbeat-{self.chat_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def __call__(self, stage: str, message: str) -> None:
+        normalized_stage = str(stage or "WORKING").strip().upper()
+        rendered = str(message or "").strip()
+        now = time.monotonic()
+        stage_changed = normalized_stage != self._stage
+        self._stage = normalized_stage
+        self._message = rendered
+        try:
+            update_conversation_state(
+                self.chat_id,
+                active_stage=normalized_stage,
+                execution_status="RUNNING",
+                active_blocker=None,
+            )
+        except Exception:
+            pass
+        if stage_changed or now - self._last_sent >= self.progress_min_seconds:
+            body = f"AÇÃO: {rendered}\nAGORA: {normalized_stage}" if rendered else f"AGORA: {normalized_stage}"
+            self.api.send(self.chat_id, body)
+            self._last_sent = now
+
+    def blocker(self, message: str) -> None:
+        detail = str(message or "").strip()[:1000]
+        self._stage = "BLOCKED"
+        self._message = detail
+        try:
+            update_conversation_state(
+                self.chat_id,
+                active_stage="BLOCKED",
+                active_blocker=detail,
+                execution_status="FAILED",
+            )
+        except Exception:
+            pass
+        self.api.send(self.chat_id, f"BLOCKER: {detail}")
+        self._last_sent = time.monotonic()
+
+    def _heartbeat_loop(self) -> None:
+        while not self._stop.wait(5.0):
+            now = time.monotonic()
+            if now - self._last_sent < self.heartbeat_seconds:
+                continue
+            stage = self._stage or "WORKING"
+            self.api.send(
+                self.chat_id,
+                f"Ainda trabalhando — etapa: {stage}. Nenhum blocker novo.",
+            )
+            self._last_sent = now
 
 
 class TelegramApi:
@@ -125,6 +216,7 @@ def _help_text() -> str:
         "/upload_status <publication_id> — reconcilia upload privado\n"
         "/pode_postar <publication_id> — aprovação explícita para tornar público\n"
         "/publicacao_status <publication_id> — reconcilia visibilidade pública\n"
+        "/evidence — auditoria técnica da conversa/última execução\n"
         "/help — mostra este menu\n\n"
         "Arquivos: envie o vídeo com legenda 'essa é a intro' ou a imagem com legenda "
         "'essa é a marca d'água'. O A15 registra identidade/proveniência; não baixa mídia pesada.\n\n"
@@ -155,7 +247,7 @@ def _publication_id(parts: list[str], command: str) -> int:
     return publication_id
 
 
-def _execute_command(text: str) -> str:
+def _execute_command(text: str, *, chat_id: int | None = None) -> str:
     from app.integrations.deepseek_harness import server
 
     parts = text.strip().split(maxsplit=1)
@@ -169,6 +261,19 @@ def _execute_command(text: str) -> str:
         return _render_result(list_governed_brand_assets())
     if command in {"/status", "/observe"}:
         return _render_result(server.br_observe())
+    if command == "/evidence":
+        if chat_id is None:
+            raise ValueError("/evidence requer contexto de chat")
+        state = get_or_create_conversation_state(chat_id)
+        return _render_result({
+            "conversation_id": state.get("conversation_id"),
+            "active_goal_id": state.get("active_goal_id"),
+            "active_task": state.get("active_task"),
+            "active_run_id": state.get("active_run_id"),
+            "active_stage": state.get("active_stage"),
+            "execution_status": state.get("execution_status"),
+            "last_execution_result": state.get("last_execution_result"),
+        })
     if command in {"/memoria", "/memory"}:
         if len(parts) != 2 or not parts[1].strip():
             raise ValueError("uso: /memoria <consulta>")
@@ -359,16 +464,17 @@ def _asset_reply(result: dict[str, Any]) -> str:
 
 
 def _chat_reply(result: dict[str, Any]) -> str:
-    return (
-        f"{result['answer']}\n\n"
-        "--- Harness evidence ---\n"
-        f"authority={result.get('authority')}\n"
-        f"capability={result.get('capability_id')}\n"
-        f"provider={result.get('provider')}\n"
-        f"model={result.get('model')}\n"
-        f"routing_id={result.get('routing_id')}\n"
-        f"fallback={result.get('fallback_occurred')}"
-    )
+    answer = str(result.get("answer") or "").strip() or "Concluído."
+    state = result.get("conversation_state")
+    if isinstance(state, dict) and bool(state.get("waiting_for_human")):
+        target = (
+            state.get("pending_human_review")
+            or state.get("pending_question")
+            or state.get("current_subject")
+            or "DECISION"
+        )
+        return f"WAITING_FOR_HUMAN=YES REVIEW_TARGET={target}\n\n{answer}"
+    return answer
 
 
 def main() -> int:
@@ -498,14 +604,34 @@ def main() -> int:
                 api.typing(chat_id)
                 try:
                     if text.startswith("/"):
-                        reply = _execute_command(text)
+                        reply = _execute_command(text, chat_id=chat_id)
                         command_name = text.split()[0]
                     else:
-                        api.send(
-                            chat_id,
-                            "🧠 DeepSeek Harness recebeu sua mensagem. Roteando raciocínio governado no cloud...",
-                        )
-                        reply = _chat_reply(chat_under_harness(text))
+                        ingested = ingest_telegram_input_under_harness({
+                            "telegram_user_id": user_id,
+                            "telegram_chat_id": chat_id,
+                            "telegram_message_id": int(message["message_id"]),
+                            "telegram_update_id": update_id,
+                            "input_kind": "text",
+                            "text": text,
+                        })
+                        input_record = dict(ingested.get("input") or {})
+                        reporter = TelegramProgressReporter(api, chat_id)
+                        reporter.start()
+                        try:
+                            conversation = handle_telegram_conversation(
+                                text,
+                                telegram_chat_id=chat_id,
+                                telegram_message_id=int(message["message_id"]),
+                                input_record=input_record,
+                                progress_callback=reporter,
+                            )
+                        except Exception as exc:
+                            reporter.blocker(f"{type(exc).__name__}: {str(exc)[:900]}")
+                            raise
+                        finally:
+                            reporter.stop()
+                        reply = _chat_reply(conversation)
                         command_name = "natural-language"
                 except Exception as exc:  # command boundary: never crash the listener
                     reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
