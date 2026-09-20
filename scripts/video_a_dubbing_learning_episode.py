@@ -23,7 +23,9 @@ FEEDBACK={
     "leonida_pronunciation":"FAIL",
     "proper_noun_pronunciation":"FAIL",
     "technical_pass_but_perceptual_fail":True,
-    "human_voice_review":"REJECTED",\n    "all_names_and_places_ptbr_required":True,\n    "foreign_language_chunks_forbidden":True,
+    "human_voice_review":"REJECTED",
+    "all_names_and_places_ptbr_required":True,
+    "foreign_language_chunks_forbidden":True,
 }
 EVIDENCE=(
     "github-run:35525920608",
