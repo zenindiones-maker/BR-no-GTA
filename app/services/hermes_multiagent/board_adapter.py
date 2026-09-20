@@ -81,21 +81,22 @@ class HermesBoardAdapter:
         assignee: str,
         parents: tuple[str, ...] = (),
         idempotency_key: str | None = None,
-        initial_status: str = "ready",
+        initial_status: str | None = None,
     ) -> str:
         with self.connection() as (kb, _kbd, conn):
-            return kb.create_task(
-                conn,
-                title=title,
-                body=body,
-                assignee=assignee,
-                parents=parents,
-                created_by="deepseek-harness",
-                workspace_kind="scratch",
-                idempotency_key=idempotency_key,
-                initial_status=initial_status,
-                max_retries=3,
-            )
+            kwargs: dict[str, Any] = {
+                "title": title,
+                "body": body,
+                "assignee": assignee,
+                "parents": parents,
+                "created_by": "deepseek-harness",
+                "workspace_kind": "scratch",
+                "idempotency_key": idempotency_key,
+                "max_retries": 3,
+            }
+            if initial_status is not None:
+                kwargs["initial_status"] = initial_status
+            return kb.create_task(conn, **kwargs)
 
     def link(self, parent_id: str, child_id: str) -> None:
         with self.connection() as (kb, _kbd, conn):
