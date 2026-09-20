@@ -24,6 +24,7 @@ HUMAN_STATE_PATH=ROOT/"config"/"video_a_production_readiness_human.json"
 READINESS_STATE_PATH=ROOT/"config"/"video_a_production_readiness_state.json"
 PRONUNCIATION_EVIDENCE_PATH=ROOT/"config"/"pronunciation_evidence_registry.json"
 PRONUNCIATION_LEXICON_PATH=ROOT/"config"/"pronunciation_lexicon.json"
+PRONUNCIATION_PTBR_CANDIDATE_PATH=ROOT/"config"/"pronunciation_ptbr_candidate.json"
 
 BASELINE_PROFILE_COMMIT="da0d33a5341ae970cc24595f24292ad3ada9e35b"
 BASELINE_RUN_ID=35399181943
@@ -255,68 +256,123 @@ def _seed_terms(candidate:dict[str,Any],text:str)->set[str]:
 
 
 def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dict[str,Any]:
+    """Inventory only real script entities and map them to the pt-BR candidate lexicon.
+
+    The inventory is driven by the final script text: lexicon entries that do not
+    occur in the script are excluded. Structured media identities and conservative
+    sentence-local extraction are used only to detect script terms missing from the
+    lexicon; common Portuguese sentence starters are not pronunciation entities.
+    """
     text=script_text(candidate)
-    identities=_inventory_identities(candidate,text)
-    evidence={}
+    candidate_lexicon=_load(PRONUNCIATION_PTBR_CANDIDATE_PATH)
+    human_evidence={}
     for row in registry.get("entries") or []:
         if not isinstance(row,dict):
             continue
         for value in [row.get("term"),*(row.get("aliases") or [])]:
             if value:
-                evidence[_norm(str(value))]=row
+                human_evidence[_norm(str(value))]=row
 
     rows=[]
-    validated=0
-    pending=[]
-    for identity in identities:
-        term=str(identity["term"])
-        aliases=[str(x) for x in identity.get("aliases") or []]
-        match=evidence.get(_norm(term))
-        matched_surface=term if match else None
-        if match is None:
-            for alias in aliases:
-                match=evidence.get(_norm(alias))
-                if match:
-                    matched_surface=alias
-                    break
-        status=str((match or {}).get("status") or "PENDING_HUMAN_REVIEW")
-        is_valid=status in {"HUMAN_APPROVED","HUMAN_APPROVED_REFERENCE"}
-        if is_valid:
-            validated+=1
-        else:
-            pending.append(term)
+    covered_surfaces=set()
+    for entry in candidate_lexicon.get("entries") or []:
+        if not isinstance(entry,dict):
+            continue
+        term=str(entry.get("term") or "").strip()
+        aliases=[str(x) for x in entry.get("aliases") or [] if str(x).strip()]
         surfaces=[term,*aliases]
-        occurrences=sum(
-            len(re.findall(r"(?<!\w)"+re.escape(surface)+r"(?!\w)",text,re.I))
-            for surface in dict.fromkeys(surfaces)
-        )
+        matched=[
+            surface for surface in surfaces
+            if surface and re.search(r"(?<!\w)"+re.escape(surface)+r"(?!\w)",text,re.I)
+        ]
+        if not matched:
+            continue
+        for surface in matched:
+            covered_surfaces.add(_norm(surface))
+        evidence=human_evidence.get(_norm(term))
+        if evidence is None:
+            for alias in aliases:
+                evidence=human_evidence.get(_norm(alias))
+                if evidence:
+                    break
+        status=str((evidence or {}).get("status") or entry.get("validation_status") or "PENDING_HUMAN_REVIEW")
+        human_valid=status in {"HUMAN_APPROVED","HUMAN_APPROVED_REFERENCE"}
         rows.append({
             "term":term,
             "aliases":aliases,
-            "category":identity["category"],
+            "category":str(entry.get("category") or _category(term,candidate)),
+            "locale":str(entry.get("locale") or "pt-BR"),
+            "synthesis_text":entry.get("synthesis_text"),
             "status":status,
-            "validated":is_valid,
-            "evidence":match,
-            "evidence_matched_surface":matched_surface,
-            "occurrences":occurrences,
-            "sources":identity.get("sources") or [],
+            "validated":human_valid,
+            "candidate_configured":True,
+            "human_evidence":evidence,
+            "source":entry.get("source"),
+            "occurrences":sum(
+                len(re.findall(r"(?<!\w)"+re.escape(surface)+r"(?!\w)",text,re.I))
+                for surface in dict.fromkeys(matched)
+            ),
         })
-    total=len(rows)
+
+    # Detect real-looking script identities not yet represented by the candidate
+    # lexicon. These remain hard blockers rather than being silently ignored.
+    unknown=[]
+    for identity in _inventory_identities(candidate,text):
+        term=str(identity["term"])
+        n=_norm(term)
+        if not n or n in covered_surfaces:
+            continue
+        category=str(identity.get("category") or _category(term,candidate))
+        parts=term.split()
+        meaningful=(
+            category in {"CHARACTER","PLACE","REGION","ORGANIZATION","BRAND","ACRONYM","GAME_SPECIFIC_TERM"}
+            or len(parts)>=2
+            or term.isupper()
+            or any(ch.isdigit() for ch in term)
+        )
+        if not meaningful:
+            continue
+        # Avoid reporting a short surface already contained in a configured entity.
+        if any(n==_norm(row["term"]) or n in {_norm(a) for a in row.get("aliases") or []} for row in rows):
+            continue
+        unknown.append(term)
+
+    dedup_unknown=[]
+    seen=set()
+    for term in unknown:
+        key=_norm(term)
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup_unknown.append(term)
+
+    validated=sum(1 for row in rows if row["validated"])
+    configured=len(rows)
+    total=configured+len(dedup_unknown)
+    pending=[row["term"] for row in rows if not row["validated"]]+dedup_unknown
     cats={}
     for row in rows:
         cats[row["category"]]=cats.get(row["category"],0)+1
+    for term in dedup_unknown:
+        cat=_category(term,candidate)
+        cats[cat]=cats.get(cat,0)+1
     return {
         "PRONUNCIATION_TERMS_TOTAL":total,
         "CHARACTER_NAMES_TOTAL":cats.get("CHARACTER",0),
         "PLACE_NAMES_TOTAL":cats.get("PLACE",0)+cats.get("REGION",0),
         "BUSINESS_ORGANIZATION_NAMES_TOTAL":cats.get("BUSINESS",0)+cats.get("ORGANIZATION",0),
+        "TERMS_WITH_PTBR_CANDIDATE":configured,
         "TERMS_WITH_VALIDATED_PRONUNCIATION":validated,
         "TERMS_PENDING_VALIDATION":total-validated,
         "UNVALIDATED_PROPER_NOUNS":pending,
+        "UNCONFIGURED_SCRIPT_ENTITIES":dedup_unknown,
         "PRONUNCIATION_COVERAGE_PERCENT":round(100.0*validated/max(1,total),3),
+        "PTBR_CANDIDATE_CONFIGURATION_PERCENT":round(100.0*configured/max(1,total),3),
+        "ALL_CONFIGURED_TERMS_PTBR":"PASS" if rows and all(row["locale"]=="pt-BR" for row in rows) else "FAIL",
+        "FOREIGN_LANGUAGE_CHUNKS_ALLOWED":"NO",
         "category_counts":cats,
         "terms":rows,
-        "inventory_policy":"structured candidate identities + sentence-local capitalization; aliases are grouped under the same pronunciation identity and common sentence-start words are excluded",
+        "inventory_policy":"final-script scan against full pt-BR candidate lexicon + conservative missing-entity detector; no sentence-fragment pseudo-entities",
     }
 
 
