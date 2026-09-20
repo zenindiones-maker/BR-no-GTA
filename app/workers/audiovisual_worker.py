@@ -487,6 +487,24 @@ def write_json(path, data):
 
 RENDER_HEARTBEAT_INTERVAL_SECONDS = 30.0
 RENDER_STALL_WARNING_SECONDS = 120.0
+RENDER_STAGE_TIMEOUT_FACTOR = 8.0
+RENDER_STAGE_TIMEOUT_MIN_SECONDS = 900.0
+RENDER_STAGE_TIMEOUT_CAP_SECONDS = 12600.0
+
+
+def render_stage_timeout_seconds(duration_seconds):
+    duration = max(0.0, float(duration_seconds or 0.0))
+    return min(
+        RENDER_STAGE_TIMEOUT_CAP_SECONDS,
+        max(RENDER_STAGE_TIMEOUT_MIN_SECONDS, duration * RENDER_STAGE_TIMEOUT_FACTOR),
+    )
+
+
+def append_jsonl(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n")
+        stream.flush()
 
 
 def render_progress_metrics(progress, state, *, now=None):
@@ -498,7 +516,12 @@ def render_progress_metrics(progress, state, *, now=None):
 
     last_media = float(state.get("last_media_seconds") or 0.0)
     last_progress = state.get("last_progress_monotonic")
-    if last_progress is None or media_seconds > last_media + 0.001:
+    pass_restarted = media_seconds + 0.001 < last_media
+    if pass_restarted:
+        last_progress = now
+        state["last_progress_monotonic"] = now
+        state["last_media_seconds"] = media_seconds
+    elif last_progress is None or media_seconds > last_media + 0.001:
         last_progress = now
         state["last_progress_monotonic"] = now
         state["last_media_seconds"] = media_seconds
@@ -519,6 +542,13 @@ def render_progress_metrics(progress, state, *, now=None):
         elapsed + eta_seconds if eta_seconds is not None else None
     )
     state["last_eta_seconds"] = eta_seconds
+    stalled = stall_seconds >= RENDER_STALL_WARNING_SECONDS
+    if stalled:
+        progress_state = "STALLED_NO_MEDIA_PROGRESS"
+    elif speed_x is not None and speed_x < 1.0:
+        progress_state = "SLOW_BUT_PROGRESSING"
+    else:
+        progress_state = "PROGRESSING"
     return {
         "percent": percent,
         "media_seconds": media_seconds,
@@ -531,7 +561,12 @@ def render_progress_metrics(progress, state, *, now=None):
             else None
         ),
         "stall_seconds": round(stall_seconds, 2),
-        "stalled": stall_seconds >= RENDER_STALL_WARNING_SECONDS,
+        "stalled": stalled,
+        "progress_state": progress_state,
+        "frame": progress.get("frame"),
+        "fps": progress.get("fps"),
+        "ffmpeg_speed": progress.get("speed"),
+        "pass_restarted": pass_restarted,
     }
 
 
@@ -569,6 +604,10 @@ def execute(job, asset_root, output_root, *, source_job=None):
         effective_audio_bitrate = "384k" if youtube_master else "192k"
         learning_binding = dict(render_config.get("learning_profile") or {})
         progress_path = folder / "render-progress.json"
+        heartbeat_path = folder / "render-heartbeats.jsonl"
+        stall_diagnostic_path = folder / "render-stall-diagnostic.json"
+        timeout_diagnostic_path = folder / "render-stage-timeout-diagnostic.json"
+        stage_timeout_seconds = render_stage_timeout_seconds(plan.duration_seconds)
         heartbeat = {
             "last_emit": 0.0,
             "last_media_seconds": 0.0,
@@ -587,6 +626,7 @@ def execute(job, asset_root, output_root, *, source_job=None):
                 "execution_id": job["execution_id"],
                 "skill_id": learning_binding.get("skill_id"),
                 "skill_version": learning_binding.get("version", "v1-legacy"),
+                "stage_timeout_seconds": stage_timeout_seconds,
                 "encoder_policy": {
                     "codec": bound_options["codec"],
                     "quality": effective_quality,
@@ -600,31 +640,65 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     "threads": render_threads,
                 },
             })
-            write_json(progress_path, payload)
             now = time.monotonic()
             metrics = render_progress_metrics(payload, heartbeat, now=now)
+            payload.update(metrics)
+            write_json(progress_path, payload)
             percent = metrics["percent"]
-            if (
+            should_emit = (
                 heartbeat["last_emit"] == 0.0
                 or now - heartbeat["last_emit"] >= RENDER_HEARTBEAT_INTERVAL_SECONDS
                 or percent >= 100.0
                 or metrics["stalled"]
-            ):
+            )
+            if should_emit:
                 heartbeat["last_emit"] = now
                 heartbeat["heartbeat_count"] += 1
-                print(
-                    json.dumps(
-                        {
-                            "RENDER_HEARTBEAT": "PASS",
-                            "render_job_id": job["render_job_id"],
-                            "execution_id": job["execution_id"],
-                            "skill_version": learning_binding.get("version", "v1-legacy"),
-                            "software_preset": bound_options.get("software_preset"),
-                            **metrics,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
+                event = {
+                    "RENDER_HEARTBEAT": "PASS",
+                    "render_job_id": job["render_job_id"],
+                    "execution_id": job["execution_id"],
+                    "skill_version": learning_binding.get("version", "v1-legacy"),
+                    "software_preset": bound_options.get("software_preset"),
+                    "stage_timeout_seconds": stage_timeout_seconds,
+                    **metrics,
+                }
+                append_jsonl(heartbeat_path, event)
+                print(json.dumps(event, sort_keys=True), flush=True)
+
+            if metrics["stalled"]:
+                diagnostic = {
+                    "RENDER_STALL_DETECTED": "YES",
+                    "classification": "STALLED_NO_MEDIA_PROGRESS",
+                    "render_job_id": job["render_job_id"],
+                    "execution_id": job["execution_id"],
+                    "stall_threshold_seconds": RENDER_STALL_WARNING_SECONDS,
+                    **metrics,
+                }
+                write_json(stall_diagnostic_path, diagnostic)
+                print("RENDER_STALL_DETECTED=YES", flush=True)
+                print("RENDER_PROGRESS_STATE=STALLED_NO_MEDIA_PROGRESS", flush=True)
+                raise WorkerError(
+                    "Render stalled: media_seconds did not advance within configured watchdog threshold"
+                )
+
+            if (
+                metrics["elapsed_seconds"] >= stage_timeout_seconds
+                and metrics["media_seconds"] + 0.001 < float(payload.get("duration") or plan.duration_seconds)
+            ):
+                diagnostic = {
+                    "RENDER_STAGE_TIMEOUT_DETECTED": "YES",
+                    "classification": metrics["progress_state"],
+                    "render_job_id": job["render_job_id"],
+                    "execution_id": job["execution_id"],
+                    "stage_timeout_seconds": stage_timeout_seconds,
+                    **metrics,
+                }
+                write_json(timeout_diagnostic_path, diagnostic)
+                print("RENDER_STAGE_TIMEOUT_DETECTED=YES", flush=True)
+                print(f"RENDER_PROGRESS_STATE={metrics['progress_state']}", flush=True)
+                raise WorkerError(
+                    "Render stage exceeded duration-proportional timeout before media completion"
                 )
 
         threads_raw = (os.environ.get("VEDIT_RENDER_THREADS") or "").strip()
@@ -694,6 +768,9 @@ def execute(job, asset_root, output_root, *, source_job=None):
                     "contract": "render-progress/v2",
                     "heartbeat_interval_seconds": RENDER_HEARTBEAT_INTERVAL_SECONDS,
                     "stall_warning_seconds": RENDER_STALL_WARNING_SECONDS,
+                    "stage_timeout_seconds": stage_timeout_seconds,
+                    "heartbeat_log": heartbeat_path.name,
+                    "stall_fail_fast": True,
                     "heartbeat_count": int(heartbeat.get("heartbeat_count") or 0),
                     "max_stall_seconds": round(float(heartbeat.get("max_stall_seconds") or 0.0), 2),
                     "last_eta_seconds": (

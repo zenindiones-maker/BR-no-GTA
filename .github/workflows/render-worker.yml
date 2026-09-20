@@ -708,6 +708,7 @@ jobs:
           YTDLP_COOKIES_FILE: runtime/secrets/youtube-cookies.txt
           YTDLP_PO_TOKEN_BASE_URL: http://127.0.0.1:4416
           NARRATION_CACHE_ROOT: runtime/narration-cache
+          PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail
           if python - <<'PY'
@@ -717,12 +718,12 @@ jobs:
           raise SystemExit(0 if job.get('product_profile') == 'professional_ptbr_v1' else 1)
           PY
           then
-            python -m app.workers.professional_audiovisual_worker \
+            python -u -m app.workers.professional_audiovisual_worker \
               --render-job runtime/render/render-job.json \
               --asset-root runtime/render/input \
               --output-dir runtime/render/output
           else
-            python -m app.workers.audiovisual_worker \
+            python -u -m app.workers.audiovisual_worker \
               --render-job runtime/render/render-job.json \
               --asset-root runtime/render/input \
               --output-dir runtime/render/output

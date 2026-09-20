@@ -70,3 +70,49 @@ def test_render_progress_resets_stall_when_media_time_advances():
     assert metrics["stall_seconds"] == 0.0
     assert metrics["stalled"] is False
     assert state["max_stall_seconds"] == 130.0
+
+
+def test_render_progress_classifies_slow_progress_separately_from_stall():
+    state = {
+        "last_media_seconds": 0.0,
+        "last_progress_monotonic": None,
+        "max_stall_seconds": 0.0,
+        "last_eta_seconds": None,
+    }
+    metrics = render_progress_metrics(
+        {"elapsed": 100.0, "seconds": 10.0, "duration": 100.0, "percent": 10.0, "frame": 300, "fps": 3.0},
+        state,
+        now=100.0,
+    )
+    assert metrics["progress_state"] == "SLOW_BUT_PROGRESSING"
+    assert metrics["stalled"] is False
+    assert metrics["frame"] == 300
+    assert metrics["fps"] == 3.0
+
+
+def test_render_progress_pass_restart_resets_stall_baseline():
+    state = {
+        "last_media_seconds": 40.0,
+        "last_progress_monotonic": 10.0,
+        "max_stall_seconds": 0.0,
+        "last_eta_seconds": None,
+    }
+    metrics = render_progress_metrics(
+        {"elapsed": 50.0, "seconds": 1.0, "duration": 100.0, "percent": 1.0},
+        state,
+        now=200.0,
+    )
+    assert metrics["pass_restarted"] is True
+    assert metrics["stall_seconds"] == 0.0
+    assert metrics["stalled"] is False
+
+
+def test_render_stage_timeout_is_duration_proportional_and_capped():
+    from app.workers.audiovisual_worker import (
+        RENDER_STAGE_TIMEOUT_CAP_SECONDS,
+        RENDER_STAGE_TIMEOUT_MIN_SECONDS,
+        render_stage_timeout_seconds,
+    )
+    assert render_stage_timeout_seconds(1) == RENDER_STAGE_TIMEOUT_MIN_SECONDS
+    assert render_stage_timeout_seconds(1500) == 12000.0
+    assert render_stage_timeout_seconds(999999) == RENDER_STAGE_TIMEOUT_CAP_SECONDS

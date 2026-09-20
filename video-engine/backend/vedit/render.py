@@ -8,9 +8,11 @@ comando di Windows.
 from __future__ import annotations
 
 import os
+import queue
 import re
 import shutil
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -233,7 +235,7 @@ _TIME_RE = re.compile(r"out_time_us=(\d+)")
 
 def _run_pass(args: list[str], duration: float, on_progress: Progress | None,
               t0: float) -> tuple[int, list[str], dict]:
-    """Esegue ffmpeg, reporta progresso e observa CPU/RSS/I/O reais do processo."""
+    """Run ffmpeg with progress ticks that remain alive even when stdout stalls."""
     proc = ffmpeg.popen(args)
     log_lines: list[str] = []
     usage = {
@@ -274,25 +276,101 @@ def _run_pass(args: list[str], duration: float, on_progress: Progress | None,
             pass
 
     assert proc.stdout is not None
-    for line in proc.stdout:
+    output_queue: queue.Queue[object] = queue.Queue()
+    eof = object()
+
+    def _read_stdout() -> None:
+        try:
+            for raw in proc.stdout:
+                output_queue.put(raw)
+        finally:
+            output_queue.put(eof)
+
+    reader = threading.Thread(target=_read_stdout, name=f"vedit-ffmpeg-progress-{proc.pid}", daemon=True)
+    reader.start()
+
+    latest: dict[str, object] = {
+        "seconds": 0.0,
+        "duration": round(duration, 3),
+        "percent": 0.0,
+        "frame": None,
+        "fps": None,
+        "speed": None,
+    }
+    last_callback = 0.0
+
+    def _number(value: str):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _emit(*, heartbeat_only: bool) -> None:
+        nonlocal last_callback
+        if on_progress is None:
+            return
+        payload = dict(latest)
+        payload["elapsed"] = round(time.time() - t0, 2)
+        payload["heartbeat_only"] = bool(heartbeat_only)
+        on_progress(payload)
+        last_callback = time.monotonic()
+
+    try:
+        while True:
+            item = None
+            try:
+                item = output_queue.get(timeout=1.0)
+            except queue.Empty:
+                pass
+
+            sample()
+            now = time.monotonic()
+            if item is eof:
+                break
+
+            if isinstance(item, str):
+                line = item.rstrip()
+                if line:
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        if key == "frame":
+                            try:
+                                latest["frame"] = int(value)
+                            except ValueError:
+                                latest["frame"] = value or None
+                        elif key == "fps":
+                            latest["fps"] = _number(value)
+                        elif key == "speed":
+                            latest["speed"] = value or None
+
+                    m = _TIME_RE.match(line)
+                    if m:
+                        done = int(m.group(1)) / 1e6
+                        latest["seconds"] = round(done, 3)
+                        latest["percent"] = round(min(100.0, done / duration * 100), 2) if duration else 0.0
+                        _emit(heartbeat_only=False)
+                    elif not line.startswith(("frame=", "fps=", "bitrate=", "total_size=", "out_time",
+                                              "dup_frames=", "drop_frames=", "speed=", "progress=", "stream_")):
+                        log_lines.append(line)
+
+            if on_progress is not None and (
+                last_callback == 0.0 or now - last_callback >= 1.0
+            ):
+                _emit(heartbeat_only=True)
+
         sample()
-        line = line.rstrip()
-        if not line:
-            continue
-        m = _TIME_RE.match(line)
-        if m and on_progress:
-            done = int(m.group(1)) / 1e6
-            on_progress({
-                "seconds": round(done, 3),
-                "duration": round(duration, 3),
-                "percent": round(min(100.0, done / duration * 100), 2) if duration else 0.0,
-                "elapsed": round(time.time() - t0, 2),
-            })
-        elif not line.startswith(("frame=", "fps=", "bitrate=", "total_size=", "out_time",
-                                  "dup_frames=", "drop_frames=", "speed=", "progress=", "stream_")):
-            log_lines.append(line)
-    sample()
-    return proc.wait(), log_lines, usage
+        return proc.wait(), log_lines, usage
+    except BaseException:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+                proc.wait(timeout=5)
+        raise
+    finally:
+        reader.join(timeout=1.0)
 
 
 # Righe di contorno: dicono che qualcosa e' andato storto, non che cosa.
