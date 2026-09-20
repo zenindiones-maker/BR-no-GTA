@@ -860,7 +860,7 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     ]
 
     roster_caps = {
-        item["capability_id"]: item
+        item.capability_id: item
         for item in [
             *video["broker"].roster,
             *system["broker"].roster,
