@@ -50,6 +50,27 @@ def build_semantic_text_only_env(base_env: dict[str, str] | None = None) -> dict
     return env
 
 
+def _same_runner_cli_command(*, executor_model: str, prompt: str) -> tuple[list[str], str]:
+    """Use the official OpenCode client path for opencode/* models.
+
+    OpenCode documents `run` as the automation client. Standalone mode is the
+    CI path for direct provider credentials; the OpenCode Console free/keyless
+    tier performs client-admission checks and must stay on the official shared
+    client/server path instead of a private standalone server.
+    """
+    shared_client = str(executor_model or "").startswith("opencode/")
+    command = ["opencode", "run"]
+    if not shared_client:
+        command.append("--standalone")
+    command.extend([
+        "--model", executor_model,
+        "--agent", OPENCODE_SEMANTIC_AGENT_ID,
+        "--format", "json",
+        build_semantic_text_only_prompt(prompt),
+    ])
+    return command, ("shared_client" if shared_client else "standalone")
+
+
 def _immutable_dispatch_ref(
     *,
     repository: str,
@@ -375,6 +396,8 @@ class OpenCodeNativeAIProvider:
         tool_call_count = 0
         tool_events: list[dict[str, Any]] = []
         error_events: list[str] = []
+        event_types: list[str] = []
+        finish_reasons: list[str] = []
         parse_errors = 0
         event_count = 0
         parse_ns = 0
@@ -389,14 +412,12 @@ class OpenCodeNativeAIProvider:
         with tempfile.TemporaryDirectory(prefix="br-opencode-") as tmp:
             stderr_path = Path(tmp) / "stderr.log"
             with stderr_path.open("w+", encoding="utf-8") as stderr_stream:
+                cli_command, cli_execution_mode = _same_runner_cli_command(
+                    executor_model=executor_model,
+                    prompt=prompt,
+                )
                 process = subprocess.Popen(
-                    [
-                        "opencode", "run", "--standalone",
-                        "--model", executor_model,
-                        "--agent", OPENCODE_SEMANTIC_AGENT_ID,
-                        "--format", "json",
-                        build_semantic_text_only_prompt(prompt),
-                    ],
+                    cli_command,
                     stdout=subprocess.PIPE,
                     stderr=stderr_stream,
                     text=True,
@@ -438,6 +459,17 @@ class OpenCodeNativeAIProvider:
                             first_event_ns = observed_ns
                         last_event_ns = observed_ns
                         event_type = str(item.get("type") or "")
+                        event_types.append(event_type or "<missing>")
+                        if event_type in {"step_finish", "step-finish"}:
+                            part = item.get("part") if isinstance(item.get("part"), dict) else {}
+                            reason = (
+                                item.get("finish_reason")
+                                or item.get("reason")
+                                or part.get("finish_reason")
+                                or part.get("reason")
+                            )
+                            if reason not in (None, ""):
+                                finish_reasons.append(str(reason))
                         if event_type in {"tool_use", "tool_call", "tool"}:
                             tool_call_count += 1
                             part = item.get("part") if isinstance(item.get("part"), dict) else {}
@@ -500,6 +532,11 @@ class OpenCodeNativeAIProvider:
             "process_teardown_ms": (process_finished_ns - last_event_at) / 1_000_000.0,
             "provider_total_ms": (process_finished_ns - provider_started_ns) / 1_000_000.0,
             "event_count": event_count,
+            "stdout_ndjson_event_types": list(event_types),
+            "finish_reason": (finish_reasons[-1] if finish_reasons else None),
+            "answer_accumulated": bool(answer),
+            "answer_length": len(answer),
+            "cli_execution_mode": cli_execution_mode,
             "tool_call_count": tool_call_count,
             "parse_errors": parse_errors,
             "timed_out": timed_out.is_set(),
@@ -623,6 +660,9 @@ class OpenCodeNativeAIProvider:
                     "retry_count": max(0, int(attempt_count) - 1),
                     "attempt_count": max(1, int(attempt_count)),
                     "parse_errors": parse_errors,
+                    "stdout_ndjson_event_types": list(event_types),
+                    "finish_reason": (finish_reasons[-1] if finish_reasons else None),
+                    "answer_accumulated": answer,
                     "tool_events": tool_events[:8],
                     "error_events": error_events[-5:],
                     "safe_stderr_tail": safe_stderr_lines,
