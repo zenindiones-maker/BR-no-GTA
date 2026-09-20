@@ -53,6 +53,16 @@ on:
         required: false
         default: ""
         type: string
+      post_branding_artifact_id:
+        description: "Optional proven failed-render artifact containing already rendered and branded MP4 for final-QA-only resume"
+        required: false
+        default: ""
+        type: string
+      post_branding_producer_run_id:
+        description: "Producer Render Worker run ID for post_branding_artifact_id"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -60,6 +70,7 @@ permissions:
 
 jobs:
   audiovisual:
+    if: inputs.post_branding_artifact_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
@@ -918,3 +929,168 @@ jobs:
             runtime/render/output/**/*.mp4
           if-no-files-found: ignore
           retention-days: 30
+
+  finalize-post-branding:
+    if: inputs.post_branding_artifact_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: video-engine/backend:.
+      BR_PERFORMANCE_TRACE_FILE: runtime/render/performance-trace.jsonl
+    steps:
+      - name: Checkout final-QA repair revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python for final QA
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Verify post-branding checkpoint provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.post_branding_artifact_id }}
+          PRODUCER_RUN_ID: ${{ inputs.post_branding_producer_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$ARTIFACT_ID"
+          test -n "$PRODUCER_RUN_ID"
+          mkdir -p runtime/render/post-branding-proof
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" > runtime/render/post-branding-proof/artifact.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN_ID}" > runtime/render/post-branding-proof/run.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          artifact=json.loads(Path("runtime/render/post-branding-proof/artifact.json").read_text())
+          run=json.loads(Path("runtime/render/post-branding-proof/run.json").read_text())
+          artifact_id=int(os.environ["ARTIFACT_ID"])
+          producer_run_id=int(os.environ["PRODUCER_RUN_ID"])
+          assert int(artifact.get("id") or 0)==artifact_id, artifact
+          assert artifact.get("name")==f"render-failure-{producer_run_id}-1", artifact
+          assert artifact.get("expired") is False, artifact
+          assert int(artifact.get("size_in_bytes") or 0)>0, artifact
+          assert int((artifact.get("workflow_run") or {}).get("id") or 0)==producer_run_id, artifact
+          assert run.get("status")=="completed" and run.get("conclusion")=="failure", run
+          assert run.get("path")==".github/workflows/render-worker.yml", run
+          print("POST_BRANDING_CHECKPOINT_PROVEN=PASS")
+          PY
+
+      - name: Restore rendered and branded checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.post_branding_artifact_id }}
+          run-id: ${{ inputs.post_branding_producer_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/render
+          merge-multiple: true
+
+      - name: Validate restored post-branding product identity
+        env:
+          EXPECTED_BRAIN_DECISION_ID: ${{ inputs.brain_decision_id }}
+          EXPECTED_EXECUTION_ID: ${{ inputs.execution_id }}
+          EXPECTED_AUTHORIZED_ACTION: ${{ inputs.authorized_action }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from app.services.current_audio_contract_service import current_audio_contract
+          roots=sorted({p.parent for p in Path("runtime/render/output").rglob("*.mp4") if p.is_file()})
+          assert len(roots)==1, roots
+          root=roots[0]
+          mp4s=list(root.glob("*.mp4"))
+          assert len(mp4s)==1 and mp4s[0].stat().st_size>0, mp4s
+          job=json.loads((root/"render-job.json").read_text(encoding="utf-8"))
+          assert int(job.get("render_job_id") or job.get("id") or 0)==2, job
+          assert int(job.get("video_id") or 0)==1, job
+          assert job.get("brain_decision_id")==os.environ["EXPECTED_BRAIN_DECISION_ID"], job
+          assert job.get("execution_id")==os.environ["EXPECTED_EXECUTION_ID"], job
+          assert job.get("authorized_action")==os.environ["EXPECTED_AUTHORIZED_ACTION"], job
+          contract=current_audio_contract()
+          assert job.get("current_audio_contract_fingerprint")==contract["CURRENT_AUDIO_CONTRACT_FINGERPRINT"], job
+          assert (job.get("narration") or {}).get("voice")==contract["VOICE_SHORT_NAME"], job
+          assert (job.get("subtitles") or {}).get("enabled") is False, job
+          assert (root/"script-ptbr.json").is_file()
+          assert (root/"brand-assets.json").is_file()
+          print("POST_BRANDING_PRODUCT_IDENTITY=PASS")
+          print("CHECKPOINT_REUSE=YES")
+          print("RENDER_RECOMPUTED=NO")
+          print("BRANDING_RECOMPUTED=NO")
+          PY
+
+      - name: Install final QA runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install "faster-whisper==1.2.0" pytest
+          python -m pytest -q tests/test_semantic_ptbr_audio_qa.py
+
+      - name: Start resumed final QA performance clock
+        run: python scripts/render_pipeline_stage_clock.py start final_qa --path runtime/render/pipeline-stage-clock.json
+
+      - name: Prove spoken audio is Brazilian Portuguese
+        run: |
+          set -euo pipefail
+          python scripts/semantic_ptbr_audio_qa.py --artifact-root runtime/render/output
+
+      - name: Prove long-form edit has no artificial padding
+        run: |
+          set -euo pipefail
+          python scripts/run001_longform_no_padding_qa.py --artifact-root runtime/render/output
+
+      - name: Finalize professional QA gates
+        run: |
+          set -euo pipefail
+          python scripts/run001_professional_finalize_qa.py --artifact-root runtime/render/output
+
+      - name: Finish resumed final QA performance clock
+        if: always()
+        run: python scripts/render_pipeline_stage_clock.py end final_qa --path runtime/render/pipeline-stage-clock.json
+
+      - name: Validate QA-passed render contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          roots=sorted({p.parent for p in Path("runtime/render/output").rglob("*.mp4") if p.is_file()})
+          assert len(roots)==1, roots
+          root=roots[0]
+          qa=json.loads((root/"render-qa.json").read_text(encoding="utf-8"))
+          semantic=json.loads((root/"semantic-ptbr-audio-qa.json").read_text(encoding="utf-8"))
+          padding=json.loads((root/"no-artificial-padding-qa.json").read_text(encoding="utf-8"))
+          assert qa.get("status")=="PASS", qa
+          assert semantic.get("status")=="PASS", semantic
+          assert padding.get("status")=="PASS", padding
+          print("RENDER_QA=PASS")
+          print("POST_BRANDING_FINAL_QA_RESUME=PASS")
+          PY
+
+      - name: Checkpoint QA-passed render before external review
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-output
+          path: runtime/render/output/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload final-QA resume diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-final-qa-resume-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime/render/post-branding-proof/
+            runtime/render/pipeline-stage-clock.json
+            runtime/render/performance-trace.jsonl
+            runtime/render/output/**/semantic-ptbr-audio-qa.json
+            runtime/render/output/**/no-artificial-padding-qa.json
+            runtime/render/output/**/render-qa.json
+            runtime/render/output/**/video-probe.json
+          if-no-files-found: warn
+          retention-days: 30
+

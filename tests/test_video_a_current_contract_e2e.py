@@ -47,3 +47,15 @@ def test_job2_resume_dispatch_reuses_current_qa_passed_checkpoints():
     assert "NARRATION_CHECKPOINT_REUSE=YES" in source
     assert "BRAND_AUDIO_CHECKPOINT_REUSE=YES" in source
     assert "MEDIA_CHECKPOINT_REUSE=YES" in source
+
+
+def test_job2_resume_can_reuse_post_branding_checkpoint_for_final_qa_only():
+    source=Path("scripts/video_a_current_job2_resume.py").read_text(encoding="utf-8")
+    workflow=Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
+    assert '"post_branding_artifact_id"' in source
+    assert '"post_branding_producer_run_id"' in source
+    assert '"resume_mode": "post_branding_final_qa"' in source
+    assert "finalize-post-branding:" in workflow
+    assert "POST_BRANDING_CHECKPOINT_PROVEN=PASS" in workflow
+    assert "RENDER_RECOMPUTED=NO" in workflow
+    assert "POST_BRANDING_FINAL_QA_RESUME=PASS" in workflow

@@ -101,6 +101,46 @@ def _prove_checkpoint_artifacts() -> dict[str, Any]:
     return proof
 
 
+
+def _post_branding_checkpoint_inputs() -> dict[str, int] | None:
+    req = _request()
+    artifact_id = int(req.get("post_branding_artifact_id") or 0)
+    producer_run_id = int(req.get("post_branding_producer_run_id") or 0)
+    if not artifact_id and not producer_run_id:
+        return None
+    if artifact_id <= 0 or producer_run_id <= 0:
+        raise RuntimeError("post-branding checkpoint requires artifact and producer run ids")
+    if producer_run_id != _previous_render_run_id():
+        raise RuntimeError("post-branding producer must be the proven previous render failure")
+    return {"artifact_id": artifact_id, "producer_run_id": producer_run_id}
+
+
+def _prove_post_branding_checkpoint() -> dict[str, Any] | None:
+    values = _post_branding_checkpoint_inputs()
+    if values is None:
+        return None
+    item = _gh_json([
+        "gh", "api",
+        f"repos/{os.environ['GITHUB_ACTIONS_REPOSITORY']}/actions/artifacts/{values['artifact_id']}",
+    ])
+    if int(item.get("id") or 0) != values["artifact_id"]:
+        raise RuntimeError("post-branding artifact id mismatch")
+    if item.get("expired") is True:
+        raise RuntimeError("post-branding artifact is expired")
+    if item.get("name") != f"render-failure-{values['producer_run_id']}-1":
+        raise RuntimeError("post-branding artifact type mismatch")
+    if int((item.get("workflow_run") or {}).get("id") or 0) != values["producer_run_id"]:
+        raise RuntimeError("post-branding artifact producer mismatch")
+    if int(item.get("size_in_bytes") or 0) <= 0:
+        raise RuntimeError("post-branding artifact is empty")
+    return {
+        "artifact_id": values["artifact_id"],
+        "producer_run_id": values["producer_run_id"],
+        "name": item.get("name"),
+        "size_in_bytes": int(item.get("size_in_bytes") or 0),
+        "expired": False,
+    }
+
 def _prove_previous_failure() -> dict[str, Any]:
     previous_render_run_id = _previous_render_run_id()
     run = _gh_json([
@@ -160,6 +200,7 @@ def prepare_retry(out: Path) -> None:
     initialize_application()
     proof = _prove_previous_failure()
     checkpoint_proof = _prove_checkpoint_artifacts()
+    post_branding_proof = _prove_post_branding_checkpoint()
     previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
     job_path = out / "render-job-handoff" / "render-job.json"
@@ -214,6 +255,8 @@ def prepare_retry(out: Path) -> None:
         "CURRENT_AUDIO_CONTRACT_FINGERPRINT": audio["CURRENT_AUDIO_CONTRACT_FINGERPRINT"],
         "previous_render_proof": proof,
         "checkpoint_artifact_proof": checkpoint_proof,
+        "post_branding_checkpoint_proof": post_branding_proof,
+        "POST_BRANDING_CHECKPOINT_REUSE": "YES" if post_branding_proof else "NO",
     })
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     print("RENDER_RETRY_MODE=REUSE_EXISTING_JOB2")
@@ -233,6 +276,7 @@ def dispatch_retry(
     initialize_application()
     proof = _prove_previous_failure()
     checkpoint_proof = _prove_checkpoint_artifacts()
+    post_branding_proof = _prove_post_branding_checkpoint()
     checkpoint_inputs = _checkpoint_inputs()
     previous_render_run_id = int(proof["run_id"])
     state_path = out / "state.json"
@@ -274,6 +318,8 @@ def dispatch_retry(
             "media_producer_run_id": str(checkpoint_inputs["producer_run_id"]),
             "brand_audio_artifact_id": str(checkpoint_inputs["brand_audio_artifact_id"]),
             "brand_audio_producer_run_id": str(checkpoint_inputs["producer_run_id"]),
+            "post_branding_artifact_id": str((post_branding_proof or {}).get("artifact_id") or ""),
+            "post_branding_producer_run_id": str((post_branding_proof or {}).get("producer_run_id") or ""),
         },
     )
     github_execution = {
@@ -289,6 +335,8 @@ def dispatch_retry(
         "render_job_handoff_source_sha": source_sha,
         "retry_of_run_id": previous_render_run_id,
         "same_render_job_id": SUCCESSOR_RENDER_JOB_ID,
+        "resume_mode": "post_branding_final_qa" if post_branding_proof else "full_render_retry",
+        "post_branding_checkpoint": post_branding_proof,
     }
     update_render_job_payload(SUCCESSOR_RENDER_JOB_ID, github_execution=github_execution)
     state.update({
@@ -309,6 +357,7 @@ def dispatch_retry(
     print("NARRATION_CHECKPOINT_REUSE=YES")
     print("BRAND_AUDIO_CHECKPOINT_REUSE=YES")
     print("MEDIA_CHECKPOINT_REUSE=YES")
+    print("POST_BRANDING_CHECKPOINT_REUSE=" + ("YES" if post_branding_proof else "NO"))
     print(f"RENDER_RUN_ID={dispatched.run_id}")
 
 

@@ -94,6 +94,28 @@ def _sample_starts(duration: float, sample_seconds: float = 45.0) -> tuple[float
     return (first, middle, last)
 
 
+
+def approved_longform_script(*, sections: Any, duration_seconds: float) -> str:
+    if not isinstance(sections, list) or len(sections) < 12:
+        raise RuntimeError("semantic PT-BR QA requires at least 12 approved semantic sections")
+    narrations: list[str] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            raise RuntimeError("semantic PT-BR QA script sections must be objects")
+        narration = str(section.get("narration") or "").strip()
+        if len(normalize_tokens(narration)) < 45:
+            raise RuntimeError("semantic PT-BR QA requires substantive approved narration in every section")
+        narrations.append(narration)
+    expected_script = " ".join(narrations)
+    minimum_words = max(450, int(math.floor((float(duration_seconds) / 60.0) * 90.0)))
+    word_count = len(normalize_tokens(expected_script))
+    if word_count < minimum_words:
+        raise RuntimeError(
+            "semantic PT-BR QA approved script is too short for the rendered long-form duration: "
+            f"{word_count} < {minimum_words}"
+        )
+    return expected_script
+
 def _extract_sample(source: Path, start: float, seconds: float, target: Path) -> None:
     result = subprocess.run(
         [
@@ -136,11 +158,11 @@ def main() -> int:
         raise RuntimeError("semantic PT-BR QA requires exactly one MP4")
     script_payload = json.loads((folder / "script-ptbr.json").read_text(encoding="utf-8"))
     sections = script_payload.get("sections") or []
-    expected_script = " ".join(str(section.get("narration") or "") for section in sections)
-    if len(normalize_tokens(expected_script)) < 2600:
-        raise RuntimeError("semantic PT-BR QA requires the approved long-form narration script")
-
     duration = _duration(mp4s[0])
+    expected_script = approved_longform_script(
+        sections=sections,
+        duration_seconds=duration,
+    )
     starts = _sample_starts(duration, args.sample_seconds)
     with tempfile.TemporaryDirectory(prefix="ptbr-qa-") as temporary:
         sample_paths = []

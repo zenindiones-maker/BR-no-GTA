@@ -1,4 +1,6 @@
-from scripts.semantic_ptbr_audio_qa import evaluate_semantic_ptbr, semantic_metrics
+import pytest
+
+from scripts.semantic_ptbr_audio_qa import approved_longform_script, evaluate_semantic_ptbr, semantic_metrics
 
 
 def test_semantic_ptbr_pass_requires_spoken_portuguese_and_script_alignment():
@@ -35,3 +37,23 @@ def test_metadata_or_voice_identity_cannot_substitute_for_semantic_speech():
     checks = evaluate_semantic_ptbr(metrics)
     assert checks["SPOKEN_AUDIO_PT_BR"] is False
     assert checks["FINAL_MIX_CONTAINS_PT_BR_NARRATION"] is False
+
+
+def test_approved_longform_script_uses_render_duration_not_arbitrary_2600_token_floor():
+    narration = " ".join(["conteudo"] * 180)
+    sections = [
+        {"section_id": f"s{i}", "narration": narration}
+        for i in range(12)
+    ]
+    approved = approved_longform_script(sections=sections, duration_seconds=20 * 60)
+    assert len(approved.split()) == 2160
+
+
+def test_approved_longform_script_fails_if_too_short_for_duration():
+    narration = " ".join(["conteudo"] * 50)
+    sections = [
+        {"section_id": f"s{i}", "narration": narration}
+        for i in range(12)
+    ]
+    with pytest.raises(RuntimeError, match="too short"):
+        approved_longform_script(sections=sections, duration_seconds=20 * 60)
