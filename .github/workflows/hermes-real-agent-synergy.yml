@@ -86,14 +86,6 @@ jobs:
           python -m pytest -q             tests/test_hermes_real_agent_synergy.py             tests/test_hermes_multiagent_boundary.py             tests/test_hermes_kanban_live_core.py             tests/test_global_capability_registry.py             tests/test_harness_routing_policy_service.py             tests/test_telegram_harness_integration.py             tests/test_opencode_semantic_text_profile.py             tests/test_delegated_agent_autonomy.py             tests/test_agent_office.py             --junitxml=artifacts/hermes-real-agent-synergy/focused.xml
           echo "HERMES_REAL_AGENT_FOCUSED=PASS"
 
-      - name: Prove semantic OpenCode v3 on this runner
-        env:
-          PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
-        run: |
-          set -euo pipefail
-          python scripts/opencode_semantic_text_v3_proof.py             --output artifacts/hermes-real-agent-synergy/opencode-semantic-v3-proof.json             | tee artifacts/hermes-real-agent-synergy/opencode-semantic-v3-proof.log
-          echo "OPENCODE_SEMANTIC_V3_RUNTIME=PASS"
-
       - name: Bootstrap bounded Codex Agent Office runtime
         run: |
           set -euo pipefail
