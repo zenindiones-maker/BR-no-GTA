@@ -78,7 +78,7 @@ jobs:
       - name: Focused benchmark contract test
         run: |
           set -euo pipefail
-          python -m pytest -q tests/test_new_video_benchmark_contract.py tests/test_youtube_role_context_service.py
+          python -m pytest -q tests/test_new_video_benchmark_contract.py tests/test_youtube_role_context_service.py tests/test_opencode_native_retry_policy.py
           python -m py_compile \
             scripts/new_video_benchmark_delivery.py \
             scripts/new_video_benchmark_quality.py \

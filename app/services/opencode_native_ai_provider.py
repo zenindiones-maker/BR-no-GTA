@@ -223,6 +223,16 @@ def _recoverable_missing_finish_reason(
     return protocol_error and _json_candidate_is_complete(answer)
 
 
+def _retryable_missing_finish_reason_error(exc: "OpenCodeNativeAIProviderError") -> bool:
+    events = [str(item) for item in (exc.details.get("error_events") or ())]
+    return any(
+        "provider.invalid-output" in event
+        and "stream ended without finish_reason" in event
+        and ("status': 200" in event or '"status": 200' in event)
+        for event in events
+    )
+
+
 class OpenCodeNativeAIProvider:
     """Official OpenCode CLI executed on a bounded GitHub Actions runner."""
 
@@ -297,6 +307,7 @@ class OpenCodeNativeAIProvider:
         canonical_model: str,
         executor_model: str,
         cli_version: str,
+        attempt_count: int = 1,
     ) -> AIResponse:
         """Run the already-promoted official CLI in the current GitHub runner.
 
@@ -506,9 +517,9 @@ class OpenCodeNativeAIProvider:
             finished_at=utcnow_iso(),
             duration_ms=performance["provider_total_ms"],
             provider_wait_ms=performance["provider_total_ms"],
-            retry_count=0,
+            retry_count=max(0, int(attempt_count) - 1),
             backoff_ms=0.0,
-            attempt_count=1,
+            attempt_count=max(1, int(attempt_count)),
             cache_hit=False,
             input_size=len(prompt.encode("utf-8")),
             output_size=len(answer.encode("utf-8")),
@@ -574,7 +585,8 @@ class OpenCodeNativeAIProvider:
                     "canonical_model": canonical_model,
                     "profile_version": self.profile_version,
                     "profile_content_ref": self.profile_content_ref,
-                    "retry_count": 0,
+                    "retry_count": max(0, int(attempt_count) - 1),
+                    "attempt_count": max(1, int(attempt_count)),
                     "parse_errors": parse_errors,
                     "tool_events": tool_events[:8],
                     "error_events": error_events[-5:],
@@ -599,12 +611,24 @@ class OpenCodeNativeAIProvider:
         cli_version = str(self.options["cli_version"])
         workflow = str(self.options.get("workflow") or OPENCODE_NATIVE_WORKFLOW)
         if str(os.getenv("BR_OPENCODE_NATIVE_EXECUTION_MODE") or "").strip() == "same_runner":
-            return self._generate_on_current_runner(
-                prompt=prompt,
-                canonical_model=canonical_model,
-                executor_model=executor_model,
-                cli_version=cli_version,
-            )
+            try:
+                return self._generate_on_current_runner(
+                    prompt=prompt,
+                    canonical_model=canonical_model,
+                    executor_model=executor_model,
+                    cli_version=cli_version,
+                    attempt_count=1,
+                )
+            except OpenCodeNativeAIProviderError as exc:
+                if not _retryable_missing_finish_reason_error(exc):
+                    raise
+                return self._generate_on_current_runner(
+                    prompt=prompt,
+                    canonical_model=canonical_model,
+                    executor_model=executor_model,
+                    cli_version=cli_version,
+                    attempt_count=2,
+                )
         dispatch_ref, parent_source_sha = _immutable_dispatch_ref(
             repository=self.repository,
             configured_ref=self.ref,
