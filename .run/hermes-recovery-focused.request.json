@@ -1,0 +1,10 @@
+{
+  "request": "hermes-recovery-focused",
+  "source_head": "cb3b4defb6da752a5d7a5aeafe700d7c1c40ba5b",
+  "scope": "lifecycle-review-timeout-diagnostics-only",
+  "no_voice": true,
+  "no_render": true,
+  "no_youtube_upload": true,
+  "no_youtube_publication": true,
+  "requested_at": "2026-09-20T23:05:00Z"
+}
