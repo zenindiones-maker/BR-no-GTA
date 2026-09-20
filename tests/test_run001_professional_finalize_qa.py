@@ -19,6 +19,10 @@ def _edit_qa():
         "checks": {
             "subtitles_default_disabled": True,
             "burned_subtitles_disabled": True,
+            "structural_label_overlay_off": True,
+            "debug_overlay_off": True,
+            "transcript_overlay_off": True,
+            "unplanned_text_overlay_off": True,
         },
     }
 
@@ -42,6 +46,15 @@ def test_subtitles_gate_still_rejects_burned_caption_tracks_when_edit_plan_is_pr
         edit_qa=_edit_qa(),
         probe=_probe(),
         edit_plan={"texts": [{"track": "CAPTIONS"}]},
+    )
+
+
+def test_subtitles_gate_rejects_unplanned_structural_text_on_generic_track():
+    assert not subtitles_qa_pass(
+        job=_job(),
+        edit_qa=_edit_qa(),
+        probe=_probe(),
+        edit_plan={"texts": [{"track": "T1", "text": "Hook"}]},
     )
 
 

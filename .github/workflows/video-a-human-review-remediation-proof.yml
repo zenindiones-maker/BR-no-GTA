@@ -81,6 +81,7 @@ jobs:
           name: video-a-human-review-remediation-${{ github.run_id }}
           path: |
             runtime/video-a-human-review-learning.json
+            runtime/human-review-learning.db
             .run/video-a-human-review-rejected.json
           if-no-files-found: error
           retention-days: 30
