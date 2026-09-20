@@ -73,6 +73,64 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     side_effects=("ephemeral worktrees", "mission-local mailbox"),
 )
 
+HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
+    capability_id="collaboration.hermes.execute",
+    capability_type="EXECUTOR",
+    domain="collaboration",
+    implementation=(
+        "Pinned NousResearch/hermes-agent durable Kanban/profile runtime "
+        "subordinated to a DeepSeek Harness CollaborationPlan"
+    ),
+    input_contract=(
+        "Harness EXECUTION authorization + exact base SHA + routed CollaborationPlan + "
+        "bounded HermesMissionExecutionSpec"
+    ),
+    output_contract=(
+        "HermesMissionExecutionResult + board/handoff/review evidence + "
+        "CanonicalExecutionResult + HarnessEpisode lineage"
+    ),
+    requirements=(
+        "persisted DeepSeek Harness EXECUTION authorization",
+        "Harness CollaborationPlan",
+        "GLOBAL_CAPABILITY_REGISTRY canonical task routing",
+        "pinned NousResearch/hermes-agent upstream SHA",
+        "mandatory forbidden-action lease",
+        "durable isolated Kanban board",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=(
+        "collaboration",
+        "hermes-agent",
+        "multi-agent",
+        "kanban",
+        "durable",
+        "handoff",
+        "review",
+        "delegated-only",
+        "zero-cost-runtime",
+    ),
+    security_boundary=(
+        "DeepSeek Harness remains sole routing/policy/authorization authority. Hermes receives only "
+        "mission-scoped Kanban coordination plus allowlisted br_harness tools, may not expand the "
+        "CollaborationPlan, may not call canonical executors directly, and has no secret, credential, "
+        "policy, canonical-memory, branch-write, paid-action or publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="HARNESS_BOUNDED_MISSION",
+    latency_class="MISSION_DEPENDENT",
+    quality_class="DURABLE_MULTIAGENT_REVIEW_GATED",
+    evidence_contract="app.services.hermes_multiagent.contracts.HermesMissionExecutionResult",
+    fallback_eligibility=False,
+    executor_binding="app.services.hermes_multiagent.runtime.execute_hermes_mission_capability",
+    version="1",
+    provider_id="nousresearch-hermes-agent",
+    agent_id="hermes-runtime",
+    side_effects=("mission-local Kanban SQLite", "structured evidence artifacts"),
+)
+
+
 
 AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
     capability_id="agent-office.codex.readonly-analysis",
@@ -615,6 +673,7 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
     AGENT_OFFICE_RECORD,
+    HERMES_MULTIAGENT_RUNTIME_RECORD,
     AGENT_OFFICE_CODEX_READONLY_RECORD,
     AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD,
     PHONE_CONTROL_RECORD,
