@@ -771,12 +771,12 @@ def _build_edit_plan(
             choices: list[tuple[float, int, str, float]] = []
             ordered_assets = list(dict.fromkeys(str(candidate["asset_ref"]) for candidate in candidates))
             for asset_order, asset_ref in enumerate(ordered_assets):
-                cursor = max(
+                source_cursor = max(
                     asset_cursors.get(asset_ref, 0.0),
                     section_anchors[asset_ref],
                 )
                 for governed_start, governed_end in governed_source_windows.get(asset_ref, []):
-                    source_start = max(cursor, governed_start)
+                    source_start = max(source_cursor, governed_start)
                     if governed_end - source_start > 0.001:
                         choices.append((source_start, asset_order, asset_ref, governed_end))
                         break
