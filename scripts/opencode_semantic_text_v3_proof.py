@@ -115,6 +115,35 @@ def _execute(prompt: str, *, label: str) -> dict[str, Any]:
     result = evidence.result if isinstance(evidence.result, dict) else {}
     text = str(result.get("text") or "").strip()
     metrics = dict(getattr(provider, "last_performance_metrics", {}) or {})
+    error = dict(evidence.error or {}) if isinstance(evidence.error, dict) else {}
+    error_performance = dict(error.get("performance") or {}) if isinstance(error.get("performance"), dict) else {}
+    diagnostics = {
+        "PROCESS_EXIT_CODE": error.get("exit_code", 0 if evidence.status == "EXECUTED" else None),
+        "EVENT_COUNT": metrics.get("event_count", error_performance.get("event_count")),
+        "PARSE_ERRORS": error.get("parse_errors", metrics.get("parse_errors", error_performance.get("parse_errors"))),
+        "ERROR_EVENTS": list(error.get("error_events") or ()),
+        "SAFE_STDERR": list(error.get("safe_stderr_tail") or ()),
+        "STDOUT_NDJSON_EVENT_TYPES": list(
+            metrics.get("stdout_ndjson_event_types")
+            or error.get("stdout_ndjson_event_types")
+            or error_performance.get("stdout_ndjson_event_types")
+            or ()
+        ),
+        "FINISH_REASON": (
+            metrics.get("finish_reason")
+            or error.get("finish_reason")
+            or error_performance.get("finish_reason")
+        ),
+        "ANSWER_ACCUMULATED": (
+            text
+            or str(error.get("answer_accumulated") or "")
+        ),
+        "CLI_EXECUTION_MODE": (
+            metrics.get("cli_execution_mode")
+            or error.get("cli_execution_mode")
+            or error_performance.get("cli_execution_mode")
+        ),
+    }
     return {
         "label": label,
         "status": evidence.status,
@@ -123,6 +152,7 @@ def _execute(prompt: str, *, label: str) -> dict[str, Any]:
         "model": evidence.model,
         "text": text,
         "error": evidence.error,
+        "diagnostics": diagnostics,
         "routing_id": routing.routing_id,
         "authorization_id": evidence.authorization_id,
         "execution_id": evidence.execution_id,
@@ -221,6 +251,8 @@ def main() -> int:
     print("SEMANTIC_AGENT=build")
     print("SEMANTIC_PROFILE=opencode-semantic-text-v3")
     print(f"ISOLATED_TEXT={proof['isolated']['text']}")
+    for key, value in proof["isolated"]["diagnostics"].items():
+        print(f"{key}={json.dumps(value, ensure_ascii=False)}")
     print(f"TOOL_CALL_COUNT={proof['isolated']['tool_call_count']}")
     print(f"TOOLS_EXPOSED={proof['isolated']['tools_exposed']}")
     print(
