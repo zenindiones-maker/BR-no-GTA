@@ -1016,7 +1016,9 @@ jobs:
           assert (job.get("narration") or {}).get("voice")==contract["VOICE_SHORT_NAME"], job
           assert (job.get("subtitles") or {}).get("enabled") is False, job
           assert (root/"script-ptbr.json").is_file()
-          assert (root/"brand-assets.json").is_file()
+          snapshots=[item for item in (job.get("brand_assets") or []) if isinstance(item,dict)]
+          asset_ids={int(item.get("asset_id") or 0) for item in snapshots}
+          assert 1 in asset_ids and 2 in asset_ids, snapshots
           print("POST_BRANDING_PRODUCT_IDENTITY=PASS")
           print("CHECKPOINT_REUSE=YES")
           print("RENDER_RECOMPUTED=NO")
