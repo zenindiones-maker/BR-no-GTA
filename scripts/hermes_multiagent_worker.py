@@ -41,6 +41,8 @@ def main() -> int:
         raise RuntimeError("worker does not own a valid Hermes profile run")
     board.heartbeat(args.task_id, run_id=run_id, note=f"{profile} started bounded analysis")
     context = board.worker_context(args.task_id)
+    prior_runs = board.list_runs(args.task_id)
+    closed_runs = [run for run in prior_runs if run.get("ended_at") is not None]
     mapping = _load_mapping()
 
     body = json.loads(str(task.get("body") or "{}"))
@@ -116,7 +118,18 @@ def main() -> int:
     if profile == "hermes-editorial-critic":
         if "HANDOFF_CONSUMED=YES" not in context or "GAP=EL022" not in context:
             raise RuntimeError("editorial critic did not consume evidence handoff")
-        changes_requested = "CHANGES REQUESTED:" in context and "EL022" in context
+        change_requests = [
+            run for run in closed_runs
+            if run.get("outcome") == "changes_requested"
+        ]
+        changes_requested = any(
+            "EL022" in str(run.get("summary") or "")
+            for run in change_requests
+        )
+        if len(change_requests) > 1:
+            raise RuntimeError(
+                "editorial critic observed repeated changes_requested loop; refusing silent retry storm"
+            )
         if not changes_requested:
             summary = (
                 "EDITORIAL_CRITIQUE_READY=YES NOVELTY=PASS REPETITION=PASS "
@@ -161,9 +174,24 @@ def main() -> int:
         return 0
 
     if profile == "hermes-reviewer":
+        review_handoffs = [
+            run for run in closed_runs
+            if run.get("outcome") == "review_requested"
+        ]
+        if not review_handoffs:
+            raise RuntimeError("reviewer has no structured review_requested handoff")
+        latest_review = str(review_handoffs[-1].get("summary") or "")
+        prior_change_requests = [
+            run for run in closed_runs
+            if run.get("outcome") == "changes_requested"
+        ]
+        if len(prior_change_requests) > 1:
+            raise RuntimeError(
+                "reviewer observed repeated changes_requested loop; refusing silent retry storm"
+            )
         first_review = (
-            "UNRESOLVED_GAP=EL022" in context
-            and "EL022_GAP_CLASSIFIED=YES" not in context
+            "UNRESOLVED_GAP=EL022" in latest_review
+            and "EL022_GAP_CLASSIFIED=YES" not in latest_review
         )
         if first_review:
             ok, implementer = board.request_changes(
@@ -178,7 +206,7 @@ def main() -> int:
                 raise RuntimeError("reviewer request_changes did not return to critic")
             return 0
 
-        if "EL022_GAP_CLASSIFIED=YES" not in context:
+        if "EL022_GAP_CLASSIFIED=YES" not in latest_review:
             raise RuntimeError("reviewer did not receive corrected critique")
         ok = board.complete(
             args.task_id,
