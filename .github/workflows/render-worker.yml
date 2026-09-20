@@ -1026,7 +1026,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          python -m pip install "faster-whisper==1.2.0"
+          python -m pip install "faster-whisper==1.2.0" "requests==2.32.5"
 
       - name: Start resumed final QA performance clock
         run: python scripts/render_pipeline_stage_clock.py start final_qa --path runtime/render/pipeline-stage-clock.json
