@@ -9,6 +9,7 @@ from app.database.telegram_conversation_repository import (
     append_conversation_turn,
     get_or_create_conversation_state,
     list_recent_conversation_turns,
+    list_recent_human_decisions,
     record_human_decision,
     update_conversation_state,
 )
@@ -158,6 +159,7 @@ def retrieve_conversation_context(
 ) -> dict[str, Any]:
     state = get_or_create_conversation_state(telegram_chat_id)
     turns = list_recent_conversation_turns(telegram_chat_id, limit=turn_limit)
+    decisions = list_recent_human_decisions(telegram_chat_id, limit=6)
     reference = resolve_conversation_reference(
         current_message,
         state=state,
@@ -167,6 +169,18 @@ def retrieve_conversation_context(
     return {
         "conversation_state": state,
         "recent_turns": _compact_turns(turns),
+        "recent_human_decisions": [
+            {
+                "decision_id": item.get("decision_id"),
+                "decision_type": item.get("decision_type"),
+                "target_ref": item.get("target_ref"),
+                "artifact_ref": item.get("artifact_ref"),
+                "run_id": item.get("run_id"),
+                "comment": str(item.get("comment") or "")[:700],
+                "learning_correction_id": item.get("learning_correction_id"),
+            }
+            for item in decisions
+        ],
         "resolved_reference": reference,
         "operational_observation": {
             "domain": observation.get("domain"),
@@ -351,6 +365,7 @@ def handle_telegram_conversation(
     telegram_chat_id: int,
     telegram_message_id: int | None = None,
     input_record: dict[str, Any] | None = None,
+    has_attachment: bool = False,
     progress_callback: ProgressCallback | None = None,
     chat_handler: ChatHandler = chat_under_harness,
     action_executor: ActionExecutor = _default_action_executor,
@@ -362,7 +377,7 @@ def handle_telegram_conversation(
 
     state = get_or_create_conversation_state(telegram_chat_id)
     recent_before = list_recent_conversation_turns(telegram_chat_id, limit=10)
-    intent = classify_conversation_intent(text)
+    intent = classify_conversation_intent(text, has_attachment=has_attachment)
     resolved = resolve_conversation_reference(text, state=state, recent_turns=recent_before)
     human_turn = append_conversation_turn(
         telegram_chat_id=telegram_chat_id,
@@ -544,6 +559,10 @@ def handle_telegram_conversation(
     )
     capability_id = _extract_identity(canonical, "capability_id")
     status = str(_extract_identity(canonical, "status") or "COMPLETED").upper()
+    if str(canonical.get("fresh_research_status") or "").upper() == "FAIL_CLOSED":
+        status = "FAILED"
+    if str(canonical.get("USER_GOAL_COMPLETED") or "").upper() == "NO" and status == "COMPLETED":
+        status = "FAILED"
     waiting = status in {"WAITING_FOR_HUMAN", "WAITING", "BLOCKED_HUMAN"}
     blocker = _extract_identity(canonical, "blocker", "error")
     pending_question = canonical.get("pending_question") if isinstance(canonical, dict) else None
