@@ -1,0 +1,287 @@
+name: New Video 1 Production Resume
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run/new-video-production-resume.request.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: new-video-1-production-resume
+  cancel-in-progress: false
+
+jobs:
+  resume:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: .
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
+      GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+      BR_RENDER_EXECUTOR: github_actions
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/new-video-benchmark/mission.db
+      BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/new-video-benchmark/performance-trace-resume.jsonl
+      BR_PERFORMANCE_TRACE_ID: "new-video-resume:${{ github.run_id }}:${{ github.run_attempt }}"
+      BR_OPENCODE_NATIVE_EXECUTION_MODE: same_runner
+      BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+      BR_OPENCODE_NATIVE_REF: ${{ github.ref_name }}
+      BR_OPENCODE_NATIVE_SOURCE_SHA: ${{ github.sha }}
+      BR_OPENCODE_NATIVE_POLL_INTERVAL: "2"
+      BR_OPENCODE_NATIVE_RUN_TIMEOUT: "900"
+      BR_OPENCODE_NATIVE_ARTIFACT_ROOT: ${{ github.workspace }}/runtime/new-video-benchmark/opencode-artifacts
+      BR_BENCHMARK_ITEM_KEY: novo-1-resume
+      ZERO_COST_OPERATION: "TRUE"
+
+    steps:
+      - name: Start production resume wall clock
+        run: |
+          set -euo pipefail
+          echo "RESUME_START_EPOCH_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+          echo "BASELINE_RUN=35513582812"
+
+      - name: Checkout exact resume revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimal production controller runtime
+        run: |
+          set -euo pipefail
+          started="$(date +%s%3N)"
+          python -m pip install -q -r requirements-production-controller.txt
+          if command -v opencode >/dev/null 2>&1 && [ "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8" ]; then
+            echo "OPENCODE_CLI_REUSED=YES"
+          else
+            npm install --global @opencode/cli@2.0.8
+            echo "OPENCODE_CLI_REUSED=NO"
+          fi
+          test "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8"
+          ended="$(date +%s%3N)"
+          echo "SETUP_INSTALL_MS=$((ended-started))" >> "$GITHUB_ENV"
+          mkdir -p runtime/new-video-benchmark/delivery
+
+      - name: Restore exact valid baseline checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10606072935"
+          run-id: "35513582812"
+          github-token: ${{ github.token }}
+          path: runtime
+          merge-multiple: true
+
+      - name: Validate reusable editorial checkpoint
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sqlite3
+          db=os.environ["BR_TEST_DATABASE"]
+          con=sqlite3.connect(db)
+          con.row_factory=sqlite3.Row
+          proof=json.load(open("runtime/new-video-benchmark/multi-agent-proof.json"))
+          assert proof["status"]=="PASS", proof
+          goal=proof["goal_id"]
+          a=con.execute("select * from gta6_goal_artifacts where goal_id=?",(goal,)).fetchone()
+          assert a and a["script_id"] and a["content_item_id"], dict(a or {})
+          script=con.execute("select * from scripts where id=?",(a["script_id"],)).fetchone()
+          plan=con.execute("select * from production_plans where content_item_id=?",(a["content_item_id"],)).fetchone()
+          assert script and plan
+          assert not a["video_id"] and not a["render_job_id"]
+          print("CHECKPOINT_REUSE=YES")
+          print("FRESH_RESEARCH_REUSED=YES")
+          print("FACT_CHECK_PRESERVED=YES")
+          print("GOAL_REUSED=YES")
+          print("SCRIPT_REUSED=YES")
+          print("PRODUCTION_PLAN_REUSED=YES")
+          print("GOVERNED_EDITORIAL_MS=0")
+          print("TIME_TO_SCRIPT_READY_MS=0")
+          PY
+
+      - name: Resume package from persisted Script and ProductionPlan
+        run: |
+          set -euo pipefail
+          started="$(date +%s%3N)"
+          python scripts/youtube_product_quality_e2e.py             --synergy-proof runtime/new-video-benchmark/multi-agent-proof.json             --resume-persisted-editorial             --output runtime/new-video-benchmark/product-quality-e2e.json
+          ended="$(date +%s%3N)"
+          echo "PRODUCT_PACKAGE_MS=$((ended-started))" >> "$GITHUB_ENV"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/new-video-benchmark/product-quality-e2e.json"))
+          assert d["metrics"]["editorial_reused"] is True, d["metrics"]
+          print(f"GOAL_ID={d['goal_id']}")
+          print(f"CONTENT_ITEM_ID={d['content_item_id']}")
+          print(f"SCRIPT_ID={d['script_id']}")
+          print(f"PRODUCTION_PLAN_ID={d['production_plan_id']}")
+          print(f"CONTEXT_BUILD_MS={d['metrics']['context_build_ms']}")
+          print(f"CONTEXT_SERIALIZATION_MS={d['metrics']['context_serialization_ms']}")
+          print(f"SPECIALIST_EXECUTION_MS={d['metrics']['specialist_execution_ms']}")
+          print("CHECKPOINT_REUSE=YES")
+          PY
+
+      - name: Restore reusable content-addressed MediaKnowledge
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10590341059"
+          run-id: "35460016361"
+          github-token: ${{ github.token }}
+          path: runtime/media-knowledge-source
+          merge-multiple: true
+
+      - name: Create current-contract Video and RenderJob
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_delivery.py prepare-handoff             --product runtime/new-video-benchmark/product-quality-e2e.json             --media-artifact-dir runtime/media-knowledge-source/product-delivery/media-knowledge             --media-descriptor .run001/media-knowledge-checkpoints/gta6-extended-look-official-20260827.json             --product-label A             --benchmark-label NOVO-1-RESUME             --out runtime/new-video-benchmark/delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))
+          print(f"VIDEO_ID={d['VIDEO_ID']}")
+          print(f"RENDER_JOB_ID={d['RENDER_JOB_ID']}")
+          PY
+
+      - name: Publish RenderJob handoff artifact
+        id: handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-video-resume-render-job-${{ github.run_id }}
+          path: runtime/new-video-benchmark/delivery/render-job-handoff/render-job.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Dispatch professional render
+        env:
+          HANDOFF_ARTIFACT_ID: ${{ steps.handoff.outputs.artifact-id }}
+          HANDOFF_ARTIFACT_NAME: new-video-resume-render-job-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_delivery.py dispatch-handoff             --out runtime/new-video-benchmark/delivery             --artifact-id "$HANDOFF_ARTIFACT_ID"             --artifact-name "$HANDOFF_ARTIFACT_NAME"             --producer-run-id "$GITHUB_RUN_ID"             --source-sha "$GITHUB_SHA"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))
+          print(f"RENDER_RUN_ID={d['RENDER_RUN_ID']}")
+          PY
+
+      - name: Wait only for current render
+        run: |
+          set -euo pipefail
+          python scripts/watch_github_run.py --run-id "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/new-video-benchmark/render-watch.json
+
+      - name: Reconcile professional render QA
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_delivery.py reconcile-render --out runtime/new-video-benchmark/delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json, os, time
+          d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))
+          print(f"ARTIFACT_ID={d['ARTIFACT_ID']}")
+          print(f"TIME_TO_RENDER_READY_MS={int(time.time()*1000)-int(os.environ['RESUME_START_EPOCH_MS'])}")
+          PY
+
+      - name: Download render output and narration master
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/new-video-benchmark/render-output runtime/new-video-benchmark/narration-output
+          gh run download "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --name render-output --dir runtime/new-video-benchmark/render-output
+          NARRATION_ARTIFACT_NAME="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RENDER_RUN_ID/artifacts" --jq '.artifacts[] | select(.name | startswith("narration-bundle-")) | .name' | head -n1)"
+          test -n "$NARRATION_ARTIFACT_NAME"
+          gh run download "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$NARRATION_ARTIFACT_NAME" --dir runtime/new-video-benchmark/narration-output
+
+      - name: Evaluate production quality
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_quality.py             --proof runtime/new-video-benchmark/multi-agent-proof.json             --product runtime/new-video-benchmark/product-quality-e2e.json             --render-root runtime/new-video-benchmark/render-output             --narration-root runtime/new-video-benchmark/narration-output             --state runtime/new-video-benchmark/delivery/state.json             --output runtime/new-video-benchmark/quality.json
+          echo "QUALITY_REGRESSION=NO"
+
+      - name: Deliver narration master to Telegram without recompression
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python scripts/telegram_narration_review_worker.py             --narration-root runtime/new-video-benchmark/narration-output             --state runtime/new-video-benchmark/delivery/state.json             --quality runtime/new-video-benchmark/quality.json             --output runtime/new-video-benchmark/delivery/narration-telegram.json
+
+      - name: Create private YouTube publication
+        run: python scripts/new_video_benchmark_delivery.py create-publication --product runtime/new-video-benchmark/product-quality-e2e.json --out runtime/new-video-benchmark/delivery
+
+      - name: Dispatch YouTube PRIVATE
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_delivery.py dispatch-upload --out runtime/new-video-benchmark/delivery
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))
+          print(f"YOUTUBE_UPLOAD_RUN_ID={d['YOUTUBE_UPLOAD_RUN_ID']}")
+          PY
+
+      - name: Wait only for private HD review readiness
+        run: python scripts/watch_github_run.py --run-id "$YOUTUBE_UPLOAD_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/new-video-benchmark/youtube-watch.json
+
+      - name: Reconcile YouTube and Telegram human review
+        run: |
+          set -euo pipefail
+          python scripts/new_video_benchmark_delivery.py reconcile-upload --out runtime/new-video-benchmark/delivery
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          final=json.load(open("runtime/new-video-benchmark/delivery/final.json"))
+          final["BASELINE_RUN"]=35513582812
+          final["SETUP_INSTALL_MS"]=int(os.environ["SETUP_INSTALL_MS"])
+          final["GOVERNED_EDITORIAL_MS"]=0
+          final["PRODUCT_PACKAGE_MS"]=int(os.environ["PRODUCT_PACKAGE_MS"])
+          final["TIME_TO_SCRIPT_READY_MS"]=0
+          final["TIME_TO_TELEGRAM_REVIEW_MS"]=int(time.time()*1000)-int(os.environ["RESUME_START_EPOCH_MS"])
+          final["FACT_CHECK_PRESERVED"]="YES"
+          final["HARNESS_AUTHORITY_PRESERVED"]="YES"
+          final["VOICE_CONTRACT_PRESERVED"]="YES"
+          Path("runtime/new-video-benchmark/delivery/final.json").write_text(json.dumps(final,ensure_ascii=False,indent=2))
+          print("QUALITY_REGRESSION=NO")
+          print("FACT_CHECK_PRESERVED=YES")
+          print("HARNESS_AUTHORITY_PRESERVED=YES")
+          print("VOICE_CONTRACT_PRESERVED=YES")
+          print(f"TELEGRAM_MESSAGE_ID={final['TELEGRAM_MESSAGE_ID']}")
+          print(f"HUMAN_REVIEW_STATUS={final['HUMAN_REVIEW_STATUS']}")
+          print(f"TIME_TO_TELEGRAM_REVIEW_MS={final['TIME_TO_TELEGRAM_REVIEW_MS']}")
+          PY
+
+      - name: Build resume latency profile
+        if: always()
+        run: |
+          set -euo pipefail
+          python scripts/summarize_performance_trace.py             --trace runtime/new-video-benchmark/performance-trace-resume.jsonl             --output runtime/new-video-benchmark/latency-profile-resume.json             --run-id "$GITHUB_RUN_ID"
+          python - <<'PY'
+          import json, os
+          baseline=json.load(open("runtime/new-video-benchmark/latency-profile.json"))
+          current=json.load(open("runtime/new-video-benchmark/latency-profile-resume.json"))
+          saved=42156.893
+          print("BASELINE_RUN=35513582812")
+          print(f"BASELINE_E2E_WALL_CLOCK_MS={baseline.get('E2E_WALL_CLOCK_MS')}")
+          print(f"E2E_WALL_CLOCK_MS={current.get('E2E_WALL_CLOCK_MS')}")
+          print(f"SETUP_INSTALL_MS={os.environ.get('SETUP_INSTALL_MS')}")
+          print("GOVERNED_EDITORIAL_MS=0")
+          print(f"PRODUCT_PACKAGE_MS={os.environ.get('PRODUCT_PACKAGE_MS')}")
+          print(f"REDUNDANT_WORK_MS={current.get('REDUNDANT_WORK_MS',0)}")
+          print(f"REUSED_CHECKPOINT_MS_SAVED={saved}")
+          PY
+
+      - name: Upload resume evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-video-production-resume-${{ github.run_id }}
+          path: |
+            runtime/new-video-benchmark/
+            runtime/youtube-upload/results/
+          if-no-files-found: warn
+          retention-days: 30

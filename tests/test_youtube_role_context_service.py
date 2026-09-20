@@ -1,5 +1,7 @@
+import json
 from app.services.youtube_role_context_service import (
     MAX_SEMANTIC_CONTEXT_CHARS,
+    ROLE_TARGET_PACKET_CHARS,
     build_production_packet,
     build_script_review_packet,
     build_seo_packet,
@@ -64,6 +66,7 @@ def test_production_packet_preserves_lineage_and_full_artifact_hashes_under_budg
     packet = result["context"]
     metrics = result["metrics"]
     assert metrics["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
+    assert metrics["packet_chars"] <= ROLE_TARGET_PACKET_CHARS["production-management"]
     assert metrics["packet_chars"] < metrics["full_context_chars"]
     assert metrics["chars_saved"] > 0
     assert packet["artifact_refs"]["script"] == "db:scripts:8"
@@ -121,3 +124,50 @@ def test_all_role_packet_builders_share_lineage_without_signature_failure():
         assert packet["metrics"]["packet_chars"] < MAX_SEMANTIC_CONTEXT_CHARS
         assert packet["context"]["provenance"]["goal_id"] == "goal-1"
         assert packet["context"]["artifact_refs"]["script"] == "db:scripts:8"
+
+
+def test_production_packet_survives_verbose_realistic_scene_plan_under_12k():
+    script = "HOOK\n" + ("Verified factual paragraph with Jason Lucia Vice City. " * 900)
+    plan = _plan()
+    plan["scenes"] = [
+        {
+            **scene,
+            "visual_description": ("Verbose visual direction with repeated narration context and evidence. " * 12),
+            "media_search_terms": [("Rockstar GTA VI official scene search phrase " * 8)],
+            "evidence_refs": [f"claim:{n}" for n in range(12)],
+            "source_url": None,
+            "asset_ref": None,
+        }
+        for scene in plan["scenes"]
+    ]
+    claims = [
+        {
+            **_claims()[0],
+            "claim_id": f"claim-{index}",
+            "statement": ("Long verified statement " * 40),
+            "evidence_refs": [f"https://www.rockstargames.com/VI#{n}" for n in range(12)],
+        }
+        for index in range(8)
+    ]
+    result = build_production_packet(
+        goal_id="goal-1",
+        content_item_id=7,
+        script_id=8,
+        production_plan_id=10,
+        script_text=script,
+        production_plan=plan,
+        claims=claims,
+        strategy_output={
+            "angle": "A" * 3000,
+            "promise": "P" * 3000,
+            "differentiation": "D" * 3000,
+            "title_direction": "T" * 3000,
+        },
+        full_context_chars=80_000,
+    )
+    assert result["metrics"]["packet_chars"] <= 12_000
+    assert result["metrics"]["target_packet_chars"] == 12_000
+    packet = result["context"]
+    assert "narration" not in json.dumps(packet["scenes"], ensure_ascii=False)
+    assert "visual_description" not in json.dumps(packet["scenes"], ensure_ascii=False)
+    assert packet["artifact_refs"]["production_plan"] == "db:production_plans:10"

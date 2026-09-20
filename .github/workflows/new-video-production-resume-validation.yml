@@ -1,0 +1,36 @@
+name: New Video Resume Focused Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - app/services/youtube_role_context_service.py
+      - scripts/youtube_product_quality_e2e.py
+      - tests/test_youtube_role_context_service.py
+      - .github/workflows/new-video-production-resume-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Focused role-packet and resume validation
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest
+          python -m pytest -q tests/test_youtube_role_context_service.py
+          python -m py_compile app/services/youtube_role_context_service.py scripts/youtube_product_quality_e2e.py
+          echo "ROLE_PACKET_DETERMINISTIC_TESTS=PASS"

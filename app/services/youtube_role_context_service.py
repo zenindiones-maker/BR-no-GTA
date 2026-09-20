@@ -6,9 +6,10 @@ import re
 from typing import Any
 
 
-PACKET_VERSION = "youtube-role-context/v1"
+PACKET_VERSION = "youtube-role-context/v2"
 MAX_SEMANTIC_CONTEXT_CHARS = 24_000
 TARGET_PACKET_CHARS = 22_000
+ROLE_TARGET_PACKET_CHARS = {"production-management": 12_000}
 
 
 def _canonical(value: Any) -> str:
@@ -199,76 +200,109 @@ def build_production_packet(
     strategy_output: dict[str, Any],
     full_context_chars: int,
 ) -> dict[str, Any]:
-    """Dense production packet; full Script/ProductionPlan stay persisted and hash-addressable."""
-    packet = _base(
-        role="production-management",
-        goal_id=goal_id,
-        content_item_id=content_item_id,
-        script_id=script_id,
-        production_plan_id=production_plan_id,
-        script_text=script_text,
-        production_plan=production_plan,
-        claims=claims,
-        strategy_output=strategy_output,
-    )
-    packet["verified_claims"] = [
+    """Minimal causal packet for production management.
+
+    Heavy canonical artifacts remain in the database and are referenced by id/hash.
+    The packet carries only the facts, script structure, scene execution skeleton,
+    media locators and QA constraints required for a production-readiness decision.
+    """
+    scenes = [
+        scene
+        for scene in (production_plan.get("scenes") or ())
+        if isinstance(scene, dict)
+    ]
+    chapter_rows = [
+        {
+            "heading": str(row.get("heading") or "")[:80],
+            "summary": str(row.get("summary") or "")[:140],
+        }
+        for row in _chapter_summaries(script_text)[:10]
+    ]
+    verified_facts = [
         {
             "claim_id": item.get("claim_id"),
-            "statement": str(item.get("statement") or "")[:360],
+            "statement": str(item.get("statement") or "")[:240],
             "verification_status": item.get("verification_status"),
-            "evidence_refs": list(item.get("evidence_refs") or ())[:2],
+            "fact_check_result": item.get("fact_check_result"),
         }
-        for item in claims
+        for item in claims[:8]
         if isinstance(item, dict)
     ]
-    scenes = [scene for scene in (production_plan.get("scenes") or ()) if isinstance(scene, dict)]
-    packet.update(
-        {
-            "timing": {
-                "estimated_duration_seconds": production_plan.get("estimated_duration_seconds"),
-                "scene_count": len(scenes),
-                "max_scene_seconds": max(
-                    (float(scene.get("duration_seconds") or 0.0) for scene in scenes),
-                    default=0.0,
-                ),
-            },
-            "hook": str(production_plan.get("hook") or _script_hook(script_text))[:760],
-            "scenes": [
-                {
-                    "order": scene.get("order"),
-                    "block": str(scene.get("narrative_block") or "")[:120],
-                    "seconds": scene.get("duration_seconds"),
-                    "visual_type": scene.get("visual_type"),
-                    "visual": str(scene.get("visual_description") or "")[:220],
-                    "search": list(scene.get("media_search_terms") or ())[:2],
-                    "evidence": list(scene.get("evidence_refs") or ())[:2],
-                    "segment_id": scene.get("segment_id"),
-                }
-                for scene in scenes
-            ],
-            "audio_requirements": [
-                str(item)[:220]
-                for item in (production_plan.get("audio_requirements") or ())
-            ][:4],
-            "visual_requirements": [
-                item if isinstance(item, (str, int, float, bool)) else {
-                    key: value
-                    for key, value in dict(item).items()
-                    if key in {"type", "description", "required"}
-                }
-                for item in (production_plan.get("visual_requirements") or ())
-            ][:6],
-            "editorial_evidence_refs": list(
-                production_plan.get("editorial_evidence_refs") or ()
-            )[:16],
-            "packet_note": (
-                "Full script and ProductionPlan are persisted at artifact_refs with content_hashes; "
-                "this packet intentionally contains only role-relevant production structure."
-            ),
+    scene_rows: list[dict[str, Any]] = []
+    for scene in scenes:
+        row = {
+            "order": scene.get("order"),
+            "block": str(scene.get("narrative_block") or "")[:55],
+            "seconds": round(float(scene.get("duration_seconds") or 0.0), 3),
+            "visual_type": scene.get("visual_type"),
+            "segment_id": scene.get("segment_id"),
+            "asset_ref": scene.get("asset_ref"),
+            "source_url": scene.get("source_url"),
+            "search": str((scene.get("media_search_terms") or [""])[0])[:70] or None,
         }
-    )
+        scene_rows.append(
+            {
+                key: value
+                for key, value in row.items()
+                if value not in (None, "", [], {})
+            }
+        )
+    packet = {
+        "packet_version": PACKET_VERSION,
+        "role": "production-management",
+        "artifact_refs": {
+            "script": f"db:scripts:{script_id}",
+            "production_plan": (
+                f"db:production_plans:{production_plan_id}"
+                if production_plan_id is not None
+                else f"db:production_plans:content-item:{content_item_id}"
+            ),
+        },
+        "content_hashes": {
+            "script_sha256": _hash(script_text),
+            "production_plan_sha256": _hash(production_plan),
+        },
+        "provenance": {
+            "goal_id": goal_id,
+            "content_item_id": content_item_id,
+            "script_id": script_id,
+            "production_plan_id": production_plan_id,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+        "title": str(production_plan.get("title") or "")[:220],
+        "editorial_summary": {
+            "angle": str(strategy_output.get("angle") or "")[:420],
+            "promise": str(strategy_output.get("promise") or "")[:320],
+            "verified_facts": verified_facts,
+        },
+        "script_structure": chapter_rows,
+        "timing": {
+            "estimated_duration_seconds": production_plan.get("estimated_duration_seconds"),
+            "scene_count": len(scenes),
+            "max_scene_seconds": max(
+                (float(scene.get("duration_seconds") or 0.0) for scene in scenes),
+                default=0.0,
+            ),
+        },
+        "scenes": scene_rows,
+        "qa_requirements": {
+            "audio": [
+                str(item)[:140]
+                for item in (production_plan.get("audio_requirements") or ())
+            ][:3],
+            "visual": [
+                str(item)[:140]
+                for item in (production_plan.get("visual_requirements") or ())
+            ][:3],
+            "facts": "Only verified/supported claims may be stated as facts.",
+            "duration_seconds": production_plan.get("estimated_duration_seconds"),
+        },
+        "packet_note": (
+            "Full Script/ProductionPlan remain canonical at artifact_refs; "
+            "production management receives only causal execution context."
+        ),
+    }
     return finalize_packet(packet, full_context_chars=full_context_chars)
-
 
 def build_thumbnail_packet(
     *,
@@ -316,11 +350,15 @@ def build_thumbnail_packet(
 
 
 def finalize_packet(packet: dict[str, Any], *, full_context_chars: int) -> dict[str, Any]:
+    import time
+    serialization_started_ns = time.perf_counter_ns()
     serialized = _canonical(packet)
+    serialization_ms = (time.perf_counter_ns() - serialization_started_ns) / 1_000_000.0
     size = len(serialized)
-    if size > TARGET_PACKET_CHARS:
+    target = int(ROLE_TARGET_PACKET_CHARS.get(str(packet.get("role") or ""), TARGET_PACKET_CHARS))
+    if size > target:
         raise ValueError(
-            f"role context packet exceeds target budget: role={packet.get('role')} chars={size}"
+            f"role context packet exceeds target budget: role={packet.get('role')} chars={size} target={target}"
         )
     if size > MAX_SEMANTIC_CONTEXT_CHARS:
         raise ValueError("role context packet exceeds semantic hard limit")
@@ -330,9 +368,11 @@ def finalize_packet(packet: dict[str, Any], *, full_context_chars: int) -> dict[
             "role": packet.get("role"),
             "mode": "ROLE_OPTIMIZED_CONTEXT",
             "packet_chars": size,
+            "target_packet_chars": target,
             "full_context_chars": max(0, int(full_context_chars)),
             "chars_saved": max(0, int(full_context_chars) - size),
             "packet_sha256": _hash(packet),
+            "serialization_ms": round(serialization_ms, 3),
             "artifact_refs": dict(packet.get("artifact_refs") or {}),
             "content_hashes": dict(packet.get("content_hashes") or {}),
         },

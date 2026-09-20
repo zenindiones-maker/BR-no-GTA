@@ -6,10 +6,15 @@ from contextvars import copy_context
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
 from app.integrations.deepseek_harness.server import br_editorial_process_next
+from app.database.content_repository import get_content_item
+from app.database.gta6_goal_repository import get_gta6_goal_artifacts
+from app.database.production_plan_repository import get_production_plan_by_content_item_id
+from app.database.scripts_repository import get_script
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -37,6 +42,53 @@ from scripts.prove_real_multi_agent_synergy import (
 
 
 TARGET_DURATION_SECONDS = 900.0
+
+
+def _load_persisted_editorial_result(
+    *,
+    goal_id: str,
+    target_duration_seconds: float,
+) -> dict[str, Any]:
+    """Forward-only resume from the already persisted editorial checkpoint."""
+    artifacts = get_gta6_goal_artifacts(goal_id)
+    if not isinstance(artifacts, dict):
+        raise RuntimeError("persisted Goal artifacts are missing")
+    script_id = int(artifacts.get("script_id") or 0)
+    content_item_id = int(artifacts.get("content_item_id") or 0)
+    if script_id <= 0 or content_item_id <= 0:
+        raise RuntimeError("persisted editorial checkpoint lacks Script/ContentItem")
+    script = get_script(script_id)
+    content_item = get_content_item(content_item_id)
+    stored = get_production_plan_by_content_item_id(content_item_id)
+    if not script or not content_item or not stored:
+        raise RuntimeError("persisted editorial checkpoint is incomplete")
+    production_plan = dict(stored.get("production_plan") or {})
+    if not production_plan.get("scenes"):
+        raise RuntimeError("persisted ProductionPlan has no scenes")
+    persisted_duration = float(production_plan.get("estimated_duration_seconds") or 0.0)
+    if abs(persisted_duration - float(target_duration_seconds)) > 0.001:
+        raise RuntimeError(
+            "persisted ProductionPlan target duration does not match resume workload"
+        )
+    if int(production_plan.get("script_id") or 0) != script_id:
+        raise RuntimeError("persisted ProductionPlan script lineage mismatch")
+    if int(production_plan.get("content_item_id") or content_item_id) != content_item_id:
+        raise RuntimeError("persisted ProductionPlan content lineage mismatch")
+    return {
+        "status": "completed",
+        "script": dict(script),
+        "content_item": dict(content_item),
+        "production_plan": production_plan,
+        "production_plan_id": int(stored["id"]),
+        "script_spec": {"hook": production_plan.get("hook")},
+        "checkpoint_reuse": {
+            "status": "PASS",
+            "goal_id": goal_id,
+            "script_id": script_id,
+            "content_item_id": content_item_id,
+            "production_plan_id": int(stored["id"]),
+        },
+    }
 
 
 def _analysis(result: dict[str, Any]) -> str:
@@ -103,6 +155,7 @@ def build_product(
     synergy: dict[str, Any],
     *,
     target_duration_seconds: float = TARGET_DURATION_SECONDS,
+    resume_persisted_editorial: bool = False,
 ) -> dict[str, Any]:
     intelligence = dict(synergy.get("source_intelligence") or {})
     signal = dict(intelligence.get("editorial_signal") or {})
@@ -154,22 +207,31 @@ def build_product(
         "content_strategy_evidence_refs": list(strategy["receipt"].get("evidence_refs") or ()),
     }
     editorial_context_text = json.dumps(editorial_context, ensure_ascii=False)
-    with PerformanceSpan(
-        "product.editorial_script",
-        "PRODUCTION_PLANNING_TIME",
-        input_size=len(editorial_context_text.encode("utf-8")),
-        metadata={"goal_id": goal_id},
-    ):
-        envelope = json.loads(
-            br_editorial_process_next(
-                goal_id=goal_id,
-                target_duration_seconds=target_duration_seconds,
-                editorial_context_json=editorial_context_text,
-            )
+    if resume_persisted_editorial:
+        checkpoint_started_ns = time.perf_counter_ns()
+        result = _load_persisted_editorial_result(
+            goal_id=goal_id,
+            target_duration_seconds=target_duration_seconds,
         )
-    result = dict(envelope.get("result") or {})
-    if result.get("status") != "completed":
-        raise RuntimeError(f"official editorial boundary did not complete: {result}")
+        checkpoint_reuse_ms = (time.perf_counter_ns() - checkpoint_started_ns) / 1_000_000.0
+    else:
+        checkpoint_reuse_ms = 0.0
+        with PerformanceSpan(
+            "product.editorial_script",
+            "PRODUCTION_PLANNING_TIME",
+            input_size=len(editorial_context_text.encode("utf-8")),
+            metadata={"goal_id": goal_id},
+        ):
+            envelope = json.loads(
+                br_editorial_process_next(
+                    goal_id=goal_id,
+                    target_duration_seconds=target_duration_seconds,
+                    editorial_context_json=editorial_context_text,
+                )
+            )
+        result = dict(envelope.get("result") or {})
+        if result.get("status") != "completed":
+            raise RuntimeError(f"official editorial boundary did not complete: {result}")
 
     script = dict(result.get("script") or {})
     content_item = dict(result.get("content_item") or {})
@@ -179,16 +241,17 @@ def build_product(
     if script_id <= 0 or content_item_id <= 0 or not production_plan.get("scenes"):
         raise RuntimeError("editorial result lacks persisted script/content/production plan")
 
-    refreshed = refresh_production_plan_from_persisted_script(
-        content_item_id=content_item_id,
-        script_id=script_id,
-        existing_plan=production_plan,
-        target_duration_seconds=target_duration_seconds,
-    )
-    production_plan = dict(refreshed["production_plan"])
-    result["production_plan"] = production_plan
-    result["script_spec"] = dict(refreshed["script_spec"])
-    content_item = {**content_item, **dict(refreshed["content_item"])}
+    if not resume_persisted_editorial:
+        refreshed = refresh_production_plan_from_persisted_script(
+            content_item_id=content_item_id,
+            script_id=script_id,
+            existing_plan=production_plan,
+            target_duration_seconds=target_duration_seconds,
+        )
+        production_plan = dict(refreshed["production_plan"])
+        result["production_plan"] = production_plan
+        result["script_spec"] = dict(refreshed["script_spec"])
+        content_item = {**content_item, **dict(refreshed["content_item"])}
 
     script_text = str(script.get("content") or "")
     script_ref = f"script:{script_id}"
@@ -212,6 +275,7 @@ def build_product(
         "production_plan": production_plan,
     }, ensure_ascii=False, sort_keys=True, default=str))
 
+    context_build_started_ns = time.perf_counter_ns()
     script_review_packet = build_script_review_packet(
         goal_id=goal_id,
         content_item_id=content_item_id,
@@ -245,6 +309,11 @@ def build_product(
         claims=claims,
         strategy_output=strategy_output,
         full_context_chars=full_production_chars,
+    )
+    context_build_ms = (time.perf_counter_ns() - context_build_started_ns) / 1_000_000.0
+    context_serialization_ms = sum(
+        float(item["metrics"].get("serialization_ms") or 0.0)
+        for item in (script_review_packet, seo_packet, production_packet)
     )
 
     def _script_review():
@@ -292,6 +361,7 @@ def build_product(
             semantic_context=production_packet["context"],
         )
 
+    specialist_started_ns = time.perf_counter_ns()
     with PerformanceSpan(
         "product.parallel_reviews",
         "AI_PROVIDER_TIME",
@@ -304,6 +374,7 @@ def build_product(
             script_review = script_future.result()
             seo = seo_future.result()
             production = production_future.result()
+    specialist_execution_ms = (time.perf_counter_ns() - specialist_started_ns) / 1_000_000.0
 
     script_review_output = _semantic_output(script_review, "script review")
     seo_output = _semantic_output(seo, "seo")
@@ -506,6 +577,11 @@ def build_product(
             "title_card_ratio": round(sum(1 for x in scenes if str(x.get("visual_type") or "").casefold()=="title_card") / len(scenes), 4) if scenes else 1.0,
             "media_resolvable_ratio": round(resolvable_scene_count / len(scenes), 4) if scenes else 0.0,
             "evidence_to_scene_coverage": round(evidence_scene_count / len(scenes), 4) if scenes else 0.0,
+            "checkpoint_reuse_ms": round(checkpoint_reuse_ms, 3),
+            "context_build_ms": round(context_build_ms, 3),
+            "context_serialization_ms": round(context_serialization_ms, 3),
+            "specialist_execution_ms": round(specialist_execution_ms, 3),
+            "editorial_reused": bool(resume_persisted_editorial),
         },
     }
 
@@ -515,9 +591,14 @@ def main() -> int:
     parser.add_argument("--synergy-proof", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--target-duration-seconds", type=float, default=TARGET_DURATION_SECONDS)
+    parser.add_argument("--resume-persisted-editorial", action="store_true")
     args = parser.parse_args()
     synergy = json.loads(args.synergy_proof.read_text(encoding="utf-8"))
-    result = build_product(synergy, target_duration_seconds=args.target_duration_seconds)
+    result = build_product(
+        synergy,
+        target_duration_seconds=args.target_duration_seconds,
+        resume_persisted_editorial=args.resume_persisted_editorial,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"E2E_EXECUTION_ID={result['mission_id']}")
@@ -527,6 +608,10 @@ def main() -> int:
     print(f"PRODUCTION_PLAN_ID={result['production_plan_id']}")
     print(f"YOUTUBE_ENTITY_ID={result['youtube_entity_id']}")
     print("YOUTUBE_PUBLICATION=NO")
+    print("EDITORIAL_CHECKPOINT_REUSE=" + ("YES" if result["metrics"].get("editorial_reused") else "NO"))
+    print(f"CONTEXT_BUILD_MS={result['metrics'].get('context_build_ms')}")
+    print(f"CONTEXT_SERIALIZATION_MS={result['metrics'].get('context_serialization_ms')}")
+    print(f"SPECIALIST_EXECUTION_MS={result['metrics'].get('specialist_execution_ms')}")
     return 0
 
 
