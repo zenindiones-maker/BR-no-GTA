@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-ptbr-pronunciation-research/v1",
-  "version": "2026.09.20.1-complete-final-script",
+  "version": "2026.09.20.2-split-research-acoustic-human",
   "candidate_id": "video-a-next-candidate-20260920-social-vice-city",
   "source_inventory_run_id": 35529442264,
   "source_inventory_artifact_id": 10610528309,
@@ -16,7 +16,6 @@
     "PTBR_PHONOLOGICAL_ADAPTATION",
     "OFFICIAL_SOURCE_LANGUAGE_AUDIO"
   ],
-  "PTBR_TARGET_COVERAGE_PERCENT": 100,
   "UNRESEARCHED_PTBR_TARGETS": [],
   "HUMAN_AUDIO_APPROVAL_IS_SEPARATE": true,
   "entries": [
@@ -1148,5 +1147,68 @@
       "HUMAN_AUDIO_STATUS": "PENDING",
       "note": "Source-language audio, when present, confirms identity/origin only. PT-BR target is selected for Brazilian narrator naturalness."
     }
-  ]
+  ],
+  "PTBR_TARGET_RESEARCH_COVERAGE": 100,
+  "PTBR_ACOUSTIC_VALIDATION_COVERAGE": 4.255,
+  "PTBR_HUMAN_APPROVED_COVERAGE": 4.255,
+  "ACOUSTIC_VALIDATED_TERMS": [
+    "BR",
+    "GTA 6"
+  ],
+  "HUMAN_APPROVED_TERMS": [
+    "BR",
+    "GTA 6"
+  ],
+  "UNVALIDATED_PTBR_TERMS": [
+    "Ambrosia",
+    "Atlantic Records",
+    "Bae-Luxe",
+    "Boobie Ike",
+    "Brian Heder",
+    "CA7RIEL",
+    "Cal Hampton",
+    "Dre'Quan Priest",
+    "DWNPLY",
+    "Etienne de Crécy",
+    "Extended Look",
+    "Flórida",
+    "Fred again",
+    "Future",
+    "Grand Theft Auto VI: The Album",
+    "Grassrivers",
+    "GTA",
+    "Guarda Costeira",
+    "Jason Duval",
+    "Keith Richards",
+    "Leonida",
+    "Leonida Keys",
+    "Penitenciária de Leonida",
+    "Liberty City",
+    "Lori",
+    "Lucia Caminos",
+    "Metro Boomin",
+    "Morgan Wallen",
+    "Mount Kalaga",
+    "Only in Leonida",
+    "Only Raw Records",
+    "Paco Amoroso",
+    "PinkPantheress",
+    "Port Gellhorn",
+    "Raul Bautista",
+    "Rauw Alejandro",
+    "Real Dimez",
+    "Rockstar",
+    "Roxy",
+    "Telegram",
+    "Travis Scott",
+    "Vice City",
+    "VIDEO A",
+    "Vintage Vice City Pack",
+    "Yung Lean"
+  ],
+  "coverage_semantics": {
+    "PTBR_TARGET_RESEARCH_COVERAGE": "PT-BR target candidate has evidence/research; not acoustic validation.",
+    "PTBR_ACOUSTIC_VALIDATION_COVERAGE": "Current PT-BR acoustic realization has passed evidence/human acoustic validation.",
+    "PTBR_HUMAN_APPROVED_COVERAGE": "Explicit BR-no-GTA human approval exists for the current target/acoustic reference."
+  }
 }
