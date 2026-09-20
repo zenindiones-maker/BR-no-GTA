@@ -1,0 +1,86 @@
+name: VIDEO A Human Review Remediation Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .run/video-a-human-review-rejected.json
+      - app/services/human_review_quality_gate.py
+      - scripts/video_a_human_review_rejection.py
+      - tests/test_human_review_quality_gate.py
+      - app/workers/professional_audiovisual_worker.py
+      - scripts/run001_longform_no_padding_qa.py
+      - scripts/run001_professional_finalize_qa.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/human-review-learning.db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install focused runtime
+        run: python -m pip install -r requirements.txt pytest
+      - name: Focused false-positive regression tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_human_review_quality_gate.py             tests/test_run001_professional_finalize_qa.py             tests/test_professional_audiovisual_worker.py
+          echo "FALSE_POSITIVE_GATE_REGRESSION=PASS"
+      - name: Record real rejected execution in Learning Plane
+        run: |
+          set -euo pipefail
+          python scripts/video_a_human_review_rejection.py             --output runtime/video-a-human-review-learning.json             --evidence github-run:35519387625             --evidence github-artifact:10608103282             --evidence youtube-private:Sg33MFL5IEs             --evidence human-review:2026-09-20-video-a-rejected
+      - name: Prove rejected artifact cannot pass new preflight
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from app.services.human_review_quality_gate import (
+              validate_content_duration, validate_media_novelty, validate_text_overlay_contract,
+          )
+          overlay=validate_text_overlay_contract(
+              texts=[{"text":"Hook","track":"T1"},{"text":"Introdução","track":"T1"}],
+              planned_text_overlays=[],
+          )
+          duration=validate_content_duration(
+              target_duration_seconds=565.653,
+              content_supported_duration_seconds=550.274,
+              artificial_padding=False,
+          )
+          media=validate_media_novelty(
+              semantic_links=[
+                  {"asset_ref":"remote://media-worker/gta6-extended-look-official-20260827","duration_seconds":8.0}
+                  for _ in range(70)
+              ],
+          )
+          assert overlay["status"]=="FAIL", overlay
+          assert duration["status"]=="FAIL", duration
+          assert media["status"]=="FAIL", media
+          print("REJECTED_BASELINE_NOW_FAILS_CLOSED=PASS")
+          print("STRUCTURAL_LABEL_OVERLAY=OFF_REQUIRED")
+          print("UNPLANNED_TEXT_OVERLAY=OFF_REQUIRED")
+          print("CONTENT_SUPPORTED_DURATION_GTE_20=REQUIRED")
+          print("MEDIA_NOVELTY=REQUIRED")
+          PY
+      - name: Upload remediation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-human-review-remediation-${{ github.run_id }}
+          path: |
+            runtime/video-a-human-review-learning.json
+            .run/video-a-human-review-rejected.json
+          if-no-files-found: error
+          retention-days: 30

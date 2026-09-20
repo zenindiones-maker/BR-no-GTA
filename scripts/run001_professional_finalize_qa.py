@@ -52,14 +52,25 @@ def subtitles_qa_pass(
     if not (configured_off and persisted_edit_proof and no_subtitle_stream and no_closed_captions):
         return False
     if edit_plan is None:
-        return True
-    burned_tracks = {
-        str(item.get("track") or "")
-        for item in edit_plan.get("texts", [])
-        if isinstance(item, dict)
-        and str(item.get("track") or "") in {"CAPTIONS", "BRAND_CAPTIONS"}
+        return (
+            edit_checks.get("structural_label_overlay_off") is True
+            and edit_checks.get("debug_overlay_off") is True
+            and edit_checks.get("transcript_overlay_off") is True
+            and edit_checks.get("unplanned_text_overlay_off") is True
+        )
+    texts = [item for item in edit_plan.get("texts", []) if isinstance(item, dict)]
+    # MASTER_FINAL is text-free unless the producer supplies an explicit planned
+    # graphics contract. Generic T1/T2 tracks are not treated as "not subtitles".
+    planned = {
+        (str(item.get("text") or "").strip(), str(item.get("track") or "").strip())
+        for item in (job.get("planned_text_overlays") or [])
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
     }
-    return not burned_tracks
+    for item in texts:
+        key = (str(item.get("text") or "").strip(), str(item.get("track") or "").strip())
+        if key not in planned:
+            return False
+    return True
 
 
 def spoken_branding_qa_pass(

@@ -40,6 +40,11 @@ from app.services.operational_efficiency_policy import (
 )
 from app.services.render_media_materializer import materialize_scenes
 from app.services.source_window_validation_service import validate_source_window_usage
+from app.services.human_review_quality_gate import (
+    validate_content_duration,
+    validate_media_novelty,
+    validate_text_overlay_contract,
+)
 from app.services.visual_branding_policy import watermark_geometry
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
@@ -217,11 +222,24 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
     if sections[-1].get("role") != "cta":
         raise WorkerError("last section must be the CTA")
     target_seconds = float(job.get("estimated_duration_seconds") or 0.0)
-    if target_seconds > 0:
-        minimum_words = max(450, int(math.floor((target_seconds / 60.0) * 90.0)))
-        maximum_words = max(minimum_words, int(math.ceil((target_seconds / 60.0) * 180.0)))
-    else:
-        minimum_words, maximum_words = MIN_SCRIPT_WORDS, MAX_SCRIPT_WORDS
+    target_wpm = float(
+        (job.get("narration") or {}).get("target_wpm")
+        or job.get("target_wpm")
+        or 125.0
+    )
+    estimated_content_seconds = total_words * 60.0 / target_wpm
+    duration_gate = validate_content_duration(
+        target_duration_seconds=target_seconds,
+        content_supported_duration_seconds=estimated_content_seconds,
+        artificial_padding=False,
+    )
+    if duration_gate["status"] != "PASS":
+        raise WorkerError(
+            "CONTENT_SUPPORTED_DURATION failed before narration/render: "
+            + json.dumps(duration_gate, sort_keys=True)
+        )
+    minimum_words = max(450, int(math.floor((target_seconds / 60.0) * 90.0)))
+    maximum_words = max(minimum_words, int(math.ceil((target_seconds / 60.0) * 180.0)))
     if not (minimum_words <= total_words <= maximum_words):
         raise WorkerError(
             "professional script word count out of range for approved duration: "
@@ -788,24 +806,10 @@ def _build_edit_plan(
         voice = section_by_id[section["section_id"]]
         section_duration = voice["duration_seconds"]
         section_start = cursor
-        texts.append(EditText(
-            text=section["heading"], start_seconds=section_start,
-            duration_seconds=min(4.0, section_duration), track="T1", font_size=52,
-            color="white", align="center", box=True,
-        ))
-        class_label = {
-            "OFFICIAL_FACT": "CONFIRMADO",
-            "OFFICIAL_STATEMENT": "DECLARAÇÃO OFICIAL",
-            "STORE_CURRENT": "INFORMAÇÃO ATUAL DE LOJA",
-            "ANALYSIS": "ANÁLISE",
-            "NOT_CONFIRMED": "NÃO CONFIRMADO",
-        }[section["classification"]]
-        texts.append(EditText(
-            text=class_label, start_seconds=section_start + min(4.2, section_duration * 0.2),
-            duration_seconds=min(3.5, max(0.8, section_duration - min(4.2, section_duration * 0.2))),
-            track="T2", font_size=34, color="white", align="center", box=True,
-        ))
-
+        # Section headings, classifications, debug labels and transcript text are
+        # editorial metadata. They must never become pixels in MASTER_FINAL by
+        # default. Text overlays require an explicit planned_text_overlays entry
+        # and are materialized by a dedicated graphics path, not here.
         remaining = section_duration
         local_offset = 0.0
         candidates = section["visual_candidates"]
@@ -1037,6 +1041,23 @@ def _build_edit_plan(
     max_cut = max((clip.duration_seconds for clip in video_clips), default=0.0)
     pre_render_validation_started = time.monotonic()
     source_window_validation = validate_source_window_usage(semantic_links)
+    overlay_validation = validate_text_overlay_contract(
+        texts=texts,
+        planned_text_overlays=job.get("planned_text_overlays") or [],
+    )
+    previous_media = (
+        (job.get("novelty_context") or {}).get("previous_video_media_asset_refs")
+        or []
+    )
+    media_novelty = validate_media_novelty(
+        semantic_links=semantic_links,
+        previous_asset_refs=previous_media,
+    )
+    content_duration = validate_content_duration(
+        target_duration_seconds=float(job.get("estimated_duration_seconds") or 0.0),
+        content_supported_duration_seconds=float(narration_duration),
+        artificial_padding=False,
+    )
     pre_render_validation_ms = (time.monotonic() - pre_render_validation_started) * 1000.0
     checks = {
         "a1_voice_present": len(audio) == 1 and audio[0].track == "A1" and audio[0].media_path == narration_master_path,
@@ -1046,6 +1067,12 @@ def _build_edit_plan(
         "semantic_lineage_per_cut": len(semantic_links) == len(video_clips) and all(item["evidence_ids"] for item in semantic_links),
         "subtitles_default_disabled": SUBTITLES_DEFAULT_ENABLED is False,
         "burned_subtitles_disabled": not any(text.track in {"CAPTIONS", "BRAND_CAPTIONS"} for text in texts),
+        "structural_label_overlay_off": overlay_validation["STRUCTURAL_LABEL_OVERLAY"] == "OFF",
+        "debug_overlay_off": overlay_validation["DEBUG_OVERLAY"] == "OFF",
+        "transcript_overlay_off": overlay_validation["TRANSCRIPT_OVERLAY"] == "OFF",
+        "unplanned_text_overlay_off": overlay_validation["UNPLANNED_TEXT_OVERLAY"] == "OFF",
+        "content_supported_duration_min_20m": content_duration["status"] == "PASS",
+        "media_novelty": media_novelty["status"] == "PASS",
         "official_intro_first": plan.metadata["timeline_sequence"][0]["phase"] == "official_intro" and plan.metadata["timeline_sequence"][0]["asset_id"] == 1,
         "spoken_opening_after_intro": plan.metadata["timeline_sequence"][1]["phase"] == "spoken_channel_opening",
         "voice_b_used": brand_contract["official_voice_profile"] == "Voice B",
@@ -1064,6 +1091,9 @@ def _build_edit_plan(
         "max_visual_cut_seconds": max_cut,
         "semantic_links": semantic_links,
         "source_window_validation": source_window_validation,
+        "text_overlay_validation": overlay_validation,
+        "content_duration_validation": content_duration,
+        "media_novelty": media_novelty,
         "pre_render_validation_ms": round(pre_render_validation_ms, 3),
     }
     if edit_qa["status"] != "PASS":

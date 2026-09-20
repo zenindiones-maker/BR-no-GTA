@@ -69,8 +69,10 @@ class VEditPolicy:
     caption_font_size: int = 52
 
     enable_transitions: bool = True
-    enable_captions: bool = True
-    enable_title_card: bool = True
+    # Human-review policy: captions and title/section cards are opt-in.
+    # Editorial metadata must not become visible MASTER_FINAL text by default.
+    enable_captions: bool = False
+    enable_title_card: bool = False
     require_real_media: bool = True
 
     # VEDIT editorial scoring.
@@ -1107,6 +1109,7 @@ def create_edit_plan(
                     "visual_type"
                 ),
                 "objective": objective,
+                "enabled": policy.enable_title_card,
             },
         )
 

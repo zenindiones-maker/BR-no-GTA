@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from app.services.source_window_validation_service import validate_source_window_usage
+from app.services.human_review_quality_gate import (
+    validate_content_duration,
+    validate_media_novelty,
+)
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -35,6 +39,17 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
     duration = float(edit_qa.get("duration_seconds") or 0.0)
     if not math.isfinite(duration) or duration <= 0:
         raise RuntimeError(f"professional edit duration is invalid: {duration}")
+    target_seconds = float(job.get("estimated_duration_seconds") or 0.0)
+    duration_gate = validate_content_duration(
+        target_duration_seconds=target_seconds,
+        content_supported_duration_seconds=duration,
+        artificial_padding=False,
+    )
+    if duration_gate["status"] != "PASS":
+        raise RuntimeError(
+            "CONTENT_SUPPORTED_DURATION failed: "
+            + json.dumps(duration_gate, sort_keys=True)
+        )
     script_sections = job.get("script_sections")
     script_words = None
     observed_wpm = None
@@ -67,6 +82,17 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
     total = float(window_validation["covered_duration_seconds"])
     if abs(total - duration) > max(1.0, duration * 0.005):
         raise RuntimeError("semantic visual coverage does not match long-form duration")
+    media_novelty = validate_media_novelty(
+        semantic_links=links,
+        previous_asset_refs=(
+            (job.get("novelty_context") or {}).get("previous_video_media_asset_refs")
+            or []
+        ),
+    )
+    if media_novelty["status"] != "PASS":
+        raise RuntimeError(
+            "MEDIA_NOVELTY failed: " + json.dumps(media_novelty, sort_keys=True)
+        )
 
     return {
         "status": "PASS",
@@ -75,6 +101,11 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
         "NO_ARTIFICIAL_PADDING": "PASS",
         "NO_REPEATED_SOURCE_WINDOWS": "PASS",
         "NO_OVERLAPPING_SOURCE_WINDOWS": "PASS",
+        "TARGET_DURATION_MINUTES": target_seconds / 60.0,
+        "CONTENT_SUPPORTED_DURATION": duration / 60.0,
+        "ARTIFICIAL_PADDING": "OFF",
+        "MEDIA_NOVELTY": "PASS",
+        "media_novelty": media_novelty,
         "semantic_segment_count": len(links),
         "unique_asset_count": int(window_validation["unique_asset_count"]),
         "source_window_validation": window_validation,
