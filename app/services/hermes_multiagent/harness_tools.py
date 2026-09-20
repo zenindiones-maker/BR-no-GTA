@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable
+from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
+    consume_harness_authorization,
     issue_harness_authorization,
     validate_harness_authorization,
 )
@@ -34,7 +35,7 @@ class HermesHarnessTools:
         *,
         spec: HermesMissionExecutionSpec,
         parent_authorization: HarnessAuthorization | dict[str, Any] | str,
-        execution_callback: Callable[..., dict[str, Any]] | None = None,
+        capability_broker: Any | None = None,
     ) -> None:
         self.spec = spec
         self.parent_authorization = validate_harness_authorization(
@@ -46,7 +47,7 @@ class HermesHarnessTools:
             raise PermissionError("Hermes mission authorization_id mismatch")
         if self.parent_authorization.harness_decision_id != spec.harness_decision_id:
             raise PermissionError("Hermes mission decision lineage mismatch")
-        self.execution_callback = execution_callback
+        self.capability_broker = capability_broker
         self._evidence: list[dict[str, Any]] = []
 
     def br_harness_status(self, *, task_id: str) -> dict[str, Any]:
@@ -72,6 +73,14 @@ class HermesHarnessTools:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         task = self.spec.task(task_id)
+        if self.capability_broker is not None:
+            if getattr(self.capability_broker, "spec", None) is not self.spec:
+                raise PermissionError("Hermes capability broker mission/spec mismatch")
+            return self.capability_broker.execute_delegated_capability(
+                task_id=task_id,
+                capability_id=task.capability_id,
+                payload=dict(payload),
+            )
         record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability_id)
         if record is None:
             raise PermissionError("Hermes requested unknown capability")
@@ -126,15 +135,8 @@ class HermesHarnessTools:
             "executor_binding": decision.selected_executor_binding,
             "executed": False,
         }
-        if self.execution_callback is None:
-            return envelope
-        result = self.execution_callback(
-            task=task,
-            payload=dict(payload),
-            authorization=child,
-            routing_decision=decision,
-        )
-        return {**envelope, "executed": True, "result": result}
+        consume_harness_authorization(child)
+        return {**envelope, "authorization_consumed": True}
 
     def br_harness_submit_evidence(
         self,
