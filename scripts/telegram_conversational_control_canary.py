@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from app.database.schema import initialize_schema
+from app.database.ideas_repository import insert_idea
+from app.database.scripts_repository import insert_script
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
     list_recent_human_decisions,
@@ -127,6 +129,18 @@ def _research_chat_stub(message: str, **kwargs: Any) -> dict[str, Any]:
 
 def run_canary() -> dict[str, Any]:
     initialize_schema()
+    idea_id = insert_idea(
+        "Canário conversa Telegram",
+        description="Ideia efêmera para prova operacional do control surface.",
+    )
+    script_id = insert_script(
+        idea_id,
+        "Roteiro canário",
+        "Abertura canônica.\n\nNa parte da música, usar somente a trilha aprovada.\n\nFechamento canônico.",
+        status="draft",
+        version=1,
+    )
+    script_ref = f"script:{script_id}"
     chat_id = 920260920
     update_conversation_state(
         chat_id,
@@ -134,7 +148,7 @@ def run_canary() -> dict[str, Any]:
         active_project="BR-no-GTA",
         active_task="produção governada do vídeo A",
         current_subject="roteiro do vídeo A",
-        active_artifact="script:canary-a",
+        active_artifact=script_ref,
         execution_status="IDLE",
         waiting_for_human=False,
     )
@@ -168,7 +182,7 @@ def run_canary() -> dict[str, Any]:
 
     update_conversation_state(
         chat_id,
-        active_artifact="script:canary-a",
+        active_artifact=script_ref,
         current_subject="roteiro do vídeo A",
         waiting_for_human=False,
         pending_human_review=None,
@@ -232,9 +246,11 @@ def run_canary() -> dict[str, Any]:
             and len(context["recent_human_decisions"]) >= 2
         ),
         "REFERENCE_RESOLUTION": (
-            last_script["resolved_reference"]["reference"] == "script:canary-a"
-            and feedback["resolved_reference"]["reference"] == "script:canary-a"
-            and section["resolved_reference"]["reference"] == "script:canary-a#musica"
+            last_script["resolved_reference"]["reference"] == script_ref
+            and last_script["canonical_result"]["status"] == "SCRIPT_PRESENTED"
+            and "parte da música" in last_script["answer"]
+            and feedback["resolved_reference"]["reference"] == script_ref
+            and section["resolved_reference"]["reference"] == f"{script_ref}#musica"
         ),
         "NATURAL_LANGUAGE_ACTION_ROUTING": (
             continued["plan"]["kind"] == "CONTINUE"
