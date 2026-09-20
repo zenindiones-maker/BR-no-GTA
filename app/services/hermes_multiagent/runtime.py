@@ -103,6 +103,62 @@ def materialize_board_from_plan(
     return board_ids, profiles
 
 
+def build_timeout_diagnostics(
+    *,
+    snapshot: dict[str, Any],
+    task_mapping: dict[str, str],
+) -> dict[str, Any]:
+    board_to_plan = {board_id: plan_id for plan_id, board_id in task_mapping.items()}
+    tasks = {
+        str(task.get("id")): task
+        for task in (snapshot.get("tasks") or ())
+    }
+    parent_ids: dict[str, list[str]] = {task_id: [] for task_id in tasks}
+    for link in snapshot.get("links") or ():
+        child_id = str(link.get("child_id") or "")
+        parent_id = str(link.get("parent_id") or "")
+        if child_id in parent_ids and parent_id:
+            parent_ids[child_id].append(parent_id)
+
+    comments_by: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in tasks}
+    for comment in snapshot.get("comments") or ():
+        task_id = str(comment.get("task_id") or "")
+        comments_by.setdefault(task_id, []).append(comment)
+
+    events_by: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in tasks}
+    for event in snapshot.get("events") or ():
+        task_id = str(event.get("task_id") or "")
+        events_by.setdefault(task_id, []).append(event)
+
+    diagnostics: list[dict[str, Any]] = []
+    for board_task_id, task in tasks.items():
+        parents = parent_ids.get(board_task_id, [])
+        open_parents = [
+            parent_id
+            for parent_id in parents
+            if str((tasks.get(parent_id) or {}).get("status") or "") not in {"done", "archived"}
+        ]
+        diagnostics.append({
+            "plan_task_id": board_to_plan.get(board_task_id),
+            "task_id": board_task_id,
+            "profile": task.get("assignee"),
+            "status": task.get("status"),
+            "current_run_id": task.get("current_run_id"),
+            "worker_pid": task.get("worker_pid"),
+            "claim_lock": task.get("claim_lock"),
+            "last_heartbeat_at": task.get("last_heartbeat_at"),
+            "parents": parents,
+            "open_dependencies": open_parents,
+            "comments": comments_by.get(board_task_id, [])[-10:],
+            "last_events": events_by.get(board_task_id, [])[-12:],
+        })
+    return {
+        "HERMES_TIMEOUT_DIAGNOSTICS": "PASS",
+        "board_id": snapshot.get("board_id"),
+        "tasks": diagnostics,
+    }
+
+
 def execute_hermes_mission_capability(
     *,
     authorization: HarnessAuthorization | dict[str, Any] | str,
@@ -121,6 +177,8 @@ def execute_hermes_mission_capability(
         raise PermissionError("Hermes mission lease expired")
 
     started = time.perf_counter()
+    out_dir = Path(artifact_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     board_id = f"br-{spec.mission_id.lower().replace('_','-')}"[:64]
     board = HermesBoardAdapter(
         upstream_root=upstream_root,
@@ -128,10 +186,34 @@ def execute_hermes_mission_capability(
         board_id=board_id,
     )
     mapping, profiles = materialize_board_from_plan(spec=spec, board=board)
-    runner(spec=spec, board=board, task_mapping=mapping, profiles=profiles)
+    try:
+        runner(spec=spec, board=board, task_mapping=mapping, profiles=profiles)
+    except TimeoutError as exc:
+        snapshot = board.snapshot()
+        timeout_board_path = out_dir / "hermes-board-timeout.json"
+        timeout_board_path.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2, default=str) + "\n",
+            encoding="utf-8",
+        )
+        diagnostics = build_timeout_diagnostics(
+            snapshot=snapshot,
+            task_mapping=mapping,
+        )
+        diagnostics_path = out_dir / "hermes-timeout-diagnostics.json"
+        diagnostics_path.write_text(
+            json.dumps(diagnostics, ensure_ascii=False, indent=2, default=str) + "\n",
+            encoding="utf-8",
+        )
+        states = {
+            row["plan_task_id"] or row["task_id"]: row["status"]
+            for row in diagnostics["tasks"]
+        }
+        raise TimeoutError(
+            "Hermes multi-agent mission timed out; "
+            f"HERMES_TIMEOUT_DIAGNOSTICS=PASS states={states} "
+            f"diagnostics={diagnostics_path.name}"
+        ) from exc
 
-    out_dir = Path(artifact_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     board_path = out_dir / "hermes-board.json"
     board.export(board_path)
     snapshot = board.snapshot()
