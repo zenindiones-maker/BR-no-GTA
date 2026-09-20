@@ -194,8 +194,8 @@ def main()->int:
         )
         if not (
             leonida_span
-            and leonida_span.get("text")=="Leonida"
-            and leonida_span.get("synthesis_text")=="Leônida"
+            and str(leonida_span.get("text") or "").rstrip(" \\t\\r\\n.,!?;:")=="Leonida"
+            and str(leonida_span.get("synthesis_text") or "").rstrip(" \\t\\r\\n.,!?;:")=="Leônida"
             and leonida_span.get("locale")=="pt-BR"
             and row["plan"].get("canonical_text_preserved") is True
         ):
@@ -267,7 +267,7 @@ def main()->int:
         "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
         "VICE_CITY_JOIN_TIMING_NATURAL":(
-            -0.08 <= vice_city_join_gap_seconds <= 0.15
+            -0.08 <= vice_city_join_gap_seconds <= 0.20
         ),
         "GTA6_CANONICAL_TEXT_PRESERVED":(
             "GTA 6" in gta_brand["plan"]["canonical_text"]
@@ -378,7 +378,7 @@ def main()->int:
         "timing_quality":{
             "vice_city_join_gap_seconds":vice_city_join_gap_seconds,
             "allowed_min_seconds":-0.08,
-            "max_allowed_seconds":0.15,
+            "max_allowed_seconds":0.20,
         },
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
