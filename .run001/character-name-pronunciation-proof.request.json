@@ -32,6 +32,6 @@
     ]
   },
   "human_character_name_review": "PENDING",
-  "proof_attempt": 5,
-  "retry_reason": "Match proven Render Worker PO-token host setup by installing Deno v2; no alias, source, or production change."
+  "proof_attempt": 6,
+  "retry_reason": "Fix local canonical-script sentence selector escaping after official Trailer 2 materialization succeeded; no alias/source/production change."
 }

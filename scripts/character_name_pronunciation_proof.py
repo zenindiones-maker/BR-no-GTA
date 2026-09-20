@@ -123,8 +123,8 @@ def download_official_reference(root: Path) -> dict[str, Any]:
 def sample_set(script: str) -> list[tuple[str,str,str]]:
     exact_sentences=[
         item.strip()
-        for item in re.split(r"(?<=[.!?])\\s+",script)
-        if re.search(r"\\b(?:Jason|Lucia)\\b",item)
+        for item in re.split(r"(?<=[.!?])\s+",script)
+        if re.search(r"\b(?:Jason|Lucia)\b",item)
     ]
     if len(exact_sentences) != 2:
         raise RuntimeError(f"expected exactly two canonical script sentences with character names, got {len(exact_sentences)}")
