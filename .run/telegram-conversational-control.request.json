@@ -1,0 +1,17 @@
+{
+  "request": "telegram-conversational-control-validation",
+  "branch": "work/gate6f-analytics-learning",
+  "source_head": "e1e1baba82ac354999c868c50b33ac4981a46eb4",
+  "requested_at": "2026-09-20T20:52:00Z",
+  "gates": [
+    "TELEGRAM_CONVERSATIONAL_CONTROL_SURFACE",
+    "MULTITURN_CONTEXT",
+    "REFERENCE_RESOLUTION",
+    "NATURAL_LANGUAGE_ACTION_ROUTING",
+    "PROGRESS_TO_TELEGRAM",
+    "WAITING_FOR_HUMAN_SIGNAL",
+    "HUMAN_FEEDBACK_BINDING",
+    "HARNESS_AUTHORITY_PRESERVED",
+    "NO_PARALLEL_CONTROL_PLANE"
+  ]
+}
