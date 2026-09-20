@@ -49,9 +49,15 @@ jobs:
           import json
           d=json.load(open(".run/video-a-current-product-e2e.request.json"))
           resume=bool(d.get("resume_from_e2e_artifact_id"))
-          youtube_only=d.get("recovery_mode")=="REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY"
+          recovery_mode=str(d.get("recovery_mode") or "")
+          reconcile_upload=recovery_mode=="RECONCILE_EXISTING_YOUTUBE_RUN"
+          youtube_only=recovery_mode in {
+              "REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY",
+              "RECONCILE_EXISTING_YOUTUBE_RUN",
+          }
           print("resume=" + ("true" if resume else "false"))
           print("youtube_only=" + ("true" if youtube_only else "false"))
+          print("reconcile_upload=" + ("true" if reconcile_upload else "false"))
           print("resume_artifact_id=" + str(d.get("resume_from_e2e_artifact_id") or ""))
           print("resume_run_id=" + str(d.get("resume_from_e2e_run_id") or ""))
           PY
@@ -145,13 +151,24 @@ jobs:
           assert video.get("file_path")==locator["media_uri"], (video, locator)
           assert publication.get("file_path")==locator["media_uri"], (publication, locator)
           cloud=get_youtube_cloud_execution(publication_id)
-          assert isinstance(cloud,dict) and cloud.get("status")=="DISPATCH_UNCERTAIN", cloud
-          assert cloud.get("run_id") in (None,""), cloud
-          assert "youtube-private-upload-worker.yml not found on the default branch" in str(cloud.get("error") or ""), cloud
+          assert isinstance(cloud,dict), cloud
+          reconcile_upload=request.get("recovery_mode")=="RECONCILE_EXISTING_YOUTUBE_RUN"
+          if reconcile_upload:
+              assert cloud.get("status")=="IN_PROGRESS", cloud
+              upload_run_id=cloud.get("run_id")
+              assert isinstance(upload_run_id,int) and upload_run_id>0, cloud
+          else:
+              assert cloud.get("status")=="DISPATCH_UNCERTAIN", cloud
+              assert cloud.get("run_id") in (None,""), cloud
+              assert "youtube-private-upload-worker.yml not found on the default branch" in str(cloud.get("error") or ""), cloud
+              upload_run_id=None
           print(f"VIDEO_ID={video['id']}")
           print(f"RENDER_JOB_ID={expected_job}")
           print(f"RENDER_RUN_ID={locator['workflow_run_id']}")
           print(f"PUBLICATION_ID={publication_id}")
+          if upload_run_id is not None:
+              print(f"YOUTUBE_UPLOAD_RUN_ID={upload_run_id}")
+              print("YOUTUBE_EXISTING_RUN_REUSE=YES")
           print("RENDER_QA=PASS")
           print("CHECKPOINT_REUSE=YES")
           print("YOUTUBE_ONLY_RECOVERY=PASS")
@@ -209,6 +226,7 @@ jobs:
           print(f"PUBLICATION_ID={d['publication']['id']}")
           PY
       - name: Dispatch YouTube PRIVATE through Harness
+        if: steps.recovery_mode.outputs.reconcile_upload != 'true'
         run: |
           set -euo pipefail
           python scripts/continue_product_to_human_review.py dispatch-upload --publication-id "$PUBLICATION_ID" --out runtime/product-delivery
