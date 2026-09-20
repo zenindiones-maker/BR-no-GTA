@@ -1,6 +1,6 @@
 {
   "mission": "br-no-gta-professional-multilingual-pronunciation-v1",
-  "base_head": "dbe86fff7bb48e22df9b7cdb8d61230261ea9062",
+  "base_head": "3b0d5367df7b59ff36a222546e464b20e2a35c15",
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "acceptance_term": "Vice City",
   "target_locale": "en-US",
@@ -8,8 +8,8 @@
   "job18_frozen": true,
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
-  "proof_attempt": 6,
-  "retry_reason": "Human policy correction: keep all GTA vocabulary in natural pt-BR Voice B context; only Vice City forces en-US. Generate short fluency review before any rerender.",
+  "proof_attempt": 7,
+  "retry_reason": "Add fail-closed Leonida pronunciation blocker: canonical text stays Leonida, synthesis-only pt-BR alias must sound Leônida, real Voice B context samples required before any full render.",
   "human_feedback": {
     "vice-city": {
       "status": "APPROVED",
@@ -33,6 +33,15 @@
       "promotion_scope": "prosody_reference_only",
       "canonical_text_mutation_allowed": false,
       "next_gate": "APPLY_TO_EXACT_CANONICAL_OPENING_AND_DELIVER_FOR_REVIEW"
+    },
+    "leonida": {
+      "status": "PENDING_HUMAN_AUDIO_REVIEW",
+      "evidence": "user explicitly reports current Leonida pronunciation is not corrected",
+      "canonical_text": "Leonida",
+      "candidate_synthesis_alias": "Leônida",
+      "locale": "pt-BR",
+      "forbid_en_us_chunk": true,
+      "next_gate": "PENDING_HUMAN_REVIEW"
     }
   },
   "requested_at": "2026-09-19T12:40:00Z",
@@ -45,10 +54,12 @@
   "automatic_promotion": false,
   "human_fluency_review": "PENDING",
   "sample_set": [
-    "A-control-ptbr: pt-BR puro",
-    "F-gta6-brand: GTA 6",
-    "D-mixed: Rockstar/Jason/Lucia/Leonida dentro do pt-BR",
-    "B-vice-city: Vice City",
-    "C-closing: pt-BR → Vice City → pt-BR"
-  ]
+    "L1-leonida-context: O estado de Leonida vai muito além de Vice City.",
+    "L2-leonida-context: Vice City é uma das regiões mais importantes de Leonida.",
+    "L3-leonida-keys: Leonida Keys amplia o mapa para além do centro urbano.",
+    "L4-leonida-power: As relações de poder em Leonida conectam Vice City, as Keys e outras regiões."
+  ],
+  "human_approval_required_for_leonida": true,
+  "leonida_written_form": "Leonida",
+  "leonida_synthesis_alias": "Leônida"
 }
