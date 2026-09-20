@@ -1,6 +1,6 @@
 {
   "schema": "video-a-production-readiness-human/v1",
-  "version": "2026.09.20.2-ptbr-pronunciation-rejected",
+  "version": "2026.09.20.3-voice-and-script-rejected",
   "candidate_id": "video-a-next-candidate-20260920-social-vice-city",
   "authority": "human",
   "status": "REJECTED",
@@ -14,7 +14,13 @@
     "all_names_and_places_ptbr_required": true,
     "foreign_language_chunks_forbidden": true,
     "technical_pass_but_perceptual_fail": true,
-    "human_voice_review": "REJECTED"
+    "human_voice_review": "REJECTED",
+    "rockstar_pronunciation": "FAIL",
+    "ptbr_target_exists_but_acoustic_realization_fails": true,
+    "script_editorial_quality": "FAIL",
+    "script_low_information_density": true,
+    "meta_production_language_in_script": true,
+    "script_human_review": "PENDING"
   },
   "rejected_evidence": {
     "pronunciation_run_id": 35525920608,
@@ -51,13 +57,23 @@
       "Metro Bombing",
       "Dracoan Prich"
     ],
-    "head_sha": "67dd120d76dc5d1df400b0d998451451c1d1ebd1"
+    "head_sha": "67dd120d76dc5d1df400b0d998451451c1d1ebd1",
+    "latest_voice_candidate_run_id": 35530605895,
+    "latest_voice_candidate_artifact_id": 10611203499,
+    "latest_voice_candidate_telegram_message_ids": [
+      354,
+      355,
+      356
+    ],
+    "latest_voice_candidate_head_sha": "3601bb4058697e29c9b6e55654eef3d301f55f2e"
   },
   "invariants": {
     "production_readiness": "FAIL",
     "full_render_authorized": "NO",
     "youtube_publication": "NO",
     "human_feedback_overrides_technical_pass": true,
-    "all_synthesis_locale": "pt-BR"
+    "all_synthesis_locale": "pt-BR",
+    "script_editorial_quality": "FAIL",
+    "script_human_review": "PENDING"
   }
 }
