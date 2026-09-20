@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from app.services.ytdlp_media_ingestion import YtDlpMediaIngestion
+from app.services.media_ingestion import IngestionStatus
 from app.services.pronunciation_service import (
     DEFAULT_VOICE,
     _edge_synthesis_groups,
@@ -19,9 +21,9 @@ from app.services.pronunciation_service import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_LEXICON = ROOT / "config" / "pronunciation_character_aliases.candidate.json"
-OFFICIAL_TRAILER_URL = "https://www.rockstargames.com/VI/downloads/videos/GTAVI_Trailer_2/GTAVI_Trailer_2.mp4"
+OFFICIAL_TRAILER_URL = "https://www.youtube.com/watch?v=VQRLujxTm3c"
 OFFICIAL_ROCKSTAR_PAGE = "https://www.rockstargames.com/VI/trailer-2"
-OFFICIAL_TRAILER_ID = "GTAVI_Trailer_2"
+OFFICIAL_TRAILER_ID = "VQRLujxTm3c"
 EXPECTED_SCRIPT_SHA256 = "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea"
 KNOWN_CHARACTER_NAMES = (
     "Jason",
@@ -78,26 +80,31 @@ def character_inventory(text: str) -> list[str]:
 
 def download_official_reference(root: Path) -> dict[str, Any]:
     root.mkdir(parents=True,exist_ok=True)
-    if not OFFICIAL_TRAILER_URL.startswith("https://www.rockstargames.com/VI/downloads/videos/"):
-        raise RuntimeError("official Trailer 2 source must remain on Rockstar Games")
+    if OFFICIAL_TRAILER_URL != "https://www.youtube.com/watch?v=VQRLujxTm3c":
+        raise RuntimeError("official Trailer 2 identity changed")
+    ingestion=YtDlpMediaIngestion()
+    result=ingestion.ingest(OFFICIAL_TRAILER_URL,root/"official-trailer-2")
+    if result.status is not IngestionStatus.DOWNLOAD_OK or result.output_path is None:
+        raise RuntimeError(
+            f"official Trailer 2 materialization failed: {result.status.value}:{result.reason}"
+        )
+    source=Path(result.output_path)
     refs={}
     for name,window in REFERENCE_WINDOWS.items():
         target=root/f"official-reference-{name.lower()}.mp3"
-        result=subprocess.run(
+        clip=subprocess.run(
             [
                 "ffmpeg","-nostdin","-y","-v","error",
-                "-rw_timeout","30000000",
-                "-ss",str(window["start_seconds"]),
-                "-i",OFFICIAL_TRAILER_URL,
-                "-t",str(window["duration_seconds"]),
-                "-vn","-ac","1","-ar","48000","-c:a","libmp3lame","-q:a","2",str(target),
+                "-ss",str(window["start_seconds"]),"-t",str(window["duration_seconds"]),
+                "-i",str(source),"-vn","-ac","1","-ar","48000",
+                "-c:a","libmp3lame","-q:a","2",str(target),
             ],
-            capture_output=True,text=True,timeout=180,
+            capture_output=True,text=True,timeout=120,
         )
-        if result.returncode != 0:
+        if clip.returncode != 0:
             raise RuntimeError(
-                f"official Rockstar Trailer 2 reference extraction failed for {name}: "
-                f"{(result.stderr or '').strip()[-800:]}"
+                f"official Trailer 2 reference extraction failed for {name}: "
+                f"{(clip.stderr or '').strip()[-800:]}"
             )
         refs[name]={
             **window,
@@ -109,6 +116,7 @@ def download_official_reference(root: Path) -> dict[str, Any]:
         "rockstar_page":OFFICIAL_ROCKSTAR_PAGE,
         "source_id":OFFICIAL_TRAILER_ID,
         "publisher":"Rockstar Games",
+        "materializer":"YtDlpMediaIngestion",
         "references":refs,
     }
 

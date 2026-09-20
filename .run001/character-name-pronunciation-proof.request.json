@@ -19,8 +19,9 @@
   "candidate_lexicon_version": "2026.09.19.4-character-candidate.1",
   "official_ground_truth": {
     "rockstar_page": "https://www.rockstargames.com/VI/trailer-2",
-    "direct_mp4": "https://www.rockstargames.com/VI/downloads/videos/GTAVI_Trailer_2/GTAVI_Trailer_2.mp4",
-    "source_id": "GTAVI_Trailer_2",
+    "youtube_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
+    "youtube_video_id": "VQRLujxTm3c",
+    "player_provenance": "Rockstar official Trailer 2 page / official Rockstar YouTube",
     "jason_reference_window_seconds": [
       23,
       29.5
@@ -31,6 +32,6 @@
     ]
   },
   "human_character_name_review": "PENDING",
-  "proof_attempt": 3,
-  "retry_reason": "Focused test runtime needs python-dotenv from canonical test bootstrap; no alias/reference/production change."
+  "proof_attempt": 4,
+  "retry_reason": "Reuse canonical render-media YouTube ingestion boundary (PO token + existing cookies) for official Rockstar Trailer 2 reference; no production or alias change."
 }
