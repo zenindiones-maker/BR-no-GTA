@@ -88,6 +88,159 @@ def rejected_script_text(rejected:dict[str,Any])->str:
     )
 
 
+
+TELEGRAM_MESSAGE_LIMIT=3500
+
+def split_human_text(text:str,*,prefix:str,limit:int=TELEGRAM_MESSAGE_LIMIT)->list[str]:
+    """Split human-facing Telegram prose without cutting words or exposing internal structure."""
+    paragraphs=[re.sub(r"\s+"," ",p.strip()) for p in re.split(r"\n\s*\n",str(text or "")) if p.strip()]
+    chunks=[]
+    current=""
+    for paragraph in paragraphs:
+        candidate=(current+"\n\n"+paragraph).strip() if current else paragraph
+        if len(candidate)<=limit:
+            current=candidate
+            continue
+        if current:
+            chunks.append(current)
+            current=""
+        sentences=[s.strip() for s in re.split(r"(?<=[.!?])\s+",paragraph) if s.strip()]
+        for sentence in sentences:
+            candidate=(current+" "+sentence).strip() if current else sentence
+            if len(candidate)<=limit:
+                current=candidate
+                continue
+            if current:
+                chunks.append(current)
+                current=""
+            words_=sentence.split()
+            piece=""
+            for word in words_:
+                candidate=(piece+" "+word).strip()
+                if len(candidate)>limit and piece:
+                    chunks.append(piece)
+                    piece=word
+                else:
+                    piece=candidate
+            if piece:
+                current=piece
+    if current:
+        chunks.append(current)
+    total=len(chunks)
+    return [f"{prefix} {idx}/{total}\n\n{chunk}" for idx,chunk in enumerate(chunks,1)] if total>1 else [f"{prefix}\n\n{chunks[0]}" if chunks else prefix]
+
+
+def first_sentence(text:str)->str:
+    parts=[s.strip() for s in re.split(r"(?<=[.!?])\s+",str(text or "").strip()) if s.strip()]
+    return parts[0] if parts else str(text or "").strip()
+
+
+def human_editorial_summary(package:dict[str,Any],findings:list[dict[str,Any]],differences:dict[str,Any])->str:
+    high=[x for x in findings if x.get("EDITORIAL_VALUE")=="HIGH"]
+    lines=[
+        "RESUMO EDITORIAL",
+        "",
+        f"Nova pauta: {package.get('working_title')}",
+        f"Pergunta central: {package.get('central_question')}",
+        "",
+        "Por que ela é realmente nova:",
+        "O vídeo deixou de usar biografias, música e uma tese abstrata sobre “ecossistema social” como espinha. "
+        "Agora o Extended Look oficial é a fonte primária e a narrativa responde, com cenas observáveis, como GTA VI parece funcionar na prática.",
+        "",
+        "Descobertas mais fortes:",
+    ]
+    for item in high[:8]:
+        lines.append(f"• {item['TIMECODE']} — {item['OBSERVED_FACT']}")
+    lines += [
+        "",
+        "O que mudou em relação ao roteiro rejeitado:",
+    ]
+    for change in differences.get("major_changes") or []:
+        lines.append(f"• {change}")
+    return "\n".join(lines)
+
+
+def human_evidence_messages(
+    *,
+    findings:list[dict[str,Any]],
+    sections:list[dict[str,Any]],
+    source_name:str,
+)->list[str]:
+    section_by_evidence={}
+    for section in sections:
+        for evidence_id in section.get("evidence_ids") or []:
+            section_by_evidence.setdefault(str(evidence_id),[]).append(section)
+    entries=[]
+    for item in findings:
+        linked=section_by_evidence.get(str(item["FINDING_ID"])) or []
+        if linked:
+            use="; ".join(
+                f"{section.get('heading')}: {section.get('audience_value')}"
+                for section in linked[:2]
+            )
+        else:
+            use="Evidência de apoio; não é usada para sustentar um bloco isoladamente."
+        entries.append(
+            f"ACHADO: {item['OBSERVED_FACT']}\n"
+            f"FONTE: {source_name} — Rockstar Games\n"
+            f"TIMECODE/REFERÊNCIA: {item['TIMECODE']} · {item['FINDING_ID']}\n"
+            f"COMO ENTRA NO VÍDEO: {use}"
+        )
+    return split_human_text("\n\n".join(entries),prefix="EVIDENCE MAP")
+
+
+def human_outline_messages(package:dict[str,Any],sections:list[dict[str,Any]])->list[str]:
+    entries=[]
+    for index,section in enumerate(sections,1):
+        entries.append(
+            f"{index}. {section.get('heading')}\n"
+            f"Função do bloco: {section.get('audience_value')}\n"
+            f"Informação nova entregue: {first_sentence(section.get('narration') or '')}"
+        )
+    heading=(
+        f"OUTLINE\n\n"
+        f"Pauta: {package.get('working_title')}\n"
+        f"Pergunta central: {package.get('central_question')}\n"
+        f"Tese: {package.get('answer_thesis')}\n\n"
+    )
+    chunks=split_human_text("\n\n".join(entries),prefix="OUTLINE")
+    if chunks:
+        chunks[0]=heading+chunks[0].split("\n\n",1)[-1]
+    return chunks
+
+
+def human_script_messages(sections:list[dict[str,Any]])->list[str]:
+    # Deliberately omit section ids/headings/evidence tags: the user reviews only viewer-facing narration.
+    narration="\n\n".join(str(section.get("narration") or "").strip() for section in sections if str(section.get("narration") or "").strip())
+    return split_human_text(narration,prefix="ROTEIRO")
+
+
+def human_qa_message(
+    *,
+    word_count:int,
+    findings_total:int,
+    high_value:int,
+    meta_count:int,
+    info_density:str,
+    repetition_status:str,
+    unsupported_claims:int,
+)->str:
+    estimated=word_count/170.0
+    return (
+        "SCRIPT QA\n\n"
+        f"SCRIPT_WORD_COUNT={word_count}\n"
+        f"ESTIMATED_DURATION={estimated:.1f} min @ 170 wpm\n"
+        f"EXTENDED_LOOK_FINDINGS_TOTAL={findings_total}\n"
+        f"HIGH_VALUE_NEW_FINDINGS={high_value}\n"
+        f"META_PRODUCTION_LEAKAGE={meta_count}\n"
+        f"INFORMATION_DENSITY_STATUS={info_density}\n"
+        f"REPETITION_STATUS={repetition_status}\n"
+        f"UNSUPPORTED_CLAIMS={unsupported_claims}\n"
+        "SCRIPT_HUMAN_REVIEW=PENDING\n"
+        "NEW_VOICE_SYNTHESIS=NO\n"
+        "FULL_RENDER_AUTHORIZED=NO"
+    )
+
 def main()->int:
     ap=argparse.ArgumentParser()
     ap.add_argument("--output-dir",type=Path,required=True)
@@ -280,6 +433,61 @@ def main()->int:
             "",
         ]
 
+    unsupported_claims=0 if (
+        supported_sections==len(sections)
+        and all(str(ref) in {str(x["FINDING_ID"]) for x in findings} for ref in all_evidence_ids)
+    ) else 1
+    human_messages=[]
+    for message in split_human_text(
+        human_editorial_summary(package,findings,differences),
+        prefix="RESUMO EDITORIAL",
+    ):
+        human_messages.append(("summary",message))
+    for message in human_evidence_messages(
+        findings=findings,
+        sections=sections,
+        source_name="Grand Theft Auto VI: An Extended Look",
+    ):
+        human_messages.append(("evidence",message))
+    for message in human_outline_messages(package,sections):
+        human_messages.append(("outline",message))
+    for message in human_script_messages(sections):
+        human_messages.append(("script",message))
+    human_messages.append(("qa",human_qa_message(
+        word_count=wc,
+        findings_total=len(findings),
+        high_value=evidence_map["HIGH_VALUE_NEW_FINDINGS"],
+        meta_count=meta_count,
+        info_density=info_density,
+        repetition_status=qa["REPETITION_STATUS"],
+        unsupported_claims=unsupported_claims,
+    )))
+
+    message_dir=args.output_dir/"telegram-human-readable"
+    message_dir.mkdir(parents=True,exist_ok=True)
+    order=[]
+    counters={}
+    for index,(kind,message) in enumerate(human_messages,1):
+        counters[kind]=counters.get(kind,0)+1
+        filename=f"{index:03d}-{kind}-{counters[kind]:02d}.txt"
+        (message_dir/filename).write_text(message+"\n",encoding="utf-8")
+        order.append(filename)
+    (args.output_dir/"telegram-message-order.txt").write_text("\n".join(order)+"\n",encoding="utf-8")
+    (args.output_dir/"telegram-presentation-manifest.json").write_text(
+        json.dumps({
+            "schema":"video-a-script-human-presentation/v1",
+            "order":order,
+            "message_count":len(order),
+            "review_surface":"TELEGRAM_TEXT",
+            "technical_attachments_default":"FORBIDDEN",
+            "exceptions":["audio","video","image"],
+            "SCRIPT_HUMAN_REVIEW":"PENDING",
+            "NEW_VOICE_SYNTHESIS":"NO",
+            "FULL_RENDER_AUTHORIZED":"NO",
+        },ensure_ascii=False,indent=2)+"\n",
+        encoding="utf-8",
+    )
+
     files={
         "01-principais-descobertas.txt":"\n".join(summary_lines)+"\n",
         "02-evidence-map.json":json.dumps(evidence_map,ensure_ascii=False,indent=2)+"\n",
@@ -293,6 +501,10 @@ def main()->int:
             "HIGH_VALUE_NEW_FINDINGS":evidence_map["HIGH_VALUE_NEW_FINDINGS"],
             "META_PRODUCTION_LEAKAGE":meta_count,
             "INFORMATION_DENSITY_STATUS":info_density,
+            "REPETITION_STATUS":qa["REPETITION_STATUS"],
+            "UNSUPPORTED_CLAIMS":unsupported_claims,
+            "ESTIMATED_DURATION_MINUTES_AT_170_WPM":round(wc/170.0,2),
+            "HUMAN_PRESENTATION_MESSAGE_COUNT":len(human_messages),
             "SCRIPT_HUMAN_REVIEW":"PENDING",
             "WAITING_FOR_HUMAN_REVIEW":"YES",
             "REVIEW_TARGET":"SCRIPT",
@@ -306,6 +518,9 @@ def main()->int:
     print(f"HIGH_VALUE_NEW_FINDINGS={evidence_map['HIGH_VALUE_NEW_FINDINGS']}")
     print(f"META_PRODUCTION_LEAKAGE={meta_count}")
     print(f"INFORMATION_DENSITY_STATUS={info_density}")
+    print("HUMAN_PRESENTATION=TELEGRAM_TEXT")
+    print("TECHNICAL_ATTACHMENTS_TO_HUMAN=NO")
+    print("NEW_VOICE_SYNTHESIS=NO")
     print("SCRIPT_HUMAN_REVIEW=PENDING")
     print("WAITING_FOR_HUMAN_REVIEW=YES")
     print("REVIEW_TARGET=SCRIPT")
