@@ -224,8 +224,9 @@ def dispatch_post_branding(request_path: Path, out: Path) -> None:
     if not persisted or persisted.get("status")!="running":
         raise RuntimeError(f"RenderJob is not recoverable for post-render continuation: {persisted}")
     previous=dict(persisted.get("github_execution") or {})
-    if int(previous.get("run_id") or 0)!=int(request["post_branding_producer_run_id"]):
-        raise RuntimeError("persisted RenderJob does not point to the proven failed render")
+    expected_previous_run_id=int(request["previous_render_run_id"])
+    if int(previous.get("run_id") or 0)!=expected_previous_run_id:
+        raise RuntimeError("persisted RenderJob cloud execution changed before post-render recovery")
     if previous.get("workflow")!="render-worker.yml":
         raise RuntimeError("persisted RenderJob workflow identity changed")
     if int(persisted.get("video_id") or 0)!=video_id:
@@ -261,16 +262,18 @@ def dispatch_post_branding(request_path: Path, out: Path) -> None:
         "ref":dispatched.ref,
         "artifact_name":"render-output",
         "transport_mode":"artifact",
-        "retry_of_run_id":int(request["post_branding_producer_run_id"]),
+        "retry_of_run_id":expected_previous_run_id,
         "same_render_job_id":job_id,
         "post_render_recovery":True,
+        "post_branding_source_run_id":int(request["post_branding_producer_run_id"]),
         "post_branding_source_artifact_id":int(request["post_branding_artifact_id"]),
     }
     update_render_job_payload(job_id,github_execution=github_execution)
     state.update(
         status="POST_RENDER_RECOVERY_DISPATCHED",
         RENDER_RUN_ID=dispatched.run_id,
-        PREVIOUS_RENDER_RUN_ID=int(request["post_branding_producer_run_id"]),
+        PREVIOUS_RENDER_RUN_ID=expected_previous_run_id,
+        POST_BRANDING_SOURCE_RUN_ID=int(request["post_branding_producer_run_id"]),
         POST_BRANDING_SOURCE_ARTIFACT_ID=int(request["post_branding_artifact_id"]),
         RENDER_RECOMPUTED="NO",
         github_execution=github_execution,
