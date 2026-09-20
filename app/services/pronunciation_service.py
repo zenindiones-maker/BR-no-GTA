@@ -11,7 +11,7 @@ import time
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
-PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v5"
+PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v6-all-ptbr"
 DEFAULT_LOCALE = "pt-BR"
 DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
@@ -145,11 +145,12 @@ def _match_explicit(text: str, explicit_spans: list[dict[str, Any]] | None) -> l
         selected=text[start:end]
         if item.get("text") is not None and str(item["text"])!=selected:
             raise PronunciationError("explicit pronunciation span text does not match canonical text")
-        locale=str(item.get("locale") or "").strip()
-        if not locale:
+        requested_locale=str(item.get("locale") or "").strip()
+        if not requested_locale:
             raise PronunciationError("explicit pronunciation span locale required")
-        if selected.casefold() != "vice city":
-            locale=DEFAULT_LOCALE
+        # Human policy: Voice B narration is one continuous pt-BR lane.
+        # Explicit metadata may select a synthesis alias, never a foreign-language chunk.
+        locale=DEFAULT_LOCALE
         out.append({
             "start":start,"end":end,"locale":locale,
             "strategy":str(item.get("strategy") or "explicit-locale"),
@@ -277,6 +278,8 @@ def provider_capabilities(provider_id: str, *, provider_version: str | None = No
 def validate_provider_plan(plan: SynthesisPlan, capabilities: ProviderCapabilities) -> None:
     if not plan.canonical_text_preserved:
         raise PronunciationError("canonical text mutation is forbidden")
+    if plan.foreign_span_count:
+        raise PronunciationError("foreign-language pronunciation chunks are forbidden by human pt-BR policy")
     if any(span.strategy=="phoneme" for span in plan.spans) and not capabilities.supports_phoneme:
         raise PronunciationError("provider/voice does not support phoneme strategy")
     if plan.foreign_span_count and not (
