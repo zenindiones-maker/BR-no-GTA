@@ -23,6 +23,7 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
+    RoutingPolicyError,
     route_harness_request,
 )
 from app.services.telegram_fresh_research_service import (
@@ -256,6 +257,127 @@ def _chat_context(
 def _emit(progress_callback: ProgressCallback | None, stage: str, message: str) -> None:
     if progress_callback is not None:
         progress_callback(stage, message)
+
+
+def _attempt_governed_reasoning_fallback(
+    *,
+    prompt: str,
+    primary_routing,
+    primary_evidence,
+    telegram_goal: str | None,
+    telegram_lineage: dict[str, Any],
+    progress_callback: ProgressCallback | None,
+    input_record: dict[str, Any] | None,
+) -> tuple[Any | None, Any | None, dict[str, Any] | None, dict[str, Any]]:
+    error = (
+        dict(primary_evidence.error)
+        if isinstance(getattr(primary_evidence, "error", None), dict)
+        else {}
+    )
+    code = str(error.get("code") or "provider_failure")
+    primary_provider = str(getattr(primary_evidence, "provider", None) or primary_routing.selected_provider or "")
+    audit = {
+        "PRIMARY_PROVIDER": primary_provider or None,
+        "PRIMARY_FAILURE": code,
+        "FALLBACK_PROVIDER": None,
+        "FALLBACK_OCCURRED": "NO",
+    }
+    if primary_provider != "opencode" or code != "semantic_tools_used":
+        audit["FALLBACK_REASON"] = "not_applicable_to_this_failure"
+        return None, None, None, audit
+
+    try:
+        fallback_routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent="fallback for Telegram semantic reasoning after proven OpenCode semantic tool isolation failure",
+                authorized_action="DECISION",
+                domain="ai",
+                task_class=TELEGRAM_REASONING_TASK_CLASS,
+                goal_id=telegram_goal,
+                required_capability_id="ai.reasoning.text",
+                provider_required=True,
+                provider_domain="ai",
+                preferred_providers=("opencode", "nvidia_nim", "tuxevil"),
+                unavailable_provider_ids=("opencode",),
+                fallback_allowed=True,
+                zero_cost_operation=True,
+                learning_required=True,
+            )
+        )
+    except RoutingPolicyError as exc:
+        audit["FALLBACK_REASON"] = "no_policy_eligible_provider"
+        audit["FALLBACK_ROUTING_EVIDENCE"] = dict(exc.evidence or {})
+        return None, None, None, audit
+
+    if not fallback_routing.selected_provider or fallback_routing.selected_provider == primary_provider:
+        audit["FALLBACK_REASON"] = "routing_did_not_select_distinct_provider"
+        return None, None, None, audit
+
+    audit["FALLBACK_PROVIDER"] = fallback_routing.selected_provider
+    _emit(
+        progress_callback,
+        "FALLBACK",
+        (
+            "OpenCode semantic falhou no isolamento de tools. "
+            f"Harness autorizou reroute explícito para {fallback_routing.selected_provider}."
+        ),
+    )
+    fallback_authorization = issue_harness_authorization(
+        authorized_action="DECISION",
+        subject=f"provider:{fallback_routing.selected_provider}",
+        lineage={
+            "routing_id": fallback_routing.routing_id,
+            "capability_id": fallback_routing.selected_capability_id,
+            "selected_provider": fallback_routing.selected_provider,
+            "selected_model": fallback_routing.selected_model,
+            "selected_executor_binding": fallback_routing.selected_provider_executor_binding,
+            "ingress": "telegram",
+            "task_class": TELEGRAM_REASONING_TASK_CLASS,
+            "fallback_from_provider": primary_provider,
+            "fallback_from_failure": code,
+            **telegram_lineage,
+        },
+    )
+    fallback_evidence = None
+    fallback_learned = None
+    try:
+        fallback_evidence = execute_harness_ai_generation(
+            prompt=prompt,
+            authorization=fallback_authorization,
+            routing_decision=fallback_routing,
+        )
+        if input_record is not None:
+            fallback_learned = capture_telegram_reasoning_outcome(
+                evidence=fallback_evidence,
+                routing_decision=fallback_routing,
+                input_record=input_record,
+            )
+    finally:
+        consume_harness_authorization(fallback_authorization)
+
+    fallback_result = (
+        fallback_evidence.result
+        if fallback_evidence is not None and isinstance(fallback_evidence.result, dict)
+        else {}
+    )
+    fallback_text = str(fallback_result.get("text") or "").strip()
+    if (
+        fallback_evidence is None
+        or not fallback_evidence.active
+        or fallback_evidence.status != "EXECUTED"
+        or not fallback_text
+    ):
+        audit["FALLBACK_REASON"] = "fallback_provider_failed"
+        audit["FALLBACK_FAILURE"] = (
+            dict(fallback_evidence.error)
+            if fallback_evidence is not None and isinstance(fallback_evidence.error, dict)
+            else None
+        )
+        return None, fallback_routing, fallback_learned, audit
+
+    audit["FALLBACK_OCCURRED"] = "YES"
+    audit["FALLBACK_REASON"] = "explicit_harness_reroute"
+    return fallback_evidence, fallback_routing, fallback_learned, audit
 
 
 def chat_under_harness(
