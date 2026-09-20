@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 
-OPENCODE_SEMANTIC_AGENT_ID = "semantic-text"
+OPENCODE_SEMANTIC_AGENT_ID = "build"
 OPENCODE_SEMANTIC_PROFILE_VERSION = "opencode-semantic-text-v3"
 OPENCODE_SEMANTIC_MAX_STEPS = 1
 OPENCODE_SEMANTIC_CONTRACT = "SEMANTIC_TEXT_ONLY"
@@ -38,7 +38,7 @@ def semantic_text_only_config() -> dict[str, Any]:
         "agents": {
             OPENCODE_SEMANTIC_AGENT_ID: {
                 "description": (
-                    "BR-no-GTA Harness semantic text-only reasoning. "
+                    "BR-no-GTA Harness semantic text-only override of the official build agent. "
                     "No tools, no filesystem, no shell, no browser, no network."
                 ),
                 "mode": "primary",
