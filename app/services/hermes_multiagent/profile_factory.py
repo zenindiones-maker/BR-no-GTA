@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import re
+from typing import Mapping
+
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.harness_collaboration_service import CollaborationPlan, RoutedCollaborationTask
+
+from .contracts import HERMES_COORDINATION_TOOLS, HermesRuntimeProfile
+
+
+_PROFILE_RE = re.compile(r"[^a-z0-9-]+")
+
+
+def _slug(value: str) -> str:
+    value = _PROFILE_RE.sub("-", value.strip().lower().replace("_", "-")).strip("-")
+    return value[:60] or "worker"
+
+
+class HermesProfileFactory:
+    """Project Harness-routed work into Hermes runtime identities.
+
+    The Global Capability Registry remains canonical. Runtime role names only
+    label a worker lane for one mission and never define capabilities, actions,
+    executors, or authority.
+    """
+
+    def __init__(self, *, registry=GLOBAL_CAPABILITY_REGISTRY) -> None:
+        self.registry = registry
+
+    def project_task(
+        self,
+        task: RoutedCollaborationTask,
+        *,
+        runtime_role: str | None = None,
+    ) -> HermesRuntimeProfile:
+        record = self.registry.get(task.capability_id)
+        if record is None:
+            raise ValueError(f"unknown routed capability: {task.capability_id}")
+        if record.executor_binding != task.selected_executor_binding:
+            raise PermissionError("Hermes profile projection executor drift")
+        if record.agent_id != task.selected_agent_id:
+            raise PermissionError("Hermes profile projection agent drift")
+        if record.skill_id != task.selected_skill_id:
+            raise PermissionError("Hermes profile projection skill drift")
+        if task.action not in record.allowed_actions:
+            raise PermissionError("Hermes profile task action is not Registry-authorized")
+
+        role = _slug(runtime_role or task.selected_agent_id or f"{record.domain}-{task.task_id}")
+        profile_name = role if role.startswith("hermes-") else f"hermes-{role}"
+        return HermesRuntimeProfile(
+            profile_name=profile_name,
+            task_id=task.task_id,
+            runtime_role=profile_name,
+            capability_id=task.capability_id,
+            domain=record.domain,
+            action=task.action,
+            canonical_agent_id=record.agent_id,
+            canonical_skill_id=record.skill_id,
+            executor_binding=str(record.executor_binding or ""),
+            input_contract=record.input_contract,
+            output_contract=record.output_contract,
+            evidence_contract=str(record.evidence_contract or ""),
+            evidence_expectations=task.evidence_expectations,
+            allowed_tools=HERMES_COORDINATION_TOOLS,
+        )
+
+    def project_plan(
+        self,
+        plan: CollaborationPlan,
+        *,
+        role_by_task: Mapping[str, str] | None = None,
+    ) -> tuple[HermesRuntimeProfile, ...]:
+        roles = dict(role_by_task or {})
+        unknown = set(roles) - {task.task_id for task in plan.tasks}
+        if unknown:
+            raise PermissionError(f"Hermes runtime role references unknown plan tasks: {sorted(unknown)}")
+        profiles = tuple(
+            self.project_task(task, runtime_role=roles.get(task.task_id))
+            for task in plan.tasks
+        )
+        names = [profile.profile_name for profile in profiles]
+        if len(names) != len(set(names)):
+            raise ValueError("Hermes runtime profile names must be unique within a mission")
+        return profiles
