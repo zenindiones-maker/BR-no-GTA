@@ -40,6 +40,33 @@ class TelegramApiError(RuntimeError):
     pass
 
 
+def _split_telegram_text(text: str, *, limit: int = MAX_REPLY_CHARS) -> list[str]:
+    rendered = str(text or "").strip() or "OK"
+    if limit < 256:
+        raise ValueError("Telegram message limit is too small")
+    payload_limit = limit - 24
+    chunks: list[str] = []
+    remaining = rendered
+    while len(remaining) > payload_limit:
+        candidates = [
+            remaining.rfind("\n\n", 0, payload_limit),
+            remaining.rfind("\n", 0, payload_limit),
+            remaining.rfind(" ", 0, payload_limit),
+        ]
+        cut = max(candidates)
+        if cut < payload_limit // 2:
+            cut = payload_limit
+        chunk = remaining[:cut].rstrip()
+        chunks.append(chunk)
+        remaining = remaining[cut:].lstrip()
+    if remaining or not chunks:
+        chunks.append(remaining or "OK")
+    if len(chunks) == 1:
+        return chunks
+    total = len(chunks)
+    return [f"{index}/{total}\n\n{chunk}" for index, chunk in enumerate(chunks, start=1)]
+
+
 class TelegramProgressReporter:
     """Stage-aware Telegram progress plus low-noise heartbeat for long operations."""
 
@@ -160,13 +187,8 @@ class TelegramApi:
         return data.get("result")
 
     def send(self, chat_id: int, text: str) -> None:
-        rendered = text.strip() or "OK"
-        if len(rendered) > MAX_REPLY_CHARS:
-            rendered = (
-                rendered[: MAX_REPLY_CHARS - 90]
-                + "\n\n[resposta truncada no Telegram; evidência completa permanece no sistema]"
-            )
-        self.call("sendMessage", {"chat_id": str(chat_id), "text": rendered})
+        for chunk in _split_telegram_text(text):
+            self.call("sendMessage", {"chat_id": str(chat_id), "text": chunk})
 
     def typing(self, chat_id: int) -> None:
         try:
