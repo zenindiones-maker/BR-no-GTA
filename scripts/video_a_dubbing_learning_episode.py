@@ -26,6 +26,10 @@ FEEDBACK={
     "human_voice_review":"REJECTED",
     "all_names_and_places_ptbr_required":True,
     "foreign_language_chunks_forbidden":True,
+    "source_language_pronunciation_is_not_automatically_ptbr_target":True,
+    "official_english_audio_is_identity_evidence_not_brazilian_acoustic_authority":True,
+    "ptbr_narration_requires_brazilian_phonological_realization":True,
+    "human_approved_ptbr_pronunciation_has_priority":True,
 }
 EVIDENCE=(
     "github-run:35525920608",
@@ -74,7 +78,7 @@ def main()->int:
         },
         commit_ref=os.environ.get("GITHUB_SHA"),
         run_ref=os.environ.get("GITHUB_RUN_ID"),
-        artifact_refs=("github-artifact:10609442706","github-artifact:10610442121"),,
+        artifact_refs=("github-artifact:10609442706","github-artifact:10610442121"),
         lineage={
             "candidate_id":"video-a-next-candidate-20260920-social-vice-city",
             "pronunciation_run_id":35525920608,
@@ -92,7 +96,7 @@ def main()->int:
     correction=record_human_correction(
         context="VIDEO A Voice B production-readiness review after technically green pronunciation proof",
         undesired_behavior="Component-level gap/lexicon checks were treated as quality evidence while the human heard truncation, artificial rhythm, bad prosody and wrong proper nouns.",
-        desired_behavior="Inventory the full final script first, restore quality-first semantic synthesis units, measure final mastered audio text fidelity, keep pronunciation/prosody/human acceptance independent, and block full render until explicit human approval.",
+        desired_behavior="Inventory the full final script first; select pronunciation targets using BR-no-GTA human approval, official PT-BR acoustic evidence when available, established Brazilian usage, then PT-BR phonological adaptation; treat source-language audio only as secondary identity evidence; synthesize all names inside continuous pt-BR Voice B context; measure final mastered audio text fidelity; and block full render until explicit human approval.",
         evidence_refs=EVIDENCE,
         goal_id=episode.goal_id,
         task_id=episode.task_id,
@@ -102,7 +106,7 @@ def main()->int:
         scope="TASK_CLASS",
     )
     memory=record_or_reuse_failure_memory(
-        claim="human perceptual failure overrides technical green; full-script pronunciation inventory and final-mix fidelity are mandatory before render",
+        claim="human perceptual failure overrides technical green; source-language pronunciation is not automatically a pt-BR target; Brazilian phonological realization, full-script pronunciation coverage and final-mix fidelity are mandatory before render",
         domain="production",
         task_class="video-a-narration-readiness",
         failure_pattern="technical-green-perceptual-fail",
@@ -134,6 +138,11 @@ def main()->int:
             "full_render_forbidden":True,
             "all_synthesis_locale_ptbr":True,
             "foreign_language_chunks_forbidden":True,
+            "source_language_pronunciation_is_not_automatically_ptbr_target":True,
+            "official_english_audio_is_identity_evidence_not_brazilian_acoustic_authority":True,
+            "ptbr_narration_requires_brazilian_phonological_realization":True,
+            "human_approved_ptbr_pronunciation_has_priority":True,
+            "target_locale":"pt-BR",
         },
     )
     result={
@@ -157,6 +166,9 @@ def main()->int:
             "all_entity_synthesis_locale":"pt-BR",
             "foreign_language_chunks":"forbidden",
             "ptbr_alias_lexicon":"config/pronunciation_ptbr_candidate.json",
+            "ptbr_pronunciation_policy":"config/pronunciation_ptbr_policy.json",
+            "ptbr_research_registry":"config/pronunciation_ptbr_research.json",
+            "official_ptbr_dub_reference":"UNCONFIRMED",
             "final_mix_text_fidelity":"required",
         },
         "LEARNING_APPLIED":"PENDING_NEXT_AUDIO",
