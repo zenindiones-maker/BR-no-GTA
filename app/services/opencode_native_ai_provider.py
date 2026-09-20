@@ -296,6 +296,27 @@ class OpenCodeNativeAIProvider:
             )
         )
 
+    def _download_native_result_payload(self, run_id: int) -> dict[str, Any]:
+        """Best-effort structured evidence retrieval, including failed workflow runs."""
+        output_dir = self.artifact_root / str(run_id)
+        try:
+            self.artifacts.download(
+                repository=self.repository,
+                run_id=run_id,
+                artifact_name=OPENCODE_NATIVE_ARTIFACT_NAME,
+                output_dir=output_dir,
+            )
+        except Exception:
+            return {}
+        files = sorted(output_dir.rglob("result.json"))
+        if len(files) != 1:
+            return {}
+        try:
+            payload = json.loads(files[0].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def _generate_on_current_runner(
         self,
         *,
