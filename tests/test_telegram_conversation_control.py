@@ -215,6 +215,57 @@ def test_status_answer_comes_from_persisted_real_state_not_model_guess():
     assert "35499900001" in result["answer"]
 
 
+def test_deferred_execution_resumes_only_after_explicit_approval():
+    chat_id = 9989
+    update_conversation_state(
+        chat_id,
+        active_goal_id="goal-video-a",
+        active_task="produção do vídeo A",
+        active_artifact="script:8",
+        current_subject="roteiro do vídeo A",
+    )
+    calls = []
+
+    def execute(plan, state, message):
+        calls.append((dict(plan), message))
+        return {
+            "status": "COMPLETED",
+            "goal_id": plan.get("active_goal_id"),
+            "run_id": "run-after-approval",
+            "execution_id": "exec-after-approval",
+            "capability_id": "production.render.execute",
+            "answer": "Ação pendente retomada pelo Harness.",
+        }
+
+    deferred = handle_telegram_conversation(
+        "faz o vídeo depois que eu aprovar",
+        telegram_chat_id=chat_id,
+        telegram_message_id=451,
+        action_executor=execute,
+        chat_handler=_chat_stub,
+        presenter=_presenter,
+    )
+    assert deferred["plan"]["kind"] == "DEFER_UNTIL_APPROVAL"
+    assert deferred["conversation_state"]["waiting_for_human"] is True
+    assert deferred["conversation_state"]["pending_action"]["kind"] == "CONTINUE"
+    assert calls == []
+
+    approved = handle_telegram_conversation(
+        "esse roteiro eu aprovo",
+        telegram_chat_id=chat_id,
+        telegram_message_id=452,
+        action_executor=execute,
+        chat_handler=_chat_stub,
+        presenter=_presenter,
+    )
+    assert len(calls) == 1
+    assert calls[0][0]["active_goal_id"] == "goal-video-a"
+    assert approved["canonical_result"]["approval_resumed_pending_action"] is True
+    assert approved["conversation_state"]["waiting_for_human"] is False
+    assert approved["conversation_state"]["active_run_id"] == "run-after-approval"
+    assert approved["conversation_state"]["pending_action"] is None
+
+
 def test_waiting_for_human_is_explicit_state_not_silent_stop():
     chat_id = 9986
     update_conversation_state(
