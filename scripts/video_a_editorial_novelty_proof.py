@@ -20,10 +20,16 @@ def materialize(candidate:dict,root:Path)->list[dict]:
         r=requests.get(str(item["url"]),timeout=90,headers={"User-Agent":"Mozilla/5.0 BR-no-GTA novelty proof"});r.raise_for_status();raw=r.content
         if len(raw)<20000:raise RuntimeError("media too small: "+str(item["asset_id"]))
         p=root/f"{i:02d}.jpg";p.write_bytes(raw);rows.append({**item,"sha256":hashlib.sha256(raw).hexdigest(),"bytes":len(raw),"phash":ahash(raw),"path":str(p)})
+    raw_phashes=[int(row["phash"]) for row in rows]
     for i,row in enumerate(rows):
-        near=[other["asset_id"] for j,other in enumerate(rows) if i!=j and (int(row["phash"])^int(other["phash"])).bit_count()<=4]
-        if near:row["near_duplicate_of"]=near
-        row["phash"]=f"{int(row['phash']):064x}"
+        near=[
+            other["asset_id"]
+            for j,other in enumerate(rows)
+            if i!=j and (raw_phashes[i]^raw_phashes[j]).bit_count()<=4
+        ]
+        if near:
+            row["near_duplicate_of"]=near
+        row["phash"]=f"{raw_phashes[i]:064x}"
     return rows
 def focused_contract_tests()->None:
     baseline=["GTA VI: álbum oficial, 34 faixas e o que isso diz sobre Vice City"];dup,score,_=topic_is_duplicate(baseline[0],baseline);assert dup and score>=0.68
