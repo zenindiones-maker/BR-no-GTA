@@ -1,6 +1,6 @@
 {
   "schema": "video-a-current-product-e2e-request/v1",
-  "requested_from_head": "e4e88e697a4e3a412fc80215e9e0677da709ce2c",
+  "requested_from_head": "bc26a4874d7850ff1cd873ae41aff3b1872dfe3b",
   "goal_id": "f9dc10d7-dcc4-44dc-b808-444a351b4189",
   "product_label": "A",
   "historical_render_run_id": 35463639061,
@@ -11,7 +11,7 @@
   "resume_from_e2e_run_id": 35480560108,
   "resume_from_e2e_artifact_id": 10595926850,
   "previous_render_run_id": 35480588299,
-  "previous_failure_class": "YOUTUBE_WORKFLOW_NOT_REGISTERED_DEFAULT_BRANCH",
+  "previous_failure_class": "YOUTUBE_WORKFLOW_DEFAULT_BRANCH_REGISTRATION_FIXED",
   "recovery_mode": "REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY",
   "checkpoint_producer_run_id": 35476930608,
   "narration_artifact_id": 10594412061,
@@ -21,7 +21,7 @@
   "youtube_privacy": "private",
   "human_review_delivery": "telegram",
   "previous_e2e_run_id": 35480560108,
-  "requested_at": "2026-09-20T01:15:00Z",
+  "requested_at": "2026-09-20T01:15:47Z",
   "post_branding_artifact_id": 10595645099,
   "post_branding_producer_run_id": 35477575128,
   "canonical_render_artifact_id": 10596116325
