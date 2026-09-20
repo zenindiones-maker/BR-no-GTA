@@ -48,6 +48,7 @@ def bootstrap(target: Path) -> dict:
                 "/hermes_cli/",
                 "/tools/",
                 "/agent/",
+                "/gateway/",
                 "/plugins/",
                 "/providers/",
                 "/*.py",
