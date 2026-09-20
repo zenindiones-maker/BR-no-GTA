@@ -14,6 +14,7 @@ from app.services.telegram_brand_asset_materializer import materialize_telegram_
 from app.services.telegram_harness_service import register_telegram_brand_asset_under_harness
 from app.services.video_execution_service import create_video_execution_spec
 from app.workers.brand_asset_worker import _build_ffmpeg_command
+from app.services.visual_branding_policy import watermark_geometry
 
 
 def _watermark_payload():
@@ -232,3 +233,17 @@ def test_brand_ffmpeg_stage_prepends_complete_intro_then_watermarks_content_with
     assert evidence["watermark_applied_to"] == "CONTENT_ONLY"
     assert "bot" not in joined.casefold()
     assert "token" not in joined.casefold()
+
+
+def test_watermark_geometry_matches_existing_bottom_right_contract():
+    geometry = watermark_geometry(
+        canvas_width=1920,
+        canvas_height=1080,
+        source_width=1280,
+        source_height=1100,
+    )
+    assert geometry["target_width"] == 307
+    assert geometry["position"] == "BOTTOM_RIGHT"
+    assert geometry["opacity"] == 0.78
+    assert geometry["x_offset_from_center"] > 0
+    assert geometry["y_offset_from_center"] > 0

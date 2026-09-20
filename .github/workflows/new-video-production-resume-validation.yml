@@ -15,6 +15,11 @@ on:
       - app/services/github_actions_learning_observer.py
       - scripts/reconcile_render_learning_incident.py
       - tests/test_source_window_failfast.py
+      - tests/test_telegram_brand_render_pipeline.py
+      - app/services/render_learning_profile_service.py
+      - app/workers/brand_asset_worker.py
+      - app/workers/audiovisual_worker.py
+      - app/services/visual_branding_policy.py
   workflow_dispatch:
 
 permissions:
@@ -40,13 +45,19 @@ jobs:
           python -m pytest -q \
             tests/test_youtube_role_context_service.py \
             tests/test_source_window_failfast.py \
-            tests/test_professional_audiovisual_worker.py
+            tests/test_professional_audiovisual_worker.py \
+            tests/test_telegram_brand_render_pipeline.py
           python -m py_compile \
             app/services/youtube_role_context_service.py \
             app/services/source_window_validation_service.py \
             app/workers/professional_audiovisual_worker.py \
+            app/workers/audiovisual_worker.py \
+            app/workers/brand_asset_worker.py \
+            app/services/visual_branding_policy.py \
+            app/services/render_learning_profile_service.py \
             scripts/run001_longform_no_padding_qa.py \
             scripts/reconcile_render_learning_incident.py \
             scripts/youtube_product_quality_e2e.py
           echo "ROLE_PACKET_DETERMINISTIC_TESTS=PASS"
           echo "PRE_RENDER_NO_PADDING_FAILFAST_TESTS=PASS"
+          echo "SINGLE_CONTENT_ENCODE_BRANDING_TESTS=PASS"

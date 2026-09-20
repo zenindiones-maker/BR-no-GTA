@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.services.edit_plan_service import EditPlan
 from app.services.render_learning_profile_service import resolve_bound_render_options
+from app.services.visual_branding_policy import watermark_geometry
 
 
 class WorkerError(ValueError):
@@ -311,6 +312,19 @@ def build_timeline(
                 source.duration_seconds,
             )
             clip.fit = source.fit
+            if source.role == "brand_watermark":
+                media = store.project.media_by_id(clip.media)
+                geometry = watermark_geometry(
+                    canvas_width=width,
+                    canvas_height=height,
+                    source_width=int(media.width),
+                    source_height=int(media.height),
+                )
+                clip.transform.scale = geometry["scale"]
+                clip.transform.opacity = geometry["opacity"]
+                clip.transform.x = geometry["x_offset_from_center"]
+                clip.transform.y = geometry["y_offset_from_center"]
+                clip.audio.mute = True
             if source.segment_id is not None:
                 if source.segment_id in segment_clips:
                     raise WorkerError("Ambiguous repeated segment_id in EditPlan")

@@ -12,6 +12,8 @@ import time
 from typing import Any
 
 from app.services.channel_spoken_branding_service import validate_job_spoken_branding
+from app.services.render_learning_profile_service import resolve_bound_render_options
+from app.services.visual_branding_policy import WATERMARK_OPACITY, WATERMARK_WIDTH_FRACTION
 from app.services.telegram_brand_asset_materializer import (
     TelegramBrandAssetMaterializationError,
     materialize_telegram_brand_assets,
@@ -19,8 +21,7 @@ from app.services.telegram_brand_asset_materializer import (
 from app.workers.audiovisual_worker import LINEAGE_FIELDS, probe_video, write_json
 
 
-WATERMARK_SCALE = 0.16
-WATERMARK_OPACITY = 0.78
+WATERMARK_SCALE = WATERMARK_WIDTH_FRACTION
 INTRO_AV_SYNC_TOLERANCE_SECONDS = 0.25
 
 
@@ -106,6 +107,8 @@ def prepare(job: dict[str, Any], runtime_root: Path) -> Path:
             "has_audio": bool(audio_streams),
             "sha256": item_evidence["sha256"],
             "size_bytes": item_evidence["size_bytes"],
+            "width": int(video_streams[0].get("width") or 0),
+            "height": int(video_streams[0].get("height") or 0),
         }
         if item["asset_type"] == "intro":
             duration = _finite_positive(item_evidence.get("duration_seconds"), "intro duration")
@@ -297,6 +300,107 @@ def _validate_final(path: Path, expected_duration: float) -> tuple[dict[str, Any
     return probe, {"checks": checks, "duration_seconds": duration}
 
 
+def _quote_concat_path(path: Path) -> str:
+    return str(path.resolve()).replace("'", "'\\''")
+
+
+def _compose_intro_without_content_reencode(
+    *,
+    job: dict[str, Any],
+    base: Path,
+    output: Path,
+    intro: dict[str, Any],
+    width: int,
+    height: int,
+    fps: float,
+) -> tuple[dict[str, Any], float]:
+    base_probe = probe_video(base)
+    streams = base_probe.get("streams") or []
+    video = next((item for item in streams if item.get("codec_type") == "video"), None)
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
+    if not isinstance(video, dict) or not isinstance(audio, dict):
+        raise BrandAssetWorkerError("base render must contain video and audio before brand concat")
+    if video.get("codec_name") != "h264" or audio.get("codec_name") != "aac":
+        raise BrandAssetWorkerError("optimized brand concat requires canonical H.264/AAC base")
+    if video.get("pix_fmt") != "yuv420p":
+        raise BrandAssetWorkerError("optimized brand concat requires yuv420p base")
+    channels = int(audio.get("channels") or 0)
+    if channels <= 0:
+        raise BrandAssetWorkerError("optimized brand concat requires known audio channel count")
+    render_config = dict(job.get("render") or {})
+    bound = resolve_bound_render_options(render_config)
+    preset = str(bound.get("software_preset") or "slow")
+    quality = "max" if render_config.get("delivery_profile") == "youtube_sdr_1080p30_v1" else str(bound.get("quality") or "high")
+    crf = {"draft": 28, "medium": 23, "high": 19, "max": 16}.get(quality, 19)
+    audio_bitrate = "384k" if render_config.get("delivery_profile") == "youtube_sdr_1080p30_v1" else "192k"
+    normalized_intro = output.with_name(output.stem + ".intro-normalized.mp4")
+    concat_list = output.with_name(output.stem + ".concat.txt")
+    normalized_intro.unlink(missing_ok=True)
+    concat_list.unlink(missing_ok=True)
+    filter_video = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
+        f"fps={fps},format=yuv420p"
+    )
+    started = time.monotonic()
+    normalize = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(intro["media_path"]), "-vf", filter_video,
+            "-af", "aresample=48000",
+            "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+            "-pix_fmt", "yuv420p", "-r", str(fps),
+            "-c:a", "aac", "-b:a", audio_bitrate, "-ar", "48000", "-ac", str(channels),
+            "-movflags", "+faststart", str(normalized_intro),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    if normalize.returncode != 0:
+        normalized_intro.unlink(missing_ok=True)
+        raise BrandAssetWorkerError("official intro normalization failed")
+    concat_list.write_text(
+        "file '" + _quote_concat_path(normalized_intro) + "'\n"
+        "file '" + _quote_concat_path(base) + "'\n",
+        encoding="utf-8",
+    )
+    concat = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
+            "-movflags", "+faststart", str(output),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    elapsed = time.monotonic() - started
+    normalized_intro.unlink(missing_ok=True)
+    concat_list.unlink(missing_ok=True)
+    if concat.returncode != 0:
+        output.unlink(missing_ok=True)
+        raise BrandAssetWorkerError("optimized intro stream-copy concat failed; refusing full-content re-encode fallback")
+    return {
+        "composition_mode": "single-content-encode-plus-intro-stream-copy/v1",
+        "content_video_reencoded": False,
+        "watermark_embedded_in_base_render": True,
+        "intro_duration_seconds": float(intro["duration_seconds"]),
+        "content_expected_duration_seconds": float(job["estimated_duration_seconds"]),
+        "final_expected_duration_seconds": float(job["estimated_duration_seconds"]) + float(intro["duration_seconds"]),
+        "watermark_start_seconds": float(intro["duration_seconds"]),
+        "watermark_scale": WATERMARK_SCALE,
+        "watermark_opacity": WATERMARK_OPACITY,
+        "watermark_position": "BOTTOM_RIGHT",
+        "watermark_margin": {"x": max(16, int(round(width * 0.025))), "y": max(16, int(round(height * 0.04)))},
+        "watermark_applied_to": "CONTENT_ONLY",
+        "intro_normalization_preset": preset,
+        "intro_normalization_crf": crf,
+        "content_stream_copy": True,
+    }, elapsed
+
+
 def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     operation_started = time.monotonic()
     spoken_branding = validate_job_spoken_branding(job)
@@ -331,25 +435,40 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         "estimated content duration",
     )
     temporary = output.with_name(output.stem + ".branded.tmp.mp4")
-    command, branding = _build_ffmpeg_command(
-        base=output,
-        output=temporary,
-        assets=assets,
-        width=width,
-        height=height,
-        fps=fps,
-        expected_duration=content_expected_duration,
-    )
+    visual_branding = dict(job.get("visual_branding") or {})
+    watermark_embedded = visual_branding.get("watermark_embedded_in_base_render") is True
+    if watermark_embedded:
+        if intro is None or watermark is None:
+            raise BrandAssetWorkerError("optimized brand path requires official intro and watermark")
+        branding, composition_seconds = _compose_intro_without_content_reencode(
+            job=job,
+            base=output,
+            output=temporary,
+            intro=intro,
+            width=width,
+            height=height,
+            fps=fps,
+        )
+    else:
+        command, branding = _build_ffmpeg_command(
+            base=output,
+            output=temporary,
+            assets=assets,
+            width=width,
+            height=height,
+            fps=fps,
+            expected_duration=content_expected_duration,
+        )
+        composition_started = time.monotonic()
+        process = subprocess.run(command, capture_output=True, text=True, timeout=7200)
+        composition_seconds = time.monotonic() - composition_started
+        if process.returncode != 0:
+            temporary.unlink(missing_ok=True)
+            raise BrandAssetWorkerError("FFmpeg brand composition failed")
     branding["content_measured_duration_seconds"] = content_measured_duration
     branding["final_measured_target_seconds"] = (
         content_measured_duration + branding["intro_duration_seconds"]
     )
-    composition_started = time.monotonic()
-    process = subprocess.run(command, capture_output=True, text=True, timeout=7200)
-    composition_seconds = time.monotonic() - composition_started
-    if process.returncode != 0:
-        temporary.unlink(missing_ok=True)
-        raise BrandAssetWorkerError("FFmpeg brand composition failed")
 
     qa_started = time.monotonic()
     probe, validation = _validate_final(
@@ -416,6 +535,10 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         "full_decode": True,
         "brand_assets_materialized_in_cloud": evidence.get("status") == "PASS",
         "brand_assets_applied": True,
+        "watermark_embedded_in_main_encode": True if watermark_embedded else True,
+        "content_not_reencoded_in_brand_stage": (
+            branding.get("content_video_reencoded") is False if watermark_embedded else False
+        ),
         "intro_present": intro_present,
         "intro_start_zero": intro_present,
         "intro_duration_measured": intro_present and branding["intro_duration_seconds"] > 0,
@@ -483,7 +606,7 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         sha256=output_digest,
         brand_asset_ids=[item["asset_id"] for item in assets],
         brand_asset_types=[item["asset_type"] for item in assets],
-        brand_composition="telegram-cloud-ffmpeg-complete-intro-concat",
+        brand_composition=branding.get("composition_mode", "telegram-cloud-ffmpeg-complete-intro-concat"),
         content_duration_semantics="estimated_duration_is_content_base",
         branding=branding,
         OFFICIAL_INTRO_FIRST="PASS",
@@ -506,8 +629,10 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
         "elapsed_seconds":time.monotonic()-operation_started,
         "input_size_bytes":base_probe.get("format",{}).get("size"),
         "output_size_bytes":output.stat().st_size,
-        "encoder":"libx264",
-        "software_preset":"medium",
+        "encoder":"stream-copy+intro-libx264" if watermark_embedded else "libx264",
+        "software_preset":branding.get("intro_normalization_preset") if watermark_embedded else "medium",
+        "BRANDING_SECOND_PASS_MS":round(composition_seconds * 1000.0, 3),
+        "content_video_reencoded":not watermark_embedded,
         "resolution":f"{width}x{height}",
         "fps":fps,
         "full_decode":"PASS",

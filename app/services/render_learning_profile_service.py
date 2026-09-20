@@ -12,6 +12,7 @@ BASELINE_RENDER_PROFILE_VERSION = "v1"
 CANDIDATE_RENDER_PROFILE_VERSION = "v2"
 TIMESTAMP_RENDER_PROFILE_VERSION = "v3"
 COMPACT_TEXT_RENDER_PROFILE_VERSION = "v4"
+CURRENT_MEDIUM_RENDER_PROFILE_VERSION = "v5"
 
 # Executable, audited bindings. The candidate changes encode speed only; the
 # quality target (H.264 / high / CRF mapping), timeline and QA remain unchanged.
@@ -48,6 +49,15 @@ _RENDER_PROFILES: dict[str, dict[str, Any]] = {
         "prefer_hw": False,
         "hwaccel_decode": False,
         "software_preset": "slow",
+        "timeline_placement": "timestamp",
+        "compact_text_overlays": True,
+    },
+    "v5": {
+        "codec": "h264",
+        "quality": "high",
+        "prefer_hw": False,
+        "hwaccel_decode": False,
+        "software_preset": "medium",
         "timeline_placement": "timestamp",
         "compact_text_overlays": True,
     },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import argparse
 import asyncio
 import hashlib
@@ -39,6 +40,7 @@ from app.services.operational_efficiency_policy import (
 )
 from app.services.render_media_materializer import materialize_scenes
 from app.services.source_window_validation_service import validate_source_window_usage
+from app.services.visual_branding_policy import watermark_geometry
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
 PROFILE = "professional_ptbr_v1"
@@ -646,6 +648,68 @@ def _governed_source_windows(
     }
 
 
+def _embed_governed_watermark(
+    plan: EditPlan,
+    *,
+    job: dict[str, Any],
+    root: Path,
+) -> tuple[EditPlan, dict[str, Any]]:
+    runtime_render_root = root.parents[2]
+    state_path = (
+        runtime_render_root
+        / "branding"
+        / str(job["execution_id"])
+        / str(job["render_job_id"])
+        / "brand-state.json"
+    )
+    if not state_path.is_file():
+        raise WorkerError("BRAND_QA: governed brand state missing before main render")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assets = list(state.get("assets") or [])
+    watermark = next(
+        (
+            item
+            for item in assets
+            if int(item.get("asset_id") or 0) == 2
+            and item.get("asset_type") == "watermark"
+        ),
+        None,
+    )
+    if watermark is None:
+        raise WorkerError("BRAND_QA: official watermark ASSET_ID=2 is required")
+    source = Path(str(watermark.get("media_path") or ""))
+    if not source.is_file() or source.stat().st_size <= 0:
+        raise WorkerError("BRAND_QA: materialized watermark is missing")
+    target_dir = root / "brand-visual"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = source.suffix if source.suffix else ".png"
+    target = target_dir / f"watermark-asset-2{suffix}"
+    shutil.copy2(source, target)
+    relative = normalize_runtime_asset_path(str(target), root)
+    clip = EditClip(
+        segment_id=None,
+        media_path=relative,
+        track="V2 WATERMARK",
+        start_seconds=0.0,
+        source_start_seconds=0.0,
+        duration_seconds=plan.duration_seconds,
+        role="brand_watermark",
+        fit="none",
+    )
+    metadata = dict(plan.metadata)
+    metadata["visual_branding"] = {
+        "policy": "single-content-encode/v1",
+        "watermark_asset_id": 2,
+        "watermark_embedded_in_base_render": True,
+        "watermark_sha256": watermark.get("sha256"),
+    }
+    return replace(
+        plan,
+        tracks=tuple([*plan.tracks, EditTrack(name="V2 WATERMARK", kind="overlay", clips=(clip,))]),
+        metadata=metadata,
+    ), metadata["visual_branding"]
+
+
 def _build_edit_plan(
     job: dict[str, Any],
     voice_sections: list[dict[str, Any]],
@@ -1158,7 +1222,10 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
     print("PRE_RENDER_NO_ARTIFICIAL_PADDING=PASS", flush=True)
     print(f"PRE_RENDER_VALIDATION_MS={float(edit_qa['pre_render_validation_ms']):.3f}", flush=True)
     print("RETRY_ON_DETERMINISTIC_FAILURE=NO", flush=True)
+    plan, visual_branding = _embed_governed_watermark(plan, job=job, root=root)
+    print("WATERMARK_EMBEDDED_IN_MAIN_ENCODE=PASS", flush=True)
     effective = dict(job)
+    effective["visual_branding"] = visual_branding
     effective["estimated_duration_seconds"] = plan.duration_seconds
     effective["scenes"] = expanded_scenes
     effective["edit_plan"] = plan.to_dict()
