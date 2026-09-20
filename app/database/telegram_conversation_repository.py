@@ -334,3 +334,27 @@ def record_human_decision(
         record = dict(row)
         record["metadata"] = _load(record.get("metadata"), {})
         return record
+
+
+def list_recent_human_decisions(
+    telegram_chat_id: int,
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    state = get_or_create_conversation_state(telegram_chat_id)
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT * FROM telegram_human_decisions
+            WHERE conversation_id = ?
+            ORDER BY decision_id DESC LIMIT ?
+            """,
+            (state["conversation_id"], max(1, min(int(limit), 25))),
+        ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in reversed(rows):
+        record = dict(row)
+        record["metadata"] = _load(record.get("metadata"), {})
+        result.append(record)
+    return result
