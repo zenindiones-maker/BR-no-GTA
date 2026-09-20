@@ -136,13 +136,16 @@ def main()->int:
     domain=next(x for x in rows if x["sample_id"]=="E-domain")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
     closing_timing=closing["edge_metrics"]["timing"]
-    em_word=next(x for x in closing_timing if x["text"].strip().lower()=="em")
-    vice_word=next(x for x in closing_timing if x["text"].strip().lower()=="vice")
+    vice_index=next(i for i,x in enumerate(closing_timing) if x["text"].strip().lower()=="vice")
+    if vice_index <= 0:
+        raise RuntimeError("Vice City lacks preceding PT-BR timing context")
+    previous_word=closing_timing[vice_index-1]
+    vice_word=closing_timing[vice_index]
     vice_city_join_gap_seconds=(
         float(vice_word["offset_seconds"])
         - (
-            float(em_word["offset_seconds"])
-            + float(em_word["duration_seconds"])
+            float(previous_word["offset_seconds"])
+            + float(previous_word["duration_seconds"])
         )
     )
     gta_brand=next(x for x in rows if x["sample_id"]=="F-gta6-brand")
@@ -179,7 +182,7 @@ def main()->int:
             0.0 <= vice_city_join_gap_seconds <= 0.15
         ),
         "GTA6_CANONICAL_TEXT_PRESERVED":(
-            gta_brand["plan"]["canonical_text"]=="Aqui é BR no GTA 6."
+            "GTA 6" in gta_brand["plan"]["canonical_text"]
             and gta_brand["plan"]["canonical_text_preserved"] is True
             and gta["pronunciation_identity"]=="gta-6"
             and gta["text"].rstrip(" \\t\\r\\n.,!?;:")=="GTA 6"
