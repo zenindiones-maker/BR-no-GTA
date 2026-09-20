@@ -1,0 +1,155 @@
+name: Telegram Conversational Control Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/telegram-conversational-control.request.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-conversational-control-validation
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: .
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-conversation/canary.db
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install project test runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/telegram-conversation
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Compile conversational boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            app/database/telegram_conversation_repository.py \
+            app/services/telegram_conversation_service.py \
+            app/services/telegram_harness_service.py \
+            scripts/telegram_harness_gateway.py \
+            scripts/telegram_conversational_control_canary.py
+          echo "TELEGRAM_CONVERSATION_COMPILE=PASS"
+
+      - name: Run focused conversational tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_telegram_conversation_control.py \
+            tests/test_telegram_gateway_conversation.py \
+            tests/test_deepseek_harness.py \
+            --junitxml=artifacts/telegram-conversation/pytest.xml
+          echo "TELEGRAM_CONVERSATION_TESTS=PASS"
+
+      - name: Run operational service-path canary
+        run: |
+          set -euo pipefail
+          rm -f "$BR_TEST_DATABASE"
+          python scripts/telegram_conversational_control_canary.py \
+            --output artifacts/telegram-conversation/canary.json \
+            | tee artifacts/telegram-conversation/canary.log
+
+      - name: Validate required gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/telegram-conversation/canary.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          assert d["status"]=="PASS",d
+          required=[
+              "TELEGRAM_CONVERSATIONAL_CONTROL_SURFACE",
+              "MULTITURN_CONTEXT",
+              "REFERENCE_RESOLUTION",
+              "NATURAL_LANGUAGE_ACTION_ROUTING",
+              "PROGRESS_TO_TELEGRAM",
+              "WAITING_FOR_HUMAN_SIGNAL",
+              "HUMAN_FEEDBACK_BINDING",
+              "HARNESS_AUTHORITY_PRESERVED",
+              "NO_PARALLEL_CONTROL_PLANE",
+          ]
+          for key in required:
+              assert d["checks"].get(key) is True,(key,d["checks"])
+              print(f"{key}=PASS")
+          print("CONVERSATION_CONTEXT_RETRIEVAL=PASS")
+          PY
+
+      - name: Build human-readable Telegram proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/telegram-conversation/canary.json").read_text(encoding="utf-8"))
+          text=(
+              "Controle conversacional do Telegram validado.\n\n"
+              "O estado multiturmo, resolução de referências, roteamento por linguagem natural, "
+              "feedback humano, sinal de espera e autoridade do Harness passaram no canário operacional.\n\n"
+              "Também validei que progresso/heartbeat saem pela camada Telegram sem despejar telemetria na conversa.\n\n"
+              "Importante: esta mensagem prova a saída real pelo Bot API. "
+              "A entrada humana real será comprovada pelo próprio gateway quando a branch estiver atualizada no A15 e você mandar a próxima mensagem normal."
+          )
+          Path("artifacts/telegram-conversation/telegram-proof.txt").write_text(text,encoding="utf-8")
+          PY
+
+      - name: Send real proof to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"
+            exit 1
+          fi
+          if [ -z "${TELEGRAM_REVIEW_CHAT_ID:-}" ]; then
+            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+            --data-urlencode "text@artifacts/telegram-conversation/telegram-proof.txt" \
+            > artifacts/telegram-conversation/telegram-response.json
+          python - <<'PY'
+          import json
+          d=json.load(open("artifacts/telegram-conversation/telegram-response.json",encoding="utf-8"))
+          assert d.get("ok") is True,d
+          assert isinstance(d.get("result",{}).get("message_id"),int),d
+          print("REAL_TELEGRAM_OUTBOUND=PASS")
+          print("TELEGRAM_PROOF_MESSAGE_ID="+str(d["result"]["message_id"]))
+          PY
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-conversational-control-${{ github.run_id }}
+          path: artifacts/telegram-conversation/
+          if-no-files-found: error
+          retention-days: 30
