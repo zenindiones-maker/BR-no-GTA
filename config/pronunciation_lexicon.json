@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.4-human-leonida-pending",
+  "version": "2026.09.20.5-all-ptbr-no-language-switch",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
@@ -11,21 +11,24 @@
     ],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true,
-    "only_forced_en_us_term": "Vice City",
+    "only_forced_en_us_term": null,
     "unnecessary_language_switches_forbidden": true,
     "character_aliases_synthesis_only": true,
     "character_name_en_us_chunks_forbidden": true,
-    "generic_name_autodetection_enabled": false
+    "generic_name_autodetection_enabled": false,
+    "foreign_language_chunks_forbidden": true,
+    "all_pronunciation_synthesis_locale": "pt-BR"
   },
   "entries": [
     {
       "identity": "vice-city",
       "term": "Vice City",
-      "locale": "en-US",
-      "strategy": "isolated-multilingual",
+      "locale": "pt-BR",
+      "strategy": "alias",
       "critical": true,
       "target_ipa": "vaɪs ˈsɪti",
-      "source": "human-approved sole forced en-US pronunciation term"
+      "source": "previously human-approved target sound, now rendered only inside Voice B pt-BR lane; no en-US chunk allowed",
+      "synthesis_text": "Váis Síti"
     },
     {
       "identity": "gta-6",
