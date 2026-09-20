@@ -1,13 +1,18 @@
 {
   "request": "hermes-multiagent-operational-canary",
   "upstream_sha": "9eca7f388f71755293343dddd6ec4d9111d68fc4",
-  "source_head": "c2782ee310d0d1933c6cbeebd7898adbe6687f36",
-  "attempt": 3,
-  "fix": "coherent sparse runtime includes gateway; explicit kanban_link materialization",
+  "source_head": "de07b7b6cb92240a8376d1dab8045f49cef8aff4",
+  "attempt": 4,
+  "recovery": {
+    "native_lifecycle": true,
+    "structured_review_change_consumption": true,
+    "timeout_diagnostics": true,
+    "gate6f_focused": true
+  },
   "scope": "VIDEO_A_EDITORIAL_ONLY",
   "no_voice": true,
   "no_render": true,
   "no_youtube_upload": true,
   "no_youtube_publication": true,
-  "requested_at": "2026-09-20T22:56:00Z"
+  "requested_at": "2026-09-20T23:15:00Z"
 }
