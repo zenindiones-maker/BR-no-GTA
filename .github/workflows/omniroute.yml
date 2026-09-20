@@ -156,13 +156,29 @@ jobs:
           test -n "$PROMPT_B64"
           mkdir -p runtime/opencode-native-result runtime/opencode-native-workdir
           python - <<'PY'
-          import base64, os
+          import base64, json, os
           from pathlib import Path
+          from app.services.opencode_semantic_profile import (
+              semantic_profile_evidence,
+              semantic_text_only_config_json,
+              semantic_text_only_prompt,
+          )
           prompt=base64.b64decode(os.environ["PROMPT_B64"], validate=True).decode("utf-8")
           if not prompt.strip():
               raise SystemExit("empty prompt")
           result_root=Path("runtime/opencode-native-result")
-          (result_root/"prompt.txt").write_text(prompt, encoding="utf-8")
+          (result_root/"prompt.txt").write_text(
+              semantic_text_only_prompt(prompt),
+              encoding="utf-8",
+          )
+          (result_root/"opencode-config.json").write_text(
+              semantic_text_only_config_json(),
+              encoding="utf-8",
+          )
+          (result_root/"semantic-profile.json").write_text(
+              json.dumps(semantic_profile_evidence(), sort_keys=True),
+              encoding="utf-8",
+          )
           PY
           START="$(python - <<'PY'
           import time
@@ -172,11 +188,14 @@ jobs:
           set +e
           ROOT="$PWD"
           PROMPT="$(cat runtime/opencode-native-result/prompt.txt)"
+          export OPENCODE_CONFIG_CONTENT="$(cat runtime/opencode-native-result/opencode-config.json)"
+          SEMANTIC_AGENT="semantic-text"
           (
             cd runtime/opencode-native-workdir
             timeout 180 opencode run \
               --standalone \
               --model "opencode/big-pickle" \
+              --agent "$SEMANTIC_AGENT" \
               --format json \
               "$PROMPT"
           ) > "$ROOT/runtime/opencode-native-result/stdout.ndjson" \
@@ -196,7 +215,7 @@ jobs:
           stderr=(root/"stderr.txt").read_text(encoding="utf-8", errors="replace")
           rc=int(os.environ["RC"])
           parts=[]; parse_errors=0; tool_call_count=0
-          event_types=[]
+          event_types=[]; tool_events=[]; error_events=[]
           for raw in stdout.splitlines():
               if not raw.strip():
                   continue
@@ -209,6 +228,21 @@ jobs:
               event_types.append(event_type)
               if event_type in {"tool_use","tool_call","tool"}:
                   tool_call_count+=1
+                  part=item.get("part") if isinstance(item.get("part"),dict) else {}
+                  state=part.get("state") if isinstance(part.get("state"),dict) else {}
+                  tool_events.append({
+                      "tool":str(item.get("tool") or item.get("name") or part.get("tool") or part.get("name") or "")[:120],
+                      "status":str(item.get("status") or part.get("status") or state.get("status") or "")[:80],
+                  })
+              if event_type=="error":
+                  candidate=item.get("error") or item.get("message") or item.get("data")
+                  if candidate:
+                      safe=re.sub(
+                          r"(?i)(authorization:|bearer\\s+|api[_-]?key|token=|sk-|ghp_|github_pat_)[^\\s,;]*",
+                          "[REDACTED]",
+                          str(candidate)[:1600],
+                      )
+                      error_events.append(safe)
               if event_type!="text":
                   continue
               part=item.get("part") or {}
@@ -225,8 +259,10 @@ jobs:
                   continue
               safe_stderr.append(line[:500])
           elapsed=max(0.0,float(os.environ["END"])-float(os.environ["START"]))
+          profile=json.loads((root/"semantic-profile.json").read_text(encoding="utf-8"))
+          semantic_pass=rc==0 and bool(answer) and tool_call_count==0
           result={
-              "status":"EXECUTED" if rc==0 and bool(answer) else "FAILED",
+              "status":"EXECUTED" if semantic_pass else "FAILED",
               "provider":"opencode",
               "canonical_model":"oc/big-pickle",
               "executor_model":"opencode/big-pickle",
@@ -242,10 +278,16 @@ jobs:
               "stderr_sha256":hashlib.sha256(stderr.encode()).hexdigest(),
               "parse_errors":parse_errors,
               "tool_call_count":tool_call_count,
+              "tool_events":tool_events,
+              "error_events":error_events[-20:],
               "event_types":event_types,
-              "semantic_agent":"build",
-              "semantic_steps":1,
+              "semantic_agent":profile["semantic_agent"],
+              "semantic_profile_version":profile["profile_version"],
+              "semantic_contract":profile["semantic_contract"],
+              "semantic_steps":profile["semantic_steps"],
               "semantic_tools_policy":"deny-all",
+              "tools_exposed":0 if tool_call_count==0 else tool_call_count,
+              "semantic_text_only_pass":semantic_pass,
               "safe_stderr":safe_stderr[-20:],
           }
           (root/"result.json").write_text(json.dumps(result,sort_keys=True),encoding="utf-8")
@@ -259,7 +301,10 @@ jobs:
               "exit_code":result["exit_code"],
               "usable_text":bool(answer),
               "tool_call_count":tool_call_count,
-              "semantic_agent":"build",
+              "tools_exposed":result["tools_exposed"],
+              "semantic_agent":result["semantic_agent"],
+              "semantic_profile_version":result["semantic_profile_version"],
+              "semantic_text_only_pass":result["semantic_text_only_pass"],
               "fallback_occurred":False,
           },sort_keys=True))
           if tool_call_count != 0:
@@ -268,9 +313,12 @@ jobs:
           if result["status"]!="EXECUTED":
               print("OPENCODE_NATIVE_ERROR=native_execution_failed")
               raise SystemExit(rc or 1)
-          print("OPENCODE_NATIVE_SEMANTIC_AGENT=build")
+          print("OPENCODE_NATIVE_SEMANTIC_AGENT="+result["semantic_agent"])
+          print("OPENCODE_NATIVE_SEMANTIC_PROFILE="+result["semantic_profile_version"])
           print("OPENCODE_NATIVE_SEMANTIC_TOOLS=DENY_ALL")
+          print("OPENCODE_NATIVE_TOOLS_EXPOSED=0")
           print("OPENCODE_NATIVE_TOOL_CALL_COUNT=0")
+          print("SEMANTIC_TEXT_ONLY=PASS")
           PY
           rm -f runtime/opencode-native-result/prompt.txt
           rm -rf runtime/opencode-native-workdir
@@ -284,6 +332,7 @@ jobs:
             runtime/opencode-native-result/result.json
             runtime/opencode-native-result/stdout.ndjson
             runtime/opencode-native-result/stderr.txt
+            runtime/opencode-native-result/semantic-profile.json
           retention-days: 7
           if-no-files-found: error
 
