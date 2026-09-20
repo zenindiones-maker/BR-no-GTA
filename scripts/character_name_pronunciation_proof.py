@@ -28,19 +28,15 @@ from app.services.pronunciation_service import (
 
 ROOT=Path(__file__).resolve().parents[1]
 CANDIDATE_CONFIG=ROOT/"config"/"pronunciation_character_aliases.candidate.json"
-PTBR_DUB_URL="https://www.youtube.com/watch?v=f8IZhKcuEts"
-PTBR_DUB_VIDEO_ID="f8IZhKcuEts"
+PTBR_DUB_URL="https://www.youtube.com/watch?v=VQRLujxTm3c"
+PTBR_DUB_VIDEO_ID="VQRLujxTm3c"
 ROCKSTAR_IDENTITY_PAGE="https://www.rockstargames.com/VI"
 EXPECTED_SCRIPT_SHA256="9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea"
-CAST_NAMES=("Jason","Lucia","Brian","Cal","Real Dimez","Phil")
+CAST_NAMES=("Jason","Lucia")
 KNOWN_SCRIPT_NAMES=("Jason","Lucia","Cal Hampton","Boobie Ike","Dre'Quan Priest","Real Dimez","Raul Bautista","Brian Heder")
 REFERENCE_VARIANTS={
-    "Jason":("jason","jeison","jayson","djeison","djeisson"),
-    "Lucia":("lucia","lúcia","lucía","lussia","lussía"),
-    "Brian":("brian","braian","brayan"),
-    "Cal":("cal","kall"),
-    "Real Dimez":("real dimez","real dimes","real daimes"),
-    "Phil":("phil","fil"),
+    "Jason":("jason","jayson","jay son"),
+    "Lucia":("lucia","lusia","lu cia"),
 }
 
 def ensure_acoustic_runtime()->None:
@@ -94,25 +90,29 @@ def normalize(value:str)->str:
 
 def materialize_reference(root:Path)->tuple[Path,dict[str,Any]]:
     root.mkdir(parents=True,exist_ok=True)
-    result=YtDlpMediaIngestion().ingest(PTBR_DUB_URL,root/"ptbr-dubbed-trailer")
+    source=root/"rockstar-trailer2.mp4"
+    audio=root/"rockstar-trailer2-16k.wav"
+    if source.is_file() and audio.is_file():
+        return audio,{"video_file":str(source),"video_sha256":sha256(source),"audio_probe":probe(audio),"checkpoint_reuse":True}
+    result=YtDlpMediaIngestion().ingest(PTBR_DUB_URL,root/"rockstar-trailer2")
     if result.status is not IngestionStatus.DOWNLOAD_OK or result.output_path is None:
-        raise RuntimeError(f"PT-BR dubbed trailer materialization failed: {result.status.value}:{result.reason}")
+        raise RuntimeError(f"Rockstar Trailer 2 materialization failed: {result.status.value}:{result.reason}")
     source=Path(result.output_path)
-    audio=root/"ptbr-dubbed-trailer-16k.wav"
+    audio=root/"rockstar-trailer2-16k.wav"
     proc=subprocess.run(
         ["ffmpeg","-nostdin","-y","-v","error","-i",str(source),"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",str(audio)],
         capture_output=True,text=True,timeout=300,
     )
     if proc.returncode!=0:
-        raise RuntimeError("PT-BR dubbed trailer audio extraction failed")
+        raise RuntimeError("Rockstar Trailer 2 audio extraction failed")
     return audio,{"video_file":str(source),"video_sha256":sha256(source),"audio_probe":probe(audio)}
 
 def transcribe_words(audio:Path)->list[dict[str,Any]]:
     from faster_whisper import WhisperModel
-    model=WhisperModel("small",device="cpu",compute_type="int8")
+    model=WhisperModel("small.en",device="cpu",compute_type="int8")
     segments,_=model.transcribe(
-        str(audio),language="pt",beam_size=5,vad_filter=True,word_timestamps=True,
-        initial_prompt="Trailer dublado de GTA 6. Nomes próprios: Jason, Lucia, Brian, Cal, Real Dimez, Phil.",
+        str(audio),language="en",beam_size=5,vad_filter=True,word_timestamps=True,
+        initial_prompt="Grand Theft Auto VI Trailer 2. Character names include Jason and Lucia.",
     )
     words=[]
     for segment in segments:
@@ -126,7 +126,7 @@ def transcribe_words(audio:Path)->list[dict[str,Any]]:
                     "probability":float(word.probability or 0.0),
                 })
     if not words:
-        raise RuntimeError("ASR did not produce word timestamps")
+        raise RuntimeError("official Rockstar Trailer 2 ASR did not produce word timestamps")
     return words
 
 def discover_occurrences(words:list[dict[str,Any]])->dict[str,list[dict[str,Any]]]:
@@ -141,7 +141,7 @@ def discover_occurrences(words:list[dict[str,Any]])->dict[str,list[dict[str,Any]
                 raw=" ".join(item["text"] for item in words[index:index+width])
                 candidate=normalize(raw)
                 score=max((SequenceMatcher(None,candidate,value).ratio() for value in variants),default=0.0)
-                if score<0.78:
+                if score<0.72:
                     continue
                 start=float(words[index]["start"])
                 end=float(words[index+width-1]["end"])
@@ -217,7 +217,7 @@ def select_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[str,Any]
         all_occurrences=occurrences.get(name) or []
         occurrences_for_name=[
             item for item in all_occurrences
-            if float(item.get("mean_probability") or 0.0) >= 0.30
+            if float(item.get("mean_probability") or 0.0) >= 0.20
         ]
         if not occurrences_for_name:
             selection[name]={
@@ -268,15 +268,15 @@ def select_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[str,Any]
             "reference_occurrence_count":len(references),
             "reference_occurrence_total":len(all_occurrences),
             "excluded_low_confidence_occurrences":len(all_occurrences)-len(occurrences_for_name),
-            "minimum_asr_probability":0.30,
+            "minimum_asr_probability":0.20,
             "ranking":rankings,
             "best_distance":winner["mean_acoustic_distance"],
             "runner_up_distance":rankings[1]["mean_acoustic_distance"] if len(rankings)>1 else None,
         }
         target=find_entry(runtime,identity)
         target["synthesis_text"]=winner["alias"]
-        target["reference_status"]="PTBR_DUB_ACOUSTIC_REFERENCE"
-        target["source"]="YouDubbing PT-BR Trailer 2 acoustic candidate; human approval required before production promotion"
+        target["reference_status"]="ROCKSTAR_TRAILER2_ACOUSTIC_REFERENCE"
+        target["source"]="Rockstar Games official Trailer 2 acoustic reference; synthesis-only PT-BR alias; human approval required before production promotion"
     return selection,runtime
 
 def sample_set(script:str)->list[tuple[str,str,str]]:
@@ -384,7 +384,7 @@ def main()->int:
         "CANDIDATE_CACHE_VERSIONED":all(
             row["plan"]["lexicon_version"]==runtime["version"] for row in rows
         ),
-        "OFFICIAL_TRAILER_REFERENCE_MATERIALIZED":materialized["audio_probe"]["size_bytes"]>0,
+        "ROCKSTAR_TRAILER2_REFERENCE_MATERIALIZED":materialized["audio_probe"]["size_bytes"]>0,
         "NO_AUTOMATIC_PROMOTION":True,
         "CHARACTER_NAME_REFERENCE_SOURCE":True,
         "CHARACTER_NAME_ACOUSTIC_REFERENCE":all(
@@ -403,7 +403,7 @@ def main()->int:
         "voice":DEFAULT_VOICE,
         "default_narration_locale":"pt-BR",
         "only_forced_en_us_term":"Vice City",
-        "character_name_reference_source":"PTBR_DUBBED_TRAILER",
+        "character_name_reference_source":"ROCKSTAR_OFFICIAL_TRAILER_2",
         "reference":{
             "url":PTBR_DUB_URL,
             "video_id":PTBR_DUB_VIDEO_ID,
@@ -425,7 +425,7 @@ def main()->int:
             "status":"PENDING",
             "required":True,
             "promotion_allowed":False,
-            "instruction":"Review the generated Voice B samples delivered as Telegram documents. PT-BR dubbed reference clips were used only for internal acoustic comparison and were not sent.",
+            "instruction":"Review the generated Voice B samples delivered as Telegram documents. Rockstar Trailer 2 reference clips were used only for internal acoustic comparison and were not sent.",
         },
     }
     (root/"character-name-pronunciation-proof.json").write_text(
@@ -438,7 +438,7 @@ def main()->int:
         )
 
     for marker in (
-        "CHARACTER_NAME_REFERENCE_SOURCE=PTBR_DUBBED_TRAILER",
+        "CHARACTER_NAME_REFERENCE_SOURCE=ROCKSTAR_OFFICIAL_TRAILER_2",
         "CHARACTER_NAME_ACOUSTIC_REFERENCE=PASS",
         "CHARACTER_NAME_PRONUNCIATION=PASS",
         "NO_CHARACTER_NAME_EN_US_CHUNKS=PASS",

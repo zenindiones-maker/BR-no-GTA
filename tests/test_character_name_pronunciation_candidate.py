@@ -12,16 +12,16 @@ def load(path):
 
 def test_candidate_requires_real_acoustic_selection():
     d=load(CANDIDATE)
-    assert d["reference"]["video_id"]=="f8IZhKcuEts"
-    assert d["reference"]["channel"]=="YouDubbing"
-    assert "pronunciation adaptation" in d["reference"]["authority_scope"]
+    assert d["reference"]["video_id"]=="VQRLujxTm3c"
+    assert d["reference"]["channel"]=="Rockstar Games"
+    assert "Official Rockstar acoustic ground truth" in d["reference"]["authority_scope"]
     assert d["policy"]["only_forced_en_us_term"]=="Vice City"
     chars={x["identity"]:x for x in d["entries"] if str(x.get("identity","")).startswith("character-")}
     assert set(chars)=={"character-jason","character-lucia"}
     assert all(x["locale"]=="pt-BR" for x in chars.values())
-    assert all(x["reference_status"]=="ACOUSTIC_SELECTION_REQUIRED" for x in chars.values())
+    assert chars["character-jason"]["reference_status"]=="ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED"\n    assert chars["character-lucia"]["reference_status"]=="HUMAN_CORRECTED_ALIAS"
     assert all("synthesis_text" not in x for x in chars.values())
-    assert all(x.get("synthesis_candidates") for x in chars.values())
+    assert all(x.get("synthesis_candidates") for x in chars.values())\n    assert chars["character-lucia"]["human_selected_synthesis_alias"]=="Lucía"
 
 def test_runtime_aliases_do_not_split_ptbr_sentence(tmp_path):
     d=load(CANDIDATE)

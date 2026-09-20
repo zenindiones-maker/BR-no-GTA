@@ -1,9 +1,9 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.5-ptbr-dub-acoustic.2",
+  "version": "2026.09.20.4-rockstar-trailer2-voice-b",
   "default_locale": "pt-BR",
   "policy": {
-    "authority": "Human-review candidate only; not promoted to production",
+    "authority": "Human-review Voice B candidate only; not promoted to production",
     "priority": [
       "canonical-lexicon",
       "character-name-synthesis-alias",
@@ -21,12 +21,12 @@
     "acoustic_selection_required": true
   },
   "reference": {
-    "kind": "ptbr_dubbed_trailer",
-    "url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
-    "video_id": "f8IZhKcuEts",
-    "title": "GTA 6 | Trailer 2 - DUBLADO - Grand Theft Auto VI",
-    "channel": "YouDubbing",
-    "authority_scope": "Brazilian dubbing/pronunciation adaptation reference only; Rockstar remains canonical character identity authority"
+    "kind": "rockstar_official_trailer_2",
+    "url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
+    "video_id": "VQRLujxTm3c",
+    "title": "Grand Theft Auto VI Trailer 2",
+    "channel": "Rockstar Games",
+    "authority_scope": "Official Rockstar acoustic ground truth for Jason and Lucia as spoken in Trailer 2"
   },
   "entries": [
     {
@@ -56,7 +56,7 @@
       "locale": "pt-BR",
       "strategy": "alias",
       "critical": true,
-      "reference_status": "ACOUSTIC_SELECTION_REQUIRED",
+      "reference_status": "ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED",
       "synthesis_candidates": [
         "Jason",
         "Djeison",
@@ -72,22 +72,12 @@
       "locale": "pt-BR",
       "strategy": "alias",
       "critical": true,
-      "reference_status": "ACOUSTIC_SELECTION_REQUIRED",
+      "reference_status": "HUMAN_CORRECTED_ALIAS",
       "synthesis_candidates": [
-        "Lucia",
-        "Lúcia",
-        "Lucía",
-        "Lussía",
-        "Lussí-a"
-      ]
+        "Lucía"
+      ],
+      "human_selected_synthesis_alias": "Lucía",
+      "source": "Human-corrected synthesis-only alias; canonical text Lucia and pt-BR sentence locale remain unchanged"
     }
-  ],
-  "cast_reference": {
-    "Jason": "Raphael Rossatto",
-    "Lucia": "Carina Eiras",
-    "Brian": "Ricardo Rossatto",
-    "Cal": "Paulo Vignolo",
-    "Real Dimez": "Isabele Riccart",
-    "Phil": "Nando Sierpe"
-  }
+  ]
 }

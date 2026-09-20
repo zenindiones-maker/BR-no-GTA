@@ -1,42 +1,29 @@
 {
-  "mission": "character-name-pronunciation-rockstar-trailer2-bc-v1",
-  "base_head": "7874a4e4162ebddbe01ea4a4b90de60a2871b5a2",
-  "requested_at": "2026-09-20T03:17:00Z",
+  "mission": "character-name-pronunciation-rockstar-trailer2-voice-b-v2",
+  "base_head": "10dec625a9a46ac167a5c1219d98a922d7e9047a",
+  "requested_at": "2026-09-20T15:24:00Z",
   "video_a_rerender": false,
   "automatic_promotion": false,
-  "good_voices": [
-    "B",
-    "C"
-  ],
   "official_voice": "B",
-  "challenger_voice": "C",
-  "voice_identity": {
-    "B": "pt-BR-ThalitaMultilingualNeural",
-    "C": "pt-BR-FranciscaNeural"
-  },
+  "voice_short_name": "pt-BR-ThalitaMultilingualNeural",
   "default_narration_locale": "pt-BR",
   "only_forced_en_us_term": "Vice City",
   "gta_6_synthesis": "gê tê á seis",
   "vice_city_target_ipa": "vaɪs ˈsɪti",
-  "canonical_product_artifact_id": 10589535732,
-  "canonical_product_run_id": 35458162169,
-  "script_sha256": "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea",
-  "current_script_character_inventory": [
+  "character_inventory": [
     "Jason",
     "Lucia"
   ],
-  "candidate_lexicon_version": "2026.09.20.1-rockstar-trailer2-bc",
+  "candidate_lexicon_version": "2026.09.20.4-rockstar-trailer2-voice-b",
   "reference_source": "ROCKSTAR_OFFICIAL_TRAILER_2",
   "reference_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
   "reference_video_id": "VQRLujxTm3c",
   "reference_channel": "Rockstar Games",
-  "speech_performance_plan": "character-review-neutral-v1",
-  "human_voice_final_review": "PENDING",
-  "reference_clips_delivery": "INTERNAL_ONLY",
-  "proof_attempt": 12,
-  "continuation_head": "55f31d5a2fa3be019569a2fb3d6fc25adaa8d6f2",
+  "canonical_product_artifact_id": 10589535732,
+  "canonical_product_run_id": 35458162169,
   "reuse_acoustic_artifact_id": 10597480517,
   "reuse_acoustic_run_id": 35485777572,
-  "retry_reason": "Fix candidate-audio cache key collision across diacritic aliases; reuse only official Rockstar reference/ASR, regenerate short B/C alias candidates.",
-  "supersedes_review_run_id": 35485980897
+  "human_character_name_review": "PENDING",
+  "no_character_name_en_us_chunks": true,
+  "generic_name_autodetection": false
 }

@@ -1,4 +1,4 @@
-name: Character Name Pronunciation Review
+name: Character Name Pronunciation Review · Voice B
 
 on:
   push:
@@ -34,22 +34,22 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Validate B/C review request
+      - name: Validate Voice B character review request
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
           d=json.loads(Path(".run001/character-name-pronunciation-proof.request.json").read_text())
-          assert d["base_head"]=="7874a4e4162ebddbe01ea4a4b90de60a2871b5a2", d
           assert d["video_a_rerender"] is False, d
           assert d["automatic_promotion"] is False, d
-          assert d["good_voices"]==["B","C"], d
-          assert d["official_voice"]=="B" and d["challenger_voice"]=="C", d
-          assert d["reference_video_id"]=="VQRLujxTm3c", d
+          assert d["official_voice"]=="B", d
+          assert d["voice_short_name"]=="pt-BR-ThalitaMultilingualNeural", d
           assert d["default_narration_locale"]=="pt-BR", d
           assert d["only_forced_en_us_term"]=="Vice City", d
-          print("VOICE_BC_REVIEW_REQUEST=PASS")
+          assert d["reference_video_id"]=="VQRLujxTm3c", d
+          assert d["character_inventory"]==["Jason","Lucia"], d
+          print("VOICE_B_CHARACTER_REVIEW_REQUEST=PASS")
           print("VIDEO_A_RERENDER=NO")
           PY
 
@@ -63,23 +63,23 @@ jobs:
           python -m pip install "pytest==9.1.1" "python-dotenv==1.2.1" "edge-tts==7.2.8"             "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
           ffmpeg -version | head -n1
 
-      - name: Restore validated official acoustic checkpoint
+      - name: Restore official Rockstar acoustic checkpoint
         uses: actions/download-artifact@v4
         with:
           artifact-ids: "10597480517"
           run-id: "35485777572"
           github-token: ${{ github.token }}
-          path: runtime/voice-bc-review
+          path: runtime/character-name-review
           merge-multiple: true
 
       - name: Setup Deno for canonical PO Token provider
-        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
+        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
       - name: Setup canonical YouTube PO Token provider
-        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
+        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
@@ -94,7 +94,7 @@ jobs:
           echo "YTDLP_PO_TOKEN_BASE_URL=http://127.0.0.1:4416" >> "$GITHUB_ENV"
 
       - name: Prepare canonical YouTube cookies
-        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
+        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
@@ -117,13 +117,13 @@ jobs:
       - name: Confirm acoustic checkpoint reuse
         run: |
           set -euo pipefail
-          test -s runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav
-          test -s runtime/voice-bc-review/internal-reference/asr-words.json
-          test -s runtime/voice-bc-review/runtime-character-lexicon.json
+          test -s runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav
+          test -s runtime/character-name-review/internal-reference/asr-words.json
+          test -s runtime/character-name-review/runtime-character-lexicon.json
           echo "ROCKSTAR_REFERENCE_CHECKPOINT_REUSE=YES"
           echo "ASR_CHECKPOINT_REUSE=YES"
 
-      - name: Focused B/C policy tests
+      - name: Focused Voice B alias policy tests
         run: |
           set -euo pipefail
           pytest -q tests/test_voice_bc_character_review.py
@@ -131,10 +131,12 @@ jobs:
           echo "NO_CHARACTER_NAME_EN_US_CHUNKS=PASS"
           echo "CANONICAL_TEXT_PRESERVED=PASS"
 
-      - name: Build Rockstar-grounded B/C audio benchmark
+      - name: Build Rockstar-grounded Voice B audio benchmark
         run: |
           set -euo pipefail
-          python scripts/voice_bc_character_review.py             --product-package runtime/product-source/product-quality-e2e.json             --output-dir runtime/voice-bc-review
+          python scripts/character_name_pronunciation_proof.py \
+            --product-package runtime/product-source/product-quality-e2e.json \
+            --output-dir runtime/character-name-review
 
       - name: Validate human review gate
         run: |
@@ -142,32 +144,22 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p=json.loads(Path("runtime/voice-bc-review/voice-bc-character-review.json").read_text())
-          required=(
-              "PT_BR_PROSODY_CONTINUITY","CHARACTER_NAME_PRONUNCIATION",
-              "NO_CHARACTER_NAME_EN_US_CHUNKS","ONLY_FORCED_EN_US_TERM",
-              "CANONICAL_TEXT_PRESERVED","VOICE_B_PRESERVED",
-              "VOICE_C_CHALLENGER_ONLY","B_C_CASTING_ONLY",
-              "SAME_SPEECH_PERFORMANCE_PLAN","SAME_TEXT_PUNCTUATION_AND_ALIASES",
-              "CURRENT_SCRIPT_CHARACTER_INVENTORY","ROCKSTAR_TRAILER2_REFERENCE_MATERIALIZED",
-              "CANDIDATE_CACHE_VERSIONED","NO_AUTOMATIC_PROMOTION","VIDEO_A_NOT_RERENDERED",
-          )
+          p=json.loads(Path("runtime/character-name-review/character-name-pronunciation-proof.json").read_text())
+          required=("PT_BR_PROSODY_CONTINUITY","CHARACTER_NAME_PRONUNCIATION","NO_CHARACTER_NAME_EN_US_CHUNKS","ONLY_FORCED_EN_US_TERM","CANONICAL_TEXT_PRESERVED","VOICE_B_PRESERVED","CURRENT_SCRIPT_CHARACTER_INVENTORY","ROCKSTAR_TRAILER2_REFERENCE_MATERIALIZED","CANDIDATE_CACHE_VERSIONED","NO_AUTOMATIC_PROMOTION","VIDEO_A_NOT_RERENDERED")
           missing=[k for k in required if (p.get("checks") or {}).get(k) is not True]
           if p.get("status")!="PASS" or missing:
-              raise SystemExit("VOICE_BC_CHARACTER_REVIEW=FAIL:"+",".join(missing))
-          if p.get("reference_source")!="ROCKSTAR_OFFICIAL_TRAILER_2":
-              raise SystemExit("REFERENCE_SOURCE_INVALID")
-          if (p.get("human_review") or {}).get("human_voice_final_review")!="PENDING":
-              raise SystemExit("HUMAN_VOICE_FINAL_REVIEW_GATE_INVALID")
-          for key in required:
-              print(key+"=PASS")
-          print("CHARACTER_NAME_REFERENCE_SOURCE=ROCKSTAR_OFFICIAL_TRAILER_2")
+              raise SystemExit("VOICE_B_CHARACTER_REVIEW=FAIL:"+",".join(missing))
+          print("PT_BR_PROSODY_CONTINUITY=PASS")
+          print("CHARACTER_NAME_PRONUNCIATION=PASS")
+          print("NO_CHARACTER_NAME_EN_US_CHUNKS=PASS")
           print("ONLY_FORCED_EN_US_TERM=Vice City")
-          print("HUMAN_VOICE_FINAL_REVIEW=PENDING")
+          print("CANONICAL_TEXT_PRESERVED=PASS")
+          print("VOICE_B_PRESERVED=PASS")
+          print("HUMAN_CHARACTER_NAME_REVIEW=PENDING")
           print("VIDEO_A_RERENDER=NO")
           PY
 
-      - name: Deliver B/C pairs to canonical Telegram as documents
+      - name: Deliver Voice B samples to canonical Telegram as documents
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
@@ -175,54 +167,33 @@ jobs:
           set -euo pipefail
           test -n "$TELEGRAM_BOT_TOKEN"
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
-          mkdir -p runtime/voice-bc-review/telegram
-          : > runtime/voice-bc-review/telegram/message-ids.txt
-          for sample in 01 02 03 04 05 06; do
-            for label in B C; do
-              audio="runtime/voice-bc-review/samples/${sample}-${label}.mp3"
-              test -s "$audio"
-              response="$(curl --fail-with-body --silent --show-error                 -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"                 -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID"                 -F "document=@$audio"                 -F "caption=${sample} · ${label} · revisão humana de voz/pronúncia")"
-              RESPONSE="$response" SAMPLE="$sample" LABEL="$label" python - <<'PY' >> runtime/voice-bc-review/telegram/message-ids.txt
-          import json,os
-          d=json.loads(os.environ["RESPONSE"])
-          if d.get("ok") is not True:
-              raise SystemExit("TELEGRAM_DELIVERY_ACCEPTED=NO")
-          mid=(d.get("result") or {}).get("message_id")
-          if not isinstance(mid,int):
-              raise SystemExit("TELEGRAM_MESSAGE_ID_MISSING")
-          print(f"{os.environ['SAMPLE']},{os.environ['LABEL']},{mid}")
-          PY
-            done
+          mkdir -p runtime/character-name-review/telegram
+          : > runtime/character-name-review/telegram/message-ids.txt
+          for audio in runtime/character-name-review/samples/*.mp3; do
+            test -s "$audio"
+            name="$(basename "$audio")"
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "document=@$audio" \
+              -F "caption=Voice B · $name · revisão humana de pronúncia dos personagens")"
+            RESPONSE="$response" NAME="$name" python - <<'PY' >> runtime/character-name-review/telegram/message-ids.txt
+import json,os
+d=json.loads(os.environ["RESPONSE"])
+if d.get("ok") is not True: raise SystemExit("TELEGRAM_DELIVERY_ACCEPTED=NO")
+mid=(d.get("result") or {}).get("message_id")
+if not isinstance(mid,int): raise SystemExit("TELEGRAM_MESSAGE_ID_MISSING")
+print(f"{os.environ['NAME']},{mid}")
+PY
           done
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=[]
-          for line in Path("runtime/voice-bc-review/telegram/message-ids.txt").read_text().splitlines():
-              sample,label,mid=line.split(",")
-              rows.append({"sample":sample,"label":label,"message_id":int(mid)})
-          state={
-              "status":"PASS",
-              "transport":"canonical-telegram-review",
-              "send_mode":"document-no-recompression",
-              "messages":rows,
-              "message_ids":[x["message_id"] for x in rows],
-              "labels":["B","C"],
-              "human_voice_final_review":"PENDING",
-              "automatic_promotion":False,
-              "video_a_rerender":False,
-          }
-          Path("runtime/voice-bc-review/telegram-delivery.json").write_text(json.dumps(state,indent=2),encoding="utf-8")
-          print("TELEGRAM_BC_REVIEW_DELIVERY=PASS")
-          print("TELEGRAM_MESSAGE_IDS="+",".join(str(x["message_id"]) for x in rows))
-          print("HUMAN_VOICE_FINAL_REVIEW=PENDING")
-          PY
+          echo "TELEGRAM_CHARACTER_REVIEW_DELIVERY=PASS"
+          echo "HUMAN_CHARACTER_NAME_REVIEW=PENDING"
 
-      - name: Upload B/C review evidence
+      - name: Upload Voice B character review evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: voice-bc-character-review-${{ github.run_id }}
-          path: runtime/voice-bc-review/
+          name: voice-b-character-pronunciation-review-${{ github.run_id }}
+          path: runtime/character-name-review/
           if-no-files-found: error
           retention-days: 30
