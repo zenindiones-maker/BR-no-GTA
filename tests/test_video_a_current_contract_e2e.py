@@ -63,7 +63,9 @@ def test_job2_resume_can_reuse_post_branding_checkpoint_for_final_qa_only():
 
 def test_current_e2e_supports_youtube_only_resume_without_render_redispatch():
     workflow=Path(".github/workflows/video-a-current-product-e2e.yml").read_text(encoding="utf-8")
-    assert 'youtube_only=d.get("recovery_mode")=="REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY"' in workflow
+    assert '"REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY"' in workflow
+    assert '"RECONCILE_EXISTING_YOUTUBE_RUN"' in workflow
+    assert 'youtube_only=recovery_mode in {' in workflow
     assert "Validate restored QA-passed render and private publication" in workflow
     assert "YOUTUBE_ONLY_RECOVERY=PASS" in workflow
     assert "steps.recovery_mode.outputs.youtube_only != 'true'" in workflow
