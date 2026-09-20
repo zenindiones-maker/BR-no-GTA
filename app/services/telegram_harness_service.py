@@ -137,6 +137,23 @@ def build_harness_connection_proof() -> dict[str, Any]:
         "selected_model": routing.selected_model,
         "provider_executor": routing.selected_provider_executor_binding,
         "fallback_occurred": routing.fallback_occurred,
+        "primary_routing_id": primary_routing_id,
+        "primary_provider": (
+            fallback_audit.get("PRIMARY_PROVIDER")
+            if isinstance(fallback_audit, dict)
+            else routing.selected_provider
+        ),
+        "primary_failure": (
+            fallback_audit.get("PRIMARY_FAILURE")
+            if isinstance(fallback_audit, dict)
+            else None
+        ),
+        "fallback_provider": (
+            fallback_audit.get("FALLBACK_PROVIDER")
+            if isinstance(fallback_audit, dict)
+            else None
+        ),
+        "fallback_audit": fallback_audit,
         "zero_cost_operation": bool(routing.policy_metadata.get("zero_cost_operation")),
         "canonical_state_source": observation.get("source_of_truth"),
         "domain": observation.get("domain"),
@@ -614,6 +631,27 @@ def chat_under_harness(
 
     result = evidence.result if isinstance(evidence.result, dict) else {}
     answer = str(result.get("text") or "").strip()
+    fallback_audit = None
+    primary_routing_id = routing.routing_id
+    if not evidence.active or evidence.status != "EXECUTED" or not answer:
+        fallback_evidence, fallback_routing, fallback_learned, fallback_audit = (
+            _attempt_governed_reasoning_fallback(
+                prompt=prompt,
+                primary_routing=routing,
+                primary_evidence=evidence,
+                telegram_goal=telegram_goal,
+                telegram_lineage=telegram_lineage,
+                progress_callback=progress_callback,
+                input_record=input_record,
+            )
+        )
+        if fallback_evidence is not None and fallback_routing is not None:
+            evidence = fallback_evidence
+            routing = fallback_routing
+            learned_outcome = fallback_learned
+            result = evidence.result if isinstance(evidence.result, dict) else {}
+            answer = str(result.get("text") or "").strip()
+
     if not evidence.active or evidence.status != "EXECUTED" or not answer:
         provider_error = (
             dict(getattr(evidence, "error", None))
@@ -642,6 +680,8 @@ def chat_under_harness(
             "latency_seconds": getattr(evidence, "latency_seconds", None),
             "retry_count": getattr(evidence, "retry_count", 0),
             "provider_error": provider_error,
+            "primary_routing_id": primary_routing_id,
+            "fallback": fallback_audit,
             "episode_id": (
                 learned_outcome["episode"]["episode_id"]
                 if learned_outcome is not None else None
