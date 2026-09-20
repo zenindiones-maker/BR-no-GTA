@@ -218,7 +218,7 @@ def main() -> int:
     )
     print(f"OPENCODE_SEMANTIC_V3_PROOF={proof['status']}")
     print("MODEL=oc/big-pickle")
-    print("SEMANTIC_AGENT=semantic-text")
+    print("SEMANTIC_AGENT=build")
     print("SEMANTIC_PROFILE=opencode-semantic-text-v3")
     print(f"ISOLATED_TEXT={proof['isolated']['text']}")
     print(f"TOOL_CALL_COUNT={proof['isolated']['tool_call_count']}")
