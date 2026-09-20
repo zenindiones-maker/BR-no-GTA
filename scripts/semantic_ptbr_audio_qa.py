@@ -86,8 +86,12 @@ def _duration(path: Path) -> float:
 
 
 def _sample_starts(duration: float, sample_seconds: float = 45.0) -> tuple[float, float, float]:
-    if duration < 20 * 60:
-        raise RuntimeError("semantic PT-BR QA requires a long-form product")
+    minimum_timeline = max(180.0, sample_seconds * 4.0)
+    if duration < minimum_timeline:
+        raise RuntimeError(
+            "semantic PT-BR QA requires enough timeline for three dispersed audio samples: "
+            f"{duration:.3f}s < {minimum_timeline:.3f}s"
+        )
     first = min(15.0, max(0.0, duration - sample_seconds))
     middle = max(0.0, duration / 2.0 - sample_seconds / 2.0)
     last = max(0.0, duration - sample_seconds - 8.0)

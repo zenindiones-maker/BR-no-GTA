@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.semantic_ptbr_audio_qa import approved_longform_script, evaluate_semantic_ptbr, semantic_metrics
+from scripts.semantic_ptbr_audio_qa import _sample_starts, approved_longform_script, evaluate_semantic_ptbr, semantic_metrics
 
 
 def test_semantic_ptbr_pass_requires_spoken_portuguese_and_script_alignment():
@@ -57,3 +57,15 @@ def test_approved_longform_script_fails_if_too_short_for_duration():
     ]
     with pytest.raises(RuntimeError, match="too short"):
         approved_longform_script(sections=sections, duration_seconds=20 * 60)
+
+
+def test_semantic_sample_starts_accept_current_professional_product_duration():
+    starts = _sample_starts(587.392, sample_seconds=45.0)
+    assert len(starts) == 3
+    assert starts[0] == 15.0
+    assert starts[0] < starts[1] < starts[2]
+
+
+def test_semantic_sample_starts_fail_when_timeline_cannot_support_dispersed_samples():
+    with pytest.raises(RuntimeError, match="three dispersed audio samples"):
+        _sample_starts(120.0, sample_seconds=45.0)
