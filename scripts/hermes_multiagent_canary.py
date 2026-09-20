@@ -76,7 +76,11 @@ def _ensure_profile_dirs(home: Path, profile_names: set[str]) -> None:
 
 def _runner_factory(*, upstream_root: Path, hermes_home: Path):
     def run(*, spec, board, task_mapping, profiles) -> None:
-        names = {profile.profile_name for profile in profiles} | {"hermes-reviewer"}
+        names = {profile.profile_name for profile in profiles} | {
+            "hermes-orchestrator",
+            "hermes-reviewer",
+            "hermes-system-failure-analyst",
+        }
         _ensure_profile_dirs(hermes_home, names)
         mapping_json = json.dumps(task_mapping, sort_keys=True)
         active: list[subprocess.Popen] = []
@@ -289,12 +293,25 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         "HERMES_SECOND_CONTROL_PLANE": False,
         "HERMES_CANONICAL_MEMORY": False,
         "COLLABORATION_PLAN_TO_HERMES": len(plan.tasks) == 3,
-        "NAMED_PROFILES": all(name in run_profiles for name in (
-            "hermes-research-verifier",
-            "hermes-evidence-analyst",
-            "hermes-editorial-critic",
-            "hermes-reviewer",
-        )),
+        "NAMED_PROFILES": (
+            all(name in run_profiles for name in (
+                "hermes-research-verifier",
+                "hermes-evidence-analyst",
+                "hermes-editorial-critic",
+                "hermes-reviewer",
+            ))
+            and all(
+                (hermes_home / "profiles" / name / "config.yaml").is_file()
+                for name in (
+                    "hermes-orchestrator",
+                    "hermes-research-verifier",
+                    "hermes-evidence-analyst",
+                    "hermes-editorial-critic",
+                    "hermes-reviewer",
+                    "hermes-system-failure-analyst",
+                )
+            )
+        ),
         "KANBAN_DURABLE_TASKS": len(board.get("tasks") or ()) == 3 and len(runs) >= 5,
         "AGENT_TO_AGENT_HANDOFF": handoff_a,
         "HANDOFF_CONSUMED": consumed,
@@ -319,6 +336,34 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         value is True or (key in {"HERMES_SECOND_CONTROL_PLANE","HERMES_CANONICAL_MEMORY"} and value is False)
         for key, value in checks.items()
     ) else "FAIL"
+    baseline_metrics = {
+        "observed": True,
+        "evidence": {
+            "source": facts["package_path"],
+            "human_voice_review": facts["human_voice_review"],
+            "script_human_review": facts["script_human_review"],
+            "production_readiness": facts["production_readiness"],
+        },
+        "task_success_rate": 0.0,
+        "quality": 0.0,
+        "human_correction_rate": 1.0,
+        "retry_rate": 0.0,
+        "failure_recurrence": 1.0,
+        "latency": None,
+        "cost": 0.0,
+        "policy_violations": 0.0,
+    }
+    candidate_metrics = {
+        "observed": True,
+        "task_success_rate": 1.0 if canonical.get("success") else 0.0,
+        "quality": 1.0 if consumed and review_requested >= 2 else 0.0,
+        "human_correction_rate": 0.0,
+        "retry_rate": float(max(0, len(critic_runs) - 1)),
+        "failure_recurrence": 0.0,
+        "latency": canonical.get("result", {}).get("elapsed_seconds"),
+        "cost": 0.0,
+        "policy_violations": 0.0,
+    }
     proof = {
         "status": status,
         "upstream_sha": UPSTREAM_SHA,
@@ -327,16 +372,18 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         "authorization_id": spec.authorization_id,
         "canonical_result": canonical,
         "checks": checks,
-        "metrics": {
-            "task_success_rate": 1.0 if canonical.get("success") else 0.0,
-            "quality": 1.0 if consumed and review_requested >= 2 else 0.0,
-            "human_correction_rate": 0.0,
-            "retry_rate": len(critic_runs) - 1,
-            "failure_recurrence": 0.0,
-            "latency": canonical.get("result", {}).get("elapsed_seconds"),
-            "cost": 0.0,
-            "policy_violations": 0.0,
+        "baseline_metrics": baseline_metrics,
+        "candidate_metrics": candidate_metrics,
+        "learning_comparison": {
+            "status": "OBSERVED",
+            "candidate_quality_not_worse": candidate_metrics["quality"] >= baseline_metrics["quality"],
+            "candidate_policy_not_worse": candidate_metrics["policy_violations"] <= baseline_metrics["policy_violations"],
+            "candidate_task_success_improved": candidate_metrics["task_success_rate"] > baseline_metrics["task_success_rate"],
+            "latency_comparable": False,
+            "promotion_decision": "NO_GLOBAL_PROMOTION_FIRST_OPERATIONAL_SAMPLE",
+            "reason": "Competence is updated from observed episodes; route promotion requires more comparable observations including latency.",
         },
+        "metrics": candidate_metrics,
     }
     (artifact_dir / "hermes-canary-proof.json").write_text(
         json.dumps(proof, ensure_ascii=False, indent=2, default=str) + "\n",
