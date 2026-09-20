@@ -1,0 +1,40 @@
+{
+  "schema": "br-no-gta-ptbr-pronunciation-policy/v1",
+  "version": "2026.09.20.1-brazilian-narrator-authority",
+  "target_locale": "pt-BR",
+  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "objective": "BRAZILIAN_NARRATOR_NATURALNESS",
+  "official_ptbr_text_localization": "AVAILABLE",
+  "official_ptbr_text_evidence": [
+    "https://store.rockstargames.com/pt-BR/game/buy-gta-vi",
+    "https://www.rockstargames.com/br/"
+  ],
+  "official_ptbr_dub_reference": "UNCONFIRMED",
+  "authority_order": [
+    "HUMAN_APPROVED_BR_NO_GTA",
+    "OFFICIAL_PTBR_ACOUSTIC_SOURCE",
+    "ESTABLISHED_BRAZILIAN_USAGE",
+    "PTBR_PHONOLOGICAL_ADAPTATION",
+    "OFFICIAL_SOURCE_LANGUAGE_AUDIO"
+  ],
+  "rules": {
+    "source_language_pronunciation_is_not_automatically_ptbr_target": true,
+    "official_english_audio_is_identity_evidence_not_brazilian_acoustic_authority": true,
+    "ptbr_narration_requires_brazilian_phonological_realization": true,
+    "human_approved_ptbr_pronunciation_has_priority": true,
+    "foreign_chunks_break_brazilian_narration_and_are_forbidden": true,
+    "all_synthesis_locale": "pt-BR",
+    "foreign_language_chunks_allowed": false,
+    "canonical_text_immutable": true,
+    "research_does_not_autoapprove_pronunciation": true,
+    "asr_does_not_autoapprove_pronunciation": true,
+    "contextual_voice_b_audio_required_before_human_approval": true,
+    "semantic_section_first": true,
+    "no_name_fragmentation": true
+  },
+  "status_semantics": {
+    "PTBR_TARGET_RESEARCHED": "Research and Brazilian adaptation target are defined; this is not human acoustic approval.",
+    "HUMAN_AUDIO_STATUS": "Only explicit human listening can promote PENDING/REJECTED to APPROVED.",
+    "GLOBAL_PRONUNCIATION_STATUS": "Must remain FAIL until required contextual samples are human-approved."
+  }
+}
