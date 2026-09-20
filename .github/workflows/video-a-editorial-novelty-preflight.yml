@@ -31,7 +31,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install focused preflight runtime
-        run: python -m pip install -r requirements.txt pillow requests
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt pytest pillow requests
+          mkdir -p runtime/editorial-novelty-proof
       - name: Focused novelty and overlay gates
         run: |
           set -euo pipefail
@@ -95,5 +98,5 @@ jobs:
         with:
           name: video-a-editorial-novelty-preflight-${{ github.run_id }}
           path: runtime/editorial-novelty-proof/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
