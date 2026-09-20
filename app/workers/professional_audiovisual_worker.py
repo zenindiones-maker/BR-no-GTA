@@ -41,6 +41,7 @@ from app.services.operational_efficiency_policy import (
 from app.services.render_media_materializer import materialize_scenes
 from app.services.source_window_validation_service import validate_source_window_usage
 from app.services.human_review_quality_gate import (
+    VOICE_B_CONTENT_PLANNING_WPM,
     validate_content_duration,
     validate_media_novelty,
     validate_text_overlay_contract,
@@ -227,7 +228,14 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
         or job.get("target_wpm")
         or 125.0
     )
-    estimated_content_seconds = total_words * 60.0 / target_wpm
+    narration_config = dict(job.get("narration") or {})
+    content_planning_wpm = (
+        VOICE_B_CONTENT_PLANNING_WPM
+        if narration_config.get("voice") == "pt-BR-ThalitaMultilingualNeural"
+        and narration_config.get("rate_locked") is True
+        else max(target_wpm, 1.0)
+    )
+    estimated_content_seconds = total_words * 60.0 / content_planning_wpm
     duration_gate = validate_content_duration(
         target_duration_seconds=target_seconds,
         content_supported_duration_seconds=estimated_content_seconds,
@@ -316,6 +324,8 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
         "section_count": len(sections),
         "minimum_words": minimum_words,
         "maximum_words": maximum_words,
+        "content_planning_wpm": content_planning_wpm,
+        "content_supported_duration_seconds": estimated_content_seconds,
         "audio_contract_fingerprint": audio_contract["CURRENT_AUDIO_CONTRACT_FINGERPRINT"],
     }
 
