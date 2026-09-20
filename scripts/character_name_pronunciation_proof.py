@@ -214,9 +214,18 @@ def select_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[str,Any]
     compatibility=root/"official-reference"
     compatibility.mkdir(parents=True,exist_ok=True)
     for name,identity in {"Jason":"character-jason","Lucia":"character-lucia"}.items():
-        occurrences_for_name=occurrences.get(name) or []
+        all_occurrences=occurrences.get(name) or []
+        occurrences_for_name=[
+            item for item in all_occurrences
+            if float(item.get("mean_probability") or 0.0) >= 0.30
+        ]
         if not occurrences_for_name:
-            selection[name]={"status":"PENDING_HUMAN","reason":"name not acoustically located in PT-BR dubbed trailer"}
+            selection[name]={
+                "status":"PENDING_HUMAN",
+                "reason":"no high-confidence acoustic occurrence in PT-BR dubbed trailer",
+                "reference_occurrence_total":len(all_occurrences),
+                "reference_occurrence_high_confidence":0,
+            }
             continue
         references=[]
         for index,item in enumerate(occurrences_for_name,1):
@@ -257,6 +266,9 @@ def select_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[str,Any]
             "synthesis_alias":winner["alias"],
             "locale":"pt-BR",
             "reference_occurrence_count":len(references),
+            "reference_occurrence_total":len(all_occurrences),
+            "excluded_low_confidence_occurrences":len(all_occurrences)-len(occurrences_for_name),
+            "minimum_asr_probability":0.30,
             "ranking":rankings,
             "best_distance":winner["mean_acoustic_distance"],
             "runner_up_distance":rankings[1]["mean_acoustic_distance"] if len(rankings)>1 else None,
@@ -375,9 +387,12 @@ def main()->int:
         "OFFICIAL_TRAILER_REFERENCE_MATERIALIZED":materialized["audio_probe"]["size_bytes"]>0,
         "NO_AUTOMATIC_PROMOTION":True,
         "CHARACTER_NAME_REFERENCE_SOURCE":True,
-        "CHARACTER_NAME_ACOUSTIC_REFERENCE":all(occurrences.get(name) for name in required),
+        "CHARACTER_NAME_ACOUSTIC_REFERENCE":all(
+            (selection.get(name) or {}).get("reference_occurrence_count",0)>0
+            for name in required
+        ),
         "VICE_CITY_POLICY_PRESERVED":only_vice,
-        "VIDEO_A_RERENDER":False,
+        "VIDEO_A_NOT_RERENDERED":True,
     }
 
     evidence={
