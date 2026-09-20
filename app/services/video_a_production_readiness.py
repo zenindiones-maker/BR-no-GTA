@@ -376,7 +376,7 @@ def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dic
         # capitalization scanning. Dates/numbers, sentence fragments ending in
         # Portuguese connectors, and one-letter/common sentence starters are
         # never pronunciation identities.
-        if re.fullmatch(r"\\d+(?:\\s+de)?",term,flags=re.I):
+        if re.fullmatch(r"\d+(?:\s+de)?",term,flags=re.I):
             continue
         if parts and parts[-1].casefold() in {"de","da","do","dos","das","e","em","para","por"}:
             continue
