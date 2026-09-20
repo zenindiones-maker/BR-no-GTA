@@ -45,6 +45,10 @@ NATURAL_RATE_MAX_PERCENT = 15
 DEFAULT_CONCURRENCY = 4
 MAX_RETRIES = 3
 CIRCUIT_BREAKER_FAILURES = 5
+SYNTHESIS_JOIN_POLICY_VERSION = "ptbr-fluency-join-v1"
+SECTION_JOIN_LEADING_MARGIN_SECONDS = 0.08
+SECTION_JOIN_TRAILING_MARGIN_SECONDS = 0.16
+MAX_PLANNED_SECTION_BOUNDARY_PAUSE_SECONDS = 0.55
 
 _WORD_RE = re.compile(r"[A-Za-zÀ-ÿ0-9]+(?:['’\-][A-Za-zÀ-ÿ0-9]+)?")
 _SPACE_RE = re.compile(r"\s+")
@@ -76,6 +80,7 @@ class ProviderResult:
     bytes_written: int
     timing: tuple[dict[str, Any], ...]
     wall_clock_seconds: float
+    metadata: dict[str, Any] | None = None
 
 
 class NarrationProvider(Protocol):
@@ -135,6 +140,11 @@ class EdgeTTSProvider:
             bytes_written=bytes_written,
             timing=tuple(timing),
             wall_clock_seconds=time.monotonic() - started,
+            metadata={
+                "join_policy": "single-request-continuous",
+                "inserted_silence_seconds": 0.0,
+                "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
+            },
         )
 
     async def synthesize_plan(self, *, plan_payload: dict[str, Any], voice: str, rate: str, output: Path) -> ProviderResult:
@@ -151,6 +161,14 @@ class EdgeTTSProvider:
             bytes_written=int(metrics["bytes_written"]),
             timing=tuple(metrics.get("timing") or ()),
             wall_clock_seconds=float(metrics["wall_clock_seconds"]),
+            metadata={
+                "join_policy": metrics.get("join_policy"),
+                "inserted_silence_seconds": float(metrics.get("inserted_silence_seconds") or 0.0),
+                "crossfade_seconds_total": float(metrics.get("crossfade_seconds_total") or 0.0),
+                "synthesis_group_count": int(metrics.get("synthesis_group_count") or 0),
+                "chunks": list(metrics.get("chunks") or []),
+                "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
+            },
         )
 
 
@@ -346,6 +364,7 @@ def segment_fingerprint(
             if segment.synthesis_plan else None
         ),
         "output_format": output_format,
+        "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
     }
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -746,6 +765,7 @@ async def _synthesize_segment_set(
                     "native_timing_available": native_available,
                     "native_duration_seconds": _native_duration(timing),
                     "provider_success": True,
+                    "provider_metadata": dict(result.metadata or {}),
                 }
                 cache_audio, metadata = cache.store(fingerprint, temp, metadata)
                 temp.unlink(missing_ok=True)
@@ -770,6 +790,7 @@ async def _synthesize_segment_set(
             "native_timing_available": bool(metadata.get("native_timing_available")),
             "native_duration_seconds": float(metadata.get("native_duration_seconds") or 0.0),
             "provider_success": bool(metadata.get("provider_success")),
+            "provider_metadata": dict(metadata.get("provider_metadata") or {}),
         }
         async with completed_lock:
             completed += 1
@@ -870,31 +891,184 @@ def _run(command: list[str], *, timeout: int = 3600) -> subprocess.CompletedProc
     return result
 
 
+def _assembly_window(record: dict[str, Any], *, first: bool, last: bool) -> tuple[float, float, list[dict[str, Any]]]:
+    duration = float(record.get("audio_duration_seconds") or 0.0)
+    native = list(record.get("timing") or [])
+    if duration <= 0:
+        raise NarrationError("assembly QA: segment duration missing")
+    if not native:
+        return 0.0, duration, []
+    first_word = min(float(item.get("offset_seconds") or 0.0) for item in native)
+    last_word = max(
+        float(item.get("offset_seconds") or 0.0) + float(item.get("duration_seconds") or 0.0)
+        for item in native
+    )
+    trim_start = 0.0 if first else max(0.0, first_word - SECTION_JOIN_LEADING_MARGIN_SECONDS)
+    trim_end = duration if last else min(duration, last_word + SECTION_JOIN_TRAILING_MARGIN_SECONDS)
+    if trim_end <= trim_start:
+        raise NarrationError("assembly QA: invalid section trim window")
+    assembled_timing = []
+    for item in native:
+        offset = float(item.get("offset_seconds") or 0.0) - trim_start
+        end = offset + float(item.get("duration_seconds") or 0.0)
+        if end <= 0 or offset >= trim_end - trim_start:
+            continue
+        assembled_timing.append({
+            **item,
+            "offset_seconds": max(0.0, offset),
+            "duration_seconds": max(
+                0.0,
+                min(trim_end - trim_start, end) - max(0.0, offset),
+            ),
+        })
+    return trim_start, trim_end, assembled_timing
+
+
 def _assemble_and_master(records: list[dict[str, Any]], bundle_root: Path, stats: dict[str, Any]) -> tuple[Path, float]:
+    """Decode each TTS section independently, trim provider edge padding, then concat PCM.
+
+    The rejected VIDEO A copied MP3 elementary streams together. That preserved
+    encoder/provider boundary padding and made 0.3-1.0 second tails audible at
+    section joins. This path never stream-copies MP3 frames into the master.
+    """
+    if not records:
+        raise NarrationError("assembly QA: no narration records")
     started = time.monotonic()
-    concat = bundle_root / "segments.concat.txt"
-    concat.write_text("\n".join(f"file '{Path(item['audio_path']).resolve()}'" for item in records) + "\n", encoding="utf-8")
-    raw_master = bundle_root / "narration-assembled.mp3"
-    stats["ffmpeg_audio_process_count"] += 1
-    _run([
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(raw_master),
-    ], timeout=1800)
-    if not _valid_mp3_header(raw_master):
-        raise NarrationError("assembly QA: concatenated MP3 invalid")
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+    filters: list[str] = []
+    labels: list[str] = []
+    for index, record in enumerate(records):
+        command.extend(["-i", str(record["audio_path"])])
+        trim_start, trim_end, assembled_timing = _assembly_window(
+            record,
+            first=index == 0,
+            last=index == len(records) - 1,
+        )
+        assembled_duration = trim_end - trim_start
+        record["assembly_trim_start_seconds"] = trim_start
+        record["assembly_trim_end_seconds"] = trim_end
+        record["assembly_trimmed_seconds"] = float(record["audio_duration_seconds"]) - assembled_duration
+        record["assembled_duration_seconds"] = assembled_duration
+        record["assembly_timing"] = assembled_timing
+        label = f"s{index}"
+        filters.append(
+            f"[{index}:a]atrim=start={trim_start:.6f}:end={trim_end:.6f},"
+            f"asetpts=PTS-STARTPTS[{label}]"
+        )
+        labels.append(f"[{label}]")
+    joined = "".join(labels) + f"concat=n={len(labels)}:v=0:a=1,"
+    joined += (
+        f"loudnorm=I={MASTER_TARGET_LUFS}:LRA=11:TP={MASTER_TRUE_PEAK_DB},"
+        "aresample=48000,aformat=channel_layouts=stereo[outa]"
+    )
+    filters.append(joined)
     master = bundle_root / "narration-master.flac"
+    command.extend([
+        "-filter_complex", ";".join(filters),
+        "-map", "[outa]",
+        "-c:a", "flac",
+        str(master),
+    ])
     stats["ffmpeg_audio_process_count"] += 1
-    _run([
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(raw_master),
-        "-af", f"loudnorm=I={MASTER_TARGET_LUFS}:LRA=11:TP={MASTER_TRUE_PEAK_DB}",
-        "-ar", "48000", "-ac", "2", "-c:a", "flac", str(master),
-    ], timeout=2400)
+    _run(command, timeout=2400)
     stats["master_normalization_count"] += 1
     stats["mastering_wall_clock"] += time.monotonic() - started
     if not master.is_file() or master.stat().st_size <= 0:
         raise NarrationError("mastering QA: narration master missing")
     return master, time.monotonic() - started
+
+
+def _record_join_edges(record: dict[str, Any]) -> tuple[float, float] | None:
+    timing = list(record.get("assembly_timing") or record.get("timing") or [])
+    duration = float(record.get("assembled_duration_seconds") or record.get("audio_duration_seconds") or 0.0)
+    if not timing or duration <= 0:
+        return None
+    first = min(float(item.get("offset_seconds") or 0.0) for item in timing)
+    last = max(
+        float(item.get("offset_seconds") or 0.0) + float(item.get("duration_seconds") or 0.0)
+        for item in timing
+    )
+    return max(0.0, first), max(0.0, duration - last)
+
+
+def _narration_fluency_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    joins: list[dict[str, Any]] = []
+    for index in range(len(records) - 1):
+        left = _record_join_edges(records[index])
+        right = _record_join_edges(records[index + 1])
+        if left is None or right is None:
+            joins.append({
+                "left_segment_id": records[index].get("segment_id"),
+                "right_segment_id": records[index + 1].get("segment_id"),
+                "measurable": False,
+            })
+            continue
+        pause = left[1] + right[0]
+        joins.append({
+            "left_segment_id": records[index].get("segment_id"),
+            "right_segment_id": records[index + 1].get("segment_id"),
+            "measurable": True,
+            "left_post_word_tail_seconds": left[1],
+            "right_pre_word_lead_seconds": right[0],
+            "planned_boundary_pause_seconds": pause,
+        })
+
+    plans = [
+        dict(item.get("synthesis_plan") or {})
+        for item in records
+        if isinstance(item.get("synthesis_plan"), dict)
+    ]
+    foreign_spans = [
+        span
+        for plan in plans
+        for span in (plan.get("spans") or [])
+        if isinstance(span, dict) and str(span.get("locale") or "pt-BR") != "pt-BR"
+    ]
+    non_vice_foreign = [
+        span for span in foreign_spans
+        if span.get("pronunciation_identity") != "vice-city"
+    ]
+    mixed_provider_rows = [
+        dict(item.get("provider_metadata") or {})
+        for item in records
+        if int((item.get("synthesis_plan") or {}).get("foreign_span_count") or 0) > 0
+    ]
+    mixed_join_ok = all(
+        row.get("join_policy") == "same-locale-coalesced-safe-margin-acrossfade"
+        and float(row.get("inserted_silence_seconds") or 0.0) == 0.0
+        for row in mixed_provider_rows
+    )
+    measurable = [row for row in joins if row.get("measurable")]
+    max_pause = max(
+        (float(row["planned_boundary_pause_seconds"]) for row in measurable),
+        default=0.0,
+    )
+    all_joins_measurable = len(measurable) == len(joins)
+    no_unplanned_pauses = all_joins_measurable and max_pause <= MAX_PLANNED_SECTION_BOUNDARY_PAUSE_SECONDS
+    no_chunk_boundaries = no_unplanned_pauses and all(
+        float(item.get("assembly_trimmed_seconds") or 0.0) >= 0.0
+        for item in records
+    )
+    continuous_ptbr = not non_vice_foreign and mixed_join_ok
+    passed = no_chunk_boundaries and no_unplanned_pauses and continuous_ptbr
+    return {
+        "status": "PASS" if passed else "FAIL",
+        "NARRATION_FLUENCY": "PASS" if passed else "FAIL",
+        "NO_AUDIBLE_CHUNK_BOUNDARIES": "PASS" if no_chunk_boundaries else "FAIL",
+        "NO_UNPLANNED_PAUSES": "PASS" if no_unplanned_pauses else "FAIL",
+        "CONTINUOUS_PTBR_PROSODY": "PASS" if continuous_ptbr else "FAIL",
+        "max_planned_section_boundary_pause_seconds": max_pause,
+        "allowed_section_boundary_pause_seconds": MAX_PLANNED_SECTION_BOUNDARY_PAUSE_SECONDS,
+        "measured_join_count": len(measurable),
+        "join_count": len(joins),
+        "joins": joins,
+        "foreign_span_count": len(foreign_spans),
+        "non_vice_city_foreign_span_count": len(non_vice_foreign),
+        "mixed_locale_segment_count": len(mixed_provider_rows),
+        "mixed_locale_join_policy_ok": mixed_join_ok,
+        "section_join_policy": "native-word-edge-trim-decoded-pcm-concat",
+        "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
+    }
 
 
 def _probe_master(master: Path, stats: dict[str, Any]) -> tuple[dict[str, Any], float]:
@@ -940,7 +1114,13 @@ def _timing_and_sections(
     master_duration: float,
     sections: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    basis = [max(0.001, float(item.get("audio_duration_seconds") or 0.0)) for item in records]
+    basis = [
+        max(
+            0.001,
+            float(item.get("assembled_duration_seconds") or item.get("audio_duration_seconds") or 0.0),
+        )
+        for item in records
+    ]
     total_basis = sum(basis)
     scale = master_duration / total_basis
     cursor = 0.0
@@ -950,7 +1130,7 @@ def _timing_and_sections(
         scaled_duration = audio_duration * scale
         start = cursor
         end = start + scaled_duration
-        native = list(record.get("timing") or [])
+        native = list(record.get("assembly_timing") or record.get("timing") or [])
         provider_words: list[dict[str, Any]] = []
         if native:
             native_scale = scaled_duration / max(0.001, audio_duration)
@@ -1170,6 +1350,11 @@ async def generate_narration_bundle_async(
     metrics = _master_decode_metrics(master, stats)
     stats["qa_wall_clock"] += time.monotonic() - qa_started
     observed_wpm = total_words * 60.0 / master_duration
+    fluency = _narration_fluency_metrics(records)
+    strict_fluency = (
+        provider.provider_id == PROVIDER_ID
+        and voice == PRONUNCIATION_DEFAULT_VOICE
+    )
     checks = {
         "file_exists": master.is_file() and master.stat().st_size > 0,
         "audio_stream": any(stream.get("codec_type") == "audio" for stream in probe.get("streams", [])),
@@ -1182,6 +1367,18 @@ async def generate_narration_bundle_async(
         "silence": float(metrics["longest_silence_seconds"]) <= 6.0,
         "master_normalization_once": stats["master_normalization_count"] == 1,
         "failed_segments_zero": not stats["failed_segments"],
+        "narration_fluency": (
+            not strict_fluency or fluency["NARRATION_FLUENCY"] == "PASS"
+        ),
+        "no_audible_chunk_boundaries": (
+            not strict_fluency or fluency["NO_AUDIBLE_CHUNK_BOUNDARIES"] == "PASS"
+        ),
+        "no_unplanned_pauses": (
+            not strict_fluency or fluency["NO_UNPLANNED_PAUSES"] == "PASS"
+        ),
+        "continuous_ptbr_prosody": (
+            not strict_fluency or fluency["CONTINUOUS_PTBR_PROSODY"] == "PASS"
+        ),
     }
     status = "PASS" if all(checks.values()) else "FAIL"
     timing, section_results = _timing_and_sections(records, master_duration=master_duration, sections=sections)
@@ -1244,6 +1441,7 @@ async def generate_narration_bundle_async(
         "master_path": str(master),
         "sha256": _sha256(master),
         "master_metrics": metrics,
+        "fluency": fluency,
         "checks": checks,
         "calibration": calibration,
         "voice_profile": profile,
@@ -1274,6 +1472,10 @@ async def generate_narration_bundle_async(
     }
     qa_path = bundle_root / "narration-qa.json"
     qa_path.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
+    (bundle_root / "narration-fluency.json").write_text(
+        json.dumps(fluency, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     manifest_segments = []
     for item in records:
         rel_audio = str(Path(item["audio_path"]).relative_to(bundle_root))

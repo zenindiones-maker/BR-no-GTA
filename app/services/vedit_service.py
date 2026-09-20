@@ -1096,22 +1096,26 @@ def create_edit_plan(
                     )
                 )
 
-        # Graphics Director.
-        graphics = _call_core(
-            build_graphics_plan,
-            {
-                "narrative_role": narrative_role,
-                "start_seconds": current_time,
-                "duration_seconds": duration,
-                "title": title,
-                "narration": narration,
-                "visual_type": scene.get(
-                    "visual_type"
-                ),
-                "objective": objective,
-                "enabled": policy.enable_title_card,
-            },
-        )
+        # Graphics Director. Editorial role/title metadata is not visual output.
+        # Keep the call structurally unreachable unless graphics were explicitly
+        # enabled by policy; _call_core filters unknown kwargs, so passing an
+        # "enabled" hint alone would not be a safe off-switch.
+        graphics = ()
+        if policy.enable_title_card:
+            graphics = _call_core(
+                build_graphics_plan,
+                {
+                    "narrative_role": narrative_role,
+                    "start_seconds": current_time,
+                    "duration_seconds": duration,
+                    "title": title,
+                    "narration": narration,
+                    "visual_type": scene.get(
+                        "visual_type"
+                    ),
+                    "objective": objective,
+                },
+            )
 
         # Graphics Director.
         #

@@ -343,8 +343,9 @@ def _edge_synthesis_groups(plan: SynthesisPlan) -> list[dict[str, Any]]:
     return groups
 
 
-_EDGE_INTER_GROUP_LEADING_PAD_SECONDS = 0.035
-_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS = 0.055
+_EDGE_INTER_GROUP_LEADING_PAD_SECONDS = 0.100
+_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS = 0.140
+_EDGE_INTER_GROUP_CROSSFADE_SECONDS = 0.060
 
 
 def _edge_trim_window(
@@ -392,13 +393,12 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
     validate_provider_plan(plan,caps)
     output.parent.mkdir(parents=True,exist_ok=True)
     started=time.monotonic()
-    timing=[]
     rows=[]
     with tempfile.TemporaryDirectory(prefix="pronunciation-",dir=str(output.parent)) as tmp:
         root=Path(tmp)
-        cumulative=0.0
         groups=_edge_synthesis_groups(plan)
         trim_windows=[]
+        local_timings=[]
         for index,group in enumerate(groups):
             chunk=root/f"{index:03d}.mp3"
             communicator=edge_tts.Communicate(
@@ -431,14 +431,7 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
             )
             effective_duration=trim_end-trim_start
             trim_windows.append((trim_start,trim_end))
-            for item in local:
-                timing.append({
-                    **item,
-                    "offset_seconds":cumulative+max(
-                        0.0,
-                        float(item["offset_seconds"])-trim_start,
-                    ),
-                })
+            local_timings.append(local)
             rows.append({
                 "index":index,
                 "locale":group["locale"],
@@ -451,7 +444,29 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
                 "trimmed_padding_seconds":raw_duration-effective_duration,
                 "bytes":chunk.stat().st_size,
             })
-            cumulative+=effective_duration
+
+        join_durations=[]
+        for index in range(1,len(rows)):
+            join_durations.append(min(
+                _EDGE_INTER_GROUP_CROSSFADE_SECONDS,
+                float(rows[index-1]["duration_seconds"])/4.0,
+                float(rows[index]["duration_seconds"])/4.0,
+            ))
+
+        timing=[]
+        cumulative=0.0
+        for index,(row,local,(trim_start,trim_end)) in enumerate(zip(rows,local_timings,trim_windows)):
+            if index>0:
+                cumulative=max(0.0,cumulative-join_durations[index-1])
+            group_start=cumulative
+            for item in local:
+                shifted=max(0.0,float(item["offset_seconds"])-trim_start)
+                timing.append({
+                    **item,
+                    "offset_seconds":group_start+shifted,
+                })
+            row["output_start_seconds"]=group_start
+            cumulative=group_start+float(row["duration_seconds"])
 
         ffmpeg_command=[
             "ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y",
@@ -459,17 +474,22 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
         for idx in range(len(groups)):
             ffmpeg_command.extend(["-i",str(root/f"{idx:03d}.mp3")])
         filters=[]
-        labels=[]
         for idx,(trim_start,trim_end) in enumerate(trim_windows):
-            label=f"a{idx}"
             filters.append(
                 f"[{idx}:a]atrim=start={trim_start:.6f}:end={trim_end:.6f},"
-                f"asetpts=PTS-STARTPTS[{label}]"
+                f"asetpts=PTS-STARTPTS[a{idx}]"
             )
-            labels.append(f"[{label}]")
-        filters.append(
-            "".join(labels)+f"concat=n={len(groups)}:v=0:a=1[outa]"
-        )
+        if len(groups)==1:
+            filters.append("[a0]anull[outa]")
+        else:
+            current="[a0]"
+            for idx in range(1,len(groups)):
+                target="[outa]" if idx==len(groups)-1 else f"[x{idx}]"
+                filters.append(
+                    f"{current}[a{idx}]acrossfade=d={join_durations[idx-1]:.6f}:"
+                    f"c1=tri:c2=tri{target}"
+                )
+                current=target
         ffmpeg_command.extend([
             "-filter_complex",";".join(filters),
             "-map","[outa]",
@@ -492,10 +512,12 @@ async def synthesize_edge_plan(plan: SynthesisPlan, *, voice: str, rate: str, pi
         "foreign_span_count":plan.foreign_span_count,
         "timing":timing,"chunks":rows,"provider_capabilities":caps.to_dict(),
         "canonical_text_preserved":plan.canonical_text_preserved,
-        "join_policy":"same-locale-coalesced-boundary-padding-trimmed-concat",
+        "join_policy":"same-locale-coalesced-safe-margin-acrossfade",
         "inserted_silence_seconds":0.0,
         "trimmed_padding_seconds":sum(float(item["trimmed_padding_seconds"]) for item in rows),
         "inter_group_leading_pad_seconds":_EDGE_INTER_GROUP_LEADING_PAD_SECONDS,
         "inter_group_trailing_pad_seconds":_EDGE_INTER_GROUP_TRAILING_PAD_SECONDS,
-        "prosody_continuity_policy":"same-locale spans use one request; locale-change chunks have provider padding trimmed before concat",
+        "crossfade_seconds_per_join":join_durations,
+        "crossfade_seconds_total":sum(join_durations),
+        "prosody_continuity_policy":"same-locale aliases stay in one PT-BR request; only Vice City may isolate en-US, with safe word margins and silence-only crossfade",
     }

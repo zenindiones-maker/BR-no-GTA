@@ -337,3 +337,34 @@ class NarrationPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_fluency_gate_trims_provider_tails_and_rejects_non_vice_foreign_span():
+    from app.services.narration_pipeline import _narration_fluency_metrics
+    clean_plan={"foreign_span_count":0,"spans":[{"locale":"pt-BR","pronunciation_identity":None}]}
+    records=[
+        {
+            "segment_id":"a","audio_duration_seconds":2.0,"assembled_duration_seconds":1.20,
+            "assembly_timing":[{"offset_seconds":0.05,"duration_seconds":1.0}],
+            "assembly_trimmed_seconds":0.8,"synthesis_plan":clean_plan,"provider_metadata":{},
+        },
+        {
+            "segment_id":"b","audio_duration_seconds":2.0,"assembled_duration_seconds":1.25,
+            "assembly_timing":[{"offset_seconds":0.04,"duration_seconds":1.05}],
+            "assembly_trimmed_seconds":0.75,"synthesis_plan":clean_plan,"provider_metadata":{},
+        },
+    ]
+    result=_narration_fluency_metrics(records)
+    assert result["status"]=="PASS"
+    assert result["max_planned_section_boundary_pause_seconds"] < 0.55
+
+    bad=[dict(records[0]),dict(records[1])]
+    bad[1]["synthesis_plan"]={
+        "foreign_span_count":1,
+        "spans":[{"locale":"en-US","pronunciation_identity":"character-jason"}],
+    }
+    bad[1]["provider_metadata"]={
+        "join_policy":"same-locale-coalesced-safe-margin-acrossfade",
+        "inserted_silence_seconds":0.0,
+    }
+    assert _narration_fluency_metrics(bad)["CONTINUOUS_PTBR_PROSODY"]=="FAIL"

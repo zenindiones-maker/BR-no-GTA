@@ -131,8 +131,8 @@ def test_language_boundary_trim_removes_provider_padding_without_clipping_words(
     boundaries=[{"offset_seconds":0.05,"duration_seconds":0.075},{"offset_seconds":1.3625,"duration_seconds":0.2125}]
     start,end=_edge_trim_window(boundaries,1.92,trim_leading=False,trim_trailing=True)
     assert start==0.0
-    assert 1.62 < end < 1.66
+    assert 1.70 < end < 1.73
     vice=[{"offset_seconds":0.0875,"duration_seconds":0.4125},{"offset_seconds":0.5,"duration_seconds":0.4}]
     start2,end2=_edge_trim_window(vice,1.248,trim_leading=True,trim_trailing=False)
-    assert 0.04 < start2 < 0.06
+    assert start2==0.0
     assert end2==1.248
