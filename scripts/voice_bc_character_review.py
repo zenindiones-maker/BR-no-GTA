@@ -64,10 +64,19 @@ def find_entry(payload:dict[str,Any],identity:str)->dict[str,Any]:
     raise RuntimeError(f"missing lexicon entry: {identity}")
 
 def script_inventory(text:str)->list[str]:
-    return [name for name in KNOWN_NAMES if re.search(r"(?<!\\w)"+re.escape(name)+r"(?!\\w)",text,re.I)]
+    return [name for name in KNOWN_NAMES if re.search(r"(?<!\w)"+re.escape(name)+r"(?!\w)",text,re.I)]
 
 def materialize_reference(root:Path)->tuple[Path,dict[str,Any]]:
     root.mkdir(parents=True,exist_ok=True)
+    source=root/"rockstar-trailer2.mp4"
+    audio=root/"rockstar-trailer2-16k.wav"
+    if source.is_file() and audio.is_file():
+        return audio,{
+            "video_file":str(source),
+            "video_sha256":sha256(source),
+            "audio_probe":probe(audio),
+            "checkpoint_reuse":True,
+        }
     result=YtDlpMediaIngestion().ingest(ROCKSTAR_TRAILER2_URL,root/"rockstar-trailer2")
     if result.status is not IngestionStatus.DOWNLOAD_OK or result.output_path is None:
         raise RuntimeError(f"Rockstar Trailer 2 materialization failed: {result.status.value}:{result.reason}")
@@ -79,7 +88,7 @@ def materialize_reference(root:Path)->tuple[Path,dict[str,Any]]:
     )
     if proc.returncode!=0:
         raise RuntimeError("Rockstar Trailer 2 audio extraction failed")
-    return audio,{"video_file":str(source),"video_sha256":sha256(source),"audio_probe":probe(audio)}
+    return audio,{"video_file":str(source),"video_sha256":sha256(source),"audio_probe":probe(audio),"checkpoint_reuse":False}
 
 def transcribe_words(audio:Path)->list[dict[str,Any]]:
     from faster_whisper import WhisperModel
@@ -218,7 +227,10 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
             raise RuntimeError(f"no official Trailer 2 acoustic occurrence resolved for {name}")
         for idx,item in enumerate(usable,1):
             target=root/"internal-reference"/"occurrences"/f"{name.lower()}-{idx:02d}.wav"
-            item["probe"]=extract_occurrence(audio,target,float(item["start"]),float(item["end"]))
+            if target.is_file():
+                item["probe"]=probe(target)
+            else:
+                item["probe"]=extract_occurrence(audio,target,float(item["start"]),float(item["end"]))
             refs.append(target)
         ranking=[]
         for alias in candidates:
@@ -228,13 +240,15 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
                 safe=normalize(alias) or "candidate"
                 mp3=root/"candidate-audio"/name.lower()/f"{safe}-{label}.mp3"
                 wav=root/"candidate-audio"/name.lower()/f"{safe}-{label}.wav"
-                asyncio.run(synthesize_isolated(alias,voice,mp3,performance))
-                proc=subprocess.run(
-                    ["ffmpeg","-nostdin","-y","-v","error","-i",str(mp3),"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",str(wav)],
-                    capture_output=True,text=True,timeout=120,
-                )
-                if proc.returncode!=0:
-                    raise RuntimeError(f"candidate wav conversion failed for {name}/{label}")
+                if not mp3.is_file():
+                    asyncio.run(synthesize_isolated(alias,voice,mp3,performance))
+                if not wav.is_file():
+                    proc=subprocess.run(
+                        ["ffmpeg","-nostdin","-y","-v","error","-i",str(mp3),"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",str(wav)],
+                        capture_output=True,text=True,timeout=120,
+                    )
+                    if proc.returncode!=0:
+                        raise RuntimeError(f"candidate wav conversion failed for {name}/{label}")
                 distances=[acoustic_distance(reference,wav) for reference in refs]
                 per_voice[label]=round(sum(distances)/len(distances),6)
                 all_dist.extend(distances)
@@ -261,8 +275,8 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
     return selection,runtime
 
 def sample_set(script:str)->list[tuple[str,str,str]]:
-    sentences=[s.strip() for s in re.split(r"(?<=[.!?])\\s+",script) if s.strip()]
-    pair=next((s for s in sentences if re.search(r"\\bJason\\b",s,re.I) and re.search(r"\\bLucia\\b",s,re.I)),None)
+    sentences=[s.strip() for s in re.split(r"(?<=[.!?])\s+",script) if s.strip()]
+    pair=next((s for s in sentences if re.search(r"\bJason\b",s,re.I) and re.search(r"\bLucia\b",s,re.I)),None)
     emotional=next((s for s in reversed(sentences) if "coment" in s.casefold() or "?" in s),None)
     natural=next((s for s in sentences if s.startswith("E por que esse assunto importa hoje")),None)
     if not pair or not emotional:
@@ -299,9 +313,15 @@ def main()->int:
         raise RuntimeError("B/C technical identity mismatch")
 
     audio,materialized=materialize_reference(root/"internal-reference")
-    words=transcribe_words(audio)
+    asr_path=root/"internal-reference"/"asr-words.json"
+    if asr_path.is_file():
+        words=json.loads(asr_path.read_text(encoding="utf-8"))
+        asr_checkpoint_reuse=True
+    else:
+        words=transcribe_words(audio)
+        asr_path.write_text(json.dumps(words,ensure_ascii=False,indent=2),encoding="utf-8")
+        asr_checkpoint_reuse=False
     occurrences=discover_occurrences(words)
-    (root/"internal-reference"/"asr-words.json").write_text(json.dumps(words,ensure_ascii=False,indent=2),encoding="utf-8")
     selection,runtime=select_shared_aliases(payload,occurrences,audio,root)
     runtime_path=root/"runtime-character-lexicon.json"
     runtime_path.write_text(json.dumps(runtime,ensure_ascii=False,indent=2),encoding="utf-8")
@@ -398,6 +418,11 @@ def main()->int:
         "review_casting":payload["review_casting"],
         "speech_performance_plan":performance,
         "script_sha256":digest,"character_inventory":inventory,
+        "checkpoint_reuse":{
+            "official_reference":bool(materialized.get("checkpoint_reuse")),
+            "asr_words":asr_checkpoint_reuse,
+            "candidate_audio":True,
+        },
         "official_acoustic_occurrences":occurrences,
         "shared_alias_selection":selection,
         "runtime_candidate_lexicon_version":runtime["version"],

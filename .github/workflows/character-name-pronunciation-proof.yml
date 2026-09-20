@@ -63,12 +63,23 @@ jobs:
           python -m pip install "pytest==9.1.1" "python-dotenv==1.2.1" "edge-tts==7.2.8"             "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
           ffmpeg -version | head -n1
 
+      - name: Restore validated official acoustic checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10597480517"
+          run-id: "35485777572"
+          github-token: ${{ github.token }}
+          path: runtime/voice-bc-review
+          merge-multiple: true
+
       - name: Setup Deno for canonical PO Token provider
+        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
       - name: Setup canonical YouTube PO Token provider
+        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
@@ -83,6 +94,7 @@ jobs:
           echo "YTDLP_PO_TOKEN_BASE_URL=http://127.0.0.1:4416" >> "$GITHUB_ENV"
 
       - name: Prepare canonical YouTube cookies
+        if: ${{ hashFiles('runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
@@ -101,6 +113,15 @@ jobs:
           github-token: ${{ github.token }}
           path: runtime/product-source
           merge-multiple: true
+
+      - name: Confirm acoustic checkpoint reuse
+        run: |
+          set -euo pipefail
+          test -s runtime/voice-bc-review/internal-reference/rockstar-trailer2-16k.wav
+          test -s runtime/voice-bc-review/internal-reference/asr-words.json
+          test -s runtime/voice-bc-review/runtime-character-lexicon.json
+          echo "ROCKSTAR_REFERENCE_CHECKPOINT_REUSE=YES"
+          echo "ASR_CHECKPOINT_REUSE=YES"
 
       - name: Focused B/C policy tests
         run: |

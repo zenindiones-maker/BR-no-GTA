@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from app.services.pronunciation_service import _edge_synthesis_groups, resolve_synthesis_plan
+from scripts.voice_bc_character_review import sample_set, script_inventory
 
 ROOT=Path(__file__).resolve().parents[1]
 CANDIDATE=ROOT/"config"/"pronunciation_character_aliases.bc-review.json"
@@ -60,3 +61,16 @@ def test_candidate_is_not_implicitly_promoted_to_production():
     ids={x["identity"] for x in load(PRODUCTION)["entries"]}
     assert "character-jason" not in ids
     assert "character-lucia" not in ids
+
+def test_sample_parser_finds_real_pair_and_conversational_sentence():
+    text=(
+        "E por que esse assunto importa hoje, e não mês que vem? "
+        "A Rockstar descreve Jason e Lucia sendo arrastados para uma conspiração. "
+        "E responde aqui nos comentários: o que você acha?"
+    )
+    assert script_inventory(text)==["Jason","Lucia"]
+    samples=sample_set(text)
+    assert len(samples)==6
+    assert samples[3][2]=="jason-lucia"
+    assert "Jason" in samples[3][1] and "Lucia" in samples[3][1]
+    assert samples[5][2]=="canonical-emotional-conversational"

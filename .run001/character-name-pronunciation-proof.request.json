@@ -1,10 +1,13 @@
 {
   "mission": "character-name-pronunciation-rockstar-trailer2-bc-v1",
   "base_head": "7874a4e4162ebddbe01ea4a4b90de60a2871b5a2",
-  "requested_at": "2026-09-20T03:04:00Z",
+  "requested_at": "2026-09-20T03:12:00Z",
   "video_a_rerender": false,
   "automatic_promotion": false,
-  "good_voices": ["B", "C"],
+  "good_voices": [
+    "B",
+    "C"
+  ],
   "official_voice": "B",
   "challenger_voice": "C",
   "voice_identity": {
@@ -18,7 +21,10 @@
   "canonical_product_artifact_id": 10589535732,
   "canonical_product_run_id": 35458162169,
   "script_sha256": "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea",
-  "current_script_character_inventory": ["Jason", "Lucia"],
+  "current_script_character_inventory": [
+    "Jason",
+    "Lucia"
+  ],
   "candidate_lexicon_version": "2026.09.20.1-rockstar-trailer2-bc",
   "reference_source": "ROCKSTAR_OFFICIAL_TRAILER_2",
   "reference_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
@@ -27,5 +33,9 @@
   "speech_performance_plan": "character-review-neutral-v1",
   "human_voice_final_review": "PENDING",
   "reference_clips_delivery": "INTERNAL_ONLY",
-  "proof_attempt": 10
+  "proof_attempt": 11,
+  "continuation_head": "efd38b0cf9763fa6993f6379166892ff3e9fb31e",
+  "reuse_acoustic_artifact_id": 10597480517,
+  "reuse_acoustic_run_id": 35485777572,
+  "retry_reason": "Fix escaped canonical-script regex only; reuse official Rockstar Trailer 2 reference, ASR and B/C candidate audio checkpoint."
 }
