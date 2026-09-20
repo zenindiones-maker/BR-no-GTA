@@ -84,64 +84,92 @@ def script_text(candidate:dict[str,Any])->str:
 
 
 def _strip_term(raw:str)->str:
-    parts=str(raw or "").strip(" \t\r\n.,:;!?“”\"").split()
-    while parts and parts[0].casefold() in _LEADING_STOP:
-        parts.pop(0)
-    while parts and re.fullmatch(r"\d+",parts[-1]):
-        parts.pop()
-    return " ".join(parts).strip(" \t\r\n.,:;!?“”\"")
+    return str(raw or "").strip(" \t\r\n.,:;!?“”\\\"")
 
 
-def _seed_terms(candidate:dict[str,Any],text:str)->set[str]:
-    raw:set[str]=set()
+def _media_identity_seeds(candidate:dict[str,Any],text:str)->dict[str,dict[str,Any]]:
+    seeds:dict[str,dict[str,Any]]={}
     for item in candidate.get("media_assets") or []:
-        if isinstance(item,dict):
-            label=_strip_term(re.sub(r"\s+\d+$","",str(item.get("label") or "")))
-            if label:
-                raw.add(label)
-    for claim in candidate.get("claims") or []:
-        if isinstance(claim,dict):
-            for match in _CAP_RE.findall(str(claim.get("statement") or "")):
-                value=_strip_term(match)
-                if value:
-                    raw.add(value)
-    for match in _CAP_RE.findall(text):
-        value=_strip_term(match)
-        if value:
-            raw.add(value)
-    for literal in ("GTA 6","GTA VI","Vice City","Leonida","Leonida Keys","Liberty City"):
-        if re.search(r"(?<!\w)"+re.escape(literal)+r"(?!\w)",text,re.I):
-            raw.add(literal)
-    out=set()
-    lowtext=text.casefold()
-    for term in raw:
-        if term in _GENERIC_STOP or len(term)<2:
+        if not isinstance(item,dict):
             continue
-        n=_norm(term)
-        if not n or n not in _norm(text):
+        term=_strip_term(re.sub(r"\s+\d+$","",str(item.get("label") or "")))
+        if not term or _norm(term) not in _norm(text):
             continue
-        tokens=term.split()
-        if len(tokens)==1 and term[0].isupper():
-            # Keep single tokens only when repeated, all-caps/digit-bearing, or
-            # sourced from a concrete media label.
-            occurrences=len(re.findall(r"(?<!\w)"+re.escape(term)+r"(?!\w)",text,re.I))
-            media_hit=any(_norm(term) in _norm(str(x.get("label") or "")) for x in candidate.get("media_assets") or [] if isinstance(x,dict))
-            if occurrences<2 and not media_hit and not any(ch.isdigit() for ch in term) and not term.isupper():
+        tags={_norm(x).replace("-"," ") for x in item.get("semantic_tags") or []}
+        category="PLACE" if "world" in tags or any(
+            token in _norm(term)
+            for token in ("vice city","leonida keys","port gellhorn","grassrivers","ambrosia","mount kalaga")
+        ) else "CHARACTER"
+        aliases=[]
+        if category=="CHARACTER":
+            first=term.split()[0]
+            if first!=term and re.search(r"(?<!\w)"+re.escape(first)+r"(?!\w)",text,re.I):
+                aliases.append(first)
+        if _norm(term)=="mount kalaga national park" and re.search(r"(?<!\w)Mount Kalaga(?!\w)",text,re.I):
+            aliases.append("Mount Kalaga")
+        if _norm(term)=="leonida keys" and re.search(r"(?<!\w)Keys(?!\w)",text,re.I):
+            aliases.append("Keys")
+        seeds[_norm(term)]={
+            "term":term,
+            "aliases":aliases,
+            "category":category,
+            "sources":["candidate.media_assets"],
+        }
+    return seeds
+
+
+def _capitalized_script_candidates(text:str)->list[str]:
+    # Work sentence-by-sentence so punctuation can never leak into a term.
+    token=r"(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ0-9'’.-]*|[A-Z0-9][A-Z0-9.-]{1,}|[A-Za-z]+[0-9][A-Za-z0-9.-]*)"
+    connector=r"(?:de|da|do|dos|das|and|again|National|Park)"
+    pattern=re.compile(rf"(?<!\w){token}(?:\s+(?:{token}|{connector})){{0,5}}")
+    stop_single={
+        "A","O","As","Os","Um","Uma","No","Na","Nos","Nas","Em","E","Mas","Isso","Essa","Esse",
+        "Aqui","Quando","Para","Por","De","Do","Da","Agora","Ainda","Ao","Ela","Elas","Ele","Eles",
+        "Entre","Este","Não","Outro","Outra","Personagens","Pode","Se","Só","Também","Trilha",
+    }
+    out=[]
+    for sentence in [x.strip() for x in re.split(r"(?<=[.!?])\s+",text) if x.strip()]:
+        for match in pattern.finditer(sentence):
+            term=_strip_term(match.group(0))
+            parts=term.split()
+            while parts and parts[0] in {"A","O","As","Os","Um","Uma","No","Na","Nos","Nas","Em","E","Mas","De","Do","Da"}:
+                parts.pop(0)
+            term=" ".join(parts)
+            if not term:
                 continue
-        out.add(term)
-    # Remove short terms fully contained in a more specific same-kind term, but
-    # preserve names that also occur independently in the script.
-    cleaned=set(out)
-    for term in list(out):
-        for other in out:
-            if term==other:
+            if len(term.split())==1 and term in stop_single:
                 continue
-            if _norm(term) in _norm(other) and len(other.split())>len(term.split()):
-                standalone=len(re.findall(r"(?<!\w)"+re.escape(term)+r"(?!\w)",text,re.I))
-                if standalone<=1:
-                    cleaned.discard(term)
-                    break
-    return cleaned
+            # A one-token sentence starter is too ambiguous unless it is
+            # acronym-like. Structured media terms are added separately.
+            if match.start()==0 and len(term.split())==1 and not (
+                term.isupper() or any(ch.isdigit() for ch in term)
+            ):
+                continue
+            out.append(term)
+    return out
+
+
+def _special_script_terms(text:str)->list[tuple[str,str]]:
+    candidates=(
+        ("Grand Theft Auto VI: The Album","GAME_SPECIFIC_TERM"),
+        ("Grand Theft Auto VI","GAME_SPECIFIC_TERM"),
+        ("GTA VI","GAME_SPECIFIC_TERM"),
+        ("GTA 6","GAME_SPECIFIC_TERM"),
+        ("Vintage Vice City Pack","BRAND"),
+        ("Vintage Vice City","BRAND"),
+        ("Extended Look","GAME_SPECIFIC_TERM"),
+        ("Only Raw Records","ORGANIZATION"),
+        ("Atlantic Records","ORGANIZATION"),
+        ("Guarda Costeira","ORGANIZATION"),
+        ("Penitenciária de Leonida","PLACE"),
+        ("Liberty City","PLACE"),
+        ("Flórida","PLACE"),
+    )
+    return [
+        (term,category) for term,category in candidates
+        if re.search(r"(?<!\w)"+re.escape(term)+r"(?!\w)",text,re.I)
+    ]
 
 
 def _category(term:str,candidate:dict[str,Any])->str:
@@ -150,29 +178,85 @@ def _category(term:str,candidate:dict[str,Any])->str:
         return "GAME_SPECIFIC_TERM"
     if term.isupper() or (any(ch.isdigit() for ch in term) and any(ch.isalpha() for ch in term)):
         return "ACRONYM"
-    if any(token in n for token in ("records","rockstar games","atlantic records")):
+    if any(token in n for token in ("records","guarda costeira")):
         return "ORGANIZATION"
-    if n in {"rockstar","playstation","xbox","youtube"} or "pack" in n:
+    if n in {"rockstar","rockstar games","playstation","xbox","youtube"} or "pack" in n:
         return "BRAND"
-    if any(token in n for token in ("city","keys","port ","grassrivers","ambrosia","mount ","kalaga","leonida","penitenciaria")):
-        return "REGION" if n in {"leonida","leonida keys","grassrivers","ambrosia"} or "mount" in n else "PLACE"
-    labels={
-        _norm(re.sub(r"\s+\d+$","",str(item.get("label") or ""))):item
-        for item in candidate.get("media_assets") or [] if isinstance(item,dict)
-    }
-    if n in labels:
-        tags={_norm(x) for x in labels[n].get("semantic_tags") or []}
-        if "world" in tags:
-            return "PLACE"
-        return "CHARACTER"
+    if any(token in n for token in ("city","keys","port gellhorn","grassrivers","ambrosia","mount kalaga","leonida","penitenciaria","florida")):
+        return "REGION" if n in {"leonida","leonida keys","grassrivers","ambrosia"} or "mount kalaga" in n else "PLACE"
     if any(suffix in n for suffix in ("ike","priest","dimez","hampton","heder","bautista","caminos","duval")):
         return "CHARACTER"
     return "FOREIGN_TERM"
 
 
+def _inventory_identities(candidate:dict[str,Any],text:str)->list[dict[str,Any]]:
+    seeds=_media_identity_seeds(candidate,text)
+
+    alias_to_identity={}
+    for key,row in seeds.items():
+        for alias in row.get("aliases") or []:
+            alias_to_identity[_norm(alias)]=key
+
+    for term,category in _special_script_terms(text):
+        key=_norm(term)
+        # Prefer the more specific structured media identity when the special
+        # form is its known alias (e.g. Mount Kalaga).
+        owner=alias_to_identity.get(key)
+        if owner:
+            continue
+        seeds.setdefault(key,{
+            "term":term,"aliases":[],"category":category,"sources":["script.special-term"],
+        })
+
+    for term in _capitalized_script_candidates(text):
+        n=_norm(term)
+        if not n:
+            continue
+        if n in alias_to_identity:
+            continue
+        # Drop a partial surface form when a structured identity already owns it.
+        owned=False
+        for key,row in seeds.items():
+            full=_norm(row["term"])
+            if n==full:
+                owned=True
+                break
+            if row["category"]=="CHARACTER" and len(term.split())==1 and any(_norm(a)==n for a in row.get("aliases") or []):
+                owned=True
+                break
+        if owned:
+            continue
+        # Avoid generic fragments of a longer existing identity.
+        longer=[
+            row for row in seeds.values()
+            if n and n in _norm(row["term"]) and len(row["term"].split())>len(term.split())
+        ]
+        if longer and len(term.split())==1:
+            continue
+        seeds.setdefault(n,{
+            "term":term,
+            "aliases":[],
+            "category":_category(term,candidate),
+            "sources":["script.capitalization"],
+        })
+
+    # Merge exact substrings that are merely a surface alias of a character;
+    # keep meaningful geographic compounds as their own identities.
+    rows=sorted(seeds.values(),key=lambda x:(x["term"].casefold(),len(x["term"])))
+    return rows
+
+
+def _seed_terms(candidate:dict[str,Any],text:str)->set[str]:
+    values=set()
+    for row in _inventory_identities(candidate,text):
+        values.add(row["term"])
+        values.update(row.get("aliases") or [])
+    return values
+
+
 def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dict[str,Any]:
     text=script_text(candidate)
-    terms=sorted(_seed_terms(candidate,text),key=lambda x:(x.casefold(),len(x)))
+    identities=_inventory_identities(candidate,text)
     evidence={}
     for row in registry.get("entries") or []:
         if not isinstance(row,dict):
@@ -180,24 +264,42 @@ def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dic
         for value in [row.get("term"),*(row.get("aliases") or [])]:
             if value:
                 evidence[_norm(str(value))]=row
+
     rows=[]
     validated=0
     pending=[]
-    for term in terms:
+    for identity in identities:
+        term=str(identity["term"])
+        aliases=[str(x) for x in identity.get("aliases") or []]
         match=evidence.get(_norm(term))
+        matched_surface=term if match else None
+        if match is None:
+            for alias in aliases:
+                match=evidence.get(_norm(alias))
+                if match:
+                    matched_surface=alias
+                    break
         status=str((match or {}).get("status") or "PENDING_HUMAN_REVIEW")
         is_valid=status in {"HUMAN_APPROVED","HUMAN_APPROVED_REFERENCE"}
         if is_valid:
             validated+=1
         else:
             pending.append(term)
+        surfaces=[term,*aliases]
+        occurrences=sum(
+            len(re.findall(r"(?<!\w)"+re.escape(surface)+r"(?!\w)",text,re.I))
+            for surface in dict.fromkeys(surfaces)
+        )
         rows.append({
             "term":term,
-            "category":_category(term,candidate),
+            "aliases":aliases,
+            "category":identity["category"],
             "status":status,
             "validated":is_valid,
             "evidence":match,
-            "occurrences":len(re.findall(r"(?<!\w)"+re.escape(term)+r"(?!\w)",text,re.I)),
+            "evidence_matched_surface":matched_surface,
+            "occurrences":occurrences,
+            "sources":identity.get("sources") or [],
         })
     total=len(rows)
     cats={}
@@ -214,6 +316,7 @@ def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dic
         "PRONUNCIATION_COVERAGE_PERCENT":round(100.0*validated/max(1,total),3),
         "category_counts":cats,
         "terms":rows,
+        "inventory_policy":"structured candidate identities + sentence-local capitalization; aliases are grouped under the same pronunciation identity and common sentence-start words are excluded",
     }
 
 
