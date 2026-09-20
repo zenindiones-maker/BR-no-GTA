@@ -1,0 +1,99 @@
+name: VIDEO A Editorial Novelty Preflight
+on:
+  push:
+    branches: [work/gate6f-analytics-learning]
+    paths:
+      - ".run/video-a-next-candidate/candidate.json"
+      - "app/services/editorial_novelty_service.py"
+      - "scripts/video_a_editorial_novelty_proof.py"
+      - ".github/workflows/video-a-editorial-novelty-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: video-a-editorial-novelty-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install focused preflight runtime
+        run: python -m pip install -r requirements.txt pillow requests
+      - name: Focused novelty and overlay gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_human_review_quality_gate.py
+          python -m py_compile app/services/editorial_novelty_service.py scripts/video_a_editorial_novelty_proof.py
+          echo "UNPLANNED_TEXT_OVERLAY=OFF"
+      - name: Restore exact rejected previous-video product baseline
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10607171223"
+          run-id: "35514396253"
+          github-token: ${{ github.token }}
+          path: runtime/previous-video
+          merge-multiple: true
+      - name: Restore real narration-fluency proof
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10608518192"
+          run-id: "35523603782"
+          github-token: ${{ github.token }}
+          path: runtime/fluency-proof
+          merge-multiple: true
+      - name: Prove novelty duration and concrete new media before render
+        run: |
+          set -euo pipefail
+          python scripts/video_a_editorial_novelty_proof.py             --baseline-root runtime/previous-video             --candidate .run/video-a-next-candidate/candidate.json             --historical .run001/video-a-investigative-longform.json             --fluency-root runtime/fluency-proof             --output-dir runtime/editorial-novelty-proof
+          python - <<'PY'
+          import json
+          p=json.load(open("runtime/editorial-novelty-proof/editorial-novelty-proof.json"))
+          for key in ("EDITORIAL_NOVELTY","REPEATED_TOPIC_BLOCKED","MEDIA_NOVELTY","DURATION_CONTENT_SUFFICIENCY"):
+              assert p[key]=="PASS",p
+          assert p["ARTIFICIAL_PADDING"]=="OFF" and p["FULL_RENDER_ALLOWED"] is False and p["YOUTUBE_PUBLICATION"]=="NO" and p["HUMAN_REVIEW_STATUS"]=="PENDING",p
+          print("VIDEO_A_EDITORIAL_MEDIA_DURATION_PREFLIGHT=PASS")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+      - name: Send approved preproduction candidate proof to Telegram
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          : > runtime/editorial-novelty-proof/telegram-message-ids.txt
+          for file in runtime/editorial-novelty-proof/editorial-novelty-proof.json runtime/editorial-novelty-proof/candidate-script.txt runtime/editorial-novelty-proof/media-materialization.json; do
+            response="$(curl --fail-with-body --silent --show-error -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" -F "document=@$file" -F "caption=VIDEO A · preflight editorial/mídia/duração · sem render · HUMAN_REVIEW_STATUS=PENDING")"
+            RESPONSE="$response" FILE="$file" python - <<'PY' >> runtime/editorial-novelty-proof/telegram-message-ids.txt
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          if d.get("ok") is not True: raise SystemExit("TELEGRAM_PREPRODUCTION_REVIEW=FAIL")
+          print(os.environ["FILE"]+","+str((d.get("result") or {}).get("message_id")))
+          PY
+          done
+          echo "TELEGRAM_REVIEW_STATUS=PENDING"
+          echo "HUMAN_REVIEW_STATUS=PENDING"
+      - name: Upload complete no-render preflight proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-editorial-novelty-preflight-${{ github.run_id }}
+          path: runtime/editorial-novelty-proof/
+          if-no-files-found: error
+          retention-days: 30
