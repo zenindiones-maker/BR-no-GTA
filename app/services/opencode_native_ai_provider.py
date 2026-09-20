@@ -697,6 +697,7 @@ class OpenCodeNativeAIProvider:
                 ])
             except Exception:
                 failed_log = ""
+            artifact_payload = self._download_native_result_payload(dispatched.run_id)
             details = {
                 "execution_ref": f"github-actions:{dispatched.run_id}",
                 "run_id": dispatched.run_id,
@@ -707,6 +708,15 @@ class OpenCodeNativeAIProvider:
                 "profile_version": self.profile_version,
                 "profile_content_ref": self.profile_content_ref,
                 "retry_count": 0,
+                "semantic_agent": artifact_payload.get("semantic_agent"),
+                "semantic_profile_version": artifact_payload.get("semantic_profile_version"),
+                "semantic_contract": artifact_payload.get("semantic_contract"),
+                "semantic_text_only_pass": artifact_payload.get("semantic_text_only_pass"),
+                "tool_call_count": artifact_payload.get("tool_call_count"),
+                "tools_exposed": artifact_payload.get("tools_exposed"),
+                "tool_events": artifact_payload.get("tool_events"),
+                "error_events": artifact_payload.get("error_events"),
+                "safe_stderr_tail": artifact_payload.get("safe_stderr"),
                 **_sanitize_failed_log(failed_log),
             }
             raise OpenCodeNativeAIProviderError(
