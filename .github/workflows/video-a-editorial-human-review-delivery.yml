@@ -62,25 +62,82 @@ jobs:
         run: |
           set -euo pipefail
           root="runtime/video-a-editorial-review"
+          checkpoint=".run/video-a-editorial-review-delivery-checkpoint.json"
           test -n "$TELEGRAM_BOT_TOKEN"
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
           test -f "$root/telegram-message-order.txt"
+
+          presentation_id="$(python - <<'PY'
+          import json
+          print(json.load(open("runtime/video-a-editorial-review/telegram-presentation-manifest.json",encoding="utf-8"))["presentation_id"])
+          PY
+          )"
           : > "$root/telegram-editorial-message-ids.txt"
+
+          if test -f "$checkpoint"; then
+            PRESENTATION_ID="$presentation_id" CHECKPOINT="$checkpoint" python - <<'PY' > "$root/telegram-editorial-message-ids.txt"
+          import json,os
+          d=json.load(open(os.environ["CHECKPOINT"],encoding="utf-8"))
+          if d.get("presentation_id")==os.environ["PRESENTATION_ID"]:
+              for filename,message_id in (d.get("delivered") or {}).items():
+                  print(f"{filename}={message_id}")
+          PY
+          fi
 
           while IFS= read -r filename; do
             test -n "$filename" || continue
+            if grep -Fq "^$filename=" "$root/telegram-editorial-message-ids.txt"; then
+              echo "TELEGRAM_RESUME_SKIP=$filename"
+              continue
+            fi
+
             path="$root/telegram-human-readable/$filename"
             test -s "$path"
-            response="$(curl --fail-with-body --silent --show-error \
-              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-              --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
-              --data-urlencode "text@$path")"
-            RESPONSE="$response" FILE="$filename" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
+            body="$root/telegram-response.json"
+            sent="NO"
+
+            for attempt in 1 2 3 4 5 6 7 8; do
+              http_code="$(curl --silent --show-error \
+                -o "$body" \
+                -w "%{http_code}" \
+                -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+                --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+                --data-urlencode "text@$path")"
+
+              if test "$http_code" = "200"; then
+                RESPONSE_FILE="$body" FILE="$filename" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
           import json,os
-          d=json.loads(os.environ["RESPONSE"])
+          d=json.load(open(os.environ["RESPONSE_FILE"],encoding="utf-8"))
           assert d.get("ok") is True,d
           print(os.environ["FILE"]+"="+str(d["result"]["message_id"]))
           PY
+                sent="YES"
+                break
+              fi
+
+              if test "$http_code" = "429"; then
+                retry_after="$(BODY="$body" python - <<'PY'
+          import json,os
+          try:
+              d=json.load(open(os.environ["BODY"],encoding="utf-8"))
+              print(int((d.get("parameters") or {}).get("retry_after") or 5))
+          except Exception:
+              print(5)
+          PY
+                )"
+                echo "TELEGRAM_RATE_LIMIT filename=$filename retry_after=$retry_after attempt=$attempt"
+                sleep "$((retry_after + 2))"
+                continue
+              fi
+
+              echo "TELEGRAM_SEND_FAIL filename=$filename http_code=$http_code"
+              cat "$body"
+              exit 1
+            done
+
+            test "$sent" = "YES"
+            # Group chats are rate-limited more strictly than the global bot limit.
+            sleep 4
           done < "$root/telegram-message-order.txt"
 
           python - <<'PY'
@@ -93,9 +150,11 @@ jobs:
           metrics=json.loads((root/"review-metrics.json").read_text())
           manifest=json.loads((root/"telegram-presentation-manifest.json").read_text())
           assert len(ids)==manifest["message_count"],(ids,manifest)
+          assert list(ids)==manifest["order"],(ids,manifest)
           state={
               **metrics,
               "TELEGRAM_EDITORIAL_MESSAGE_IDS":ids,
+              "TELEGRAM_PRESENTATION_ID":manifest["presentation_id"],
               "HUMAN_PRESENTATION":"TELEGRAM_TEXT",
               "TECHNICAL_ATTACHMENTS_TO_HUMAN":"NO",
               "SCRIPT_HUMAN_REVIEW":"PENDING",
