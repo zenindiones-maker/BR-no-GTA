@@ -37,13 +37,14 @@ def test_ten_minutes_cannot_pass_longform_content_gate():
     assert result["CONTENT_SUPPORTED_DURATION_GTE_20"] is False
 
 
-def test_real_twenty_minutes_without_padding_passes():
+def test_real_target_fully_supported_without_padding_passes():
     result = validate_content_duration(
         target_duration_seconds=1320,
-        content_supported_duration_seconds=1280,
+        content_supported_duration_seconds=1320,
         artificial_padding=False,
     )
     assert result["status"] == "PASS"
+    assert result["CONTENT_SUPPORTS_TARGET"] is True
     assert result["ARTIFICIAL_PADDING"] == "OFF"
 
 
