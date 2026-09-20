@@ -18,6 +18,8 @@ OPENCODE_PROFILE_RESOLVER_BINDING = (
     "create_opencode_provider_for_active_profile"
 )
 
+_INCIDENT_RECONCILED = False
+
 _PROFILES: dict[str, dict[str, Any]] = {
     "v1": {
         "executor_kind": "omniroute_http",
@@ -154,6 +156,16 @@ def _hydrate_promoted_semantic_v3_if_needed() -> None:
 
 
 def resolve_active_opencode_executor_profile() -> dict[str, Any]:
+    global _INCIDENT_RECONCILED
+    if not _INCIDENT_RECONCILED:
+        from app.services.opencode_semantic_incident_service import (
+            reconcile_confirmed_opencode_semantic_tool_failure,
+        )
+        reconcile_confirmed_opencode_semantic_tool_failure(
+            skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+            skill_version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        )
+        _INCIDENT_RECONCILED = True
     _hydrate_promoted_semantic_v3_if_needed()
     active = learning_repository.get_active_version(
         table="harness_skill_versions",
