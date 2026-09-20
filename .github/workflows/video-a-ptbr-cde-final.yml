@@ -1,0 +1,206 @@
+name: VIDEO A PT-BR Final CDE Voice Candidate
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "config/pronunciation_ptbr_policy.json"
+      - "config/pronunciation_ptbr_research.json"
+      - "config/pronunciation_ptbr_candidate.json"
+      - "scripts/video_a_dubbing_learning_episode.py"
+      - "scripts/video_a_audio_forensics_v2.py"
+      - "scripts/video_a_ptbr_cde_candidate.py"
+      - ".github/workflows/video-a-ptbr-cde-final.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-ptbr-final-cde
+  cancel-in-progress: true
+
+jobs:
+  cde:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/runtime/ptbr-cde-learning.db
+      SOURCE_AUDITION_RUN_ID: "35527492016"
+      SOURCE_AUDITION_ARTIFACT_ID: "10610442121"
+      SOURCE_FORENSICS_RUN_ID: "35529067781"
+      SOURCE_FORENSICS_ARTIFACT_ID: "10610666993"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install focused PT-BR audio runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt
+          python -m pip install "edge-tts==7.2.8" "faster-whisper==1.2.1"
+          python -m py_compile \
+            scripts/video_a_dubbing_learning_episode.py \
+            scripts/video_a_audio_forensics_v2.py \
+            scripts/video_a_ptbr_cde_candidate.py \
+            app/services/pronunciation_service.py \
+            app/services/narration_policy_promotion_guard.py
+          echo "PTBR_FOCUSED_RUNTIME=PASS"
+
+      - name: Validate frozen inventory and Brazilian authority policy
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy=json.loads(Path("config/pronunciation_ptbr_policy.json").read_text(encoding="utf-8"))
+          research=json.loads(Path("config/pronunciation_ptbr_research.json").read_text(encoding="utf-8"))
+          assert policy["objective"]=="BRAZILIAN_NARRATOR_NATURALNESS",policy
+          assert policy["official_ptbr_dub_reference"]=="UNCONFIRMED",policy
+          assert policy["rules"]["all_synthesis_locale"]=="pt-BR",policy
+          assert policy["rules"]["foreign_language_chunks_allowed"] is False,policy
+          assert len(research["entries"])==47,research
+          assert research["pronunciation_terms_total"]==47,research
+          assert research["PTBR_TARGET_COVERAGE_PERCENT"]==100.0,research
+          assert research["UNRESEARCHED_PTBR_TARGETS"]==[],research
+          assert all(row["TARGET_LOCALE"]=="pt-BR" for row in research["entries"]),research
+          assert all(row["PTBR_TARGET_RESEARCHED"]=="YES" for row in research["entries"]),research
+          print("PTBR_PRONUNCIATION_POLICY=ACTIVE")
+          print("OFFICIAL_PTBR_DUB_REFERENCE=UNCONFIRMED")
+          print("TOTAL_PTBR_PRONUNCIATION_COVERAGE=100")
+          print("UNVALIDATED_PTBR_TERMS=0")
+          PY
+
+      - name: Persist Brazilian pronunciation learning
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/ptbr-cde
+          python scripts/video_a_dubbing_learning_episode.py \
+            --output runtime/ptbr-cde/learning-proof.json
+
+      - name: Download exact rejected audition artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_AUDITION_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_AUDITION_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/source-audition
+          merge-multiple: true
+
+      - name: Download first-pass forensic artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_FORENSICS_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_FORENSICS_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/source-forensics
+          merge-multiple: true
+
+      - name: Resolve old alignment uncertainty with stronger ASR
+        run: |
+          set -euo pipefail
+          python scripts/video_a_audio_forensics_v2.py \
+            --audition-root runtime/source-audition \
+            --forensics-root runtime/source-forensics \
+            --output-dir runtime/ptbr-cde/old-audio-forensics
+
+      - name: Generate only corrected C D E Voice B candidates
+        run: |
+          set -euo pipefail
+          python scripts/video_a_ptbr_cde_candidate.py \
+            --source-audition-root runtime/source-audition \
+            --old-reconciliation runtime/ptbr-cde/old-audio-forensics/old-audio-reconciliation-v2.json \
+            --learning-proof runtime/ptbr-cde/learning-proof.json \
+            --output-dir runtime/ptbr-cde/final
+
+      - name: Validate no-render final audio gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime/ptbr-cde/final")
+          report=json.loads((root/"ptbr-cde-report.json").read_text(encoding="utf-8"))
+          assert report["PTBR_PRONUNCIATION_POLICY"]=="ACTIVE",report
+          assert report["OFFICIAL_PTBR_DUB_REFERENCE"]=="UNCONFIRMED",report
+          assert report["PRONUNCIATION_TERMS_TOTAL"]==47,report
+          assert report["CHARACTER_PTBR_COVERAGE"]==100.0,report
+          assert report["PLACE_PTBR_COVERAGE"]==100.0,report
+          assert report["TOTAL_PTBR_PRONUNCIATION_COVERAGE"]==100.0,report
+          assert report["UNVALIDATED_PTBR_TERMS"]==0,report
+          assert report["PROPER_NOUN_ALIGNMENT_ERRORS_UNCERTAIN"]==0,report
+          assert report["TEXT_FIDELITY"]=="PASS",report
+          assert report["NO_NAME_FRAGMENTATION"]=="PASS",report
+          assert report["ALL_SYNTHESIS_LOCALE"]=="pt-BR",report
+          assert report["FOREIGN_LANGUAGE_CHUNKS_ALLOWED"]=="NO",report
+          assert report["SEMANTIC_SECTION_POLICY_PRESERVED"]=="YES",report
+          assert report["LEARNING_APPLIED_TO_NEXT_EXECUTION"]=="YES",report
+          assert report["LEONIDA_PRONUNCIATION"]=="FAIL",report
+          assert report["GLOBAL_PRONUNCIATION_STATUS"]=="FAIL",report
+          assert report["HUMAN_VOICE_REVIEW"]=="PENDING",report
+          assert report["FULL_RENDER_AUTHORIZED"]=="NO",report
+          files=sorted((root/"audio").glob("*--PTBR-FINAL-CANDIDATE.flac"))
+          assert len(files)==3,[str(x) for x in files]
+          assert [x.name[0] for x in files]==["C","D","E"],[x.name for x in files]
+          print("PTBR_FINAL_CDE_TECHNICAL_GATE=PASS")
+          print("TEXT_FIDELITY=PASS")
+          print("GLOBAL_PRONUNCIATION_STATUS=FAIL")
+          print("LEONIDA_PRONUNCIATION=FAIL")
+          print("HUMAN_VOICE_REVIEW=PENDING")
+          print("FULL_RENDER_AUTHORIZED=NO")
+          PY
+
+      - name: Send only C D E corrected FLAC documents to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          root="runtime/ptbr-cde/final"
+          ids="runtime/ptbr-cde/telegram-cde-message-ids.txt"
+          : > "$ids"
+          for prefix in C D E; do
+            file="$(find "$root/audio" -maxdepth 1 -type f -name "${prefix}-*--PTBR-FINAL-CANDIDATE.flac" -print -quit)"
+            test -n "$file"
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "document=@$file" \
+              -F "caption=VIDEO A · FINAL VOICE CANDIDATE $prefix · Voice B · PT-BR brasileiro · semantic-section-v1 · zero foreign chunks · HUMAN_VOICE_REVIEW=PENDING · FULL_RENDER=NO")"
+            RESPONSE="$response" PREFIX="$prefix" python - <<'PY' >> "$ids"
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          if d.get("ok") is not True:
+              raise SystemExit("TELEGRAM_CDE=FAIL")
+          print(os.environ["PREFIX"]+"="+str((d.get("result") or {}).get("message_id")))
+          PY
+          done
+          test "$(wc -l < "$ids" | tr -d ' ')" = "3"
+          echo "NEW_TELEGRAM_VOICE_MESSAGES=$(paste -sd, "$ids")"
+          echo "HUMAN_VOICE_REVIEW=PENDING"
+          echo "FULL_RENDER_AUTHORIZED=NO"
+
+      - name: Upload PT-BR CDE evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-ptbr-final-cde-${{ github.run_id }}
+          path: |
+            runtime/ptbr-cde/
+          if-no-files-found: warn
+          retention-days: 30
