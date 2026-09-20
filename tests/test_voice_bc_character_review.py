@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from app.services.pronunciation_service import _edge_synthesis_groups, resolve_synthesis_plan
-from scripts.voice_bc_character_review import sample_set, script_inventory
+from scripts.voice_bc_character_review import candidate_cache_key, sample_set, script_inventory
 
 ROOT=Path(__file__).resolve().parents[1]
 CANDIDATE=ROOT/"config"/"pronunciation_character_aliases.bc-review.json"
@@ -74,3 +74,8 @@ def test_sample_parser_finds_real_pair_and_conversational_sentence():
     assert samples[3][2]=="jason-lucia"
     assert "Jason" in samples[3][1] and "Lucia" in samples[3][1]
     assert samples[5][2]=="canonical-emotional-conversational"
+
+def test_candidate_cache_key_preserves_diacritic_identity():
+    assert candidate_cache_key("Djeison") != candidate_cache_key("Djêison")
+    assert candidate_cache_key("Lucia") != candidate_cache_key("Lucía")
+    assert candidate_cache_key("Lussía") != candidate_cache_key("Lussiá")

@@ -1,7 +1,7 @@
 {
   "mission": "character-name-pronunciation-rockstar-trailer2-bc-v1",
   "base_head": "7874a4e4162ebddbe01ea4a4b90de60a2871b5a2",
-  "requested_at": "2026-09-20T03:12:00Z",
+  "requested_at": "2026-09-20T03:17:00Z",
   "video_a_rerender": false,
   "automatic_promotion": false,
   "good_voices": [
@@ -33,9 +33,10 @@
   "speech_performance_plan": "character-review-neutral-v1",
   "human_voice_final_review": "PENDING",
   "reference_clips_delivery": "INTERNAL_ONLY",
-  "proof_attempt": 11,
-  "continuation_head": "efd38b0cf9763fa6993f6379166892ff3e9fb31e",
+  "proof_attempt": 12,
+  "continuation_head": "55f31d5a2fa3be019569a2fb3d6fc25adaa8d6f2",
   "reuse_acoustic_artifact_id": 10597480517,
   "reuse_acoustic_run_id": 35485777572,
-  "retry_reason": "Fix escaped canonical-script regex only; reuse official Rockstar Trailer 2 reference, ASR and B/C candidate audio checkpoint."
+  "retry_reason": "Fix candidate-audio cache key collision across diacritic aliases; reuse only official Rockstar reference/ASR, regenerate short B/C alias candidates.",
+  "supersedes_review_run_id": 35485980897
 }

@@ -54,6 +54,10 @@ def normalize(value:str)->str:
     value="".join(ch for ch in value if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+","",value)
 
+def candidate_cache_key(alias:str)->str:
+    digest=hashlib.sha256(alias.encode("utf-8")).hexdigest()[:10]
+    return f"{normalize(alias) or 'candidate'}-{digest}"
+
 def load_config()->dict[str,Any]:
     return json.loads(CONFIG.read_text(encoding="utf-8"))
 
@@ -237,7 +241,7 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
             per_voice={}
             all_dist=[]
             for label,voice in VOICES.items():
-                safe=normalize(alias) or "candidate"
+                safe=candidate_cache_key(alias)
                 mp3=root/"candidate-audio"/name.lower()/f"{safe}-{label}.mp3"
                 wav=root/"candidate-audio"/name.lower()/f"{safe}-{label}.wav"
                 if not mp3.is_file():
@@ -421,7 +425,7 @@ def main()->int:
         "checkpoint_reuse":{
             "official_reference":bool(materialized.get("checkpoint_reuse")),
             "asr_words":asr_checkpoint_reuse,
-            "candidate_audio":True,
+            "candidate_audio":False,
         },
         "official_acoustic_occurrences":occurrences,
         "shared_alias_selection":selection,
