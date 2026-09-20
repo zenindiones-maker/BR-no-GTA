@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.6-ptbr-game-entities",
+  "version": "2026.09.20.7-ptbr-full-script-candidate",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -318,6 +318,204 @@
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "established brand pronunciation rendered in pt-BR"
+    },
+    {
+      "identity": "atlantic-records",
+      "term": "Atlantic Records",
+      "category": "ORGANIZATION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Atlântic Récords",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR phonetic candidate"
+    },
+    {
+      "identity": "grand-theft-auto-vi",
+      "term": "Grand Theft Auto VI",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á seis",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "channel-approved GTA 6 realization"
+    },
+    {
+      "identity": "gta-6",
+      "term": "GTA 6",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á seis",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "channel-approved GTA 6 realization"
+    },
+    {
+      "identity": "gta-vi",
+      "term": "GTA VI",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á seis",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "channel-approved GTA 6 realization"
+    },
+    {
+      "identity": "extended-look",
+      "term": "Extended Look",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Extêndid Lúk",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR phonetic candidate"
+    },
+    {
+      "identity": "vintage-vice-city-pack",
+      "term": "Vintage Vice City Pack",
+      "category": "BRAND",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Víntidj Váis Síti Pék",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR phonetic candidate"
+    },
+    {
+      "identity": "yung-lean",
+      "term": "Yung Lean",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Iâng Lín",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "future",
+      "term": "Future",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Fiútcher",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "metro-boomin",
+      "term": "Metro Boomin",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Métro Búmin",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "travis-scott",
+      "term": "Travis Scott",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Trévis Scót",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "ca7riel",
+      "term": "CA7RIEL",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Catriél",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist stylized-name candidate"
+    },
+    {
+      "identity": "paco-amoroso",
+      "term": "Paco Amoroso",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Páco Amorôso",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Spanish proper-name pt-BR candidate"
+    },
+    {
+      "identity": "pinkpantheress",
+      "term": "PinkPantheress",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Pínk Pánteress",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "fred-again",
+      "term": "Fred again",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Fred Aguén",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "etienne-de-crecy",
+      "term": "Etienne de Crécy",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Etién de Crêssi",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "French-name pt-BR candidate"
+    },
+    {
+      "identity": "morgan-wallen",
+      "term": "Morgan Wallen",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Mórgan Uólen",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "rauw-alejandro",
+      "term": "Rauw Alejandro",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Ráu Alejândro",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Spanish artist-name pt-BR candidate"
+    },
+    {
+      "identity": "keith-richards",
+      "term": "Keith Richards",
+      "category": "FOREIGN_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Kíth Rítchards",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "artist-name pt-BR candidate"
     }
   ]
 }
