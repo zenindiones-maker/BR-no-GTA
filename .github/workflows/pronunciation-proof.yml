@@ -9,6 +9,8 @@ on:
       - .run001/pronunciation-proof.request.json
       - .github/workflows/pronunciation-proof.yml
       - config/pronunciation_lexicon.json
+      - config/pronunciation_human_approvals.json
+      - app/services/human_review_quality_gate.py
       - app/services/pronunciation_service.py
       - scripts/pronunciation_proof.py
       - tests/test_pronunciation_service.py
@@ -54,6 +56,7 @@ jobs:
               'job18_frozen':True,
               'youtube_publication':False,
               'human_approval_required_for_vice_city':True,
+              'human_approval_required_for_leonida':True,
           }
           for key,value in expected.items():
               if request.get(key)!=value:
@@ -85,7 +88,8 @@ jobs:
           pytest -q \
             tests/test_pronunciation_service.py \
             tests/test_narration_pipeline.py \
-            tests/test_channel_spoken_branding.py
+            tests/test_channel_spoken_branding.py \
+            tests/test_human_review_quality_gate.py
 
       - name: Generate real Voice B pronunciation proof
         run: |
@@ -101,6 +105,9 @@ jobs:
           proof=json.loads(Path('runtime/pronunciation-proof/pronunciation-proof.json').read_text(encoding='utf-8'))
           required=(
               'PRONUNCIATION_LAYER','CANONICAL_TEXT_PRESERVED','VOICE_B_PRESERVED',
+              'LEONIDA_ALIAS_REGISTERED','LEONIDA_CANONICAL_TEXT_PRESERVED',
+              'LEONIDA_CONTINUOUS_PTBR_PROSODY','LEONIDA_NO_AUDIBLE_CHUNK_BOUNDARY',
+              'LEONIDA_REAL_AUDIO_GENERATED',
               'VICE_CITY_LANGUAGE_RESOLUTION','VICE_CITY_REAL_AUDIO_GENERATED',
               'VICE_CITY_JOIN_TIMING_NATURAL',
               'GTA6_CANONICAL_TEXT_PRESERVED','GTA6_REAL_AUDIO_GENERATED',
@@ -124,12 +131,32 @@ jobs:
           terms=review.get('terms') or {}
           if (terms.get('vice-city') or {}).get('status')!='APPROVED':
               raise SystemExit('VICE_CITY_HUMAN_REVIEW_INVALID')
+          if (terms.get('leonida') or {}).get('status')!='PENDING':
+              raise SystemExit('LEONIDA_HUMAN_REVIEW_INVALID')
           if (terms.get('gta-6') or {}).get('status')!='PENDING':
               raise SystemExit('GTA6_HUMAN_REVIEW_INVALID')
           if (terms.get('voice-b-naturality') or {}).get('status')!='PENDING':
               raise SystemExit('VOICE_B_NATURALITY_REVIEW_INVALID')
           for key in required:
               print(key+'=PASS')
+          assert proof.get('LEONIDA_ALIAS_REGISTERED')=='PASS',proof
+          assert proof.get('LEONIDA_SYNTHESIS_ALIAS')=='Leônida',proof
+          assert proof.get('LEONIDA_PRONUNCIATION')=='FAIL',proof
+          assert proof.get('CONTINUOUS_PTBR_PROSODY')=='PASS',proof
+          assert proof.get('NO_AUDIBLE_CHUNK_BOUNDARY')=='PASS',proof
+          assert proof.get('EDITORIAL_TEXT_MUTATED')=='NO',proof
+          assert proof.get('TRANSCRIPT_MUTATED')=='NO',proof
+          assert proof.get('PRODUCTION_READINESS')=='FAIL',proof
+          assert proof.get('FULL_RENDER_AUTHORIZED')=='NO',proof
+          print('LEONIDA_ALIAS_REGISTERED=PASS')
+          print('LEONIDA_SYNTHESIS_ALIAS=Leônida')
+          print('LEONIDA_PRONUNCIATION=FAIL')
+          print('CONTINUOUS_PTBR_PROSODY=PASS')
+          print('NO_AUDIBLE_CHUNK_BOUNDARY=PASS')
+          print('EDITORIAL_TEXT_MUTATED=NO')
+          print('TRANSCRIPT_MUTATED=NO')
+          print('PRODUCTION_READINESS=FAIL')
+          print('FULL_RENDER_AUTHORIZED=NO')
           print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS')
           print('GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING')
           print('VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING')
@@ -137,7 +164,7 @@ jobs:
           print('PUBLICATION_AUTHORITY_UNCHANGED=YES')
           PY
 
-      - name: Deliver critical pronunciation samples to Telegram when available
+      - name: Deliver Leonida Voice B context samples to Telegram
         if: always()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -149,50 +176,85 @@ jobs:
           from pathlib import Path
           root=Path('runtime/pronunciation-proof')
           root.mkdir(parents=True,exist_ok=True)
-          state={'status':'NOT_SENT','reason':None,'sample_count':0,'human_review_status':'PENDING'}
+          required=tuple(root/'samples'/name for name in (
+              'L1-leonida-context.mp3',
+              'L2-leonida-context.mp3',
+              'L3-leonida-keys.mp3',
+              'L4-leonida-power.mp3',
+          ))
+          state={
+              'status':'NOT_SENT',
+              'reason':None,
+              'sample_count':0,
+              'human_review_status':'PENDING',
+              'message_ids':[],
+              'PRODUCTION_READINESS':'FAIL',
+              'FULL_RENDER_AUTHORIZED':'NO',
+          }
           token=(os.environ.get('TELEGRAM_BOT_TOKEN') or '').strip()
           chat=(os.environ.get('TELEGRAM_REVIEW_CHAT_ID') or '').strip()
-          required=(
-              root/'samples'/'C0-closing-literal-baseline.mp3',
-              root/'samples'/'B-vice-city.mp3',
-              root/'samples'/'C-closing.mp3',
-              root/'samples'/'D-mixed.mp3',
-              root/'samples'/'F-gta6-brand.mp3',
-              root/'samples'/'G-brand-mixed.mp3',
-              root/'samples'/'H-opening-take-1.mp3',
-              root/'samples'/'H-opening-take-2.mp3',
-              root/'samples'/'H-opening-take-3.mp3',
-              root/'samples'/'I-opening-fluid-1.mp3',
-              root/'samples'/'I-opening-fluid-2.mp3',
-              root/'samples'/'I-opening-fluid-3.mp3',
-              root/'samples'/'J-opening-canonical-fluid2.mp3',
+          if not all(path.is_file() for path in required):
+              state['reason']='LEONIDA_REVIEW_SAMPLES_UNAVAILABLE'
+          elif not token:
+              state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
+          elif not chat:
+              state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
+          else:
+              state['status']='READY'
+          (root/'telegram-leonida-review.json').write_text(
+              json.dumps(state,ensure_ascii=False,indent=2),encoding='utf-8'
           )
-          if not all(path.is_file() for path in required): state['reason']='PRONUNCIATION_REVIEW_SAMPLES_UNAVAILABLE'
-          elif not token: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN'
-          elif not chat: state['reason']='EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID'
-          else: state['status']='READY'
-          (root/'telegram-pronunciation-review.json').write_text(json.dumps(state,indent=2),encoding='utf-8')
-          print(state['status']); print(state['reason'] or 'TELEGRAM_PRONUNCIATION_REVIEW_READY')
+          print(state['status'])
+          print(state['reason'] or 'TELEGRAM_LEONIDA_REVIEW_READY')
           PY
-          status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-pronunciation-review.json'))['status'])")"
+          status="$(python -c "import json;print(json.load(open('runtime/pronunciation-proof/telegram-leonida-review.json'))['status'])")"
           if [ "$status" != "READY" ]; then exit 0; fi
-          sent=0
-          for audio in runtime/pronunciation-proof/samples/C0-closing-literal-baseline.mp3 runtime/pronunciation-proof/samples/B-vice-city.mp3 runtime/pronunciation-proof/samples/C-closing.mp3 runtime/pronunciation-proof/samples/D-mixed.mp3 runtime/pronunciation-proof/samples/F-gta6-brand.mp3 runtime/pronunciation-proof/samples/G-brand-mixed.mp3 runtime/pronunciation-proof/samples/H-opening-take-1.mp3 runtime/pronunciation-proof/samples/H-opening-take-2.mp3 runtime/pronunciation-proof/samples/H-opening-take-3.mp3 runtime/pronunciation-proof/samples/I-opening-fluid-1.mp3 runtime/pronunciation-proof/samples/I-opening-fluid-2.mp3 runtime/pronunciation-proof/samples/I-opening-fluid-3.mp3 runtime/pronunciation-proof/samples/J-opening-canonical-fluid2.mp3; do
-            curl --fail-with-body --silent --show-error \
+          : > runtime/pronunciation-proof/telegram-leonida-message-ids.txt
+          for audio in \
+            runtime/pronunciation-proof/samples/L1-leonida-context.mp3 \
+            runtime/pronunciation-proof/samples/L2-leonida-context.mp3 \
+            runtime/pronunciation-proof/samples/L3-leonida-keys.mp3 \
+            runtime/pronunciation-proof/samples/L4-leonida-power.mp3; do
+            response="$(curl --fail-with-body --silent --show-error \
               -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendAudio" \
               -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
               -F "audio=@$audio" \
-              -F "caption=BR no GTA 6 · revisão de pronúncia/fluidez · $(basename "$audio")" >/dev/null
-            sent=$((sent+1))
-          done
-          SENT_COUNT="$sent" python - <<'PY'
+              -F "caption=BR no GTA 6 · LEONIDA · Voice B · revisão humana obrigatória · $(basename "$audio") · PRODUCTION_READINESS=FAIL")"
+            RESPONSE="$response" AUDIO="$audio" python - <<'PY' >> runtime/pronunciation-proof/telegram-leonida-message-ids.txt
           import json,os
+          payload=json.loads(os.environ['RESPONSE'])
+          if payload.get('ok') is not True:
+              raise SystemExit('TELEGRAM_LEONIDA_REVIEW=FAIL')
+          print(os.path.basename(os.environ['AUDIO'])+','+str((payload.get('result') or {}).get('message_id')))
+          PY
+          done
+          python - <<'PY'
+          import json
           from pathlib import Path
-          path=Path('runtime/pronunciation-proof/telegram-pronunciation-review.json')
-          state=json.loads(path.read_text())
-          state.update({'status':'SENT','sample_count':int(os.environ['SENT_COUNT']),'human_review_status':'PENDING'})
-          path.write_text(json.dumps(state,indent=2),encoding='utf-8')
-          print('PRONUNCIATION_REVIEW_SAMPLES_SENT='+os.environ['SENT_COUNT'])
+          root=Path('runtime/pronunciation-proof')
+          ids=[]
+          for line in (root/'telegram-leonida-message-ids.txt').read_text(encoding='utf-8').splitlines():
+              if ',' in line:
+                  name,value=line.rsplit(',',1)
+                  ids.append({'file':name,'message_id':int(value)})
+          state=json.loads((root/'telegram-leonida-review.json').read_text(encoding='utf-8'))
+          state.update({
+              'status':'SENT',
+              'sample_count':len(ids),
+              'message_ids':ids,
+              'human_review_status':'PENDING',
+              'LEONIDA_PRONUNCIATION':'FAIL',
+              'PRODUCTION_READINESS':'FAIL',
+              'FULL_RENDER_AUTHORIZED':'NO',
+          })
+          (root/'telegram-leonida-review.json').write_text(
+              json.dumps(state,ensure_ascii=False,indent=2),encoding='utf-8'
+          )
+          print('LEONIDA_REVIEW_SAMPLES_SENT='+str(len(ids)))
+          print('HUMAN_REVIEW_STATUS=PENDING')
+          print('LEONIDA_PRONUNCIATION=FAIL')
+          print('PRODUCTION_READINESS=FAIL')
+          print('FULL_RENDER_AUTHORIZED=NO')
           PY
 
       - name: Upload pronunciation proof
