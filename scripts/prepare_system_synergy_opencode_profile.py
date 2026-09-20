@@ -30,10 +30,15 @@ from app.services.harness_learning_service import (
     promote_candidate,
     register_skill_version,
 )
-from app.services.opencode_native_ai_provider import build_semantic_text_only_prompt
+from app.services.opencode_native_ai_provider import (
+    build_semantic_text_only_env,
+    build_semantic_text_only_prompt,
+)
+from app.services.opencode_semantic_profile import OPENCODE_SEMANTIC_AGENT_ID
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+    SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
     OPENCODE_EXECUTOR_SKILL_ID,
     executable_opencode_executor_profile,
     resolve_active_opencode_executor_profile,
@@ -159,6 +164,7 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         process = subprocess.run(
             [
                 "opencode", "run", "--standalone", "--model", EXECUTOR_MODEL,
+                "--agent", OPENCODE_SEMANTIC_AGENT_ID,
                 "--format", "json", build_semantic_text_only_prompt(prompt),
             ],
             capture_output=True,
@@ -166,7 +172,7 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
             timeout=300,
             check=False,
             cwd=tmp,
-            env=dict(os.environ),
+            env=build_semantic_text_only_env(dict(os.environ)),
         )
     latency = time.monotonic() - started
     finished_at = _utcnow()
@@ -174,6 +180,7 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
     parse_errors = 0
     event_types: list[str] = []
     error_events: list[str] = []
+    tool_call_count = 0
     for raw in process.stdout.splitlines():
         if not raw.strip():
             continue
@@ -185,6 +192,8 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         event_type = str(item.get("type") or "")
         if event_type:
             event_types.append(event_type)
+        if event_type in {"tool_use", "tool_call", "tool"}:
+            tool_call_count += 1
         if event_type != "text":
             candidate_error = item.get("error") or item.get("message") or item.get("data")
             if candidate_error:
@@ -201,7 +210,11 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         if isinstance(value, str):
             parts.append(value)
     answer = "".join(parts).strip()
-    success = process.returncode == 0 and answer == EXPECTED_TEXT
+    success = (
+        process.returncode == 0
+        and answer == EXPECTED_TEXT
+        and tool_call_count == 0
+    )
     return {
         "observed": True,
         "role": "candidate",
@@ -216,6 +229,10 @@ def _candidate_probe(prompt: str, root: Path) -> dict[str, Any]:
         "text_matches_expected": answer == EXPECTED_TEXT,
         "parse_errors": parse_errors,
         "event_types": list(dict.fromkeys(event_types)),
+        "tool_call_count": tool_call_count,
+        "tools_exposed": 0 if tool_call_count == 0 else tool_call_count,
+        "semantic_agent": OPENCODE_SEMANTIC_AGENT_ID,
+        "semantic_contract": "SEMANTIC_TEXT_ONLY",
         "error_events": error_events[-5:],
         "safe_stderr": [
             line[:500]
@@ -340,6 +357,7 @@ def prepare(output: Path) -> dict[str, Any]:
 
     v1 = executable_opencode_executor_profile(BASELINE_OPENCODE_EXECUTOR_VERSION)
     v2 = executable_opencode_executor_profile(CANDIDATE_OPENCODE_EXECUTOR_VERSION)
+    v3 = executable_opencode_executor_profile(SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION)
     common_refs = tuple(dict.fromkeys([
         *baseline["evidence_refs"],
         *candidate["evidence_refs"],
@@ -358,10 +376,10 @@ def prepare(output: Path) -> dict[str, Any]:
     )
     register_skill_version(
         skill_id=OPENCODE_EXECUTOR_SKILL_ID,
-        version="v2",
-        parent_version="v1",
-        content_ref=v2["content_ref"],
-        checksum=v2["checksum"],
+        version="v3",
+        parent_version="v2",
+        content_ref=v3["content_ref"],
+        checksum=v3["checksum"],
         status="CANDIDATE",
         evidence_refs=common_refs,
     )
@@ -382,7 +400,7 @@ def prepare(output: Path) -> dict[str, Any]:
                 "candidate on an equivalent semantic workload."
             ),
             hypothesis=(
-                "The official OpenCode CLI v2 can replace the baseline executor only if observed "
+                "The official OpenCode semantic text profile v3 can replace the baseline executor only if observed "
                 "success/quality improves with no policy, cost or fallback regression."
             ),
             authorization=improvement_auth,
@@ -409,7 +427,7 @@ def prepare(output: Path) -> dict[str, Any]:
             acceptance["min_latency_reduction_fraction"] = 0.05
         learning_candidate = create_learning_candidate(
             candidate_type="SKILL_UPDATE",
-            hypothesis="Use official OpenCode CLI v2 only after observed non-regression and measurable improvement.",
+            hypothesis="Use official OpenCode semantic text profile v3 only after observed non-regression and measurable improvement.",
             domain="ai",
             task_class="system-synergy-semantic-provider",
             source_episode_ids=(episode_id,),
@@ -417,9 +435,9 @@ def prepare(output: Path) -> dict[str, Any]:
             target_agent_id="provider:opencode",
             target_capability_id="ai.reasoning.text",
             target_skill_id=OPENCODE_EXECUTOR_SKILL_ID,
-            baseline_version="v1",
-            candidate_version="v2",
-            implementation_ref=v2["content_ref"],
+            baseline_version="v2",
+            candidate_version="v3",
+            implementation_ref=v3["content_ref"],
             acceptance_criteria=acceptance,
             contradiction_check={
                 "status": "OBSERVED_EQUIVALENT_WORKLOAD",
@@ -465,11 +483,11 @@ def prepare(output: Path) -> dict[str, Any]:
                 evaluation=evaluation,
                 authorization=promotion_auth,
                 memory_claim=(
-                    "Observed system-synergy provider benchmark promoted OpenCode executor profile v2 "
+                    "Observed system-synergy provider benchmark promoted OpenCode semantic text profile v3 "
                     "after measurable improvement with zero-cost/no-fallback regression gates."
                 ),
                 memory_type="PROCEDURAL",
-                source_versions={f"skill:{OPENCODE_EXECUTOR_SKILL_ID}": "v2"},
+                source_versions={f"skill:{OPENCODE_EXECUTOR_SKILL_ID}": "v3"},
             )
         finally:
             consume_harness_authorization(promotion_auth)
@@ -496,7 +514,7 @@ def prepare(output: Path) -> dict[str, Any]:
     active = resolve_active_opencode_executor_profile()
     proof = {
         "schema_version": 1,
-        "status": "PASS" if evaluation["decision"] == "PROMOTE" and active["version"] == "v2" else "BLOCKED",
+        "status": "PASS" if evaluation["decision"] == "PROMOTE" and active["version"] == "v3" else "BLOCKED",
         "run_id": run_id,
         "workload_fingerprint": fingerprint,
         "baseline": baseline,
