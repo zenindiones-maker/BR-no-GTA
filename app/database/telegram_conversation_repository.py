@@ -38,6 +38,7 @@ def _ensure_schema(connection) -> None:
             last_human_decision TEXT,
             pending_human_review TEXT,
             pending_question TEXT,
+            pending_action TEXT,
             active_artifact TEXT,
             active_run_id TEXT,
             active_stage TEXT,
@@ -50,6 +51,17 @@ def _ensure_schema(connection) -> None:
         )
         """
     )
+    existing_state_columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(telegram_conversation_states)"
+        ).fetchall()
+    }
+    if "pending_action" not in existing_state_columns:
+        connection.execute(
+            "ALTER TABLE telegram_conversation_states ADD COLUMN pending_action TEXT"
+        )
+
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS telegram_conversation_turns (
@@ -130,6 +142,7 @@ def _state_record(row) -> dict[str, Any] | None:
     record["waiting_for_human"] = bool(record.get("waiting_for_human"))
     record["last_execution_result"] = _load(record.get("last_execution_result"), {})
     record["recent_turn_ids"] = _load(record.get("recent_turn_ids"), [])
+    record["pending_action"] = _load(record.get("pending_action"), None)
     return record
 
 
@@ -162,7 +175,7 @@ def update_conversation_state(
     allowed = {
         "active_goal_id", "active_project", "active_task", "current_subject",
         "last_human_intent", "last_human_decision", "pending_human_review",
-        "pending_question", "active_artifact", "active_run_id", "active_stage",
+        "pending_question", "pending_action", "active_artifact", "active_run_id", "active_stage",
         "active_blocker", "execution_status", "waiting_for_human",
         "last_execution_result", "recent_turn_ids",
     }
@@ -175,9 +188,9 @@ def update_conversation_state(
     values = dict(changes)
     if "waiting_for_human" in values:
         values["waiting_for_human"] = int(bool(values["waiting_for_human"]))
-    for key in ("last_execution_result", "recent_turn_ids"):
+    for key in ("last_execution_result", "recent_turn_ids", "pending_action"):
         if key in values:
-            values[key] = _dump(values[key])
+            values[key] = _dump(values[key]) if values[key] is not None else None
     values["updated_at"] = _utcnow()
     assignments = ", ".join(f"{key} = ?" for key in values)
     params = list(values.values()) + [state["conversation_id"]]
