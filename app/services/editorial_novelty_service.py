@@ -25,7 +25,7 @@ def topic_is_duplicate(topic:str,baselines:list[str])->tuple[bool,float,str|None
     scored=[(similarity(topic,x),x) for x in baselines if str(x).strip()]
     if not scored:return False,0.0,None
     score,matched=max(scored,key=lambda x:x[0]);return score>=TOPIC_REPEAT_THRESHOLD,score,matched
-def _sentences(text:str)->list[str]: return [normalize(x) for x in re.split(r"(?<=[.!?])\\s+",text) if len(words(x))>=8]
+def _sentences(text:str)->list[str]: return [normalize(x) for x in re.split(r"(?<=[.!?])\s+",text) if len(words(x))>=8]
 def internal_sentence_duplication_percent(text:str)->float:
     rows=_sentences(text);return 0.0 if not rows else (len(rows)-len(set(rows)))/len(rows)*100.0
 def shingles(text:str,n:int=8)->set[tuple[str,...]]:
