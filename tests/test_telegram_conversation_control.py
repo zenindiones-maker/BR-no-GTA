@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.database.ideas_repository import insert_idea
+from app.database.scripts_repository import insert_script
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
     list_recent_conversation_turns,
@@ -63,6 +65,34 @@ def test_reference_resolution_tracks_last_artifact_and_section():
         recent_turns=recent,
     )
     assert section["reference"] == "script:9#musica"
+
+
+def test_last_script_request_delivers_canonical_script_content():
+    idea_id = insert_idea("Ideia teste roteiro", description="teste")
+    script_id = insert_script(
+        idea_id,
+        "Roteiro teste",
+        "Texto canônico completo do roteiro para revisão humana.",
+        status="draft",
+        version=1,
+    )
+    chat_id = 9990
+    update_conversation_state(
+        chat_id,
+        active_artifact=f"script:{script_id}",
+        current_subject="roteiro atual",
+    )
+    result = handle_telegram_conversation(
+        "me manda o último roteiro",
+        telegram_chat_id=chat_id,
+        telegram_message_id=91,
+        chat_handler=_chat_stub,
+        presenter=_presenter,
+    )
+    assert result["canonical_result"]["status"] == "SCRIPT_PRESENTED"
+    assert result["canonical_result"]["script_id"] == script_id
+    assert result["answer"] == "Texto canônico completo do roteiro para revisão humana."
+    assert result["conversation_state"]["active_artifact"] == f"script:{script_id}"
 
 
 def test_multiturn_pronoun_feedback_binds_human_decision_and_learning():
