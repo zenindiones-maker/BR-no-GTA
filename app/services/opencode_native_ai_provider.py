@@ -177,6 +177,15 @@ class OpenCodeNativeAIProviderError(AIProviderError):
             "semantic_text_only_pass": self.details.get("semantic_text_only_pass"),
             "error_events": self.details.get("error_events"),
             "safe_stderr_tail": self.details.get("safe_stderr_tail"),
+            "parse_errors": self.details.get("parse_errors"),
+            "stdout_ndjson_event_types": self.details.get("stdout_ndjson_event_types"),
+            "finish_reason": self.details.get("finish_reason"),
+            "answer_accumulated": self.details.get("answer_accumulated"),
+            "cli_execution_mode": (
+                (self.details.get("performance") or {}).get("cli_execution_mode")
+                if isinstance(self.details.get("performance"), dict)
+                else None
+            ),
             "performance": self.details.get("performance"),
         }
 
