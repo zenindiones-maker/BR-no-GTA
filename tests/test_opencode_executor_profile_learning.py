@@ -23,6 +23,7 @@ from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
     OPENCODE_EXECUTOR_SKILL_ID,
+    SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
     OpenCodeBlockedBaselineError,
     create_opencode_provider_for_active_profile,
     executable_opencode_executor_profile,
@@ -89,20 +90,20 @@ def test_default_opencode_profile_is_observed_blocked_v1_and_fails_closed():
     assert error["profile_version"] == "v1"
 
 
-def test_active_v2_profile_resolves_real_native_executor(monkeypatch):
+def test_active_v3_profile_resolves_real_native_executor(monkeypatch):
     profile = executable_opencode_executor_profile(
-        CANDIDATE_OPENCODE_EXECUTOR_VERSION
+        SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION
     )
     register_skill_version(
         skill_id=OPENCODE_EXECUTOR_SKILL_ID,
-        version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-        parent_version=BASELINE_OPENCODE_EXECUTOR_VERSION,
+        version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+        parent_version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
         content_ref=profile["content_ref"],
         checksum=profile["checksum"],
         status="ACTIVE",
         evidence_refs=("github:run:35343942135",),
     )
-    assert resolve_active_opencode_executor_profile()["version"] == "v2"
+    assert resolve_active_opencode_executor_profile()["version"] == "v3"
 
     captured = {}
 
@@ -128,8 +129,9 @@ def test_active_v2_profile_resolves_real_native_executor(monkeypatch):
         routing_decision=route,
         authorization=auth,
     )
-    assert provider.profile_version == "v2"
+    assert provider.profile_version == "v3"
     assert captured["profile"]["options"]["executor_model"] == "opencode/big-pickle"
+    assert captured["profile"]["options"]["semantic_contract"] == "SEMANTIC_TEXT_ONLY"
 
 
 def test_harness_evidence_reports_concrete_promoted_executor(monkeypatch):
