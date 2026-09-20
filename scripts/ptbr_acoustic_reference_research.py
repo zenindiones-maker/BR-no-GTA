@@ -53,7 +53,9 @@ def download_audio(source:dict[str,Any],root:Path)->Path:
     folder.mkdir(parents=True,exist_ok=True)
     template=str(folder/"source.%(ext)s")
     run([
-        "yt-dlp","--no-playlist","-f","bestaudio/best","-x","--audio-format","wav",
+        "yt-dlp","--no-playlist","--js-runtimes","deno",
+        "--extractor-args","youtube:player_client=android",
+        "-f","bestaudio/best","-x","--audio-format","wav",
         "--audio-quality","0","-o",template,source["url"]
     ],timeout=2400)
     rows=list(folder.glob("source.wav"))
