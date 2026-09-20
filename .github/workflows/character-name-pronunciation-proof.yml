@@ -1,0 +1,184 @@
+name: Character Name Pronunciation Review
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run001/character-name-pronunciation-proof.request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: character-name-pronunciation-review
+  cancel-in-progress: false
+
+jobs:
+  character-pronunciation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Validate candidate request
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(".run001/character-name-pronunciation-proof.request.json").read_text())
+          assert d["base_head"]=="a73026f487ec0f49e7d531fe51c982cf5263973e", d
+          assert d["video_a_rerender"] is False, d
+          assert d["automatic_promotion"] is False, d
+          assert d["default_narration_locale"]=="pt-BR", d
+          assert d["only_forced_en_us_term"]=="Vice City", d
+          assert d["script_sha256"]=="9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea", d
+          print("CHARACTER_NAME_REQUEST=PASS")
+          print("VIDEO_A_RERENDER=NO")
+          PY
+
+      - name: Install audio benchmark runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements.txt pytest
+          python -m pip install "edge-tts==7.2.8" "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
+
+      - name: Restore canonical product package only
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10589535732"
+          run-id: "35458162169"
+          github-token: ${{ github.token }}
+          path: runtime/product-source
+          merge-multiple: true
+
+      - name: Focused candidate tests
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_character_name_pronunciation_candidate.py
+          echo "NO_CHARACTER_NAME_EN_US_CHUNKS=PASS"
+          echo "CANONICAL_TEXT_PRESERVED=PASS"
+          echo "VOICE_B_PRESERVED=PASS"
+
+      - name: Generate official-grounded Voice B character benchmark
+        run: |
+          set -euo pipefail
+          python scripts/character_name_pronunciation_proof.py \
+            --product-package runtime/product-source/product-quality-e2e.json \
+            --output-dir runtime/character-pronunciation
+
+      - name: Validate review gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("runtime/character-pronunciation/character-name-pronunciation-proof.json").read_text())
+          required=(
+              "PT_BR_PROSODY_CONTINUITY",
+              "CHARACTER_NAME_PRONUNCIATION",
+              "NO_CHARACTER_NAME_EN_US_CHUNKS",
+              "ONLY_FORCED_EN_US_TERM",
+              "CANONICAL_TEXT_PRESERVED",
+              "VOICE_B_PRESERVED",
+              "CURRENT_SCRIPT_CHARACTER_INVENTORY",
+              "CANDIDATE_CACHE_VERSIONED",
+              "OFFICIAL_TRAILER_REFERENCE_MATERIALIZED",
+              "NO_AUTOMATIC_PROMOTION",
+          )
+          missing=[k for k in required if (p.get("checks") or {}).get(k) is not True]
+          if p.get("status")!="PASS" or missing:
+              raise SystemExit("CHARACTER_NAME_PRONUNCIATION_PROOF=FAIL:"+",".join(missing))
+          if (p.get("human_review") or {}).get("status")!="PENDING":
+              raise SystemExit("HUMAN_CHARACTER_NAME_REVIEW_GATE_INVALID")
+          for key in required:
+              print(key+"=PASS")
+          print("ONLY_FORCED_EN_US_TERM=Vice City")
+          print("HUMAN_CHARACTER_NAME_REVIEW=PENDING")
+          print("VIDEO_A_RERENDER=NO")
+          PY
+
+      - name: Deliver review files to canonical Telegram transport
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          mkdir -p runtime/character-pronunciation/telegram
+          files=(
+            runtime/character-pronunciation/official-reference/official-reference-jason.mp3
+            runtime/character-pronunciation/official-reference/official-reference-lucia.mp3
+            runtime/character-pronunciation/samples/A-jason.mp3
+            runtime/character-pronunciation/samples/B-lucia.mp3
+            runtime/character-pronunciation/samples/C-jason-lucia.mp3
+            runtime/character-pronunciation/samples/D-character-vice-city.mp3
+            runtime/character-pronunciation/samples/E-current-script-multi.mp3
+          )
+          : > runtime/character-pronunciation/telegram/message-ids.txt
+          for audio in "${files[@]}"; do
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "document=@$audio" \
+              -F "caption=BR no GTA 6 · character pronunciation review · $(basename "$audio")")"
+            RESPONSE="$response" python - <<'PY' >> runtime/character-pronunciation/telegram/message-ids.txt
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          if d.get("ok") is not True:
+              raise SystemExit("TELEGRAM_DELIVERY_ACCEPTED=NO")
+          mid=(d.get("result") or {}).get("message_id")
+          if not isinstance(mid,int):
+              raise SystemExit("TELEGRAM_MESSAGE_ID_MISSING")
+          print(mid)
+          PY
+          done
+          MESSAGE_IDS="$(paste -sd, runtime/character-pronunciation/telegram/message-ids.txt)" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          ids=[int(x) for x in os.environ["MESSAGE_IDS"].split(",") if x.strip()]
+          state={
+              "status":"PASS",
+              "transport":"canonical-telegram-review",
+              "send_mode":"document-no-recompression",
+              "message_ids":ids,
+              "sample_count":len(ids),
+              "human_character_name_review":"PENDING",
+              "automatic_promotion":False,
+              "video_a_rerender":False,
+          }
+          Path("runtime/character-pronunciation/telegram-delivery.json").write_text(json.dumps(state,indent=2),encoding="utf-8")
+          print("TELEGRAM_CHARACTER_REVIEW_DELIVERY=PASS")
+          print("TELEGRAM_MESSAGE_IDS="+",".join(str(x) for x in ids))
+          print("HUMAN_CHARACTER_NAME_REVIEW=PENDING")
+          PY
+
+      - name: Upload pronunciation review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-name-pronunciation-${{ github.run_id }}
+          path: runtime/character-pronunciation/
+          if-no-files-found: error
+          retention-days: 30

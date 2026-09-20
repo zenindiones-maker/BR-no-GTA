@@ -1,0 +1,25 @@
+{
+  "mission": "character-name-pronunciation-ptbr-continuity-v1",
+  "base_head": "a73026f487ec0f49e7d531fe51c982cf5263973e",
+  "requested_at": "2026-09-20T02:21:00Z",
+  "video_a_rerender": false,
+  "automatic_promotion": false,
+  "default_narration_locale": "pt-BR",
+  "only_forced_en_us_term": "Vice City",
+  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "gta_6_synthesis": "gê tê á seis",
+  "vice_city_target_ipa": "vaɪs ˈsɪti",
+  "canonical_product_artifact_id": 10589535732,
+  "canonical_product_run_id": 35458162169,
+  "script_sha256": "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea",
+  "current_script_character_inventory": ["Jason", "Lucia"],
+  "candidate_lexicon_version": "2026.09.19.4-character-candidate.1",
+  "official_ground_truth": {
+    "rockstar_page": "https://www.rockstargames.com/VI/trailer-2",
+    "youtube_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
+    "youtube_video_id": "VQRLujxTm3c",
+    "jason_reference_window_seconds": [23.0, 29.5],
+    "lucia_reference_window_seconds": [49.0, 55.0]
+  },
+  "human_character_name_review": "PENDING"
+}
