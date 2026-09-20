@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.5-rockstar-acoustic.1",
+  "version": "2026.09.19.5-ptbr-dub-acoustic.2",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "Human-review candidate only; not promoted to production",
@@ -21,13 +21,12 @@
     "acoustic_selection_required": true
   },
   "reference": {
-    "kind": "official_rockstar_trailer_2",
-    "rockstar_page": "https://www.rockstargames.com/VI/trailer-2",
-    "url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
-    "video_id": "VQRLujxTm3c",
-    "title": "Grand Theft Auto VI Trailer 2",
-    "publisher": "Rockstar Games",
-    "authority_scope": "Canonical character-name pronunciation ground truth; PT-BR synthesis spellings are human-gated approximations only."
+    "kind": "ptbr_dubbed_trailer",
+    "url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
+    "video_id": "f8IZhKcuEts",
+    "title": "GTA 6 | Trailer 2 - DUBLADO - Grand Theft Auto VI",
+    "channel": "YouDubbing",
+    "authority_scope": "Brazilian dubbing/pronunciation adaptation reference only; Rockstar remains canonical character identity authority"
   },
   "entries": [
     {
@@ -83,22 +82,12 @@
       ]
     }
   ],
-  "benchmark_pair": {
-    "status": "DELIVERED_FOR_HUMAN_REVIEW",
-    "proof_run_id": 35484467232,
-    "proof_artifact_id": 10597177719,
-    "jason_synthesis_candidate": "Djêisson",
-    "lucia_synthesis_candidate": "Lussía",
-    "telegram_message_ids": [
-      215,
-      216,
-      217,
-      218,
-      219,
-      220,
-      221
-    ],
-    "promoted": false,
-    "human_review": "PENDING"
+  "cast_reference": {
+    "Jason": "Raphael Rossatto",
+    "Lucia": "Carina Eiras",
+    "Brian": "Ricardo Rossatto",
+    "Cal": "Paulo Vignolo",
+    "Real Dimez": "Isabele Riccart",
+    "Phil": "Nando Sierpe"
   }
 }
