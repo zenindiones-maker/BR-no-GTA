@@ -34,7 +34,7 @@ jobs:
       - name: Install focused preflight runtime
         run: |
           set -euo pipefail
-          python -m pip install -r requirements.txt pytest pillow requests
+          python -m pip install pytest pillow requests
           mkdir -p runtime/editorial-novelty-proof
       - name: Focused novelty and overlay gates
         run: |
