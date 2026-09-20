@@ -79,3 +79,12 @@ def test_candidate_cache_key_preserves_diacritic_identity():
     assert candidate_cache_key("Djeison") != candidate_cache_key("Djêison")
     assert candidate_cache_key("Lucia") != candidate_cache_key("Lucía")
     assert candidate_cache_key("Lussía") != candidate_cache_key("Lussiá")
+
+
+def test_lucia_human_alias_is_exactly_lucia_with_acute_i():
+    d=load(CANDIDATE)
+    entry=next(x for x in d["entries"] if x["identity"]=="character-lucia")
+    assert entry["human_selected_synthesis_alias"]=="Lucía"
+    assert entry["synthesis_candidates"]==["Lucía"]
+    assert "Lussiá" not in entry["synthesis_candidates"]
+    assert entry["locale"]=="pt-BR"

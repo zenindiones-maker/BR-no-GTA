@@ -221,7 +221,9 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
     runtime["reference"]["source_audio_sha256"]=sha256(audio)
     selection={}
     for name,identity in {"Jason":"character-jason","Lucia":"character-lucia"}.items():
-        candidates=list(find_entry(payload,identity).get("synthesis_candidates") or [])
+        entry=find_entry(payload,identity)
+        human_selected=str(entry.get("human_selected_synthesis_alias") or "").strip()
+        candidates=[human_selected] if human_selected else list(entry.get("synthesis_candidates") or [])
         refs=[]
         usable=[
             item for item in occurrences.get(name) or []
@@ -264,7 +266,8 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
         ranking.sort(key=lambda row:(row["shared_mean_acoustic_distance"],len(row["alias"])))
         winner=ranking[0]
         selection[name]={
-            "status":"ROCKSTAR_TRAILER2_SHARED_ALIAS_SELECTED",
+            "status":"HUMAN_ALIAS_SELECTED" if human_selected else "ROCKSTAR_TRAILER2_SHARED_ALIAS_SELECTED",
+            "selection_authority":"human" if human_selected else "rockstar_trailer2_acoustic",
             "synthesis_alias":winner["alias"],
             "locale":"pt-BR",
             "reference_occurrence_count":len(refs),
@@ -274,8 +277,12 @@ def select_shared_aliases(payload:dict[str,Any],occurrences:dict[str,list[dict[s
         }
         target=find_entry(runtime,identity)
         target["synthesis_text"]=winner["alias"]
-        target["reference_status"]="ROCKSTAR_TRAILER2_ACOUSTIC_REFERENCE"
-        target["source"]="Rockstar Games official Trailer 2 acoustic reference; human approval required"
+        if human_selected:
+            target["reference_status"]="HUMAN_CORRECTED_ALIAS"
+            target["source"]="Human-corrected synthesis-only alias; canonical text and pt-BR locale preserved"
+        else:
+            target["reference_status"]="ROCKSTAR_TRAILER2_ACOUSTIC_REFERENCE"
+            target["source"]="Rockstar Games official Trailer 2 acoustic reference; human approval required"
     return selection,runtime
 
 def sample_set(script:str)->list[tuple[str,str,str]]:

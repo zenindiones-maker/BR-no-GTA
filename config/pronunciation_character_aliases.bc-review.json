@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.1-rockstar-trailer2-bc",
+  "version": "2026.09.20.2-rockstar-trailer2-bc-human-lucia",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "Human-review candidate only; not promoted to production",
@@ -23,7 +23,10 @@
     "authority_scope": "Official Rockstar acoustic ground truth for Jason and Lucia as spoken in Trailer 2"
   },
   "review_casting": {
-    "allowed_blind_ids": ["B", "C"],
+    "allowed_blind_ids": [
+      "B",
+      "C"
+    ],
     "official_voice": "B",
     "challenger_voice": "C",
     "automatic_voice_switch": false,
@@ -57,7 +60,9 @@
     {
       "identity": "gta-6",
       "term": "GTA 6",
-      "aliases": ["GTA VI"],
+      "aliases": [
+        "GTA VI"
+      ],
       "locale": "pt-BR",
       "strategy": "alias",
       "synthesis_text": "gê tê á seis",
@@ -71,7 +76,14 @@
       "strategy": "alias",
       "critical": true,
       "reference_status": "ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED",
-      "synthesis_candidates": ["Jason", "Djeison", "Djêison", "Djeisson", "Djêisson", "Jêison"]
+      "synthesis_candidates": [
+        "Jason",
+        "Djeison",
+        "Djêison",
+        "Djeisson",
+        "Djêisson",
+        "Jêison"
+      ]
     },
     {
       "identity": "character-lucia",
@@ -79,8 +91,12 @@
       "locale": "pt-BR",
       "strategy": "alias",
       "critical": true,
-      "reference_status": "ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED",
-      "synthesis_candidates": ["Lucia", "Lúcia", "Lucía", "Lussía", "Lussí-a", "Lussiá"]
+      "reference_status": "HUMAN_CORRECTED_ALIAS",
+      "synthesis_candidates": [
+        "Lucía"
+      ],
+      "human_selected_synthesis_alias": "Lucía",
+      "source": "Human-corrected synthesis-only alias: canonical text Lucia remains unchanged; PT-BR sentence locale preserved"
     }
   ]
 }
