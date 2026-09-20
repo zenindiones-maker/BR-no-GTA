@@ -162,12 +162,33 @@ def execute_hermes_mission_capability(
         comment for comment in snapshot["comments"]
         if "HANDOFF" in str(comment.get("body") or "").upper()
     )
+    projected_workers = [profile.to_dict() for profile in profiles]
+    projected_names = {item["profile_name"] for item in projected_workers}
+    for run in snapshot["runs"]:
+        observed_name = str(run.get("profile") or "").strip()
+        if not observed_name or observed_name in projected_names:
+            continue
+        board_task_id = str(run.get("task_id") or "")
+        plan_task_id = next(
+            (plan_id for plan_id, value in mapping.items() if value == board_task_id),
+            None,
+        )
+        if plan_task_id is None:
+            continue
+        projected = HermesProfileFactory().project_task(
+            spec.task(plan_task_id),
+            runtime_role=observed_name,
+        ).to_dict()
+        projected["observed_review_lane"] = True
+        projected_workers.append(projected)
+        projected_names.add(observed_name)
+
     result = HermesMissionExecutionResult(
         mission_id=spec.mission_id,
         board_id=board_id,
         run_id=f"hermes:{spec.mission_id}",
         status="COMPLETED" if all(v == "done" for v in final_statuses.values()) else "INCOMPLETE",
-        workers=tuple(profile.to_dict() for profile in profiles),
+        workers=tuple(projected_workers),
         tasks=tuple(snapshot["tasks"]),
         comments_handoffs=handoffs,
         retries=retries,
