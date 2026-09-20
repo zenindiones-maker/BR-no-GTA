@@ -143,6 +143,49 @@ class OpenCodeBlockedBaselineError(AIProviderError):
         }
 
 
+class OpenCodeDisprovenSemanticProfileError(AIProviderError):
+    def __init__(self, profile: dict[str, Any]):
+        super().__init__(
+            "OpenCode semantic profile v2 is blocked by observed semantic tool use"
+        )
+        self.profile = profile
+        self.safe_message = str(self)
+        self.retryable = False
+
+    def to_dict(self) -> dict[str, Any]:
+        options = dict(self.profile["options"])
+        return {
+            "provider": "opencode",
+            "model": options["canonical_model"],
+            "code": "semantic_tools_used",
+            "retryable": False,
+            "message": self.safe_message,
+            "error_type": type(self).__name__,
+            "observed_failure_run_id": 35537494044,
+            "observed_failure_artifact_id": 10612603412,
+            "profile_skill_id": self.profile["skill_id"],
+            "profile_version": self.profile["version"],
+            "profile_content_ref": self.profile["content_ref"],
+            "profile_checksum": self.profile["checksum"],
+            "executor_binding": options["executor_binding"],
+            "failure_pattern": "opencode_semantic_tools_used",
+        }
+
+
+class _DisprovenSemanticProvider:
+    def __init__(self, profile: dict[str, Any]):
+        self.profile = profile
+        self.executor_binding = profile["options"]["executor_binding"]
+        self.profile_version = profile["version"]
+        self.profile_content_ref = profile["content_ref"]
+        self.profile_checksum = profile["checksum"]
+
+    def generate(self, prompt: str) -> AIResponse:
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise AIProviderError("OpenCode prompt must be non-empty")
+        raise OpenCodeDisprovenSemanticProfileError(self.profile)
+
+
 class _BlockedBaselineProvider:
     def __init__(self, profile: dict[str, Any]):
         self.profile = profile
@@ -171,10 +214,9 @@ def create_opencode_provider_for_active_profile(
 
     if profile["version"] == BASELINE_OPENCODE_EXECUTOR_VERSION:
         return _BlockedBaselineProvider(profile)
-    if profile["version"] in {
-        CANDIDATE_OPENCODE_EXECUTOR_VERSION,
-        SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
-    }:
+    if profile["version"] == CANDIDATE_OPENCODE_EXECUTOR_VERSION:
+        return _DisprovenSemanticProvider(profile)
+    if profile["version"] == SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION:
         from app.services.opencode_native_ai_provider import OpenCodeNativeAIProvider
 
         return OpenCodeNativeAIProvider(
