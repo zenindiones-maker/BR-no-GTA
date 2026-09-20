@@ -179,3 +179,5 @@ jobs:
             runtime/video-a-dubbing-learning.db
           if-no-files-found: warn
           retention-days: 30
+
+# all-ptbr human-rejection audition trigger v1
