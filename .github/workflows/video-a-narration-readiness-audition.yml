@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   audition:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'run VIDEO A narration audition')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
