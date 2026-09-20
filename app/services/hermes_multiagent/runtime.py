@@ -98,7 +98,6 @@ def materialize_board_from_plan(
                 assignee=profile.profile_name,
                 parents=parent_board_ids,
                 idempotency_key=f"{spec.mission_id}:{plan_task_id}",
-                initial_status="ready",
             )
     return board_ids, profiles
 
