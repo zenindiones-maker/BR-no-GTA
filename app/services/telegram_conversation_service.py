@@ -49,7 +49,7 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
     text = _fold(message).strip()
     if not text:
         return "CLARIFICATION"
-    if re.search(r"\b(aprovo|aprovado|aprovada|pode seguir|pode continuar|ficou bom|ficou melhor)\b", text):
+    if re.search(r"\b(aprovo|aprovado|aprovada|pode seguir|pode continuar|ficou bom)\b", text):
         return "APPROVAL"
     if re.search(r"\b(rejeito|reprovado|reprovada|nao gostei|ficou ruim|esta ruim|ta ruim|nao use|nao usa)\b", text):
         return "REJECTION"
