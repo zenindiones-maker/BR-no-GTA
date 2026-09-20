@@ -9,6 +9,12 @@ on:
       - scripts/youtube_product_quality_e2e.py
       - tests/test_youtube_role_context_service.py
       - .github/workflows/new-video-production-resume-validation.yml
+      - app/services/source_window_validation_service.py
+      - app/workers/professional_audiovisual_worker.py
+      - scripts/run001_longform_no_padding_qa.py
+      - app/services/github_actions_learning_observer.py
+      - scripts/reconcile_render_learning_incident.py
+      - tests/test_source_window_failfast.py
   workflow_dispatch:
 
 permissions:
@@ -31,6 +37,16 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -q pytest python-dotenv==1.2.3
-          python -m pytest -q tests/test_youtube_role_context_service.py
-          python -m py_compile app/services/youtube_role_context_service.py scripts/youtube_product_quality_e2e.py
+          python -m pytest -q \
+            tests/test_youtube_role_context_service.py \
+            tests/test_source_window_failfast.py \
+            tests/test_professional_audiovisual_worker.py
+          python -m py_compile \
+            app/services/youtube_role_context_service.py \
+            app/services/source_window_validation_service.py \
+            app/workers/professional_audiovisual_worker.py \
+            scripts/run001_longform_no_padding_qa.py \
+            scripts/reconcile_render_learning_incident.py \
+            scripts/youtube_product_quality_e2e.py
           echo "ROLE_PACKET_DETERMINISTIC_TESTS=PASS"
+          echo "PRE_RENDER_NO_PADDING_FAILFAST_TESTS=PASS"

@@ -38,6 +38,7 @@ from app.services.operational_efficiency_policy import (
     validate_observability_event,
 )
 from app.services.render_media_materializer import materialize_scenes
+from app.services.source_window_validation_service import validate_source_window_usage
 from app.workers.audiovisual_worker import WorkerError, execute, probe_video, write_json
 
 PROFILE = "professional_ptbr_v1"
@@ -602,6 +603,49 @@ def _caption_chunks(text: str, *, max_words: int = 10) -> list[str]:
     return chunks or [text.strip()]
 
 
+def _merge_source_windows(
+    windows: list[tuple[float, float]],
+    *,
+    tolerance: float = 0.001,
+) -> list[tuple[float, float]]:
+    merged: list[list[float]] = []
+    for start, end in sorted(windows):
+        if end <= start:
+            continue
+        if not merged or start > merged[-1][1] + tolerance:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
+
+
+def _governed_source_windows(
+    job: dict[str, Any],
+    *,
+    opening_duration: float,
+    closing_duration: float,
+) -> dict[str, list[tuple[float, float]]]:
+    sections = list(job.get("script_sections") or [])
+    grouped: dict[str, list[tuple[float, float]]] = {}
+    for section_index, section in enumerate(sections):
+        candidates = list(section.get("visual_candidates") or [])
+        for candidate_index, candidate in enumerate(candidates):
+            asset_ref = str(candidate["asset_ref"])
+            start = float(candidate["start_seconds"])
+            end = float(candidate["end_seconds"])
+            if section_index == 0 and candidate_index == 0:
+                start += opening_duration
+            if section_index == len(sections) - 1 and candidate_index == len(candidates) - 1:
+                end -= closing_duration
+            if end <= start:
+                raise WorkerError("EDIT_QA: branding reservation exhausted a governed source window")
+            grouped.setdefault(asset_ref, []).append((start, end))
+    return {
+        asset_ref: _merge_source_windows(windows)
+        for asset_ref, windows in grouped.items()
+    }
+
+
 def _build_edit_plan(
     job: dict[str, Any],
     voice_sections: list[dict[str, Any]],
@@ -625,8 +669,13 @@ def _build_edit_plan(
     cursor = opening_duration
     segment_id = 1
     cut_pattern_index = 0
-    source_usage: dict[str, float] = {}
+    asset_cursors: dict[str, float] = {}
     semantic_links = []
+    governed_source_windows = _governed_source_windows(
+        job,
+        opening_duration=opening_duration,
+        closing_duration=closing_duration,
+    )
 
     first_section = job["script_sections"][0]
     opening_candidate = first_section["visual_candidates"][0]
@@ -696,7 +745,6 @@ def _build_edit_plan(
         remaining = section_duration
         local_offset = 0.0
         candidates = section["visual_candidates"]
-        candidate_index = 0
 
         def candidate_bounds(index: int, candidate: dict[str, Any]) -> tuple[float, float]:
             start = float(candidate["start_seconds"])
@@ -709,38 +757,39 @@ def _build_edit_plan(
                 raise WorkerError("EDIT_QA: branding reservation exhausted a semantic visual window")
             return start, end
 
-        candidate_cursor = {index: candidate_bounds(index, candidate)[0] for index, candidate in enumerate(candidates)}
+        section_anchors: dict[str, float] = {}
+        candidate_for_asset: dict[str, dict[str, Any]] = {}
+        for idx, candidate in enumerate(candidates):
+            start, _ = candidate_bounds(idx, candidate)
+            asset_ref = str(candidate["asset_ref"])
+            section_anchors[asset_ref] = min(section_anchors.get(asset_ref, start), start)
+            candidate_for_asset.setdefault(asset_ref, candidate)
+
         while remaining > 0.001:
             desired = TARGET_VISUAL_CUT_SECONDS[cut_pattern_index % len(TARGET_VISUAL_CUT_SECONDS)]
             cut_pattern_index += 1
-            duration = min(desired, remaining)
-            attempts = 0
-            chosen = None
-            while attempts < len(candidates) * 3:
-                idx = candidate_index % len(candidates)
-                candidate_index += 1
-                candidate = candidates[idx]
-                start = candidate_cursor[idx]
-                _, end = candidate_bounds(idx, candidate)
-                available = end - start
-                if available >= duration - 0.001:
-                    chosen = (idx, candidate, start)
-                    break
-                candidate_cursor[idx] = candidate_bounds(idx, candidate)[0]
-                attempts += 1
-            if chosen is None:
-                # Candidate windows are editorial hints. When a synthesized section is longer than the
-                # non-repeating hints, deterministically restart at the beginning of the least-used candidate.
-                ranked = sorted(enumerate(candidates), key=lambda pair: source_usage.get(f"{pair[1]['asset_ref']}:{pair[0]}", 0.0))
-                idx, candidate = ranked[0]
-                start, reserved_end = candidate_bounds(idx, candidate)
-                if reserved_end - start < duration - 0.001:
-                    duration = min(duration, reserved_end - start)
-                chosen = (idx, candidate, start)
-            idx, candidate, source_start = chosen
+            choices: list[tuple[float, int, str, float]] = []
+            ordered_assets = list(dict.fromkeys(str(candidate["asset_ref"]) for candidate in candidates))
+            for asset_order, asset_ref in enumerate(ordered_assets):
+                cursor = max(
+                    asset_cursors.get(asset_ref, 0.0),
+                    section_anchors[asset_ref],
+                )
+                for governed_start, governed_end in governed_source_windows.get(asset_ref, []):
+                    source_start = max(cursor, governed_start)
+                    if governed_end - source_start > 0.001:
+                        choices.append((source_start, asset_order, asset_ref, governed_end))
+                        break
+            if not choices:
+                raise WorkerError(
+                    "EDIT_QA: non-overlapping governed source coverage is insufficient; "
+                    "refusing source-window rewind/reuse"
+                )
+            source_start, _, asset_ref, governed_end = min(choices)
+            duration = min(desired, remaining, governed_end - source_start)
             if duration <= 0.001:
                 raise WorkerError("EDIT_QA: semantic media candidate cannot cover narration")
-            asset_ref = candidate["asset_ref"]
+            candidate = candidate_for_asset[asset_ref]
             video_clips.append(EditClip(
                 segment_id=segment_id,
                 media_path=source_paths[asset_ref],
@@ -767,9 +816,7 @@ def _build_edit_plan(
                 "duration_seconds": duration,
                 "media_path": source_paths[asset_ref],
             })
-            candidate_cursor[idx] = source_start + duration
-            usage_key = f"{asset_ref}:{idx}"
-            source_usage[usage_key] = source_usage.get(usage_key, 0.0) + duration
+            asset_cursors[asset_ref] = source_start + duration
             semantic_links.append({
                 "segment_id": segment_id,
                 "section_id": section["section_id"],
@@ -924,6 +971,9 @@ def _build_edit_plan(
     video_end = max((clip.start_seconds + clip.duration_seconds for clip in video_clips), default=0.0)
     audio_end = max((item.start_seconds + (item.duration_seconds or 0.0) for item in audio), default=0.0)
     max_cut = max((clip.duration_seconds for clip in video_clips), default=0.0)
+    pre_render_validation_started = time.monotonic()
+    source_window_validation = validate_source_window_usage(semantic_links)
+    pre_render_validation_ms = (time.monotonic() - pre_render_validation_started) * 1000.0
     checks = {
         "a1_voice_present": len(audio) == 1 and audio[0].track == "A1" and audio[0].media_path == narration_master_path,
         "voice_full_coverage": abs(audio_end - duration) <= 0.01,
@@ -940,6 +990,7 @@ def _build_edit_plan(
         "brand_audio_cache_policy": bool(brand_contract["cache_policy"]["closing_fixed_reusable"]),
         "editorial_hook_preserved": job["script_sections"][0]["role"] == "hook" and plan.metadata["timeline_sequence"][2]["phase"] == "editorial_hook",
         "source_audio_not_authoritative": plan.metadata["source_audio_policy"] == "MUTED_VISUAL_SOURCE_AUDIO_A1_ONLY",
+        "no_reused_or_overlapping_source_windows": source_window_validation["status"] == "PASS",
     }
     edit_qa = {
         "status": "PASS" if all(checks.values()) else "FAIL",
@@ -948,6 +999,8 @@ def _build_edit_plan(
         "video_cut_count": len(video_clips),
         "max_visual_cut_seconds": max_cut,
         "semantic_links": semantic_links,
+        "source_window_validation": source_window_validation,
+        "pre_render_validation_ms": round(pre_render_validation_ms, 3),
     }
     if edit_qa["status"] != "PASS":
         raise WorkerError(f"EDIT_QA failed: {checks}")
@@ -1102,6 +1155,9 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         narration_duration=content_voice["duration_seconds"],
         brand_audio=content_voice,
     )
+    print("PRE_RENDER_NO_ARTIFICIAL_PADDING=PASS", flush=True)
+    print(f"PRE_RENDER_VALIDATION_MS={float(edit_qa['pre_render_validation_ms']):.3f}", flush=True)
+    print("RETRY_ON_DETERMINISTIC_FAILURE=NO", flush=True)
     effective = dict(job)
     effective["estimated_duration_seconds"] = plan.duration_seconds
     effective["scenes"] = expanded_scenes

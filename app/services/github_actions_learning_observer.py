@@ -256,6 +256,8 @@ def capture_observed_render_episode(
     render_job: Mapping[str, Any],
     observation: GitHubRenderObservation,
     routing_decision: Mapping[str, Any] | None = None,
+    failure_class_override: str | None = None,
+    failure_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if observation.observed is not True or not observation.terminal:
         raise ValueError("only a terminal canonical GitHub observation can create an Episode")
@@ -276,6 +278,12 @@ def capture_observed_render_episode(
         else "CANCELLED" if observation.job_conclusion == "cancelled"
         else "FAILED"
     )
+    effective_failure_class = None if observation.success else (
+        str(failure_class_override).strip()
+        if failure_class_override is not None and str(failure_class_override).strip()
+        else observation.failure_class
+    )
+    effective_failure_metadata = dict(failure_metadata or {})
     artifact_refs = tuple(
         f"github:artifact:{item.get('id')}:{item.get('name')}"
         for item in observation.artifacts
@@ -340,12 +348,13 @@ def capture_observed_render_episode(
             "run_conclusion": observation.run_conclusion,
             "job_status": observation.job_status,
             "job_conclusion": observation.job_conclusion,
-            "failure_class": observation.failure_class,
+            "failure_class": effective_failure_class,
             "failure_stage": failed_stage,
             "orphan_processes": list(observation.orphan_processes),
+            **effective_failure_metadata,
         },
         outcome_evidence=evidence_refs,
-        error=(observation.failure_class if not observation.success else None),
+        error=effective_failure_class,
         retry_count=0,
         human_intervention=False,
         qa_results=qa,
@@ -386,7 +395,7 @@ def capture_observed_render_episode(
             ),
             domain=RENDER_DOMAIN,
             task_class=RENDER_TASK_CLASS,
-            failure_pattern=observation.failure_class,
+            failure_pattern=str(effective_failure_class),
             source_episode_id=persisted["episode_id"],
             evidence_refs=evidence_refs,
             agent_id=RENDER_AGENT_ID,
@@ -398,7 +407,7 @@ def capture_observed_render_episode(
                 f"skill:{RENDER_PROFILE_SKILL_ID}": skill_version,
             },
             metadata={
-                "failure_class": observation.failure_class,
+                "failure_class": effective_failure_class,
                 "affected_task_class": RENDER_TASK_CLASS,
                 "affected_capability": RENDER_CAPABILITY_ID,
                 "affected_skill": RENDER_PROFILE_SKILL_ID,
@@ -416,7 +425,9 @@ def capture_observed_render_episode(
                     "commit_sha": observation.head_sha,
                 },
                 "diagnostic_status": diagnostic_status,
-                "root_cause": None,
+                "root_cause": effective_failure_metadata.get("root_cause"),
+                "waste_cause": effective_failure_metadata.get("waste_cause"),
+                "avoidable_render_waste_ms": effective_failure_metadata.get("avoidable_render_waste_ms"),
                 "applicable_scope": "TASK_CLASS",
             },
             confidence=0.99,

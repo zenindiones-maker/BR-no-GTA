@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.services.source_window_validation_service import validate_source_window_usage
+
 
 def load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -53,52 +55,16 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
     if not isinstance(links, list) or not links:
         raise RuntimeError("semantic media lineage is required")
 
-    by_asset: dict[str, list[tuple[float, float, int, str]]] = {}
-    total = 0.0
-    for item in links:
-        if not isinstance(item, dict):
-            raise RuntimeError("semantic link must be an object")
-        asset_ref = str(item.get("asset_ref") or "").strip()
-        section_id = str(item.get("section_id") or "").strip()
-        if not asset_ref or not section_id:
-            raise RuntimeError("semantic link requires asset_ref and section_id")
-        start = float(item.get("source_start_seconds"))
-        length = float(item.get("duration_seconds"))
-        if not math.isfinite(start) or not math.isfinite(length) or start < 0 or length <= 0:
-            raise RuntimeError("semantic link contains invalid source timing")
-        if length > 12.001:
-            raise RuntimeError("visual cut exceeds long-form professional cadence")
-        end = start + length
-        segment_id = int(item.get("segment_id"))
-        by_asset.setdefault(asset_ref, []).append((start, end, segment_id, section_id))
-        total += length
-
-    overlaps: list[dict[str, Any]] = []
-    repeated_exact_windows: list[dict[str, Any]] = []
-    for asset_ref, intervals in by_asset.items():
-        seen: set[tuple[float, float]] = set()
-        ordered = sorted(intervals, key=lambda value: (value[0], value[1], value[2]))
-        for current in ordered:
-            key = (round(current[0], 3), round(current[1], 3))
-            if key in seen:
-                repeated_exact_windows.append({"asset_ref": asset_ref, "start": key[0], "end": key[1]})
-            seen.add(key)
-        for previous, current in zip(ordered, ordered[1:]):
-            overlap = min(previous[1], current[1]) - max(previous[0], current[0])
-            if overlap > 0.05:
-                overlaps.append({
-                    "asset_ref": asset_ref,
-                    "previous_segment_id": previous[2],
-                    "current_segment_id": current[2],
-                    "previous_section_id": previous[3],
-                    "current_section_id": current[3],
-                    "overlap_seconds": overlap,
-                })
-    if overlaps or repeated_exact_windows:
+    window_validation = validate_source_window_usage(links)
+    if window_validation["status"] != "PASS":
+        detail = (window_validation["overlaps"] or window_validation["repeated_exact_windows"])[0]
         raise RuntimeError(
             "NO_ARTIFICIAL_PADDING failed: source windows were reused or overlapped; "
-            f"overlaps={len(overlaps)} repeats={len(repeated_exact_windows)}"
+            f"overlaps={window_validation['overlap_count']} "
+            f"repeats={window_validation['repeat_count']} "
+            f"first_defect={json.dumps(detail, sort_keys=True)}"
         )
+    total = float(window_validation["covered_duration_seconds"])
     if abs(total - duration) > max(1.0, duration * 0.005):
         raise RuntimeError("semantic visual coverage does not match long-form duration")
 
@@ -110,7 +76,8 @@ def validate_no_padding(*, job: dict[str, Any], edit_qa: dict[str, Any]) -> dict
         "NO_REPEATED_SOURCE_WINDOWS": "PASS",
         "NO_OVERLAPPING_SOURCE_WINDOWS": "PASS",
         "semantic_segment_count": len(links),
-        "unique_asset_count": len(by_asset),
+        "unique_asset_count": int(window_validation["unique_asset_count"]),
+        "source_window_validation": window_validation,
         "covered_duration_seconds": total,
         "edit_duration_seconds": duration,
         "approved_script_word_count": script_words,
