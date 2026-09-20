@@ -93,7 +93,7 @@ jobs:
               assert item["status"]=="EXECUTED",item
               assert item["tool_call_count"]==0,item
               assert item["tools_exposed"]==0,item
-              assert item["semantic_agent"]=="semantic-text",item
+              assert item["semantic_agent"]=="build",item
               assert item["semantic_profile_version"]=="opencode-semantic-text-v3",item
               assert item["semantic_contract"]=="SEMANTIC_TEXT_ONLY",item
               assert item["semantic_text_only_pass"] is True,item
