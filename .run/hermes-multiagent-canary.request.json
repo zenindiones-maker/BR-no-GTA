@@ -1,0 +1,11 @@
+{
+  "request": "hermes-multiagent-operational-canary",
+  "upstream_sha": "9eca7f388f71755293343dddd6ec4d9111d68fc4",
+  "source_head": "970751f4bcbf5bba47aa8ad1d4f296a9c8496a32",
+  "scope": "VIDEO_A_EDITORIAL_ONLY",
+  "no_voice": true,
+  "no_render": true,
+  "no_youtube_upload": true,
+  "no_youtube_publication": true,
+  "requested_at": "2026-09-20T22:50:00Z"
+}
