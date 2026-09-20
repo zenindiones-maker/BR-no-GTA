@@ -1,15 +1,10 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.4-character-candidate.1",
+  "version": "2026.09.19.5-ptbr-dub-acoustic.1",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "Human-review candidate only; not promoted to production",
-    "priority": [
-      "canonical-lexicon",
-      "character-name-synthesis-alias",
-      "explicit-span-metadata",
-      "pt-BR-fallback"
-    ],
+    "priority": ["canonical-lexicon","character-name-synthesis-alias","explicit-span-metadata","pt-BR-fallback"],
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true,
     "only_forced_en_us_term": "Vice City",
@@ -17,7 +12,16 @@
     "character_aliases_synthesis_only": true,
     "transcript_mutation_forbidden": true,
     "seo_mutation_forbidden": true,
-    "automatic_promotion": false
+    "automatic_promotion": false,
+    "acoustic_selection_required": true
+  },
+  "reference": {
+    "kind": "ptbr_dubbed_trailer",
+    "url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
+    "video_id": "f8IZhKcuEts",
+    "title": "GTA 6 | Trailer 2 - DUBLADO - Grand Theft Auto VI",
+    "channel": "YouDubbing",
+    "authority_scope": "Brazilian dubbing/pronunciation adaptation reference only; Rockstar remains canonical character identity authority"
   },
   "entries": [
     {
@@ -44,20 +48,26 @@
       "term": "Jason",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Djêisson",
       "critical": true,
-      "target_ipa": "ˈdʒeɪsən",
-      "source": "candidate synthesis-only alias grounded against Rockstar Games Grand Theft Auto VI Trailer 2; spoken references around 00:24, 00:28 and 00:55"
+      "reference_status": "ACOUSTIC_SELECTION_REQUIRED",
+      "synthesis_candidates": ["Jason","Djeison","Djêison","Djeisson","Djêisson","Jêison"]
     },
     {
       "identity": "character-lucia",
       "term": "Lucia",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Lussía",
       "critical": true,
-      "target_ipa": "luˈsiːə",
-      "source": "candidate synthesis-only alias grounded against Rockstar Games Grand Theft Auto VI Trailer 2; spoken reference around 00:50"
+      "reference_status": "ACOUSTIC_SELECTION_REQUIRED",
+      "synthesis_candidates": ["Lucia","Lúcia","Lucía","Lussía","Lussí-a"]
     }
-  ]
+  ],
+  "cast_reference": {
+    "Jason": "Raphael Rossatto",
+    "Lucia": "Carina Eiras",
+    "Brian": "Ricardo Rossatto",
+    "Cal": "Paulo Vignolo",
+    "Real Dimez": "Isabele Riccart",
+    "Phil": "Nando Sierpe"
+  }
 }
