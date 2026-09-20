@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.11-canonical-identity-surfaces",
+  "version": "2026.09.20.12-brazilian-narrator-targets",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -8,7 +8,17 @@
     "all_synthesis_locale": "pt-BR",
     "foreign_language_chunks_forbidden": true,
     "automatic_promotion": false,
-    "pronunciation_requires_human_review": true
+    "pronunciation_requires_human_review": true,
+    "objective": "BRAZILIAN_NARRATOR_NATURALNESS",
+    "authority_order": [
+      "HUMAN_APPROVED_BR_NO_GTA",
+      "OFFICIAL_PTBR_ACOUSTIC_SOURCE",
+      "ESTABLISHED_BRAZILIAN_USAGE",
+      "PTBR_PHONOLOGICAL_ADAPTATION",
+      "OFFICIAL_SOURCE_LANGUAGE_AUDIO"
+    ],
+    "source_language_pronunciation_is_not_automatically_ptbr_target": true,
+    "official_english_audio_is_identity_evidence_not_brazilian_acoustic_authority": true
   },
   "entries": [
     {
@@ -22,7 +32,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "previously approved target sound rendered in pt-BR lane",
       "canonical_identity": "vice-city",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "leonida",
@@ -35,7 +50,12 @@
       "validation_status": "HUMAN_REJECTED_CURRENT_ALIAS",
       "source": "explicit human target; prior audio rejected, requires new contextual proof",
       "canonical_identity": "leonida",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "REJECTED"
     },
     {
       "identity": "leonida-keys",
@@ -48,7 +68,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "leonida-keys",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "liberty-city",
@@ -61,7 +86,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "liberty-city",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "port-gellhorn",
@@ -69,12 +99,17 @@
       "category": "PLACE",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Pórt Guélhórn",
+      "synthesis_text": "Pórt Gélhorn",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "port-gellhorn",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "grassrivers",
@@ -87,7 +122,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "grassrivers",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "ambrosia",
@@ -95,12 +135,17 @@
       "category": "REGION",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Ambrôzia",
+      "synthesis_text": "Ambrósia",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "ambrosia",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "mount-kalaga",
@@ -113,7 +158,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "mount-kalaga",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "jason-duval",
@@ -126,7 +176,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "jason-duval",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "jason",
@@ -139,7 +194,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Rockstar localized spelling cross-check",
       "canonical_identity": "jason-duval",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "lucia-caminos",
@@ -152,7 +212,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration plus prior Lucia correction",
       "canonical_identity": "lucia-caminos",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "lucia",
@@ -165,7 +230,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "prior human correction; global review still required",
       "canonical_identity": "lucia-caminos",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "boobie-ike",
@@ -178,7 +248,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "boobie-ike",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "boobie",
@@ -191,7 +266,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "boobie-ike",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "drequan-priest",
@@ -204,7 +284,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "drequan-priest",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "drequan",
@@ -217,7 +302,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "drequan-priest",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "real-dimez",
@@ -230,7 +320,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "real-dimez",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "cal-hampton",
@@ -243,7 +338,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "cal-hampton",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "cal",
@@ -256,7 +356,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "short-form name",
       "canonical_identity": "cal-hampton",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "brian-heder",
@@ -269,7 +374,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "brian-heder",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "brian",
@@ -282,7 +392,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "brian-heder",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "raul-bautista",
@@ -290,12 +405,17 @@
       "category": "CHARACTER",
       "locale": "pt-BR",
       "strategy": "alias",
-      "synthesis_text": "Raúl Batísta",
+      "synthesis_text": "Raúl Bautísta",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Spanish/Portuguese-compatible rendering",
       "canonical_identity": "raul-bautista",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "raul",
@@ -308,7 +428,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Spanish/Portuguese-compatible rendering",
       "canonical_identity": "raul-bautista",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "bae-luxe",
@@ -321,7 +446,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "bae-luxe",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "roxy",
@@ -334,7 +464,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "localized transliteration cross-check",
       "canonical_identity": "roxy",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "dwnply",
@@ -347,7 +482,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "reported reading Downplay; human review required",
       "canonical_identity": "dwnply",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "only-raw-records",
@@ -360,7 +500,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "only-raw-records",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "rockstar",
@@ -373,7 +518,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "established brand pronunciation rendered in pt-BR",
       "canonical_identity": "rockstar",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "atlantic-records",
@@ -386,7 +536,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR phonetic candidate",
       "canonical_identity": "atlantic-records",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "grand-theft-auto-vi",
@@ -399,7 +554,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "channel-approved GTA 6 realization",
       "canonical_identity": "gta-6",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "gta-6",
@@ -412,7 +572,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "channel-approved GTA 6 realization",
       "canonical_identity": "gta-6",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "gta-vi",
@@ -425,7 +590,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "channel-approved GTA 6 realization",
       "canonical_identity": "gta-6",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "extended-look",
@@ -438,7 +608,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR phonetic candidate",
       "canonical_identity": "extended-look",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "vintage-vice-city-pack",
@@ -451,7 +626,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR phonetic candidate",
       "canonical_identity": "vintage-vice-city-pack",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "yung-lean",
@@ -464,7 +644,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "yung-lean",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "future",
@@ -477,7 +662,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "future",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "metro-boomin",
@@ -490,7 +680,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "metro-boomin",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "travis-scott",
@@ -503,7 +698,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "travis-scott",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "ca7riel",
@@ -516,7 +716,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist stylized-name candidate",
       "canonical_identity": "ca7riel",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "paco-amoroso",
@@ -529,7 +734,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Spanish proper-name pt-BR candidate",
       "canonical_identity": "paco-amoroso",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "pinkpantheress",
@@ -542,7 +752,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "pinkpantheress",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "fred-again",
@@ -555,7 +770,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "fred-again",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "etienne-de-crecy",
@@ -568,7 +788,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "French-name pt-BR candidate",
       "canonical_identity": "etienne-de-crecy",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "morgan-wallen",
@@ -581,7 +806,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "morgan-wallen",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "rauw-alejandro",
@@ -594,7 +824,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Spanish artist-name pt-BR candidate",
       "canonical_identity": "rauw-alejandro",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "keith-richards",
@@ -607,7 +842,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate",
       "canonical_identity": "keith-richards",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "grand-theft-auto-vi-the-album",
@@ -620,7 +860,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "full official title rendered in pt-BR voice lane",
       "canonical_identity": "grand-theft-auto-vi-the-album",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "the-album",
@@ -633,7 +878,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "title fragment rendered in pt-BR voice lane",
       "canonical_identity": "grand-theft-auto-vi-the-album",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "only-in-leonida",
@@ -646,7 +896,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "official page title rendered in pt-BR voice lane",
       "canonical_identity": "only-in-leonida",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "gta",
@@ -659,7 +914,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Brazilian letter-name reading",
       "canonical_identity": "gta",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "vintage-vice-city",
@@ -672,7 +932,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR phonetic candidate",
       "canonical_identity": "vintage-vice-city-pack",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "lori",
@@ -685,7 +950,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "pt-BR contextual candidate",
       "canonical_identity": "lori",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "leonida-penitentiary-pt",
@@ -698,7 +968,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "Portuguese phrase with Leonida synthesis target",
       "canonical_identity": "leonida-penitentiary-pt",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     },
     {
       "identity": "guarda-costeira",
@@ -711,7 +986,12 @@
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
       "source": "native Portuguese phrase",
       "canonical_identity": "guarda-costeira",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "NOT_REQUIRED_NATIVE_PTBR"
     },
     {
       "identity": "florida",
@@ -724,7 +1004,12 @@
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
       "source": "standard pt-BR pronunciation",
       "canonical_identity": "florida",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "NOT_REQUIRED_NATIVE_PTBR"
     },
     {
       "identity": "br",
@@ -737,7 +1022,12 @@
       "validation_status": "HUMAN_APPROVED_REFERENCE",
       "source": "channel brand Brazilian letter reading",
       "canonical_identity": "br",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "APPROVED_REFERENCE"
     },
     {
       "identity": "video-a",
@@ -750,7 +1040,12 @@
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
       "source": "production label",
       "canonical_identity": "video-a",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "NOT_REQUIRED_NATIVE_PTBR"
     },
     {
       "identity": "telegram",
@@ -763,7 +1058,12 @@
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
       "source": "established pt-BR rendering",
       "canonical_identity": "telegram",
-      "surface_role": "CANONICAL"
+      "surface_role": "CANONICAL",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "NOT_REQUIRED_NATIVE_PTBR"
     },
     {
       "identity": "leonida-keys-short",
@@ -776,7 +1076,12 @@
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "standalone shorthand for Leonida Keys in the final candidate script; pt-BR lane only",
       "canonical_identity": "leonida-keys",
-      "surface_role": "ALIAS"
+      "surface_role": "ALIAS",
+      "target_locale": "pt-BR",
+      "research_status": "PTBR_TARGET_RESEARCHED",
+      "official_ptbr_dub_reference": "UNCONFIRMED",
+      "source_language_is_secondary_only": true,
+      "human_audio_status": "PENDING"
     }
   ]
 }
