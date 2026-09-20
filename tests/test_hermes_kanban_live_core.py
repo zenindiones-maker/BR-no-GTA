@@ -238,4 +238,3 @@ def test_timeout_diagnostics_capture_open_dependency_run_pid_events_and_comments
     assert rows["child"]["open_dependencies"] == [root_id]
     assert rows["child"]["comments"][-1]["body"] == "HANDOFF_PENDING=YES"
     assert rows["root"]["last_events"]
-
