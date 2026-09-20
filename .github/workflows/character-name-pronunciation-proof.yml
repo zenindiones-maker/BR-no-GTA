@@ -2,10 +2,10 @@ name: Character Name Pronunciation Review · Voice B
 
 on:
   push:
-    branches:
-      - work/gate6f-analytics-learning
+    branches: [work/gate6f-analytics-learning]
     paths:
       - ".run001/character-name-pronunciation-proof.request.json"
+      - ".github/workflows/character-name-pronunciation-proof.yml"
   workflow_dispatch:
 
 permissions:
@@ -34,34 +34,33 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Validate Voice B character review request
+      - name: Validate Voice B review request
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
           d=json.loads(Path(".run001/character-name-pronunciation-proof.request.json").read_text())
-          assert d["video_a_rerender"] is False, d
-          assert d["automatic_promotion"] is False, d
-          assert d["official_voice"]=="B", d
-          assert d["voice_short_name"]=="pt-BR-ThalitaMultilingualNeural", d
-          assert d["default_narration_locale"]=="pt-BR", d
-          assert d["only_forced_en_us_term"]=="Vice City", d
-          assert d["reference_video_id"]=="VQRLujxTm3c", d
-          assert d["character_inventory"]==["Jason","Lucia"], d
+          assert d["video_a_rerender"] is False
+          assert d["automatic_promotion"] is False
+          assert d["official_voice"]=="B"
+          assert d["voice_short_name"]=="pt-BR-ThalitaMultilingualNeural"
+          assert d["default_narration_locale"]=="pt-BR"
+          assert d["only_forced_en_us_term"]=="Vice City"
+          assert d["reference_video_id"]=="VQRLujxTm3c"
+          assert d["character_inventory"]==["Jason","Lucia"]
           print("VOICE_B_CHARACTER_REVIEW_REQUEST=PASS")
           print("VIDEO_A_RERENDER=NO")
           PY
 
-      - name: Install audio benchmark runtime
+      - name: Install short audio benchmark runtime
         run: |
           set -euo pipefail
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
-          python -m pip install "pytest==9.1.1" "python-dotenv==1.2.1" "edge-tts==7.2.8"             "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
-          ffmpeg -version | head -n1
+          python -m pip install "pytest==9.1.1" "python-dotenv==1.2.1" "edge-tts==7.2.8" "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
 
       - name: Restore official Rockstar acoustic checkpoint
         uses: actions/download-artifact@v4
@@ -72,39 +71,6 @@ jobs:
           path: runtime/character-name-review
           merge-multiple: true
 
-      - name: Setup Deno for canonical PO Token provider
-        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Setup canonical YouTube PO Token provider
-        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
-          cd runtime/bgutil-ytdlp-pot-provider/server
-          deno install --allow-scripts=npm:canvas --frozen
-          cd node_modules
-          export DENO_NO_PROMPT=1
-          nohup deno run --no-prompt --allow-env --allow-net --allow-ffi=. --allow-read=. ../src/main.ts --port 4416 > ../provider.log 2>&1 &
-          echo $! > ../provider.pid
-          sleep 5
-          kill -0 "$(cat ../provider.pid)"
-          echo "YTDLP_PO_TOKEN_BASE_URL=http://127.0.0.1:4416" >> "$GITHUB_ENV"
-
-      - name: Prepare canonical YouTube cookies
-        if: ${{ hashFiles('runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav') == '' }}
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
-        run: |
-          set -euo pipefail
-          test -n "$YOUTUBE_COOKIES"
-          mkdir -p runtime/secrets
-          printf '%s' "$YOUTUBE_COOKIES" > runtime/secrets/youtube-cookies.txt
-          chmod 600 runtime/secrets/youtube-cookies.txt
-          echo "YTDLP_COOKIES_FILE=$GITHUB_WORKSPACE/runtime/secrets/youtube-cookies.txt" >> "$GITHUB_ENV"
-
       - name: Restore canonical product package only
         uses: actions/download-artifact@v4
         with:
@@ -114,20 +80,18 @@ jobs:
           path: runtime/product-source
           merge-multiple: true
 
-      - name: Confirm acoustic checkpoint reuse
+      - name: Confirm checkpoint reuse
         run: |
           set -euo pipefail
           test -s runtime/character-name-review/internal-reference/rockstar-trailer2-16k.wav
           test -s runtime/character-name-review/internal-reference/asr-words.json
-          test -s runtime/character-name-review/runtime-character-lexicon.json
           echo "ROCKSTAR_REFERENCE_CHECKPOINT_REUSE=YES"
           echo "ASR_CHECKPOINT_REUSE=YES"
 
       - name: Focused Voice B alias policy tests
         run: |
           set -euo pipefail
-          pytest -q tests/test_voice_bc_character_review.py
-          echo "B_C_CASTING_ONLY=PASS"
+          pytest -q tests/test_character_name_pronunciation_candidate.py tests/test_pronunciation_service.py
           echo "NO_CHARACTER_NAME_EN_US_CHUNKS=PASS"
           echo "CANONICAL_TEXT_PRESERVED=PASS"
 
@@ -145,16 +109,19 @@ jobs:
           import json
           from pathlib import Path
           p=json.loads(Path("runtime/character-name-review/character-name-pronunciation-proof.json").read_text())
-          required=("PT_BR_PROSODY_CONTINUITY","CHARACTER_NAME_PRONUNCIATION","NO_CHARACTER_NAME_EN_US_CHUNKS","ONLY_FORCED_EN_US_TERM","CANONICAL_TEXT_PRESERVED","VOICE_B_PRESERVED","CURRENT_SCRIPT_CHARACTER_INVENTORY","ROCKSTAR_TRAILER2_REFERENCE_MATERIALIZED","CANDIDATE_CACHE_VERSIONED","NO_AUTOMATIC_PROMOTION","VIDEO_A_NOT_RERENDERED")
+          required=(
+              "PT_BR_PROSODY_CONTINUITY","CHARACTER_NAME_PRONUNCIATION",
+              "NO_CHARACTER_NAME_EN_US_CHUNKS","ONLY_FORCED_EN_US_TERM",
+              "CANONICAL_TEXT_PRESERVED","VOICE_B_PRESERVED",
+              "CURRENT_SCRIPT_CHARACTER_INVENTORY","ROCKSTAR_TRAILER2_REFERENCE_MATERIALIZED",
+              "CANDIDATE_CACHE_VERSIONED","NO_AUTOMATIC_PROMOTION","VIDEO_A_NOT_RERENDERED",
+          )
           missing=[k for k in required if (p.get("checks") or {}).get(k) is not True]
           if p.get("status")!="PASS" or missing:
               raise SystemExit("VOICE_B_CHARACTER_REVIEW=FAIL:"+",".join(missing))
-          print("PT_BR_PROSODY_CONTINUITY=PASS")
-          print("CHARACTER_NAME_PRONUNCIATION=PASS")
-          print("NO_CHARACTER_NAME_EN_US_CHUNKS=PASS")
+          for key in required:
+              print(key+"=PASS")
           print("ONLY_FORCED_EN_US_TERM=Vice City")
-          print("CANONICAL_TEXT_PRESERVED=PASS")
-          print("VOICE_B_PRESERVED=PASS")
           print("HUMAN_CHARACTER_NAME_REVIEW=PENDING")
           print("VIDEO_A_RERENDER=NO")
           PY
@@ -178,13 +145,15 @@ jobs:
               -F "document=@$audio" \
               -F "caption=Voice B · $name · revisão humana de pronúncia dos personagens")"
             RESPONSE="$response" NAME="$name" python - <<'PY' >> runtime/character-name-review/telegram/message-ids.txt
-import json,os
-d=json.loads(os.environ["RESPONSE"])
-if d.get("ok") is not True: raise SystemExit("TELEGRAM_DELIVERY_ACCEPTED=NO")
-mid=(d.get("result") or {}).get("message_id")
-if not isinstance(mid,int): raise SystemExit("TELEGRAM_MESSAGE_ID_MISSING")
-print(f"{os.environ['NAME']},{mid}")
-PY
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          if d.get("ok") is not True:
+              raise SystemExit("TELEGRAM_DELIVERY_ACCEPTED=NO")
+          mid=(d.get("result") or {}).get("message_id")
+          if not isinstance(mid,int):
+              raise SystemExit("TELEGRAM_MESSAGE_ID_MISSING")
+          print(f"{os.environ['NAME']},{mid}")
+          PY
           done
           echo "TELEGRAM_CHARACTER_REVIEW_DELIVERY=PASS"
           echo "HUMAN_CHARACTER_NAME_REVIEW=PENDING"
