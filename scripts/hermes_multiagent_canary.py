@@ -146,6 +146,9 @@ def _runner_factory(*, upstream_root: Path, hermes_home: Path):
                 time.sleep(0.25)
             else:
                 time.sleep(0.1)
+        (hermes_home / "canary-worker.log").write_text(
+            "\n".join(logs), encoding="utf-8"
+        )
         raise TimeoutError("Hermes multi-agent canary did not reach terminal mission state")
     return run
 
@@ -286,7 +289,62 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     critic_runs = [run for run in runs if run.get("profile") == "hermes-editorial-critic"]
     reviewer_runs = [run for run in runs if run.get("profile") == "hermes-reviewer"]
 
+    tasks_by_plan: dict[str, dict[str, Any]] = {}
+    for task in board.get("tasks") or ():
+        try:
+            body = json.loads(str(task.get("body") or "{}"))
+        except json.JSONDecodeError:
+            body = {}
+        plan_task_id = str(body.get("plan_task_id") or "")
+        if plan_task_id:
+            tasks_by_plan[plan_task_id] = task
+
+    created_status_by_task: dict[str, str] = {}
+    claimed_task_ids: set[str] = set()
+    for event in events:
+        task_id = str(event.get("task_id") or "")
+        kind = str(event.get("kind") or "")
+        payload = event.get("payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = {}
+        if kind == "created" and isinstance(payload, dict):
+            created_status_by_task[task_id] = str(payload.get("status") or "")
+        if kind == "claimed":
+            claimed_task_ids.add(task_id)
+
+    root_task = tasks_by_plan["research-verifier"]
+    evidence_task = tasks_by_plan["evidence-analyst"]
+    critic_task = tasks_by_plan["editorial-critic"]
+    root_task_ready = created_status_by_task.get(str(root_task["id"])) == "ready"
+    dependency_gating = (
+        created_status_by_task.get(str(evidence_task["id"])) == "todo"
+        and created_status_by_task.get(str(critic_task["id"])) == "todo"
+    )
+    dispatch_claim = all(
+        str(tasks_by_plan[plan_id]["id"]) in claimed_task_ids
+        for plan_id in ("research-verifier", "evidence-analyst", "editorial-critic")
+    )
+    running_transition = all(
+        any(
+            run.get("task_id") == tasks_by_plan[plan_id]["id"]
+            for run in runs
+        )
+        for plan_id in ("research-verifier", "evidence-analyst", "editorial-critic")
+    )
+    all_mission_tasks_terminal = all(
+        str(task.get("status") or "") == "done"
+        for task in tasks_by_plan.values()
+    )
+
     checks = {
+        "ROOT_TASK_READY": root_task_ready,
+        "DEPENDENCY_GATING": dependency_gating,
+        "DISPATCH_CLAIM": dispatch_claim,
+        "RUNNING_TRANSITION": running_transition,
+        "ALL_MISSION_TASKS_TERMINAL": all_mission_tasks_terminal,
         "HERMES_UPSTREAM_PINNED": UPSTREAM_SHA == "9eca7f388f71755293343dddd6ec4d9111d68fc4",
         "HERMES_UNDER_HARNESS": canonical.get("authority") == "deepseek_harness",
         "GLOBAL_REGISTRY_REMAINS_CANONICAL": routing.selected_capability_id == HERMES_RUNTIME_CAPABILITY_ID,
