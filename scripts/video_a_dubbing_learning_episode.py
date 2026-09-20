@@ -24,6 +24,11 @@ FEEDBACK={
     "proper_noun_pronunciation":"FAIL",
     "technical_pass_but_perceptual_fail":True,
     "human_voice_review":"REJECTED",
+    "rockstar_pronunciation":"FAIL",
+    "ptbr_target_exists_but_acoustic_realization_fails":True,
+    "script_editorial_quality":"FAIL",
+    "script_low_information_density":True,
+    "meta_production_language_in_script":True,
     "all_names_and_places_ptbr_required":True,
     "foreign_language_chunks_forbidden":True,
     "source_language_pronunciation_is_not_automatically_ptbr_target":True,
@@ -119,7 +124,7 @@ def main()->int:
     )
     candidate=create_learning_candidate(
         candidate_type="SYSTEM_IMPROVEMENT",
-        hypothesis="Use one continuous pt-BR synthesis lane for every final-script entity, apply versioned pt-BR synthesis aliases before TTS, require full-script pronunciation coverage, and keep human approval as the only authority for pronunciation/naturalness.",
+        hypothesis="Treat PT-BR target research, acoustic validation and human approval as separate states; never equate an orthographic alias with acoustic control; keep semantic-section pt-BR narration; rebuild rejected editorial material from primary evidence; and prevent production metadata from entering viewer-facing scripts.",
         domain="production",
         task_class="video-a-narration-readiness",
         source_episode_ids=(episode.episode_id,),
@@ -143,6 +148,10 @@ def main()->int:
             "ptbr_narration_requires_brazilian_phonological_realization":True,
             "human_approved_ptbr_pronunciation_has_priority":True,
             "target_locale":"pt-BR",
+            "ptbr_target_researched_does_not_equal_ptbr_pronunciation_validated":True,
+            "orthographic_alias_does_not_equal_acoustic_control":True,
+            "editorial_novelty_does_not_equal_editorial_quality":True,
+            "production_metadata_must_never_leak_into_viewer_script":True,
         },
     )
     result={
@@ -170,6 +179,8 @@ def main()->int:
             "ptbr_research_registry":"config/pronunciation_ptbr_research.json",
             "official_ptbr_dub_reference":"UNCONFIRMED",
             "final_mix_text_fidelity":"required",
+            "pronunciation_state_model":["PTBR_TARGET_RESEARCH_COVERAGE","PTBR_ACOUSTIC_VALIDATION_COVERAGE","PTBR_HUMAN_APPROVED_COVERAGE"],
+            "script_quality_gate":"human value + density + support + no production metadata",
         },
         "LEARNING_APPLIED":"PENDING_NEXT_AUDIO",
         "HUMAN_REVIEW":"PENDING",
