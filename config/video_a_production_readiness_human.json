@@ -1,6 +1,6 @@
 {
   "schema": "video-a-production-readiness-human/v1",
-  "version": "2026.09.20.1-global-dubbing-rejected",
+  "version": "2026.09.20.2-ptbr-pronunciation-rejected",
   "candidate_id": "video-a-next-candidate-20260920-social-vice-city",
   "authority": "human",
   "status": "REJECTED",
@@ -11,24 +11,53 @@
     "global_pronunciation_status": "FAIL",
     "leonida_pronunciation": "FAIL",
     "proper_noun_pronunciation": "FAIL",
+    "all_names_and_places_ptbr_required": true,
+    "foreign_language_chunks_forbidden": true,
     "technical_pass_but_perceptual_fail": true,
     "human_voice_review": "REJECTED"
   },
   "rejected_evidence": {
     "pronunciation_run_id": 35525920608,
     "pronunciation_artifact_id": 10609442706,
-    "telegram_message_ids": [
+    "first_telegram_message_ids": [
       317,
       318,
       319,
       320
     ],
-    "head_sha": "4926b47185861eec1e46b4e70594e19a10dc8f59"
+    "audition_run_id": 35527492016,
+    "audition_artifact_id": 10610442121,
+    "audition_telegram_message_ids": [
+      335,
+      336,
+      337,
+      338,
+      339,
+      340,
+      341,
+      342,
+      343,
+      344,
+      345,
+      346,
+      347,
+      348,
+      349
+    ],
+    "audition_asr_observed_errors": [
+      "Leonida Keis",
+      "Porte Geliornan",
+      "Junglin",
+      "Metro Bombing",
+      "Dracoan Prich"
+    ],
+    "head_sha": "67dd120d76dc5d1df400b0d998451451c1d1ebd1"
   },
   "invariants": {
     "production_readiness": "FAIL",
     "full_render_authorized": "NO",
     "youtube_publication": "NO",
-    "human_feedback_overrides_technical_pass": true
+    "human_feedback_overrides_technical_pass": true,
+    "all_synthesis_locale": "pt-BR"
   }
 }
