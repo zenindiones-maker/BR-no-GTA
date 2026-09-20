@@ -19,9 +19,9 @@ from app.services.pronunciation_service import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_LEXICON = ROOT / "config" / "pronunciation_character_aliases.candidate.json"
-OFFICIAL_TRAILER_URL = "https://www.youtube.com/watch?v=VQRLujxTm3c"
+OFFICIAL_TRAILER_URL = "https://www.rockstargames.com/VI/downloads/videos/GTAVI_Trailer_2/GTAVI_Trailer_2.mp4"
 OFFICIAL_ROCKSTAR_PAGE = "https://www.rockstargames.com/VI/trailer-2"
-EXPECTED_VIDEO_ID = "VQRLujxTm3c"
+OFFICIAL_TRAILER_ID = "GTAVI_Trailer_2"
 EXPECTED_SCRIPT_SHA256 = "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea"
 KNOWN_CHARACTER_NAMES = (
     "Jason",
@@ -78,42 +78,27 @@ def character_inventory(text: str) -> list[str]:
 
 def download_official_reference(root: Path) -> dict[str, Any]:
     root.mkdir(parents=True,exist_ok=True)
-    meta=subprocess.run(
-        ["yt-dlp","--no-playlist","--skip-download","--print","%(id)s\\t%(channel)s\\t%(title)s",OFFICIAL_TRAILER_URL],
-        capture_output=True,text=True,timeout=180,
-    )
-    if meta.returncode != 0:
-        raise RuntimeError("official Trailer 2 metadata lookup failed")
-    line=(meta.stdout.strip().splitlines() or [""])[-1]
-    parts=line.split("\\t",2)
-    if len(parts) != 3 or parts[0] != EXPECTED_VIDEO_ID or "Rockstar Games" not in parts[1]:
-        raise RuntimeError(f"unexpected official Trailer 2 identity: {line!r}")
-    subprocess.run(
-        [
-            "yt-dlp","--no-playlist","-f","bestaudio",
-            "-o",str(root/"official-trailer-2.%(ext)s"),
-            OFFICIAL_TRAILER_URL,
-        ],
-        check=True,timeout=300,
-    )
-    sources=[
-        p for p in root.glob("official-trailer-2.*")
-        if p.suffix not in {".part",".ytdl",".json"} and p.is_file()
-    ]
-    if len(sources) != 1:
-        raise RuntimeError(f"official Trailer 2 audio materialization ambiguous: {sources}")
-    source=sources[0]
+    if not OFFICIAL_TRAILER_URL.startswith("https://www.rockstargames.com/VI/downloads/videos/"):
+        raise RuntimeError("official Trailer 2 source must remain on Rockstar Games")
     refs={}
     for name,window in REFERENCE_WINDOWS.items():
         target=root/f"official-reference-{name.lower()}.mp3"
-        subprocess.run(
+        result=subprocess.run(
             [
                 "ffmpeg","-nostdin","-y","-v","error",
-                "-ss",str(window["start_seconds"]),"-t",str(window["duration_seconds"]),
-                "-i",str(source),"-vn","-ac","1","-ar","48000","-c:a","libmp3lame","-q:a","2",str(target),
+                "-rw_timeout","30000000",
+                "-ss",str(window["start_seconds"]),
+                "-i",OFFICIAL_TRAILER_URL,
+                "-t",str(window["duration_seconds"]),
+                "-vn","-ac","1","-ar","48000","-c:a","libmp3lame","-q:a","2",str(target),
             ],
-            check=True,timeout=120,
+            capture_output=True,text=True,timeout=180,
         )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"official Rockstar Trailer 2 reference extraction failed for {name}: "
+                f"{(result.stderr or '').strip()[-800:]}"
+            )
         refs[name]={
             **window,
             "file":str(target),
@@ -122,9 +107,8 @@ def download_official_reference(root: Path) -> dict[str, Any]:
     return {
         "source_url":OFFICIAL_TRAILER_URL,
         "rockstar_page":OFFICIAL_ROCKSTAR_PAGE,
-        "video_id":parts[0],
-        "channel":parts[1],
-        "title":parts[2],
+        "source_id":OFFICIAL_TRAILER_ID,
+        "publisher":"Rockstar Games",
         "references":refs,
     }
 
