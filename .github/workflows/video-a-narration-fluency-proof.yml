@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: \${{ github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -62,7 +62,7 @@ jobs:
         with:
           artifact-ids: "10606237268"
           run-id: "35514545427"
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: runtime/rejected-narration
           merge-multiple: true
 
@@ -71,7 +71,7 @@ jobs:
         with:
           artifact-ids: "10607268845"
           run-id: "35519368513"
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: runtime/rejected-render-job
           merge-multiple: true
 
@@ -104,8 +104,8 @@ jobs:
       - name: Deliver A/B continuous audio as Telegram documents
         if: success()
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: \${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
         run: |
           set -euo pipefail
           test -n "$TELEGRAM_BOT_TOKEN"
@@ -135,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-a-narration-fluency-proof-\${{ github.run_id }}
+          name: video-a-narration-fluency-proof-${{ github.run_id }}
           path: runtime/narration-fluency-proof/
           if-no-files-found: error
           retention-days: 30
