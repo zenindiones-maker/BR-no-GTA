@@ -75,7 +75,7 @@ def test_production_packet_preserves_lineage_and_full_artifact_hashes_under_budg
     assert len(packet["content_hashes"]["production_plan_sha256"]) == 64
     assert packet["provenance"]["goal_id"] == "goal-1"
     assert len(packet["scenes"]) == 30
-    assert packet["verified_claims"][0]["verification_status"] == "VERIFIED"
+    assert packet["editorial_summary"]["verified_facts"][0]["verification_status"] == "VERIFIED"
 
 
 def test_seo_packet_uses_dense_summary_without_losing_artifact_reconstruction_refs():
