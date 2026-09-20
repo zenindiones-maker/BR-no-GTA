@@ -249,6 +249,7 @@ class OpenCodeNativeAIProvider:
         self.profile_version = str(profile["version"])
         self.profile_content_ref = str(profile["content_ref"])
         self.profile_checksum = str(profile["checksum"])
+        self.last_performance_metrics: dict[str, Any] = {}
         self.repository = (
             repository
             or os.getenv("BR_OPENCODE_NATIVE_REPOSITORY")
