@@ -7,6 +7,11 @@ from typing import Any, Iterable
 
 TARGET_MIN_SECONDS = 20 * 60
 TARGET_PREFERRED_MAX_SECONDS = 25 * 60
+# Rejected VIDEO A measured 166.28081098469863 WPM at locked +0% Voice B.
+# Plan at 170 WPM so editorial sufficiency cannot pass by assuming a slower
+# speech rate than the human-approved runtime actually delivers.
+VOICE_B_CONTENT_PLANNING_WPM = 170.0
+VOICE_B_REJECTED_OBSERVED_WPM = 166.28081098469863
 MIN_UNIQUE_MEDIA_ASSETS = 4
 MAX_SINGLE_ASSET_SHARE = 0.45
 MAX_PREVIOUS_MEDIA_REUSE_RATIO = 0.25
@@ -78,10 +83,12 @@ def validate_content_duration(
     target = float(target_duration_seconds)
     supported = float(content_supported_duration_seconds)
     finite = math.isfinite(target) and math.isfinite(supported)
+    target_in_band = finite and TARGET_MIN_SECONDS <= target <= TARGET_PREFERRED_MAX_SECONDS
+    content_supports_target = finite and supported >= target
     status = (
-        finite
-        and target >= TARGET_MIN_SECONDS
+        target_in_band
         and supported >= TARGET_MIN_SECONDS
+        and content_supports_target
         and not artificial_padding
     )
     return {
@@ -89,7 +96,9 @@ def validate_content_duration(
         "TARGET_DURATION_MINUTES": target / 60.0 if math.isfinite(target) else None,
         "CONTENT_SUPPORTED_DURATION": supported / 60.0 if math.isfinite(supported) else None,
         "TARGET_DURATION_MINUTES_GTE_20": bool(finite and target >= TARGET_MIN_SECONDS),
+        "TARGET_DURATION_WITHIN_20_25": bool(target_in_band),
         "CONTENT_SUPPORTED_DURATION_GTE_20": bool(finite and supported >= TARGET_MIN_SECONDS),
+        "CONTENT_SUPPORTS_TARGET": bool(content_supports_target),
         "ARTIFICIAL_PADDING": "ON" if artificial_padding else "OFF",
         "preferred_upper_bound_minutes": TARGET_PREFERRED_MAX_SECONDS / 60.0,
     }
