@@ -54,6 +54,14 @@ def _norm(value:str)->str:
     return " ".join(_WORD_RE.findall(str(value or "").casefold()))
 
 
+def _safe_number(value:Any,default:float=0.0)->float:
+    try:
+        number=float(value)
+    except (TypeError,ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
 def _percentile(values:list[float],quantile:float)->float:
     if not values:
         return 0.0
@@ -446,7 +454,7 @@ def validate_persisted_readiness(path:Path|None=None)->dict[str,Any]:
     preserved=dict(state.get("preserved") or {})
     required={
         "TEXT_FIDELITY":audio.get("TEXT_FIDELITY")=="PASS",
-        "PRONUNCIATION_COVERAGE_PERCENT":float(audio.get("PRONUNCIATION_COVERAGE_PERCENT") or 0.0)>=100.0,
+        "PRONUNCIATION_COVERAGE_PERCENT":_safe_number(audio.get("PRONUNCIATION_COVERAGE_PERCENT"))>=100.0,
         "UNVALIDATED_PROPER_NOUNS":audio.get("UNVALIDATED_PROPER_NOUNS") in (0,[],None),
         "GLOBAL_PRONUNCIATION_STATUS":audio.get("GLOBAL_PRONUNCIATION_STATUS")=="PASS",
         "LEONIDA_PRONUNCIATION":audio.get("LEONIDA_PRONUNCIATION")=="PASS",
@@ -456,8 +464,8 @@ def validate_persisted_readiness(path:Path|None=None)->dict[str,Any]:
         "CONTINUOUS_PTBR_PROSODY":audio.get("CONTINUOUS_PTBR_PROSODY")=="PASS",
         "UNPLANNED_TEXT_OVERLAY":video.get("UNPLANNED_TEXT_OVERLAY")=="OFF",
         "VISUAL_COVERAGE":video.get("VISUAL_COVERAGE")=="PASS",
-        "CLAIM_EVIDENCE_COVERAGE":float(video.get("CLAIM_EVIDENCE_COVERAGE") or 0.0)>=100.0,
-        "CONTENT_SUPPORTED_DURATION_MINUTES":float(preserved.get("CONTENT_SUPPORTED_DURATION_MINUTES") or 0.0)>=20.0,
+        "CLAIM_EVIDENCE_COVERAGE":_safe_number(video.get("CLAIM_EVIDENCE_COVERAGE"))>=100.0,
+        "CONTENT_SUPPORTED_DURATION_MINUTES":_safe_number(preserved.get("CONTENT_SUPPORTED_DURATION_MINUTES"))>=20.0,
         "ARTIFICIAL_PADDING":preserved.get("ARTIFICIAL_PADDING")=="OFF",
         "HUMAN_VOICE_REVIEW":audio.get("HUMAN_VOICE_REVIEW")=="APPROVED",
     }
