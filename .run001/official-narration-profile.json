@@ -45,9 +45,9 @@
     "pronunciation_profile_bound": true
   },
   "pronunciation_profile": {
-    "version": "br-no-gta-ptbr-v3",
+    "version": "br-no-gta-ptbr-v4-all-ptbr",
     "default_narration_locale": "pt-BR",
-    "only_forced_en_us_term": "Vice City",
+    "only_forced_en_us_term": null,
     "gta_6_synthesis": "gê tê á seis",
     "vice_city_target_ipa": "vaɪs ˈsɪti",
     "terms": [
@@ -55,7 +55,9 @@
       "GTA VI",
       "Vice City"
     ],
-    "policy": "All other names and brands keep canonical text and remain in Voice B's pt-BR prosody lane."
+    "policy": "All script terms, including Vice City and foreign proper nouns, must be synthesized inside Voice B's continuous pt-BR lane using synthesis-only aliases when required. Foreign-language TTS chunks are forbidden.",
+    "all_synthesis_locale": "pt-BR",
+    "vice_city_ptbr_synthesis": "Váis Síti"
   },
   "human_evidence": {
     "final_voice": "Voice B",
@@ -64,7 +66,7 @@
     "final_selection": "HUMAN_EXPLICIT",
     "legacy_casting_state": "RETIRED_FROM_RUNTIME",
     "policy": "Do not enumerate, synthesize, benchmark, or substitute alternative voices in production.",
-    "pronunciation_policy": "PT-BR continuity; only Vice City forces en-US"
+    "pronunciation_policy": "continuous pt-BR for every term; no foreign-language chunks"
   },
   "qa_evidence": {
     "round1_run_id": 35390107713,
@@ -92,7 +94,7 @@
     "pronunciation profile changes materially",
     "human review explicitly supersedes Fluid 2 or G-brand-mixed",
     "provider behavior contradicts observed QA",
-    "pronunciation policy no longer matches pt-BR-only-except-Vice-City"
+    "pronunciation policy no longer matches all-pt-BR single-lane synthesis"
   ],
   "invariants": {
     "harness_authority_preserved": true,
