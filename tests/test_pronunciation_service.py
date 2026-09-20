@@ -13,12 +13,12 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_has_only_human_approved_runtime_overrides():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.09.20.4-human-leonida-pending"
+    assert lexicon["version"]=="2026.09.20.5-all-ptbr-no-language-switch"
     assert lexicon["default_locale"]=="pt-BR"
-    assert lexicon["policy"]["only_forced_en_us_term"]=="Vice City"
+    assert lexicon["policy"]["only_forced_en_us_term"] is None\n    assert lexicon["policy"]["foreign_language_chunks_forbidden"] is True
     entries={item["identity"]:item for item in lexicon["entries"]}
     assert set(entries)=={"vice-city","gta-6","character-lucia","leonida"}
-    assert entries["vice-city"]["locale"]=="en-US"
+    assert entries["vice-city"]["locale"]=="pt-BR"\n    assert entries["vice-city"]["synthesis_text"]=="Váis Síti"
     assert entries["vice-city"]["target_ipa"]=="vaɪs ˈsɪti"
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="gê tê á seis"
@@ -52,21 +52,22 @@ def test_explicit_foreign_metadata_cannot_bypass_policy_for_non_vice_city():
     assert plan.foreign_span_count==0
     assert plan.spans[0].locale=="pt-BR"
 
-def test_vice_city_is_only_forced_en_us_term():
+def test_vice_city_stays_inside_ptbr_voice_lane():
     text="A Rockstar mostrou Vice City e Jason comentou a novidade."
     plan=resolve_synthesis_plan(text)
-    foreign=[span for span in plan.spans if span.locale!="pt-BR"]
-    assert len(foreign)==1
-    assert foreign[0].text=="Vice City"
-    assert foreign[0].locale=="en-US"
-    assert foreign[0].target_ipa=="vaɪs ˈsɪti"
+    assert plan.foreign_span_count==0
+    vice=next(span for span in plan.spans if span.pronunciation_identity=="vice-city")
+    assert vice.text=="Vice City"
+    assert vice.locale=="pt-BR"
+    assert vice.synthesis_text=="Váis Síti"
+    assert vice.target_ipa=="vaɪs ˈsɪti"
 
-def test_ptbr_to_vice_city_to_ptbr_has_only_one_foreign_group():
+def test_ptbr_vice_city_never_creates_a_language_boundary():
     text="Hoje vamos entrar em Vice City e depois voltar aos detalhes da Rockstar."
     plan=resolve_synthesis_plan(text)
     groups=_edge_synthesis_groups(plan)
-    assert [item["locale"] for item in groups]==["pt-BR","en-US","pt-BR"]
-    assert groups[1]["synthesis_text"]=="Vice City"
+    assert [item["locale"] for item in groups]==["pt-BR"]
+    assert "Váis Síti" in groups[0]["synthesis_text"]
 
 def test_gta6_alias_preserves_ptbr_prosody_and_canonical_text():
     text="Hoje vamos falar de GTA 6 sem quebrar a fluidez."
@@ -99,12 +100,10 @@ def test_bad_explicit_span_fails_closed():
     with pytest.raises(PronunciationError):
         resolve_synthesis_plan("Vice City",explicit_spans=[{"start":0,"end":4,"text":"Vice City","locale":"en-US"}])
 
-def test_azure_ssml_only_wraps_vice_city_in_en_us():
+def test_azure_ssml_has_no_foreign_language_wrappers():
     ssml=build_azure_ssml(resolve_synthesis_plan("A Rockstar voltou para Vice City com Jason."))
-    assert ssml.count('<lang xml:lang="en-US">')==1
-    assert '<lang xml:lang="en-US">Vice City</lang>' in ssml
-    assert '<lang xml:lang="en-US">Rockstar</lang>' not in ssml
-    assert '<lang xml:lang="en-US">Jason</lang>' not in ssml
+    assert '<lang xml:lang="en-US">' not in ssml
+    assert "Váis Síti" in ssml
 
 def test_edge_capabilities_are_truthful():
     caps=provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE)
@@ -116,7 +115,7 @@ def test_edge_fails_closed_if_phoneme_requested_but_unsupported():
     plan=SynthesisPlan(
         canonical_text="Vice City",default_locale="pt-BR",voice=DEFAULT_VOICE,
         resolver_version=PRONUNCIATION_LAYER_VERSION,lexicon_version="test",
-        spans=(SynthesisSpan(0,9,"Vice City","en-US","phoneme","Vice City","explicit",target_ipa="vaɪs ˈsɪti"),),
+        spans=(SynthesisSpan(0,9,"Vice City","pt-BR","phoneme","Váis Síti","explicit",target_ipa="vaɪs ˈsɪti"),),
         lexicon_hits=(),explicit_span_count=1,detected_span_count=0,resolution_wall_clock_seconds=0.0,
     )
     with pytest.raises(PronunciationError,match="phoneme"):
@@ -142,7 +141,7 @@ def test_canonical_entries_include_human_approved_lucia_alias():
     plan=resolve_synthesis_plan("Jason e Lucia chegaram a Vice City.")
     assert plan.canonical_text=="Jason e Lucia chegaram a Vice City."
     assert plan.canonical_text_preserved
-    assert sum(1 for span in plan.spans if span.locale=="en-US")==1
+    assert sum(1 for span in plan.spans if span.locale!="pt-BR")==0
     assert next(span for span in plan.spans if span.pronunciation_identity=="character-lucia").locale=="pt-BR"
 
 def test_language_boundary_trim_removes_provider_padding_without_clipping_words():
@@ -154,3 +153,14 @@ def test_language_boundary_trim_removes_provider_padding_without_clipping_words(
     start2,end2=_edge_trim_window(vice,1.248,trim_leading=True,trim_trailing=False)
     assert start2==0.0
     assert end2==1.248
+
+
+def test_explicit_vice_city_en_us_metadata_is_forced_back_to_ptbr():
+    text="Vice City"
+    plan=resolve_synthesis_plan(text,explicit_spans=[{
+        "start":0,"end":len(text),"text":text,"locale":"en-US",
+        "strategy":"explicit-locale","synthesis_text":"Váis Síti",
+    }])
+    assert plan.foreign_span_count==0
+    assert plan.spans[0].locale=="pt-BR"
+    assert plan.spans[0].synthesis_text=="Váis Síti"
