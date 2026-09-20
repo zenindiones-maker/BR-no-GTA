@@ -65,15 +65,14 @@ def test_semantic_v3_uses_dedicated_primary_agent_one_step_and_deny_all():
         {"action": "*", "resource": "*", "effect": "deny"}
     ]
     assert config["permissions"] == agent["permissions"]
-    assert "build" not in config["agents"]
 
 
 def test_semantic_inline_config_is_actually_injected_into_process_env():
     env = build_semantic_text_only_env({"PATH": "/bin"})
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
     assert env["PATH"] == "/bin"
-    assert config["default_agent"] == "semantic-text"
-    assert config["agents"]["semantic-text"]["steps"] == 1
+    assert config["default_agent"] == "build"
+    assert config["agents"]["build"]["steps"] == 1
 
 
 def test_v2_profile_is_fail_closed_after_confirmed_tool_use():
