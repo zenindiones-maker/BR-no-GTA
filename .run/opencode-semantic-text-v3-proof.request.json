@@ -1,12 +1,20 @@
 {
   "request": "opencode-semantic-text-v3-proof",
   "branch": "work/gate6f-analytics-learning",
-  "source_head": "2c9228fd98069eaac6b406e6fd5287bc56026cbe",
+  "source_head": "f47375c3346ce0b4b52e0b42bd14935587875dc9",
   "root_cause_run_id": 35537494044,
   "root_cause_artifact_id": 10612603412,
-  "previous_proof_run_id": 35538823955,
-  "previous_proof_result": "ZERO_TOOLS_BUT_SAME_RUN_UPSTREAM_403",
-  "attempt": 2,
+  "attempts": [
+    {
+      "run_id": 35538823955,
+      "result": "same_runner_upstream_403"
+    },
+    {
+      "run_id": 35538925017,
+      "result": "proof_harness_instrumentation_failed_before_child_dispatch"
+    }
+  ],
+  "attempt": 3,
   "execution_mode": "child_workflow",
   "required": {
     "prompt_1": "Responda apenas: TESTE_OK",
