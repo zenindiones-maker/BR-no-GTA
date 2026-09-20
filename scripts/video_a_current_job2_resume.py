@@ -110,8 +110,6 @@ def _post_branding_checkpoint_inputs() -> dict[str, int] | None:
         return None
     if artifact_id <= 0 or producer_run_id <= 0:
         raise RuntimeError("post-branding checkpoint requires artifact and producer run ids")
-    if producer_run_id != _previous_render_run_id():
-        raise RuntimeError("post-branding producer must be the proven previous render failure")
     return {"artifact_id": artifact_id, "producer_run_id": producer_run_id}
 
 
@@ -133,6 +131,14 @@ def _prove_post_branding_checkpoint() -> dict[str, Any] | None:
         raise RuntimeError("post-branding artifact producer mismatch")
     if int(item.get("size_in_bytes") or 0) <= 0:
         raise RuntimeError("post-branding artifact is empty")
+    producer = _gh_json([
+        "gh", "api",
+        f"repos/{os.environ['GITHUB_ACTIONS_REPOSITORY']}/actions/runs/{values['producer_run_id']}",
+    ])
+    if producer.get("status") != "completed" or producer.get("conclusion") != "failure":
+        raise RuntimeError("post-branding producer run is not a proven completed failure")
+    if producer.get("path") != ".github/workflows/render-worker.yml":
+        raise RuntimeError("post-branding producer is not the canonical Render Worker")
     return {
         "artifact_id": values["artifact_id"],
         "producer_run_id": values["producer_run_id"],
