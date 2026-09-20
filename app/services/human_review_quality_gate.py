@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter
+from pathlib import Path
 from typing import Any, Iterable
 
 TARGET_MIN_SECONDS = 20 * 60
@@ -15,6 +17,8 @@ VOICE_B_REJECTED_OBSERVED_WPM = 166.28081098469863
 MIN_UNIQUE_MEDIA_ASSETS = 4
 MAX_SINGLE_ASSET_SHARE = 0.45
 MAX_PREVIOUS_MEDIA_REUSE_RATIO = 0.25
+PRONUNCIATION_LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
+PRONUNCIATION_HUMAN_APPROVALS_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_human_approvals.json"
 
 _STRUCTURAL = {
     "hook", "introdução", "introducao", "intro", "contexto", "desenvolvimento",
@@ -141,4 +145,59 @@ def validate_media_novelty(
         "previous_media_reuse_ratio_allowed": MAX_PREVIOUS_MEDIA_REUSE_RATIO,
         "reused_asset_refs": sorted(reused),
         "asset_duration_seconds": dict(sorted(durations.items())),
+    }
+
+
+def validate_pronunciation_readiness(
+    *,
+    lexicon_path: Path | None = None,
+    approvals_path: Path | None = None,
+) -> dict[str, Any]:
+    """Fail closed until Leonida has real human auditory approval.
+
+    Written/canonical text remains Leonida. The synthesis-only alias Leônida is
+    permitted only inside the pt-BR pronunciation layer and must never authorize
+    production by its mere presence in the lexicon.
+    """
+    lexicon = json.loads((lexicon_path or PRONUNCIATION_LEXICON_PATH).read_text(encoding="utf-8"))
+    approvals = json.loads((approvals_path or PRONUNCIATION_HUMAN_APPROVALS_PATH).read_text(encoding="utf-8"))
+    entries = {
+        str(item.get("identity") or ""): item
+        for item in (lexicon.get("entries") or [])
+        if isinstance(item, dict)
+    }
+    leonida = dict(entries.get("leonida") or {})
+    alias_registered = (
+        leonida.get("term") == "Leonida"
+        and leonida.get("locale") == "pt-BR"
+        and leonida.get("strategy") == "alias"
+        and leonida.get("synthesis_text") == "Leônida"
+        and leonida.get("critical") is True
+    )
+    term = dict(((approvals.get("terms") or {}).get("leonida") or {}))
+    human_approved = (
+        term.get("status") == "APPROVED"
+        and term.get("auditory_review_required") is True
+        and term.get("approved") is True
+        and bool(term.get("proof_run_id"))
+        and bool(term.get("telegram_message_ids"))
+    )
+    pronunciation_pass = alias_registered and human_approved
+    return {
+        "status": "PASS" if pronunciation_pass else "FAIL",
+        "LEONIDA_ALIAS_REGISTERED": "PASS" if alias_registered else "FAIL",
+        "LEONIDA_WRITTEN_FORM": "Leonida",
+        "LEONIDA_SYNTHESIS_ALIAS": "Leônida",
+        "LEONIDA_PRONUNCIATION": "PASS" if pronunciation_pass else "FAIL",
+        "LEONIDA_HUMAN_AUDIO_REVIEW": "PASS" if human_approved else "PENDING",
+        "DEFAULT_NARRATION_LOCALE": "pt-BR",
+        "EDITORIAL_TEXT_MUTATED": "NO",
+        "TRANSCRIPT_MUTATED": "NO",
+        "SEO_TEXT_MUTATED": "NO",
+        "CAPTION_TEXT_MUTATED": "NO",
+        "PRODUCTION_READINESS": "PASS" if pronunciation_pass else "FAIL",
+        "FULL_RENDER_AUTHORIZED": "YES" if pronunciation_pass else "NO",
+        "human_approval_status": term.get("status") or "MISSING",
+        "proof_run_id": term.get("proof_run_id"),
+        "telegram_message_ids": list(term.get("telegram_message_ids") or []),
     }
