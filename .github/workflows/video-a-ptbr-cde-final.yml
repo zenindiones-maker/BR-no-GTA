@@ -13,6 +13,11 @@ on:
       - "scripts/video_a_ptbr_cde_candidate.py"
       - ".github/workflows/video-a-ptbr-cde-final.yml"
   workflow_dispatch:
+    inputs:
+      approval:
+        description: 'Exact gate token required: SCRIPT_HUMAN_REVIEW=APPROVED'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +29,7 @@ concurrency:
 
 jobs:
   cde:
+    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.approval || '', 'SCRIPT_HUMAN_REVIEW=APPROVED')
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     env:
