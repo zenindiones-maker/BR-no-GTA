@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  GH_TOKEN: ${{ github.token }}
   PYTHONPATH: .
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/opencode-semantic-v3/proof.db
   BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
