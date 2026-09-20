@@ -123,9 +123,9 @@ class NarrationPipelineTests(unittest.TestCase):
         spoken, applied = apply_pronunciation_profile(original)
         self.assertEqual(original, "GTA VI é publicado pela Rockstar Games e Take-Two acompanha o negócio.")
         self.assertIn("gê tê á seis", spoken)
-        self.assertIn("Take Two", spoken)
-        self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v2")
-        self.assertGreaterEqual(len(applied), 2)
+        self.assertIn("Take-Two", spoken)
+        self.assertEqual(PRONUNCIATION_PROFILE_VERSION, "br-no-gta-ptbr-v3")
+        self.assertEqual([item["identity"] for item in applied], ["gta-6"])
 
     def test_fingerprint_changes_only_when_synthesis_identity_changes(self):
         segment = deterministic_segment_script(SECTIONS, target_wpm=125)[0]

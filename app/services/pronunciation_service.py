@@ -11,7 +11,7 @@ import time
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
-PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v4"
+PRONUNCIATION_LAYER_VERSION = "br-no-gta-pronunciation/v5"
 DEFAULT_LOCALE = "pt-BR"
 DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
 LEXICON_PATH = Path(__file__).resolve().parents[2] / "config" / "pronunciation_lexicon.json"
@@ -148,6 +148,8 @@ def _match_explicit(text: str, explicit_spans: list[dict[str, Any]] | None) -> l
         locale=str(item.get("locale") or "").strip()
         if not locale:
             raise PronunciationError("explicit pronunciation span locale required")
+        if selected.casefold() != "vice city":
+            locale=DEFAULT_LOCALE
         out.append({
             "start":start,"end":end,"locale":locale,
             "strategy":str(item.get("strategy") or "explicit-locale"),
@@ -158,19 +160,8 @@ def _match_explicit(text: str, explicit_spans: list[dict[str, Any]] | None) -> l
     return out
 
 def _conservative_autodetect(text: str) -> list[dict[str, Any]]:
-    out=[]
-    for m in _AUTODETECT_ACRONYM_RE.finditer(text):
-        token=m.group(0)
-        if token in _AUTODETECT_EXCLUDE or token.isdigit():
-            continue
-        out.append({
-            "start":m.start(),"end":m.end(),"locale":"en-US",
-            "strategy":"isolated-multilingual","source":"detector",
-            "pronunciation_identity":f"autodetect:{token.lower()}",
-            "synthesis_text":None,"confidence":0.82,"critical":False,
-            "target_ipa":None,"priority":2,
-        })
-    return out
+    """Disabled by human policy: PT-BR remains canonical unless explicitly approved."""
+    return []
 
 def _select_non_overlapping(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     accepted=[]
@@ -201,7 +192,7 @@ def resolve_synthesis_plan(
     voice: str = DEFAULT_VOICE,
     explicit_spans: list[dict[str, Any]] | None = None,
     lexicon_path: Path | None = None,
-    enable_conservative_detection: bool = True,
+    enable_conservative_detection: bool = False,
 ) -> SynthesisPlan:
     started=time.monotonic()
     if not isinstance(text,str) or not text:

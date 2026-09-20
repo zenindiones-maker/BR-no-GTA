@@ -9,7 +9,7 @@
   "youtube_publication": false,
   "human_approval_required_for_vice_city": true,
   "proof_attempt": 6,
-  "retry_reason": "Human review selected I-opening-fluid-2.mp3 as the best current Voice B fluency reference. Preserve its prosody/timing while applying the exact canonical opening text; do not change editorial wording.",
+  "retry_reason": "Human policy correction: keep all GTA vocabulary in natural pt-BR Voice B context; only Vice City forces en-US. Generate short fluency review before any rerender.",
   "human_feedback": {
     "vice-city": {
       "status": "APPROVED",
@@ -35,5 +35,20 @@
       "next_gate": "APPLY_TO_EXACT_CANONICAL_OPENING_AND_DELIVER_FOR_REVIEW"
     }
   },
-  "requested_at": "2026-09-19T12:40:00Z"
+  "requested_at": "2026-09-19T12:40:00Z",
+  "policy_revision": "ptbr-prosody-continuity-v1",
+  "default_narration_locale": "pt-BR",
+  "only_forced_en_us_term": "Vice City",
+  "vice_city_target_ipa": "vaɪs ˈsɪti",
+  "gta_6_synthesis": "gê tê á seis",
+  "rerender_video": false,
+  "automatic_promotion": false,
+  "human_fluency_review": "PENDING",
+  "sample_set": [
+    "A-control-ptbr: pt-BR puro",
+    "F-gta6-brand: GTA 6",
+    "D-mixed: Rockstar/Jason/Lucia/Leonida dentro do pt-BR",
+    "B-vice-city: Vice City",
+    "C-closing: pt-BR → Vice City → pt-BR"
+  ]
 }

@@ -45,21 +45,17 @@
     "pronunciation_profile_bound": true
   },
   "pronunciation_profile": {
-    "version": "br-no-gta-ptbr-v1",
+    "version": "br-no-gta-ptbr-v3",
+    "default_narration_locale": "pt-BR",
+    "only_forced_en_us_term": "Vice City",
+    "gta_6_synthesis": "gê tê á seis",
+    "vice_city_target_ipa": "vaɪs ˈsɪti",
     "terms": [
-      "Rockstar",
-      "Rockstar Games",
-      "Take-Two",
-      "GTA VI",
       "GTA 6",
-      "Vice City",
-      "Leonida",
-      "Jason",
-      "Lucia",
-      "PlayStation 5",
-      "Xbox Series X",
-      "Xbox Series S"
-    ]
+      "GTA VI",
+      "Vice City"
+    ],
+    "policy": "All other names and brands keep canonical text and remain in Voice B's pt-BR prosody lane."
   },
   "human_evidence": {
     "final_voice": "Voice B",
@@ -67,7 +63,8 @@
     "final_end_reference": "G-brand-mixed",
     "final_selection": "HUMAN_EXPLICIT",
     "legacy_casting_state": "RETIRED_FROM_RUNTIME",
-    "policy": "Do not enumerate, synthesize, benchmark, or substitute alternative voices in production."
+    "policy": "Do not enumerate, synthesize, benchmark, or substitute alternative voices in production.",
+    "pronunciation_policy": "PT-BR continuity; only Vice City forces en-US"
   },
   "qa_evidence": {
     "round1_run_id": 35390107713,
@@ -94,7 +91,8 @@
     "pt-BR-ThalitaMultilingualNeural becomes unavailable",
     "pronunciation profile changes materially",
     "human review explicitly supersedes Fluid 2 or G-brand-mixed",
-    "provider behavior contradicts observed QA"
+    "provider behavior contradicts observed QA",
+    "pronunciation policy no longer matches pt-BR-only-except-Vice-City"
   ],
   "invariants": {
     "harness_authority_preserved": true,

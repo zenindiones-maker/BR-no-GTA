@@ -89,6 +89,8 @@ def current_audio_contract() -> dict[str, Any]:
         "CLOSING_POLICY_INTERNAL": PRODUCTION_CLOSING_POLICY,
         "APPROVED_G_SHA256": approved_g_sha,
         "DERIVED_CLOSING_SHA256": closing_sha,
+        "DEFAULT_NARRATION_LOCALE": lexicon.get("default_locale"),
+        "ONLY_FORCED_EN_US_TERM": (lexicon.get("policy") or {}).get("only_forced_en_us_term"),
         "GTA_6_SYNTHESIS": gta.get("synthesis_text"),
         "VICE_CITY_LOCALE": vice.get("locale"),
         "VICE_CITY_TARGET_IPA": vice.get("target_ipa"),
@@ -107,10 +109,12 @@ def current_audio_contract() -> dict[str, Any]:
         "OPENING_PITCH": "+1Hz",
         "CLOSING_ASSET": "G-brand-mixed",
         "CLOSING_ASSET_POLICY": "IMMUTABLE_HUMAN_APPROVED",
+        "DEFAULT_NARRATION_LOCALE": "pt-BR",
+        "ONLY_FORCED_EN_US_TERM": "Vice City",
         "GTA_6_SYNTHESIS": "gê tê á seis",
         "VICE_CITY_LOCALE": "en-US",
         "VICE_CITY_TARGET_IPA": "vaɪs ˈsɪti",
-        "PRONUNCIATION_LEXICON_VERSION": "2026.09.19.3",
+        "PRONUNCIATION_LEXICON_VERSION": "2026.09.19.4",
     }
     for key, value in expected.items():
         if payload.get(key) != value:

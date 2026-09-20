@@ -16,12 +16,12 @@ FLUIDITY_PROFILES=(
 CANONICAL_FLUID2_PROFILE={"take_id":"fluid-2","rate":"+3%","pitch":"+1Hz"}
 
 SAMPLES=(
-    ("A-control-ptbr","A análise separa fatos confirmados de rumores."),
+    ("A-control-ptbr","Hoje vamos analisar as novidades com calma, separando fatos confirmados de rumores."),
     ("B-vice-city","Vice City"),
-    ("C-closing","E BR não dorme em Vice City"),
-    ("D-mixed","A Rockstar mostrou Vice City em GTA 6."),
-    ("E-domain","Digital Foundry analisou PlayStation 5, Xbox Series X, NVIDIA e AMD."),
-    ("F-gta6-brand","Aqui é BR no GTA 6."),
+    ("C-closing","Hoje a Rockstar mostrou mais detalhes de Vice City e a gente vai analisar tudo com calma."),
+    ("D-mixed","A Rockstar apresentou Jason, Lucia e Leonida em materiais oficiais."),
+    ("E-domain","Digital Foundry, NVIDIA, AMD, PlayStation, Xbox e YouTube entram na conversa sem quebrar o português."),
+    ("F-gta6-brand","Hoje vamos falar de GTA 6 e do que mudou até agora."),
     ("G-brand-mixed","BR no GTA 6. E BR não dorme em Vice City."),
 )
 
@@ -132,6 +132,8 @@ def main()->int:
     }
 
     closing=next(x for x in rows if x["sample_id"]=="C-closing")
+    names=next(x for x in rows if x["sample_id"]=="D-mixed")
+    domain=next(x for x in rows if x["sample_id"]=="E-domain")
     vice=next(x for x in closing["plan"]["spans"] if x.get("pronunciation_identity")=="vice-city")
     closing_timing=closing["edge_metrics"]["timing"]
     em_word=next(x for x in closing_timing if x["text"].strip().lower()=="em")
@@ -150,10 +152,27 @@ def main()->int:
     azure_ssml=build_azure_ssml(strict_plan)
     edge=provider_capabilities("edge-tts",provider_version="7.2.8",voice=DEFAULT_VOICE)
     azure=provider_capabilities("azure-speech",voice=DEFAULT_VOICE)
+    unnecessary_language_switches=sum(
+        1 for row in rows for span in row["plan"]["spans"]
+        if span["locale"]!="pt-BR" and span.get("pronunciation_identity")!="vice-city"
+    )
     checks={
         "PRONUNCIATION_LAYER":all(x["plan"]["canonical_text_preserved"] for x in rows),
         "CANONICAL_TEXT_PRESERVED":all(x["plan"]["canonical_text"]==x["canonical_text"] for x in rows),
         "VOICE_B_PRESERVED":True,
+        "PT_BR_PROSODY_CONTINUITY":(
+            names["plan"]["foreign_span_count"]==0
+            and domain["plan"]["foreign_span_count"]==0
+            and names["edge_metrics"]["synthesis_group_count"]==1
+            and domain["edge_metrics"]["synthesis_group_count"]==1
+        ),
+        "VICE_CITY_PRONUNCIATION":vice["locale"]=="en-US" and vice.get("target_ipa")=="vaɪs ˈsɪti",
+        "UNNECESSARY_LANGUAGE_SWITCHES":unnecessary_language_switches==0,
+        "ONLY_FORCED_EN_US_TERM":all(
+            span["text"]=="Vice City"
+            for row in rows for span in row["plan"]["spans"]
+            if span["locale"]!="pt-BR"
+        ),
         "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
         "VICE_CITY_JOIN_TIMING_NATURAL":(
@@ -210,7 +229,14 @@ def main()->int:
     if not all(checks.values()): raise RuntimeError("pronunciation proof failed:"+",".join(k for k,v in checks.items() if not v))
     evidence={
         "status":"PASS","voice":DEFAULT_VOICE,"provider":"edge-tts","provider_version":"7.2.8",
-        "sample_count":len(rows),"samples":rows,"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"canonical_opening_fluid2_candidate":canonical_fluid2,"checks":checks,
+        "sample_count":len(rows),"samples":rows,
+        "policy":{
+            "DEFAULT_NARRATION_LOCALE":"pt-BR",
+            "ONLY_FORCED_EN_US_TERM":"Vice City",
+            "VICE_CITY_TARGET_IPA":"vaɪs ˈsɪti",
+            "GTA_6_SYNTHESIS":"gê tê á seis",
+            "UNNECESSARY_LANGUAGE_SWITCHES":unnecessary_language_switches,
+        },"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"canonical_opening_fluid2_candidate":canonical_fluid2,"checks":checks,
         "timing_quality":{"vice_city_join_gap_seconds":vice_city_join_gap_seconds,"max_allowed_seconds":0.15},
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
         "human_review":{
@@ -273,6 +299,12 @@ def main()->int:
     print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS")
     print("GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING")
     print("VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING")
+    print("PT_BR_PROSODY_CONTINUITY=PASS")
+    print("VICE_CITY_PRONUNCIATION=PASS")
+    print("UNNECESSARY_LANGUAGE_SWITCHES=0")
+    print("CANONICAL_TEXT_PRESERVED=PASS")
+    print("VOICE_B_PRESERVED=PASS")
+    print("HUMAN_FLUENCY_REVIEW=PENDING")
     print("JOB18_UNCHANGED=YES"); print("PUBLICATION_AUTHORITY_UNCHANGED=YES")
     return 0
 
