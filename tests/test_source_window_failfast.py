@@ -42,6 +42,11 @@ def test_real_late_qa_overlap_is_classified_with_exact_windows():
 def test_allocator_spills_forward_without_rewinding_first_window(monkeypatch):
     monkeypatch.setattr(professional, "validate_job_spoken_branding", lambda job: _brand_contract())
     job = {
+        "content_item_id": 1,
+        "script_id": 1,
+        "title": "Benchmark",
+        "objective": "Validate monotonic source allocation",
+        "format": "YouTube longform",
         "script_sections": [
             {
                 "section_id": "benchmark-script-01",
