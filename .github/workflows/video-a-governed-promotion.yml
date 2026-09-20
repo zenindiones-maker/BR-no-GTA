@@ -33,30 +33,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Production readiness hard gate — Leonida human auditory approval
+      - name: Production readiness hard gate — full audio/video evidence
         run: |
           set -euo pipefail
           python - <<'PY'
-          from app.services.human_review_quality_gate import validate_pronunciation_readiness
-          result=validate_pronunciation_readiness()
-          for key in (
-              'LEONIDA_ALIAS_REGISTERED',
-              'LEONIDA_WRITTEN_FORM',
-              'LEONIDA_SYNTHESIS_ALIAS',
-              'LEONIDA_PRONUNCIATION',
-              'LEONIDA_HUMAN_AUDIO_REVIEW',
-              'EDITORIAL_TEXT_MUTATED',
-              'TRANSCRIPT_MUTATED',
-              'SEO_TEXT_MUTATED',
-              'CAPTION_TEXT_MUTATED',
-              'PRODUCTION_READINESS',
-              'FULL_RENDER_AUTHORIZED',
-          ):
-              print(f"{key}={result[key]}")
-          if result['LEONIDA_PRONUNCIATION']!='PASS':
-              raise SystemExit('PRODUCTION_READINESS=FAIL:LEONIDA_PRONUNCIATION_HUMAN_APPROVAL_REQUIRED')
-          if result['FULL_RENDER_AUTHORIZED']!='YES':
-              raise SystemExit('FULL_RENDER_AUTHORIZED=NO')
+          from app.services.video_a_production_readiness import validate_persisted_readiness
+          result=validate_persisted_readiness()
+          print("PRODUCTION_READINESS="+result["PRODUCTION_READINESS"])
+          print("FULL_RENDER_AUTHORIZED="+result["FULL_RENDER_AUTHORIZED"])
+          print("FAILED_READINESS_GATES="+",".join(result["failed"]))
+          if result["status"]!="PASS":
+              raise SystemExit("PRODUCTION_READINESS=FAIL")
           PY
 
       - name: Install Learning Plane runtime
