@@ -162,7 +162,10 @@ def execute_hermes_mission_capability(
         comment for comment in snapshot["comments"]
         if "HANDOFF" in str(comment.get("body") or "").upper()
     )
-    projected_workers = [profile.to_dict() for profile in profiles]
+    projected_workers = [
+        HermesProfileFactory().project_orchestrator().to_dict(),
+        *(profile.to_dict() for profile in profiles),
+    ]
     projected_names = {item["profile_name"] for item in projected_workers}
     for run in snapshot["runs"]:
         observed_name = str(run.get("profile") or "").strip()
