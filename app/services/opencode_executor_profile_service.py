@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from typing import Any
@@ -91,7 +92,69 @@ def executable_opencode_executor_profile(version: str) -> dict[str, Any]:
     }
 
 
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _hydrate_promoted_semantic_v3_if_needed() -> None:
+    profile = executable_opencode_executor_profile(SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION)
+    options = dict(profile["options"])
+    if options.get("status") != "PROMOTED":
+        return
+
+    existing = learning_repository.get_version(
+        table="harness_skill_versions",
+        identity_field="skill_id",
+        identity=OPENCODE_EXECUTOR_SKILL_ID,
+        version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+    )
+    evidence_refs = [
+        "github:run:35537494044:opencode-semantic-tools-used",
+        "github:artifact:10612603412",
+        f"github:run:{options.get('evidence_run_id')}:opencode-semantic-v3-proof",
+    ]
+    if existing is None:
+        learning_repository.insert_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            record={
+                "skill_id": OPENCODE_EXECUTOR_SKILL_ID,
+                "version": SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+                "parent_version": CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+                "content_ref": profile["content_ref"],
+                "checksum": profile["checksum"],
+                "status": "CANDIDATE",
+                "evidence_refs": evidence_refs,
+                "created_at": _utcnow(),
+                "promoted_at": None,
+            },
+        )
+    else:
+        if (
+            existing["content_ref"] != profile["content_ref"]
+            or existing["checksum"] != profile["checksum"]
+        ):
+            raise PermissionError(
+                "persisted OpenCode semantic v3 profile conflicts with executable definition"
+            )
+
+    active = learning_repository.get_active_version(
+        table="harness_skill_versions",
+        identity_field="skill_id",
+        identity=OPENCODE_EXECUTOR_SKILL_ID,
+    )
+    if active is None or active.get("version") != SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION:
+        learning_repository.activate_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=OPENCODE_EXECUTOR_SKILL_ID,
+            version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+            promoted_at=_utcnow(),
+        )
+
+
 def resolve_active_opencode_executor_profile() -> dict[str, Any]:
+    _hydrate_promoted_semantic_v3_if_needed()
     active = learning_repository.get_active_version(
         table="harness_skill_versions",
         identity_field="skill_id",
