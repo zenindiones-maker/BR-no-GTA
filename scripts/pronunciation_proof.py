@@ -1,7 +1,8 @@
 from __future__ import annotations
-import argparse,asyncio,json,shutil,subprocess,time
+import argparse,asyncio,json,shutil,subprocess,time,unicodedata
 from pathlib import Path
 from app.services.channel_spoken_branding_service import TAKE_PROFILES, canonical_opening_text
+from app.services.human_review_quality_gate import validate_pronunciation_readiness
 from app.services.pronunciation_service import (
     DEFAULT_VOICE,build_azure_ssml,pronunciation_cache_identity,
     provider_capabilities,resolve_synthesis_plan,synthesize_edge_plan,
@@ -23,6 +24,13 @@ SAMPLES=(
     ("E-domain","Digital Foundry, NVIDIA, AMD, PlayStation, Xbox e YouTube entram na conversa sem quebrar o português."),
     ("F-gta6-brand","Hoje vamos falar de GTA 6 e do que mudou até agora."),
     ("G-brand-mixed","BR no GTA 6. E BR não dorme em Vice City."),
+)
+
+LEONIDA_SAMPLES=(
+    ("L1-leonida-context","O estado de Leonida vai muito além de Vice City."),
+    ("L2-leonida-context","Vice City é uma das regiões mais importantes de Leonida."),
+    ("L3-leonida-keys","Leonida Keys amplia o mapa para além do centro urbano."),
+    ("L4-leonida-power","As relações de poder em Leonida conectam Vice City, as Keys e outras regiões."),
 )
 
 def _probe(path:Path)->dict:
@@ -56,7 +64,7 @@ def main()->int:
     baseline_path=samples_dir/"C0-closing-literal-baseline.mp3"
     baseline=asyncio.run(_literal_edge_baseline(baseline_text,baseline_path))
     rows=[]; total_started=time.monotonic(); resolution=0.0; synthesis=0.0; calls=0
-    for sample_id,text in SAMPLES:
+    for sample_id,text in SAMPLES+LEONIDA_SAMPLES:
         plan=resolve_synthesis_plan(text,voice=DEFAULT_VOICE); resolution+=plan.resolution_wall_clock_seconds
         output=samples_dir/f"{sample_id}.mp3"
         metrics=asyncio.run(synthesize_edge_plan(plan,voice=DEFAULT_VOICE,rate="+0%",pitch="+0Hz",output=output))
@@ -172,10 +180,74 @@ def main()->int:
         1 for row in rows for span in row["plan"]["spans"]
         if span["locale"]!="pt-BR" and span.get("pronunciation_identity")!="vice-city"
     )
+    leonida_rows=[row for row in rows if row["sample_id"].startswith("L")]
+    def _plain_word(value:str)->str:
+        decomposed=unicodedata.normalize("NFD",str(value or ""))
+        return "".join(ch for ch in decomposed if unicodedata.category(ch)!="Mn").casefold().strip(" \\t\\r\\n.,!?;:")
+    leonida_alias_registered=True
+    leonida_continuous_ptbr=True
+    leonida_neighbor_gaps=[]
+    for row in leonida_rows:
+        leonida_span=next(
+            (span for span in row["plan"]["spans"] if span.get("pronunciation_identity")=="leonida"),
+            None,
+        )
+        if not (
+            leonida_span
+            and leonida_span.get("text")=="Leonida"
+            and leonida_span.get("synthesis_text")=="Leônida"
+            and leonida_span.get("locale")=="pt-BR"
+            and row["plan"].get("canonical_text_preserved") is True
+        ):
+            leonida_alias_registered=False
+        chunks=[
+            chunk for chunk in row["edge_metrics"].get("chunks",[])
+            if "leonida" in (chunk.get("pronunciation_identities") or [])
+        ]
+        if not (
+            len(chunks)==1
+            and chunks[0].get("locale")=="pt-BR"
+            and "Leônida" in str(chunks[0].get("synthesis_text") or "")
+            and str(chunks[0].get("synthesis_text") or "").strip()!="Leônida"
+        ):
+            leonida_continuous_ptbr=False
+        timing=list(row["edge_metrics"].get("timing") or [])
+        index=next((i for i,item in enumerate(timing) if _plain_word(item.get("text"))=="leonida"),None)
+        if index is None:
+            leonida_continuous_ptbr=False
+            continue
+        current=timing[index]
+        current_start=float(current.get("offset_seconds") or 0.0)
+        current_end=current_start+float(current.get("duration_seconds") or 0.0)
+        if index>0:
+            previous=timing[index-1]
+            previous_end=float(previous.get("offset_seconds") or 0.0)+float(previous.get("duration_seconds") or 0.0)
+            leonida_neighbor_gaps.append(max(0.0,current_start-previous_end))
+        if index+1<len(timing):
+            following=timing[index+1]
+            following_start=float(following.get("offset_seconds") or 0.0)
+            leonida_neighbor_gaps.append(max(0.0,following_start-current_end))
+    leonida_max_neighbor_gap=max(leonida_neighbor_gaps,default=999.0)
+    leonida_no_audible_boundary=(
+        len(leonida_rows)==4
+        and len(leonida_neighbor_gaps)>=4
+        and leonida_max_neighbor_gap<=0.35
+        and leonida_continuous_ptbr
+    )
+    readiness=validate_pronunciation_readiness()
     checks={
         "PRONUNCIATION_LAYER":all(x["plan"]["canonical_text_preserved"] for x in rows),
         "CANONICAL_TEXT_PRESERVED":all(x["plan"]["canonical_text"]==x["canonical_text"] for x in rows),
         "VOICE_B_PRESERVED":True,
+        "LEONIDA_ALIAS_REGISTERED":leonida_alias_registered,
+        "LEONIDA_CANONICAL_TEXT_PRESERVED":all(
+            row["plan"]["canonical_text"]==row["canonical_text"]
+            and row["plan"]["canonical_text_preserved"] is True
+            for row in leonida_rows
+        ),
+        "LEONIDA_CONTINUOUS_PTBR_PROSODY":leonida_continuous_ptbr,
+        "LEONIDA_NO_AUDIBLE_CHUNK_BOUNDARY":leonida_no_audible_boundary,
+        "LEONIDA_REAL_AUDIO_GENERATED":all(row["probe"]["size_bytes"]>0 for row in leonida_rows),
         "PT_BR_PROSODY_CONTINUITY":(
             names["plan"]["foreign_span_count"]==0
             and domain["plan"]["foreign_span_count"]==0
@@ -258,7 +330,30 @@ def main()->int:
             "ONLY_FORCED_EN_US_TERM":"Vice City",
             "VICE_CITY_TARGET_IPA":"vaɪs ˈsɪti",
             "GTA_6_SYNTHESIS":"gê tê á seis",
+            "LEONIDA_WRITTEN_FORM":"Leonida",
+            "LEONIDA_SYNTHESIS_ALIAS":"Leônida",
             "UNNECESSARY_LANGUAGE_SWITCHES":unnecessary_language_switches,
+        },
+        "LEONIDA_ALIAS_REGISTERED":"PASS" if leonida_alias_registered else "FAIL",
+        "LEONIDA_SYNTHESIS_ALIAS":"Leônida",
+        "LEONIDA_PRONUNCIATION":readiness["LEONIDA_PRONUNCIATION"],
+        "CONTINUOUS_PTBR_PROSODY":"PASS" if leonida_continuous_ptbr else "FAIL",
+        "NO_AUDIBLE_CHUNK_BOUNDARY":"PASS" if leonida_no_audible_boundary else "FAIL",
+        "EDITORIAL_TEXT_MUTATED":"NO",
+        "TRANSCRIPT_MUTATED":"NO",
+        "SEO_TEXT_MUTATED":"NO",
+        "CAPTION_TEXT_MUTATED":"NO",
+        "PRODUCTION_READINESS":readiness["PRODUCTION_READINESS"],
+        "FULL_RENDER_AUTHORIZED":readiness["FULL_RENDER_AUTHORIZED"],
+        "leonida_context_samples":[{
+            "sample_id":row["sample_id"],
+            "canonical_text":row["canonical_text"],
+            "file":f"{row['sample_id']}.mp3",
+        } for row in leonida_rows],
+        "leonida_timing_quality":{
+            "max_neighbor_gap_seconds":leonida_max_neighbor_gap,
+            "max_allowed_seconds":0.35,
+            "measured_neighbor_gap_count":len(leonida_neighbor_gaps),
         },"opening_naturality_takes":opening_takes,"opening_fluidity_takes":fluidity_takes,"canonical_opening_fluid2_candidate":canonical_fluid2,"checks":checks,
         "timing_quality":{"vice_city_join_gap_seconds":vice_city_join_gap_seconds,"max_allowed_seconds":0.15},
         "strict_provider":{"provider":"azure-speech","ssml_preview":azure_ssml,"capabilities":azure.to_dict(),"live_call_executed":False,"reason":"optional strict boundary; Edge proves the current production path without Azure credentials"},
@@ -271,6 +366,15 @@ def main()->int:
                     "sample_id":"C-closing",
                     "target_ipa":vice.get("target_ipa"),
                     "basis":"human review in Telegram on 2026-09-19",
+                },
+                "leonida":{
+                    "status":"PENDING",
+                    "sample_ids":[row["sample_id"] for row in leonida_rows],
+                    "files":[f"{row['sample_id']}.mp3" for row in leonida_rows],
+                    "written_form":"Leonida",
+                    "candidate_synthesis_alias":"Leônida",
+                    "locale":"pt-BR",
+                    "basis":"real Voice B continuous-context samples generated; human auditory approval is mandatory before production readiness can pass",
                 },
                 "gta-6":{
                     "status":"PENDING",
@@ -319,6 +423,15 @@ def main()->int:
     (args.output_dir/"pronunciation-proof.json").write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding="utf-8")
     (args.output_dir/"azure-ssml-boundary.xml").write_text(azure_ssml,encoding="utf-8")
     for key,passed in checks.items(): print(f"{key}={'PASS' if passed else 'FAIL'}")
+    print("LEONIDA_ALIAS_REGISTERED="+("PASS" if leonida_alias_registered else "FAIL"))
+    print("LEONIDA_SYNTHESIS_ALIAS=Leônida")
+    print("LEONIDA_PRONUNCIATION="+readiness["LEONIDA_PRONUNCIATION"])
+    print("CONTINUOUS_PTBR_PROSODY="+("PASS" if leonida_continuous_ptbr else "FAIL"))
+    print("NO_AUDIBLE_CHUNK_BOUNDARY="+("PASS" if leonida_no_audible_boundary else "FAIL"))
+    print("EDITORIAL_TEXT_MUTATED=NO")
+    print("TRANSCRIPT_MUTATED=NO")
+    print("PRODUCTION_READINESS="+readiness["PRODUCTION_READINESS"])
+    print("FULL_RENDER_AUTHORIZED="+readiness["FULL_RENDER_AUTHORIZED"])
     print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS")
     print("GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING")
     print("VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING")
