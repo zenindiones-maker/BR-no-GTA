@@ -1,8 +1,8 @@
 {
-  "mission": "character-name-pronunciation-official-ground-truth-reconcile-v3",
+  "mission": "character-name-pronunciation-ptbr-acoustic-v2",
   "base_head": "a73026f487ec0f49e7d531fe51c982cf5263973e",
-  "continuation_head": "1e8ad66287d945e5bb27ecb956b05da164789d2f",
-  "requested_at": "2026-09-20T02:43:00Z",
+  "continuation_head": "13dd95a8237ee4d8bcca8cf37db4d9ed789464aa",
+  "requested_at": "2026-09-20T02:47:00Z",
   "video_a_rerender": false,
   "automatic_promotion": false,
   "default_narration_locale": "pt-BR",
@@ -13,32 +13,17 @@
   "canonical_product_artifact_id": 10589535732,
   "canonical_product_run_id": 35458162169,
   "script_sha256": "9bde9d9e5fd413597ecafadbfb55836ccbcaf10da7038aa83c133b3cc65c15ea",
-  "current_script_character_inventory": [
-    "Jason",
-    "Lucia"
-  ],
-  "candidate_lexicon_version": "2026.09.19.5-rockstar-acoustic.1",
+  "current_script_character_inventory": ["Jason", "Lucia"],
+  "candidate_lexicon_version": "2026.09.19.5-ptbr-dub-acoustic.2",
+  "reference_source": "PTBR_DUBBED_TRAILER",
+  "reference_url": "https://www.youtube.com/watch?v=f8IZhKcuEts",
+  "reference_video_id": "f8IZhKcuEts",
+  "reference_title": "GTA 6 | Trailer 2 - DUBLADO - Grand Theft Auto VI",
+  "reference_channel": "YouDubbing",
+  "reference_authority_scope": "pronunciation adaptation only; Rockstar remains canonical identity authority",
+  "rockstar_identity_authority": "Rockstar Games / official Trailer 2",
   "human_character_name_review": "PENDING",
-  "proof_attempt": 8,
-  "retry_reason": "Forward-correct competing PT-BR dub reference to user-required official Rockstar Trailer 2 ground truth; reuse already delivered official-grounded benchmark without rerender or duplicate Telegram messages.",
-  "official_ground_truth": {
-    "rockstar_page": "https://www.rockstargames.com/VI/trailer-2",
-    "youtube_url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
-    "youtube_video_id": "VQRLujxTm3c",
-    "publisher": "Rockstar Games"
-  },
-  "reuse_official_grounded_proof": {
-    "run_id": 35484467232,
-    "artifact_id": 10597177719,
-    "telegram_message_ids": [
-      215,
-      216,
-      217,
-      218,
-      219,
-      220,
-      221
-    ]
-  },
-  "deliver_telegram": false
+  "reference_clips_delivery": "INTERNAL_ONLY",
+  "proof_attempt": 9,
+  "retry_reason": "Use PT-BR dubbed acoustic reference requested by human; exclude low-confidence ASR hits from scoring; fix no-rerender gate; no production promotion or VIDEO A rerender."
 }
