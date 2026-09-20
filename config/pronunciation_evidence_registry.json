@@ -1,0 +1,62 @@
+{
+  "schema": "br-no-gta-pronunciation-evidence/v1",
+  "version": "2026.09.20.1-full-script-readiness",
+  "policy": {
+    "no_invented_pronunciation": true,
+    "human_review_required_when_evidence_insufficient": true,
+    "asr_never_auto_approves_pronunciation": true,
+    "canonical_text_immutable": true,
+    "default_locale": "pt-BR",
+    "only_forced_en_us_term": "Vice City"
+  },
+  "entries": [
+    {
+      "identity": "vice-city",
+      "term": "Vice City",
+      "status": "HUMAN_APPROVED",
+      "source_type": "HUMAN_REVIEW",
+      "source_ref": "Telegram review 2026-09-19",
+      "synthesis": "Vice City",
+      "locale": "en-US",
+      "target_ipa": "vaɪs ˈsɪti"
+    },
+    {
+      "identity": "gta-6",
+      "term": "GTA 6",
+      "aliases": [
+        "GTA VI"
+      ],
+      "status": "HUMAN_APPROVED_REFERENCE",
+      "source_type": "HUMAN_REVIEW",
+      "source_ref": "BR-no-GTA approved Brazilian realization",
+      "synthesis": "gê tê á seis",
+      "locale": "pt-BR"
+    },
+    {
+      "identity": "lucia",
+      "term": "Lucia",
+      "status": "HUMAN_CORRECTED_ALIAS_PENDING_GLOBAL_REVIEW",
+      "source_type": "HUMAN_REVIEW",
+      "source_ref": "existing canonical pronunciation lexicon",
+      "synthesis": "Lucía",
+      "locale": "pt-BR"
+    },
+    {
+      "identity": "jason",
+      "term": "Jason",
+      "status": "OFFICIAL_ACOUSTIC_REFERENCE_PENDING_HUMAN",
+      "source_type": "ROCKSTAR_OFFICIAL_AUDIO",
+      "source_ref": "Grand Theft Auto VI Trailer 2 / VQRLujxTm3c",
+      "locale": "pt-BR"
+    },
+    {
+      "identity": "leonida",
+      "term": "Leonida",
+      "status": "HUMAN_REJECTED",
+      "source_type": "HUMAN_REVIEW",
+      "source_ref": "run 35525920608 artifact 10609442706 Telegram 317-320",
+      "synthesis_target": "Leônida",
+      "locale": "pt-BR"
+    }
+  ]
+}
