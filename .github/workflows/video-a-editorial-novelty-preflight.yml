@@ -6,6 +6,7 @@ on:
       - ".run/video-a-next-candidate/candidate.json"
       - "app/services/editorial_novelty_service.py"
       - "scripts/video_a_editorial_novelty_proof.py"
+      - "tests/test_human_review_quality_gate.py"
       - ".github/workflows/video-a-editorial-novelty-preflight.yml"
   workflow_dispatch:
 permissions:
