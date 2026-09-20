@@ -111,7 +111,7 @@ def prepare_retry(request_path: Path, out: Path) -> None:
     state.update({
         "status":"CURRENT_RENDER_RETRY_PREPARED",
         "PREVIOUS_RENDER_RUN_ID":int(request["previous_render_run_id"]),
-        "RENDER_RUN_ID":None,
+        "RENDER_RUN_ID":int(request["previous_render_run_id"]),
         "CHECKPOINT_REUSE":"YES",
         "NARRATION_CHECKPOINT_REUSE":"YES",
         "BRAND_AUDIO_CHECKPOINT_REUSE":"YES",

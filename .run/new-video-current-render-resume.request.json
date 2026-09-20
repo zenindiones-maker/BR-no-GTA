@@ -1,6 +1,6 @@
 {
   "schema": "new-video-current-render-resume/v1",
-  "requested_from_head": "4eb8ce8a5d2c839d20529ca5873b15a0d12d68ad",
+  "requested_from_head": "6d3570aba8be0c7a10caef171e9849efe862a95b",
   "controller_checkpoint_run_id": 35514396253,
   "controller_checkpoint_artifact_id": 10607171223,
   "previous_render_run_id": 35514545427,
@@ -17,7 +17,8 @@
   "reuse_narration": true,
   "reuse_media": true,
   "reuse_brand_audio": true,
-  "requested_render_retry_count": 1,
+  "requested_render_retry_count": 2,
   "youtube_privacy": "private",
-  "human_review_delivery": "telegram"
+  "human_review_delivery": "telegram",
+  "previous_controller_attempt_run_id": 35519299696
 }
