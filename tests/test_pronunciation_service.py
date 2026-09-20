@@ -13,17 +13,19 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_has_only_human_approved_runtime_overrides():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.09.20.3-human-lucia"
+    assert lexicon["version"]=="2026.09.20.4-human-leonida-pending"
     assert lexicon["default_locale"]=="pt-BR"
     assert lexicon["policy"]["only_forced_en_us_term"]=="Vice City"
     entries={item["identity"]:item for item in lexicon["entries"]}
-    assert set(entries)=={"vice-city","gta-6","character-lucia"}
+    assert set(entries)=={"vice-city","gta-6","character-lucia","leonida"}
     assert entries["vice-city"]["locale"]=="en-US"
     assert entries["vice-city"]["target_ipa"]=="vaɪs ˈsɪti"
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="gê tê á seis"
     assert entries["character-lucia"]["locale"]=="pt-BR"
     assert entries["character-lucia"]["synthesis_text"]=="Lucía"
+    assert entries["leonida"]["locale"]=="pt-BR"
+    assert entries["leonida"]["synthesis_text"]=="Leônida"
 
 def test_names_and_brands_stay_in_ptbr_lane():
     text="A Rockstar apresentou Jason, Lucia e Leonida no YouTube para PlayStation e Xbox."
@@ -35,7 +37,7 @@ def test_names_and_brands_stay_in_ptbr_lane():
     groups=_edge_synthesis_groups(plan)
     assert len(groups)==1
     assert groups[0]["locale"]=="pt-BR"
-    assert groups[0]["synthesis_text"]==text.replace("Lucia","Lucía")
+    assert groups[0]["synthesis_text"]==text.replace("Lucia","Lucía").replace("Leonida","Leônida")
 
 def test_unknown_acronyms_do_not_force_language_switches():
     plan=resolve_synthesis_plan("RTX, NVIDIA e AMD entram na conversa.")
@@ -76,6 +78,22 @@ def test_gta6_alias_preserves_ptbr_prosody_and_canonical_text():
     assert plan.foreign_span_count==0
     assert len(_edge_synthesis_groups(plan))==1
     assert plan.canonical_text==text and plan.canonical_text_preserved
+
+def test_leonida_alias_is_synthesis_only_and_stays_in_continuous_ptbr_context():
+    text="As relações de poder em Leonida conectam as Keys e outras regiões."
+    plan=resolve_synthesis_plan(text)
+    leonida=next(span for span in plan.spans if span.pronunciation_identity=="leonida")
+    assert leonida.text=="Leonida"
+    assert leonida.synthesis_text=="Leônida"
+    assert leonida.locale=="pt-BR"
+    assert plan.canonical_text==text
+    assert plan.canonical_text_preserved is True
+    assert plan.foreign_span_count==0
+    groups=_edge_synthesis_groups(plan)
+    assert len(groups)==1
+    assert groups[0]["locale"]=="pt-BR"
+    assert "Leônida" in groups[0]["synthesis_text"]
+    assert groups[0]["synthesis_text"]!="Leônida"
 
 def test_bad_explicit_span_fails_closed():
     with pytest.raises(PronunciationError):
@@ -119,7 +137,7 @@ def test_cache_payload_excludes_runtime_resolution_time():
 def test_canonical_entries_include_human_approved_lucia_alias():
     entries=canonical_lexicon_entries()
     by_id={item["identity"]:item for item in entries}
-    assert set(by_id)=={"vice-city","gta-6","character-lucia"}
+    assert set(by_id)=={"vice-city","gta-6","character-lucia","leonida"}
     assert by_id["character-lucia"]["synthesis_text"]=="Lucía"
     plan=resolve_synthesis_plan("Jason e Lucia chegaram a Vice City.")
     assert plan.canonical_text=="Jason e Lucia chegaram a Vice City."
