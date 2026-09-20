@@ -23,16 +23,16 @@ FEEDBACK={
     "leonida_pronunciation":"FAIL",
     "proper_noun_pronunciation":"FAIL",
     "technical_pass_but_perceptual_fail":True,
-    "human_voice_review":"REJECTED",
+    "human_voice_review":"REJECTED",\n    "all_names_and_places_ptbr_required":True,\n    "foreign_language_chunks_forbidden":True,
 }
 EVIDENCE=(
     "github-run:35525920608",
     "github-artifact:10609442706",
-    "telegram-message:317",
-    "telegram-message:318",
-    "telegram-message:319",
-    "telegram-message:320",
-    "human-review:2026-09-20-global-dubbing-rejected",
+    "github-run:35527492016",
+    "github-artifact:10610442121",
+    "telegram-messages:317-320",
+    "telegram-messages:335-349",
+    "human-review:2026-09-20-global-dubbing-rejected-twice",
 )
 
 def main()->int:
@@ -42,10 +42,10 @@ def main()->int:
     initialize_application()
     now=datetime.now(timezone.utc).isoformat()
     episode=HarnessEpisode(
-        episode_id="episode-video-a-global-dubbing-reject-20260920",
+        episode_id="episode-video-a-ptbr-pronunciation-reject-20260920",
         goal_id="video-a-next-candidate-20260920-social-vice-city",
-        decision_id="human-global-dubbing-review-20260920",
-        execution_id="pronunciation-proof-35525920608",
+        decision_id="human-all-ptbr-pronunciation-review-20260920",
+        execution_id="narration-audition-35527492016",
         task_id="video-a-production-readiness-audio",
         agent_id="professional-video-a-worker",
         capability_id="narration.generate.pt-BR",
@@ -60,7 +60,7 @@ def main()->int:
         input_refs=("candidate:video-a-next-candidate-20260920-social-vice-city",),
         output_refs=("human-voice-review:REJECTED",),
         evidence_refs=EVIDENCE,
-        error="Technical pronunciation proof was green but human review rejected global dubbing quality, naturalness, fluency and pronunciation.",
+        error="Two technically green audio proofs were rejected by the human; names/places were mispronounced and foreign-language chunking is forbidden. The next execution must use continuous pt-BR synthesis for every entity.",
         human_intervention=True,
         qa_results={
             "AUDIO_TECHNICAL_INTEGRITY":"PASS",
@@ -72,12 +72,15 @@ def main()->int:
         },
         commit_ref=os.environ.get("GITHUB_SHA"),
         run_ref=os.environ.get("GITHUB_RUN_ID"),
-        artifact_refs=("github-artifact:10609442706",),
+        artifact_refs=("github-artifact:10609442706","github-artifact:10610442121"),,
         lineage={
             "candidate_id":"video-a-next-candidate-20260920-social-vice-city",
             "pronunciation_run_id":35525920608,
             "pronunciation_artifact_id":10609442706,
-            "telegram_message_ids":[317,318,319,320],
+            "audition_run_id":35527492016,
+            "audition_artifact_id":10610442121,
+            "telegram_message_ids":[317,318,319,320,335,336,337,338,339,340,341,342,343,344,345,346,347,348,349],
+            "observed_asr_pronunciation_errors":["Leonida Keis","Porte Geliornan","Junglin","Metro Bombing","Dracoan Prich"],
             "old_segment_policy":"microsegment-v1-default",
             "locked_human_profile_segment_policy":"semantic-section-v1",
             "pronunciation_lexicon":"config/pronunciation_lexicon.json",
@@ -110,7 +113,7 @@ def main()->int:
     )
     candidate=create_learning_candidate(
         candidate_type="SYSTEM_IMPROVEMENT",
-        hypothesis="Restore semantic-section synthesis by default, require full-script proper-noun inventory and final-mix script-to-speech fidelity, and make human voice approval a hard render gate.",
+        hypothesis="Use one continuous pt-BR synthesis lane for every final-script entity, apply versioned pt-BR synthesis aliases before TTS, require full-script pronunciation coverage, and keep human approval as the only authority for pronunciation/naturalness.",
         domain="production",
         task_class="video-a-narration-readiness",
         source_episode_ids=(episode.episode_id,),
@@ -127,6 +130,8 @@ def main()->int:
             "next_audio_policy_must_differ_from_rejected_default":True,
             "human_review_required":True,
             "full_render_forbidden":True,
+            "all_synthesis_locale_ptbr":True,
+            "foreign_language_chunks_forbidden":True,
         },
     )
     result={
@@ -147,6 +152,9 @@ def main()->int:
             "segment_strategy":"semantic-section-v1-default",
             "quality_proxy":"five independent QA dimensions + human acceptance",
             "proper_noun_inventory":"full final script before synthesis",
+            "all_entity_synthesis_locale":"pt-BR",
+            "foreign_language_chunks":"forbidden",
+            "ptbr_alias_lexicon":"config/pronunciation_ptbr_candidate.json",
             "final_mix_text_fidelity":"required",
         },
         "LEARNING_APPLIED":"PENDING_NEXT_AUDIO",
