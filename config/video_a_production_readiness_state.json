@@ -1,6 +1,6 @@
 {
   "schema": "video-a-production-readiness-state/v1",
-  "version": "2026.09.20.1-pre-audition",
+  "version": "2026.09.20.2-script-and-acoustic-blocked",
   "candidate_id": "video-a-next-candidate-20260920-social-vice-city",
   "preserved": {
     "EDITORIAL_NOVELTY": "PASS",
@@ -28,7 +28,11 @@
     "NARRATION_FLUENCY": "FAIL",
     "NO_NAME_FRAGMENTATION": "PENDING",
     "CONTINUOUS_PTBR_PROSODY": "PENDING",
-    "HUMAN_VOICE_REVIEW": "REJECTED"
+    "HUMAN_VOICE_REVIEW": "REJECTED",
+    "PTBR_TARGET_RESEARCH_COVERAGE": 100,
+    "PTBR_ACOUSTIC_VALIDATION_COVERAGE": 0,
+    "PTBR_HUMAN_APPROVED_COVERAGE": 0,
+    "ROCKSTAR_PRONUNCIATION": "FAIL"
   },
   "video": {
     "UNPLANNED_TEXT_OVERLAY": "OFF",
@@ -37,5 +41,15 @@
   },
   "PRODUCTION_READINESS": "FAIL",
   "FULL_RENDER_AUTHORIZED": "NO",
-  "YOUTUBE_PUBLICATION": "NO"
+  "YOUTUBE_PUBLICATION": "NO",
+  "editorial": {
+    "EDITORIAL_NOVELTY": "PASS",
+    "SCRIPT_EDITORIAL_QUALITY": "FAIL",
+    "INFORMATION_DENSITY": "FAIL",
+    "AUDIENCE_VALUE": "FAIL",
+    "NARRATIVE_COHERENCE": "PENDING_REWRITE",
+    "META_PRODUCTION_LEAKAGE": "FAIL",
+    "REPETITION": "PENDING_REWRITE",
+    "SCRIPT_HUMAN_REVIEW": "PENDING"
+  }
 }
