@@ -11,6 +11,7 @@ from app.services.ai_provider import AIProviderError, AIResponse
 OPENCODE_EXECUTOR_SKILL_ID = "ai.reasoning.opencode-executor-profile"
 BASELINE_OPENCODE_EXECUTOR_VERSION = "v1"
 CANDIDATE_OPENCODE_EXECUTOR_VERSION = "v2"
+SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION = "v3"
 OPENCODE_PROFILE_RESOLVER_BINDING = (
     "app.services.opencode_executor_profile_service."
     "create_opencode_provider_for_active_profile"
@@ -36,6 +37,23 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "cli_version": "2.0.8",
         "status": "PROMOTED",
         "evidence_run_id": 35450516329,
+    },
+    "v3": {
+        "executor_kind": "official_opencode_cli_github_actions",
+        "executor_binding": (
+            "app.services.opencode_native_ai_provider.OpenCodeNativeAIProvider"
+        ),
+        "canonical_model": "oc/big-pickle",
+        "executor_model": "opencode/big-pickle",
+        "workflow": "omniroute.yml",
+        "cli_version": "2.0.8",
+        "semantic_profile": "opencode-semantic-text-v3",
+        "semantic_agent": "semantic-text",
+        "semantic_steps": 1,
+        "semantic_contract": "SEMANTIC_TEXT_ONLY",
+        "status": "CANDIDATE_ROOT_CAUSE_FIX",
+        "root_cause_evidence_run_id": 35537494044,
+        "root_cause_artifact_id": 10612603412,
     },
 }
 
@@ -153,7 +171,10 @@ def create_opencode_provider_for_active_profile(
 
     if profile["version"] == BASELINE_OPENCODE_EXECUTOR_VERSION:
         return _BlockedBaselineProvider(profile)
-    if profile["version"] == CANDIDATE_OPENCODE_EXECUTOR_VERSION:
+    if profile["version"] in {
+        CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+    }:
         from app.services.opencode_native_ai_provider import OpenCodeNativeAIProvider
 
         return OpenCodeNativeAIProvider(
