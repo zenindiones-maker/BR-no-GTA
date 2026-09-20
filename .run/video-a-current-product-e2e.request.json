@@ -11,7 +11,7 @@
   "resume_from_e2e_run_id": 35479559649,
   "resume_from_e2e_artifact_id": 10595610849,
   "previous_render_run_id": 35479588939,
-  "previous_failure_class": "FINAL_QA_RUNTIME_TEST_ENVIRONMENT_MISSING_DOTENV",
+  "previous_failure_class": "FINAL_QA_RUNTIME_FIX_APPLIED_POST_BRANDING_CHECKPOINT_REUSED",
   "recovery_mode": "REUSE_EXISTING_JOB2_POST_BRANDING_FINAL_QA",
   "checkpoint_producer_run_id": 35476930608,
   "narration_artifact_id": 10594412061,
