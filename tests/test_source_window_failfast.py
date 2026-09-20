@@ -47,6 +47,8 @@ def test_allocator_spills_forward_without_rewinding_first_window(monkeypatch):
         "title": "Benchmark",
         "objective": "Validate monotonic source allocation",
         "format": "YouTube longform",
+        "product_label": "A",
+        "product_version": "test-current-contract",
         "script_sections": [
             {
                 "section_id": "benchmark-script-01",
