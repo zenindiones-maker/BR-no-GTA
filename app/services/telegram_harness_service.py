@@ -126,6 +126,8 @@ def build_harness_connection_proof() -> dict[str, Any]:
     )
     consume_harness_authorization(authorization)
     observation = build_gta6_observation()
+    primary_routing_id = routing.routing_id
+    fallback_audit = None
     return {
         "TELEGRAM_HARNESS": "PASS",
         "authority": authorization.issued_by,
