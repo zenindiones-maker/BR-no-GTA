@@ -137,17 +137,55 @@ def test_file_submission_is_a_first_class_conversation_intent():
 
 
 def test_natural_language_research_routes_without_slash_command():
+    seen = {}
+
+    def research_execute(plan, state, message):
+        seen["plan"] = dict(plan)
+        return {
+            "status": "COMPLETED",
+            "operation": "br_research_run",
+            "result": {
+                "total": 3,
+                "rockstar_newswire": [{"title": "Official update"}],
+                "news_feeds": [{"title": "Secondary report"}],
+                "editorial": [{"decision": "QUEUE"}],
+            },
+            "capability_id": "gta6.research",
+            "routing_id": "route-research",
+            "authorization_id": "auth-research",
+            "execution_id": "exec-research",
+        }
+
+    def synthesize(message, **kwargs):
+        seen["skip_fresh_research"] = kwargs.get("skip_fresh_research")
+        seen["reasoning_context"] = kwargs.get("conversation_context")
+        return {
+            "status": "COMPLETED",
+            "answer": "A pesquisa gerou uma avaliação editorial nova; o roteiro precisa ser reavaliado antes de produção.",
+            "capability_id": "ai.reasoning.text",
+            "routing_id": "route-ai",
+            "authorization_id": "auth-ai",
+            "execution_id": "exec-ai",
+        }
+
     result = handle_telegram_conversation(
         "pesquisa as últimas informações do GTA 6 e me diz se muda nosso roteiro",
         telegram_chat_id=9983,
         telegram_message_id=201,
         input_record={"id": 55, "telegram_chat_id": 9983, "telegram_message_id": 201},
-        chat_handler=_chat_stub,
+        chat_handler=synthesize,
+        action_executor=research_execute,
         presenter=_presenter,
     )
     assert result["intent"] == "RESEARCH_REQUEST"
-    assert result["plan"]["capability_id"] == "gta6.research.fresh-cloud"
-    assert result["canonical_result"]["capability_id"] == "gta6.research.fresh-cloud"
+    assert result["plan"]["kind"] == "RESEARCH_PIPELINE"
+    assert result["plan"]["capability_id"] == "gta6.research"
+    assert seen["plan"]["authorized_action"] == "RESEARCH"
+    assert seen["skip_fresh_research"] is True
+    compact = seen["reasoning_context"]["governed_research_pipeline_result"]
+    assert compact["total"] == 3
+    assert compact["editorial_count"] == 1
+    assert result["canonical_result"]["capability_id"] == "gta6.research"
     assert result["conversation_state"]["execution_status"] == "COMPLETED"
 
 
