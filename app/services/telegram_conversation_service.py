@@ -16,6 +16,7 @@ from app.database.telegram_conversation_repository import (
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
 from app.services.human_presentation_service import present_canonical_result_under_harness
+from app.services.script_service import get_script, list_scripts
 from app.services.telegram_harness_service import chat_under_harness
 
 
@@ -381,6 +382,25 @@ def _status_answer(state: dict[str, Any]) -> str:
     return "Não há run nem tarefa ativa registrada nesta conversa agora."
 
 
+def _resolve_script_for_presentation(reference: str | None) -> dict[str, Any] | None:
+    ref = str(reference or "").strip()
+    if not ref:
+        return None
+    script_id: int | None = None
+    if ref.startswith("script:"):
+        suffix = ref.split(":", 1)[1].split("#", 1)[0].strip()
+        if suffix.isdigit():
+            script_id = int(suffix)
+        elif suffix == "last":
+            scripts = list_scripts()
+            return scripts[-1] if scripts else None
+    elif ref.isdigit():
+        script_id = int(ref)
+    if script_id is None:
+        return None
+    return get_script(script_id)
+
+
 def _present(
     canonical: dict[str, Any],
     *,
@@ -582,14 +602,28 @@ def handle_telegram_conversation(
             "artifact_ref": plan.get("artifact_ref"),
         }
     elif plan["kind"] == "PRESENT_EXISTING":
-        canonical = {
-            "status": "REFERENCE_RESOLVED",
-            "answer": (
-                f"Resolvi seu pedido para {plan.get('artifact_ref')}. "
-                "A referência ficou vinculada à conversa; a entrega do conteúdo usa a apresentação Telegram sem exigir que você repita IDs."
-            ),
-            "artifact_ref": plan.get("artifact_ref"),
-        }
+        script = _resolve_script_for_presentation(plan.get("artifact_ref"))
+        if script is None:
+            canonical = {
+                "status": "WAITING_FOR_HUMAN",
+                "answer": (
+                    "Resolvi a referência do roteiro, mas o conteúdo canônico não está disponível no SQLite atual. "
+                    "Não vou inventar nem reconstruir o texto por memória."
+                ),
+                "pending_question": "O roteiro referenciado precisa existir no estado canônico antes da entrega.",
+                "artifact_ref": plan.get("artifact_ref"),
+            }
+        else:
+            script_ref = f"script:{script['id']}"
+            canonical = {
+                "status": "SCRIPT_PRESENTED",
+                "answer": str(script.get("content") or "").strip(),
+                "artifact_ref": script_ref,
+                "script_id": script["id"],
+                "script_title": script.get("title"),
+                "script_version": script.get("version"),
+                "script_status": script.get("status"),
+            }
     elif plan["kind"] == "RESEARCH_PIPELINE":
         state = update_conversation_state(
             telegram_chat_id,
@@ -668,8 +702,12 @@ def handle_telegram_conversation(
     run_id = _extract_identity(canonical, "run_id", "render_run_id", "workflow_run_id")
     execution_id = _extract_identity(canonical, "execution_id")
     goal_id = _extract_identity(canonical, "goal_id")
+    artifact_ref = _extract_identity(canonical, "artifact_ref", "artifact_id")
+    script_identity = _extract_identity(canonical, "script_id")
+    if artifact_ref is None and script_identity is not None:
+        artifact_ref = f"script:{script_identity}"
     artifact_ref = (
-        _extract_identity(canonical, "artifact_ref", "artifact_id", "script_id")
+        artifact_ref
         or resolved.get("reference")
         or state.get("active_artifact")
     )
