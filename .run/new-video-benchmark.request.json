@@ -1,0 +1,17 @@
+{
+  "requested_from_head": "01401be64030ec82e833f023f1f70ccbe4b84076",
+  "benchmark_label": "NOVO-1",
+  "objective": "fresh independent GTA VI product E2E with current Voice B pronunciation contract",
+  "fresh_research": true,
+  "reuse_video_a": false,
+  "reuse_old_product": false,
+  "media_checkpoint_policy": "content_addressed_reuse_if_valid",
+  "voice_contract": {
+    "voice": "pt-BR-ThalitaMultilingualNeural",
+    "default_locale": "pt-BR",
+    "only_forced_en_us_term": "Vice City",
+    "gta6_synthesis": "gê tê á seis",
+    "lucia_synthesis_alias": "Lucía"
+  },
+  "requested_at": "2026-09-20T13:22:00Z"
+}
