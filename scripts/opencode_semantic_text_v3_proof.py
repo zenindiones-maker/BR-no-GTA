@@ -114,7 +114,7 @@ def _execute(prompt: str, *, label: str) -> dict[str, Any]:
 
     result = evidence.result if isinstance(evidence.result, dict) else {}
     text = str(result.get("text") or "").strip()
-    metrics = dict(provider.last_performance_metrics or {})
+    metrics = dict(getattr(provider, "last_performance_metrics", {}) or {})
     return {
         "label": label,
         "status": evidence.status,
