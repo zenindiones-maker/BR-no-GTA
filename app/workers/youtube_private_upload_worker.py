@@ -133,16 +133,31 @@ def _validate_render_evidence(job: dict[str, Any], artifact_root: Path) -> tuple
     manifest_path = _safe_child(artifact_root, locator["manifest_relative_path"], "manifest_relative_path")
     probe_path = _safe_child(artifact_root, locator["probe_relative_path"], "probe_relative_path")
     qa_path = _safe_child(artifact_root, locator["qa_relative_path"], "qa_relative_path")
+    render_job_path = _safe_child(
+        artifact_root,
+        locator["render_job_relative_path"],
+        "render_job_relative_path",
+    )
     for path, label in (
         (media, "media"),
-        (manifest_path, "render manifest"),
         (probe_path, "video probe"),
         (qa_path, "render QA"),
     ):
         if not path.is_file() or path.stat().st_size <= 0:
             raise YouTubeUploadWorkerError(f"missing or empty {label}")
 
-    manifest = _load_json(manifest_path, "render manifest")
+    manifest = None
+    evidence_schema = "render-manifest/v1"
+    if manifest_path.is_file() and manifest_path.stat().st_size > 0:
+        manifest = _load_json(manifest_path, "render manifest")
+    else:
+        if not render_job_path.is_file() or render_job_path.stat().st_size <= 0:
+            raise YouTubeUploadWorkerError(
+                "missing render manifest and immutable render-job fallback evidence"
+            )
+        manifest = _load_json(render_job_path, "render job evidence")
+        evidence_schema = "render-job-probe-qa/v1"
+
     probe = _load_json(probe_path, "video probe")
     qa = _load_json(qa_path, "render QA")
 
@@ -152,27 +167,47 @@ def _validate_render_evidence(job: dict[str, Any], artifact_root: Path) -> tuple
         "execution_id": locator["execution_id"],
     }
     for key, value in expected.items():
-        if manifest.get(key) != value:
-            raise YouTubeUploadWorkerError(f"render manifest {key} mismatch")
+        manifest_value = manifest.get(key)
+        if key == "render_job_id" and manifest_value is None:
+            manifest_value = manifest.get("id")
+        if manifest_value != value:
+            label = "render manifest" if evidence_schema == "render-manifest/v1" else "render job evidence"
+            raise YouTubeUploadWorkerError(f"{label} {key} mismatch")
         if qa.get(key) != value:
             raise YouTubeUploadWorkerError(f"render QA {key} mismatch")
         lineage = probe.get("lineage")
         if not isinstance(lineage, dict) or lineage.get(key) != value:
             raise YouTubeUploadWorkerError(f"video probe {key} mismatch")
 
-    if manifest.get("qa_status") != "PASS" or qa.get("status") != "PASS":
+    if qa.get("status") != "PASS":
         raise YouTubeUploadWorkerError("render QA is not PASS")
     checks = qa.get("checks")
     if not isinstance(checks, dict) or not checks or not all(value is True for value in checks.values()):
         raise YouTubeUploadWorkerError("render QA checks are not all true")
+    if evidence_schema == "render-manifest/v1" and manifest.get("qa_status") != "PASS":
+        raise YouTubeUploadWorkerError("render QA is not PASS")
+    if evidence_schema != "render-manifest/v1":
+        if manifest.get("authorized_action") != "EXECUTION":
+            raise YouTubeUploadWorkerError("render job evidence is not Harness EXECUTION")
+        if qa.get("stage") not in {"brand-complete", "professional_final_branded"}:
+            raise YouTubeUploadWorkerError("render QA is not final branded evidence")
 
     size = media.stat().st_size
-    if manifest.get("size_bytes") != size:
-        raise YouTubeUploadWorkerError("render manifest size mismatch")
+    probe_size = probe.get("format", {}).get("size")
+    try:
+        probe_size_int = int(probe_size)
+    except (TypeError, ValueError):
+        probe_size_int = -1
+    if probe_size_int != size:
+        raise YouTubeUploadWorkerError("video probe size mismatch")
+
     with media.open("rb") as stream:
         sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
-    if manifest.get("sha256") != sha256:
-        raise YouTubeUploadWorkerError("render manifest sha256 mismatch")
+    if evidence_schema == "render-manifest/v1":
+        if manifest.get("size_bytes") != size:
+            raise YouTubeUploadWorkerError("render manifest size mismatch")
+        if manifest.get("sha256") != sha256:
+            raise YouTubeUploadWorkerError("render manifest sha256 mismatch")
 
     streams = probe.get("streams")
     if not isinstance(streams, list):
@@ -186,11 +221,17 @@ def _validate_render_evidence(job: dict[str, Any], artifact_root: Path) -> tuple
         duration = math.nan
     if not math.isfinite(duration) or duration <= 0:
         raise YouTubeUploadWorkerError("video probe duration invalid")
-    manifest_duration = manifest.get("duration_seconds")
-    if not isinstance(manifest_duration, (int, float)) or isinstance(manifest_duration, bool):
-        raise YouTubeUploadWorkerError("render manifest duration invalid")
-    if abs(float(manifest_duration) - duration) > max(0.5, duration * 0.01):
-        raise YouTubeUploadWorkerError("render manifest/probe duration mismatch")
+
+    if evidence_schema == "render-manifest/v1":
+        evidence_duration = manifest.get("duration_seconds")
+        if not isinstance(evidence_duration, (int, float)) or isinstance(evidence_duration, bool):
+            raise YouTubeUploadWorkerError("render manifest duration invalid")
+    else:
+        evidence_duration = qa.get("duration_seconds")
+        if not isinstance(evidence_duration, (int, float)) or isinstance(evidence_duration, bool):
+            raise YouTubeUploadWorkerError("render QA duration invalid")
+    if abs(float(evidence_duration) - duration) > max(0.5, duration * 0.01):
+        raise YouTubeUploadWorkerError("render evidence/probe duration mismatch")
 
     evidence = {
         "render_job_id": locator["render_job_id"],
@@ -203,6 +244,7 @@ def _validate_render_evidence(job: dict[str, Any], artifact_root: Path) -> tuple
         "sha256": sha256,
         "duration_seconds": duration,
         "qa_status": "PASS",
+        "evidence_schema": evidence_schema,
     }
     return media, evidence
 

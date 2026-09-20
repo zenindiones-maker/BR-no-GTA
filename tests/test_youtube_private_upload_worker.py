@@ -170,3 +170,60 @@ def test_worker_rejects_public_visibility_request(tmp_path):
         execute(job, root, publisher=publisher)
 
     assert publisher.calls == []
+
+def test_worker_accepts_current_immutable_render_artifact_without_legacy_manifest(tmp_path):
+    root, media = _artifact(tmp_path)
+    folder = root / "render-a-21" / "21"
+    (folder / "render-manifest.json").unlink()
+    (folder / "render-job.json").write_text(json.dumps({
+        "render_job_id": 21,
+        "id": 21,
+        "video_id": 31,
+        "execution_id": "render-a-21",
+        "authorized_action": "EXECUTION",
+    }))
+    probe_path = folder / "video-probe.json"
+    probe = json.loads(probe_path.read_text())
+    probe["format"]["size"] = str(media.stat().st_size)
+    probe_path.write_text(json.dumps(probe))
+    qa_path = folder / "render-qa.json"
+    qa = json.loads(qa_path.read_text())
+    qa["stage"] = "brand-complete"
+    qa["duration_seconds"] = 1500.0
+    qa_path.write_text(json.dumps(qa))
+    publisher = _Publisher()
+
+    result = execute(_job(), root, publisher=publisher)
+
+    assert result["status"] == "UPLOADED"
+    assert result["artifact_evidence"]["evidence_schema"] == "render-job-probe-qa/v1"
+    assert result["artifact_evidence"]["sha256"] == hashlib.sha256(media.read_bytes()).hexdigest()
+    assert publisher.calls[0]["file_path"] == str(media)
+
+
+def test_manifestless_artifact_requires_final_branded_qa_before_youtube_side_effect(tmp_path):
+    root, media = _artifact(tmp_path)
+    folder = root / "render-a-21" / "21"
+    (folder / "render-manifest.json").unlink()
+    (folder / "render-job.json").write_text(json.dumps({
+        "render_job_id": 21,
+        "id": 21,
+        "video_id": 31,
+        "execution_id": "render-a-21",
+        "authorized_action": "EXECUTION",
+    }))
+    probe_path = folder / "video-probe.json"
+    probe = json.loads(probe_path.read_text())
+    probe["format"]["size"] = str(media.stat().st_size)
+    probe_path.write_text(json.dumps(probe))
+    qa_path = folder / "render-qa.json"
+    qa = json.loads(qa_path.read_text())
+    qa["stage"] = "pre-brand"
+    qa["duration_seconds"] = 1500.0
+    qa_path.write_text(json.dumps(qa))
+    publisher = _Publisher()
+
+    with pytest.raises(YouTubeUploadWorkerError, match="final branded"):
+        execute(_job(), root, publisher=publisher)
+
+    assert publisher.calls == []
