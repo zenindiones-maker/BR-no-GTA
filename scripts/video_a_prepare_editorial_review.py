@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -473,9 +474,17 @@ def main()->int:
         (message_dir/filename).write_text(message+"\n",encoding="utf-8")
         order.append(filename)
     (args.output_dir/"telegram-message-order.txt").write_text("\n".join(order)+"\n",encoding="utf-8")
+    presentation_hash=hashlib.sha256()
+    for filename in order:
+        presentation_hash.update(filename.encode("utf-8"))
+        presentation_hash.update(b"\0")
+        presentation_hash.update((message_dir/filename).read_bytes())
+        presentation_hash.update(b"\0")
+    presentation_id=presentation_hash.hexdigest()
     (args.output_dir/"telegram-presentation-manifest.json").write_text(
         json.dumps({
             "schema":"video-a-script-human-presentation/v1",
+            "presentation_id":presentation_id,
             "order":order,
             "message_count":len(order),
             "review_surface":"TELEGRAM_TEXT",
