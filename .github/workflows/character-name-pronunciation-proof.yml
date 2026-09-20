@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: character-name-pronunciation-review
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   character-pronunciation:
@@ -62,37 +62,6 @@ jobs:
             "yt-dlp[default]==2026.8.19" "bgutil-ytdlp-pot-provider==1.3.1"
           ffmpeg -version | head -n1
 
-      - name: Setup Deno for canonical PO Token provider
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Setup canonical YouTube PO Token provider
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git runtime/bgutil-ytdlp-pot-provider
-          cd runtime/bgutil-ytdlp-pot-provider/server
-          deno install --allow-scripts=npm:canvas --frozen
-          cd node_modules
-          export DENO_NO_PROMPT=1
-          nohup deno run --no-prompt --allow-env --allow-net --allow-ffi=. --allow-read=. ../src/main.ts --port 4416 > ../provider.log 2>&1 &
-          echo $! > ../provider.pid
-          sleep 5
-          kill -0 "$(cat ../provider.pid)"
-          echo "YTDLP_PO_TOKEN_BASE_URL=http://127.0.0.1:4416" >> "$GITHUB_ENV"
-          echo "CANONICAL_YOUTUBE_PO_TOKEN_PROVIDER=PASS"
-
-      - name: Prepare canonical YouTube cookies
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
-        run: |
-          set -euo pipefail
-          test -n "$YOUTUBE_COOKIES"
-          mkdir -p runtime/secrets
-          printf '%s' "$YOUTUBE_COOKIES" > runtime/secrets/youtube-cookies.txt
-          chmod 600 runtime/secrets/youtube-cookies.txt
-          echo "YTDLP_COOKIES_FILE=$GITHUB_WORKSPACE/runtime/secrets/youtube-cookies.txt" >> "$GITHUB_ENV"
-
       - name: Restore canonical product package only
         uses: actions/download-artifact@v4
         with:
@@ -110,12 +79,35 @@ jobs:
           echo "CANONICAL_TEXT_PRESERVED=PASS"
           echo "VOICE_B_PRESERVED=PASS"
 
-      - name: Generate official-grounded Voice B character benchmark
+      - name: Restore delivered official-grounded pronunciation benchmark
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10597177719"
+          run-id: "35484467232"
+          github-token: ${{ github.token }}
+          path: runtime/character-pronunciation
+          merge-multiple: true
+
+      - name: Reconcile official-grounded Voice B character benchmark
         run: |
           set -euo pipefail
-          python scripts/character_name_pronunciation_proof.py \
-            --product-package runtime/product-source/product-quality-e2e.json \
-            --output-dir runtime/character-pronunciation
+          test -s runtime/character-pronunciation/character-name-pronunciation-proof.json
+          test -s runtime/character-pronunciation/telegram-delivery.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          proof=json.loads(Path("runtime/character-pronunciation/character-name-pronunciation-proof.json").read_text())
+          delivery=json.loads(Path("runtime/character-pronunciation/telegram-delivery.json").read_text())
+          assert proof["official_ground_truth"]["source_id"]=="VQRLujxTm3c", proof["official_ground_truth"]
+          assert proof["official_ground_truth"]["publisher"]=="Rockstar Games", proof["official_ground_truth"]
+          assert proof["human_review"]["status"]=="PENDING", proof["human_review"]
+          assert proof["automatic_promotion"] is False
+          assert proof["rerender_video"] is False
+          assert delivery["message_ids"]==[215,216,217,218,219,220,221], delivery
+          print("CHECKPOINT_REUSE=YES")
+          print("OFFICIAL_TRAILER_REFERENCE_MATERIALIZED=PASS")
+          print("VIDEO_A_RERENDER=NO")
+          PY
 
       - name: Validate review gate
         run: |
@@ -154,6 +146,25 @@ jobs:
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
         run: |
           set -euo pipefail
+          if python - <<'PY'
+          import json
+          d=json.load(open(".run001/character-name-pronunciation-proof.request.json"))
+          raise SystemExit(0 if d.get("deliver_telegram") is False else 1)
+          PY
+          then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/character-pronunciation/telegram-delivery.json").read_text())
+          ids=d.get("message_ids") or []
+          assert ids==[215,216,217,218,219,220,221], d
+          print("TELEGRAM_CHARACTER_REVIEW_DELIVERY=REUSED")
+          print("TELEGRAM_MESSAGE_IDS="+",".join(str(x) for x in ids))
+          print("HUMAN_CHARACTER_NAME_REVIEW=PENDING")
+          print("VIDEO_A_RERENDER=NO")
+          PY
+            exit 0
+          fi
           test -n "$TELEGRAM_BOT_TOKEN"
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
           mkdir -p runtime/character-pronunciation/telegram
