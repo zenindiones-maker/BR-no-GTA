@@ -265,6 +265,7 @@ def chat_under_harness(
     input_record: dict[str, Any] | None = None,
     conversation_context: dict[str, Any] | None = None,
     force_fresh_research: bool = False,
+    skip_fresh_research: bool = False,
 ) -> dict[str, Any]:
     text = str(message or "").strip()
     if not text:
@@ -272,9 +273,12 @@ def chat_under_harness(
     if len(text) > 8000:
         raise ValueError("Telegram chat message is too long")
 
-    freshness_required = bool(force_fresh_research) or requires_fresh_research(
-        text,
-        input_context=input_record,
+    freshness_required = (not skip_fresh_research) and (
+        bool(force_fresh_research)
+        or requires_fresh_research(
+            text,
+            input_context=input_record,
+        )
     )
     fresh = None
     source_intelligence = None
