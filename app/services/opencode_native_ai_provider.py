@@ -19,6 +19,13 @@ from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.github_actions_run_tracker import GitHubActionsRunTracker
 from app.services.github_actions_run_watcher import GitHubActionsRunWatcher
 from app.services.performance_telemetry_service import emit_performance_event, utcnow_iso
+from app.services.opencode_semantic_profile import (
+    OPENCODE_SEMANTIC_AGENT_ID,
+    OPENCODE_SEMANTIC_CONTRACT,
+    OPENCODE_SEMANTIC_PROFILE_VERSION,
+    semantic_profile_evidence,
+    semantic_text_only_config_json,
+)
 
 
 OPENCODE_NATIVE_ARTIFACT_NAME = "opencode-native-result"
@@ -46,17 +53,9 @@ def build_semantic_text_only_prompt(prompt: str) -> str:
 
 
 def build_semantic_text_only_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
-    """Force the OpenCode V2 runtime to expose no executable tools for semantic calls."""
+    """Apply the dedicated OpenCode V2 text-only agent as an inline runtime override."""
     env = dict(os.environ if base_env is None else base_env)
-    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
-        {
-            "$schema": "https://opencode.ai/config.json",
-            "permissions": [
-                {"action": "*", "resource": "*", "effect": "deny"},
-            ],
-        },
-        separators=(",", ":"),
-    )
+    env["OPENCODE_CONFIG_CONTENT"] = semantic_text_only_config_json()
     return env
 
 
@@ -375,6 +374,7 @@ class OpenCodeNativeAIProvider:
                     [
                         "opencode", "run", "--standalone",
                         "--model", executor_model,
+                        "--agent", OPENCODE_SEMANTIC_AGENT_ID,
                         "--format", "json",
                         build_semantic_text_only_prompt(prompt),
                     ],
@@ -383,7 +383,7 @@ class OpenCodeNativeAIProvider:
                     text=True,
                     bufsize=1,
                     cwd=tmp,
-                    env=dict(os.environ),
+                    env=build_semantic_text_only_env(dict(os.environ)),
                 )
                 process_launched_ns = time.perf_counter_ns()
 
