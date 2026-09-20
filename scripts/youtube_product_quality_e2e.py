@@ -99,7 +99,11 @@ def _thumbnail_copy(title: str) -> str:
     return "GTA VI: OFICIAL"
 
 
-def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
+def build_product(
+    synergy: dict[str, Any],
+    *,
+    target_duration_seconds: float = TARGET_DURATION_SECONDS,
+) -> dict[str, Any]:
     intelligence = dict(synergy.get("source_intelligence") or {})
     signal = dict(intelligence.get("editorial_signal") or {})
     goal_id = str(signal.get("goal_id") or "").strip()
@@ -107,7 +111,12 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("real source intelligence did not produce a Goal")
 
     run_id = str(os.getenv("GITHUB_RUN_ID") or "local")
-    mission_id = f"mission-youtube-product-{run_id}"
+    item_key = str(os.getenv("BR_BENCHMARK_ITEM_KEY") or "").strip()
+    run_identity = f"{run_id}-{item_key}" if item_key else run_id
+    mission_id = f"mission-youtube-product-{run_identity}"
+    target_duration_seconds = float(target_duration_seconds)
+    if target_duration_seconds <= 0:
+        raise ValueError("target_duration_seconds must be positive")
     claims = _claim_context(intelligence)
     verified_refs = [
         f"claim:{item['claim_id']}"
@@ -154,7 +163,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         envelope = json.loads(
             br_editorial_process_next(
                 goal_id=goal_id,
-                target_duration_seconds=TARGET_DURATION_SECONDS,
+                target_duration_seconds=target_duration_seconds,
                 editorial_context_json=editorial_context_text,
             )
         )
@@ -174,7 +183,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
         content_item_id=content_item_id,
         script_id=script_id,
         existing_plan=production_plan,
-        target_duration_seconds=TARGET_DURATION_SECONDS,
+        target_duration_seconds=target_duration_seconds,
     )
     production_plan = dict(refreshed["production_plan"])
     result["production_plan"] = production_plan
@@ -492,6 +501,7 @@ def build_product(synergy: dict[str, Any]) -> dict[str, Any]:
             "scene_count": len(scenes),
             "max_scene_seconds": max(float(x.get("duration_seconds") or 0) for x in scenes),
             "package_evidence_refs": len(package.get("evidence_refs") or []),
+            "target_duration_seconds": target_duration_seconds,
             "generic_scene_ratio": round(generic_scene_count / len(scenes), 4) if scenes else 1.0,
             "title_card_ratio": round(sum(1 for x in scenes if str(x.get("visual_type") or "").casefold()=="title_card") / len(scenes), 4) if scenes else 1.0,
             "media_resolvable_ratio": round(resolvable_scene_count / len(scenes), 4) if scenes else 0.0,
@@ -504,9 +514,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--synergy-proof", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--target-duration-seconds", type=float, default=TARGET_DURATION_SECONDS)
     args = parser.parse_args()
     synergy = json.loads(args.synergy_proof.read_text(encoding="utf-8"))
-    result = build_product(synergy)
+    result = build_product(synergy, target_duration_seconds=args.target_duration_seconds)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"E2E_EXECUTION_ID={result['mission_id']}")

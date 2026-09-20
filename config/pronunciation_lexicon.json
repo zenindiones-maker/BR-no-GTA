@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.19.4",
+  "version": "2026.09.20.3-human-lucia",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
@@ -12,7 +12,10 @@
     "canonical_text_immutable": true,
     "human_gate_for_critical_terms": true,
     "only_forced_en_us_term": "Vice City",
-    "unnecessary_language_switches_forbidden": true
+    "unnecessary_language_switches_forbidden": true,
+    "character_aliases_synthesis_only": true,
+    "character_name_en_us_chunks_forbidden": true,
+    "generic_name_autodetection_enabled": false
   },
   "entries": [
     {
@@ -35,6 +38,15 @@
       "synthesis_text": "gê tê á seis",
       "critical": true,
       "source": "human-approved Brazilian reading; canonical/editorial text remains GTA 6"
+    },
+    {
+      "identity": "character-lucia",
+      "term": "Lucia",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Lucía",
+      "critical": true,
+      "source": "human-approved synthesis-only alias; canonical editorial/transcript/SEO text remains Lucia"
     }
   ]
 }

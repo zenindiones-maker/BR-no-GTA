@@ -13,15 +13,17 @@ from app.services.pronunciation_service import (
 
 def test_lexicon_has_only_human_approved_runtime_overrides():
     lexicon=load_pronunciation_lexicon()
-    assert lexicon["version"]=="2026.09.19.4"
+    assert lexicon["version"]=="2026.09.20.3-human-lucia"
     assert lexicon["default_locale"]=="pt-BR"
     assert lexicon["policy"]["only_forced_en_us_term"]=="Vice City"
     entries={item["identity"]:item for item in lexicon["entries"]}
-    assert set(entries)=={"vice-city","gta-6"}
+    assert set(entries)=={"vice-city","gta-6","character-lucia"}
     assert entries["vice-city"]["locale"]=="en-US"
     assert entries["vice-city"]["target_ipa"]=="vaɪs ˈsɪti"
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="gê tê á seis"
+    assert entries["character-lucia"]["locale"]=="pt-BR"
+    assert entries["character-lucia"]["synthesis_text"]=="Lucía"
 
 def test_names_and_brands_stay_in_ptbr_lane():
     text="A Rockstar apresentou Jason, Lucia e Leonida no YouTube para PlayStation e Xbox."
@@ -33,7 +35,7 @@ def test_names_and_brands_stay_in_ptbr_lane():
     groups=_edge_synthesis_groups(plan)
     assert len(groups)==1
     assert groups[0]["locale"]=="pt-BR"
-    assert groups[0]["synthesis_text"]==text
+    assert groups[0]["synthesis_text"]==text.replace("Lucia","Lucía")
 
 def test_unknown_acronyms_do_not_force_language_switches():
     plan=resolve_synthesis_plan("RTX, NVIDIA e AMD entram na conversa.")
@@ -114,9 +116,16 @@ def test_cache_payload_excludes_runtime_resolution_time():
     changed=replace(plan,resolution_wall_clock_seconds=plan.resolution_wall_clock_seconds+99.0)
     assert synthesis_plan_cache_payload(plan)==synthesis_plan_cache_payload(changed)
 
-def test_canonical_entries_are_exactly_two():
+def test_canonical_entries_include_human_approved_lucia_alias():
     entries=canonical_lexicon_entries()
-    assert {item["identity"] for item in entries}=={"vice-city","gta-6"}
+    by_id={item["identity"]:item for item in entries}
+    assert set(by_id)=={"vice-city","gta-6","character-lucia"}
+    assert by_id["character-lucia"]["synthesis_text"]=="Lucía"
+    plan=resolve_synthesis_plan("Jason e Lucia chegaram a Vice City.")
+    assert plan.canonical_text=="Jason e Lucia chegaram a Vice City."
+    assert plan.canonical_text_preserved
+    assert sum(1 for span in plan.spans if span.locale=="en-US")==1
+    assert next(span for span in plan.spans if span.pronunciation_identity=="character-lucia").locale=="pt-BR"
 
 def test_language_boundary_trim_removes_provider_padding_without_clipping_words():
     boundaries=[{"offset_seconds":0.05,"duration_seconds":0.075},{"offset_seconds":1.3625,"duration_seconds":0.2125}]

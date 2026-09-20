@@ -252,16 +252,22 @@ def prove(fresh: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("fresh research lacks source URL")
 
     initialize_schema()
-    run_identity = os.getenv("GITHUB_RUN_ID") or "local"
+    base_run_identity = os.getenv("GITHUB_RUN_ID") or "local"
+    item_key = str(os.getenv("BR_BENCHMARK_ITEM_KEY") or "").strip()
+    run_identity = f"{base_run_identity}-{item_key}" if item_key else base_run_identity
     mission_id = f"mission-system-synergy-{run_identity}"
     goal_id = f"goal-system-synergy-{run_identity}"
 
+    ingress_identity = 900001
+    if item_key:
+        digest = __import__("hashlib").sha256(run_identity.encode("utf-8")).hexdigest()
+        ingress_identity += int(digest[:8], 16) % 900000
     ingress = ingest_telegram_input_under_harness(
         {
-            "telegram_user_id": 900001,
-            "telegram_chat_id": 900001,
-            "telegram_message_id": 900001,
-            "telegram_update_id": 900001,
+            "telegram_user_id": ingress_identity,
+            "telegram_chat_id": ingress_identity,
+            "telegram_message_id": ingress_identity,
+            "telegram_update_id": ingress_identity,
             "input_kind": "text",
             "text": f"Transforme esta fonte em pauta de vídeo se fizer sentido: {source_url}",
         }

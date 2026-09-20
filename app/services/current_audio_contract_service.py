@@ -64,6 +64,7 @@ def current_audio_contract() -> dict[str, Any]:
     }
     gta = entries.get("gta-6") or {}
     vice = entries.get("vice-city") or {}
+    lucia = entries.get("character-lucia") or {}
     runtime = profile.get("runtime_voice_policy") or {}
     take = next(
         (item for item in TAKE_PROFILES if item.get("take_id") == SELECTED_OPENING_TAKE_ID),
@@ -95,6 +96,7 @@ def current_audio_contract() -> dict[str, Any]:
         "VICE_CITY_LOCALE": vice.get("locale"),
         "VICE_CITY_TARGET_IPA": vice.get("target_ipa"),
         "PRONUNCIATION_LEXICON_VERSION": lexicon.get("version"),
+        "LUCIA_SYNTHESIS_ALIAS": lucia.get("synthesis_text"),
         "OFFICIAL_NARRATION_PROFILE_ID": profile.get("profile_id"),
     }
     expected = {
@@ -114,7 +116,8 @@ def current_audio_contract() -> dict[str, Any]:
         "GTA_6_SYNTHESIS": "gê tê á seis",
         "VICE_CITY_LOCALE": "en-US",
         "VICE_CITY_TARGET_IPA": "vaɪs ˈsɪti",
-        "PRONUNCIATION_LEXICON_VERSION": "2026.09.19.4",
+        "PRONUNCIATION_LEXICON_VERSION": "2026.09.20.3-human-lucia",
+        "LUCIA_SYNTHESIS_ALIAS": "Lucía",
     }
     for key, value in expected.items():
         if payload.get(key) != value:

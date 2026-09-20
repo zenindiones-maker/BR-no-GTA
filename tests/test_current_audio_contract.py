@@ -20,7 +20,8 @@ def test_current_audio_contract_is_human_approved_voice_b():
     assert c["GTA_6_SYNTHESIS"]=="gê tê á seis"
     assert c["VICE_CITY_LOCALE"]=="en-US"
     assert c["VICE_CITY_TARGET_IPA"]=="vaɪs ˈsɪti"
-    assert c["PRONUNCIATION_LEXICON_VERSION"]=="2026.09.19.4"
+    assert c["PRONUNCIATION_LEXICON_VERSION"]=="2026.09.20.3-human-lucia"
+    assert c["LUCIA_SYNTHESIS_ALIAS"]=="Lucía"
     assert len(c["CURRENT_AUDIO_CONTRACT_FINGERPRINT"])==64
 
 
