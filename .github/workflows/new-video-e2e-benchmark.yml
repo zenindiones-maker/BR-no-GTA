@@ -86,7 +86,56 @@ jobs:
             scripts/telegram_narration_review_worker.py
           echo "NEW_VIDEO_BENCHMARK_CONTRACT=PASS"
 
+      - name: Restore valid fresh research from previous failed benchmark
+        id: reuse_fresh
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: "10605874745"
+          run-id: "35513472760"
+          github-token: ${{ github.token }}
+          path: runtime/previous-benchmark
+          merge-multiple: true
+
+      - name: Reuse only validated fresh research checkpoint
+        id: fresh_checkpoint
+        run: |
+          set -euo pipefail
+          SRC="$(find runtime/previous-benchmark -type f -name fresh-research.json | head -n1 || true)"
+          if [ -n "$SRC" ]; then
+            python - "$SRC" <<'PY'
+          import json, pathlib, shutil, sys
+          src=pathlib.Path(sys.argv[1])
+          d=json.loads(src.read_text(encoding="utf-8"))
+          assert d.get("status")=="PASS", d
+          submitted=d.get("submitted_source") or {}
+          assert submitted.get("resolution_status")=="PASS", submitted
+          out=pathlib.Path("runtime/new-video-benchmark/fresh-research.json")
+          out.parent.mkdir(parents=True,exist_ok=True)
+          shutil.copy2(src,out)
+          print("FRESH_RESEARCH_CHECKPOINT_REUSE=YES")
+          PY
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rehydrate promoted OpenCode profile
+        run: |
+          set -euo pipefail
+          python scripts/hydrate_promoted_opencode_profile.py \
+            --output runtime/new-video-benchmark/provider-promotion.json
+          python - <<'PY'
+          import json
+          d=json.load(open("runtime/new-video-benchmark/provider-promotion.json"))
+          assert d["status"]=="PASS", d
+          assert d["active_profile"]["version"]=="v2", d
+          assert d["quality_regression"]=="NO", d
+          assert d["fallback_occurred"] is False, d
+          print("PROMOTED_PROVIDER_REHYDRATION=PASS")
+          PY
+
       - name: Fresh Rockstar research
+        if: steps.fresh_checkpoint.outputs.reuse != 'true'
         run: |
           set -euo pipefail
           python scripts/e2e_latency_stage.py start fresh_research \

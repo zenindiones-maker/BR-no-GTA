@@ -13,5 +13,8 @@
     "gta6_synthesis": "gê tê á seis",
     "lucia_synthesis_alias": "Lucía"
   },
-  "requested_at": "2026-09-20T13:22:00Z"
+  "requested_at": "2026-09-20T13:28:00Z",
+  "retry_of_run_id": 35513472760,
+  "reuse_fresh_research_artifact_id": 10605874745,
+  "blocker_fixed": "rehydrate_promoted_opencode_profile_before_semantic_agents"
 }
