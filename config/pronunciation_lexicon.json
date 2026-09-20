@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.3-human-lucia",
+  "version": "2026.09.20.4-human-leonida-pending",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "DeepSeek Harness via narration/spoken-branding capability",
@@ -47,6 +47,15 @@
       "synthesis_text": "Lucía",
       "critical": true,
       "source": "human-approved synthesis-only alias; canonical editorial/transcript/SEO text remains Lucia"
+    },
+    {
+      "identity": "leonida",
+      "term": "Leonida",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Leônida",
+      "critical": true,
+      "source": "human-requested synthesis-only PT-BR alias; auditory approval pending; canonical editorial/transcript/SEO/caption text remains Leonida"
     }
   ]
 }
