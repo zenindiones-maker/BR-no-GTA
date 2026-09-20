@@ -1,0 +1,323 @@
+{
+  "schema": "br-no-gta-pronunciation-lexicon/v1",
+  "version": "2026.09.20.6-ptbr-game-entities",
+  "default_locale": "pt-BR",
+  "policy": {
+    "authority": "human-review candidate only",
+    "canonical_text_immutable": true,
+    "all_synthesis_locale": "pt-BR",
+    "foreign_language_chunks_forbidden": true,
+    "automatic_promotion": false,
+    "pronunciation_requires_human_review": true
+  },
+  "entries": [
+    {
+      "identity": "vice-city",
+      "term": "Vice City",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Váis Síti",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "previously approved target sound rendered in pt-BR lane"
+    },
+    {
+      "identity": "leonida",
+      "term": "Leonida",
+      "category": "REGION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Leônida",
+      "critical": true,
+      "validation_status": "HUMAN_REJECTED_CURRENT_ALIAS",
+      "source": "explicit human target; prior audio rejected, requires new contextual proof"
+    },
+    {
+      "identity": "leonida-keys",
+      "term": "Leonida Keys",
+      "category": "REGION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Leônida Kíis",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "liberty-city",
+      "term": "Liberty City",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Líberti Síti",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "port-gellhorn",
+      "term": "Port Gellhorn",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Pórt Guélhórn",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "grassrivers",
+      "term": "Grassrivers",
+      "category": "REGION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Gráss Rívers",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "ambrosia",
+      "term": "Ambrosia",
+      "category": "REGION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Ambrôzia",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "mount-kalaga",
+      "term": "Mount Kalaga",
+      "category": "PLACE",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Máunt Kalága",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "jason-duval",
+      "term": "Jason Duval",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Djeison Duvál",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "jason",
+      "term": "Jason",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Djeison",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Rockstar localized spelling cross-check"
+    },
+    {
+      "identity": "lucia-caminos",
+      "term": "Lucia Caminos",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Lucía Camínos",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration plus prior Lucia correction"
+    },
+    {
+      "identity": "lucia",
+      "term": "Lucia",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Lucía",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "prior human correction; global review still required"
+    },
+    {
+      "identity": "boobie-ike",
+      "term": "Boobie Ike",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Búbi Áik",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "boobie",
+      "term": "Boobie",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Búbi",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "drequan-priest",
+      "term": "Dre'Quan Priest",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Drê Kuán Príst",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "drequan",
+      "term": "Dre'Quan",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Drê Kuán",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "real-dimez",
+      "term": "Real Dimez",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Ríal Dáimz",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "cal-hampton",
+      "term": "Cal Hampton",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Cal Hémpton",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "cal",
+      "term": "Cal",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Cal",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "short-form name"
+    },
+    {
+      "identity": "brian-heder",
+      "term": "Brian Heder",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Bráian Héder",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "brian",
+      "term": "Brian",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Bráian",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "raul-bautista",
+      "term": "Raul Bautista",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Raúl Batísta",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Spanish/Portuguese-compatible rendering"
+    },
+    {
+      "identity": "raul",
+      "term": "Raul",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Raúl",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "Spanish/Portuguese-compatible rendering"
+    },
+    {
+      "identity": "bae-luxe",
+      "term": "Bae-Luxe",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Bêi Lâks",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "roxy",
+      "term": "Roxy",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Róksi",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "localized transliteration cross-check"
+    },
+    {
+      "identity": "dwnply",
+      "term": "DWNPLY",
+      "category": "CHARACTER",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Dáunplêi",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "reported reading Downplay; human review required"
+    },
+    {
+      "identity": "only-raw-records",
+      "term": "Only Raw Records",
+      "category": "ORGANIZATION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Ôunli Ró Récords",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "pt-BR contextual candidate"
+    },
+    {
+      "identity": "rockstar",
+      "term": "Rockstar",
+      "category": "BRAND",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Rókstar",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "established brand pronunciation rendered in pt-BR"
+    }
+  ]
+}
