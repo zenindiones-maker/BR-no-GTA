@@ -1,0 +1,96 @@
+name: VIDEO A Extended Look Primary Research Audit
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "scripts/video_a_extended_look_primary_audit.py"
+      - ".github/workflows/video-a-extended-look-primary-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: video-a-extended-look-primary-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: .
+      SOURCE_VIDEO_RUN_ID: "35407875087"
+      SOURCE_VIDEO_ARTIFACT_ID: "10572578507"
+      SOURCE_KNOWLEDGE_RUN_ID: "35460016361"
+      SOURCE_KNOWLEDGE_ARTIFACT_ID: "10590341059"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install research runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install "faster-whisper==1.2.1"
+          python -m py_compile scripts/video_a_extended_look_primary_audit.py
+
+      - name: Download exact official Extended Look checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_VIDEO_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_VIDEO_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/extended-look-source
+          merge-multiple: true
+
+      - name: Download reusable media-knowledge checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_KNOWLEDGE_ARTIFACT_ID }}
+          run-id: ${{ env.SOURCE_KNOWLEDGE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: runtime/extended-look-knowledge
+          merge-multiple: true
+
+      - name: Audit all scenes and transcribe official source
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/extended-look-primary-audit
+          python scripts/video_a_extended_look_primary_audit.py             --video-root runtime/extended-look-source             --knowledge-root runtime/extended-look-knowledge             --output-dir runtime/extended-look-primary-audit
+
+      - name: Validate primary-source evidence contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/extended-look-primary-audit/extended-look-primary-audit.json").read_text())
+          assert d["status"]=="PASS",d
+          assert d["EXTENDED_LOOK_SCENES_TOTAL"]==314,d
+          assert d["EXTENDED_LOOK_FINDINGS_TOTAL"]>=25,d
+          assert d["HIGH_VALUE_NEW_FINDINGS"]>=15,d
+          assert d["research_policy"]["primary_video_is_factual_authority"] is True,d
+          assert d["research_policy"]["leaks_for_factual_support_forbidden"] is True,d
+          assert len(d["transcript"])>0,d
+          print("EXTENDED_LOOK_PRIMARY_RESEARCH=PASS")
+          print("FULL_RENDER_AUTHORIZED=NO")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: video-a-extended-look-primary-audit-${{ github.run_id }}
+          path: runtime/extended-look-primary-audit/
+          if-no-files-found: warn
+          retention-days: 30
