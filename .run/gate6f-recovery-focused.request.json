@@ -1,0 +1,10 @@
+{
+  "request": "gate6f-recovery-focused",
+  "source_head": "e815098ecaaf42b47fc1c198e5676ccd7cb92522",
+  "scope": "telegram-proof-opencode-semantic-v3",
+  "no_voice": true,
+  "no_render": true,
+  "no_youtube_upload": true,
+  "no_youtube_publication": true,
+  "requested_at": "2026-09-20T23:14:00Z"
+}
