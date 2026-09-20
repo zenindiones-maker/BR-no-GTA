@@ -63,3 +63,30 @@ def test_diverse_media_with_low_previous_reuse_passes():
         links.extend({"asset_ref": ref, "duration_seconds": 10.0} for _ in range(5))
     result = validate_media_novelty(semantic_links=links, previous_asset_refs=("old-x",))
     assert result["status"] == "PASS"
+
+
+def test_target_above_25_minutes_is_rejected_for_video_a_band():
+    result = validate_content_duration(
+        target_duration_seconds=26*60,
+        content_supported_duration_seconds=26*60,
+        artificial_padding=False,
+    )
+    assert result["status"]=="FAIL"
+    assert result["TARGET_DURATION_WITHIN_20_25"] is False
+
+
+def test_content_must_support_full_target_not_only_twenty_minutes():
+    result = validate_content_duration(
+        target_duration_seconds=24*60,
+        content_supported_duration_seconds=20*60,
+        artificial_padding=False,
+    )
+    assert result["status"]=="FAIL"
+    assert result["CONTENT_SUPPORTED_DURATION_GTE_20"] is True
+    assert result["CONTENT_SUPPORTS_TARGET"] is False
+
+
+def test_locked_voice_b_planning_rate_requires_about_3400_words_for_20_minutes():
+    from app.services.human_review_quality_gate import VOICE_B_CONTENT_PLANNING_WPM
+    required=20*VOICE_B_CONTENT_PLANNING_WPM
+    assert required==3400.0
