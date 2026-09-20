@@ -372,9 +372,23 @@ def pronunciation_inventory(candidate:dict[str,Any],registry:dict[str,Any])->dic
             continue
         category=str(identity.get("category") or _category(term,candidate))
         parts=term.split()
+        # Missing-entity detection is deliberately stricter than ordinary
+        # capitalization scanning. Dates/numbers, sentence fragments ending in
+        # Portuguese connectors, and one-letter/common sentence starters are
+        # never pronunciation identities.
+        if re.fullmatch(r"\\d+(?:\\s+de)?",term,flags=re.I):
+            continue
+        if parts and parts[-1].casefold() in {"de","da","do","dos","das","e","em","para","por"}:
+            continue
+        if len(parts)==1 and (len(term)<=2 or term.casefold() in _LEADING_STOP):
+            continue
         meaningful=(
             category in {"CHARACTER","PLACE","REGION","ORGANIZATION","BRAND","ACRONYM","GAME_SPECIFIC_TERM","FOREIGN_TERM"}
-            and (len(parts)>=2 or term.isupper() or any(ch.isdigit() for ch in term))
+            and (
+                len(parts)>=2
+                or term.isupper()
+                or any(ch.isdigit() for ch in term)
+            )
         )
         if not meaningful:
             continue
