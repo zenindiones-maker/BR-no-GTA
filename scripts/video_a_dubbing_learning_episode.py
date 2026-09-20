@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from app.main import initialize_application
+from app.services.harness_learning_service import (
+    HarnessEpisode,
+    create_learning_candidate,
+    persist_episode,
+    record_human_correction,
+    record_or_reuse_failure_memory,
+)
+
+FEEDBACK={
+    "global_dubbing_quality":"FAIL",
+    "narration_naturalness":"FAIL",
+    "narration_fluency":"FAIL",
+    "global_pronunciation_status":"FAIL",
+    "leonida_pronunciation":"FAIL",
+    "proper_noun_pronunciation":"FAIL",
+    "technical_pass_but_perceptual_fail":True,
+    "human_voice_review":"REJECTED",
+}
+EVIDENCE=(
+    "github-run:35525920608",
+    "github-artifact:10609442706",
+    "telegram-message:317",
+    "telegram-message:318",
+    "telegram-message:319",
+    "telegram-message:320",
+    "human-review:2026-09-20-global-dubbing-rejected",
+)
+
+def main()->int:
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--output",type=Path,required=True)
+    args=ap.parse_args()
+    initialize_application()
+    now=datetime.now(timezone.utc).isoformat()
+    episode=HarnessEpisode(
+        episode_id="episode-video-a-global-dubbing-reject-20260920",
+        goal_id="video-a-next-candidate-20260920-social-vice-city",
+        decision_id="human-global-dubbing-review-20260920",
+        execution_id="pronunciation-proof-35525920608",
+        task_id="video-a-production-readiness-audio",
+        agent_id="professional-video-a-worker",
+        capability_id="narration.generate.pt-BR",
+        domain="production",
+        task_class="video-a-narration-readiness",
+        started_at=now,
+        finished_at=now,
+        duration_seconds=0.0,
+        status="FAILED",
+        actual_outcome={"observed":True,"human_feedback":FEEDBACK},
+        outcome_evidence=EVIDENCE,
+        input_refs=("candidate:video-a-next-candidate-20260920-social-vice-city",),
+        output_refs=("human-voice-review:REJECTED",),
+        evidence_refs=EVIDENCE,
+        error="Technical pronunciation proof was green but human review rejected global dubbing quality, naturalness, fluency and pronunciation.",
+        human_intervention=True,
+        qa_results={
+            "AUDIO_TECHNICAL_INTEGRITY":"PASS",
+            "TEXT_FIDELITY":"NOT_MEASURED_ON_FINAL_MIX",
+            "PRONUNCIATION_CORRECTNESS":"FAIL",
+            "PROSODY_NATURALNESS":"FAIL",
+            "HUMAN_ACCEPTANCE":"REJECTED",
+            **FEEDBACK,
+        },
+        commit_ref=os.environ.get("GITHUB_SHA"),
+        run_ref=os.environ.get("GITHUB_RUN_ID"),
+        artifact_refs=("github-artifact:10609442706",),
+        lineage={
+            "candidate_id":"video-a-next-candidate-20260920-social-vice-city",
+            "pronunciation_run_id":35525920608,
+            "pronunciation_artifact_id":10609442706,
+            "telegram_message_ids":[317,318,319,320],
+            "old_segment_policy":"microsegment-v1-default",
+            "locked_human_profile_segment_policy":"semantic-section-v1",
+            "pronunciation_lexicon":"config/pronunciation_lexicon.json",
+        },
+    )
+    persisted=persist_episode(episode)
+    correction=record_human_correction(
+        context="VIDEO A Voice B production-readiness review after technically green pronunciation proof",
+        undesired_behavior="Component-level gap/lexicon checks were treated as quality evidence while the human heard truncation, artificial rhythm, bad prosody and wrong proper nouns.",
+        desired_behavior="Inventory the full final script first, restore quality-first semantic synthesis units, measure final mastered audio text fidelity, keep pronunciation/prosody/human acceptance independent, and block full render until explicit human approval.",
+        evidence_refs=EVIDENCE,
+        goal_id=episode.goal_id,
+        task_id=episode.task_id,
+        affected_agent=episode.agent_id,
+        affected_capability=episode.capability_id,
+        metadata={"human_feedback":FEEDBACK},
+        scope="TASK_CLASS",
+    )
+    memory=record_or_reuse_failure_memory(
+        claim="human perceptual failure overrides technical green; full-script pronunciation inventory and final-mix fidelity are mandatory before render",
+        domain="production",
+        task_class="video-a-narration-readiness",
+        failure_pattern="technical-green-perceptual-fail",
+        source_episode_id=episode.episode_id,
+        evidence_refs=EVIDENCE,
+        capability_id=episode.capability_id,
+        agent_id=episode.agent_id,
+        metadata={"human_feedback":FEEDBACK},
+        confidence=1.0,
+    )
+    candidate=create_learning_candidate(
+        candidate_type="SYSTEM_IMPROVEMENT",
+        hypothesis="Restore semantic-section synthesis by default, require full-script proper-noun inventory and final-mix script-to-speech fidelity, and make human voice approval a hard render gate.",
+        domain="production",
+        task_class="video-a-narration-readiness",
+        source_episode_ids=(episode.episode_id,),
+        evidence_refs=EVIDENCE,
+        target_agent_id=episode.agent_id,
+        target_capability_id=episode.capability_id,
+        candidate_version=os.environ.get("GITHUB_SHA") or "global-dubbing-readiness-v1",
+        implementation_ref="video-a-production-readiness:quality-first-semantic-section",
+        acceptance_criteria={
+            "technical_green_does_not_equal_spoken_text_correct":True,
+            "pronunciation_validation_must_cover_entire_final_script":True,
+            "human_perceptual_fail_overrides_technical_pass":True,
+            "proper_noun_inventory_must_run_before_synthesis":True,
+            "next_audio_policy_must_differ_from_rejected_default":True,
+            "human_review_required":True,
+            "full_render_forbidden":True,
+        },
+    )
+    result={
+        "status":"PASS",
+        "FAILURE_OBSERVED":"PASS",
+        "CAUSE_IDENTIFIED":"PASS",
+        "LEARNING_EPISODE_ID":persisted["episode_id"],
+        "LEARNING_CANDIDATE_ID":candidate["candidate_id"],
+        "failure_memory_id":memory["memory_id"],
+        "correction_id":correction["correction_id"],
+        "old_execution_policy":{
+            "segment_strategy":"microsegment-v1-default",
+            "quality_proxy":"component gap/chunk/lexicon checks",
+            "proper_noun_inventory":"partial/manual",
+            "final_mix_text_fidelity":"absent",
+        },
+        "new_execution_policy":{
+            "segment_strategy":"semantic-section-v1-default",
+            "quality_proxy":"five independent QA dimensions + human acceptance",
+            "proper_noun_inventory":"full final script before synthesis",
+            "final_mix_text_fidelity":"required",
+        },
+        "LEARNING_APPLIED":"PENDING_NEXT_AUDIO",
+        "HUMAN_REVIEW":"PENDING",
+        "PRODUCTION_READINESS":"FAIL",
+        "FULL_RENDER_AUTHORIZED":"NO",
+    }
+    args.output.parent.mkdir(parents=True,exist_ok=True)
+    args.output.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+    print("FAILURE_OBSERVED=PASS")
+    print("CAUSE_IDENTIFIED=PASS")
+    print("LEARNING_CANDIDATE_CREATED=PASS")
+    print("EXECUTION_POLICY_CHANGED=PASS")
+    print("LEARNING_EPISODE_ID="+persisted["episode_id"])
+    print("LEARNING_CANDIDATE_ID="+candidate["candidate_id"])
+    print("LEARNING_APPLIED=PENDING_NEXT_AUDIO")
+    print("PRODUCTION_READINESS=FAIL")
+    print("FULL_RENDER_AUTHORIZED=NO")
+    return 0
+
+if __name__=="__main__":
+    raise SystemExit(main())
