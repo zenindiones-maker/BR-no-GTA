@@ -15,10 +15,12 @@ def test_lexicon_has_only_human_approved_runtime_overrides():
     lexicon=load_pronunciation_lexicon()
     assert lexicon["version"]=="2026.09.20.5-all-ptbr-no-language-switch"
     assert lexicon["default_locale"]=="pt-BR"
-    assert lexicon["policy"]["only_forced_en_us_term"] is None\n    assert lexicon["policy"]["foreign_language_chunks_forbidden"] is True
+    assert lexicon["policy"]["only_forced_en_us_term"] is None
+    assert lexicon["policy"]["foreign_language_chunks_forbidden"] is True
     entries={item["identity"]:item for item in lexicon["entries"]}
     assert set(entries)=={"vice-city","gta-6","character-lucia","leonida"}
-    assert entries["vice-city"]["locale"]=="pt-BR"\n    assert entries["vice-city"]["synthesis_text"]=="Váis Síti"
+    assert entries["vice-city"]["locale"]=="pt-BR"
+    assert entries["vice-city"]["synthesis_text"]=="Váis Síti"
     assert entries["vice-city"]["target_ipa"]=="vaɪs ˈsɪti"
     assert entries["gta-6"]["locale"]=="pt-BR"
     assert entries["gta-6"]["synthesis_text"]=="gê tê á seis"
