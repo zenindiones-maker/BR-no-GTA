@@ -232,16 +232,16 @@ def build_production_packet(
                     default=0.0,
                 ),
             },
-            "hook": str(production_plan.get("hook") or _script_hook(script_text))[:900],
+            "hook": str(production_plan.get("hook") or _script_hook(script_text))[:760],
             "scenes": [
                 {
                     "order": scene.get("order"),
-                    "block": str(scene.get("narrative_block") or "")[:140],
+                    "block": str(scene.get("narrative_block") or "")[:120],
                     "seconds": scene.get("duration_seconds"),
                     "visual_type": scene.get("visual_type"),
-                    "visual": str(scene.get("visual_description") or "")[:260],
+                    "visual": str(scene.get("visual_description") or "")[:220],
                     "search": list(scene.get("media_search_terms") or ())[:2],
-                    "evidence": list(scene.get("evidence_refs") or ())[:3],
+                    "evidence": list(scene.get("evidence_refs") or ())[:2],
                     "segment_id": scene.get("segment_id"),
                 }
                 for scene in scenes
