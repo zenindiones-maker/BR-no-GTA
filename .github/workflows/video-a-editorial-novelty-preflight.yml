@@ -34,14 +34,36 @@ jobs:
       - name: Install focused preflight runtime
         run: |
           set -euo pipefail
-          python -m pip install pytest pillow requests
+          python -m pip install pillow requests
           mkdir -p runtime/editorial-novelty-proof
       - name: Focused novelty and overlay gates
         run: |
           set -euo pipefail
-          python -m pytest -q tests/test_human_review_quality_gate.py
           python -m py_compile app/services/editorial_novelty_service.py scripts/video_a_editorial_novelty_proof.py
-          echo "UNPLANNED_TEXT_OVERLAY=OFF"
+          python - <<'PY'
+          from app.services.human_review_quality_gate import (
+              validate_content_duration,
+              validate_text_overlay_contract,
+          )
+          from scripts.video_a_editorial_novelty_proof import focused_contract_tests
+          focused_contract_tests()
+          overlay=validate_text_overlay_contract(
+              texts=[{"text":"Hook","track":"T1"}],
+              planned_text_overlays=[],
+          )
+          assert overlay["status"]=="FAIL",overlay
+          assert overlay["UNPLANNED_TEXT_OVERLAY"]=="ON",overlay
+          duration=validate_content_duration(
+              target_duration_seconds=20.5*60,
+              content_supported_duration_seconds=20.86*60,
+              artificial_padding=False,
+          )
+          assert duration["status"]=="PASS",duration
+          assert duration["CONTENT_SUPPORTS_TARGET"] is True,duration
+          print("EDITORIAL_NOVELTY_FOCUSED_TESTS=PASS")
+          print("UNPLANNED_TEXT_OVERLAY=OFF_REQUIRED")
+          print("CONTENT_DURATION_GATE=PASS")
+          PY
       - name: Restore exact rejected previous-video product baseline
         uses: actions/download-artifact@v4
         with:
