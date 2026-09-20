@@ -178,7 +178,7 @@ def main()->int:
     azure=provider_capabilities("azure-speech",voice=DEFAULT_VOICE)
     unnecessary_language_switches=sum(
         1 for row in rows for span in row["plan"]["spans"]
-        if span["locale"]!="pt-BR" and span.get("pronunciation_identity")!="vice-city"
+        if span["locale"]!="pt-BR"
     )
     leonida_rows=[row for row in rows if row["sample_id"].startswith("L")]
     def _plain_word(value:str)->str:
@@ -257,14 +257,21 @@ def main()->int:
             and names["edge_metrics"]["synthesis_group_count"]==1
             and domain["edge_metrics"]["synthesis_group_count"]==1
         ),
-        "VICE_CITY_PRONUNCIATION":vice["locale"]=="en-US" and vice.get("target_ipa")=="vaɪs ˈsɪti",
-        "UNNECESSARY_LANGUAGE_SWITCHES":unnecessary_language_switches==0,
-        "ONLY_FORCED_EN_US_TERM":all(
-            span.get("pronunciation_identity")=="vice-city"
-            for row in rows for span in row["plan"]["spans"]
-            if span["locale"]!="pt-BR"
+        "VICE_CITY_PRONUNCIATION":(
+            vice["locale"]=="pt-BR"
+            and vice.get("target_ipa")=="vaɪs ˈsɪti"
+            and vice.get("synthesis_text")=="Váis Síti"
         ),
-        "VICE_CITY_LANGUAGE_RESOLUTION":vice["locale"]=="en-US" and vice["text"]=="Vice City",
+        "UNNECESSARY_LANGUAGE_SWITCHES":unnecessary_language_switches==0,
+        "ALL_SYNTHESIS_PTBR":all(
+            span["locale"]=="pt-BR"
+            for row in rows for span in row["plan"]["spans"]
+        ),
+        "VICE_CITY_LANGUAGE_RESOLUTION":(
+            vice["locale"]=="pt-BR"
+            and vice["text"]=="Vice City"
+            and vice.get("synthesis_text")=="Váis Síti"
+        ),
         "VICE_CITY_REAL_AUDIO_GENERATED":closing["probe"]["size_bytes"]>0,
         "VICE_CITY_JOIN_TIMING_NATURAL":(
             -0.08 <= vice_city_join_gap_seconds <= 0.20
@@ -315,11 +322,11 @@ def main()->int:
             and canonical_fluid2["rate"]=="+3%"
             and canonical_fluid2["pitch"]=="+1Hz"
         ),
-        "MIXED_LANGUAGE_SYNTHESIS":closing["plan"]["foreign_span_count"]>=1,
+        "SINGLE_PTBR_SYNTHESIS":all(row["plan"]["foreign_span_count"]==0 for row in rows),
         "PRONUNCIATION_LEXICON":"vice-city" in closing["plan"]["lexicon_hits"],
         "CACHE_INVALIDATION":"lexicon_version" in closing["cache_identity"],
         "EDGE_CAPABILITY_BOUNDARY":edge.supports_ssml is False and edge.supports_isolated_multilingual_chunks is True,
-        "STRICT_PROVIDER_BOUNDARY":azure.supports_language_spans is True and '<lang xml:lang="en-US">Vice City</lang>' in azure_ssml and azure.supports_phoneme is False,
+        "STRICT_PROVIDER_BOUNDARY":azure.supports_language_spans is True and '<lang xml:lang="en-US">' not in azure_ssml and azure.supports_phoneme is False,
         "FINAL_AUDIO_DECODE":all(x["probe"]["full_decode"] for x in rows),
         "NO_EDITORIAL_TEXT_MUTATION":all("Váiss" not in json.dumps(x["plan"],ensure_ascii=False) and "Vaice" not in json.dumps(x["plan"],ensure_ascii=False) for x in rows),
     }
@@ -347,7 +354,8 @@ def main()->int:
         "legacy_opening_transport_compatibility":legacy_opening_compatibility,
         "policy":{
             "DEFAULT_NARRATION_LOCALE":"pt-BR",
-            "ONLY_FORCED_EN_US_TERM":"Vice City",
+            "ALL_SYNTHESIS_LOCALE":"pt-BR",
+            "FOREIGN_LANGUAGE_CHUNKS":"OFF",
             "VICE_CITY_TARGET_IPA":"vaɪs ˈsɪti",
             "GTA_6_SYNTHESIS":"gê tê á seis",
             "LEONIDA_WRITTEN_FORM":"Leonida",
@@ -429,7 +437,7 @@ def main()->int:
         },
         "performance":{
             "baseline_literal_closing":{"wall_clock_seconds":baseline["wall_clock_seconds"],"external_calls":baseline["external_calls"],"probe":baseline["probe"]},
-            "candidate_multilingual_closing":{"wall_clock_seconds":closing["edge_metrics"]["wall_clock_seconds"],"external_calls":closing["edge_metrics"]["external_calls"],"probe":closing["probe"]},
+            "candidate_ptbr_closing":{"wall_clock_seconds":closing["edge_metrics"]["wall_clock_seconds"],"external_calls":closing["edge_metrics"]["external_calls"],"probe":closing["probe"]},
             "comparison_basis":"same canonical closing text; performance is descriptive because candidate changes pronunciation handling quality",
             "resolution_wall_clock_seconds":resolution,"synthesis_wall_clock_seconds":synthesis,
             "total_wall_clock_seconds":time.monotonic()-total_started,"tts_external_calls":calls,
@@ -456,7 +464,8 @@ def main()->int:
     print("TRANSCRIPT_MUTATED=NO")
     print("PRODUCTION_READINESS="+readiness["PRODUCTION_READINESS"])
     print("FULL_RENDER_AUTHORIZED="+readiness["FULL_RENDER_AUTHORIZED"])
-    print("VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS")
+    print("VICE_CITY_TARGET_SOUND_REFERENCE=HUMAN_APPROVED")
+    print("FOREIGN_LANGUAGE_CHUNKS=OFF")
     print("GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING")
     print("VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING")
     print("PT_BR_PROSODY_CONTINUITY=PASS")
