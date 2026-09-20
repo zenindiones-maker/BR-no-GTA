@@ -34,7 +34,6 @@ def _action_executor(plan: dict[str, Any], state: dict[str, Any], message: str) 
             authorized_action="EXECUTION",
             required_capability_id="production.render.execute",
             fallback_allowed=False,
-            zero_cost_operation=True,
         )
     )
     authorization = issue_harness_authorization(
