@@ -32,6 +32,6 @@
     ]
   },
   "human_character_name_review": "PENDING",
-  "proof_attempt": 4,
-  "retry_reason": "Reuse canonical render-media YouTube ingestion boundary (PO token + existing cookies) for official Rockstar Trailer 2 reference; no production or alias change."
+  "proof_attempt": 5,
+  "retry_reason": "Match proven Render Worker PO-token host setup by installing Deno v2; no alias, source, or production change."
 }
