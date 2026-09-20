@@ -49,7 +49,9 @@ jobs:
           import json
           d=json.load(open(".run/video-a-current-product-e2e.request.json"))
           resume=bool(d.get("resume_from_e2e_artifact_id"))
+          youtube_only=d.get("recovery_mode")=="REUSE_QA_PASSED_RENDER_YOUTUBE_ONLY"
           print("resume=" + ("true" if resume else "false"))
+          print("youtube_only=" + ("true" if youtube_only else "false"))
           print("resume_artifact_id=" + str(d.get("resume_from_e2e_artifact_id") or ""))
           print("resume_run_id=" + str(d.get("resume_from_e2e_run_id") or ""))
           PY
@@ -104,13 +106,64 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/video_a_current_contract_recovery.py prepare-handoff --product runtime/checkpoint/product-quality-e2e.json --old-state runtime/historical/product-delivery/state.json --out runtime/product-delivery
+      - name: Validate restored QA-passed render and private publication
+        if: steps.recovery_mode.outputs.youtube_only == 'true'
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+          from app.main import initialize_application
+          from app.database.render_queue_repository import get_render_job
+          from app.database.video_repository import get_video
+          from app.database.youtube_repository import get_youtube_publication
+          from app.database.youtube_cloud_execution_repository import get_youtube_cloud_execution
+          from app.services.media_artifact_locator_service import validate_media_artifact_locator
+
+          initialize_application()
+          request=json.loads(Path(".run/video-a-current-product-e2e.request.json").read_text())
+          expected_job=int(request["successor_render_job_id"])
+          persisted_publication=json.loads(Path("runtime/product-delivery/publication.json").read_text())["publication"]
+          publication_id=int(persisted_publication["id"])
+          publication=get_youtube_publication(publication_id)
+          assert publication is not None, publication_id
+          video=get_video(int(publication["video_id"]))
+          job=get_render_job(expected_job)
+          assert video and video.get("status")=="ready", video
+          assert job and job.get("status")=="completed", job
+          assert int(job.get("video_id") or 0)==int(video["id"]), job
+          assert publication.get("status")=="pending", publication
+          assert publication.get("privacy_status")=="private", publication
+          assert publication.get("youtube_video_id") is None and publication.get("youtube_url") is None, publication
+          github_execution=job.get("github_execution") or {}
+          locator=validate_media_artifact_locator(
+              github_execution.get("artifact_locator") or {},
+              expected_render_job_id=expected_job,
+              expected_video_id=int(video["id"]),
+              expected_execution_id=job.get("execution_id"),
+          )
+          assert video.get("file_path")==locator["media_uri"], (video, locator)
+          assert publication.get("file_path")==locator["media_uri"], (publication, locator)
+          cloud=get_youtube_cloud_execution(publication_id)
+          assert isinstance(cloud,dict) and cloud.get("status")=="DISPATCH_UNCERTAIN", cloud
+          assert cloud.get("run_id") in (None,""), cloud
+          assert "youtube-private-upload-worker.yml not found on the default branch" in str(cloud.get("error") or ""), cloud
+          print(f"VIDEO_ID={video['id']}")
+          print(f"RENDER_JOB_ID={expected_job}")
+          print(f"RENDER_RUN_ID={locator['workflow_run_id']}")
+          print(f"PUBLICATION_ID={publication_id}")
+          print("RENDER_QA=PASS")
+          print("CHECKPOINT_REUSE=YES")
+          print("YOUTUBE_ONLY_RECOVERY=PASS")
+          PY
       - name: Validate and prepare existing Job2 retry handoff
-        if: steps.recovery_mode.outputs.resume == 'true'
+        if: steps.recovery_mode.outputs.resume == 'true' && steps.recovery_mode.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python -m pytest -q             tests/test_current_audio_contract.py             tests/test_channel_spoken_branding.py             tests/test_run001_longform_editorial_controller.py             tests/test_video_a_current_contract_e2e.py
           python scripts/video_a_current_job2_resume.py prepare-retry --out runtime/product-delivery
       - name: Publish governed current Job2 handoff
+        if: steps.recovery_mode.outputs.youtube_only != 'true'
         id: render_job_handoff
         uses: actions/upload-artifact@v4
         with:
@@ -119,6 +172,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Dispatch current Job2 by artifact handoff
+        if: steps.recovery_mode.outputs.youtube_only != 'true'
         env:
           HANDOFF_ARTIFACT_ID: ${{ steps.render_job_handoff.outputs.artifact-id }}
           HANDOFF_ARTIFACT_NAME: video-a-current-render-job-${{ github.run_id }}
@@ -137,12 +191,14 @@ jobs:
           print(f"RENDER_RUN_ID={d['RENDER_RUN_ID']}")
           PY
       - name: Wait only for current professional render
+        if: steps.recovery_mode.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python scripts/e2e_latency_stage.py start render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
           python scripts/watch_github_run.py --run-id "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/product-delivery/render-watch.json
           python scripts/e2e_latency_stage.py end render_wait --category WAITING_EXTERNAL_TIME --work-class WAITING --output-artifact runtime/product-delivery/render-watch.json
       - name: Reconcile QA-passed render into canonical database
+        if: steps.recovery_mode.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python scripts/continue_product_to_human_review.py reconcile-render --out runtime/product-delivery

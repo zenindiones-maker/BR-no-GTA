@@ -14,6 +14,7 @@ from app.database.youtube_cloud_execution_repository import (
     mark_youtube_cloud_dispatch_uncertain,
     record_youtube_cloud_failure,
     reconcile_youtube_cloud_upload_success,
+    reset_recoverable_youtube_cloud_dispatch_uncertain,
 )
 from app.database.youtube_repository import get_youtube_publication
 from app.services.github_actions_artifact_service import GitHubActionsArtifactService
@@ -166,8 +167,16 @@ def dispatch_targeted_private_upload(
     dispatch is deliberately fail-closed until its GitHub evidence is resolved.
     """
     publication = _publication(publication_id)
-    if get_youtube_cloud_execution(publication_id) is not None:
-        raise ValueError(f"YouTube publication already has cloud execution: {publication_id}")
+    existing_cloud = get_youtube_cloud_execution(publication_id)
+    if existing_cloud is not None:
+        if existing_cloud.get("status") != "DISPATCH_UNCERTAIN":
+            raise ValueError(f"YouTube publication already has cloud execution: {publication_id}")
+        reset_recoverable_youtube_cloud_dispatch_uncertain(
+            publication_id,
+            expected_workflow=WORKFLOW,
+        )
+        if get_youtube_cloud_execution(publication_id) is not None:
+            raise RuntimeError("recoverable YouTube cloud execution was not cleared")
     locator = _render_locator_for_video(publication["video_id"])
     routing = _route(publication_id)
     authorization = _issue(publication_id, routing, operation="dispatch")
