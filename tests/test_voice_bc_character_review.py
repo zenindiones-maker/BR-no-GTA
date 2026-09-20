@@ -1,0 +1,62 @@
+import json
+from pathlib import Path
+
+from app.services.pronunciation_service import _edge_synthesis_groups, resolve_synthesis_plan
+
+ROOT=Path(__file__).resolve().parents[1]
+CANDIDATE=ROOT/"config"/"pronunciation_character_aliases.bc-review.json"
+PRODUCTION=ROOT/"config"/"pronunciation_lexicon.json"
+
+def load(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+def runtime_lexicon(tmp_path):
+    d=load(CANDIDATE)
+    for item in d["entries"]:
+        if item["identity"]=="character-jason":
+            item["synthesis_text"]="Djeison"
+        if item["identity"]=="character-lucia":
+            item["synthesis_text"]="Lussía"
+    d["version"]+="+test"
+    p=tmp_path/"runtime.json"
+    p.write_text(json.dumps(d,ensure_ascii=False),encoding="utf-8")
+    return p
+
+def test_review_casting_is_exactly_b_and_c():
+    d=load(CANDIDATE)
+    assert d["reference"]["video_id"]=="VQRLujxTm3c"
+    assert d["reference"]["channel"]=="Rockstar Games"
+    assert d["review_casting"]["allowed_blind_ids"]==["B","C"]
+    assert d["review_casting"]["official_voice"]=="B"
+    assert d["review_casting"]["challenger_voice"]=="C"
+    assert d["review_casting"]["voices"]=={
+        "B":"pt-BR-ThalitaMultilingualNeural",
+        "C":"pt-BR-FranciscaNeural",
+    }
+    assert d["review_casting"]["automatic_promotion"] is False
+
+def test_character_aliases_stay_inside_ptbr_group(tmp_path):
+    p=runtime_lexicon(tmp_path)
+    plan=resolve_synthesis_plan("Jason e Lucia seguem juntos.",lexicon_path=p)
+    groups=_edge_synthesis_groups(plan)
+    assert plan.canonical_text_preserved
+    assert plan.foreign_span_count==0
+    assert len(groups)==1
+    assert groups[0]["locale"]=="pt-BR"
+
+def test_vice_city_is_only_foreign_span(tmp_path):
+    p=runtime_lexicon(tmp_path)
+    plan=resolve_synthesis_plan("Jason e Lucia atravessam Vice City.",lexicon_path=p)
+    foreign=[x for x in plan.spans if x.locale!="pt-BR"]
+    assert len(foreign)==1
+    assert foreign[0].pronunciation_identity=="vice-city"
+    assert all(
+        x.locale=="pt-BR"
+        for x in plan.spans
+        if x.pronunciation_identity in {"character-jason","character-lucia"}
+    )
+
+def test_candidate_is_not_implicitly_promoted_to_production():
+    ids={x["identity"] for x in load(PRODUCTION)["entries"]}
+    assert "character-jason" not in ids
+    assert "character-lucia" not in ids

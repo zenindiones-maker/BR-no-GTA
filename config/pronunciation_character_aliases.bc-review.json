@@ -1,0 +1,86 @@
+{
+  "schema": "br-no-gta-pronunciation-lexicon/v1",
+  "version": "2026.09.20.1-rockstar-trailer2-bc",
+  "default_locale": "pt-BR",
+  "policy": {
+    "authority": "Human-review candidate only; not promoted to production",
+    "canonical_text_immutable": true,
+    "only_forced_en_us_term": "Vice City",
+    "character_aliases_synthesis_only": true,
+    "character_name_en_us_chunks_forbidden": true,
+    "generic_name_autodetection_enabled": false,
+    "transcript_mutation_forbidden": true,
+    "seo_mutation_forbidden": true,
+    "automatic_promotion": false,
+    "shared_alias_across_review_voices": true
+  },
+  "reference": {
+    "kind": "rockstar_official_trailer_2",
+    "url": "https://www.youtube.com/watch?v=VQRLujxTm3c",
+    "video_id": "VQRLujxTm3c",
+    "title": "Grand Theft Auto VI Trailer 2",
+    "channel": "Rockstar Games",
+    "authority_scope": "Official Rockstar acoustic ground truth for Jason and Lucia as spoken in Trailer 2"
+  },
+  "review_casting": {
+    "allowed_blind_ids": ["B", "C"],
+    "official_voice": "B",
+    "challenger_voice": "C",
+    "automatic_voice_switch": false,
+    "automatic_promotion": false,
+    "voices": {
+      "B": "pt-BR-ThalitaMultilingualNeural",
+      "C": "pt-BR-FranciscaNeural"
+    }
+  },
+  "speech_performance_plan": {
+    "id": "character-review-neutral-v1",
+    "rate": "+0%",
+    "pitch": "+0Hz",
+    "volume": "+0%",
+    "default_locale": "pt-BR",
+    "only_forced_en_us_term": "Vice City",
+    "same_text": true,
+    "same_punctuation": true,
+    "same_aliases": true
+  },
+  "entries": [
+    {
+      "identity": "vice-city",
+      "term": "Vice City",
+      "locale": "en-US",
+      "strategy": "isolated-multilingual",
+      "critical": true,
+      "target_ipa": "vaɪs ˈsɪti",
+      "source": "human-approved sole forced en-US pronunciation term"
+    },
+    {
+      "identity": "gta-6",
+      "term": "GTA 6",
+      "aliases": ["GTA VI"],
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á seis",
+      "critical": true,
+      "source": "human-approved Brazilian reading"
+    },
+    {
+      "identity": "character-jason",
+      "term": "Jason",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "critical": true,
+      "reference_status": "ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED",
+      "synthesis_candidates": ["Jason", "Djeison", "Djêison", "Djeisson", "Djêisson", "Jêison"]
+    },
+    {
+      "identity": "character-lucia",
+      "term": "Lucia",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "critical": true,
+      "reference_status": "ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED",
+      "synthesis_candidates": ["Lucia", "Lúcia", "Lucía", "Lussía", "Lussí-a", "Lussiá"]
+    }
+  ]
+}
