@@ -1029,7 +1029,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          python -m pip install "faster-whisper==1.2.0" "requests==2.32.5"
+          python -m pip install "faster-whisper==1.2.0" "requests==2.32.5" "python-dotenv==1.1.1"
 
       - name: Complete governed branding if needed
         env:
