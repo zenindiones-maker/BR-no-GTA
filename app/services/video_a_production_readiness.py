@@ -524,9 +524,9 @@ def baseline_provenance(profile:dict[str,Any],lexicon:dict[str,Any])->dict[str,A
             "RATE":"+0%",
             "PITCH":"+0Hz",
             "VOLUME":"+0%",
-            "DEFAULT_RUNTIME_SEGMENT_STRATEGY":"microsegment-v1",
+            "DEFAULT_RUNTIME_SEGMENT_STRATEGY":"semantic-section-v1",
             "CURRENT_LEXICON_VERSION":lexicon.get("version"),
-            "MIXED_LOCALE_JOIN":"safe-margin-acrossfade for Vice City",
+            "MIXED_LOCALE_JOIN":"disabled; all synthesis remains pt-BR",
             "REJECTED_RUN_ID":CURRENT_REJECTED_RUN_ID,
             "REJECTED_ARTIFACT_ID":CURRENT_REJECTED_ARTIFACT_ID,
             "REJECTED_TELEGRAM_MESSAGES":list(CURRENT_REJECTED_TELEGRAM_MESSAGES),
@@ -677,10 +677,13 @@ def validate_persisted_readiness(path:Path|None=None)->dict[str,Any]:
     state=_load(path or READINESS_STATE_PATH)
     audio=dict(state.get("audio") or {})
     video=dict(state.get("video") or {})
+    editorial=dict(state.get("editorial") or {})
     preserved=dict(state.get("preserved") or {})
     required={
         "TEXT_FIDELITY":audio.get("TEXT_FIDELITY")=="PASS",
-        "PRONUNCIATION_COVERAGE_PERCENT":_safe_number(audio.get("PRONUNCIATION_COVERAGE_PERCENT"))>=100.0,
+        "PTBR_TARGET_RESEARCH_COVERAGE":_safe_number(audio.get("PTBR_TARGET_RESEARCH_COVERAGE"))>=100.0,
+        "PTBR_ACOUSTIC_VALIDATION_COVERAGE":_safe_number(audio.get("PTBR_ACOUSTIC_VALIDATION_COVERAGE"))>=100.0,
+        "PTBR_HUMAN_APPROVED_COVERAGE":_safe_number(audio.get("PTBR_HUMAN_APPROVED_COVERAGE"))>=100.0,
         "UNVALIDATED_PROPER_NOUNS":audio.get("UNVALIDATED_PROPER_NOUNS") in (0,[],None),
         "GLOBAL_PRONUNCIATION_STATUS":audio.get("GLOBAL_PRONUNCIATION_STATUS")=="PASS",
         "LEONIDA_PRONUNCIATION":audio.get("LEONIDA_PRONUNCIATION")=="PASS",
@@ -694,6 +697,13 @@ def validate_persisted_readiness(path:Path|None=None)->dict[str,Any]:
         "CONTENT_SUPPORTED_DURATION_MINUTES":_safe_number(preserved.get("CONTENT_SUPPORTED_DURATION_MINUTES"))>=20.0,
         "ARTIFICIAL_PADDING":preserved.get("ARTIFICIAL_PADDING")=="OFF",
         "HUMAN_VOICE_REVIEW":audio.get("HUMAN_VOICE_REVIEW")=="APPROVED",
+        "SCRIPT_EDITORIAL_QUALITY":editorial.get("SCRIPT_EDITORIAL_QUALITY")=="PASS",
+        "INFORMATION_DENSITY":editorial.get("INFORMATION_DENSITY")=="PASS",
+        "AUDIENCE_VALUE":editorial.get("AUDIENCE_VALUE")=="PASS",
+        "NARRATIVE_COHERENCE":editorial.get("NARRATIVE_COHERENCE")=="PASS",
+        "META_PRODUCTION_LEAKAGE":editorial.get("META_PRODUCTION_LEAKAGE") in (0,"0","PASS"),
+        "REPETITION":editorial.get("REPETITION")=="PASS",
+        "SCRIPT_HUMAN_REVIEW":editorial.get("SCRIPT_HUMAN_REVIEW")=="APPROVED",
     }
     passed=all(required.values())
     return {
