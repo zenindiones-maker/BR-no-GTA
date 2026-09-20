@@ -26,80 +26,103 @@ from app.services.telegram_conversation_service import (
 
 
 def _action_executor(plan: dict[str, Any], state: dict[str, Any], message: str) -> dict[str, Any]:
-    if plan.get("kind") != "CONTINUE":
-        raise AssertionError(f"unexpected canary action plan: {plan}")
-    routing = route_harness_request(
-        HarnessRoutingRequest(
-            intent="prove natural-language continuation resolves through Harness production routing without side effect",
-            authorized_action="EXECUTION",
-            required_capability_id="production.render.execute",
-            fallback_allowed=False,
+    if plan.get("kind") == "CONTINUE":
+        routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent="prove natural-language continuation resolves through Harness production routing without side effect",
+                authorized_action="EXECUTION",
+                required_capability_id="production.render.execute",
+                fallback_allowed=False,
+            )
         )
-    )
-    authorization = issue_harness_authorization(
-        authorized_action="EXECUTION",
-        subject=f"capability:{routing.selected_capability_id}",
-        lineage={
-            "routing_id": routing.routing_id,
-            "capability_id": routing.selected_capability_id,
-            "selected_executor_binding": routing.selected_executor_binding,
-            "goal_id": plan.get("active_goal_id"),
-            "ingress": "telegram-canary",
-            "canary_no_side_effect": True,
-        },
-    )
-    try:
-        return {
-            "status": "CANARY_AUTHORIZED",
-            "answer": (
-                "Continuidade resolvida pelo goal ativo e autorizada no boundary do Harness. "
-                "O canário não dispara render pesado."
-            ),
-            "goal_id": plan.get("active_goal_id"),
-            "capability_id": routing.selected_capability_id,
-            "routing_id": routing.routing_id,
-            "authorization_id": authorization.authorization_id,
-            "execution_id": authorization.execution_id,
-            "canary_no_side_effect": True,
-        }
-    finally:
-        consume_harness_authorization(authorization)
+        authorization = issue_harness_authorization(
+            authorized_action="EXECUTION",
+            subject=f"capability:{routing.selected_capability_id}",
+            lineage={
+                "routing_id": routing.routing_id,
+                "capability_id": routing.selected_capability_id,
+                "selected_executor_binding": routing.selected_executor_binding,
+                "goal_id": plan.get("active_goal_id"),
+                "ingress": "telegram-canary",
+                "canary_no_side_effect": True,
+            },
+        )
+        try:
+            return {
+                "status": "CANARY_AUTHORIZED",
+                "answer": (
+                    "Continuidade resolvida pelo goal ativo e autorizada no boundary do Harness. "
+                    "O canário não dispara render pesado."
+                ),
+                "goal_id": plan.get("active_goal_id"),
+                "capability_id": routing.selected_capability_id,
+                "routing_id": routing.routing_id,
+                "authorization_id": authorization.authorization_id,
+                "execution_id": authorization.execution_id,
+                "canary_no_side_effect": True,
+            }
+        finally:
+            consume_harness_authorization(authorization)
+
+    if plan.get("kind") == "RESEARCH_PIPELINE":
+        routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent="prove natural-language request resolves to canonical GTA6 research pipeline",
+                authorized_action="RESEARCH",
+                required_capability_id="gta6.research",
+                fallback_allowed=False,
+            )
+        )
+        authorization = issue_harness_authorization(
+            authorized_action="RESEARCH",
+            subject="action:RESEARCH",
+            lineage={
+                "routing_id": routing.routing_id,
+                "capability_id": routing.selected_capability_id,
+                "selected_executor_binding": routing.selected_executor_binding,
+                "ingress": "telegram-canary",
+                "canary_no_external_research": True,
+            },
+        )
+        try:
+            return {
+                "status": "CANARY_AUTHORIZED",
+                "operation": "br_research_run",
+                "result": {
+                    "total": 2,
+                    "rockstar_newswire": [{"title": "Official canary evidence"}],
+                    "news_feeds": [{"title": "Secondary canary evidence"}],
+                    "editorial": [{"decision": "CANARY_EDITORIAL_EVALUATED"}],
+                },
+                "capability_id": routing.selected_capability_id,
+                "routing_id": routing.routing_id,
+                "authorization_id": authorization.authorization_id,
+                "execution_id": authorization.execution_id,
+                "canary_no_external_research": True,
+            }
+        finally:
+            consume_harness_authorization(authorization)
+
+    raise AssertionError(f"unexpected canary action plan: {plan}")
 
 
 def _research_chat_stub(message: str, **kwargs: Any) -> dict[str, Any]:
-    assert kwargs.get("force_fresh_research") is True
-    routing = route_harness_request(
-        HarnessRoutingRequest(
-            intent="prove natural-language research request selects official fresh GTA6 research capability",
-            authorized_action="RESEARCH",
-            required_capability_id="gta6.research.fresh-cloud",
-            fallback_allowed=False,
-            zero_cost_operation=True,
-        )
-    )
-    authorization = issue_harness_authorization(
-        authorized_action="RESEARCH",
-        subject=f"capability:{routing.selected_capability_id}",
-        lineage={
-            "routing_id": routing.routing_id,
-            "capability_id": routing.selected_capability_id,
-            "selected_executor_binding": routing.selected_executor_binding,
-            "ingress": "telegram-canary",
-            "canary_no_external_research": True,
-        },
-    )
-    try:
-        return {
-            "status": "CANARY_AUTHORIZED",
-            "answer": "Pesquisa natural chegou à capability oficial de fresh research pelo Harness.",
-            "capability_id": routing.selected_capability_id,
-            "routing_id": routing.routing_id,
-            "authorization_id": authorization.authorization_id,
-            "execution_id": authorization.execution_id,
-            "canary_no_external_research": True,
-        }
-    finally:
-        consume_harness_authorization(authorization)
+    assert kwargs.get("skip_fresh_research") is True
+    context = kwargs.get("conversation_context") or {}
+    governed = context.get("governed_research_pipeline_result") or {}
+    assert governed.get("total") == 2
+    assert governed.get("editorial_count") == 1
+    return {
+        "status": "COMPLETED",
+        "answer": (
+            "A pesquisa oficial chegou à avaliação editorial. "
+            "O canário confirma que a decisão sobre o roteiro usa esse resultado sem uma segunda pesquisa."
+        ),
+        "capability_id": "ai.reasoning.text",
+        "routing_id": "route-canary-synthesis",
+        "authorization_id": "auth-canary-synthesis",
+        "execution_id": "exec-canary-synthesis",
+    }
 
 
 def run_canary() -> dict[str, Any]:
@@ -189,6 +212,7 @@ def run_canary() -> dict[str, Any]:
         },
         progress_callback=progress_callback,
         chat_handler=_research_chat_stub,
+        action_executor=_action_executor,
     )
 
     context = retrieve_conversation_context(
@@ -215,8 +239,8 @@ def run_canary() -> dict[str, Any]:
         "NATURAL_LANGUAGE_ACTION_ROUTING": (
             continued["plan"]["kind"] == "CONTINUE"
             and continued["canonical_result"]["capability_id"] == "production.render.execute"
-            and research["plan"]["capability_id"] == "gta6.research.fresh-cloud"
-            and research["canonical_result"]["capability_id"] == "gta6.research.fresh-cloud"
+            and research["plan"]["capability_id"] == "gta6.research"
+            and research["canonical_result"]["capability_id"] == "gta6.research"
         ),
         "PROGRESS_TO_TELEGRAM": (
             any(stage == "UNDERSTANDING" for stage, _ in progress)
