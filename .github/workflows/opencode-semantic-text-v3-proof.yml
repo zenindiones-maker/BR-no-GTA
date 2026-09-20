@@ -9,7 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
   statuses: write
 
 concurrency:
@@ -19,7 +20,6 @@ concurrency:
 env:
   PYTHONPATH: .
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/opencode-semantic-v3/proof.db
-  BR_OPENCODE_NATIVE_EXECUTION_MODE: same_runner
   BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
   BR_OPENCODE_NATIVE_REF: ${{ github.ref_name }}
   BR_OPENCODE_NATIVE_SOURCE_SHA: ${{ github.sha }}
