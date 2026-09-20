@@ -2,6 +2,7 @@ from app.services.human_review_quality_gate import (
     validate_content_duration,
     validate_media_novelty,
     validate_text_overlay_contract,
+    validate_pronunciation_readiness,
 )
 
 
@@ -91,3 +92,55 @@ def test_locked_voice_b_planning_rate_requires_about_3400_words_for_20_minutes()
     from app.services.human_review_quality_gate import VOICE_B_CONTENT_PLANNING_WPM
     required=20*VOICE_B_CONTENT_PLANNING_WPM
     assert required==3400.0
+
+
+def test_leonida_pronunciation_gate_requires_human_audio_approval(tmp_path):
+    import json
+
+    lexicon={
+        "entries":[{
+            "identity":"leonida","term":"Leonida","locale":"pt-BR",
+            "strategy":"alias","synthesis_text":"Leônida","critical":True,
+        }]
+    }
+    lexicon_path=tmp_path/"lexicon.json"
+    lexicon_path.write_text(json.dumps(lexicon,ensure_ascii=False),encoding="utf-8")
+
+    approvals_path=tmp_path/"approvals.json"
+    approvals_path.write_text(json.dumps({
+        "terms":{"leonida":{
+            "status":"PENDING_HUMAN_AUDIO_REVIEW",
+            "auditory_review_required":True,
+            "approved":False,
+            "proof_run_id":None,
+            "telegram_message_ids":[],
+        }}
+    },ensure_ascii=False),encoding="utf-8")
+    pending=validate_pronunciation_readiness(
+        lexicon_path=lexicon_path,
+        approvals_path=approvals_path,
+    )
+    assert pending["LEONIDA_ALIAS_REGISTERED"]=="PASS"
+    assert pending["LEONIDA_SYNTHESIS_ALIAS"]=="Leônida"
+    assert pending["LEONIDA_PRONUNCIATION"]=="FAIL"
+    assert pending["PRODUCTION_READINESS"]=="FAIL"
+    assert pending["FULL_RENDER_AUTHORIZED"]=="NO"
+    assert pending["EDITORIAL_TEXT_MUTATED"]=="NO"
+    assert pending["TRANSCRIPT_MUTATED"]=="NO"
+
+    approvals_path.write_text(json.dumps({
+        "terms":{"leonida":{
+            "status":"APPROVED",
+            "auditory_review_required":True,
+            "approved":True,
+            "proof_run_id":123456,
+            "telegram_message_ids":[789],
+        }}
+    },ensure_ascii=False),encoding="utf-8")
+    approved=validate_pronunciation_readiness(
+        lexicon_path=lexicon_path,
+        approvals_path=approvals_path,
+    )
+    assert approved["LEONIDA_PRONUNCIATION"]=="PASS"
+    assert approved["PRODUCTION_READINESS"]=="PASS"
+    assert approved["FULL_RENDER_AUTHORIZED"]=="YES"
