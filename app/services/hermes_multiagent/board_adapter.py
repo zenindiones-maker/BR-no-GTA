@@ -97,6 +97,10 @@ class HermesBoardAdapter:
                 max_retries=3,
             )
 
+    def link(self, parent_id: str, child_id: str) -> None:
+        with self.connection() as (kb, _kbd, conn):
+            kb.link_tasks(conn, parent_id, child_id)
+
     def comment(self, task_id: str, *, author: str, body: str) -> int:
         with self.connection() as (kb, _kbd, conn):
             return kb.add_comment(conn, task_id, author=author, body=body)
