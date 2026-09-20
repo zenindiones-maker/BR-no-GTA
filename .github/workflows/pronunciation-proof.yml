@@ -51,12 +51,13 @@ jobs:
           from pathlib import Path
           request=json.loads(Path('.run001/pronunciation-proof.request.json').read_text(encoding='utf-8'))
           expected={
-              'mission':'br-no-gta-professional-multilingual-pronunciation-v1',
+              'mission':'br-no-gta-professional-ptbr-pronunciation-v2',
               'voice':'pt-BR-ThalitaMultilingualNeural',
               'job18_frozen':True,
               'youtube_publication':False,
               'human_approval_required_for_vice_city':True,
               'human_approval_required_for_leonida':True,
+              'foreign_language_chunks_forbidden':True,
           }
           for key,value in expected.items():
               if request.get(key)!=value:
@@ -115,7 +116,7 @@ jobs:
               'NATURAL_PTBR_PROSODY_CONTINUITY','OPENING_THREE_TAKES_GENERATED',
               'OPENING_FLUIDITY_THREE_TAKES_GENERATED',
               'OPENING_CANONICAL_FLUID2_GENERATED',
-              'MIXED_LANGUAGE_SYNTHESIS','PRONUNCIATION_LEXICON','CACHE_INVALIDATION',
+              'SINGLE_PTBR_SYNTHESIS','ALL_SYNTHESIS_PTBR','PRONUNCIATION_LEXICON','CACHE_INVALIDATION',
               'EDGE_CAPABILITY_BOUNDARY','STRICT_PROVIDER_BOUNDARY',
               'FINAL_AUDIO_DECODE','NO_EDITORIAL_TEXT_MUTATION',
           )
@@ -129,9 +130,9 @@ jobs:
           if review.get('status')!='PENDING':
               raise SystemExit('HUMAN_REVIEW_GATE_INVALID')
           terms=review.get('terms') or {}
-          if (terms.get('vice-city') or {}).get('status')!='APPROVED':
-              raise SystemExit('VICE_CITY_HUMAN_REVIEW_INVALID')
-          if (terms.get('leonida') or {}).get('status')!='PENDING':
+          if (terms.get('vice-city') or {}).get('status') not in ('APPROVED','REFERENCE_SOUND_APPROVED_GLOBAL_DUBBING_REJECTED'):
+              raise SystemExit('VICE_CITY_REFERENCE_STATUS_INVALID')
+          if (terms.get('leonida') or {}).get('status') not in ('PENDING','REJECTED'):
               raise SystemExit('LEONIDA_HUMAN_REVIEW_INVALID')
           if (terms.get('gta-6') or {}).get('status')!='PENDING':
               raise SystemExit('GTA6_HUMAN_REVIEW_INVALID')
@@ -157,7 +158,8 @@ jobs:
           print('TRANSCRIPT_MUTATED=NO')
           print('PRODUCTION_READINESS=FAIL')
           print('FULL_RENDER_AUTHORIZED=NO')
-          print('VICE_CITY_PRONUNCIATION_HUMAN_APPROVED=PASS')
+          print('VICE_CITY_TARGET_SOUND_REFERENCE=HUMAN_APPROVED')
+          print('FOREIGN_LANGUAGE_CHUNKS=OFF')
           print('GTA6_PRONUNCIATION_HUMAN_APPROVED=PENDING')
           print('VOICE_B_NATURALITY_HUMAN_APPROVED=PENDING')
           print('JOB18_UNCHANGED=YES')
