@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.7-ptbr-full-script-candidate",
+  "version": "2026.09.20.8-ptbr-full-script-candidate",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -516,6 +516,39 @@
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
       "source": "artist-name pt-BR candidate"
+    },
+    {
+      "identity": "grand-theft-auto-vi-the-album",
+      "term": "Grand Theft Auto VI: The Album",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "gê tê á seis: dâ Álbum",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "full official title rendered in pt-BR voice lane"
+    },
+    {
+      "identity": "the-album",
+      "term": "The Album",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "dâ Álbum",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "title fragment rendered in pt-BR voice lane"
+    },
+    {
+      "identity": "only-in-leonida",
+      "term": "Only in Leonida",
+      "category": "GAME_SPECIFIC_TERM",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Ôunli in Leônida",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "official page title rendered in pt-BR voice lane"
     }
   ]
 }
