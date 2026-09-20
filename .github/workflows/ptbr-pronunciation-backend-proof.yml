@@ -1,0 +1,72 @@
+name: PT-BR Pronunciation Backend Capability Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/azure_pronunciation_provider.py"
+      - "scripts/pronunciation_backend_capability_proof.py"
+      - "config/pronunciation_golden_ptbr.json"
+      - ".github/workflows/ptbr-pronunciation-backend-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+      AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+      AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install exact pronunciation backends
+        run: |
+          set -euo pipefail
+          python -m pip install "edge-tts==7.2.8" "azure-cognitiveservices-speech==1.46.0"
+          python -m py_compile             app/services/azure_pronunciation_provider.py             scripts/pronunciation_backend_capability_proof.py
+
+      - name: Prove current production and Azure candidate capabilities
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/ptbr-pronunciation-backend
+          python scripts/pronunciation_backend_capability_proof.py             --output-dir runtime/ptbr-pronunciation-backend
+
+      - name: Validate fail-closed result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/ptbr-pronunciation-backend/pronunciation-backend-capability.json").read_text())
+          assert d["CURRENT_PRODUCTION_BACKEND"]=="edge-tts", d
+          assert d["PTBR_SSML_PHONEME_SUPPORTED"]=="NO", d
+          assert d["PTBR_CUSTOM_LEXICON_SUPPORTED"]=="NO", d
+          assert d["VOICE_B_PHONEME_CONTROL_SUPPORTED"]=="NO", d
+          assert d["PRODUCTION_BACKEND_PROMOTION"]=="BLOCKED_PENDING_LIVE_VOICE_B_AND_HUMAN_AUDIO_PROOF", d
+          assert d["LEONIDA_PRONUNCIATION"]=="FAIL", d
+          assert d["ROCKSTAR_PRONUNCIATION"]=="FAIL", d
+          assert d["FULL_RENDER_AUTHORIZED"]=="NO", d
+          print("EDGE_PHONEME_CAPABILITY_PROOF=PASS")
+          print("FULL_RENDER_AUTHORIZED=NO")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ptbr-pronunciation-backend-${{ github.run_id }}
+          path: runtime/ptbr-pronunciation-backend/
+          if-no-files-found: warn
+          retention-days: 30
