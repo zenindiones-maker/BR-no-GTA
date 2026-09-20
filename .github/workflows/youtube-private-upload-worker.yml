@@ -107,12 +107,17 @@ jobs:
           CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_OAUTH_CLIENT_SECRET_JSON }}
         run: |
           set -euo pipefail
+          missing=0
           if [ -z "${TOKEN_JSON:-}" ]; then
-            echo "YOUTUBE_OAUTH_TOKEN_JSON secret is not configured" >&2
-            exit 1
+            echo "EXTERNAL_SECRET_BLOCKER=YOUTUBE_OAUTH_TOKEN_JSON"
+            missing=1
           fi
           if [ -z "${CLIENT_SECRET_JSON:-}" ]; then
-            echo "YOUTUBE_OAUTH_CLIENT_SECRET_JSON secret is not configured" >&2
+            echo "EXTERNAL_SECRET_BLOCKER=YOUTUBE_OAUTH_CLIENT_SECRET_JSON"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "YOUTUBE_OAUTH_CREDENTIAL_BOUNDARY=BLOCKED"
             exit 1
           fi
           printf '%s' "$TOKEN_JSON" > runtime/youtube-upload/oauth/youtube_token.json
