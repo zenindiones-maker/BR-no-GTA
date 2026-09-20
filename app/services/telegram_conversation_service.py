@@ -203,9 +203,9 @@ def plan_natural_language_action(
         return {"kind": "STATUS", "authorized_action": "DECISION"}
     if intent == "RESEARCH_REQUEST":
         return {
-            "kind": "CAPABILITY",
+            "kind": "RESEARCH_PIPELINE",
             "authorized_action": "RESEARCH",
-            "capability_id": "gta6.research.fresh-cloud",
+            "capability_id": "gta6.research",
         }
     if intent == "CANCEL_REQUEST":
         return {"kind": "CANCEL", "authorized_action": "DECISION"}
@@ -307,8 +307,10 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             }
         return _parse_result(server.br_execution_process_next(goal_id=goal_id))
 
-    if plan["kind"] == "CAPABILITY":
+    if plan["kind"] in {"CAPABILITY", "RESEARCH_PIPELINE"}:
         capability_id = str(plan.get("capability_id") or "").strip()
+        if capability_id == "gta6.research":
+            return _parse_result(server.br_research_run())
         cached_payloads = state.get("last_execution_result") or {}
         cached_payloads = cached_payloads.get("capability_payloads") if isinstance(cached_payloads, dict) else None
         payload = dict((cached_payloads or {}).get(capability_id) or {}) if isinstance(cached_payloads, dict) else {}
@@ -336,6 +338,23 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
         "answer": "A ação ainda não possui executor natural-language allowlisted.",
         "pending_question": "Preciso de uma referência operacional inequívoca.",
     }
+
+
+def _compact_research_pipeline_result(result: dict[str, Any]) -> dict[str, Any]:
+    payload = result.get("result") if isinstance(result.get("result"), dict) else result
+    if not isinstance(payload, dict):
+        return {"status": result.get("status")}
+    compact: dict[str, Any] = {
+        "operation": result.get("operation"),
+        "total": payload.get("total"),
+        "rockstar_monitor": payload.get("rockstar_monitor"),
+    }
+    for key, limit in (("rockstar_newswire", 6), ("news_feeds", 8), ("editorial", 12)):
+        value = payload.get(key)
+        if isinstance(value, list):
+            compact[key] = value[:limit]
+            compact[f"{key}_count"] = len(value)
+    return compact
 
 
 def _status_answer(state: dict[str, Any]) -> str:
@@ -571,8 +590,8 @@ def handle_telegram_conversation(
             ),
             "artifact_ref": plan.get("artifact_ref"),
         }
-    elif plan["kind"] == "RESEARCH_REQUEST":
-        update_conversation_state(
+    elif plan["kind"] == "RESEARCH_PIPELINE":
+        state = update_conversation_state(
             telegram_chat_id,
             execution_status="RUNNING",
             active_stage="RESEARCH",
@@ -581,16 +600,49 @@ def handle_telegram_conversation(
             waiting_for_human=False,
         )
         if progress_callback is not None:
-            progress_callback("RESEARCH", "Pesquisando evidências atuais pelo boundary oficial do Harness.")
-        canonical = _parse_result(
+            progress_callback(
+                "RESEARCH",
+                "Executando a pesquisa GTA 6 oficial pelo Harness; a própria pipeline persiste evidência e avaliação editorial.",
+            )
+        research_result = _parse_result(action_executor(plan, state, text))
+        if progress_callback is not None:
+            progress_callback(
+                "EDITORIAL",
+                "Pesquisa concluída. Usando a avaliação editorial persistida para medir impacto no roteiro ativo.",
+            )
+        reasoning_context = {
+            **context,
+            "governed_research_pipeline_result": _compact_research_pipeline_result(
+                research_result
+            ),
+        }
+        if progress_callback is not None:
+            progress_callback(
+                "SYNTHESIS",
+                "Sintetizando o impacto editorial sem repetir a pesquisa.",
+            )
+        synthesis = _parse_result(
             chat_handler(
                 text,
                 progress_callback=progress_callback,
                 input_record=input_record,
-                conversation_context=context,
-                force_fresh_research=True,
+                conversation_context=reasoning_context,
+                skip_fresh_research=True,
             )
         )
+        canonical = {
+            **research_result,
+            "answer": str(
+                synthesis.get("answer")
+                or "A pesquisa foi concluída e a avaliação editorial foi persistida."
+            ),
+            "research_synthesis": {
+                "capability_id": synthesis.get("capability_id"),
+                "routing_id": synthesis.get("routing_id"),
+                "authorization_id": synthesis.get("authorization_id"),
+                "execution_id": synthesis.get("execution_id"),
+            },
+        }
     elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY"}:
         update_conversation_state(
             telegram_chat_id,
