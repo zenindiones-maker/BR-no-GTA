@@ -1,0 +1,87 @@
+{
+  "schema": "br-no-gta-golden-ptbr-pronunciation/v1",
+  "version": "2026.09.20.1-human-gated",
+  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "target_locale": "pt-BR",
+  "policy": {
+    "canonical_text_immutable": true,
+    "human_status_is_authoritative": true,
+    "approved_audio_hash_required_for_approved_terms": true,
+    "backend_or_lexicon_change_requires_rerun": true,
+    "orthographic_alias_is_not_acoustic_proof": true,
+    "source_language_audio_is_identity_evidence_only": true
+  },
+  "entries": [
+    {
+      "TERM": "VOICE_B_FLUIDITY_REFERENCE",
+      "CANONICAL_TEXT": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de as novidades de hoje!",
+      "PTBR_TARGET": "human-approved Fluid 2 voice/prosody reference",
+      "ACOUSTIC_REFERENCE": {
+        "run_id": 35525920608,
+        "file": "I-opening-fluid-2.mp3",
+        "sha256": "cfe1e17489cc479622ba8ffa55396a8347f562e25fb8586cba7d755b08da358f"
+      },
+      "SYNTHESIS_METHOD": "edge-tts semantic-section-v1 +3% +1Hz",
+      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "CONTEXT_SENTENCE": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de as novidades de hoje!",
+      "HUMAN_STATUS": "APPROVED_REFERENCE",
+      "APPROVED_AUDIO_HASH": "cfe1e17489cc479622ba8ffa55396a8347f562e25fb8586cba7d755b08da358f"
+    },
+    {
+      "TERM": "Vice City",
+      "CANONICAL_TEXT": "Vice City",
+      "PTBR_TARGET": "target sound previously human-approved; new all-ptBR realization requires fresh approval",
+      "ACOUSTIC_REFERENCE": {
+        "run_id": 35525920608,
+        "file": "C-closing.mp3",
+        "sha256": "9090589b052682d3c4d610e14adea83f30cf3903da7c9e1d2801687894f8e679"
+      },
+      "SYNTHESIS_METHOD": "LEGACY_REFERENCE_ONLY",
+      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "CONTEXT_SENTENCE": "E BR não dorme em Vice City",
+      "HUMAN_STATUS": "LEGACY_APPROVED_REFERENCE_NEW_PTBR_RENDER_PENDING",
+      "APPROVED_AUDIO_HASH": "9090589b052682d3c4d610e14adea83f30cf3903da7c9e1d2801687894f8e679"
+    },
+    {
+      "TERM": "Leonida",
+      "CANONICAL_TEXT": "Leonida",
+      "PTBR_TARGET": "Leônida",
+      "ACOUSTIC_REFERENCE": {
+        "rejected_run_id": 35530605895,
+        "rejected_artifact_id": 10611203499,
+        "rejected_telegram_message_ids": [
+          355,
+          356
+        ],
+        "rejected_audio_hashes": [
+          "099608db0ad2d006e76043ae83c14ffc83d69da82c4680fe474d2a430b0e4a0e",
+          "5f0207e6dcc9d491e38f7b70fe929a5e43b6bb66122ab3b2ac96d9cd27603048"
+        ]
+      },
+      "SYNTHESIS_METHOD": "PENDING_PHONEME_BACKEND_PROOF",
+      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "CONTEXT_SENTENCE": "O estado de Leonida vai muito além de Vice City.",
+      "HUMAN_STATUS": "REJECTED",
+      "APPROVED_AUDIO_HASH": null
+    },
+    {
+      "TERM": "Rockstar Games",
+      "CANONICAL_TEXT": "Rockstar Games",
+      "PTBR_TARGET": "PENDING_BRAZILIAN_ACOUSTIC_RESEARCH",
+      "ACOUSTIC_REFERENCE": {
+        "rejected_run_id": 35530605895,
+        "rejected_artifact_id": 10611203499,
+        "rejected_telegram_message_ids": [
+          354,
+          355,
+          356
+        ]
+      },
+      "SYNTHESIS_METHOD": "PENDING_PHONEME_BACKEND_PROOF",
+      "VOICE": "pt-BR-ThalitaMultilingualNeural",
+      "CONTEXT_SENTENCE": "A Rockstar Games mostrou novas cenas de GTA 6.",
+      "HUMAN_STATUS": "REJECTED",
+      "APPROVED_AUDIO_HASH": null
+    }
+  ]
+}
