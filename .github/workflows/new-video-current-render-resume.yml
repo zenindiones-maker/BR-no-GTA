@@ -51,7 +51,11 @@ jobs:
           d=json.load(open(".run/new-video-current-render-resume.request.json"))
           print("checkpoint_artifact_id="+str(d["controller_checkpoint_artifact_id"]))
           print("checkpoint_run_id="+str(d["controller_checkpoint_run_id"]))
-          print("post_branding="+("true" if d.get("recovery_mode")=="POST_BRANDING_ONLY" else "false"))
+          mode=str(d.get("recovery_mode") or "")
+          print("post_branding="+("true" if mode=="POST_BRANDING_ONLY" else "false"))
+          print("youtube_only="+("true" if mode=="YOUTUBE_ONLY_AFTER_RENDER_QA" else "false"))
+          print("product_checkpoint_artifact_id="+str(d.get("product_checkpoint_artifact_id") or ""))
+          print("product_checkpoint_run_id="+str(d.get("product_checkpoint_run_id") or ""))
           PY
 
       - name: Restore existing Video/RenderJob control checkpoint
@@ -63,8 +67,30 @@ jobs:
           path: runtime
           merge-multiple: true
 
+      - name: Restore approved Product Package metadata only
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.recovery.outputs.product_checkpoint_artifact_id }}
+          run-id: ${{ steps.recovery.outputs.product_checkpoint_run_id }}
+          github-token: ${{ github.token }}
+          path: runtime/upstream-product
+          merge-multiple: true
+
+      - name: Materialize approved Product Package without restoring old DB
+        run: |
+          set -euo pipefail
+          source_path="runtime/upstream-product/new-video-benchmark/product-quality-e2e.json"
+          target_path="runtime/new-video-benchmark/product-quality-e2e.json"
+          test -s "$source_path"
+          mkdir -p "$(dirname "$target_path")"
+          cp "$source_path" "$target_path"
+          echo "PRODUCT_PACKAGE_CHECKPOINT_REUSE=YES"
+          echo "RESEARCH_RECOMPUTED=NO"
+          echo "BRAIN_RECOMPUTED=NO"
+          echo "EDITORIAL_RECOMPUTED=NO"
+
       - name: Validate existing state and prepare same-Job handoff
-        if: steps.recovery.outputs.post_branding != 'true'
+        if: steps.recovery.outputs.post_branding != 'true' && steps.recovery.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python scripts/new_video_current_render_resume.py prepare-retry \
@@ -72,7 +98,7 @@ jobs:
             --out runtime/new-video-benchmark/delivery
 
       - name: Publish same-Job handoff
-        if: steps.recovery.outputs.post_branding != 'true'
+        if: steps.recovery.outputs.post_branding != 'true' && steps.recovery.outputs.youtube_only != 'true'
         id: handoff
         uses: actions/upload-artifact@v4
         with:
@@ -82,7 +108,7 @@ jobs:
           retention-days: 30
 
       - name: Dispatch one current-source retry with QA-passed checkpoints
-        if: steps.recovery.outputs.post_branding != 'true'
+        if: steps.recovery.outputs.post_branding != 'true' && steps.recovery.outputs.youtube_only != 'true'
         env:
           HANDOFF_ARTIFACT_ID: ${{ steps.handoff.outputs.artifact-id }}
           HANDOFF_ARTIFACT_NAME: new-video-current-render-job-${{ github.run_id }}
@@ -102,7 +128,7 @@ jobs:
           PY
 
       - name: Dispatch post-render branding recovery without rerender
-        if: steps.recovery.outputs.post_branding == 'true'
+        if: steps.recovery.outputs.post_branding == 'true' && steps.recovery.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python scripts/new_video_current_render_resume.py dispatch-post-branding \
@@ -115,9 +141,11 @@ jobs:
           PY
 
       - name: Wait only for the single current render
+        if: steps.recovery.outputs.youtube_only != 'true'
         run: python scripts/watch_github_run.py --run-id "$RENDER_RUN_ID" --repo "$GITHUB_REPOSITORY" --interval-seconds 30 --output runtime/new-video-benchmark/render-watch.json
 
       - name: Reconcile RenderJob and require final QA
+        if: steps.recovery.outputs.youtube_only != 'true'
         run: |
           set -euo pipefail
           python scripts/new_video_benchmark_delivery.py reconcile-render --out runtime/new-video-benchmark/delivery
