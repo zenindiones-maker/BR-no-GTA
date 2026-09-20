@@ -189,9 +189,101 @@ def dispatch_retry(request_path: Path,out:Path,artifact_id:int,artifact_name:str
     print(f"RENDER_RUN_ID={dispatched.run_id}")
 
 
+def _prove_post_branding_source(request: dict[str, Any]) -> dict[str, Any]:
+    repo=os.environ["GITHUB_ACTIONS_REPOSITORY"]
+    run_id=int(request["post_branding_producer_run_id"])
+    artifact_id=int(request["post_branding_artifact_id"])
+    run=_gh_json(["gh","run","view",str(run_id),"--repo",repo,"--json","databaseId,status,conclusion,event,headSha,name,url"])
+    if run.get("status")!="completed" or run.get("conclusion")!="failure":
+        raise RuntimeError(f"post-render source run is not a terminal failed render: {run}")
+    if str(run.get("name") or "")!="Render Worker":
+        raise RuntimeError(f"post-render source is not Render Worker: {run}")
+    artifacts=_gh_json(["gh","api",f"repos/{repo}/actions/runs/{run_id}/artifacts"])
+    by_id={int(a["id"]):a for a in artifacts.get("artifacts") or []}
+    item=by_id.get(artifact_id)
+    if not item:
+        raise RuntimeError(f"post-render failure artifact not found: {artifact_id}")
+    if item.get("name")!=f"render-failure-{run_id}-1":
+        raise RuntimeError(f"unexpected post-render artifact name: {item.get('name')!r}")
+    if item.get("expired") is not False or int(item.get("size_in_bytes") or 0)<=0:
+        raise RuntimeError("post-render failure artifact is unavailable")
+    return {"run_id":run_id,"artifact_id":artifact_id,"head_sha":run.get("headSha"),"url":run.get("url")}
+
+
+def dispatch_post_branding(request_path: Path, out: Path) -> None:
+    initialize_application()
+    request=_load(request_path)
+    proof=_prove_post_branding_source(request)
+    state=_load(out/"state.json")
+    job_id=int(request["render_job_id"])
+    video_id=int(request["video_id"])
+    if int(state.get("RENDER_JOB_ID") or 0)!=job_id or int(state.get("VIDEO_ID") or 0)!=video_id:
+        raise RuntimeError("controller checkpoint identity does not match post-render recovery request")
+    persisted=get_render_job(job_id)
+    if not persisted or persisted.get("status")!="running":
+        raise RuntimeError(f"RenderJob is not recoverable for post-render continuation: {persisted}")
+    previous=dict(persisted.get("github_execution") or {})
+    if int(previous.get("run_id") or 0)!=int(request["post_branding_producer_run_id"]):
+        raise RuntimeError("persisted RenderJob does not point to the proven failed render")
+    if previous.get("workflow")!="render-worker.yml":
+        raise RuntimeError("persisted RenderJob workflow identity changed")
+    if int(persisted.get("video_id") or 0)!=video_id:
+        raise RuntimeError("post-render recovery would change Video identity")
+    if str(persisted.get("execution_id") or "")!=str(request["execution_id"]):
+        raise RuntimeError("post-render recovery would change execution identity")
+
+    dispatched=GitHubActionsDispatcher(command_runner=run_github_actions_command).dispatch(
+        repository=os.environ["GITHUB_ACTIONS_REPOSITORY"],
+        workflow="render-worker.yml",
+        ref=os.environ["GITHUB_ACTIONS_RENDER_REF"],
+        inputs={
+            "render_job":"",
+            "render_job_descriptor":"",
+            "brain_decision_id":str(persisted["brain_decision_id"]),
+            "execution_id":str(persisted["execution_id"]),
+            "authorized_action":str(persisted["authorized_action"]),
+            "narration_artifact_id":"",
+            "narration_producer_run_id":"",
+            "media_artifact_id":"",
+            "media_producer_run_id":"",
+            "brand_audio_artifact_id":"",
+            "brand_audio_producer_run_id":"",
+            "post_branding_artifact_id":str(request["post_branding_artifact_id"]),
+            "post_branding_producer_run_id":str(request["post_branding_producer_run_id"]),
+        },
+    )
+    github_execution={
+        **previous,
+        "run_id":dispatched.run_id,
+        "repository":dispatched.repository,
+        "workflow":dispatched.workflow,
+        "ref":dispatched.ref,
+        "artifact_name":"render-output",
+        "transport_mode":"artifact",
+        "retry_of_run_id":int(request["post_branding_producer_run_id"]),
+        "same_render_job_id":job_id,
+        "post_render_recovery":True,
+        "post_branding_source_artifact_id":int(request["post_branding_artifact_id"]),
+    }
+    update_render_job_payload(job_id,github_execution=github_execution)
+    state.update(
+        status="POST_RENDER_RECOVERY_DISPATCHED",
+        RENDER_RUN_ID=dispatched.run_id,
+        PREVIOUS_RENDER_RUN_ID=int(request["post_branding_producer_run_id"]),
+        POST_BRANDING_SOURCE_ARTIFACT_ID=int(request["post_branding_artifact_id"]),
+        RENDER_RECOMPUTED="NO",
+        github_execution=github_execution,
+        post_branding_source_proof=proof,
+    )
+    (out/"state.json").write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+    print("POST_RENDER_RECOVERY_DISPATCHED=PASS")
+    print("RENDER_RECOMPUTED=NO")
+    print(f"RENDER_RUN_ID={dispatched.run_id}")
+
+
 def main()->int:
     p=argparse.ArgumentParser()
-    p.add_argument("action",choices=("prepare-retry","dispatch-retry"))
+    p.add_argument("action",choices=("prepare-retry","dispatch-retry","dispatch-post-branding"))
     p.add_argument("--request",type=Path,default=Path(".run/new-video-current-render-resume.request.json"))
     p.add_argument("--out",type=Path,default=Path("runtime/new-video-benchmark/delivery"))
     p.add_argument("--artifact-id",type=int)
@@ -201,6 +293,8 @@ def main()->int:
     a=p.parse_args()
     if a.action=="prepare-retry":
         prepare_retry(a.request,a.out)
+    elif a.action=="dispatch-post-branding":
+        dispatch_post_branding(a.request,a.out)
     else:
         if not all((a.artifact_id,a.artifact_name,a.producer_run_id,a.source_sha)):
             raise SystemExit("dispatch-retry requires artifact identity and source SHA")

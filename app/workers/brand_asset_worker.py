@@ -410,6 +410,9 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     if not isinstance(assets, list):
         raise BrandAssetWorkerError("brand state assets are invalid")
 
+    intro = next((item for item in assets if item["asset_type"] == "intro"), None)
+    watermark = next((item for item in assets if item["asset_type"] == "watermark"), None)
+
     render_folder = output_root / str(job["execution_id"]) / str(job["render_job_id"])
     output = render_folder / f"{job['video_id']}.mp4"
     if not output.is_file():
@@ -501,8 +504,6 @@ def apply(job: dict[str, Any], runtime_root: Path, output_root: Path) -> Path:
     qa_seconds = time.monotonic() - qa_started
 
     os.replace(temporary, output)
-    intro = next((item for item in assets if item["asset_type"] == "intro"), None)
-    watermark = next((item for item in assets if item["asset_type"] == "watermark"), None)
     probe["lineage"] = {key: job[key] for key in LINEAGE_FIELDS}
     probe["brand_assets"] = [
         {

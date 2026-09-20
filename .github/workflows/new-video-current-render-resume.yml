@@ -42,16 +42,29 @@ jobs:
       - name: Install minimal controller runtime
         run: python -m pip install -q -r requirements-production-controller.txt
 
+      - name: Resolve current recovery request
+        id: recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          d=json.load(open(".run/new-video-current-render-resume.request.json"))
+          print("checkpoint_artifact_id="+str(d["controller_checkpoint_artifact_id"]))
+          print("checkpoint_run_id="+str(d["controller_checkpoint_run_id"]))
+          print("post_branding="+("true" if d.get("recovery_mode")=="POST_BRANDING_ONLY" else "false"))
+          PY
+
       - name: Restore existing Video/RenderJob control checkpoint
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: "10607171223"
-          run-id: "35514396253"
+          artifact-ids: ${{ steps.recovery.outputs.checkpoint_artifact_id }}
+          run-id: ${{ steps.recovery.outputs.checkpoint_run_id }}
           github-token: ${{ github.token }}
           path: runtime
           merge-multiple: true
 
       - name: Validate existing state and prepare same-Job handoff
+        if: steps.recovery.outputs.post_branding != 'true'
         run: |
           set -euo pipefail
           python scripts/new_video_current_render_resume.py prepare-retry \
@@ -59,6 +72,7 @@ jobs:
             --out runtime/new-video-benchmark/delivery
 
       - name: Publish same-Job handoff
+        if: steps.recovery.outputs.post_branding != 'true'
         id: handoff
         uses: actions/upload-artifact@v4
         with:
@@ -68,6 +82,7 @@ jobs:
           retention-days: 30
 
       - name: Dispatch one current-source retry with QA-passed checkpoints
+        if: steps.recovery.outputs.post_branding != 'true'
         env:
           HANDOFF_ARTIFACT_ID: ${{ steps.handoff.outputs.artifact-id }}
           HANDOFF_ARTIFACT_NAME: new-video-current-render-job-${{ github.run_id }}
@@ -80,6 +95,19 @@ jobs:
             --artifact-name "$HANDOFF_ARTIFACT_NAME" \
             --producer-run-id "$GITHUB_RUN_ID" \
             --source-sha "$GITHUB_SHA"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))
+          print(f"RENDER_RUN_ID={d['RENDER_RUN_ID']}")
+          PY
+
+      - name: Dispatch post-render branding recovery without rerender
+        if: steps.recovery.outputs.post_branding == 'true'
+        run: |
+          set -euo pipefail
+          python scripts/new_video_current_render_resume.py dispatch-post-branding \
+            --request .run/new-video-current-render-resume.request.json \
+            --out runtime/new-video-benchmark/delivery
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("runtime/new-video-benchmark/delivery/state.json"))

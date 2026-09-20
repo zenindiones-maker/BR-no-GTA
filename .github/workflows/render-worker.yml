@@ -54,7 +54,7 @@ on:
         default: ""
         type: string
       post_branding_artifact_id:
-        description: "Optional proven failed-render artifact containing already rendered and branded MP4 for final-QA-only resume"
+        description: "Optional proven failed-render artifact containing a completed base render for post-render branding/final-QA resume"
         required: false
         default: ""
         type: string
@@ -1004,8 +1004,10 @@ jobs:
           mp4s=list(root.glob("*.mp4"))
           assert len(mp4s)==1 and mp4s[0].stat().st_size>0, mp4s
           job=json.loads((root/"render-job.json").read_text(encoding="utf-8"))
-          assert int(job.get("render_job_id") or job.get("id") or 0)==2, job
-          assert int(job.get("video_id") or 0)==1, job
+          render_job_id=int(job.get("render_job_id") or job.get("id") or 0)
+          video_id=int(job.get("video_id") or 0)
+          assert render_job_id>0, job
+          assert video_id>0, job
           assert job.get("brain_decision_id")==os.environ["EXPECTED_BRAIN_DECISION_ID"], job
           assert job.get("execution_id")==os.environ["EXPECTED_EXECUTION_ID"], job
           assert job.get("authorized_action")==os.environ["EXPECTED_AUTHORIZED_ACTION"], job
@@ -1018,15 +1020,56 @@ jobs:
           print("POST_BRANDING_PRODUCT_IDENTITY=PASS")
           print("CHECKPOINT_REUSE=YES")
           print("RENDER_RECOMPUTED=NO")
-          print("BRANDING_RECOMPUTED=NO")
           PY
 
-      - name: Install final QA runtime
+      - name: Install post-render recovery and final QA runtime
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           python -m pip install "faster-whisper==1.2.0" "requests==2.32.5"
+
+      - name: Complete governed branding if needed
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+
+          roots=sorted({p.parent for p in Path("runtime/render/output").rglob("*.mp4") if p.is_file()})
+          assert len(roots)==1, roots
+          root=roots[0]
+          job=json.loads((root/"render-job.json").read_text(encoding="utf-8"))
+          qa_path=root/"render-qa.json"
+          qa=json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.is_file() else {}
+          proof=Path("runtime/render/post-branding-proof")
+          proof.mkdir(parents=True, exist_ok=True)
+          if qa.get("status")=="PASS" and qa.get("stage")=="brand-complete":
+              (proof/"branding-mode.txt").write_text("reuse\n",encoding="utf-8")
+              print("POST_RENDER_BRANDING_REUSE=YES")
+          else:
+              target=Path("runtime/render/render-job.json")
+              target.write_text(json.dumps(job,ensure_ascii=False,indent=2),encoding="utf-8")
+              brand_dir=Path("runtime/render/branding")/str(job["execution_id"])/str(job.get("render_job_id") or job.get("id"))
+              if brand_dir.exists():
+                  shutil.rmtree(brand_dir)
+              (proof/"branding-mode.txt").write_text("recover\n",encoding="utf-8")
+              print("POST_RENDER_BRANDING_RECOVERY=REQUIRED")
+          PY
+          if grep -qx 'recover' runtime/render/post-branding-proof/branding-mode.txt; then
+            test -n "$TELEGRAM_BOT_TOKEN"
+            python -m app.workers.brand_asset_worker prepare \
+              --render-job runtime/render/render-job.json \
+              --runtime-root runtime/render
+            python -m app.workers.brand_asset_worker apply \
+              --render-job runtime/render/render-job.json \
+              --runtime-root runtime/render \
+              --output-dir runtime/render/output
+            echo "POST_RENDER_BRANDING_RECOVERY=PASS"
+            echo "RENDER_RECOMPUTED=NO"
+          fi
 
       - name: Start resumed final QA performance clock
         run: python scripts/render_pipeline_stage_clock.py start final_qa --path runtime/render/pipeline-stage-clock.json
