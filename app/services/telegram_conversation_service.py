@@ -69,7 +69,8 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         return "RESEARCH_REQUEST"
     if any(term in text for term in (
         "continua de onde parou", "continue de onde parou", "continua a missao",
-        "retoma", "retome", "faz de novo", "refaz", "gera ", "gere ", "corrige ",
+        "retoma", "retome", "faz de novo", "refaz", "faz o video", "faca o video",
+        "depois que eu aprovar", "quando eu aprovar", "gera ", "gere ", "corrige ",
         "corrija ", "renderiza", "renderize", "produz ", "produza ", "me manda ",
         "envia ", "execute ", "executa ",
     )):
@@ -211,6 +212,27 @@ def plan_natural_language_action(
     if intent in {"APPROVAL", "REJECTION", "FEEDBACK"}:
         return {"kind": "HUMAN_DECISION", "authorized_action": "DECISION"}
     if intent == "EXECUTION_REQUEST":
+        if any(term in text for term in ("depois que eu aprovar", "quando eu aprovar")):
+            pending_action = (
+                {
+                    "kind": "CONTINUE",
+                    "authorized_action": "EXECUTION",
+                    "active_goal_id": state.get("active_goal_id"),
+                    "active_task": state.get("active_task"),
+                }
+                if state.get("active_goal_id")
+                else {
+                    "kind": "CAPABILITY_DISCOVERY",
+                    "authorized_action": "EXECUTION",
+                    "artifact_ref": resolved_reference or state.get("active_artifact"),
+                }
+            )
+            return {
+                "kind": "DEFER_UNTIL_APPROVAL",
+                "authorized_action": "DECISION",
+                "pending_action": pending_action,
+                "artifact_ref": resolved_reference or state.get("active_artifact"),
+            }
         if any(term in text for term in ("continua de onde parou", "continue de onde parou", "continua a missao", "retoma", "retome")):
             return {
                 "kind": "CONTINUE",
@@ -483,20 +505,62 @@ def handle_telegram_conversation(
             learning_correction_id=(correction or {}).get("correction_id"),
         )
         changes: dict[str, Any] = {"last_human_decision": decision_type}
+        pending_action = state.get("pending_action") if decision_type == "APPROVAL" else None
         if decision_type == "APPROVAL":
-            changes.update(waiting_for_human=False, pending_human_review=None, pending_question=None)
+            changes.update(
+                waiting_for_human=False,
+                pending_human_review=None,
+                pending_question=None,
+                pending_action=None,
+            )
         else:
-            changes.update(waiting_for_human=True, pending_human_review=resolved.get("reference") or state.get("current_subject"))
+            changes.update(
+                waiting_for_human=True,
+                pending_human_review=resolved.get("reference") or state.get("current_subject"),
+            )
         state = update_conversation_state(telegram_chat_id, **changes)
-        if decision_type == "APPROVAL":
-            answer = f"Aprovação vinculada a {resolved.get('reference') or 'resultado ativo'}. Vou usar essa decisão nas próximas ações governadas."
+        if decision_type == "APPROVAL" and isinstance(pending_action, dict):
+            if progress_callback is not None:
+                progress_callback(
+                    "AUTHORIZATION",
+                    "Aprovação recebida. Retomando a ação pendente pelo boundary oficial do Harness.",
+                )
+            resumed = _parse_result(action_executor(dict(pending_action), state, text))
+            canonical = {
+                **resumed,
+                "human_decision": decision,
+                "learning_correction": correction,
+                "approval_resumed_pending_action": True,
+            }
         else:
-            answer = f"Feedback vinculado a {resolved.get('reference') or 'resultado ativo'}. Não vou repetir a próxima execução ignorando essa correção."
+            if decision_type == "APPROVAL":
+                answer = f"Aprovação vinculada a {resolved.get('reference') or 'resultado ativo'}. Vou usar essa decisão nas próximas ações governadas."
+            else:
+                answer = f"Feedback vinculado a {resolved.get('reference') or 'resultado ativo'}. Não vou repetir a próxima execução ignorando essa correção."
+            canonical = {
+                "status": "HUMAN_DECISION_RECORDED",
+                "answer": answer,
+                "human_decision": decision,
+                "learning_correction": correction,
+            }
+    elif plan["kind"] == "DEFER_UNTIL_APPROVAL":
+        state = update_conversation_state(
+            telegram_chat_id,
+            waiting_for_human=True,
+            pending_human_review=plan.get("artifact_ref") or state.get("current_subject") or "APPROVAL",
+            pending_question="Aguardando sua aprovação antes de executar a ação pendente.",
+            pending_action=dict(plan.get("pending_action") or {}),
+            execution_status="WAITING_FOR_HUMAN",
+            active_stage="WAITING_FOR_HUMAN",
+        )
         canonical = {
-            "status": "HUMAN_DECISION_RECORDED",
-            "answer": answer,
-            "human_decision": decision,
-            "learning_correction": correction,
+            "status": "WAITING_FOR_HUMAN",
+            "answer": (
+                "Entendi. Guardei a ação como pendente e não vou executá-la antes da sua aprovação. "
+                "Quando você aprovar, ela volta ao Harness e passa pelos gates normais."
+            ),
+            "pending_question": "Aguardando sua aprovação antes de executar a ação pendente.",
+            "artifact_ref": plan.get("artifact_ref"),
         }
     elif plan["kind"] == "PRESENT_EXISTING":
         canonical = {
@@ -569,7 +633,11 @@ def handle_telegram_conversation(
     state = update_conversation_state(
         telegram_chat_id,
         active_goal_id=str(goal_id) if goal_id is not None else state.get("active_goal_id"),
-        active_task=text[:240],
+        active_task=(
+            text[:240]
+            if intent in {"EXECUTION_REQUEST", "RESEARCH_REQUEST"}
+            else state.get("active_task")
+        ),
         active_artifact=str(artifact_ref) if artifact_ref is not None else state.get("active_artifact"),
         active_run_id=str(run_id) if run_id is not None else state.get("active_run_id"),
         active_stage="WAITING_FOR_HUMAN" if waiting else "COMPLETE",
