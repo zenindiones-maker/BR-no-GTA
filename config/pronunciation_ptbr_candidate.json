@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.9-ptbr-complete-script-candidate",
+  "version": "2026.09.20.10-ptbr-complete-script-candidate",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -648,6 +648,17 @@
       "critical": false,
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
       "source": "established pt-BR rendering"
+    },
+    {
+      "identity": "leonida-keys-short",
+      "term": "Keys",
+      "category": "REGION",
+      "locale": "pt-BR",
+      "strategy": "alias",
+      "synthesis_text": "Kíis",
+      "critical": true,
+      "validation_status": "PENDING_HUMAN_REVIEW",
+      "source": "standalone shorthand for Leonida Keys in the final candidate script; pt-BR lane only"
     }
   ]
 }
