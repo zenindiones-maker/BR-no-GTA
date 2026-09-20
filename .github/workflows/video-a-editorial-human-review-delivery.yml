@@ -1,0 +1,152 @@
+name: VIDEO A Editorial Human Review Delivery
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "scripts/video_a_prepare_editorial_review.py"
+      - ".github/workflows/video-a-editorial-human-review-delivery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-a-editorial-human-review-delivery
+  cancel-in-progress: true
+
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build exact editorial review package
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/video-a-editorial-review
+          python -m py_compile scripts/video_a_prepare_editorial_review.py
+          python scripts/video_a_prepare_editorial_review.py \
+            --output-dir runtime/video-a-editorial-review
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime/video-a-editorial-review")
+          m=json.loads((root/"review-metrics.json").read_text(encoding="utf-8"))
+          assert m["EXTENDED_LOOK_FINDINGS_TOTAL"]==31,m
+          assert m["META_PRODUCTION_LEAKAGE"]==0,m
+          assert m["SCRIPT_HUMAN_REVIEW"]=="PENDING",m
+          assert m["WAITING_FOR_HUMAN_REVIEW"]=="YES",m
+          assert m["REVIEW_TARGET"]=="SCRIPT",m
+          print("EDITORIAL_REVIEW_PACKAGE=PASS")
+          print("FULL_RENDER_AUTHORIZED=NO")
+          print("VOICE_SYNTHESIS=NO")
+          print("VISUAL_COVERAGE_WORK=NO")
+          PY
+
+      - name: Send editorial review package to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          root="runtime/video-a-editorial-review"
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_REVIEW_CHAT_ID"
+
+          metrics="$(python - <<'PY'
+          import json
+          d=json.load(open("runtime/video-a-editorial-review/review-metrics.json",encoding="utf-8"))
+          print(
+              "VIDEO A — REVISÃO HUMANA DO ROTEIRO\n"
+              f"Extended Look findings: {d['EXTENDED_LOOK_FINDINGS_TOTAL']}\n"
+              f"High-value findings: {d['HIGH_VALUE_NEW_FINDINGS']}\n"
+              f"Script words: {d['SCRIPT_WORD_COUNT']}\n"
+              f"Meta production leakage: {d['META_PRODUCTION_LEAKAGE']}\n"
+              f"Information density: {d['INFORMATION_DENSITY_STATUS']}\n\n"
+              "Revise primeiro o roteiro. Nenhuma nova voz/render será executada até aprovação.\n"
+              "SCRIPT_HUMAN_REVIEW=PENDING\n"
+              "WAITING_FOR_HUMAN_REVIEW=YES\n"
+              "REVIEW_TARGET=SCRIPT"
+          )
+          PY
+          )"
+          response="$(curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+            --data-urlencode "text=$metrics")"
+          RESPONSE="$response" python - <<'PY' > "$root/telegram-editorial-message-ids.txt"
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          assert d.get("ok") is True,d
+          print("summary="+str(d["result"]["message_id"]))
+          PY
+
+          while IFS='|' read -r file caption; do
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              -F "document=@$root/$file" \
+              -F "caption=$caption · SCRIPT_HUMAN_REVIEW=PENDING")"
+            RESPONSE="$response" FILE="$file" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
+          import json,os
+          d=json.loads(os.environ["RESPONSE"])
+          assert d.get("ok") is True,d
+          print(os.environ["FILE"]+"="+str(d["result"]["message_id"]))
+          PY
+          done <<'EOF'
+          01-principais-descobertas.txt|A · Principais descobertas novas do Extended Look
+          02-evidence-map.json|B · Evidence map completo EL001–EL031
+          03-outline-completo.md|C · Outline completo revisado
+          04-roteiro-completo-revisado.md|D · Roteiro completo revisado — revisão humana
+          05-script-qa.json|E · Métricas Script QA
+          06-diferencas-vs-roteiro-rejeitado.json|F · Diferenças vs roteiro rejeitado
+          EOF
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime/video-a-editorial-review")
+          ids={}
+          for line in (root/"telegram-editorial-message-ids.txt").read_text().splitlines():
+              k,v=line.split("=",1); ids[k]=int(v)
+          metrics=json.loads((root/"review-metrics.json").read_text())
+          state={
+              **metrics,
+              "TELEGRAM_EDITORIAL_MESSAGE_IDS":ids,
+              "SCRIPT_HUMAN_REVIEW":"PENDING",
+              "HUMAN_VOICE_REVIEW":"REJECTED",
+              "PRODUCTION_READINESS":"FAIL",
+              "FULL_RENDER_AUTHORIZED":"NO",
+              "YOUTUBE_PUBLICATION":"NO",
+              "WAITING_FOR_HUMAN_REVIEW":"YES",
+              "REVIEW_TARGET":"SCRIPT",
+              "VOICE_SYNTHESIS":"NO",
+              "VISUAL_COVERAGE_WORK":"NO",
+          }
+          (root/"waiting-for-human-review.json").write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
+          print("TELEGRAM_EDITORIAL_MESSAGE_IDS="+json.dumps(ids,separators=(",",":")))
+          print("WAITING_FOR_HUMAN_REVIEW=YES")
+          print("REVIEW_TARGET=SCRIPT")
+          print("FULL_RENDER_AUTHORIZED=NO")
+          PY
+
+      - name: Upload delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-editorial-human-review-${{ github.run_id }}
+          path: runtime/video-a-editorial-review/
+          if-no-files-found: warn
+          retention-days: 30
