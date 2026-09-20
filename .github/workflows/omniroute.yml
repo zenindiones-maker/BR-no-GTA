@@ -189,7 +189,7 @@ jobs:
           ROOT="$PWD"
           PROMPT="$(cat runtime/opencode-native-result/prompt.txt)"
           export OPENCODE_CONFIG_CONTENT="$(cat runtime/opencode-native-result/opencode-config.json)"
-          SEMANTIC_AGENT="semantic-text"
+          SEMANTIC_AGENT="build"
           (
             cd runtime/opencode-native-workdir
             timeout 180 opencode run \
