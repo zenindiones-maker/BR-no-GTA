@@ -1,0 +1,60 @@
+name: VIDEO A Corrected Pronunciation Inventory Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/video_a_production_readiness.py"
+      - "config/pronunciation_ptbr_candidate.json"
+      - "config/pronunciation_evidence_registry.json"
+      - "scripts/video_a_corrected_inventory_proof.py"
+      - ".github/workflows/video-a-corrected-inventory-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-a-corrected-pronunciation-inventory
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile focused inventory code
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            app/services/video_a_production_readiness.py \
+            scripts/video_a_audio_forensics.py \
+            scripts/video_a_corrected_inventory_proof.py
+
+      - name: Prove corrected final-script inventory only
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/video-a-corrected-inventory
+          python scripts/video_a_corrected_inventory_proof.py \
+            --output runtime/video-a-corrected-inventory/corrected-pronunciation-inventory.json
+
+      - name: Upload corrected inventory evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-a-corrected-pronunciation-inventory-${{ github.run_id }}
+          path: runtime/video-a-corrected-inventory/
+          if-no-files-found: error
+          retention-days: 30
