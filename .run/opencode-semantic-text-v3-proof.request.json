@@ -1,0 +1,18 @@
+{
+  "request": "opencode-semantic-text-v3-proof",
+  "branch": "work/gate6f-analytics-learning",
+  "source_head": "cd277c9ad396055db58e93a2ebaedf6479e060b4",
+  "root_cause_run_id": 35537494044,
+  "root_cause_artifact_id": 10612603412,
+  "prompt_1": "Responda apenas: TESTE_OK",
+  "prompt_2": "Onde estamos?",
+  "required": {
+    "cli_version": "2.0.8",
+    "model": "oc/big-pickle",
+    "semantic_agent": "semantic-text",
+    "semantic_profile": "opencode-semantic-text-v3",
+    "tools_exposed": 0,
+    "tool_call_count": 0,
+    "semantic_text_only": "PASS"
+  }
+}
