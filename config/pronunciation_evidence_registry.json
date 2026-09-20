@@ -1,23 +1,25 @@
 {
   "schema": "br-no-gta-pronunciation-evidence/v1",
-  "version": "2026.09.20.1-full-script-readiness",
+  "version": "2026.09.20.2-all-ptbr-human-rejected",
   "policy": {
     "no_invented_pronunciation": true,
     "human_review_required_when_evidence_insufficient": true,
     "asr_never_auto_approves_pronunciation": true,
     "canonical_text_immutable": true,
     "default_locale": "pt-BR",
-    "only_forced_en_us_term": "Vice City"
+    "only_forced_en_us_term": null,
+    "foreign_language_chunks_forbidden": true,
+    "all_synthesis_locale": "pt-BR"
   },
   "entries": [
     {
       "identity": "vice-city",
       "term": "Vice City",
-      "status": "HUMAN_APPROVED",
+      "status": "REFERENCE_SOUND_APPROVED_NEW_PTBR_RENDER_PENDING",
       "source_type": "HUMAN_REVIEW",
-      "source_ref": "Telegram review 2026-09-19",
-      "synthesis": "Vice City",
-      "locale": "en-US",
+      "source_ref": "Human previously approved the target sound, but global dubbing was later rejected; new pt-BR-lane rendering requires fresh review",
+      "synthesis": "Váis Síti",
+      "locale": "pt-BR",
       "target_ipa": "vaɪs ˈsɪti"
     },
     {
@@ -37,7 +39,7 @@
       "term": "Lucia",
       "status": "HUMAN_CORRECTED_ALIAS_PENDING_GLOBAL_REVIEW",
       "source_type": "HUMAN_REVIEW",
-      "source_ref": "existing canonical pronunciation lexicon",
+      "source_ref": "Prior human alias correction exists, but global audition 35527492016 was rejected",
       "synthesis": "Lucía",
       "locale": "pt-BR"
     },
@@ -46,7 +48,7 @@
       "term": "Jason",
       "status": "OFFICIAL_ACOUSTIC_REFERENCE_PENDING_HUMAN",
       "source_type": "ROCKSTAR_OFFICIAL_AUDIO",
-      "source_ref": "Grand Theft Auto VI Trailer 2 / VQRLujxTm3c",
+      "source_ref": "Rockstar Trailer 2 identity reference; all-ptBR alias candidate still requires human approval",
       "locale": "pt-BR"
     },
     {
@@ -54,7 +56,7 @@
       "term": "Leonida",
       "status": "HUMAN_REJECTED",
       "source_type": "HUMAN_REVIEW",
-      "source_ref": "run 35525920608 artifact 10609442706 Telegram 317-320",
+      "source_ref": "run 35525920608 artifact 10609442706 Telegram 317-320; global audition run 35527492016 artifact 10610442121 also rejected",
       "synthesis_target": "Leônida",
       "locale": "pt-BR"
     }
