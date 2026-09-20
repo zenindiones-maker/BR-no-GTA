@@ -56,7 +56,7 @@ class TelegramProgressReporter:
         )
         self._stage = "STARTING"
         self._message = ""
-        self._last_sent = 0.0
+        self._last_sent = time.monotonic()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -218,8 +218,8 @@ def _help_text() -> str:
         "/publicacao_status <publication_id> — reconcilia visibilidade pública\n"
         "/evidence — auditoria técnica da conversa/última execução\n"
         "/help — mostra este menu\n\n"
-        "Arquivos: envie o vídeo com legenda 'essa é a intro' ou a imagem com legenda "
-        "'essa é a marca d'água'. O A15 registra identidade/proveniência; não baixa mídia pesada.\n\n"
+        "Arquivos também entram na conversa: o A15 registra identidade/proveniência via getFile, "
+        "sem baixar mídia pesada. Intro e marca d'água continuam reconhecidas pelas legendas explícitas.\n\n"
         "Telegram é ingress/control surface. Autoridade continua no DeepSeek Harness; render, mídia e upload pesado continuam no cloud."
     )
 
@@ -407,6 +407,26 @@ def _private_message(update: dict[str, Any]) -> tuple[int, int, dict[str, Any], 
         return None
 
 
+def _verify_attachment_remote(
+    *,
+    api: TelegramApi,
+    attachment: dict[str, Any],
+) -> dict[str, Any]:
+    file_id = attachment.get("telegram_file_id")
+    file_unique_id = attachment.get("telegram_file_unique_id")
+    if not isinstance(file_id, str) or not file_id:
+        raise ValueError("Telegram attachment has no file_id")
+    if not isinstance(file_unique_id, str) or not file_unique_id:
+        raise ValueError("Telegram attachment has no file_unique_id")
+    remote = api.call("getFile", {"file_id": file_id}, timeout=20)
+    if not isinstance(remote, dict) or not isinstance(remote.get("file_path"), str):
+        raise TelegramApiError("Telegram getFile did not return a usable file path")
+    verified = dict(attachment)
+    verified["remote_verified"] = True
+    verified["remote_file_path"] = remote["file_path"]
+    return verified
+
+
 def _register_attachment(
     *,
     api: TelegramApi,
@@ -418,20 +438,9 @@ def _register_attachment(
     update_id: int,
     caption: str,
 ) -> dict[str, Any]:
-    file_id = attachment.get("telegram_file_id")
-    file_unique_id = attachment.get("telegram_file_unique_id")
-    if not isinstance(file_id, str) or not file_id:
-        raise ValueError("Telegram attachment has no file_id")
-    if not isinstance(file_unique_id, str) or not file_unique_id:
-        raise ValueError("Telegram attachment has no file_unique_id")
-
-    # Real remote proof: getFile verifies that Telegram can resolve this exact
-    # file identity. We intentionally do NOT download media bytes on the A15.
-    remote = api.call("getFile", {"file_id": file_id}, timeout=20)
-    if not isinstance(remote, dict) or not isinstance(remote.get("file_path"), str):
-        raise TelegramApiError("Telegram getFile did not return a usable file path")
-
-    payload = dict(attachment)
+    # Real remote proof: getFile verifies the exact Telegram identity.
+    # Media bytes remain remote; the A15 does not download the attachment.
+    payload = _verify_attachment_remote(api=api, attachment=attachment)
     payload.update(
         asset_type=asset_type,
         telegram_user_id=user_id,
@@ -565,36 +574,83 @@ def main() -> int:
                 attachment = _extract_attachment(message)
                 if attachment is not None:
                     asset_type = _classify_brand_asset(text, attachment.get("file_name"))
-                    if asset_type is None:
-                        api.send(
-                            chat_id,
-                            "Recebi o arquivo, mas não vou adivinhar a função dele. "
-                            "Reenvie com legenda 'essa é a intro' ou 'essa é a marca d'água'.",
-                        )
+                    if asset_type is not None:
+                        try:
+                            result = _register_attachment(
+                                api=api,
+                                attachment=attachment,
+                                asset_type=asset_type,
+                                user_id=user_id,
+                                chat_id=chat_id,
+                                message=message,
+                                update_id=update_id,
+                                caption=text,
+                            )
+                        except Exception as exc:
+                            reply = f"ASSET_REGISTERED=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
+                            print(
+                                f"TELEGRAM_ASSET=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
+                                flush=True,
+                            )
+                        else:
+                            reply = _asset_reply(result)
+                            print(
+                                f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={result['asset']['id']}",
+                                flush=True,
+                            )
+                        api.send(chat_id, reply)
                         continue
+
+                    api.typing(chat_id)
+                    reporter = TelegramProgressReporter(api, chat_id)
+                    reporter.start()
                     try:
-                        result = _register_attachment(
+                        verified_attachment = _verify_attachment_remote(
                             api=api,
                             attachment=attachment,
-                            asset_type=asset_type,
-                            user_id=user_id,
-                            chat_id=chat_id,
-                            message=message,
-                            update_id=update_id,
-                            caption=text,
                         )
+                        submission_text = text or (
+                            "Arquivo enviado: "
+                            + str(
+                                verified_attachment.get("file_name")
+                                or verified_attachment.get("media_kind")
+                                or "anexo"
+                            )
+                        )
+                        ingested = ingest_telegram_input_under_harness({
+                            "telegram_user_id": user_id,
+                            "telegram_chat_id": chat_id,
+                            "telegram_message_id": int(message["message_id"]),
+                            "telegram_update_id": update_id,
+                            "input_kind": str(verified_attachment.get("media_kind") or "attachment"),
+                            "text": submission_text,
+                            "attachment": verified_attachment,
+                        })
+                        input_record = dict(ingested.get("input") or {})
+                        conversation = handle_telegram_conversation(
+                            submission_text,
+                            telegram_chat_id=chat_id,
+                            telegram_message_id=int(message["message_id"]),
+                            input_record=input_record,
+                            has_attachment=True,
+                            progress_callback=reporter,
+                        )
+                        reply = _chat_reply(conversation)
                     except Exception as exc:
-                        reply = f"ASSET_REGISTERED=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
+                        reporter.blocker(f"{type(exc).__name__}: {str(exc)[:900]}")
+                        reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
                         print(
-                            f"TELEGRAM_ASSET=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
+                            f"TELEGRAM_FILE_SUBMISSION=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                             flush=True,
                         )
                     else:
-                        reply = _asset_reply(result)
                         print(
-                            f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={result['asset']['id']}",
+                            f"TELEGRAM_FILE_SUBMISSION=PASS USER_ID={user_id} "
+                            f"KIND={verified_attachment.get('media_kind')}",
                             flush=True,
                         )
+                    finally:
+                        reporter.stop()
                     api.send(chat_id, reply)
                     continue
 
