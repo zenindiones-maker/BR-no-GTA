@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: telegram-conversational-control-validation
@@ -153,3 +154,36 @@ jobs:
           path: artifacts/telegram-conversation/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish commit validation status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          case "$JOB_STATUS" in
+            success) state=success ;;
+            failure) state=failure ;;
+            cancelled) state=error ;;
+            *) state=error ;;
+          esac
+          python - <<'PY' > /tmp/status.json
+          import json,os
+          print(json.dumps({
+              "state": os.environ["STATE"],
+              "context": "telegram-conversational-control",
+              "description": "Telegram conversational control validation",
+          }))
+          PY
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d @/tmp/status.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          STATE: ${{ job.status == 'success' && 'success' || job.status == 'failure' && 'failure' || 'error' }}
