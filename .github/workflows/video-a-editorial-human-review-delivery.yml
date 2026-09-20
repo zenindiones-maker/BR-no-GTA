@@ -55,7 +55,7 @@ jobs:
           print("VISUAL_COVERAGE_WORK=NO")
           PY
 
-      - name: Send editorial review package to Telegram
+      - name: Send human-readable editorial review to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
@@ -64,55 +64,24 @@ jobs:
           root="runtime/video-a-editorial-review"
           test -n "$TELEGRAM_BOT_TOKEN"
           test -n "$TELEGRAM_REVIEW_CHAT_ID"
+          test -f "$root/telegram-message-order.txt"
+          : > "$root/telegram-editorial-message-ids.txt"
 
-          metrics="$(python - <<'PY'
-          import json
-          d=json.load(open("runtime/video-a-editorial-review/review-metrics.json",encoding="utf-8"))
-          print(
-              "VIDEO A — REVISÃO HUMANA DO ROTEIRO\n"
-              f"Extended Look findings: {d['EXTENDED_LOOK_FINDINGS_TOTAL']}\n"
-              f"High-value findings: {d['HIGH_VALUE_NEW_FINDINGS']}\n"
-              f"Script words: {d['SCRIPT_WORD_COUNT']}\n"
-              f"Meta production leakage: {d['META_PRODUCTION_LEAKAGE']}\n"
-              f"Information density: {d['INFORMATION_DENSITY_STATUS']}\n\n"
-              "Revise primeiro o roteiro. Nenhuma nova voz/render será executada até aprovação.\n"
-              "SCRIPT_HUMAN_REVIEW=PENDING\n"
-              "WAITING_FOR_HUMAN_REVIEW=YES\n"
-              "REVIEW_TARGET=SCRIPT"
-          )
-          PY
-          )"
-          response="$(curl --fail-with-body --silent --show-error \
-            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
-            --data-urlencode "text=$metrics")"
-          RESPONSE="$response" python - <<'PY' > "$root/telegram-editorial-message-ids.txt"
-          import json,os
-          d=json.loads(os.environ["RESPONSE"])
-          assert d.get("ok") is True,d
-          print("summary="+str(d["result"]["message_id"]))
-          PY
-
-          while IFS='|' read -r file caption; do
+          while IFS= read -r filename; do
+            test -n "$filename" || continue
+            path="$root/telegram-human-readable/$filename"
+            test -s "$path"
             response="$(curl --fail-with-body --silent --show-error \
-              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
-              -F "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
-              -F "document=@$root/$file" \
-              -F "caption=$caption · SCRIPT_HUMAN_REVIEW=PENDING")"
-            RESPONSE="$response" FILE="$file" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
+              -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+              --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
+              --data-urlencode "text@$path")"
+            RESPONSE="$response" FILE="$filename" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
           import json,os
           d=json.loads(os.environ["RESPONSE"])
           assert d.get("ok") is True,d
           print(os.environ["FILE"]+"="+str(d["result"]["message_id"]))
           PY
-          done <<'EOF'
-          01-principais-descobertas.txt|A · Principais descobertas novas do Extended Look
-          02-evidence-map.json|B · Evidence map completo EL001–EL031
-          03-outline-completo.md|C · Outline completo revisado
-          04-roteiro-completo-revisado.md|D · Roteiro completo revisado — revisão humana
-          05-script-qa.json|E · Métricas Script QA
-          06-diferencas-vs-roteiro-rejeitado.json|F · Diferenças vs roteiro rejeitado
-          EOF
+          done < "$root/telegram-message-order.txt"
 
           python - <<'PY'
           import json
@@ -122,9 +91,13 @@ jobs:
           for line in (root/"telegram-editorial-message-ids.txt").read_text().splitlines():
               k,v=line.split("=",1); ids[k]=int(v)
           metrics=json.loads((root/"review-metrics.json").read_text())
+          manifest=json.loads((root/"telegram-presentation-manifest.json").read_text())
+          assert len(ids)==manifest["message_count"],(ids,manifest)
           state={
               **metrics,
               "TELEGRAM_EDITORIAL_MESSAGE_IDS":ids,
+              "HUMAN_PRESENTATION":"TELEGRAM_TEXT",
+              "TECHNICAL_ATTACHMENTS_TO_HUMAN":"NO",
               "SCRIPT_HUMAN_REVIEW":"PENDING",
               "HUMAN_VOICE_REVIEW":"REJECTED",
               "PRODUCTION_READINESS":"FAIL",
@@ -132,13 +105,15 @@ jobs:
               "YOUTUBE_PUBLICATION":"NO",
               "WAITING_FOR_HUMAN_REVIEW":"YES",
               "REVIEW_TARGET":"SCRIPT",
-              "VOICE_SYNTHESIS":"NO",
+              "NEW_VOICE_SYNTHESIS":"NO",
               "VISUAL_COVERAGE_WORK":"NO",
           }
           (root/"waiting-for-human-review.json").write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
           print("TELEGRAM_EDITORIAL_MESSAGE_IDS="+json.dumps(ids,separators=(",",":")))
-          print("WAITING_FOR_HUMAN_REVIEW=YES")
-          print("REVIEW_TARGET=SCRIPT")
+          print("HUMAN_PRESENTATION=TELEGRAM_TEXT")
+          print("TECHNICAL_ATTACHMENTS_TO_HUMAN=NO")
+          print("SCRIPT_HUMAN_REVIEW=PENDING")
+          print("NEW_VOICE_SYNTHESIS=NO")
           print("FULL_RENDER_AUTHORIZED=NO")
           PY
 
