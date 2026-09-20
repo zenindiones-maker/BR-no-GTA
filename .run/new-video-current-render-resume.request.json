@@ -1,9 +1,9 @@
 {
   "schema": "new-video-current-render-resume/v2",
-  "requested_from_head": "6cadcf413e9def4f3042d159b2cb95b060307c2e",
-  "controller_checkpoint_run_id": 35520977715,
-  "controller_checkpoint_artifact_id": 10608565955,
-  "previous_render_run_id": 35520997633,
+  "requested_from_head": "9b98510efbd5fef61e5309180298fe8be59f662e",
+  "controller_checkpoint_run_id": 35521140310,
+  "controller_checkpoint_artifact_id": 10608910428,
+  "previous_render_run_id": 35521154953,
   "goal_id": "bed0bbd8-7a70-4170-b4e5-42166bc0450c",
   "video_id": 1,
   "render_job_id": 1,
@@ -20,10 +20,10 @@
   "requested_render_retry_count": 2,
   "youtube_privacy": "private",
   "human_review_delivery": "telegram",
-  "previous_controller_attempt_run_id": 35520977715,
+  "previous_controller_attempt_run_id": 35521140310,
   "recovery_mode": "POST_BRANDING_ONLY",
   "post_branding_producer_run_id": 35519387625,
   "post_branding_artifact_id": 10608103282,
-  "post_branding_dispatch_attempt": 3,
+  "post_branding_dispatch_attempt": 4,
   "previous_recovery_controller_run_id": 35520912373
 }
