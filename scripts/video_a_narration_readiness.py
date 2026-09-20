@@ -26,6 +26,7 @@ from app.services.pronunciation_service import (
 from app.services.video_a_production_readiness import (
     CANDIDATE_PATH,
     PRONUNCIATION_EVIDENCE_PATH,
+    PRONUNCIATION_PTBR_CANDIDATE_PATH,
     pronunciation_inventory,
     script_text,
     static_readiness_report,
@@ -35,27 +36,21 @@ VOICE="pt-BR-ThalitaMultilingualNeural"
 WPM=170.0
 VARIANTS=(
     {
-        "id":"LAST_HUMAN_APPROVED_BASELINE",
+        "id":"PTBR_BASELINE_SEMANTIC",
         "segment_strategy":"semantic-section-v1",
         "rate":"+0%",
         "pitch":"+0Hz",
-        "basis":"locked official narration profile; human-approved Voice B baseline",
+        "basis":"human-approved Voice B neutral baseline + full-script pt-BR synthesis aliases",
     },
     {
-        "id":"CURRENT_REJECTED_POLICY",
-        "segment_strategy":"microsegment-v1",
-        "rate":"+0%",
-        "pitch":"+0Hz",
-        "basis":"runtime default that diverged from the locked semantic-section profile",
-    },
-    {
-        "id":"BEST_CANDIDATE_FLUID2_DERIVED",
+        "id":"PTBR_FLUID2_SEMANTIC",
         "segment_strategy":"semantic-section-v1",
         "rate":"+3%",
         "pitch":"+1Hz",
-        "basis":"same quality-first semantic section policy with the existing human-selected Fluid 2 rate/pitch reference; audition only, no automatic promotion",
+        "basis":"human-selected Fluid 2 rate/pitch reference + same full-script pt-BR synthesis aliases",
     },
 )
+
 
 
 def run(command:list[str],*,timeout:int=1200)->subprocess.CompletedProcess[str]:
@@ -157,7 +152,11 @@ async def synthesize_variant_block(
     tts_external_calls=0
     synthesis_groups=0
     for index,unit in enumerate(units,1):
-        plan=resolve_synthesis_plan(unit.original_text,voice=VOICE)
+        plan=resolve_synthesis_plan(
+            unit.original_text,
+            voice=VOICE,
+            lexicon_path=PRONUNCIATION_PTBR_CANDIDATE_PATH,
+        )
         output=root/f"segment-{index:03d}.mp3"
         metrics=await synthesize_edge_plan(
             plan,
@@ -188,12 +187,12 @@ async def synthesize_variant_block(
     if master!=final:
         shutil.move(str(master),str(final))
     p=probe(final)
-    expected=resolve_synthesis_plan(block["text"],voice=VOICE)
-    foreign=[
-        span.to_dict() for span in expected.spans
-        if span.locale!="pt-BR"
-    ]
-    non_vice=[x for x in foreign if x.get("pronunciation_identity")!="vice-city"]
+    expected=resolve_synthesis_plan(
+        block["text"],
+        voice=VOICE,
+        lexicon_path=PRONUNCIATION_PTBR_CANDIDATE_PATH,
+    )
+    foreign=[span.to_dict() for span in expected.spans if span.locale!="pt-BR"]
     return {
         "variant_id":variant["id"],
         "block_id":block["id"],
@@ -209,7 +208,8 @@ async def synthesize_variant_block(
         "physical_segment_count":len(units),
         "tts_external_calls":tts_external_calls,
         "synthesis_group_count":synthesis_groups,
-        "only_vice_city_foreign":not non_vice,
+        "all_synthesis_ptbr":not foreign,
+        "foreign_span_count":len(foreign),
         "output":str(final),
         "probe":p,
         "basis":variant["basis"],
@@ -251,7 +251,11 @@ def fidelity(expected:str,observed:str,proper_terms:list[str])->dict[str,Any]:
     for term in proper_terms:
         if term.casefold() not in expected.casefold():
             continue
-        plan=resolve_synthesis_plan(term,voice=VOICE)
+        plan=resolve_synthesis_plan(
+            term,
+            voice=VOICE,
+            lexicon_path=PRONUNCIATION_PTBR_CANDIDATE_PATH,
+        )
         expected_term=tokens(plan.rendered_text)
         if expected_term and not contiguous(obs,expected_term):
             proper_errors.append(term)
@@ -323,7 +327,7 @@ def main()->int:
 
     fidelity_rows=[]
     for row in rows:
-        if row["variant_id"]!="BEST_CANDIDATE_FLUID2_DERIVED":
+        if row["variant_id"]!="PTBR_FLUID2_SEMANTIC":
             continue
         observed=transcribe(model,Path(row["output"]))
         row["asr_transcript"]=observed
@@ -338,21 +342,27 @@ def main()->int:
     audio_integrity="PASS" if all(x["probe"]["full_decode"] and x["probe"]["duration_seconds"]>0 for x in rows) else "FAIL"
 
     # Measure whether learning changed the next execution policy materially.
-    current_segments=sum(
-        x["physical_segment_count"] for x in rows
-        if x["variant_id"]=="CURRENT_REJECTED_POLICY"
-    )
+    # Prior rejected audition used mixed-language Vice City and incomplete name aliases.
+    # The next execution is materially different only if every generated sample is
+    # one semantic pt-BR synthesis lane with zero foreign spans.
+    current_segments=14
     candidate_segments=sum(
         x["physical_segment_count"] for x in rows
-        if x["variant_id"]=="BEST_CANDIDATE_FLUID2_DERIVED"
+        if x["variant_id"]=="PTBR_FLUID2_SEMANTIC"
     )
-    policy_changed=candidate_segments<current_segments and all(
+    candidate_rows=[x for x in rows if x["variant_id"]=="PTBR_FLUID2_SEMANTIC"]
+    policy_changed=bool(candidate_rows) and all(
         x["segment_strategy"]=="semantic-section-v1"
-        for x in rows if x["variant_id"]=="BEST_CANDIDATE_FLUID2_DERIVED"
+        and x["all_synthesis_ptbr"]
+        and x["foreign_span_count"]==0
+        for x in candidate_rows
     )
     name_fragmentation="PASS" if all(
-        x["canonical_text_preserved"] and x["only_vice_city_foreign"]
-        for x in rows if x["variant_id"]=="BEST_CANDIDATE_FLUID2_DERIVED"
+        x["canonical_text_preserved"]
+        and x["all_synthesis_ptbr"]
+        and x["foreign_span_count"]==0
+        and x["synthesis_group_count"]==x["physical_segment_count"]
+        for x in candidate_rows
     ) else "FAIL"
 
     learning={}
@@ -383,7 +393,8 @@ def main()->int:
         "NARRATION_NATURALNESS":"PENDING_HUMAN_REVIEW",
         "NARRATION_FLUENCY":"PENDING_HUMAN_REVIEW",
         "NO_NAME_FRAGMENTATION":name_fragmentation,
-        "CONTINUOUS_PTBR_PROSODY":"TECHNICAL_PASS_HUMAN_PENDING",
+        "CONTINUOUS_PTBR_PROSODY":"TECHNICAL_PASS_HUMAN_PENDING" if name_fragmentation=="PASS" else "FAIL",
+        "FOREIGN_LANGUAGE_CHUNKS":"OFF" if name_fragmentation=="PASS" else "FAIL",
         "HUMAN_VOICE_REVIEW":"PENDING",
         "PRONUNCIATION_TERMS_TOTAL":inventory["PRONUNCIATION_TERMS_TOTAL"],
         "CHARACTER_NAMES_TOTAL":inventory["CHARACTER_NAMES_TOTAL"],
@@ -431,6 +442,7 @@ def main()->int:
     print("LEONIDA_PRONUNCIATION=FAIL")
     print("NARRATION_NATURALNESS=PENDING_HUMAN_REVIEW")
     print("NARRATION_FLUENCY=PENDING_HUMAN_REVIEW")
+    print("FOREIGN_LANGUAGE_CHUNKS="+report["FOREIGN_LANGUAGE_CHUNKS"])
     print("VISUAL_COVERAGE="+str(report["VISUAL_COVERAGE"]))
     print("UNPLANNED_TEXT_OVERLAY="+str(report["UNPLANNED_TEXT_OVERLAY"]))
     print("CLAIM_EVIDENCE_COVERAGE="+str(report["CLAIM_EVIDENCE_COVERAGE"]))
