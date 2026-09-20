@@ -15,6 +15,7 @@ on:
       - "config/pronunciation_ptbr_candidate.json"
       - "config/pronunciation_lexicon.json"
       - "tests/test_video_a_production_readiness.py"
+      - "tests/test_pronunciation_service.py"
       - ".github/workflows/video-a-narration-readiness-audition.yml"
   workflow_dispatch:
 
