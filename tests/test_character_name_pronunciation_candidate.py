@@ -1,44 +1,63 @@
+import json
 from pathlib import Path
 
 from app.services.pronunciation_service import _edge_synthesis_groups, resolve_synthesis_plan
 
 ROOT=Path(__file__).resolve().parents[1]
 CANDIDATE=ROOT/"config"/"pronunciation_character_aliases.candidate.json"
+PRODUCTION=ROOT/"config"/"pronunciation_lexicon.json"
 
-def test_character_aliases_are_synthesis_only_ptbr():
-    text="A Rockstar descreve Jason e Lucia em material oficial."
-    plan=resolve_synthesis_plan(text,lexicon_path=CANDIDATE)
-    spans={span.pronunciation_identity:span for span in plan.spans if span.pronunciation_identity}
-    assert plan.canonical_text==text
-    assert plan.canonical_text_preserved is True
-    assert spans["character-jason"].text=="Jason"
-    assert spans["character-jason"].synthesis_text=="Djêisson"
-    assert spans["character-jason"].locale=="pt-BR"
-    assert spans["character-lucia"].text=="Lucia"
-    assert spans["character-lucia"].synthesis_text=="Lussía"
-    assert spans["character-lucia"].locale=="pt-BR"
-    assert plan.foreign_span_count==0
+def load(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+def test_candidate_requires_real_acoustic_selection():
+    d=load(CANDIDATE)
+    assert d["reference"]["video_id"]=="f8IZhKcuEts"
+    assert d["policy"]["only_forced_en_us_term"]=="Vice City"
+    chars={x["identity"]:x for x in d["entries"] if str(x.get("identity","")).startswith("character-")}
+    assert set(chars)=={"character-jason","character-lucia"}
+    assert all(x["locale"]=="pt-BR" for x in chars.values())
+    assert all(x["reference_status"]=="ACOUSTIC_SELECTION_REQUIRED" for x in chars.values())
+    assert all("synthesis_text" not in x for x in chars.values())
+    assert all(x.get("synthesis_candidates") for x in chars.values())
+
+def test_runtime_aliases_do_not_split_ptbr_sentence(tmp_path):
+    d=load(CANDIDATE)
+    for x in d["entries"]:
+        if x["identity"]=="character-jason":
+            x["synthesis_text"]="Djeison"
+        if x["identity"]=="character-lucia":
+            x["synthesis_text"]="Lucía"
+    d["version"]+="+test"
+    p=tmp_path/"runtime.json"
+    p.write_text(json.dumps(d,ensure_ascii=False),encoding="utf-8")
+    text="Jason e Lucia seguem juntos."
+    plan=resolve_synthesis_plan(text,lexicon_path=p)
+    assert plan.canonical_text==text and plan.canonical_text_preserved
     groups=_edge_synthesis_groups(plan)
-    assert len(groups)==1
-    assert groups[0]["locale"]=="pt-BR"
+    assert plan.foreign_span_count==0
+    assert len(groups)==1 and groups[0]["locale"]=="pt-BR"
 
-def test_character_aliases_do_not_create_en_us_chunks_around_vice_city():
-    text="Jason e Lucia atravessam Vice City."
-    plan=resolve_synthesis_plan(text,lexicon_path=CANDIDATE)
-    foreign=[span for span in plan.spans if span.locale!="pt-BR"]
-    assert len(foreign)==1
-    assert foreign[0].pronunciation_identity=="vice-city"
-    character=[span for span in plan.spans if span.pronunciation_identity in {"character-jason","character-lucia"}]
-    assert character
-    assert all(span.locale=="pt-BR" for span in character)
+def test_vice_city_remains_only_en_us_span(tmp_path):
+    d=load(CANDIDATE)
+    for x in d["entries"]:
+        if x["identity"]=="character-jason":
+            x["synthesis_text"]="Djeison"
+        if x["identity"]=="character-lucia":
+            x["synthesis_text"]="Lucía"
+    d["version"]+="+test"
+    p=tmp_path/"runtime.json"
+    p.write_text(json.dumps(d,ensure_ascii=False),encoding="utf-8")
+    plan=resolve_synthesis_plan("Jason e Lucia atravessam Vice City.",lexicon_path=p)
+    foreign=[x for x in plan.spans if x.locale!="pt-BR"]
+    assert len(foreign)==1 and foreign[0].pronunciation_identity=="vice-city"
+    assert all(
+        x.locale=="pt-BR"
+        for x in plan.spans
+        if x.pronunciation_identity in {"character-jason","character-lucia"}
+    )
 
-def test_default_production_lexicon_is_not_promoted_implicitly():
-    text="Jason e Lucia atravessam Leonida."
-    plan=resolve_synthesis_plan(text)
-    assert "character-jason" not in plan.lexicon_hits
-    assert "character-lucia" not in plan.lexicon_hits
-    assert plan.rendered_text==text
-
-def test_candidate_lexicon_version_changes_cache_identity():
-    plan=resolve_synthesis_plan("Jason e Lucia",lexicon_path=CANDIDATE)
-    assert plan.lexicon_version=="2026.09.19.4-character-candidate.1"
+def test_production_lexicon_not_promoted_implicitly():
+    ids={x["identity"] for x in load(PRODUCTION)["entries"]}
+    assert "character-jason" not in ids
+    assert "character-lucia" not in ids
