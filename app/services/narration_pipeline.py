@@ -45,7 +45,7 @@ NATURAL_RATE_MAX_PERCENT = 15
 DEFAULT_CONCURRENCY = 4
 MAX_RETRIES = 3
 CIRCUIT_BREAKER_FAILURES = 5
-SYNTHESIS_JOIN_POLICY_VERSION = "ptbr-fluency-join-v1"
+SYNTHESIS_JOIN_POLICY_VERSION = "ptbr-quality-first-semantic-section-v2"
 SECTION_JOIN_LEADING_MARGIN_SECONDS = 0.08
 SECTION_JOIN_TRAILING_MARGIN_SECONDS = 0.16
 MAX_PLANNED_SECTION_BOUNDARY_PAUSE_SECONDS = 0.55
@@ -1284,7 +1284,7 @@ async def generate_narration_bundle_async(
     if language != "pt-BR" or not voice.startswith("pt-BR-"):
         raise NarrationError("narration bundle requires an explicit pt-BR neural voice")
     target_wpm = float(job.get("target_wpm") or 125.0)
-    segment_strategy = str(narration.get("segment_strategy") or "microsegment-v1")
+    segment_strategy = str(narration.get("segment_strategy") or "semantic-section-v1")
     rate_locked = bool(narration.get("rate_locked") is True)
     official_profile_id = str(narration.get("official_profile_id") or "")
     official_profile_sha256 = str(narration.get("official_profile_sha256") or "")
