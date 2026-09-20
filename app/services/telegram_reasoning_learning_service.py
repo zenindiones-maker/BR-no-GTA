@@ -28,6 +28,7 @@ from app.services.opencode_executor_profile_service import (
 TELEGRAM_REASONING_CAPABILITY_ID = "ai.reasoning.text"
 TELEGRAM_REASONING_DOMAIN = "ai"
 TELEGRAM_REASONING_TASK_CLASS = "telegram-reasoning"
+TELEGRAM_REASONING_FAILURE_TASK_CLASS = "telegram.reasoning"
 
 
 def _stable_id(prefix: str, payload: Any) -> str:
@@ -65,9 +66,11 @@ def _telegram_refs(input_record: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _failure_pattern(evidence: HarnessAIProviderEvidence) -> str:
     error = evidence.error if isinstance(evidence.error, Mapping) else {}
-    code = str(error.get("code") or "provider_failure").strip().upper()
-    provider = str(evidence.provider or "unknown").strip().upper()
-    return f"AI_PROVIDER_{provider}_{code}"
+    raw_code = str(error.get("code") or "provider_failure").strip()
+    provider = str(evidence.provider or "unknown").strip()
+    if provider == "opencode" and raw_code == "semantic_tools_used":
+        return "opencode_semantic_tools_used"
+    return f"AI_PROVIDER_{provider.upper()}_{raw_code.upper()}"
 
 
 def _failure_metadata(
@@ -78,7 +81,11 @@ def _failure_metadata(
     error = dict(evidence.error) if isinstance(evidence.error, Mapping) else {}
     return {
         "failure_class": _failure_pattern(evidence),
-        "affected_task_class": TELEGRAM_REASONING_TASK_CLASS,
+        "affected_task_class": (
+            TELEGRAM_REASONING_FAILURE_TASK_CLASS
+            if _failure_pattern(evidence) == "opencode_semantic_tools_used"
+            else TELEGRAM_REASONING_TASK_CLASS
+        ),
         "affected_capability": TELEGRAM_REASONING_CAPABILITY_ID,
         "provider": evidence.provider,
         "model": evidence.model,
@@ -97,7 +104,11 @@ def _failure_metadata(
             "telegram_update_id": input_record.get("telegram_update_id"),
             "memory_event_id": input_record.get("memory_event_id"),
         },
-        "diagnostic_status": "OUTCOME_CONFIRMED_ROOT_CAUSE_OPEN",
+        "diagnostic_status": (
+            "ROOT_CAUSE_CONFIRMED"
+            if _failure_pattern(evidence) == "opencode_semantic_tools_used"
+            else "OUTCOME_CONFIRMED_ROOT_CAUSE_OPEN"
+        ),
         "applicable_scope": "TASK_CLASS_PROVIDER_MODEL",
     }
 
@@ -370,7 +381,11 @@ def capture_telegram_reasoning_outcome(
                 f"{evidence.model}: {_failure_pattern(evidence)}."
             ),
             domain=TELEGRAM_REASONING_DOMAIN,
-            task_class=TELEGRAM_REASONING_TASK_CLASS,
+            task_class=(
+                TELEGRAM_REASONING_FAILURE_TASK_CLASS
+                if _failure_pattern(evidence) == "opencode_semantic_tools_used"
+                else TELEGRAM_REASONING_TASK_CLASS
+            ),
             failure_pattern=_failure_pattern(evidence),
             source_episode_id=persisted["episode_id"],
             evidence_refs=evidence_refs,
