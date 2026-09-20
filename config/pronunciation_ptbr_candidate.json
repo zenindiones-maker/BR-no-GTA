@@ -1,6 +1,6 @@
 {
   "schema": "br-no-gta-pronunciation-lexicon/v1",
-  "version": "2026.09.20.10-ptbr-complete-script-candidate",
+  "version": "2026.09.20.11-canonical-identity-surfaces",
   "default_locale": "pt-BR",
   "policy": {
     "authority": "human-review candidate only",
@@ -20,7 +20,9 @@
       "synthesis_text": "Váis Síti",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "previously approved target sound rendered in pt-BR lane"
+      "source": "previously approved target sound rendered in pt-BR lane",
+      "canonical_identity": "vice-city",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "leonida",
@@ -31,7 +33,9 @@
       "synthesis_text": "Leônida",
       "critical": true,
       "validation_status": "HUMAN_REJECTED_CURRENT_ALIAS",
-      "source": "explicit human target; prior audio rejected, requires new contextual proof"
+      "source": "explicit human target; prior audio rejected, requires new contextual proof",
+      "canonical_identity": "leonida",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "leonida-keys",
@@ -42,7 +46,9 @@
       "synthesis_text": "Leônida Kíis",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "leonida-keys",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "liberty-city",
@@ -53,7 +59,9 @@
       "synthesis_text": "Líberti Síti",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "liberty-city",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "port-gellhorn",
@@ -64,7 +72,9 @@
       "synthesis_text": "Pórt Guélhórn",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "port-gellhorn",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "grassrivers",
@@ -75,7 +85,9 @@
       "synthesis_text": "Gráss Rívers",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "grassrivers",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "ambrosia",
@@ -86,7 +98,9 @@
       "synthesis_text": "Ambrôzia",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "ambrosia",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "mount-kalaga",
@@ -97,7 +111,9 @@
       "synthesis_text": "Máunt Kalága",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "mount-kalaga",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "jason-duval",
@@ -108,7 +124,9 @@
       "synthesis_text": "Djeison Duvál",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "jason-duval",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "jason",
@@ -119,7 +137,9 @@
       "synthesis_text": "Djeison",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Rockstar localized spelling cross-check"
+      "source": "Rockstar localized spelling cross-check",
+      "canonical_identity": "jason-duval",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "lucia-caminos",
@@ -130,7 +150,9 @@
       "synthesis_text": "Lucía Camínos",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration plus prior Lucia correction"
+      "source": "localized transliteration plus prior Lucia correction",
+      "canonical_identity": "lucia-caminos",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "lucia",
@@ -141,7 +163,9 @@
       "synthesis_text": "Lucía",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "prior human correction; global review still required"
+      "source": "prior human correction; global review still required",
+      "canonical_identity": "lucia-caminos",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "boobie-ike",
@@ -152,7 +176,9 @@
       "synthesis_text": "Búbi Áik",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "boobie-ike",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "boobie",
@@ -163,7 +189,9 @@
       "synthesis_text": "Búbi",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "boobie-ike",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "drequan-priest",
@@ -174,7 +202,9 @@
       "synthesis_text": "Drê Kuán Príst",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "drequan-priest",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "drequan",
@@ -185,7 +215,9 @@
       "synthesis_text": "Drê Kuán",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "drequan-priest",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "real-dimez",
@@ -196,7 +228,9 @@
       "synthesis_text": "Ríal Dáimz",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "real-dimez",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "cal-hampton",
@@ -207,7 +241,9 @@
       "synthesis_text": "Cal Hémpton",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "cal-hampton",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "cal",
@@ -218,7 +254,9 @@
       "synthesis_text": "Cal",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "short-form name"
+      "source": "short-form name",
+      "canonical_identity": "cal-hampton",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "brian-heder",
@@ -229,7 +267,9 @@
       "synthesis_text": "Bráian Héder",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "brian-heder",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "brian",
@@ -240,7 +280,9 @@
       "synthesis_text": "Bráian",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "brian-heder",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "raul-bautista",
@@ -251,7 +293,9 @@
       "synthesis_text": "Raúl Batísta",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Spanish/Portuguese-compatible rendering"
+      "source": "Spanish/Portuguese-compatible rendering",
+      "canonical_identity": "raul-bautista",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "raul",
@@ -262,7 +306,9 @@
       "synthesis_text": "Raúl",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Spanish/Portuguese-compatible rendering"
+      "source": "Spanish/Portuguese-compatible rendering",
+      "canonical_identity": "raul-bautista",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "bae-luxe",
@@ -273,7 +319,9 @@
       "synthesis_text": "Bêi Lâks",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "bae-luxe",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "roxy",
@@ -284,7 +332,9 @@
       "synthesis_text": "Róksi",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "localized transliteration cross-check"
+      "source": "localized transliteration cross-check",
+      "canonical_identity": "roxy",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "dwnply",
@@ -295,7 +345,9 @@
       "synthesis_text": "Dáunplêi",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "reported reading Downplay; human review required"
+      "source": "reported reading Downplay; human review required",
+      "canonical_identity": "dwnply",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "only-raw-records",
@@ -306,7 +358,9 @@
       "synthesis_text": "Ôunli Ró Récords",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "only-raw-records",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "rockstar",
@@ -317,7 +371,9 @@
       "synthesis_text": "Rókstar",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "established brand pronunciation rendered in pt-BR"
+      "source": "established brand pronunciation rendered in pt-BR",
+      "canonical_identity": "rockstar",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "atlantic-records",
@@ -328,7 +384,9 @@
       "synthesis_text": "Atlântic Récords",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR phonetic candidate"
+      "source": "pt-BR phonetic candidate",
+      "canonical_identity": "atlantic-records",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "grand-theft-auto-vi",
@@ -339,7 +397,9 @@
       "synthesis_text": "gê tê á seis",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "channel-approved GTA 6 realization"
+      "source": "channel-approved GTA 6 realization",
+      "canonical_identity": "gta-6",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "gta-6",
@@ -350,7 +410,9 @@
       "synthesis_text": "gê tê á seis",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "channel-approved GTA 6 realization"
+      "source": "channel-approved GTA 6 realization",
+      "canonical_identity": "gta-6",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "gta-vi",
@@ -361,7 +423,9 @@
       "synthesis_text": "gê tê á seis",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "channel-approved GTA 6 realization"
+      "source": "channel-approved GTA 6 realization",
+      "canonical_identity": "gta-6",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "extended-look",
@@ -372,7 +436,9 @@
       "synthesis_text": "Extêndid Lúk",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR phonetic candidate"
+      "source": "pt-BR phonetic candidate",
+      "canonical_identity": "extended-look",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "vintage-vice-city-pack",
@@ -383,7 +449,9 @@
       "synthesis_text": "Víntidj Váis Síti Pék",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR phonetic candidate"
+      "source": "pt-BR phonetic candidate",
+      "canonical_identity": "vintage-vice-city-pack",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "yung-lean",
@@ -394,7 +462,9 @@
       "synthesis_text": "Iâng Lín",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "yung-lean",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "future",
@@ -405,7 +475,9 @@
       "synthesis_text": "Fiútcher",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "future",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "metro-boomin",
@@ -416,7 +488,9 @@
       "synthesis_text": "Métro Búmin",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "metro-boomin",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "travis-scott",
@@ -427,7 +501,9 @@
       "synthesis_text": "Trévis Scót",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "travis-scott",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "ca7riel",
@@ -438,7 +514,9 @@
       "synthesis_text": "Catriél",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist stylized-name candidate"
+      "source": "artist stylized-name candidate",
+      "canonical_identity": "ca7riel",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "paco-amoroso",
@@ -449,7 +527,9 @@
       "synthesis_text": "Páco Amorôso",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Spanish proper-name pt-BR candidate"
+      "source": "Spanish proper-name pt-BR candidate",
+      "canonical_identity": "paco-amoroso",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "pinkpantheress",
@@ -460,7 +540,9 @@
       "synthesis_text": "Pínk Pánteress",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "pinkpantheress",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "fred-again",
@@ -471,7 +553,9 @@
       "synthesis_text": "Fred Aguén",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "fred-again",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "etienne-de-crecy",
@@ -482,7 +566,9 @@
       "synthesis_text": "Etién de Crêssi",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "French-name pt-BR candidate"
+      "source": "French-name pt-BR candidate",
+      "canonical_identity": "etienne-de-crecy",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "morgan-wallen",
@@ -493,7 +579,9 @@
       "synthesis_text": "Mórgan Uólen",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "morgan-wallen",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "rauw-alejandro",
@@ -504,7 +592,9 @@
       "synthesis_text": "Ráu Alejândro",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Spanish artist-name pt-BR candidate"
+      "source": "Spanish artist-name pt-BR candidate",
+      "canonical_identity": "rauw-alejandro",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "keith-richards",
@@ -515,7 +605,9 @@
       "synthesis_text": "Kíth Rítchards",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "artist-name pt-BR candidate"
+      "source": "artist-name pt-BR candidate",
+      "canonical_identity": "keith-richards",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "grand-theft-auto-vi-the-album",
@@ -526,7 +618,9 @@
       "synthesis_text": "gê tê á seis: dâ Álbum",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "full official title rendered in pt-BR voice lane"
+      "source": "full official title rendered in pt-BR voice lane",
+      "canonical_identity": "grand-theft-auto-vi-the-album",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "the-album",
@@ -537,7 +631,9 @@
       "synthesis_text": "dâ Álbum",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "title fragment rendered in pt-BR voice lane"
+      "source": "title fragment rendered in pt-BR voice lane",
+      "canonical_identity": "grand-theft-auto-vi-the-album",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "only-in-leonida",
@@ -548,7 +644,9 @@
       "synthesis_text": "Ôunli in Leônida",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "official page title rendered in pt-BR voice lane"
+      "source": "official page title rendered in pt-BR voice lane",
+      "canonical_identity": "only-in-leonida",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "gta",
@@ -559,7 +657,9 @@
       "synthesis_text": "gê tê á",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Brazilian letter-name reading"
+      "source": "Brazilian letter-name reading",
+      "canonical_identity": "gta",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "vintage-vice-city",
@@ -570,7 +670,9 @@
       "synthesis_text": "Víntidj Váis Síti",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR phonetic candidate"
+      "source": "pt-BR phonetic candidate",
+      "canonical_identity": "vintage-vice-city-pack",
+      "surface_role": "ALIAS"
     },
     {
       "identity": "lori",
@@ -581,7 +683,9 @@
       "synthesis_text": "Lóri",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "pt-BR contextual candidate"
+      "source": "pt-BR contextual candidate",
+      "canonical_identity": "lori",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "leonida-penitentiary-pt",
@@ -592,7 +696,9 @@
       "synthesis_text": "Penitenciária de Leônida",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "Portuguese phrase with Leonida synthesis target"
+      "source": "Portuguese phrase with Leonida synthesis target",
+      "canonical_identity": "leonida-penitentiary-pt",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "guarda-costeira",
@@ -603,7 +709,9 @@
       "synthesis_text": "Guarda Costeira",
       "critical": false,
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
-      "source": "native Portuguese phrase"
+      "source": "native Portuguese phrase",
+      "canonical_identity": "guarda-costeira",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "florida",
@@ -614,7 +722,9 @@
       "synthesis_text": "Flórida",
       "critical": false,
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
-      "source": "standard pt-BR pronunciation"
+      "source": "standard pt-BR pronunciation",
+      "canonical_identity": "florida",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "br",
@@ -625,7 +735,9 @@
       "synthesis_text": "bê érre",
       "critical": true,
       "validation_status": "HUMAN_APPROVED_REFERENCE",
-      "source": "channel brand Brazilian letter reading"
+      "source": "channel brand Brazilian letter reading",
+      "canonical_identity": "br",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "video-a",
@@ -636,7 +748,9 @@
       "synthesis_text": "vídeo á",
       "critical": false,
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
-      "source": "production label"
+      "source": "production label",
+      "canonical_identity": "video-a",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "telegram",
@@ -647,7 +761,9 @@
       "synthesis_text": "Telegram",
       "critical": false,
       "validation_status": "NATIVE_PTBR_NO_OVERRIDE_REQUIRED",
-      "source": "established pt-BR rendering"
+      "source": "established pt-BR rendering",
+      "canonical_identity": "telegram",
+      "surface_role": "CANONICAL"
     },
     {
       "identity": "leonida-keys-short",
@@ -658,7 +774,9 @@
       "synthesis_text": "Kíis",
       "critical": true,
       "validation_status": "PENDING_HUMAN_REVIEW",
-      "source": "standalone shorthand for Leonida Keys in the final candidate script; pt-BR lane only"
+      "source": "standalone shorthand for Leonida Keys in the final candidate script; pt-BR lane only",
+      "canonical_identity": "leonida-keys",
+      "surface_role": "ALIAS"
     }
   ]
 }
