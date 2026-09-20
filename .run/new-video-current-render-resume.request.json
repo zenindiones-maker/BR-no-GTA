@@ -1,0 +1,23 @@
+{
+  "schema": "new-video-current-render-resume/v1",
+  "requested_from_head": "4eb8ce8a5d2c839d20529ca5873b15a0d12d68ad",
+  "controller_checkpoint_run_id": 35514396253,
+  "controller_checkpoint_artifact_id": 10607171223,
+  "previous_render_run_id": 35514545427,
+  "goal_id": "bed0bbd8-7a70-4170-b4e5-42166bc0450c",
+  "video_id": 1,
+  "render_job_id": 1,
+  "execution_id": "224fd26c-5e58-4643-92c0-304d744c8966",
+  "checkpoint_producer_run_id": 35514545427,
+  "narration_artifact_id": 10606237268,
+  "brand_audio_artifact_id": 10606317120,
+  "media_artifact_id": 10606466657,
+  "reuse_research": true,
+  "reuse_editorial": true,
+  "reuse_narration": true,
+  "reuse_media": true,
+  "reuse_brand_audio": true,
+  "requested_render_retry_count": 1,
+  "youtube_privacy": "private",
+  "human_review_delivery": "telegram"
+}

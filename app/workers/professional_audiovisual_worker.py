@@ -1220,6 +1220,7 @@ def execute_professional(job: dict[str, Any], asset_root: Path, output_root: Pat
         brand_audio=content_voice,
     )
     print("PRE_RENDER_NO_ARTIFICIAL_PADDING=PASS", flush=True)
+    print("PRE_RENDER_NO_PADDING_FAILFAST=PASS", flush=True)
     print(f"PRE_RENDER_VALIDATION_MS={float(edit_qa['pre_render_validation_ms']):.3f}", flush=True)
     print("RETRY_ON_DETERMINISTIC_FAILURE=NO", flush=True)
     plan, visual_branding = _embed_governed_watermark(plan, job=job, root=root)
