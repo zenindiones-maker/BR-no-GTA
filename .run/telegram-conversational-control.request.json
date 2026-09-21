@@ -1,10 +1,10 @@
 {
   "request": "telegram-system-synergy-live-gateway-validation",
-  "source_head": "2161cc4348d2ca72465d7e9f3338ff98ba24ac62",
-  "requested_at": "2026-09-20T22:06:00-03:00",
-  "attempt": 9,
-  "scope": "pending-action-restart-continuity-final-validation",
-  "prerequisite_focused_run": 35549712542,
-  "prerequisite_focused_artifact": 10617399332,
-  "opencode_policy": "contain-external-403-no-bypass"
+  "source_head": "bceae4dd028fc76550d5aca0dd6e5aad9c8eed94",
+  "scope": "real-telegram-status-opencode-checksum-isolation-and-stale-process-proof",
+  "prerequisite_focused_run": 35550758602,
+  "prerequisite_focused_artifact": 10617489100,
+  "observed_real_error": "active OpenCode executor profile checksum does not match executable code",
+  "opencode_policy": "contain-external-403-no-global-status-preflight",
+  "requested_at": "2026-09-20T22:25:00-03:00"
 }
