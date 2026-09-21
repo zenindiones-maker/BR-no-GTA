@@ -1,0 +1,7 @@
+{
+  "request": "dynamic-system-improvement-focused",
+  "source_head": "8a227dc843c64bf7ff318978eb659b33b7d36450",
+  "scope": "mission-read-write-scope-fail-closed",
+  "previous_blocker": "task read_set exceeds mission path scope",
+  "requested_at": "2026-09-21T14:24:00-03:00"
+}
