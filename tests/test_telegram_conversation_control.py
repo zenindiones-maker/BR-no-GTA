@@ -5,6 +5,7 @@ from app.database.scripts_repository import insert_script
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
     list_recent_conversation_turns,
+    list_recent_telegram_progress_events,
     update_conversation_state,
 )
 from app.services.telegram_conversation_service import (
@@ -754,3 +755,80 @@ def test_natural_system_improvement_goal_does_not_require_hermes_keyword():
     assert plan["mission_planner"] == "HARNESS_REGISTRY_COMPETENCE"
     assert plan["collaboration_runtime"] == "HERMES_WHEN_MULTI_AGENT_REQUIRED"
     assert "hermes" not in "Analisa por que o sistema está demorando e corrige o que for inútil sem reduzir qualidade.".casefold()
+
+
+
+def test_status_reconciles_legacy_understanding_without_operational_evidence():
+    chat_id = 99201
+    calls = {"provider": 0, "action": 0}
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-telegram-human-interface-regression",
+        active_task="integração humana do Telegram com o Harness",
+        current_subject="status humano determinístico",
+        active_artifact="script:8",
+        active_run_id=None,
+        execution_status="RUNNING",
+        active_stage="UNDERSTANDING",
+        active_blocker=None,
+        waiting_for_human=False,
+        pending_action=None,
+        last_execution_result={
+            "status": "COMPLETED",
+            "capability_id": "telegram.input.ingest",
+            "answer": "Última operação canônica concluída.",
+            "goal_id": "goal-telegram-human-interface-regression",
+        },
+    )
+
+    def provider(*_args, **_kwargs):
+        calls["provider"] += 1
+        raise AssertionError("STATUS must remain provider-free")
+
+    def action(*_args, **_kwargs):
+        calls["action"] += 1
+        raise AssertionError("STATUS must not enter Hermes/action execution")
+
+    result = handle_telegram_conversation(
+        "Onde estamos?",
+        telegram_chat_id=chat_id,
+        telegram_message_id=99202,
+        chat_handler=provider,
+        action_executor=action,
+        presenter=_presenter,
+    )
+
+    canonical = result["canonical_result"]
+    control = canonical["control_surface_status"]
+    reloaded = get_or_create_conversation_state(chat_id)
+    events = list_recent_telegram_progress_events(chat_id, limit=10)
+
+    assert result["intent"] == "STATUS_REQUEST"
+    assert result["plan"]["kind"] == "STATUS"
+    assert canonical["STALE_PROGRESS_STATE_DETECTED"] == "PASS"
+    assert canonical["STALE_PROGRESS_STATE_RECONCILED"] == "PASS"
+    assert canonical["STATUS_PROVIDER_CALLS"] == 0
+    assert canonical["STATUS_OPENCODE_CALLS"] == 0
+    assert canonical["STATUS_HERMES_CALLS"] == 0
+    assert calls == {"provider": 0, "action": 0}
+    assert control["canonical_execution_active"] is False
+    assert control["execution_status"] == "IDLE"
+    assert reloaded["execution_status"] == "IDLE"
+    assert reloaded["active_stage"] is None
+    assert reloaded["active_goal_id"] == "goal-telegram-human-interface-regression"
+    assert reloaded["active_task"] == "integração humana do Telegram com o Harness"
+    assert reloaded["active_artifact"] == "script:8"
+    assert reloaded["last_execution_result"]["status"] == "COMPLETED"
+    upper_answer = result["answer"].upper()
+    for internal_stage in ("UNDERSTANDING", "ROUTING", "REASONING", "AUTHORIZATION"):
+        assert internal_stage not in upper_answer
+    assert "BR-no-GTA" in result["answer"]
+    assert "goal-telegram-human-interface-regression" in result["answer"]
+    assert "Não há execução ativa neste momento." in result["answer"]
+    assert any(
+        item["event_type"] == "STALE_PROGRESS_RECONCILIATION"
+        and item["metadata"]["previous_execution_status"] == "RUNNING"
+        and item["metadata"]["previous_active_stage"] == "UNDERSTANDING"
+        for item in events
+    )
