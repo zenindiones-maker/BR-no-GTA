@@ -377,3 +377,204 @@ def test_recent_turns_are_compact_and_persisted():
     assert len(turns) == 8
     assert len(state["recent_turn_ids"]) == 8
     assert state["recent_turn_ids"] == [turn["turn_id"] for turn in turns]
+
+
+
+def test_research_survives_optional_reasoning_provider_failure():
+    from app.services.telegram_harness_service import HarnessReasoningFailure
+
+    chat_id = 9991
+
+    def execute(plan, state, message):
+        assert plan["kind"] == "RESEARCH_PIPELINE"
+        return {
+            "status": "COMPLETED",
+            "operation": "br_research_run",
+            "result": {
+                "total": 2,
+                "rockstar_newswire": [{"title": "Official evidence survives"}],
+                "news_feeds": [{"title": "Secondary evidence survives"}],
+                "editorial": [{"decision": "REVIEW_SCRIPT"}],
+            },
+            "capability_id": "gta6.research",
+            "routing_id": "route-research-provider-free",
+            "authorization_id": "auth-research-provider-free",
+            "execution_id": "exec-research-provider-free",
+        }
+
+    def unavailable(*_args, **_kwargs):
+        raise HarnessReasoningFailure(
+            {
+                "provider": "opencode",
+                "model": "oc/big-pickle",
+                "provider_error": {
+                    "code": "provider_auth_403",
+                    "message": "OpenCode's free tier can only be used from within OpenCode",
+                },
+            }
+        )
+
+    result = handle_telegram_conversation(
+        "pesquisa a novidade X",
+        telegram_chat_id=chat_id,
+        telegram_message_id=801,
+        action_executor=execute,
+        chat_handler=unavailable,
+        presenter=_presenter,
+    )
+
+    canonical = result["canonical_result"]
+    assert canonical["RESEARCH_EXECUTION"] == "PASS"
+    assert canonical["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
+    assert canonical["capability_id"] == "gta6.research"
+    assert "Official evidence survives" in result["answer"]
+    assert "não acrescentei interpretação" in result["answer"]
+    assert result["conversation_state"]["execution_status"] == "COMPLETED"
+
+
+def test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider():
+    chat_id = 9992
+    update_conversation_state(
+        chat_id,
+        active_goal_id="goal-video-a",
+        active_artifact="script:8",
+        active_task="revisão do roteiro A",
+    )
+    seen = {}
+
+    def execute(plan, state, message):
+        seen["plan"] = dict(plan)
+        return {
+            "status": "RUNNING",
+            "answer": "Missão Hermes despachada pelo Harness.",
+            "capability_id": "collaboration.hermes.execute",
+            "mission_id": "tg-hermes-test-1",
+            "goal_id": "goal-video-a",
+            "run_id": "35550000001",
+            "routing_id": "route-hermes",
+            "authorization_id": "auth-hermes",
+            "execution_id": "exec-hermes",
+            "pending_action": {
+                "kind": "HERMES_CLOUD_RESUME",
+                "mission_id": "tg-hermes-test-1",
+                "task_id": "production-management",
+                "goal_id": "goal-video-a",
+                "parent_run_id": "35550000001",
+            },
+        }
+
+    result = handle_telegram_conversation(
+        "Analisa esse roteiro com a equipe e vê o que falta",
+        telegram_chat_id=chat_id,
+        telegram_message_id=802,
+        action_executor=execute,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Hermes collaboration must not enter generic model chat")
+        ),
+        presenter=_presenter,
+    )
+
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert seen["plan"]["kind"] == "HERMES_COLLABORATION"
+    assert seen["plan"]["capability_id"] == "collaboration.hermes.execute"
+    assert result["conversation_state"]["execution_status"] == "RUNNING"
+    assert result["conversation_state"]["active_run_id"] == "35550000001"
+    assert result["conversation_state"]["pending_action"]["mission_id"] == "tg-hermes-test-1"
+
+
+def test_status_aggregates_hermes_pending_state_without_llm():
+    chat_id = 9993
+    update_conversation_state(
+        chat_id,
+        active_goal_id="goal-video-a",
+        active_task="produção governada",
+        active_run_id="35550000002",
+        active_stage="RUNNING",
+        execution_status="RUNNING",
+        active_artifact="script:8",
+        pending_action={
+            "kind": "HERMES_CLOUD_RESUME",
+            "mission_id": "tg-hermes-status-1",
+            "task_id": "production-management",
+            "goal_id": "goal-video-a",
+            "parent_run_id": "35550000002",
+        },
+    )
+
+    result = handle_telegram_conversation(
+        "Onde estamos?",
+        telegram_chat_id=chat_id,
+        telegram_message_id=803,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("status must remain provider-free")
+        ),
+        presenter=_presenter,
+    )
+
+    status = result["canonical_result"]["control_surface_status"]
+    assert status["provider_independent"] is True
+    assert status["authority"] == "DEEPSEEK_HARNESS"
+    assert status["hermes_mission_id"] == "tg-hermes-status-1"
+    assert status["active_run_id"] == "35550000002"
+    assert status["pending_action"]["task_id"] == "production-management"
+
+
+def test_restart_continuity_approval_reuses_persisted_hermes_lineage():
+    chat_id = 9994
+    pending = {
+        "kind": "HERMES_CLOUD_RESUME",
+        "mission_id": "tg-hermes-restart-1",
+        "task_id": "production-management",
+        "goal_id": "goal-video-a",
+        "artifact_ref": "script:8",
+        "parent_run_id": "35550000003",
+        "authorized_action": "EXECUTION",
+    }
+    update_conversation_state(
+        chat_id,
+        active_goal_id="goal-video-a",
+        active_artifact="script:8",
+        active_run_id="35550000003",
+        execution_status="RUNNING",
+        pending_action=pending,
+    )
+
+    # Simulate a fresh gateway process by reloading only durable state.
+    restored = get_or_create_conversation_state(chat_id)
+    assert restored["pending_action"] == pending
+    seen = {}
+
+    def resume(plan, state, message):
+        seen["plan"] = dict(plan)
+        seen["conversation_id"] = state["conversation_id"]
+        return {
+            "status": "RUNNING",
+            "answer": "Mesma missão retomada.",
+            "capability_id": "collaboration.hermes.execute",
+            "mission_id": plan["mission_id"],
+            "task_id": plan["task_id"],
+            "goal_id": plan["goal_id"],
+            "run_id": "35550000004",
+            "routing_id": "route-resume",
+            "authorization_id": "auth-resume",
+            "execution_id": "exec-resume",
+        }
+
+    result = handle_telegram_conversation(
+        "Aprovo",
+        telegram_chat_id=chat_id,
+        telegram_message_id=804,
+        action_executor=resume,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("unambiguous approval must not require an LLM")
+        ),
+        presenter=_presenter,
+    )
+
+    assert seen["conversation_id"] == f"telegram:{chat_id}"
+    assert seen["plan"]["mission_id"] == "tg-hermes-restart-1"
+    assert seen["plan"]["task_id"] == "production-management"
+    assert result["canonical_result"]["approval_resumed_pending_action"] is True
+    assert result["canonical_result"]["mission_id"] == "tg-hermes-restart-1"
+    assert result["conversation_state"]["active_run_id"] == "35550000004"
+    assert result["conversation_state"]["pending_action"] is None
