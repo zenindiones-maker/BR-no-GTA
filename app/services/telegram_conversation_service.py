@@ -16,6 +16,7 @@ from app.database.telegram_conversation_repository import (
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
 from app.services.human_presentation_service import present_canonical_result_under_harness
+from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.script_service import get_script, list_scripts
 from app.services.telegram_harness_service import (
     HarnessReasoningFailure,
@@ -615,6 +616,27 @@ def handle_telegram_conversation(
                 },
                 scope="LOCAL",
             )
+        canonical_human_decision = record_canonical_human_decision(
+            decision_type=decision_type,
+            source_surface="telegram",
+            source_ref=f"telegram-turn:{human_turn['turn_id']}",
+            content=text,
+            evidence_refs=evidence_refs,
+            goal_id=state.get("active_goal_id"),
+            task_id=state.get("active_task"),
+            capability_id=(
+                state.get("last_execution_result", {}).get("capability_id")
+                if isinstance(state.get("last_execution_result"), dict)
+                else None
+            ),
+            artifact_ref=state.get("active_artifact"),
+            metadata={
+                "conversation_id": state["conversation_id"],
+                "telegram_chat_id": telegram_chat_id,
+                "telegram_message_id": telegram_message_id,
+                "learning_correction_id": (correction or {}).get("correction_id"),
+            },
+        )
         decision = record_human_decision(
             telegram_chat_id=telegram_chat_id,
             decision_type=decision_type,
@@ -627,6 +649,10 @@ def handle_telegram_conversation(
             artifact_ref=state.get("active_artifact"),
             run_id=state.get("active_run_id"),
             learning_correction_id=(correction or {}).get("correction_id"),
+            metadata={
+                "canonical_decision_id": canonical_human_decision["decision_id"],
+                "canonical_memory_plane": "HARNESS_LEARNING_PLANE",
+            },
         )
         changes: dict[str, Any] = {"last_human_decision": decision_type}
         pending_action = state.get("pending_action") if decision_type == "APPROVAL" else None
@@ -654,6 +680,7 @@ def handle_telegram_conversation(
             canonical = {
                 **resumed,
                 "human_decision": decision,
+                "canonical_human_decision": canonical_human_decision,
                 "learning_correction": correction,
                 "approval_resumed_pending_action": True,
             }
@@ -666,6 +693,7 @@ def handle_telegram_conversation(
                 "status": "HUMAN_DECISION_RECORDED",
                 "answer": answer,
                 "human_decision": decision,
+                "canonical_human_decision": canonical_human_decision,
                 "learning_correction": correction,
             }
     elif plan["kind"] == "DEFER_UNTIL_APPROVAL":
