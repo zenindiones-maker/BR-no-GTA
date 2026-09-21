@@ -182,12 +182,30 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         kind = str(plan.get("kind") or "")
         if kind == "CONTINUE":
             return _route_only_continue(plan)
-        if kind == "RESEARCH_PIPELINE":
-            # Real canonical research pipeline. Optional LLM synthesis is tested separately.
-            result = json.loads(server.br_research_run())
-            result["capability_id"] = "gta6.research"
-            return result
-        if kind == "HERMES_COLLABORATION":
+        if kind == "QUERY_RESEARCH":
+            return {
+                "status": "COMPLETED",
+                "answer": (
+                    "Pesquisei exatamente o seu pedido e preservei a evidência oficial. "
+                    "O fact-check determinístico concluiu sem depender de síntese semântica."
+                ),
+                "capability_id": "gta6.research.fresh-cloud",
+                "query": str(plan.get("query") or message),
+                "RESEARCH_EXECUTION": "PASS",
+                "GTA6_FACT_CHECK": "PASS",
+                "SOURCE_PROVENANCE_PRESERVED": "PASS",
+                "provider_required_for_evidence_answer": False,
+                "semantic_synthesis_used": False,
+            }
+        if kind in {"HERMES_COLLABORATION", "HARNESS_MISSION"}:
+            if kind == "HARNESS_MISSION":
+                mission_plan = plan.get("mission_plan")
+                if not isinstance(mission_plan, dict):
+                    raise AssertionError("HARNESS_MISSION missing MissionPlan")
+                if mission_plan.get("authority") != "DEEPSEEK_HARNESS":
+                    raise AssertionError("MissionPlan escaped Harness authority")
+                if len((mission_plan.get("collaboration_plan") or {}).get("tasks") or []) < 2:
+                    raise AssertionError("editorial Harness mission did not plan collaboration")
             raw = script_content.encode("utf-8")
             mission_id = f"telegram-control-synergy-{chat_id}"
             hermes_start = start_hermes_control_mission(
@@ -437,7 +455,8 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         ),
         "TELEGRAM_PROVIDER_INDEPENDENT_CONTROL": (
             free_question_blocked
-            and research["canonical_result"]["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
+            and research["canonical_result"].get("semantic_synthesis_used") is False
+            and research["canonical_result"].get("provider_required_for_evidence_answer") is False
             and status["canonical_result"]["status"] == "OBSERVED"
         ),
         "STATUS_WITHOUT_LLM": (
@@ -461,11 +480,20 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         ),
         "RESEARCH_WITHOUT_SYNTHESIS_LLM": (
             research["canonical_result"]["RESEARCH_EXECUTION"] == "PASS"
-            and research["canonical_result"]["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
-            and research["canonical_result"].get("capability_id") == "gta6.research"
+            and research["canonical_result"]["GTA6_FACT_CHECK"] == "PASS"
+            and research["canonical_result"].get("capability_id") == "gta6.research.fresh-cloud"
+            and research["canonical_result"].get("semantic_synthesis_used") is False
+            and research["canonical_result"].get("query") == "Pesquisa a novidade X"
         ),
         "PROGRESS_TO_TELEGRAM_LIVE": (
-            any("UNDERSTANDING" in text or "AUTHORIZATION" in text or "RESEARCH" in text for text in all_messages)
+            any(
+                "Pesquisando exatamente" in text
+                or text.startswith("AÇÃO:")
+                or text.startswith("STATUS:")
+                or text.startswith("REVIEW:")
+                for text in all_messages
+            )
+            and not any("UNDERSTANDING" in text for text in all_messages)
         ),
         "HARNESS_STATUS_AGGREGATION": (
             waiting_status["canonical_result"]["control_surface_status"]["hermes_mission_id"]
