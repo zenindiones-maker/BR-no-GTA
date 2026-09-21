@@ -68,11 +68,46 @@ def _authorization_matches_context(
         return True
     if mission_id and str(lineage.get("mission_id") or "") == str(mission_id):
         return True
-    if goal_id and str(lineage.get("goal_id") or "") == str(goal_id):
-        return True
     if run_id and str(lineage.get("run_id") or lineage.get("workflow_run_id") or "") == str(run_id):
         return True
+    if goal_id and str(lineage.get("goal_id") or "") == str(goal_id):
+        return True
     return False
+
+
+def _authorization_is_strong_active_evidence(
+    record: dict[str, Any] | None,
+    *,
+    mission_id: Any,
+    run_id: Any,
+    execution_id: Any,
+    authorization_id: Any,
+) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("status") or "").casefold() != "active":
+        return False
+    lineage = record.get("lineage")
+    lineage = lineage if isinstance(lineage, dict) else {}
+    return bool(
+        (
+            authorization_id
+            and str(record.get("authorization_id") or "") == str(authorization_id)
+        )
+        or (
+            execution_id
+            and str(record.get("execution_id") or "") == str(execution_id)
+        )
+        or (
+            mission_id
+            and str(lineage.get("mission_id") or "") == str(mission_id)
+        )
+        or (
+            run_id
+            and str(lineage.get("run_id") or lineage.get("workflow_run_id") or "")
+            == str(run_id)
+        )
+    )
 
 
 def derive_operational_activity_evidence(
@@ -138,9 +173,12 @@ def derive_operational_activity_evidence(
             relevant_authorization = item
             break
 
-    active_authorization = bool(
-        isinstance(relevant_authorization, dict)
-        and str(relevant_authorization.get("status") or "").casefold() == "active"
+    active_authorization = _authorization_is_strong_active_evidence(
+        relevant_authorization,
+        mission_id=mission_id,
+        run_id=result_run_id,
+        execution_id=execution_id,
+        authorization_id=authorization_id,
     )
     canonical_result_active = bool(
         result_status in _ACTIVE_RESULT_STATUSES
