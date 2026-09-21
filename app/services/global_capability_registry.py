@@ -20,12 +20,6 @@ from app.services.media_analysis_cloud_service import (
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
     MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
 )
-from app.services.obsidian_memory_service import (
-    OBSIDIAN_EXPORT_CAPABILITY_ID,
-    OBSIDIAN_EXPORT_EXECUTOR_BINDING,
-    OBSIDIAN_INBOX_CAPABILITY_ID,
-    OBSIDIAN_INBOX_EXECUTOR_BINDING,
-)
 
 AGENT_OFFICE_RECORD = CapabilityRecord(
     capability_id="agent-office.execute",
@@ -676,7 +670,7 @@ MEDIA_ANALYSIS_CLOUD_RECORD = CapabilityRecord(
 )
 
 OBSIDIAN_INBOX_RECORD = CapabilityRecord(
-    capability_id=OBSIDIAN_INBOX_CAPABILITY_ID,
+    capability_id="memory.obsidian.inbox.ingest",
     capability_type="EXECUTOR",
     domain="human-memory",
     implementation="Harness-governed deterministic Obsidian Inbox human-note ingestion",
@@ -703,7 +697,7 @@ OBSIDIAN_INBOX_RECORD = CapabilityRecord(
     quality_class="BOUNDED_MARKDOWN_PROVENANCE_FAIL_CLOSED",
     evidence_contract="HarnessEpisode + CANDIDATE harness_memory + canonical HumanDecision",
     fallback_eligibility=False,
-    executor_binding=OBSIDIAN_INBOX_EXECUTOR_BINDING,
+    executor_binding="app.services.obsidian_memory_service.execute_obsidian_inbox_capability",
     version="1",
     provider_id="internal",
     agent_id="obsidian-inbox-ingress",
@@ -716,7 +710,7 @@ OBSIDIAN_INBOX_RECORD = CapabilityRecord(
 )
 
 OBSIDIAN_EXPORT_RECORD = CapabilityRecord(
-    capability_id=OBSIDIAN_EXPORT_CAPABILITY_ID,
+    capability_id="memory.obsidian.export",
     capability_type="EXECUTOR",
     domain="human-memory",
     implementation="Deterministic published-memory Markdown projection from canonical BR SQLite",
@@ -741,7 +735,7 @@ OBSIDIAN_EXPORT_RECORD = CapabilityRecord(
     quality_class="DETERMINISTIC_HUMAN_READABLE_PROJECTION",
     evidence_contract="obsidian-memory-export/v1 manifest",
     fallback_eligibility=False,
-    executor_binding=OBSIDIAN_EXPORT_EXECUTOR_BINDING,
+    executor_binding="app.services.obsidian_memory_service.execute_obsidian_export_capability",
     version="1",
     provider_id="internal",
     agent_id="obsidian-memory-publisher",
