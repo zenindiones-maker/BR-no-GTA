@@ -1,5 +1,6 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "06534df8c368195cede82f853640cbb827879423",
-  "scope": "memory-delta-hermes-obsidian-telegram-safety"
+  "source_head": "2ff6236f206304c31d900d953f894e3018a535de",
+  "scope": "memory-delta-hermes-obsidian-telegram-safety",
+  "retry_for": "provider-free-memory-recall-dispatch"
 }
