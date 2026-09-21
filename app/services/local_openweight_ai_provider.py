@@ -17,6 +17,24 @@ LOCAL_OPENWEIGHT_OLLAMA_VERSION = "0.34.2"
 
 _SEMANTIC_PLANNER_NUM_PREDICT = 900
 _SEMANTIC_CONTEXT_BUCKETS = (8192, 12288, 16384, 24576, 32768)
+_SEMANTIC_PLANNER_PROFILE_BUDGETS = (256, 384, 512, 900)
+
+
+def semantic_planner_num_predict() -> int:
+    raw = str(os.getenv("BR_LOCAL_SEMANTIC_NUM_PREDICT") or "").strip()
+    if not raw:
+        return _SEMANTIC_PLANNER_NUM_PREDICT
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise AIProviderError(
+            "Invalid bounded local semantic output budget."
+        ) from exc
+    if value not in _SEMANTIC_PLANNER_PROFILE_BUDGETS:
+        raise AIProviderError(
+            "Local semantic output budget is outside profiled bounds."
+        )
+    return value
 
 
 def _seconds_from_ns(value):
@@ -88,7 +106,7 @@ class OllamaLocalAIProvider:
 
         structured_planner = _is_structured_semantic_planner_prompt(value)
         if structured_planner:
-            num_predict = _SEMANTIC_PLANNER_NUM_PREDICT
+            num_predict = semantic_planner_num_predict()
             num_ctx, prompt_token_estimate = _semantic_context_window(
                 value,
                 num_predict=num_predict,
