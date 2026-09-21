@@ -55,6 +55,9 @@ class CodexAuthPreflight:
     auth_timeout_path_repeated: bool
     lease: CodexAuthLease | None
     reason: str
+    local_codex_auth_context: str = "SEPARATE_USER_CONTEXT"
+    cloud_runner_codex_auth_context: str = "EPHEMERAL_RUNNER"
+    missing_auth_configuration: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -218,9 +221,21 @@ def classify_codex_auth(
 
     federation_rule = source.get("OPENAI_FEDERATION_RULE_ID", "").strip()
     identity_file = source.get("OPENAI_IDENTITY_TOKEN_FILE", "").strip()
-    if bool(federation_rule) != bool(identity_file):
+    configured_audience = source.get("OPENAI_FEDERATION_AUDIENCE", "").strip()
+    missing_configuration: list[str] = []
+    if not federation_rule:
+        missing_configuration.append("OPENAI_FEDERATION_RULE_ID")
+    if not identity_file:
+        missing_configuration.append("OPENAI_IDENTITY_TOKEN_FILE")
+    if not configured_audience and not identity_file:
+        # The workflow needs the audience only to mint the GitHub OIDC token file.
+        missing_configuration.append("OPENAI_FEDERATION_AUDIENCE")
+    if missing_configuration:
         auth_state = AUTH_BLOCKED
-        reason = "workload identity configuration is incomplete"
+        reason = (
+            "cloud runner has no reusable Codex workload identity configuration; "
+            "this does not invalidate or disconnect the human's existing local Codex session"
+        )
     elif state.cost_class == "paid_api":
         auth_state = AUTH_BLOCKED
         reason = "paid API authentication is not eligible under ZERO_COST_OPERATION"
@@ -249,6 +264,7 @@ def classify_codex_auth(
         auth_timeout_path_repeated=False,
         lease=None,
         reason=reason,
+        missing_auth_configuration=tuple(missing_configuration),
     )
 
 
