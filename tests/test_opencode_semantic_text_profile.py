@@ -81,18 +81,13 @@ def test_external_provider_keeps_documented_standalone_ci_mode():
     assert command[:3] == ["opencode", "run", "--standalone"]
     assert mode == "standalone"
 
-def test_semantic_v3_uses_dedicated_primary_agent_one_step_and_deny_all():
+def test_semantic_v3_preserves_builtin_build_and_uses_global_deny_all():
     config = semantic_text_only_config()
     assert config["default_agent"] == OPENCODE_SEMANTIC_AGENT_ID
-    agent = config["agents"][OPENCODE_SEMANTIC_AGENT_ID]
-    assert agent["mode"] == "primary"
-    assert agent["steps"] == 1
-    assert "system" not in agent
-    assert "description" not in agent
-    assert agent["permissions"] == [
+    assert "agents" not in config
+    assert config["permissions"] == [
         {"action": "*", "resource": "*", "effect": "deny"}
     ]
-    assert config["permissions"] == agent["permissions"]
 
 
 def test_semantic_inline_config_is_actually_injected_into_process_env():
@@ -100,7 +95,10 @@ def test_semantic_inline_config_is_actually_injected_into_process_env():
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
     assert env["PATH"] == "/bin"
     assert config["default_agent"] == "build"
-    assert config["agents"]["build"]["steps"] == 1
+    assert "agents" not in config
+    assert config["permissions"] == [
+        {"action": "*", "resource": "*", "effect": "deny"}
+    ]
 
 
 def test_v2_profile_is_fail_closed_after_confirmed_tool_use():
@@ -125,7 +123,7 @@ def test_v3_profile_is_a_distinct_candidate_identity():
     assert profile["version"] == "v3"
     assert options["semantic_profile"] == OPENCODE_SEMANTIC_PROFILE_VERSION
     assert options["semantic_agent"] == OPENCODE_SEMANTIC_AGENT_ID
-    assert options["semantic_steps"] == 1
+    assert options["semantic_steps"] is None
     assert options["semantic_contract"] == OPENCODE_SEMANTIC_CONTRACT
     assert options["status"] == "CANDIDATE_ROOT_CAUSE_FIX"
 
