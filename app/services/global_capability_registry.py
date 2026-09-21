@@ -20,6 +20,12 @@ from app.services.media_analysis_cloud_service import (
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
     MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
 )
+from app.services.obsidian_memory_service import (
+    OBSIDIAN_EXPORT_CAPABILITY_ID,
+    OBSIDIAN_EXPORT_EXECUTOR_BINDING,
+    OBSIDIAN_INBOX_CAPABILITY_ID,
+    OBSIDIAN_INBOX_EXECUTOR_BINDING,
+)
 
 AGENT_OFFICE_RECORD = CapabilityRecord(
     capability_id="agent-office.execute",
@@ -669,6 +675,84 @@ MEDIA_ANALYSIS_CLOUD_RECORD = CapabilityRecord(
     side_effects=("GitHub Actions workflow dispatch",),
 )
 
+OBSIDIAN_INBOX_RECORD = CapabilityRecord(
+    capability_id=OBSIDIAN_INBOX_CAPABILITY_ID,
+    capability_type="EXECUTOR",
+    domain="human-memory",
+    implementation="Harness-governed deterministic Obsidian Inbox human-note ingestion",
+    input_contract="small Markdown human_note + explicit target/goal lineage",
+    output_contract="canonical HumanDecision + HarnessEpisode + gated MemoryCandidate",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "exact Global Capability Registry executor binding",
+        "bounded Markdown input",
+        "no Android vault write from cloud",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("memory", "obsidian", "human-note", "learning", "inbox", "zero-cost"),
+    security_boundary=(
+        "Obsidian is input/projection only. DeepSeek Harness remains sole authority; "
+        "ingestion may create a canonical human decision and CANDIDATE memory only, "
+        "never ACTIVE memory, model execution, publication, media work or Android vault mutation."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="BOUNDED_MARKDOWN_PROVENANCE_FAIL_CLOSED",
+    evidence_contract="HarnessEpisode + CANDIDATE harness_memory + canonical HumanDecision",
+    fallback_eligibility=False,
+    executor_binding=OBSIDIAN_INBOX_EXECUTOR_BINDING,
+    version="1",
+    provider_id="internal",
+    agent_id="obsidian-inbox-ingress",
+    side_effects=("canonical Learning Plane append",),
+    authority="DEEPSEEK_HARNESS",
+    memory_write="CANDIDATE_ONLY",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+)
+
+OBSIDIAN_EXPORT_RECORD = CapabilityRecord(
+    capability_id=OBSIDIAN_EXPORT_CAPABILITY_ID,
+    capability_type="EXECUTOR",
+    domain="human-memory",
+    implementation="Deterministic published-memory Markdown projection from canonical BR SQLite",
+    input_contract="canonical Learning Plane state + bounded project/system selectors",
+    output_contract="small obsidian-memory-export Markdown package + manifest",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "exact Global Capability Registry executor binding",
+        "cloud artifact output path",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=("memory", "obsidian", "projection", "markdown", "zero-cost"),
+    security_boundary=(
+        "Read-only projection of canonical memory. Cannot write Android storage, promote memory, "
+        "change HumanDecision, execute agents, render media or publish externally."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_HUMAN_READABLE_PROJECTION",
+    evidence_contract="obsidian-memory-export/v1 manifest",
+    fallback_eligibility=False,
+    executor_binding=OBSIDIAN_EXPORT_EXECUTOR_BINDING,
+    version="1",
+    provider_id="internal",
+    agent_id="obsidian-memory-publisher",
+    side_effects=("workflow artifact Markdown write",),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+)
+
 _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
@@ -694,6 +778,8 @@ for _record in (
     SYSTEM_IMPROVEMENT_RECORD,
     GTA6_BRAIN_DECISION_RECORD,
     MEDIA_ANALYSIS_CLOUD_RECORD,
+    OBSIDIAN_INBOX_RECORD,
+    OBSIDIAN_EXPORT_RECORD,
     *_YOUTUBE_DEPARTMENT_RECORDS,
 ):
     if _record.capability_id in _REGISTRY._by_id:
