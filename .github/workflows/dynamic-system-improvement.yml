@@ -89,17 +89,30 @@ jobs:
           test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
           echo "HERMES_UPSTREAM_PINNED=PASS"
 
-      - name: Bootstrap bounded Codex Agent Office runtime
+      - name: Prepare isolated Codex home
+        working-directory: target
+        run: |
+          set -euo pipefail
+          codex_home="$RUNNER_TEMP/br-dynamic-system-improvement-codex-$GITHUB_RUN_ID"
+          install -d -m 700 "$codex_home"
+          echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
+          echo "CODEX_HOME_ISOLATED=PASS"
+
+      - name: Install bounded Codex tooling
         working-directory: target
         run: |
           set -euo pipefail
           bash scripts/agent-tooling/bootstrap.sh codex
-          codex_home="$RUNNER_TEMP/br-dynamic-system-improvement-codex-$GITHUB_RUN_ID"
-          install -d -m 700 "$codex_home"
-          echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
+          echo "CODEX_TOOLING_BOOTSTRAP=PASS"
+
+      - name: Prepare and prove Codex sandbox
+        working-directory: target
+        run: |
+          set -euo pipefail
+          command -v codex
+          codex --version
           bash scripts/prepare_codex_linux_sandbox.sh
           python scripts/codex_sandbox_preflight.py             --repository-root "$GITHUB_WORKSPACE/target"             --output artifacts/dynamic-system-improvement/codex-sandbox-preflight.json
-          codex --version
           echo "AGENT_OFFICE_RUNTIME=PASS"
 
       - name: Trusted Codex authentication bootstrap
