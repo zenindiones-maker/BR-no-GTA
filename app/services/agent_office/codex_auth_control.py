@@ -299,9 +299,18 @@ def write_checkpoint(path: Path, checkpoint: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(dict(checkpoint), ensure_ascii=False, indent=2, sort_keys=True)
     lowered = text.lower()
-    for forbidden in ("access_token", "refresh_token", "api_key", "user_code", "credential":"):
+    for forbidden in (
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "user_code",
+        "\"password\"",
+        "\"secret\"",
+    ):
         if forbidden in lowered:
             raise PermissionError("auth checkpoint contains forbidden credential material")
+    if '"credential_material_persisted": true' in lowered:
+        raise PermissionError("auth checkpoint persisted credential material")
     path.write_text(text + "\n", encoding="utf-8")
 
 
