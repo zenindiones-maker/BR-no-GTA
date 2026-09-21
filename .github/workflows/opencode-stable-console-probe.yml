@@ -37,9 +37,7 @@ jobs:
           {
             "$schema": "https://opencode.ai/config.json",
             "default_agent": "build",
-            "permissions": [
-              {"action": "*", "resource": "*", "effect": "deny"}
-            ]
+            "permission": "deny"
           }
           JSON
           export OPENCODE_CONFIG="$PWD/artifacts/opencode-stable-probe/opencode.json"
