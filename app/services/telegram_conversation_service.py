@@ -783,7 +783,7 @@ def handle_telegram_conversation(
                     "execution_id": synthesis.get("execution_id"),
                 },
             }
-    elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY"}:
+    elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY", "HERMES_COLLABORATION"}:
         update_conversation_state(
             telegram_chat_id,
             execution_status="RUNNING",
