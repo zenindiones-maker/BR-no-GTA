@@ -1,4 +1,4 @@
-# Live proof retry after observed evidence-ref dedup.
+# Live proof retry after zero-fetch gate fix.
 name: Continuous Operation Live Proof
 
 on:
