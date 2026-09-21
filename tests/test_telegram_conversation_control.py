@@ -8,6 +8,7 @@ from app.database.telegram_conversation_repository import (
     list_recent_telegram_progress_events,
     update_conversation_state,
 )
+from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.telegram_conversation_service import (
     classify_conversation_intent,
     handle_telegram_conversation,
@@ -844,3 +845,215 @@ def test_broad_gta6_information_goal_is_not_downgraded_to_generic_chat():
     assert plan["query"] == "Tudo sobre gta 6"
     assert plan["capability_id"] == "gta6.research.fresh-cloud"
     assert plan["goal_envelope"]["mission_class"] == "GTA6_INTELLIGENCE"
+
+
+
+def test_literal_conhecimento_uses_context_before_provider():
+    chat_id = 12001
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        current_subject="GTA 6",
+    )
+    calls = {"chat": 0, "action": 0}
+
+    def chat_handler(*_args, **_kwargs):
+        calls["chat"] += 1
+        raise AssertionError('literal "Conhecimento" must not call semantic provider')
+
+    def action_executor(*_args, **_kwargs):
+        calls["action"] += 1
+        raise AssertionError('literal "Conhecimento" must not dispatch execution')
+
+    result = handle_telegram_conversation(
+        "Conhecimento",
+        telegram_chat_id=chat_id,
+        telegram_user_id=777001,
+        telegram_chat_type="private",
+        telegram_message_id=1200101,
+        chat_handler=chat_handler,
+        action_executor=action_executor,
+        presenter=_presenter,
+    )
+    assert result["intent"] == "KNOWLEDGE_RECALL_REQUEST"
+    assert result["plan"]["kind"] == "KNOWLEDGE_RECALL"
+    assert result["intent_resolution"]["layer"] == "LAYER_2_CONTEXT"
+    assert result["canonical_result"]["provider_independent"] is True
+    assert result["canonical_result"]["provider_calls"] == 0
+    assert "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE" not in result["answer"]
+    assert calls == {"chat": 0, "action": 0}
+
+
+def test_literal_memoria_recalls_canonical_human_decision_provider_free():
+    chat_id = 12002
+    goal_id = "goal-memory-literal"
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id=goal_id,
+        current_subject="VIDEO A",
+    )
+    decision = record_canonical_human_decision(
+        decision_type="INSTRUCTION",
+        source_surface="telegram",
+        source_ref="telegram-turn:literal-memory-seed",
+        content="Não produzir nova voz antes da revisão do roteiro.",
+        evidence_refs=("telegram-turn:literal-memory-seed",),
+        goal_id=goal_id,
+        task_id="script-human-review",
+        artifact_ref="script:8",
+    )
+
+    result = handle_telegram_conversation(
+        "Memória",
+        telegram_chat_id=chat_id,
+        telegram_user_id=777002,
+        telegram_chat_type="private",
+        telegram_message_id=1200201,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError('literal "Memória" must not call provider')
+        ),
+        action_executor=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError('literal "Memória" must not execute action')
+        ),
+        presenter=_presenter,
+    )
+    assert result["intent"] == "MEMORY_RECALL_REQUEST"
+    assert result["plan"]["kind"] == "MEMORY_RECALL"
+    assert result["canonical_result"]["provider_independent"] is True
+    assert decision["decision_id"] in {
+        item["decision_id"]
+        for item in result["canonical_result"]["human_decisions"]
+    }
+
+
+def test_literal_continua_resolves_against_active_goal_without_provider():
+    chat_id = 12003
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-continue-literal",
+        active_task="existing governed task",
+    )
+    seen = {}
+
+    def action_executor(plan, state, message):
+        seen["plan"] = dict(plan)
+        return {
+            "status": "COMPLETED",
+            "answer": "Retomada governada.",
+            "goal_id": state["active_goal_id"],
+        }
+
+    result = handle_telegram_conversation(
+        "Continua",
+        telegram_chat_id=chat_id,
+        telegram_user_id=777003,
+        telegram_chat_type="private",
+        telegram_message_id=1200301,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError('"Continua" must not use provider')
+        ),
+        action_executor=action_executor,
+        presenter=_presenter,
+    )
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert seen["plan"]["kind"] == "CONTINUE"
+    assert seen["plan"]["active_goal_id"] == "goal-continue-literal"
+
+
+def test_literal_melhora_sistema_enters_harness_mission_planner_without_provider():
+    chat_id = 12004
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-system-health-literal",
+        current_subject="sistema BR-no-GTA",
+    )
+    seen = {}
+
+    def action_executor(plan, _state, _message):
+        seen["plan"] = dict(plan)
+        return {
+            "status": "RUNNING",
+            "answer": "Missão governada despachada.",
+            "mission_id": plan["mission_plan"]["mission_id"],
+        }
+
+    result = handle_telegram_conversation(
+        "Melhora o sistema",
+        telegram_chat_id=chat_id,
+        telegram_user_id=777004,
+        telegram_chat_type="private",
+        telegram_message_id=1200401,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError('"Melhora o sistema" must reach Mission Planner before provider')
+        ),
+        action_executor=action_executor,
+        presenter=_presenter,
+    )
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert result["intent_resolution"]["layer"] == "LAYER_3_MISSION_PLANNER"
+    assert seen["plan"]["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert seen["plan"]["mission_plan"]["goal"]["mission_class"] == "SYSTEM_IMPROVEMENT"
+
+
+def test_natural_agent_phrase_needs_no_hermes_keyword():
+    chat_id = 12005
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-latency-literal",
+        current_subject="sistema lento",
+    )
+    seen = {}
+
+    def action_executor(plan, _state, _message):
+        seen["plan"] = dict(plan)
+        return {"status": "RUNNING", "answer": "Equipe mínima selecionada."}
+
+    literal = "Chama os agentes pra descobrir por que está lento"
+    result = handle_telegram_conversation(
+        literal,
+        telegram_chat_id=chat_id,
+        telegram_user_id=777005,
+        telegram_chat_type="private",
+        telegram_message_id=1200501,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("natural system goal must not default to provider")
+        ),
+        action_executor=action_executor,
+        presenter=_presenter,
+    )
+    assert result["intent"] == "EXECUTION_REQUEST"
+    assert seen["plan"]["mission_plan"]["goal"]["mission_class"] == "SYSTEM_IMPROVEMENT"
+    assert "Hermes" not in literal
+    assert len(seen["plan"]["mission_plan"]["collaboration_plan"]["tasks"]) >= 2
+
+
+def test_explicit_guarda_is_governed_memory_candidate_not_auto_promotion():
+    chat_id = 12006
+    update_conversation_state(
+        chat_id,
+        active_project="BR-no-GTA",
+        active_goal_id="goal-governed-memory-write",
+        current_subject="VIDEO A",
+        active_artifact="script:8",
+    )
+    result = handle_telegram_conversation(
+        "Guarda isso na memória.",
+        telegram_chat_id=chat_id,
+        telegram_user_id=777006,
+        telegram_chat_type="private",
+        telegram_message_id=1200601,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("explicit memory write must not call provider")
+        ),
+        presenter=_presenter,
+    )
+    assert result["intent"] == "MEMORY_WRITE_REQUEST"
+    assert result["plan"]["kind"] == "MEMORY_CANDIDATE"
+    assert result["canonical_result"]["status"] == "MEMORY_CANDIDATE_CREATED"
+    assert result["canonical_result"]["memory_candidate"]["status"] == "CANDIDATE"
+    assert result["canonical_result"]["CANONICAL_AUTO_PROMOTION"] == "NO"
+    assert result["canonical_result"]["HARNESS_EVALUATION_REQUIRED"] == "PASS"
