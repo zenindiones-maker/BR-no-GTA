@@ -183,3 +183,34 @@ def test_provider_failure_does_not_trigger_silent_fallback(monkeypatch):
     assert evidence.status == "FAILED"
     assert calls == ["nvidia", "Teste"]
     assert evidence.routing["fallback_occurred"] is False
+
+
+
+def test_provider_constructor_integrity_error_is_captured_as_evidence(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "opencode",
+        model_id="oc/big-pickle",
+    )
+
+    def failing_selector(*, provider_name, authorization):
+        assert provider_name == "opencode"
+        assert authorization.authority == "deepseek_harness"
+        raise PermissionError(
+            "active OpenCode executor profile checksum does not match executable code"
+        )
+
+    evidence = execute_harness_ai_generation(
+        provider_name="opencode",
+        prompt="Teste",
+        authorization=auth("opencode"),
+        selector=failing_selector,
+    )
+
+    assert evidence.status == "FAILED"
+    assert evidence.active is False
+    assert evidence.provider == "opencode"
+    assert evidence.error["code"] == "provider_profile_integrity_mismatch"
+    assert evidence.error["failure_pattern"] == "opencode_profile_integrity_mismatch"
+    assert evidence.error["retryable"] is False
+    assert "checksum does not match executable code" in evidence.error["message"]
