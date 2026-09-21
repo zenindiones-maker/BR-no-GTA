@@ -1,6 +1,6 @@
 {
   "request": "opencode-stable-console-admission-probe",
-  "source_head": "f1fc4d16ade9be5abb0c3cbd56c19a7b5f54d7c2",
+  "source_head": "e40c44ea3b01a5090f2db5306150df61328f3ae8",
   "comparison": {
     "failing_package": "@opencode/cli@2.0.8",
     "failing_runs": [
@@ -12,5 +12,7 @@
     "model": "opencode/big-pickle",
     "agent": "build",
     "permissions": "deny-all"
-  }
+  },
+  "attempt": 2,
+  "change": "stable V1 permission=deny"
 }
