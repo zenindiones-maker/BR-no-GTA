@@ -24,6 +24,7 @@ from app.services.harness_routing_policy_service import HarnessRoutingRequest, r
 from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.obsidian_memory_service import export_obsidian_memory_projection
 from app.services.telegram_conversation_service import handle_telegram_conversation
+from scripts import continuous_intelligence_cycle as continuous_cycle
 
 
 GOAL = "goal-continuous-test"
@@ -264,3 +265,54 @@ def test_obsidian_human_decision_is_recalled_by_telegram_without_provider():
         for item in result["canonical_result"]["human_decisions"]
     }
     assert "Não produzir nova voz" in result["canonical_result"]["answer"]
+
+
+
+def test_scheduled_entrypoint_contract_runs_main_without_checks_keyerror(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(continuous_cycle, "_is_due", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_failure_prevention",
+        lambda: {
+            "FAILURE_MEMORY_RETRIEVAL": "PASS",
+            "FAILURE_RECURRENCE_PREVENTION": "PASS",
+            "brain_semantic_task": "SKIPPED_KNOWN_UNCHANGED_PROVIDER_BLOCKER",
+            "failure_memory_id": "memory-opencode-403-test",
+        },
+    )
+    artifact_dir = tmp_path / "scheduled"
+    upstream_root = tmp_path / "hermes-upstream"
+    upstream_root.mkdir()
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "continuous_intelligence_cycle.py",
+            "--artifact-dir",
+            str(artifact_dir),
+            "--upstream-root",
+            str(upstream_root),
+            "--target-sha",
+            "a" * 40,
+            "--trigger-kind",
+            "schedule",
+            "--mode",
+            "scheduled",
+        ],
+    )
+
+    assert continuous_cycle.main() == 0
+    output = capsys.readouterr().out
+    assert "CONTINUOUS_OPERATION=PASS" in output
+    assert "SCHEDULED_ENTRYPOINT_CONTRACT=PASS" in output
+    report = __import__("json").loads(
+        (artifact_dir / "continuous-cycle.json").read_text(encoding="utf-8")
+    )
+    assert report["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
+    assert report["due"] == {
+        "gta6": False,
+        "daily": False,
+        "improvement": False,
+        "weekly": False,
+    }
