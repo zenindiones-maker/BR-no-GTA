@@ -1,0 +1,17 @@
+{
+  "request": "telegram-natural-interaction-provider-last-validation",
+  "source_head": "ebc0f45f492b9f8fb0d42046f8e66ce4186108a8",
+  "literal_inputs": [
+    "Conhecimento",
+    "Memória",
+    "Onde estamos?",
+    "Continua",
+    "Melhora o sistema",
+    "Chama os agentes pra descobrir por que está lento"
+  ],
+  "scope": "literal-short-controls-mission-router-memory-gate-workflow-fanout",
+  "no_voice": true,
+  "no_render": true,
+  "no_upload": true,
+  "no_publication": true
+}
