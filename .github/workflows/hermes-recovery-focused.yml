@@ -49,7 +49,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_hermes_multiagent_boundary.py             tests/test_hermes_kanban_live_core.py             --junitxml=artifacts/hermes-recovery-focused/focused.xml
+          python -m pytest -q             tests/test_hermes_real_agent_synergy.py             tests/test_hermes_multiagent_boundary.py             tests/test_hermes_kanban_live_core.py             tests/test_opencode_semantic_text_profile.py             --junitxml=artifacts/hermes-recovery-focused/focused.xml
           echo "ROOT_TASK_READY=PASS"
           echo "DEPENDENCY_GATING=PASS"
           echo "DISPATCH_CLAIM=PASS"
