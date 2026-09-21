@@ -316,6 +316,27 @@ def plan_natural_language_action(
                 "active_goal_id": state.get("active_goal_id"),
                 "active_task": state.get("active_task"),
             }
+        system_improvement_goal = (
+            any(term in text for term in (
+                "sistema", "pipeline", "processo", "execucao", "execução",
+                "demorando", "lentidao", "lentidão", "desempenho", "performance",
+                "desperdicio", "desperdício", "retry", "latencia", "latência",
+            ))
+            and any(term in text for term in (
+                "analisa", "analise", "descobre", "descubra", "investiga", "investigue",
+                "corrige", "corrija", "melhora", "melhore", "otimiza", "otimize",
+            ))
+        )
+        if system_improvement_goal:
+            return {
+                "kind": "SYSTEM_IMPROVEMENT_MISSION",
+                "authorized_action": "DEVELOPMENT",
+                "capability_id": "system.improvement.propose",
+                "artifact_ref": resolved_reference or state.get("active_artifact"),
+                "active_goal_id": state.get("active_goal_id"),
+                "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
+                "collaboration_runtime": "HERMES_WHEN_MULTI_AGENT_REQUIRED",
+            }
         if (
             any(term in text for term in ("com a equipe", "pela equipe", "hermes"))
             or (
@@ -457,6 +478,17 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
 
         return resume_telegram_hermes_mission(
             pending_action=plan,
+            state=state,
+            message=message,
+        )
+
+    if plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION":
+        from app.services.telegram_system_improvement_dispatch_service import (
+            dispatch_telegram_system_improvement_mission,
+        )
+
+        return dispatch_telegram_system_improvement_mission(
+            plan=plan,
             state=state,
             message=message,
         )
