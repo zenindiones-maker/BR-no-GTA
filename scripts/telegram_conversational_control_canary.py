@@ -331,6 +331,11 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     )
 
     waiting_state = get_or_create_conversation_state(chat_id)
+    waiting_pending_action = waiting_state.get("pending_action")
+    if not isinstance(waiting_pending_action, dict):
+        raise RuntimeError(
+            "PENDING_ACTION_PERSISTED=FAIL: WAITING_FOR_HUMAN state lost pending_action"
+        )
     waiting_status = _live(
         api,
         chat_id=chat_id,
@@ -341,9 +346,25 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         ),
     )
 
+    after_status_state = get_or_create_conversation_state(chat_id)
+    after_status_pending_action = after_status_state.get("pending_action")
+    if not isinstance(after_status_pending_action, dict):
+        raise RuntimeError(
+            "PENDING_ACTION_RELOADED=FAIL: read-only status consumed pending_action"
+        )
+
     # Simulated process restart: new API/reporter objects, state only from SQLite.
+    # The repository opens a fresh SQLite connection for every load, so this
+    # exercises durable reload rather than an in-memory cache.
     restarted_api = FakeTelegramApi()
     restored = get_or_create_conversation_state(chat_id)
+    restored_pending_action = restored.get("pending_action")
+    if not isinstance(restored_pending_action, dict):
+        raise RuntimeError(
+            "PENDING_ACTION_RELOADED=FAIL: restart reload returned no pending_action"
+        )
+    restored_mission_id = str(restored_pending_action.get("mission_id") or "")
+    restored_task_id = str(restored_pending_action.get("task_id") or "")
     resumed = _live(
         restarted_api,
         chat_id=chat_id,
@@ -368,6 +389,7 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         free_question_blocked = True
 
     final_state = get_or_create_conversation_state(chat_id)
+    pending_action_consumed_after_resume = final_state.get("pending_action") is None
     decisions = list_recent_human_decisions(chat_id, limit=20)
     all_messages = api.human_facing + restarted_api.human_facing
     start_audit = list((hermes_start or {}).get("authorization_audit") or ())
@@ -446,6 +468,35 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
             and any(text.startswith("AGUARDANDO VOCÊ:") for text in all_messages)
             and any(text.startswith("RESULTADO:") for text in all_messages)
         ),
+        "PENDING_ACTION_PERSISTED": (
+            waiting_pending_action.get("mission_id") == f"telegram-control-synergy-{chat_id}"
+            and waiting_pending_action.get("task_id") == "production-management"
+        ),
+        "PENDING_ACTION_RELOADED": (
+            after_status_pending_action == waiting_pending_action
+            and restored_pending_action == waiting_pending_action
+        ),
+        "MISSION_ID_PRESERVED": (
+            restored_mission_id == f"telegram-control-synergy-{chat_id}"
+            and resumed["canonical_result"].get("mission_id") == restored_mission_id
+        ),
+        "TASK_ID_PRESERVED": (
+            restored_task_id == "production-management"
+            and resumed["canonical_result"].get("task_id") == restored_task_id
+        ),
+        "APPROVAL_AFTER_RESTART": (
+            resumed["canonical_result"].get("approval_resumed_pending_action") is True
+            and any(
+                row.get("decision_type") == "APPROVAL"
+                for row in list_recent_human_decisions(chat_id, limit=20)
+            )
+        ),
+        "HERMES_RESUME_AFTER_RESTART": (
+            hermes_resume is not None
+            and bool(resume_prod)
+            and resume_prod[0]["status"] == "done"
+            and pending_action_consumed_after_resume
+        ),
         "HUMAN_BLOCK_RESUME_LIVE": (
             team["conversation_state"]["waiting_for_human"] is True
             and resumed["canonical_result"].get("approval_resumed_pending_action") is True
@@ -454,9 +505,12 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         ),
         "RESTART_CONTINUITY": (
             waiting_state["conversation_id"] == restored["conversation_id"]
-            and restored["pending_action"]["mission_id"] == f"telegram-control-synergy-{chat_id}"
-            and restored["pending_action"]["task_id"] == "production-management"
-            and resumed["canonical_result"]["mission_id"] == restored["pending_action"]["mission_id"]
+            and restored_pending_action == waiting_pending_action
+            and restored_mission_id == f"telegram-control-synergy-{chat_id}"
+            and restored_task_id == "production-management"
+            and resumed["canonical_result"].get("mission_id") == restored_mission_id
+            and resumed["canonical_result"].get("task_id") == restored_task_id
+            and pending_action_consumed_after_resume
         ),
         "HARNESS_AUTHORITY_PRESERVED": (
             all(row.get("authority") == "DEEPSEEK_HARNESS" for row in [*start_audit, *resume_audit])
