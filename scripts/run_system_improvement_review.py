@@ -261,6 +261,7 @@ def _bounded_context(snapshot: dict[str, Any], focus: str) -> dict[str, Any]:
         "focus": focus,
         "git_head": snapshot["git_head"],
         "registry": snapshot["registry"],
+        "capability_usage": snapshot.get("capability_usage", {}),
         "workflows": snapshot["workflows"],
         "hotspots": snapshot["hotspots"],
         "known_governed_performance_surfaces": snapshot[
