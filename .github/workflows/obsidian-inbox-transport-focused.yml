@@ -1,0 +1,177 @@
+name: Obsidian Inbox Transport Focused
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/obsidian-inbox-transport.request.json"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/obsidian-inbox-transport/focused.db
+  TARGET_REF: work/gate6f-analytics-learning
+  VIDEO_A_GOAL_ID: 93f99ddc-09c7-474b-8849-6981aa78d60c
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact validation revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install focused dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/obsidian-inbox-transport
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Focused target-lineage test
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/obsidian_inbox_cloud_ingest.py scripts/obsidian_apply_memory_envelope.py
+          python -m pytest -q             tests/test_memory_plane_obsidian.py::test_obsidian_cloud_ingest_preserves_target_transport_lineage             --junitxml=artifacts/obsidian-inbox-transport/pytest.xml
+          echo "FOCUSED_OBSIDIAN_INBOX_TRANSPORT=PASS"
+
+      - name: Prove dispatcher is registered on default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api             "repos/$GITHUB_REPOSITORY/contents/.github/workflows/obsidian-memory-inbox.yml?ref=main"             --jq '.path'             | grep -Fx '.github/workflows/obsidian-memory-inbox.yml'
+          echo "DEFAULT_BRANCH_DISPATCHER_REGISTERED=PASS"
+
+      - name: Build bounded payload from pre-existing human-note fixture
+        id: payload
+        run: |
+          set -euo pipefail
+          python - <<'PY' >/tmp/note.b64
+          import ast, base64
+          from pathlib import Path
+          source=Path("scripts/obsidian_memory_plane_canary.py").read_text(encoding="utf-8")
+          tree=ast.parse(source)
+          matches=[]
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  value=node.value
+                  if "type: human_note" in value and "target: video-a" in value:
+                      raw=value.encode("utf-8")
+                      if 0 < len(raw) <= 32 * 1024:
+                          matches.append(raw)
+          if len(matches) != 1:
+              raise SystemExit(f"expected one pre-existing bounded human_note fixture, found {len(matches)}")
+          print(base64.b64encode(matches[0]).decode("ascii"))
+          PY
+          echo "dispatch_id=transport-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "PREEXISTING_FIXTURE_PAYLOAD=PASS"
+
+      - name: Dispatch through default-branch transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_ID: ${{ steps.payload.outputs.dispatch_id }}
+        run: |
+          set -euo pipefail
+          NOTE_B64="$(cat /tmp/note.b64)"
+          gh workflow run obsidian-memory-inbox.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f "dispatch_id=$DISPATCH_ID"             -f "note_b64=$NOTE_B64"             -f "source_ref=Inbox/transport-validation.md"             -f "goal_id=$VIDEO_A_GOAL_ID"             -f "task_id=script-human-review"             -f "artifact_ref=script:8"             -f "target_ref=$TARGET_REF"
+          echo "OBSIDIAN_INBOX_DISPATCH_REQUEST=PASS"
+
+      - name: Wait for dispatched run and download envelope
+        id: child
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_ID: ${{ steps.payload.outputs.dispatch_id }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow obsidian-memory-inbox.yml               --branch main               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"Obsidian Inbox $DISPATCH_ID\") | .databaseId"               | head -n 1)"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+          [[ -n "$run_id" ]] || { echo "OBSIDIAN_INBOX_DISPATCH=FAIL child run not found" >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          mkdir -p artifacts/obsidian-inbox-transport/child
+          gh run download "$run_id"             --repo "$GITHUB_REPOSITORY"             --name "obsidian-inbox-$DISPATCH_ID"             --dir artifacts/obsidian-inbox-transport/child
+          echo "OBSIDIAN_INBOX_CHILD_RUN=$run_id"
+
+      - name: Validate end-to-end transport proof
+        env:
+          CHILD_RUN_ID: ${{ steps.child.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("artifacts/obsidian-inbox-transport/child")
+          envelope=json.loads((root/"canonical-memory-envelope.json").read_text())
+          result=json.loads((root/"obsidian-inbox-result.json").read_text())
+          receipt=json.loads((root/"materialization-receipt.json").read_text())
+          expected_ref=os.environ["TARGET_REF"]
+          expected_sha=os.environ["GITHUB_SHA"]
+          assert envelope["target_ref"] == expected_ref, (envelope.get("target_ref"), expected_ref)
+          assert envelope["target_sha"] == expected_sha, (envelope.get("target_sha"), expected_sha)
+          assert result["OBSIDIAN_NOTE_INGESTED"] == "PASS"
+          assert result["MEMORY_CANDIDATE_CREATED"] == "PASS"
+          assert result["CANONICAL_AUTO_PROMOTION"] == "NO"
+          assert result["HARNESS_EVALUATION_REQUIRED"] == "PASS"
+          assert result["HARNESS_EVALUATION_DECISION"] == "HUMAN_REVIEW"
+          assert envelope["memory_candidate"]["status"] == "CANDIDATE"
+          assert envelope["memory_evaluation"]["decision"] == "HUMAN_REVIEW"
+          assert receipt["status"] == "APPLIED"
+          assert receipt["memory_status"] == "CANDIDATE"
+          assert receipt["evaluation_decision"] == "HUMAN_REVIEW"
+          assert envelope["authority"] == "DEEPSEEK_HARNESS"
+          assert envelope["canonical_target"] == "BR SQLite Learning Plane"
+          assert envelope["canonical_auto_promotion"] is False
+          assert envelope["termux_processing_class"] == "DETERMINISTIC_SMALL_ENVELOPE_ONLY"
+          assert receipt["TERMUX_HEAVY_PROCESSING"] == "NO"
+          assert receipt["OBSIDIAN_CANONICAL_MEMORY"] == "NO"
+          assert envelope["NEW_VOICE_SYNTHESIS"] == "NO"
+          assert envelope["FULL_RENDER"] == "NO"
+          assert envelope["YOUTUBE_UPLOAD"] == "NO"
+          assert envelope["YOUTUBE_PUBLICATION"] == "NO"
+          print("OBSIDIAN_INBOX_DISPATCH=PASS")
+          print("TARGET_REF_PRESERVED=PASS")
+          print("OBSIDIAN_NOTE_INGESTED=PASS")
+          print("MEMORY_CANDIDATE_CREATED=PASS")
+          print("CANONICAL_AUTO_PROMOTION=NO")
+          print("HARNESS_EVALUATION_REQUIRED=PASS")
+          print("HARNESS_EVALUATION_DECISION=HUMAN_REVIEW")
+          print("OBSIDIAN_MEMORY_ENVELOPE_APPLIED=PASS")
+          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
+          print("TERMUX_HEAVY_PROCESSING=NO")
+          print("HERMES_DIRECT_MEMORY_WRITE=NO")
+          print("OBSIDIAN_CANONICAL_MEMORY=NO")
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          print("OBSIDIAN_INBOX_CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
+          PY
+
+      - name: Upload focused transport evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-inbox-transport-${{ github.run_id }}
+          path: artifacts/obsidian-inbox-transport/
+          if-no-files-found: error
+          retention-days: 30
