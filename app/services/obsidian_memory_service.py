@@ -255,6 +255,162 @@ def _frontmatter_for_memory(memory: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _safe_slug(value: Any) -> str:
+    text = re.sub(r"[^A-Za-z0-9À-ÿ._-]+", "-", str(value or "").strip())
+    return text.strip("-") or "Unknown"
+
+
+def _objective_health_body(scoreboard: Mapping[str, Any]) -> str:
+    ordered = (
+        "executions_total", "executions_success", "human_interventions",
+        "retries", "duplicate_work", "memory_hits", "memory_misses",
+        "failure_memory_preventions", "useful_findings",
+        "research_claims_verified", "research_claims_rejected",
+        "stale_knowledge_superseded", "latency_seconds",
+    )
+    return "\n".join(
+        f"- **{key}**: {scoreboard.get(key, 0)}"
+        for key in ordered
+    )
+
+
+def _knowledge_projection(*, root: Path, now: str) -> list[str]:
+    files: list[str] = []
+    lineage = continuous_repository.list_claim_lineage(limit=500)
+    claims: list[dict[str, Any]] = []
+    for item in lineage:
+        claim = get_memory_claim(int(item["claim_id"]))
+        if claim is not None:
+            claims.append({**item, "claim": claim})
+
+    by_subject: dict[str, list[dict[str, Any]]] = {}
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for item in claims:
+        by_subject.setdefault(str(item["subject"]), []).append(item)
+        by_source.setdefault(str(item["source_id"]), []).append(item)
+        claim = item["claim"]
+        claim_id = int(item["claim_id"])
+        files.append(_write_markdown(
+            root,
+            f"40-Knowledge/GTA6/Claims/Claim-{claim_id}.md",
+            _markdown(
+                {
+                    "claim_id": claim_id,
+                    "subject": item["subject"],
+                    "status": claim.get("status"),
+                    "source_id": item["source_id"],
+                    "source_url": item["source_url"],
+                    "source_type": item["source_type"],
+                    "published_at": item.get("published_at"),
+                    "observed_at": item.get("observed_at"),
+                    "evidence_ref": item["evidence_ref"],
+                    "evidence_class": item["evidence_class"],
+                    "supersedes": item.get("supersedes_claim_id"),
+                    "related_claims": item.get("related_claims") or [],
+                },
+                f"Claim {claim_id} — {item['subject']}",
+                "\n".join([
+                    str(claim.get("claim") or ""),
+                    "",
+                    f"**Estado:** {str(claim.get('status') or '').upper()}",
+                    f"**Classe de evidência:** {item['evidence_class']}",
+                    f"**Fonte:** {item['source_url']}",
+                    f"**Evidência:** {item['evidence_ref']}",
+                    (f"**Supersedes:** [[Claim-{item['supersedes_claim_id']}]]"
+                     if item.get("supersedes_claim_id") else "**Supersedes:** nenhum"),
+                ]),
+            ),
+        ))
+
+    known_characters = {"jason duval", "jason", "lucia caminós", "lucia caminos", "lucia"}
+    known_locations = {"vice city", "leonida", "leonida keys", "keys"}
+    for subject, rows in sorted(by_subject.items()):
+        folded = subject.casefold()
+        if folded in known_characters or any(name in folded for name in ("jason", "lucia")):
+            folder = "Characters"
+        elif folded in known_locations or any(name in folded for name in ("vice city", "leonida", "keys")):
+            folder = "Locations"
+        else:
+            folder = "Topics"
+        links = [
+            f"- [[../Claims/Claim-{row['claim_id']}|Claim {row['claim_id']}]] — "
+            f"{str(row['claim'].get('status') or '').upper()} — {row['claim'].get('claim')}"
+            for row in rows
+        ]
+        files.append(_write_markdown(
+            root,
+            f"40-Knowledge/GTA6/{folder}/{_safe_slug(subject)}.md",
+            _markdown(
+                {
+                    "subject": subject, "status": "KNOWLEDGE_MAP",
+                    "evidence_refs": list(dict.fromkeys(row["evidence_ref"] for row in rows)),
+                    "created_at": now,
+                    "related_claims": [row["claim_id"] for row in rows],
+                },
+                subject,
+                "\n".join([
+                    "## Claims relacionados", *links, "", "## Fontes",
+                    *[f"- {url}" for url in dict.fromkeys(row["source_url"] for row in rows)],
+                ]),
+            ),
+        ))
+
+    for source_id, rows in sorted(by_source.items()):
+        first = rows[0]
+        files.append(_write_markdown(
+            root,
+            f"40-Knowledge/GTA6/Official-Sources/{_safe_slug(source_id)}.md",
+            _markdown(
+                {
+                    "source_id": source_id, "source_url": first["source_url"],
+                    "source_type": first["source_type"],
+                    "status": ("PRIMARY_SOURCE" if first["source_type"] == "PRIMARY_SOURCE" else first["source_type"]),
+                    "observed_at": max(str(row.get("observed_at") or "") for row in rows),
+                    "evidence_refs": list(dict.fromkeys(row["evidence_ref"] for row in rows)),
+                },
+                f"Official Source — {source_id}",
+                "\n".join([
+                    f"URL: {first['source_url']}", "", "Claims derivados:",
+                    *[f"- [[../Claims/Claim-{row['claim_id']}|Claim {row['claim_id']}]]" for row in rows],
+                ]),
+            ),
+        ))
+
+    contradictions = [
+        item for item in claims
+        if str(item["claim"].get("status") or "").casefold() in {"uncertain", "superseded", "rejected"}
+        or str(item.get("evidence_class") or "").upper() in {"CONTRADICTED", "UNVERIFIED", "RUMOR", "COMMUNITY_OBSERVATION"}
+    ]
+    files.append(_write_markdown(
+        root, "40-Knowledge/GTA6/Contradictions/Index.md",
+        _markdown(
+            {"status": "OBSERVED", "created_at": now, "claim_ids": [item["claim_id"] for item in contradictions]},
+            "GTA6 Contradictions and Unverified Claims",
+            "\n".join([
+                "A lista abaixo não promove rumor/opinião como fato.", "",
+                *[
+                    f"- [[../Claims/Claim-{item['claim_id']}|Claim {item['claim_id']}]] — "
+                    f"{str(item['claim'].get('status') or '').upper()} / {item['evidence_class']}"
+                    for item in contradictions
+                ],
+            ]),
+        ),
+    ))
+
+    for folder in ("Topics", "Characters", "Locations", "Mechanics", "Official-Sources", "Claims"):
+        index_path = f"40-Knowledge/GTA6/{folder}/Index.md"
+        entries = [path for path in files if path.startswith(f"40-Knowledge/GTA6/{folder}/") and not path.endswith("/Index.md")]
+        files.append(_write_markdown(
+            root, index_path,
+            _markdown(
+                {"status": "INDEX", "created_at": now, "entry_count": len(entries)},
+                f"GTA6 {folder}",
+                "\n".join([f"- [[{Path(path).stem}]]" for path in entries])
+                or "Nenhuma entrada canônica nesta categoria ainda.",
+            ),
+        ))
+    return files
+
 def export_obsidian_memory_projection(
     *,
     output_root: str | Path,
