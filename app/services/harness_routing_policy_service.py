@@ -68,6 +68,8 @@ class HarnessRoutingRequest:
     goal_id: str | None = None
     agent_id: str | None = None
     skill_id: str | None = None
+    artifact_ref: str | None = None
+    failure_pattern: str | None = None
     learning_required: bool | None = None
     competence_records: tuple[dict[str, Any], ...] = ()
 
@@ -450,6 +452,8 @@ def route_harness_request(
         "retrieved_memory_ids": [],
         "retrieved_failure_memory_ids": [],
         "retrieved_human_feedback_ids": [],
+        "retrieved_human_decision_ids": [],
+        "bounded_memory_context": {},
         "competence_records": [],
         "active_skill_versions": [],
         "active_policy_versions": [],
@@ -467,6 +471,10 @@ def route_harness_request(
                     capability_id=request.required_capability_id,
                     agent_id=request.agent_id,
                     skill_id=request.skill_id,
+                    goal_id=request.goal_id,
+                    artifact_ref=request.artifact_ref,
+                    failure_pattern=request.failure_pattern,
+                    intent=request.intent,
                 ),
             }
         except Exception as exc:
@@ -634,6 +642,13 @@ def route_harness_request(
         "zero_cost_operation": request.zero_cost_operation,
         "global_zero_cost_operation": ZERO_COST_OPERATION,
         "task_class": request.task_class,
+        "goal_id": request.goal_id,
+        "artifact_ref": request.artifact_ref,
+        "failure_pattern": request.failure_pattern,
+        "memory_retrieve_before_execution": (
+            learning_context.get("MEMORY_RETRIEVE_BEFORE_EXECUTION") == "PASS"
+        ),
+        "bounded_memory_context": dict(learning_context.get("bounded_memory_context") or {}),
         "learning_context": learning_context,
         "competence_evidence_used": [
             {
