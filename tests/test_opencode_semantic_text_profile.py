@@ -87,6 +87,8 @@ def test_semantic_v3_uses_dedicated_primary_agent_one_step_and_deny_all():
     agent = config["agents"][OPENCODE_SEMANTIC_AGENT_ID]
     assert agent["mode"] == "primary"
     assert agent["steps"] == 1
+    assert "system" not in agent
+    assert "description" not in agent
     assert agent["permissions"] == [
         {"action": "*", "resource": "*", "effect": "deny"}
     ]
