@@ -26,6 +26,10 @@ permissions:
   contents: read
   statuses: write
 
+concurrency:
+  group: harness-intelligence-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   focused:
     runs-on: ubuntu-24.04
