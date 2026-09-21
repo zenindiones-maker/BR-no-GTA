@@ -126,6 +126,200 @@ def _ensure_schema(connection) -> None:
         ON telegram_human_decisions(conversation_id, decision_id DESC)
         """
     )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_human_identities (
+            human_identity_id TEXT PRIMARY KEY,
+            telegram_user_id INTEGER NOT NULL UNIQUE,
+            project_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_conversation_threads (
+            thread_id TEXT PRIMARY KEY,
+            human_identity_id TEXT NOT NULL,
+            project_key TEXT NOT NULL,
+            goal_id TEXT,
+            canonical_context TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(human_identity_id, project_key),
+            FOREIGN KEY(human_identity_id)
+                REFERENCES telegram_human_identities(human_identity_id)
+                ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_surface_sessions (
+            surface_session_id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL,
+            telegram_chat_id INTEGER NOT NULL UNIQUE,
+            chat_type TEXT NOT NULL,
+            allowed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(thread_id)
+                REFERENCES telegram_conversation_threads(thread_id)
+                ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_telegram_surface_sessions_thread
+        ON telegram_surface_sessions(thread_id, telegram_chat_id);
+
+        CREATE INDEX IF NOT EXISTS idx_telegram_threads_human_project
+        ON telegram_conversation_threads(human_identity_id, project_key);
+        """
+    )
+
+
+def _project_key(value: str | None = None) -> str:
+    text = str(value or "BR-no-GTA").strip()
+    if not text:
+        raise ValueError("project_key is required")
+    return text
+
+
+def resolve_telegram_human_context(
+    *,
+    telegram_user_id: int,
+    telegram_chat_id: int,
+    chat_type: str,
+    project_key: str = "BR-no-GTA",
+    allowed: bool,
+) -> dict[str, Any]:
+    user_id = int(telegram_user_id)
+    chat_id = int(telegram_chat_id)
+    if user_id <= 0 or chat_id == 0:
+        raise ValueError("Telegram identity requires positive user_id and non-zero chat_id")
+    normalized_chat_type = str(chat_type or "").strip().lower()
+    if normalized_chat_type not in {"private", "group", "supergroup"}:
+        raise ValueError("unsupported Telegram chat type")
+    project = _project_key(project_key)
+    human_identity_id = f"telegram-user:{user_id}"
+    thread_id = f"human:{user_id}:project:{project.casefold()}"
+    surface_session_id = f"telegram-chat:{chat_id}"
+    now = _utcnow()
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        connection.execute(
+            """
+            INSERT INTO telegram_human_identities (
+                human_identity_id, telegram_user_id, project_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(human_identity_id) DO UPDATE SET
+                telegram_user_id = excluded.telegram_user_id,
+                project_key = excluded.project_key,
+                updated_at = excluded.updated_at
+            """,
+            (human_identity_id, user_id, project, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO telegram_conversation_threads (
+                thread_id, human_identity_id, project_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(thread_id) DO UPDATE SET
+                human_identity_id = excluded.human_identity_id,
+                project_key = excluded.project_key,
+                updated_at = excluded.updated_at
+            """,
+            (thread_id, human_identity_id, project, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO telegram_surface_sessions (
+                surface_session_id, thread_id, telegram_chat_id, chat_type,
+                allowed, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(telegram_chat_id) DO UPDATE SET
+                surface_session_id = excluded.surface_session_id,
+                thread_id = excluded.thread_id,
+                chat_type = excluded.chat_type,
+                allowed = excluded.allowed,
+                updated_at = excluded.updated_at
+            """,
+            (
+                surface_session_id, thread_id, chat_id, normalized_chat_type,
+                int(bool(allowed)), now, now,
+            ),
+        )
+        thread = connection.execute(
+            "SELECT * FROM telegram_conversation_threads WHERE thread_id = ?",
+            (thread_id,),
+        ).fetchone()
+        session = connection.execute(
+            "SELECT * FROM telegram_surface_sessions WHERE telegram_chat_id = ?",
+            (chat_id,),
+        ).fetchone()
+    thread_record = dict(thread)
+    thread_record["canonical_context"] = _load(
+        thread_record.get("canonical_context"), {}
+    )
+    session_record = dict(session)
+    session_record["allowed"] = bool(session_record.get("allowed"))
+    return {
+        "human_identity_id": human_identity_id,
+        "thread_id": thread_id,
+        "surface_session_id": surface_session_id,
+        "project_key": project,
+        "telegram_user_id": user_id,
+        "telegram_chat_id": chat_id,
+        "chat_type": normalized_chat_type,
+        "allowed": bool(allowed),
+        "thread": thread_record,
+        "surface_session": session_record,
+    }
+
+
+def get_shared_thread_context(thread_id: str) -> dict[str, Any]:
+    identity = str(thread_id or "").strip()
+    if not identity:
+        raise ValueError("thread_id is required")
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        row = connection.execute(
+            "SELECT * FROM telegram_conversation_threads WHERE thread_id = ?",
+            (identity,),
+        ).fetchone()
+    if row is None:
+        raise ValueError("conversation thread not found")
+    record = dict(row)
+    record["canonical_context"] = _load(record.get("canonical_context"), {})
+    return record
+
+
+def update_shared_thread_context(
+    thread_id: str,
+    **changes: Any,
+) -> dict[str, Any]:
+    allowed_fields = {
+        "active_goal_id", "active_task", "current_subject", "active_artifact",
+        "active_run_id", "last_human_decision", "waiting_for_human",
+        "pending_question", "pending_human_review",
+    }
+    unknown = set(changes) - allowed_fields
+    if unknown:
+        raise ValueError(f"unsupported shared thread fields: {sorted(unknown)}")
+    current = get_shared_thread_context(thread_id)
+    context = dict(current.get("canonical_context") or {})
+    for key, value in changes.items():
+        if value is None:
+            context.pop(key, None)
+        else:
+            context[key] = value
+    goal_id = context.get("active_goal_id")
+    now = _utcnow()
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        connection.execute(
+            """
+            UPDATE telegram_conversation_threads
+            SET goal_id = ?, canonical_context = ?, updated_at = ?
+            WHERE thread_id = ?
+            """,
+            (goal_id, _dump(context), now, str(thread_id)),
+        )
+    return get_shared_thread_context(thread_id)
 
 
 def conversation_id_for_chat(telegram_chat_id: int) -> str:
