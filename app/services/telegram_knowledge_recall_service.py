@@ -216,6 +216,8 @@ def recall_canonical_gta6_knowledge(
     query: str,
     *,
     limit: int = 8,
+    project_context: str = "",
+    subject_context: str = "",
 ) -> dict[str, Any]:
     text = str(query or "").strip()
     if not text:
@@ -239,10 +241,20 @@ def recall_canonical_gta6_knowledge(
             "SOURCE_PROVENANCE_PRESERVED": "NO_MATCH",
         }
 
-    semantic_hits = _semantic_hits(text, limit=min(limit, 5))
-    claims = _lineage_claims(text, limit=limit)
+    broad_context = _is_broad_gta6_query(
+        text,
+        project_context=project_context,
+        subject_context=subject_context,
+    )
+    semantic_hits = [] if broad_context else _semantic_hits(text, limit=min(limit, 5))
+    claims = _lineage_claims(
+        text,
+        limit=limit,
+        project_context=project_context,
+        subject_context=subject_context,
+    )
 
-    if not claims and _is_broad_gta6_query(text):
+    if not claims and broad_context:
         claims = _fallback_active_claims(limit=limit)
 
     if not claims and semantic_hits:
@@ -279,13 +291,16 @@ def recall_canonical_gta6_knowledge(
 
     return {
         "status": "CANONICAL_KNOWLEDGE_RECALLED" if claims else "NO_CANONICAL_KNOWLEDGE_MATCH",
-        "answer": _human_answer(text, claims),
+        "answer": _human_answer(text, claims, broad_context=broad_context),
         "query": text,
         "claims": claims,
         "semantic_memory_hits": semantic_hits,
         "provider_independent": True,
         "provider_calls": 0,
         "semantic_provider_required": False,
+        "context_resolved_scope": "gta6" if broad_context else None,
+        "project_context": project_context or None,
+        "subject_context": subject_context or None,
         "canonical_memory_plane": "BR_SQLITE",
         "knowledge_authority": "KNOWLEDGE_BRAIN",
         "obsidian_role": "PUBLISHED_MEMORY_VIEW",
