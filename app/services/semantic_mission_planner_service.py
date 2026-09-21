@@ -158,27 +158,40 @@ class MissionTaskProposal:
         criteria = _string_tuple(
             value.get("acceptance_criteria"),
             "acceptance_criteria",
-            limit=12,
-            max_item_len=900,
+            limit=2,
+            max_item_len=240,
         )
         if not criteria:
             raise ValueError(f"task {task_id} requires acceptance_criteria")
         return cls(
             task_id=task_id,
-            objective=_required_text(value.get("objective"), "objective"),
-            task_class=_required_text(value.get("task_class"), "task_class", max_len=160),
+            objective=_required_text(
+                value.get("objective"),
+                "objective",
+                max_len=220,
+            ),
+            task_class=_required_text(
+                value.get("task_class"),
+                "task_class",
+                max_len=96,
+            ),
             required_capability_description=_required_text(
                 value.get("required_capability_description"),
                 "required_capability_description",
+                max_len=180,
             ),
             candidate_capability_ids=_string_tuple(
                 value.get("candidate_capability_ids"),
                 "candidate_capability_ids",
-                limit=8,
+                limit=3,
                 max_item_len=160,
             ),
             dependencies=dependencies,
-            expected_output=_required_text(value.get("expected_output"), "expected_output"),
+            expected_output=_required_text(
+                value.get("expected_output"),
+                "expected_output",
+                max_len=120,
+            ),
             acceptance_criteria=criteria,
             risk_side_effect_class=risk,
             action=action,
@@ -262,21 +275,35 @@ class MissionPlanProposal:
         required_outcomes = _string_tuple(
             value.get("required_outcomes"),
             "required_outcomes",
-            limit=16,
-            max_item_len=1200,
+            limit=4,
+            max_item_len=240,
         )
         if not required_outcomes:
             raise ValueError("semantic planner requires at least one required_outcome")
         return cls(
-            interpreted_goal=_required_text(value.get("interpreted_goal"), "interpreted_goal"),
-            assumptions=_string_tuple(value.get("assumptions"), "assumptions", limit=16),
+            interpreted_goal=_required_text(
+                value.get("interpreted_goal"),
+                "interpreted_goal",
+                max_len=240,
+            ),
+            assumptions=_string_tuple(
+                value.get("assumptions"),
+                "assumptions",
+                limit=2,
+                max_item_len=240,
+            ),
             required_outcomes=required_outcomes,
             tasks=tasks,
-            rationale=_required_text(value.get("rationale"), "rationale", max_len=5000),
+            rationale=_required_text(
+                value.get("rationale"),
+                "rationale",
+                max_len=240,
+            ),
             context_usage_notes=_string_tuple(
                 value.get("context_usage_notes"),
                 "context_usage_notes",
-                limit=16,
+                limit=3,
+                max_item_len=240,
             ),
             uncertainty=uncertainty,
             needs_human_clarification=needs_clarification,
@@ -284,19 +311,20 @@ class MissionPlanProposal:
             memory_strategy_notes=_string_tuple(
                 value.get("memory_strategy_notes"),
                 "memory_strategy_notes",
-                limit=16,
+                limit=3,
+                max_item_len=240,
             ),
             reused_artifact_refs=_string_tuple(
                 value.get("reused_artifact_refs"),
                 "reused_artifact_refs",
-                limit=16,
-                max_item_len=400,
+                limit=3,
+                max_item_len=200,
             ),
             avoided_bad_paths=_string_tuple(
                 value.get("avoided_bad_paths"),
                 "avoided_bad_paths",
-                limit=16,
-                max_item_len=400,
+                limit=3,
+                max_item_len=200,
             ),
         )
 
@@ -351,96 +379,220 @@ def _json_object(value: str) -> dict[str, Any]:
     return parsed
 
 
-def _prompt_payload(context: dict[str, Any], validation_feedback: tuple[str, ...]) -> dict[str, Any]:
+def mission_plan_json_schema(*, max_tasks: int) -> dict[str, Any]:
+    max_tasks = max(1, min(int(max_tasks), 12))
+    string_240 = {"type": "string", "minLength": 1, "maxLength": 240}
+    string_200 = {"type": "string", "minLength": 1, "maxLength": 200}
+    task_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "task_id",
+            "objective",
+            "task_class",
+            "required_capability_description",
+            "candidate_capability_ids",
+            "dependencies",
+            "expected_output",
+            "acceptance_criteria",
+            "risk_side_effect_class",
+            "action",
+        ],
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$",
+            },
+            "objective": {"type": "string", "minLength": 1, "maxLength": 220},
+            "task_class": {"type": "string", "minLength": 1, "maxLength": 96},
+            "required_capability_description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 180,
+            },
+            "candidate_capability_ids": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {"type": "string", "minLength": 1, "maxLength": 160},
+            },
+            "dependencies": {
+                "type": "array",
+                "maxItems": 12,
+                "items": {"type": "string", "minLength": 1, "maxLength": 80},
+            },
+            "expected_output": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+            },
+            "acceptance_criteria": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 2,
+                "items": string_240,
+            },
+            "risk_side_effect_class": {
+                "type": "string",
+                "enum": sorted(_ALLOWED_RISK_CLASSES),
+            },
+            "action": {
+                "type": "string",
+                "enum": sorted(_ALLOWED_ACTIONS),
+            },
+        },
+    }
     return {
-        "role": "MISSION_PLAN_PROPOSER_ONLY",
-        "authority": "NONE",
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "interpreted_goal",
+            "assumptions",
+            "required_outcomes",
+            "tasks",
+            "rationale",
+            "context_usage_notes",
+            "uncertainty",
+            "needs_human_clarification",
+            "clarification_question",
+            "memory_strategy_notes",
+            "reused_artifact_refs",
+            "avoided_bad_paths",
+        ],
+        "properties": {
+            "interpreted_goal": string_240,
+            "assumptions": {
+                "type": "array",
+                "maxItems": 2,
+                "items": string_240,
+            },
+            "required_outcomes": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": string_240,
+            },
+            "tasks": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": max_tasks,
+                "items": task_schema,
+            },
+            "rationale": string_240,
+            "context_usage_notes": {
+                "type": "array",
+                "maxItems": 3,
+                "items": string_240,
+            },
+            "uncertainty": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+            },
+            "needs_human_clarification": {"type": "boolean"},
+            "clarification_question": {
+                "anyOf": [
+                    {"type": "null"},
+                    {"type": "string", "minLength": 1, "maxLength": 240},
+                ]
+            },
+            "memory_strategy_notes": {
+                "type": "array",
+                "maxItems": 3,
+                "items": string_240,
+            },
+            "reused_artifact_refs": {
+                "type": "array",
+                "maxItems": 3,
+                "items": string_200,
+            },
+            "avoided_bad_paths": {
+                "type": "array",
+                "maxItems": 3,
+                "items": string_200,
+            },
+        },
+    }
+
+
+def _prompt_payload(
+    context: dict[str, Any],
+    validation_feedback: tuple[str, ...],
+) -> dict[str, Any]:
+    payload = {
         "human_goal": context["human_goal"],
-        "project": context["project"],
         "subject": context.get("subject"),
         "canonical_state": context.get("canonical_state") or {},
         "conversation_state": context.get("conversation_state") or {},
-        "bounded_memory_context": context.get("bounded_memory_context") or {},
-        "recent_execution_history": context.get("recent_execution_history") or [],
-        "relevant_failure_memories": context.get("relevant_failure_memories") or [],
-        "human_feedback_decisions": context.get("human_feedback_decisions") or [],
+        "memory": context.get("bounded_memory_context") or {},
+        "history": context.get("recent_execution_history") or [],
+        "failure_memory": context.get("relevant_failure_memories") or [],
+        "human_decisions": context.get("human_feedback_decisions") or [],
         "provider_health": context.get("provider_health") or {},
-        "global_capability_registry": context.get("registry_summary") or [],
-        "competence_evidence": context.get("competence_evidence") or [],
+        "capabilities": context.get("registry_summary") or [],
+        "competence": context.get("competence_evidence") or [],
         "resource_bounds": context.get("resource_bounds") or {},
         "known_bad_paths": context.get("known_bad_paths") or [],
         "validation_feedback": list(validation_feedback),
     }
-
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [], {})
+    }
 
 def build_semantic_planner_prompt(
     context: dict[str, Any],
     *,
     validation_feedback: tuple[str, ...] = (),
 ) -> str:
-    max_tasks = int((context.get("resource_bounds") or {}).get("max_tasks_per_mission") or 8)
-    schema = {
-        "interpreted_goal": "string",
-        "assumptions": ["string"],
-        "required_outcomes": ["string"],
-        "tasks": [
-            {
-                "task_id": "stable kebab-case id",
-                "objective": "specific outcome-oriented task objective",
-                "task_class": "semantic task class",
-                "required_capability_description": "what capability is needed, not who executes it",
-                "candidate_capability_ids": ["zero or more IDs copied exactly from Registry"],
-                "dependencies": ["task_id"],
-                "expected_output": "artifact/evidence/result contract",
-                "acceptance_criteria": ["observable pass criterion"],
-                "risk_side_effect_class": "READ_ONLY|LOW|MEDIUM|HIGH|EXTERNAL_SIDE_EFFECT",
-                "action": "RESEARCH|EDITORIAL|DEVELOPMENT|EXECUTION|DECISION",
-            }
-        ],
-        "rationale": "why this decomposition fits this goal and current state",
-        "context_usage_notes": ["which conversation-state facts materially changed the plan; empty only if none were relevant"],
-        "uncertainty": "0..1",
-        "needs_human_clarification": False,
-        "clarification_question": None,
-        "memory_strategy_notes": ["how prior evidence changed the strategy"],
-        "reused_artifact_refs": ["existing artifact/checkpoint references worth reusing"],
-        "avoided_bad_paths": ["known failed/redundant paths intentionally not repeated"],
+    max_tasks = int(
+        (context.get("resource_bounds") or {}).get("max_tasks_per_mission")
+        or 8
+    )
+    contract = {
+        "assumptions": "max2",
+        "required_outcomes": "max4",
+        "tasks": "minimum sufficient; max" + str(max_tasks),
+        "task": {
+            "candidate_capability_ids": "max3 exact Registry IDs; [] if unsure",
+            "acceptance_criteria": "1-2 observable criteria",
+            "dependencies": "task_id list",
+        },
+        "rationale": "1 short sentence",
+        "context_usage_notes": "max3",
+        "memory_strategy_notes": "max3",
+        "reused_artifact_refs": "max3",
+        "avoided_bad_paths": "max3",
     }
-    instructions = f"""
-You are a proposal-only semantic mission planner inside the BR-no-GTA DeepSeek Harness.
-Return STRICT JSON only. No markdown, prose wrapper, comments, or code fences.
-
-Your output is not authority. Do not authorize, execute, publish, promote, alter policy, choose an executor binding,
-grant permissions, write to the canonical branch, or invent a capability. Capability IDs may appear only if they are
-copied exactly from the provided Global Capability Registry; when uncertain, leave candidate_capability_ids empty and
-describe the required capability semantically.
-
-Decompose the human goal into the minimum sufficient dynamic DAG, maximum {max_tasks} tasks. Avoid a generic fixed
-measure->root-cause->candidate->validate template unless the actual goal and evidence make every step necessary.
-Prefer observation before mutation when the problem is uncertain. Reuse validated memory/artifacts/checkpoints when
-relevant. Use both recent successful and failed execution history when it materially changes strategy. Record how
-relevant canonical/conversation state changed the plan in context_usage_notes. Explicitly avoid known bad paths. Use competence evidence to propose sensible candidates, but never treat
-competence as authorization. Require independent validation for risky or mutating work. Ask for human clarification
-only when a missing fact prevents a safe feasible plan; do not ask merely because uncertainty exists.
-Do not call a provider for deterministic status/control intents.
-"""
-    return "\n\n".join(
+    instructions = (
+        "You propose a MissionPlan only; authority=NONE. Return one strict JSON "
+        "object using the required MissionPlan fields. Use the minimum sufficient "
+        "dynamic DAG, observe before mutation when cause is unknown, reuse relevant "
+        "memory/checkpoints, account for competence and known failures, and require "
+        "independent validation for risky/mutating work. Never invent capability "
+        "IDs, choose executor bindings, authorize, publish, promote, or mutate policy. "
+        "Do not repeat the human goal or explain known capability IDs. Keep every "
+        "string concise. Ask for clarification only when a missing fact prevents a "
+        "safe feasible plan."
+    )
+    return "\n".join(
         [
-            instructions.strip(),
-            "OUTPUT_SCHEMA=\n" + json.dumps(
-                schema,
+            instructions,
+            "OUTPUT_CONTRACT="
+            + json.dumps(
+                contract,
                 ensure_ascii=False,
-                sort_keys=True,
+                separators=(",", ":"),
             ),
-            "PLANNING_CONTEXT=\n" + json.dumps(
+            "CONTEXT="
+            + json.dumps(
                 _prompt_payload(context, validation_feedback),
                 ensure_ascii=False,
-                sort_keys=True,
+                separators=(",", ":"),
                 default=str,
             ),
         ]
     )
-
 
 def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     from app.services.harness_ai_provider_service import execute_harness_ai_generation
