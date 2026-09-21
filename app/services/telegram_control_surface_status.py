@@ -11,6 +11,26 @@ from app.database.telegram_conversation_repository import (
 from app.services.gta6_observation_service import build_gta6_observation
 
 
+_ACTIVE_RESULT_STATUSES = {
+    "RUNNING",
+    "IN_PROGRESS",
+    "QUEUED",
+    "DISPATCHED",
+    "STARTED",
+}
+_TERMINAL_RESULT_STATUSES = {
+    "COMPLETED",
+    "SUCCESS",
+    "SUCCEEDED",
+    "FAILED",
+    "FAILURE",
+    "CANCELLED",
+    "CANCELED",
+    "BLOCKED",
+    "REJECTED",
+}
+
+
 def _nested_value(payload: Any, *keys: str) -> Any:
     stack = [payload]
     seen: set[int] = set()
@@ -25,6 +45,136 @@ def _nested_value(payload: Any, *keys: str) -> Any:
                 return value
         stack.extend(value for value in current.values() if isinstance(value, dict))
     return None
+
+
+def _normalized_status(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def _authorization_matches_context(
+    record: dict[str, Any],
+    *,
+    goal_id: Any,
+    mission_id: Any,
+    run_id: Any,
+    execution_id: Any,
+    authorization_id: Any,
+) -> bool:
+    lineage = record.get("lineage")
+    lineage = lineage if isinstance(lineage, dict) else {}
+    if authorization_id and str(record.get("authorization_id") or "") == str(authorization_id):
+        return True
+    if execution_id and str(record.get("execution_id") or "") == str(execution_id):
+        return True
+    if mission_id and str(lineage.get("mission_id") or "") == str(mission_id):
+        return True
+    if goal_id and str(lineage.get("goal_id") or "") == str(goal_id):
+        return True
+    if run_id and str(lineage.get("run_id") or lineage.get("workflow_run_id") or "") == str(run_id):
+        return True
+    return False
+
+
+def derive_operational_activity_evidence(
+    state: dict[str, Any],
+    *,
+    recent_authorizations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Derive active execution from canonical evidence, never progress telemetry alone."""
+
+    current = dict(state)
+    latest_result = current.get("last_execution_result")
+    latest_result = latest_result if isinstance(latest_result, dict) else {}
+    pending_action = current.get("pending_action")
+    pending_action = pending_action if isinstance(pending_action, dict) else {}
+
+    goal_id = (
+        current.get("active_goal_id")
+        or _nested_value(latest_result, "goal_id")
+        or pending_action.get("active_goal_id")
+    )
+    mission_id = pending_action.get("mission_id") or _nested_value(
+        latest_result, "mission_id"
+    )
+    execution_id = _nested_value(
+        latest_result,
+        "execution_id",
+        "render_execution_id",
+        "delegation_id",
+    )
+    authorization_id = _nested_value(latest_result, "authorization_id")
+    result_run_id = _nested_value(
+        latest_result,
+        "workflow_run_id",
+        "run_id",
+        "render_run_id",
+    )
+    result_status = _normalized_status(
+        _nested_value(
+            latest_result,
+            "execution_status",
+            "workflow_status",
+            "run_status",
+            "render_status",
+            "status",
+        )
+    )
+
+    authorizations = (
+        list(recent_authorizations)
+        if recent_authorizations is not None
+        else list_recent_harness_authorizations(limit=25)
+    )
+    relevant_authorization = None
+    for item in authorizations:
+        if _authorization_matches_context(
+            item,
+            goal_id=goal_id,
+            mission_id=mission_id,
+            run_id=result_run_id,
+            execution_id=execution_id,
+            authorization_id=authorization_id,
+        ):
+            relevant_authorization = item
+            break
+
+    active_authorization = bool(
+        isinstance(relevant_authorization, dict)
+        and str(relevant_authorization.get("status") or "").casefold() == "active"
+    )
+    canonical_result_active = bool(
+        result_status in _ACTIVE_RESULT_STATUSES
+        and any((execution_id, result_run_id, mission_id, authorization_id))
+    )
+    waiting_for_human = bool(current.get("waiting_for_human"))
+    pending_task_real = bool(
+        isinstance(pending_action, dict)
+        and pending_action.get("kind")
+        and (
+            pending_action.get("task_id")
+            or pending_action.get("active_task")
+            or pending_action.get("mission_id")
+        )
+    )
+    has_active_execution = bool(
+        not waiting_for_human
+        and (active_authorization or canonical_result_active)
+    )
+
+    return {
+        "has_active_execution": has_active_execution,
+        "active_authorization": active_authorization,
+        "canonical_result_active": canonical_result_active,
+        "waiting_for_human": waiting_for_human,
+        "pending_task_real": pending_task_real,
+        "goal_id": goal_id,
+        "mission_id": mission_id,
+        "execution_id": execution_id,
+        "authorization_id": authorization_id,
+        "result_run_id": result_run_id,
+        "result_status": result_status or None,
+        "relevant_authorization": relevant_authorization,
+    }
 
 
 def _compact_authorization(record: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -70,41 +220,23 @@ def build_harness_control_surface_status(
     pending_action = current.get("pending_action")
     pending_action = pending_action if isinstance(pending_action, dict) else {}
 
-    goal_id = (
-        current.get("active_goal_id")
-        or _nested_value(latest_result, "goal_id")
-        or pending_action.get("active_goal_id")
+    recent_authorizations = list_recent_harness_authorizations(limit=25)
+    activity = derive_operational_activity_evidence(
+        current,
+        recent_authorizations=recent_authorizations,
     )
-    mission_id = (
-        pending_action.get("mission_id")
-        or _nested_value(latest_result, "mission_id")
-    )
+    goal_id = activity.get("goal_id")
+    mission_id = activity.get("mission_id")
     task_id = (
         pending_action.get("task_id")
         or current.get("active_task")
         or _nested_value(latest_result, "task_id")
     )
     run_id = (
-        current.get("active_run_id")
-        or _nested_value(latest_result, "workflow_run_id", "run_id", "render_run_id")
+        activity.get("result_run_id")
+        or current.get("active_run_id")
     )
-
-    recent_authorizations = list_recent_harness_authorizations(limit=25)
-    relevant_authorization = None
-    for item in recent_authorizations:
-        lineage = item.get("lineage")
-        lineage = lineage if isinstance(lineage, dict) else {}
-        if mission_id and lineage.get("mission_id") == mission_id:
-            relevant_authorization = item
-            break
-        if goal_id and lineage.get("goal_id") == goal_id:
-            relevant_authorization = item
-            break
-        if run_id and str(item.get("execution_id") or "") == str(run_id):
-            relevant_authorization = item
-            break
-    if relevant_authorization is None and recent_authorizations:
-        relevant_authorization = recent_authorizations[0]
+    relevant_authorization = activity.get("relevant_authorization")
 
     try:
         observation = build_gta6_observation()
@@ -127,10 +259,30 @@ def build_harness_control_surface_status(
     return {
         "conversation_id": current.get("conversation_id"),
         "telegram_chat_id": int(telegram_chat_id),
-        "execution_status": current.get("execution_status") or "IDLE",
+        "active_project": current.get("active_project") or "BR-no-GTA",
+        "current_subject": current.get("current_subject"),
+        "execution_status": (
+            "WAITING_FOR_HUMAN"
+            if activity.get("waiting_for_human")
+            else "RUNNING"
+            if activity.get("has_active_execution")
+            else "IDLE"
+        ),
+        "canonical_execution_active": bool(activity.get("has_active_execution")),
+        "activity_evidence": {
+            key: value
+            for key, value in activity.items()
+            if key != "relevant_authorization"
+        },
         "active_goal_id": goal_id,
         "active_task": task_id,
-        "active_stage": current.get("active_stage"),
+        "active_stage": (
+            current.get("active_stage")
+            if activity.get("has_active_execution")
+            else "WAITING_FOR_HUMAN"
+            if activity.get("waiting_for_human")
+            else None
+        ),
         "active_artifact": current.get("active_artifact"),
         "active_run_id": run_id,
         "active_blocker": blocker,
