@@ -161,7 +161,12 @@ def _fallback_active_claims(*, limit: int = 8) -> list[dict[str, Any]]:
     ]
 
 
-def _human_answer(query: str, claims: list[dict[str, Any]]) -> str:
+def _human_answer(
+    query: str,
+    claims: list[dict[str, Any]],
+    *,
+    broad_context: bool,
+) -> str:
     if not claims:
         return (
             "Não encontrei conhecimento canônico suficiente para esse pedido no estado atual. "
@@ -169,7 +174,24 @@ def _human_answer(query: str, claims: list[dict[str, Any]]) -> str:
             "ainda não possui um claim ativo correspondente."
         )
 
-    lines = ["Conhecimento canônico disponível agora:"]
+    primary_sources = {
+        str(item.get("source_url") or item.get("source_id") or "").strip()
+        for item in claims
+        if str(item.get("source_type") or item.get("evidence_class") or "").upper()
+        in {"OFFICIAL", "PRIMARY_SOURCE"}
+        and str(item.get("source_url") or item.get("source_id") or "").strip()
+    }
+    if broad_context:
+        lines = [
+            "Tenho conhecimento canônico de GTA 6 já validado no estado atual.",
+            (
+                f"Esta resposta cobre {len(claims)} claim(s) relevante(s) e "
+                f"{len(primary_sources)} fonte(s) primária(s)/oficial(is) associada(s)."
+            ),
+            "Alguns registros disponíveis:",
+        ]
+    else:
+        lines = ["Conhecimento canônico disponível agora:"]
     for item in claims[:8]:
         subject = str(item.get("subject") or "").strip()
         prefix = f"{subject}: " if subject else ""
