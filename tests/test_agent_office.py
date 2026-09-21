@@ -542,3 +542,74 @@ def test_official_harness_mcp_path_returns_canonical_agent_office_evidence():
     assert result["authority"] == "deepseek_harness"
     assert result["result"]["status"] == "SUCCEEDED"
     assert response["evidence"]["capability_id"] == CAPABILITY_ID
+
+
+
+def test_agent_office_separate_mission_scopes_are_fail_closed(tmp_path, capsys):
+    root, sha = _repo(tmp_path)
+    spec = _spec(
+        root,
+        sha,
+        allowed_paths=["README.md"],
+        mission_read_scope=["README.md"],
+        mission_write_scope=[],
+    )
+    valid = _task(
+        read_set=["README.md"],
+        allowed_paths=[],
+        write_set=[],
+    )
+    lease = AgentOfficeService._build_task_lease(spec, valid)
+    assert lease.read_set == ("README.md",)
+    assert lease.write_set == ()
+
+    invalid_read = _task(
+        task_id="invalid-read",
+        read_set=["app/services/harness_collaboration_service.py"],
+        allowed_paths=[],
+        write_set=[],
+    )
+    with pytest.raises(PermissionError, match="REQUEST_SCOPE_EXPANSION"):
+        AgentOfficeService._build_task_lease(spec, invalid_read)
+    output = capsys.readouterr().out
+    assert 'TASK_ID="invalid-read"' in output
+    assert 'OUT_OF_SCOPE_READ_PATHS=["app/services/harness_collaboration_service.py"]' in output
+    assert 'OUT_OF_SCOPE_WRITE_PATHS=[]' in output
+
+    write_spec = _spec(
+        root,
+        sha,
+        allowed_paths=["README.md"],
+        mission_read_scope=["README.md"],
+        mission_write_scope=["README.md"],
+    )
+    invalid_write = _task(
+        task_id="invalid-write",
+        read_set=["README.md"],
+        allowed_paths=["README.md"],
+        write_set=["app/services/agent_office/service.py"],
+    )
+    with pytest.raises(PermissionError, match="REQUEST_SCOPE_EXPANSION"):
+        AgentOfficeService._build_task_lease(write_spec, invalid_write)
+    output = capsys.readouterr().out
+    assert 'TASK_ID="invalid-write"' in output
+    assert 'OUT_OF_SCOPE_WRITE_PATHS=["app/services/agent_office/service.py"]' in output
+
+
+def test_delegated_task_cannot_expand_mission_scope(tmp_path):
+    root, sha = _repo(tmp_path)
+    spec = _spec(
+        root,
+        sha,
+        allowed_paths=["README.md"],
+        mission_read_scope=["README.md"],
+        mission_write_scope=["README.md"],
+    )
+    attempted_expansion = _task(
+        task_id="hermes-scope-expansion",
+        read_set=["README.md"],
+        allowed_paths=["README.md", "app"],
+        write_set=[],
+    )
+    with pytest.raises(PermissionError, match="REQUEST_SCOPE_EXPANSION"):
+        AgentOfficeService._build_task_lease(spec, attempted_expansion)
