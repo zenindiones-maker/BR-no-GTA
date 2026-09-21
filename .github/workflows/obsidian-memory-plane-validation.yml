@@ -116,6 +116,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload lightweight published-memory view
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-memory-export-${{ github.run_id }}
+          path: artifacts/obsidian-memory-plane/obsidian-memory-export/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish validation status
         if: always()
         env:
