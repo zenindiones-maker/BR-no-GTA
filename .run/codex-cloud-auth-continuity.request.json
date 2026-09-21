@@ -1,0 +1,7 @@
+{
+  "request": "codex-cloud-auth-continuity",
+  "source_head": "388fb821cca49e93729471e41589f7a60a331c9b",
+  "runner_a": "fresh",
+  "runner_b": "fresh",
+  "credential_artifact": "FORBIDDEN"
+}
