@@ -1,0 +1,8 @@
+{
+  "request": "obsidian-inbox-transport-focused",
+  "source_head": "2789fb66fba6e41a672e28e3efe2faf8eac4ba39",
+  "default_branch": "main",
+  "target_ref": "work/gate6f-analytics-learning",
+  "transport_only": true,
+  "termux_changed": false
+}
