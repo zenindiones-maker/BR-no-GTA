@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import json
+import os
 from typing import Any
+from urllib import request
 
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -9,6 +12,10 @@ from app.services.zero_cost_policy_service import assess_zero_cost
 from app.services.opencode_executor_profile_service import (
     SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
     executable_opencode_executor_profile,
+)
+from app.services.local_openweight_ai_provider import (
+    LOCAL_OPENWEIGHT_MODEL_DIGEST,
+    LOCAL_OPENWEIGHT_MODEL_ID,
 )
 
 
@@ -46,10 +53,76 @@ def _failure_rows() -> list[dict[str, Any]]:
         return []
 
 
+def _local_openweight_health() -> ProviderHealth:
+    if os.getenv("BR_LOCAL_OPENWEIGHT_ENABLED", "").strip() != "1":
+        return ProviderHealth(
+            provider_id="ollama_local",
+            state="BLOCKED",
+            reason="Local open-weight runtime is not enabled in this process.",
+            evidence_refs=("github:run:35658908009:zero-cost-proof",),
+            retry_allowed=True,
+            zero_cost_eligible=True,
+        )
+    url = os.getenv(
+        "BR_LOCAL_OPENWEIGHT_URL",
+        "http://127.0.0.1:11434",
+    ).rstrip("/") + "/api/tags"
+    try:
+        with request.urlopen(url, timeout=2.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        return ProviderHealth(
+            provider_id="ollama_local",
+            state="BLOCKED",
+            reason=f"Local open-weight runtime readiness failed: {type(exc).__name__}",
+            evidence_refs=("github:run:35658908009:zero-cost-proof",),
+            retry_allowed=True,
+            zero_cost_eligible=True,
+        )
+    rows = [
+        item for item in (payload.get("models") or ())
+        if isinstance(item, dict)
+        and str(item.get("name") or item.get("model") or "") == LOCAL_OPENWEIGHT_MODEL_ID
+    ]
+    if len(rows) != 1:
+        return ProviderHealth(
+            provider_id="ollama_local",
+            state="BLOCKED",
+            reason="Proven local open-weight model is not loaded.",
+            evidence_refs=("github:run:35658908009:zero-cost-proof",),
+            retry_allowed=True,
+            zero_cost_eligible=True,
+        )
+    digest = str(rows[0].get("digest") or "").removeprefix("sha256:")
+    if digest != LOCAL_OPENWEIGHT_MODEL_DIGEST:
+        return ProviderHealth(
+            provider_id="ollama_local",
+            state="QUARANTINED",
+            reason="Local open-weight model digest does not match proven identity.",
+            evidence_refs=("github:artifact:10665244270",),
+            retry_allowed=False,
+            zero_cost_eligible=False,
+        )
+    return ProviderHealth(
+        provider_id="ollama_local",
+        state="AVAILABLE",
+        reason="Proven loopback-only Qwen3 runtime is ready with exact model digest.",
+        evidence_refs=(
+            "github:run:35658908009",
+            "github:artifact:10665244270",
+            f"model-digest:{LOCAL_OPENWEIGHT_MODEL_DIGEST}",
+        ),
+        retry_allowed=True,
+        zero_cost_eligible=True,
+    )
+
+
 def provider_health(provider_id: str) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
     if not provider:
         raise ValueError("provider_id is required")
+    if provider == "ollama_local":
+        return _local_openweight_health()
 
     failures = _failure_rows()
     if provider == "opencode":
@@ -165,7 +238,9 @@ def provider_health(provider_id: str) -> ProviderHealth:
 def semantic_provider_health() -> dict[str, Any]:
     providers = [
         provider_health(provider)
-        for provider in ("opencode", "tuxevil", "nvidia_nim", "gemini")
+        for provider in (
+            "opencode", "ollama_local", "tuxevil", "nvidia_nim", "gemini"
+        )
     ]
     zero_cost_ready = [
         item for item in providers
