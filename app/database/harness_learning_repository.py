@@ -804,3 +804,173 @@ def insert_improvement_mission(record: dict[str, Any]) -> dict[str, Any]:
         return _deserialize(row, _MISSION_JSON)
     finally:
         connection.close()
+
+
+_HUMAN_DECISION_JSON = {"evidence_refs", "metadata"}
+_MEMORY_EVALUATION_JSON = {"evidence_refs"}
+
+
+def insert_canonical_human_decision(record: dict[str, Any]) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        columns = (
+            "decision_id", "decision_type", "source_surface", "source_ref",
+            "goal_id", "task_id", "capability_id", "agent_id", "artifact_ref",
+            "content", "evidence_refs", "metadata", "created_at",
+        )
+        values = [
+            _dump(record.get(key, [] if key == "evidence_refs" else {}))
+            if key in _HUMAN_DECISION_JSON else record.get(key)
+            for key in columns
+        ]
+        connection.execute(
+            f"INSERT OR IGNORE INTO harness_human_decisions ({','.join(columns)}) "
+            f"VALUES ({','.join('?' for _ in columns)})",
+            values,
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM harness_human_decisions WHERE decision_id = ?",
+            (record["decision_id"],),
+        ).fetchone()
+        if row is None:
+            row = connection.execute(
+                """SELECT * FROM harness_human_decisions
+                   WHERE source_surface = ? AND source_ref = ? AND decision_type = ?""",
+                (
+                    record["source_surface"],
+                    record["source_ref"],
+                    record["decision_type"],
+                ),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("canonical human decision persistence failed")
+        return _deserialize(row, _HUMAN_DECISION_JSON)
+    finally:
+        connection.close()
+
+
+def list_canonical_human_decisions(
+    *,
+    goal_id: str | None = None,
+    task_id: str | None = None,
+    capability_id: str | None = None,
+    agent_id: str | None = None,
+    artifact_ref: str | None = None,
+    source_surface: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    connection = get_connection()
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for key, value in (
+            ("goal_id", goal_id),
+            ("task_id", task_id),
+            ("capability_id", capability_id),
+            ("agent_id", agent_id),
+            ("artifact_ref", artifact_ref),
+            ("source_surface", source_surface),
+        ):
+            if value is not None:
+                clauses.append(f"{key} = ?")
+                params.append(value)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(max(1, min(int(limit), 100)))
+        rows = connection.execute(
+            f"""SELECT * FROM harness_human_decisions{where}
+                ORDER BY created_at DESC, decision_id DESC LIMIT ?""",
+            params,
+        ).fetchall()
+        return [_deserialize(row, _HUMAN_DECISION_JSON) for row in rows]
+    finally:
+        connection.close()
+
+
+def insert_memory_evaluation(record: dict[str, Any]) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        columns = (
+            "evaluation_id", "memory_id", "decision", "reason", "evidence_refs",
+            "supersedes_memory_id", "authority", "authorization_id", "created_at",
+        )
+        values = [
+            _dump(record.get(key, [])) if key in _MEMORY_EVALUATION_JSON else record.get(key)
+            for key in columns
+        ]
+        connection.execute(
+            f"INSERT OR IGNORE INTO harness_memory_evaluations ({','.join(columns)}) "
+            f"VALUES ({','.join('?' for _ in columns)})",
+            values,
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM harness_memory_evaluations WHERE evaluation_id = ?",
+            (record["evaluation_id"],),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("memory evaluation persistence failed")
+        return _deserialize(row, _MEMORY_EVALUATION_JSON)
+    finally:
+        connection.close()
+
+
+def list_memory_evaluations(
+    *,
+    memory_id: str | None = None,
+    decision: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    connection = get_connection()
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for key, value in (("memory_id", memory_id), ("decision", decision)):
+            if value is not None:
+                clauses.append(f"{key} = ?")
+                params.append(value)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(max(1, min(int(limit), 200)))
+        rows = connection.execute(
+            f"""SELECT * FROM harness_memory_evaluations{where}
+                ORDER BY created_at DESC, evaluation_id DESC LIMIT ?""",
+            params,
+        ).fetchall()
+        return [_deserialize(row, _MEMORY_EVALUATION_JSON) for row in rows]
+    finally:
+        connection.close()
+
+
+def update_memory_lifecycle(
+    memory_id: str,
+    *,
+    status: str,
+    metadata_updates: dict[str, Any] | None = None,
+    last_verified_at: str | None = None,
+) -> dict[str, Any]:
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("memory not found")
+        current = _deserialize(row, _MEMORY_JSON)
+        metadata = dict(current.get("metadata") or {})
+        metadata.update(dict(metadata_updates or {}))
+        connection.execute(
+            """UPDATE harness_memories
+               SET status = ?, metadata = ?,
+                   last_verified_at = COALESCE(?, last_verified_at)
+               WHERE memory_id = ?""",
+            (status, _dump(metadata), last_verified_at, memory_id),
+        )
+        connection.commit()
+        updated = connection.execute(
+            "SELECT * FROM harness_memories WHERE memory_id = ?",
+            (memory_id,),
+        ).fetchone()
+        return _deserialize(updated, _MEMORY_JSON)
+    finally:
+        connection.close()
