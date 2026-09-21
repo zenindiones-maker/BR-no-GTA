@@ -10,6 +10,7 @@ LOG_FILE="${STATE_DIR}/telegram-gateway.log"
 REVISION_FILE="${STATE_DIR}/telegram-gateway.revision"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 START_LOCK_DIR="${STATE_DIR}/telegram-gateway.start.lock"
+SUPERVISOR_PID_FILE="${STATE_DIR}/telegram-supervisor.pid"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 
 mkdir -p "${STATE_DIR}" "${CONFIG_DIR}"
@@ -232,19 +233,25 @@ sync_branch_ff_only() {
 
 runtime_revision_report() {
   local local_head remote_head loaded pid
+  local -a pids=()
   local_head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
   remote_head="$(remote_repo_revision 2>/dev/null || true)"
   loaded="$(loaded_runtime_revision 2>/dev/null || true)"
   pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  mapfile -t pids < <(gateway_pids)
   echo "RUNNING_GATEWAY_PID=${pid:-NONE}"
+  echo "RUNNING_GATEWAY_INSTANCES=${#pids[@]}"
+  echo "RUNNING_GATEWAY_PIDS=${pids[*]:-NONE}"
   echo "RUNNING_GATEWAY_REVISION=${loaded:-MISSING}"
   echo "LOCAL_HEAD=${local_head:-UNKNOWN}"
   echo "REMOTE_HEAD=${remote_head:-UNAVAILABLE}"
-  if [[ -n "${local_head}" && -n "${remote_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${remote_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
     echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=PASS"
+    echo "TELEGRAM_GATEWAY_SINGLETON=PASS"
     return 0
   fi
   echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=FAIL"
+  echo "TELEGRAM_GATEWAY_SINGLETON=FAIL"
   return 2
 }
 
@@ -266,20 +273,22 @@ publish_runtime_status() {
   configure_cloud_routing >/dev/null 2>&1 || return 0
 
   local local_head remote_head loaded pid state description repo
+  local -a pids=()
   local_head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
   remote_head="$(remote_repo_revision 2>/dev/null || true)"
   loaded="$(loaded_runtime_revision 2>/dev/null || true)"
   pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
   repo="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
+  mapfile -t pids < <(gateway_pids)
 
   [[ -n "${remote_head}" ]] || return 0
   state="error"
-  if [[ -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+  if [[ "${#pids[@]}" -eq 1 && -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
     if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
       state="success"
     fi
   fi
-  description="pid=${pid:-none} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"
+  description="pid=${pid:-none} instances=${#pids[@]} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"
   gh api     --method POST     -H "Accept: application/vnd.github+json"     "repos/${repo}/statuses/${remote_head}"     -f "state=${state}"     -f "context=telegram-a15-runtime"     -f "description=${description}"     >/dev/null 2>&1 || true
 }
 
@@ -302,6 +311,38 @@ acquire_start_lock() {
 
 release_start_lock() {
   rm -rf "${START_LOCK_DIR}" 2>/dev/null || true
+}
+
+reap_untracked_legacy_supervisors() {
+  local tracked="" pid
+  tracked="$(cat "${SUPERVISOR_PID_FILE}" 2>/dev/null || true)"
+  while IFS= read -r pid; do
+    [[ "${pid}" =~ ^[0-9]+$ ]] || continue
+    [[ "${pid}" == "$" || "${pid}" == "${PPID}" || "${pid}" == "${tracked}" ]] && continue
+    echo "TELEGRAM_SUPERVISOR=REAPING_UNTRACKED PID=${pid}"
+    kill "${pid}" 2>/dev/null || true
+  done < <(
+    "${PYTHON_BIN}" - <<'PY'
+from pathlib import Path
+import os
+for entry in Path("/proc").iterdir():
+    if not entry.name.isdigit():
+        continue
+    pid = int(entry.name)
+    if pid == os.getpid():
+        continue
+    try:
+        argv = [
+            part.decode("utf-8", errors="replace")
+            for part in (entry / "cmdline").read_bytes().split(b"\0")
+            if part
+        ]
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        continue
+    if any(arg.endswith("/telegram-supervisor.sh") for arg in argv):
+        print(pid)
+PY
+  )
 }
 
 terminate_gateway_pids() {
@@ -482,6 +523,7 @@ reconcile_gateway() {
   : > "${MAINTENANCE_FILE}"
   trap 'rm -f "${MAINTENANCE_FILE}" "${START_LOCK_DIR}"' EXIT INT TERM
   echo "TELEGRAM_DEPLOY_RECONCILE=START"
+  reap_untracked_legacy_supervisors
   sync_branch_ff_only
   stop_gateway
   start_gateway
