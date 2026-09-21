@@ -119,7 +119,20 @@ class BoundedMemoryContext:
     obsidian_role: str = "PROJECTION_ONLY"
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # This boundary is consumed by routing metadata, Hermes mission context
+        # and evidence artifacts, all of which are JSON contracts. Normalize
+        # immutable Python tuples into JSON arrays instead of leaking runtime
+        # container types across the boundary.
+        for key in (
+            "conversation_memory",
+            "operational_memory",
+            "knowledge_memory",
+            "artifact_lineage_memory",
+            "competence_records",
+        ):
+            data[key] = list(data.get(key) or ())
+        return data
 
 
 def _fits(payload: dict[str, Any], max_bytes: int) -> bool:
