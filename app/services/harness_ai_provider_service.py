@@ -24,6 +24,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.nvidia_nim_provider import NvidiaNIMProvider
+from app.services.local_openweight_ai_provider import OllamaLocalAIProvider
 from app.services.opencode_executor_profile_service import (
     create_opencode_provider_for_active_profile,
 )
@@ -195,6 +196,17 @@ def select_harness_ai_provider(
         ):
             raise PermissionError("Tuxevil executor escaped registered Harness binding")
         return normalized_provider, create_ai_provider(
+            model=decision.selected_model,
+        )
+
+    if normalized_provider == "ollama_local":
+        if "local_openweight_ai_provider.OllamaLocalAIProvider" not in (
+            decision.selected_provider_executor_binding or ""
+        ):
+            raise PermissionError(
+                "Local open-weight executor escaped registered Harness binding"
+            )
+        return normalized_provider, OllamaLocalAIProvider(
             model=decision.selected_model,
         )
 
