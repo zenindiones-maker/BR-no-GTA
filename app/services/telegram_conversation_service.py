@@ -358,9 +358,7 @@ def plan_natural_language_action(
                 "authorized_action": "DECISION",
                 "artifact_ref": resolved_reference or state.get("active_artifact") or "script:last",
             }
-        if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")) and any(
-            term in text for term in ("gera", "gere", "produz", "produza", "cria", "crie")
-        ):
+        if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
             return {
                 "kind": "CAPABILITY",
                 "authorized_action": "EXECUTION",
