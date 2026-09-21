@@ -17,7 +17,13 @@ from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
 from app.services.human_presentation_service import present_canonical_result_under_harness
 from app.services.script_service import get_script, list_scripts
-from app.services.telegram_harness_service import chat_under_harness
+from app.services.telegram_harness_service import (
+    HarnessReasoningFailure,
+    chat_under_harness,
+)
+from app.services.telegram_control_surface_status import (
+    build_harness_control_surface_status,
+)
 
 
 INTENTS = {
@@ -73,7 +79,8 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "retoma", "retome", "faz de novo", "refaz", "faz o video", "faca o video",
         "depois que eu aprovar", "quando eu aprovar", "gera ", "gere ", "corrige ",
         "corrija ", "renderiza", "renderize", "produz ", "produza ", "me manda ",
-        "envia ", "execute ", "executa ",
+        "envia ", "execute ", "executa ", "analisa ", "analise ", "revisa ",
+        "revise ", "com a equipe", "pela equipe",
     )):
         return "EXECUTION_REQUEST"
     if any(term in text for term in (
@@ -241,6 +248,20 @@ def plan_natural_language_action(
                 "active_goal_id": state.get("active_goal_id"),
                 "active_task": state.get("active_task"),
             }
+        if (
+            any(term in text for term in ("com a equipe", "pela equipe", "hermes"))
+            or (
+                any(term in text for term in ("analisa", "analise", "revisa", "revise"))
+                and any(term in text for term in ("roteiro", "video", "resultado"))
+            )
+        ):
+            return {
+                "kind": "HERMES_COLLABORATION",
+                "authorized_action": "EXECUTION",
+                "capability_id": "collaboration.hermes.execute",
+                "artifact_ref": resolved_reference or state.get("active_artifact"),
+                "active_goal_id": state.get("active_goal_id"),
+            }
         if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
             return {
                 "kind": "CAPABILITY",
@@ -308,6 +329,17 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             }
         return _parse_result(server.br_execution_process_next(goal_id=goal_id))
 
+    if plan["kind"] == "HERMES_COLLABORATION":
+        from app.services.telegram_hermes_dispatch_service import (
+            dispatch_telegram_hermes_mission,
+        )
+
+        return dispatch_telegram_hermes_mission(
+            plan=plan,
+            state=state,
+            message=message,
+        )
+
     if plan["kind"] in {"CAPABILITY", "RESEARCH_PIPELINE"}:
         capability_id = str(plan.get("capability_id") or "").strip()
         if capability_id == "gta6.research":
@@ -358,6 +390,37 @@ def _compact_research_pipeline_result(result: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _deterministic_research_answer(result: dict[str, Any]) -> str:
+    compact = _compact_research_pipeline_result(result)
+    parts = ["A pesquisa governada foi concluída e a evidência canônica foi preservada."]
+    total = compact.get("total")
+    if total is not None:
+        parts.append(f"Total observado no resultado: {total}.")
+    official = compact.get("rockstar_newswire")
+    if isinstance(official, list) and official:
+        titles = [
+            str(item.get("title") or "").strip()
+            for item in official
+            if isinstance(item, dict) and str(item.get("title") or "").strip()
+        ]
+        if titles:
+            parts.append("Fontes oficiais no resultado: " + "; ".join(titles[:4]) + ".")
+    editorial = compact.get("editorial")
+    if isinstance(editorial, list) and editorial:
+        decisions = [
+            str(item.get("decision") or item.get("status") or "").strip()
+            for item in editorial
+            if isinstance(item, dict)
+            and str(item.get("decision") or item.get("status") or "").strip()
+        ]
+        if decisions:
+            parts.append("Avaliação editorial persistida: " + "; ".join(decisions[:4]) + ".")
+    parts.append(
+        "A síntese generativa está indisponível; por isso não acrescentei interpretação nem fatos fora do resultado da pesquisa."
+    )
+    return " ".join(parts)
+
+
 def _status_answer(state: dict[str, Any]) -> str:
     status = str(state.get("execution_status") or "IDLE")
     stage = str(state.get("active_stage") or "").strip()
@@ -368,7 +431,9 @@ def _status_answer(state: dict[str, Any]) -> str:
     waiting = bool(state.get("waiting_for_human"))
     if waiting:
         target = str(state.get("pending_human_review") or state.get("pending_question") or "decisão pendente")
-        return f"Estou aguardando você: {target}. Não há execução autônoma passando por cima dessa decisão."
+        mission = str(state.get("hermes_mission_id") or "").strip()
+        suffix = f" Missão Hermes: {mission}." if mission else ""
+        return f"Estou aguardando você: {target}.{suffix} Nenhuma execução passa por cima dessa decisão."
     if status in {"RUNNING", "IN_PROGRESS"}:
         details = [item for item in (task, f"etapa {stage}" if stage else "", f"run {run_id}" if run_id else "") if item]
         text = "Estou executando " + (" — ".join(details) if details else "a tarefa ativa") + "."
@@ -376,7 +441,10 @@ def _status_answer(state: dict[str, Any]) -> str:
             text += f" Blocker atual: {blocker}."
         return text
     if blocker:
-        return f"Estou parado por um blocker real: {blocker}."
+        auth = state.get("latest_harness_authorization")
+        capability = auth.get("capability_id") if isinstance(auth, dict) else None
+        suffix = f" Última capability autorizada: {capability}." if capability else ""
+        return f"Estou parado por um blocker real: {blocker}.{suffix}"
     if task or goal:
         return f"Não há etapa rodando agora. A tarefa ativa é {task or goal}; posso continuar dela sem você repetir IDs."
     return "Não há run nem tarefa ativa registrada nesta conversa agora."
@@ -474,11 +542,16 @@ def handle_telegram_conversation(
     decision = None
     if plan["kind"] == "STATUS":
         state = get_or_create_conversation_state(telegram_chat_id)
+        control_surface_status = build_harness_control_surface_status(
+            telegram_chat_id,
+            state=state,
+        )
         canonical = {
             "status": "OBSERVED",
-            "answer": _status_answer(state),
+            "answer": _status_answer(control_surface_status),
             "intent": intent,
             "conversation_state": state,
+            "control_surface_status": control_surface_status,
         }
     elif plan["kind"] == "CANCEL":
         state = update_conversation_state(
@@ -653,30 +726,52 @@ def handle_telegram_conversation(
         if progress_callback is not None:
             progress_callback(
                 "SYNTHESIS",
-                "Sintetizando o impacto editorial sem repetir a pesquisa.",
+                "Tentando síntese opcional; a pesquisa já está preservada mesmo se o provider estiver indisponível.",
             )
-        synthesis = _parse_result(
-            chat_handler(
-                text,
-                progress_callback=progress_callback,
-                input_record=input_record,
-                conversation_context=reasoning_context,
-                skip_fresh_research=True,
+        try:
+            synthesis = _parse_result(
+                chat_handler(
+                    text,
+                    progress_callback=progress_callback,
+                    input_record=input_record,
+                    conversation_context=reasoning_context,
+                    skip_fresh_research=True,
+                )
             )
-        )
-        canonical = {
-            **research_result,
-            "answer": str(
-                synthesis.get("answer")
-                or "A pesquisa foi concluída e a avaliação editorial foi persistida."
-            ),
-            "research_synthesis": {
-                "capability_id": synthesis.get("capability_id"),
-                "routing_id": synthesis.get("routing_id"),
-                "authorization_id": synthesis.get("authorization_id"),
-                "execution_id": synthesis.get("execution_id"),
-            },
-        }
+        except HarnessReasoningFailure as exc:
+            provider_failure = exc.to_dict()
+            if progress_callback is not None:
+                progress_callback(
+                    "RESULT",
+                    "Pesquisa concluída. A síntese generativa está indisponível; apresentando somente o resultado canônico.",
+                )
+            canonical = {
+                **research_result,
+                "answer": _deterministic_research_answer(research_result),
+                "RESEARCH_EXECUTION": "PASS",
+                "OPTIONAL_SYNTHESIS": "UNAVAILABLE",
+                "reasoning_provider_blocker": {
+                    "provider": provider_failure.get("provider"),
+                    "model": provider_failure.get("model"),
+                    "provider_error": provider_failure.get("provider_error"),
+                },
+            }
+        else:
+            canonical = {
+                **research_result,
+                "answer": str(
+                    synthesis.get("answer")
+                    or "A pesquisa foi concluída e a avaliação editorial foi persistida."
+                ),
+                "RESEARCH_EXECUTION": "PASS",
+                "OPTIONAL_SYNTHESIS": "PASS",
+                "research_synthesis": {
+                    "capability_id": synthesis.get("capability_id"),
+                    "routing_id": synthesis.get("routing_id"),
+                    "authorization_id": synthesis.get("authorization_id"),
+                    "execution_id": synthesis.get("execution_id"),
+                },
+            }
     elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY"}:
         update_conversation_state(
             telegram_chat_id,
