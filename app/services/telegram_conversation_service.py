@@ -18,6 +18,10 @@ from app.database.telegram_conversation_repository import (
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
+from app.services.harness_collaboration_service import (
+    build_goal_envelope,
+    plan_mission_from_human_goal,
+)
 from app.services.human_presentation_service import present_canonical_result_under_harness
 from app.services.memory_plane_service import record_canonical_human_decision
 from app.services.script_service import get_script, list_scripts
@@ -321,41 +325,56 @@ def plan_natural_language_action(
                 "active_goal_id": state.get("active_goal_id"),
                 "active_task": state.get("active_task"),
             }
-        system_improvement_goal = (
-            any(term in text for term in (
-                "sistema", "pipeline", "processo", "execucao", "execução",
-                "demorando", "lentidao", "lentidão", "desempenho", "performance",
-                "desperdicio", "desperdício", "retry", "latencia", "latência",
-            ))
-            and any(term in text for term in (
-                "analisa", "analise", "descobre", "descubra", "investiga", "investigue",
-                "corrige", "corrija", "melhora", "melhore", "otimiza", "otimize",
-            ))
-        )
-        if system_improvement_goal:
-            return {
-                "kind": "SYSTEM_IMPROVEMENT_MISSION",
-                "authorized_action": "DEVELOPMENT",
-                "capability_id": "system.improvement.propose",
-                "artifact_ref": resolved_reference or state.get("active_artifact"),
-                "active_goal_id": state.get("active_goal_id"),
-                "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
-                "collaboration_runtime": "HERMES_WHEN_MULTI_AGENT_REQUIRED",
-            }
-        if (
-            any(term in text for term in ("com a equipe", "pela equipe", "hermes"))
-            or (
-                any(term in text for term in ("analisa", "analise", "revisa", "revise"))
-                and any(term in text for term in ("roteiro", "video", "resultado"))
+        # Natural operational goals are converted into a Harness-owned GoalEnvelope
+        # and MissionPlan. The human never selects Hermes, Agent Office or specialists.
+        try:
+            goal_envelope = build_goal_envelope(
+                human_goal=message,
+                project=str(state.get("active_project") or "BR-no-GTA"),
+                goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
+                subject=str(state.get("current_subject") or "").strip() or None,
+                source_surface="telegram",
             )
-        ):
+            mission_plan = plan_mission_from_human_goal(
+                goal_envelope,
+                artifact_ref=resolved_reference or state.get("active_artifact"),
+            )
+        except RuntimeError as exc:
+            if str(exc) == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE":
+                return {
+                    "kind": "SEMANTIC_REASONING_UNAVAILABLE",
+                    "authorized_action": "DECISION",
+                    "reason": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+                }
+            mission_plan = None
+            goal_envelope = None
+
+        if mission_plan is not None and goal_envelope is not None:
+            if goal_envelope.mission_class == "SYSTEM_IMPROVEMENT":
+                return {
+                    "kind": "SYSTEM_IMPROVEMENT_MISSION",
+                    "authorized_action": "DEVELOPMENT",
+                    "capability_id": "system.improvement.propose",
+                    "artifact_ref": resolved_reference or state.get("active_artifact"),
+                    "active_goal_id": state.get("active_goal_id"),
+                    "goal_envelope": goal_envelope.to_dict(),
+                    "mission_plan": mission_plan.to_dict(),
+                    "mission_planner": "DEEPSEEK_HARNESS",
+                    "collaboration_runtime": mission_plan.collaboration_plan.authority,
+                }
             return {
-                "kind": "HERMES_COLLABORATION",
+                "kind": "HARNESS_MISSION",
                 "authorized_action": "EXECUTION",
-                "capability_id": "collaboration.hermes.execute",
                 "artifact_ref": resolved_reference or state.get("active_artifact"),
                 "active_goal_id": state.get("active_goal_id"),
+                "goal_envelope": goal_envelope.to_dict(),
+                "mission_plan": mission_plan.to_dict(),
+                "mission_planner": "DEEPSEEK_HARNESS",
+                "collaboration_runtime": (
+                    "HERMES" if len(mission_plan.collaboration_plan.tasks) > 1 else None
+                ),
             }
+
         if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
             return {
                 "kind": "CAPABILITY",
@@ -462,6 +481,22 @@ def _extract_identity(payload: dict[str, Any], *keys: str) -> Any:
 
 def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], message: str) -> dict[str, Any]:
     from app.integrations.deepseek_harness import server
+
+    if plan["kind"] == "SEMANTIC_REASONING_UNAVAILABLE":
+        return {
+            "status": "BLOCKED_PROVIDER",
+            "answer": (
+                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
+                "O objetivo exige planejamento semântico aberto e não existe provider zero-cost saudável elegível. "
+                "Controles determinísticos, status, memória e aprovações continuam disponíveis."
+            ),
+            "provider_retry_performed": False,
+            "authority": "DEEPSEEK_HARNESS",
+            "NEW_VOICE_SYNTHESIS": "NO",
+            "FULL_RENDER": "NO",
+            "YOUTUBE_UPLOAD": "NO",
+            "YOUTUBE_PUBLICATION": "NO",
+        }
 
     if plan["kind"] == "CONTINUE":
         goal_id = str(plan.get("active_goal_id") or "").strip()
