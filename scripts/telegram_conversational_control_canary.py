@@ -4,7 +4,10 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 from app.database.ideas_repository import insert_idea
@@ -353,9 +356,26 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
             "PENDING_ACTION_RELOADED=FAIL: read-only status consumed pending_action"
         )
 
-    # Simulated process restart: new API/reporter objects, state only from SQLite.
-    # The repository opens a fresh SQLite connection for every load, so this
-    # exercises durable reload rather than an in-memory cache.
+    # Literal process restart proof: a fresh Python interpreter must recover
+    # the same durable ConversationState from SQLite before approval is sent.
+    reload_code = (
+        "import json;"
+        "from app.database.telegram_conversation_repository import "
+        "get_or_create_conversation_state;"
+        f"print(json.dumps(get_or_create_conversation_state({chat_id}), ensure_ascii=False))"
+    )
+    reload_process = subprocess.run(
+        [sys.executable, "-c", reload_code],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=dict(os.environ),
+    )
+    process_reloaded_state = json.loads(
+        [line for line in reload_process.stdout.splitlines() if line.strip()][-1]
+    )
+
     restarted_api = FakeTelegramApi()
     restored = get_or_create_conversation_state(chat_id)
     restored_pending_action = restored.get("pending_action")
@@ -474,14 +494,20 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         ),
         "PENDING_ACTION_RELOADED": (
             after_status_pending_action == waiting_pending_action
+            and process_reloaded_state.get("pending_action") == waiting_pending_action
             and restored_pending_action == waiting_pending_action
         ),
         "MISSION_ID_PRESERVED": (
-            restored_mission_id == f"telegram-control-synergy-{chat_id}"
+            process_reloaded_state.get("conversation_id") == f"telegram:{chat_id}"
+            and (process_reloaded_state.get("pending_action") or {}).get("mission_id")
+            == f"telegram-control-synergy-{chat_id}"
+            and restored_mission_id == f"telegram-control-synergy-{chat_id}"
             and resumed["canonical_result"].get("mission_id") == restored_mission_id
         ),
         "TASK_ID_PRESERVED": (
-            restored_task_id == "production-management"
+            (process_reloaded_state.get("pending_action") or {}).get("task_id")
+            == "production-management"
+            and restored_task_id == "production-management"
             and resumed["canonical_result"].get("task_id") == restored_task_id
         ),
         "APPROVAL_AFTER_RESTART": (
