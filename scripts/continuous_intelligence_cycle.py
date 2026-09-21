@@ -1188,6 +1188,9 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
     }
     report = {
         "schema": "br-continuous-operation-cycle/v1", "status": "PASS",
+        "checks": {
+            "SCHEDULED_ENTRYPOINT_CONTRACT": True,
+        },
         "trigger_kind": trigger_kind, "target_sha": target_sha, "due": due,
         "meaningful_change": meaningful, "gta6": gta, "knowledge_promotions": promotions,
         "improvement_candidate": improvement_candidate, "failure_prevention": failure,
