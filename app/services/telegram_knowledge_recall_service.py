@@ -31,12 +31,21 @@ def _tokens(value: str) -> set[str]:
     }
 
 
-def _is_broad_gta6_query(query: str) -> bool:
+def _is_broad_gta6_query(
+    query: str,
+    *,
+    project_context: str = "",
+    subject_context: str = "",
+) -> bool:
     text = _fold(query)
     mentions_gta6 = any(term in text for term in (
         "gta 6", "gta6", "gta vi", "grand theft auto vi",
     ))
-    return mentions_gta6 and not _tokens(query)
+    context = _fold(f"{project_context} {subject_context}")
+    project_is_gta6 = any(term in context for term in (
+        "br-no-gta", "gta 6", "gta6", "gta vi",
+    ))
+    return (mentions_gta6 or project_is_gta6) and not _tokens(query)
 
 
 def _explicitly_outside_gta6_scope(query: str) -> bool:
