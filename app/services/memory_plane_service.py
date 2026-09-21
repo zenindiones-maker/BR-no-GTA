@@ -115,6 +115,10 @@ def infer_failure_pattern(episode: dict[str, Any]) -> str:
             (episode.get("actual_outcome") or {}).get("provider_error"),
         )
     ).casefold()
+    if "codex_device_auth_wait_timeout" in text or (
+        "device auth" in text and "runner" in text and "waiting" in text
+    ):
+        return "codex_device_auth_wait_timeout"
     if "free tier" in text and ("403" in text or "opencode" in text):
         return "opencode_free_tier_403"
     if "semantic" in text and "tool" in text:
