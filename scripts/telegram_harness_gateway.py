@@ -84,6 +84,7 @@ class TelegramProgressReporter:
         self._stage = "STARTING"
         self._message = ""
         self._last_sent = time.monotonic()
+        self._progress_message_id: int | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -120,7 +121,7 @@ class TelegramProgressReporter:
             pass
         if stage_changed or now - self._last_sent >= self.progress_min_seconds:
             body = f"AÇÃO: {rendered}\nAGORA: {normalized_stage}" if rendered else f"AGORA: {normalized_stage}"
-            self.api.send(self.chat_id, body)
+            self._publish(body)
             self._last_sent = now
 
     def blocker(self, message: str) -> None:
@@ -136,8 +137,19 @@ class TelegramProgressReporter:
             )
         except Exception:
             pass
-        self.api.send(self.chat_id, f"BLOCKER: {detail}")
+        self._publish(f"BLOCKER: {detail}")
         self._last_sent = time.monotonic()
+
+    def _publish(self, text: str) -> None:
+        if self._progress_message_id is not None and hasattr(self.api, "edit"):
+            try:
+                self.api.edit(self.chat_id, self._progress_message_id, text)
+                return
+            except Exception:
+                self._progress_message_id = None
+        message_id = self.api.send(self.chat_id, text)
+        if isinstance(message_id, int):
+            self._progress_message_id = message_id
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.wait(5.0):
@@ -145,9 +157,8 @@ class TelegramProgressReporter:
             if now - self._last_sent < self.heartbeat_seconds:
                 continue
             stage = self._stage or "WORKING"
-            self.api.send(
-                self.chat_id,
-                f"Ainda trabalhando — etapa: {stage}. Nenhum blocker novo.",
+            self._publish(
+                f"Ainda trabalhando — etapa: {stage}. Nenhum blocker novo."
             )
             self._last_sent = now
 
@@ -186,9 +197,26 @@ class TelegramApi:
             raise TelegramApiError(str(data.get("description") or data))
         return data.get("result")
 
-    def send(self, chat_id: int, text: str) -> None:
+    def send(self, chat_id: int, text: str) -> int | None:
+        last_message_id: int | None = None
         for chunk in _split_telegram_text(text):
-            self.call("sendMessage", {"chat_id": str(chat_id), "text": chunk})
+            result = self.call("sendMessage", {"chat_id": str(chat_id), "text": chunk})
+            if isinstance(result, dict) and isinstance(result.get("message_id"), int):
+                last_message_id = int(result["message_id"])
+        return last_message_id
+
+    def edit(self, chat_id: int, message_id: int, text: str) -> None:
+        chunks = _split_telegram_text(text)
+        if len(chunks) != 1:
+            raise ValueError("progress edit must fit in one Telegram message")
+        self.call(
+            "editMessageText",
+            {
+                "chat_id": str(chat_id),
+                "message_id": str(int(message_id)),
+                "text": chunks[0],
+            },
+        )
 
     def typing(self, chat_id: int) -> None:
         try:
@@ -502,9 +530,9 @@ def _chat_reply(result: dict[str, Any]) -> str:
             state.get("pending_human_review")
             or state.get("pending_question")
             or state.get("current_subject")
-            or "DECISION"
+            or "sua decisão"
         )
-        return f"WAITING_FOR_HUMAN=YES REVIEW_TARGET={target}\n\n{answer}"
+        return f"Estou aguardando você sobre {target}.\n\n{answer}"
     return answer
 
 
