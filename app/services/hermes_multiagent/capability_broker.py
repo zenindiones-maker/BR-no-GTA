@@ -275,6 +275,7 @@ class HermesHarnessCapabilityBroker:
             result=result,
         )
         audit = {
+            "authority": "DEEPSEEK_HARNESS",
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
             "task_class": f"hermes:{task_id}",
