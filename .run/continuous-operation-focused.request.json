@@ -1,6 +1,7 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "b3e29e46efec64fa73976e9fb938399aa74c739f",
-  "scope": "scheduled-entrypoint-contract-gta6-due-key",
-  "expected": "SCHEDULED_ENTRYPOINT_CONTRACT=PASS"
+  "source_head": "900b290cb44b7c8f296e2284a068db953148d3ef",
+  "scope": "observed-improvement-evidence-ref-dedup",
+  "observed_failure_run": 35589436851,
+  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS"
 }
