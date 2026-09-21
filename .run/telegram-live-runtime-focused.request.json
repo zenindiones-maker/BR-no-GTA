@@ -1,8 +1,10 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "a1160720ae00d2dda5e09d4c5489999194b18378",
-  "scope": "single-runtime-status-final-response-multiline-regression",
+  "source_head": "8a369cf9f287050273ee4a525ba5390218a2838b",
+  "scope": "single-runtime-status-final-response-multiline-regression-rerun",
   "observed_human_failure": "duplicate status plus reasoning/OpenCode failure after deterministic status",
+  "previous_focused_run": 35612247832,
+  "previous_failure": "stale textual assertion only",
   "required": [
     "runtime-singleton",
     "module-style-process-reconciliation",
