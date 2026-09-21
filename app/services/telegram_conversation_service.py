@@ -908,7 +908,15 @@ def handle_telegram_conversation(
     # Short deterministic control paths must return the result directly.
     # A visible UNDERSTANDING heartbeat is product noise and can become a
     # misleading final message if the process dies before presentation.
-    visible_progress_allowed = plan["kind"] not in {"STATUS", "MEMORY_RECALL", "KNOWLEDGE_RECALL"}
+    visible_progress_allowed = plan["kind"] not in {
+        "STATUS",
+        "MEMORY_RECALL",
+        "KNOWLEDGE_RECALL",
+        "MEMORY_CANDIDATE",
+        "HUMAN_DECISION",
+        "CANCEL",
+        "PRESENT_EXISTING",
+    }
     if progress_callback is not None and visible_progress_allowed:
         progress_callback(
             "UNDERSTANDING",
