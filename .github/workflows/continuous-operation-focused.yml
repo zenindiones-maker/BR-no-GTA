@@ -43,7 +43,7 @@ jobs:
       - name: Compile continuous boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/database/continuous_operation_repository.py             app/services/continuous_operation_policy_service.py             app/services/continuous_intelligence_service.py             app/services/obsidian_memory_service.py             app/services/telegram_conversation_service.py             app/services/hermes_multiagent/evidence.py             scripts/continuous_state_checkpoint.py             scripts/continuous_intelligence_cycle.py
+          python -m py_compile             app/database/continuous_operation_repository.py             app/services/continuous_operation_policy_service.py             app/services/continuous_intelligence_service.py             app/services/obsidian_memory_service.py             app/services/telegram_conversation_service.py             app/services/hermes_multiagent/evidence.py             scripts/continuous_state_checkpoint.py             scripts/continuous_due_gate.py             scripts/continuous_intelligence_cycle.py
           echo "CONTINUOUS_BOUNDARIES_COMPILE=PASS"
 
       - name: Run focused continuous tests
