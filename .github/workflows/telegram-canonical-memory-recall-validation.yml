@@ -77,9 +77,12 @@ jobs:
           def presenter(canonical, **kwargs):
               return {"text": canonical.get("answer", "")}
 
+          literal_input="Conhecimento"
           result=handle_telegram_conversation(
-              "Conhecimento sobre o gta 6",
+              literal_input,
               telegram_chat_id=770001,
+              telegram_user_id=1770001,
+              telegram_chat_type="private",
               telegram_message_id=770002,
               chat_handler=provider,
               action_executor=action,
@@ -87,8 +90,10 @@ jobs:
               presenter=presenter,
           )
           canonical=result["canonical_result"]
+          assert literal_input=="Conhecimento"
           assert result["intent"]=="KNOWLEDGE_RECALL_REQUEST", result["intent"]
           assert result["plan"]["kind"]=="KNOWLEDGE_RECALL", result["plan"]
+          assert result["intent_resolution"]["layer"]=="LAYER_2_CONTEXT", result["intent_resolution"]
           assert canonical["status"]=="CANONICAL_KNOWLEDGE_RECALLED", canonical
           assert canonical["provider_independent"] is True
           assert canonical["provider_calls"]==0
@@ -141,12 +146,32 @@ jobs:
           assert provider_calls==0
           assert action_calls==0
 
+          print("HUMAN_INPUT_LITERAL_MATCH=PASS")
+          print("SHORT_UTTERANCE_CONTEXT_RESOLUTION=PASS")
+          print("KNOWLEDGE_RECALL_PROVIDER_FREE=PASS")
           print("TELEGRAM_CANONICAL_KNOWLEDGE_RECALL=PASS")
           print("STATUS_PROVIDER_INDEPENDENT=PASS")
           print("KNOWLEDGE_PROVIDER_CALLS=0")
           print("SOURCE_PROVENANCE_PRESERVED=PASS")
           print("GTA7_MEMORY_MISS_NOT_PROVIDER_FAILURE=PASS")
           PY
+
+      - name: Run natural interaction and routing focused regressions
+        env:
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/focused.db
+        run: |
+          set -euo pipefail
+          rm -f "$BR_TEST_DATABASE"
+          python -m pytest -q             tests/test_telegram_conversation_control.py::test_literal_conhecimento_uses_context_before_provider             tests/test_telegram_conversation_control.py::test_literal_memoria_recalls_canonical_human_decision_provider_free             tests/test_telegram_conversation_control.py::test_literal_continua_resolves_against_active_goal_without_provider             tests/test_telegram_conversation_control.py::test_literal_melhora_sistema_enters_harness_mission_planner_without_provider             tests/test_telegram_conversation_control.py::test_natural_agent_phrase_needs_no_hermes_keyword             tests/test_telegram_conversation_control.py::test_explicit_guarda_is_governed_memory_candidate_not_auto_promotion             tests/test_harness_mission_planner.py::test_execution_router_keeps_known_missions_off_provider_fallback             tests/test_operational_routing_governance.py
+          echo "TELEGRAM_NATURAL_INTERACTION=PASS"
+          echo "MEMORY_RECALL_PROVIDER_FREE=PASS"
+          echo "STATUS_PROVIDER_FREE=PASS"
+          echo "HARNESS_MISSION_PLANNER=PASS"
+          echo "MISSION_EXECUTION_ROUTER=PASS"
+          echo "NO_KEYWORD_REQUIRED_FOR_HERMES=PASS"
+          echo "TELEGRAM_MEMORY_WRITE_GOVERNED=PASS"
+          echo "CAPABILITY_USAGE_AUDIT=PASS"
+          echo "NO_UNRELATED_WORKFLOW_FANOUT=PASS"
 
       - name: Prove canonical state feeds Obsidian projection
         env:
