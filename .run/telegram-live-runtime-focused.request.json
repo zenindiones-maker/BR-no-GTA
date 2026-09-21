@@ -1,12 +1,7 @@
 {
-  "request": "telegram-live-semantic-provider-failure-regression",
-  "source_head": "300195e26ca70af41c8e00509c3d7875efda9c08",
-  "observed_human_failure": "active OpenCode executor profile checksum does not match executable code",
-  "expected_human_result": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
-  "preserve": {
-    "new_voice_synthesis": "NO",
-    "full_render": "NO",
-    "youtube_upload": "NO",
-    "youtube_publication": "NO"
-  }
+  "request": "telegram-live-semantic-provider-failure-regression-rerun",
+  "source_head": "7ff0f62587e799806657d399ec2fa2301b75edfb",
+  "canonical_failure_status": "FAILED",
+  "human_error_surface": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+  "technical_checksum_in_human_reply": "NO"
 }
