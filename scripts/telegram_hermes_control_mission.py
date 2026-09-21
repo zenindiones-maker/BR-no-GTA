@@ -202,6 +202,7 @@ def _start(
     upstream_root: Path,
     artifact_dir: Path,
 ) -> dict[str, Any]:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     raw = _decode_artifact(artifact_text_b64)
     observed_sha = hashlib.sha256(raw).hexdigest() if raw else expected_sha256
     if expected_sha256 and observed_sha != expected_sha256:
