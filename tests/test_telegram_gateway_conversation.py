@@ -17,6 +17,7 @@ from app.services.harness_learning_service import register_skill_version
 from app.services.telegram_ingress_policy_service import (
     parse_governed_telegram_ingress,
 )
+from app.services.telegram_harness_service import HarnessReasoningFailure
 from app.services.opencode_executor_profile_service import (
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
     OPENCODE_EXECUTOR_SKILL_ID,
@@ -645,3 +646,51 @@ def test_progress_reporter_keeps_internal_control_stages_telemetry_only(monkeypa
 
     reporter("RESEARCH", "Equipe pesquisando fontes oficiais — 1/3.")
     assert api.sent == [(13001, "Equipe pesquisando fontes oficiais — 1/3.")]
+
+
+
+def test_semantic_provider_integrity_failure_is_human_safe():
+    exc = HarnessReasoningFailure(
+        {
+            "provider": "opencode",
+            "model": "oc/big-pickle",
+            "provider_error": {
+                "code": "provider_profile_integrity_mismatch",
+                "message": (
+                    "active OpenCode executor profile checksum does not match "
+                    "executable code"
+                ),
+                "failure_pattern": "opencode_profile_integrity_mismatch",
+                "retryable": False,
+            },
+            "episode_id": "episode-profile-integrity-test",
+            "failure_memory_id": "memory-profile-integrity-test",
+            "execution_id": "execution-profile-integrity-test",
+        }
+    )
+
+    presented = gateway_v2._reasoning_failure_presentation(exc)
+    text = presented["text"]
+
+    assert "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE" in text
+    assert "checksum does not match executable code" not in text
+    assert "active OpenCode executor profile" not in text
+    assert "/evidence" in text
+    assert presented["mode"] == "ACTION_FIRST"
+
+
+def test_generic_semantic_provider_boundary_leak_is_sanitized():
+    presented = gateway_v2._generic_failure_presentation(
+        PermissionError(
+            "active OpenCode executor profile checksum does not match executable code"
+        ),
+        command="natural-language",
+        telegram_message_id=70001,
+        telegram_update_id=70002,
+    )
+    text = presented["text"]
+
+    assert "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE" in text
+    assert "checksum does not match executable code" not in text
+    assert "active OpenCode executor profile" not in text
+    assert "/evidence" in text
