@@ -6,7 +6,7 @@ from typing import Any
 
 OPENCODE_SEMANTIC_AGENT_ID = "build"
 OPENCODE_SEMANTIC_PROFILE_VERSION = "opencode-semantic-text-v3"
-OPENCODE_SEMANTIC_MAX_STEPS = 1
+OPENCODE_SEMANTIC_MAX_STEPS = None
 OPENCODE_SEMANTIC_CONTRACT = "SEMANTIC_TEXT_ONLY"
 
 _SEMANTIC_TEXT_ONLY_HEADER = """EXECUTION MODE: SEMANTIC_TEXT_ONLY
@@ -25,8 +25,9 @@ def semantic_text_only_prompt(prompt: str) -> str:
 def semantic_text_only_config() -> dict[str, Any]:
     """Native OpenCode V2 config for text-only semantic reasoning.
 
-    steps=1 is intentional: on the final step OpenCode removes tools from the
-    model request. Deny-all permissions remain as a second fail-closed boundary.
+    Keep the official built-in build agent intact. Global deny-all permissions
+    are resolved before the model request and remove every disabled tool from
+    the request; the semantic instruction itself stays in the bounded user prompt.
     """
     deny_all = [
         {"action": "*", "resource": "*", "effect": "deny"},
@@ -35,18 +36,6 @@ def semantic_text_only_config() -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "default_agent": OPENCODE_SEMANTIC_AGENT_ID,
         "permissions": deny_all,
-        "agents": {
-            OPENCODE_SEMANTIC_AGENT_ID: {
-                # Preserve the official built-in build system identity. The free
-                # OpenCode Console tier currently rejects some customized/internal
-                # agent request paths before generation. Text-only behavior is
-                # enforced without replacing the build system prompt: final-step
-                # tool removal + deny-all permissions + the bounded user prompt.
-                "mode": "primary",
-                "steps": OPENCODE_SEMANTIC_MAX_STEPS,
-                "permissions": deny_all,
-            }
-        },
     }
 
 
@@ -66,5 +55,5 @@ def semantic_profile_evidence() -> dict[str, Any]:
         "semantic_contract": OPENCODE_SEMANTIC_CONTRACT,
         "semantic_steps": OPENCODE_SEMANTIC_MAX_STEPS,
         "permissions": "deny-all",
-        "tool_exposure_contract": "final-step-tools-removed-by-opencode",
+        "tool_exposure_contract": "permission-filter-removes-disabled-tools-before-model-request",
     }
