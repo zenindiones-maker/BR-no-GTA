@@ -66,6 +66,7 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_failure_is_explicit \
             tests/test_telegram_gateway_conversation.py::test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy \
             tests/test_telegram_conversation_control.py::test_status_reconciles_legacy_understanding_without_operational_evidence \
+            tests/test_telegram_project_status.py::test_status_query_never_replaces_project_subject_and_exposes_canonical_snapshot \
             --junitxml=artifacts/telegram-live-runtime-focused/pytest.xml
           echo "PROGRESS_TELEMETRY_NOT_CANONICAL_STATE=PASS"
           echo "STALE_PROGRESS_STATE_DETECTED=PASS"
