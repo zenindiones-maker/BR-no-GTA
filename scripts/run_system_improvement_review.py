@@ -13,6 +13,7 @@ from typing import Any
 from app.database.schema import initialize_schema
 from app.services.addy_harness_service import execute_authorized_addy_skill
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.capability_usage_audit_service import build_capability_usage_audit
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -237,6 +238,7 @@ def build_snapshot() -> dict[str, Any]:
         "hotspots": _hotspots(files),
         "workflows": _workflow_snapshot(files),
         "registry": _registry_snapshot(),
+        "capability_usage": build_capability_usage_audit(),
         "known_governed_performance_surfaces": [
             ".github/workflows/operational-cold-start-benchmark.yml",
             ".github/workflows/render-issue14-promotion.yml",
