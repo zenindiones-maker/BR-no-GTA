@@ -269,8 +269,8 @@ class SemanticPlannerResult:
 def _json_object(value: str) -> dict[str, Any]:
     text = str(value or "").strip()
     if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"s*```$", "", text)
+        text = re.sub(r"^```(?:json)?\\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\\s*```$", "", text)
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
