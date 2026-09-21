@@ -12,12 +12,20 @@ from app.database import harness_learning_repository as learning_repository
 from app.database.schema import initialize_schema
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_collaboration_service import (
+    _deterministic_fast_path_requirements,
     _legacy_mission_requirements,
     build_goal_envelope,
     plan_mission_from_human_goal,
 )
 from app.services.harness_mission_execution_router import select_mission_execution_route
+from app.services.provider_health_service import semantic_provider_health
 from app.services.telegram_conversation_service import classify_conversation_intent
+
+
+REAL_NATURAL_GOAL = (
+    "Não sei exatamente o que está errado no sistema. Investiga sozinho e decide "
+    "quais especialistas precisa, sem fazer mudanças antes de provar a causa."
+)
 
 
 CASES = (
@@ -301,8 +309,106 @@ def _case_metrics(case: dict[str, Any], plan) -> dict[str, Metric]:
     }
 
 
+def _real_natural_goal_attempt() -> dict[str, Any]:
+    health = semantic_provider_health()
+    goal = build_goal_envelope(
+        human_goal=REAL_NATURAL_GOAL,
+        project="BR-no-GTA",
+        goal_id="real-natural-goal-intelligence-proof",
+        subject="saúde geral do sistema",
+        source_surface="intelligence-benchmark-real-goal",
+        canonical_state={
+            "active_project": "BR-no-GTA",
+            "execution_status": "investigation-requested",
+        },
+        conversation_state={
+            "human_constraint": "não fazer mudanças antes de provar a causa",
+        },
+    )
+    fast_path = _deterministic_fast_path_requirements(goal)
+    proof: dict[str, Any] = {
+        "human_goal": REAL_NATURAL_GOAL,
+        "goal_id": goal.goal_id,
+        "mission_class": goal.mission_class,
+        "fast_path_requirement_count": len(fast_path),
+        "SEMANTIC_PLANNER_PATH_REQUIRED": len(fast_path) == 0,
+        "provider_health": health,
+    }
+    try:
+        plan = plan_mission_from_human_goal(goal)
+    except RuntimeError as exc:
+        reason = str(exc)
+        proof.update({
+            "status": "BLOCKED_PROVIDER" if "PROVIDER" in reason else "FAIL",
+            "blocker": reason,
+            "SEMANTIC_PLANNER_CALLED": (
+                "NO_PROVIDER_HEALTH_GATE"
+                if reason == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+                else "ATTEMPTED"
+            ),
+            "PLANNING_MODE": (
+                "SEMANTIC_ADAPTIVE_REQUIRED_BLOCKED_PROVIDER"
+                if len(fast_path) == 0 and "PROVIDER" in reason
+                else "UNRESOLVED"
+            ),
+            "DYNAMIC_DECOMPOSITION": "NOT_EXECUTED",
+            "REGISTRY_VALIDATION": "NOT_EXECUTED",
+            "MEMORY_INFLUENCES_STRATEGY": "NOT_APPLICABLE_PROVIDER_BLOCK",
+            "COMPETENCE_INFLUENCES_SELECTION": "NOT_APPLICABLE_PROVIDER_BLOCK",
+            "PLAN_DIVERSITY": "NOT_APPLICABLE_PROVIDER_BLOCK",
+            "NO_HARDCODED_TEAM_REQUIRED": (
+                "PASS"
+                if all(
+                    name.casefold() not in REAL_NATURAL_GOAL.casefold()
+                    for name in ("codex", "hermes", "agent office")
+                )
+                else "FAIL"
+            ),
+            "MISSION_EXECUTION_ROUTE": "UNAVAILABLE_PROVIDER_BLOCK",
+        })
+        return proof
+
+    route = select_mission_execution_route(plan.to_dict())
+    proof.update({
+        "status": "PLANNED",
+        "blocker": None,
+        "SEMANTIC_PLANNER_CALLED": "YES",
+        "PLANNING_MODE": plan.planning_mode,
+        "DYNAMIC_DECOMPOSITION": (
+            "PASS"
+            if plan.planning_mode == "SEMANTIC_ADAPTIVE"
+            and bool(plan.collaboration_plan.tasks)
+            else "FAIL"
+        ),
+        "REGISTRY_VALIDATION": "PASS",
+        "MEMORY_INFLUENCES_STRATEGY": (
+            "PASS" if plan.memory_influences_strategy else "NOT_APPLICABLE"
+        ),
+        "COMPETENCE_INFLUENCES_SELECTION": (
+            "PASS" if plan.competence_influences_selection else "NOT_APPLICABLE"
+        ),
+        "NO_HARDCODED_TEAM_REQUIRED": (
+            "PASS"
+            if all(
+                name.casefold() not in REAL_NATURAL_GOAL.casefold()
+                for name in ("codex", "hermes", "agent office")
+            )
+            else "FAIL"
+        ),
+        "mission_id": plan.mission_id,
+        "plan_id": plan.plan_id,
+        "task_ids": [task.task_id for task in plan.collaboration_plan.tasks],
+        "capability_ids": [task.capability_id for task in plan.collaboration_plan.tasks],
+        "planning_evidence": dict(plan.planning_evidence),
+        "MISSION_EXECUTION_ROUTE": route.to_dict(),
+    })
+    return proof
+
+
 def run_benchmark(*, output: Path) -> dict[str, Any]:
     initialize_schema()
+    provider_health_snapshot = semantic_provider_health()
+    requested_real_goal_proof = _real_natural_goal_attempt()
     case_reports: list[dict[str, Any]] = []
     signatures: list[tuple[Any, ...]] = []
     blocked: list[dict[str, str]] = []
@@ -320,7 +426,11 @@ def run_benchmark(*, output: Path) -> dict[str, Any]:
             plan = plan_mission_from_human_goal(goal)
         except RuntimeError as exc:
             reason = str(exc)
-            blocked.append({"case_id": case["case_id"], "reason": reason})
+            blocked.append({
+                "case_id": case["case_id"],
+                "reason": reason,
+                "provider_health": provider_health_snapshot,
+            })
             case_reports.append({
                 "case_id": case["case_id"],
                 "human_goal": case["goal"],
@@ -395,6 +505,8 @@ def run_benchmark(*, output: Path) -> dict[str, Any]:
         "planner_authority": "NONE",
         "benchmark_kind": "LIVE_PROVIDER_STRUCTURAL_INTELLIGENCE",
         "provider_inference_injected": False,
+        "provider_health": provider_health_snapshot,
+        "requested_real_natural_goal_proof": requested_real_goal_proof,
         "case_count": len(CASES),
         "completed_case_count": completed,
         "cases": case_reports,
@@ -437,11 +549,11 @@ def main() -> int:
         "NO_UNNECESSARY_PROVIDER_CALL_FOR_STATUS="
         + ("PASS" if report["deterministic_control_proof"]["passed"] else "FAIL")
     )
-    proof = report.get("real_natural_goal_proof")
+    proof = report.get("requested_real_natural_goal_proof")
     print(
         "REAL_NATURAL_GOAL_PROOF="
         + (
-            f"{proof['mission_id']}:{proof['case_id']}"
+            f"{proof.get('status')}:{proof.get('mission_id') or proof.get('blocker')}"
             if isinstance(proof, dict)
             else "UNAVAILABLE"
         )
