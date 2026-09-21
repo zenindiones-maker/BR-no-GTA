@@ -38,6 +38,7 @@ from app.services.telegram_status_reconciliation_service import (
     reconcile_stale_progress_state,
 )
 from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
+from app.services.telegram_knowledge_recall_service import recall_canonical_gta6_knowledge
 
 
 INTENTS = {
@@ -48,6 +49,7 @@ INTENTS = {
     "REJECTION",
     "STATUS_REQUEST",
     "MEMORY_RECALL_REQUEST",
+    "KNOWLEDGE_RECALL_REQUEST",
     "FILE_SUBMISSION",
     "RESEARCH_REQUEST",
     "EXECUTION_REQUEST",
@@ -145,6 +147,13 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "minha decisao sobre", "minhas decisoes sobre",
     )):
         return "MEMORY_RECALL_REQUEST"
+    if any(term in text for term in (
+        "conhecimento sobre", "memoria sobre", "memória sobre",
+        "o que sabemos sobre", "oque sabemos sobre",
+        "o que voce sabe sobre", "oque voce sabe sobre",
+        "conhecimento do gta", "conhecimento do gta6",
+    )):
+        return "KNOWLEDGE_RECALL_REQUEST"
     if any(term in text for term in (
         "pesquisa", "pesquise", "procura", "procure", "investiga", "investigue",
         "ultimas informacoes", "ultimas noticias", "verifica nas fontes",
@@ -299,6 +308,12 @@ def plan_natural_language_action(
         return {"kind": "STATUS", "authorized_action": "DECISION"}
     if intent == "MEMORY_RECALL_REQUEST":
         return {"kind": "MEMORY_RECALL", "authorized_action": "DECISION"}
+    if intent == "KNOWLEDGE_RECALL_REQUEST":
+        return {
+            "kind": "KNOWLEDGE_RECALL",
+            "authorized_action": "DECISION",
+            "query": message,
+        }
     if intent == "RESEARCH_REQUEST":
         goal_envelope = build_goal_envelope(
             human_goal=message,
@@ -864,7 +879,7 @@ def handle_telegram_conversation(
     )
     state_changes: dict[str, Any] = {"last_human_intent": intent}
     # Observation/recall queries inspect project state; they must never become it.
-    if intent not in {"STATUS_REQUEST", "MEMORY_RECALL_REQUEST"}:
+    if intent not in {"STATUS_REQUEST", "MEMORY_RECALL_REQUEST", "KNOWLEDGE_RECALL_REQUEST"}:
         state_changes["current_subject"] = (
             resolved.get("reference")
             or state.get("current_subject")
@@ -888,7 +903,7 @@ def handle_telegram_conversation(
     # Short deterministic control paths must return the result directly.
     # A visible UNDERSTANDING heartbeat is product noise and can become a
     # misleading final message if the process dies before presentation.
-    visible_progress_allowed = plan["kind"] not in {"STATUS", "MEMORY_RECALL"}
+    visible_progress_allowed = plan["kind"] not in {"STATUS", "MEMORY_RECALL", "KNOWLEDGE_RECALL"}
     if progress_callback is not None and visible_progress_allowed:
         progress_callback(
             "UNDERSTANDING",
@@ -937,6 +952,11 @@ def handle_telegram_conversation(
     elif plan["kind"] == "MEMORY_RECALL":
         state = get_or_create_conversation_state(telegram_chat_id)
         canonical = _canonical_human_memory_recall(text, state)
+    elif plan["kind"] == "KNOWLEDGE_RECALL":
+        state = get_or_create_conversation_state(telegram_chat_id)
+        canonical = recall_canonical_gta6_knowledge(
+            str(plan.get("query") or text),
+        )
     elif plan["kind"] == "CANCEL":
         state = update_conversation_state(
             telegram_chat_id,
