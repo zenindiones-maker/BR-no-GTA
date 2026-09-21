@@ -971,6 +971,22 @@ def main() -> int:
                             f"PLAN={(conversation.get('plan') or {}).get('kind')}",
                             flush=True,
                         )
+                        if conversation.get("intent") == "STATUS_REQUEST":
+                            status_result = conversation.get("canonical_result")
+                            status_result = (
+                                status_result
+                                if isinstance(status_result, dict)
+                                else {}
+                            )
+                            print(
+                                "TELEGRAM_STATUS_RESULT=PASS "
+                                f"STALE_PROGRESS_STATE_DETECTED={status_result.get('STALE_PROGRESS_STATE_DETECTED')} "
+                                f"STALE_PROGRESS_STATE_RECONCILED={status_result.get('STALE_PROGRESS_STATE_RECONCILED')} "
+                                f"STATUS_PROVIDER_CALLS={status_result.get('STATUS_PROVIDER_CALLS')} "
+                                f"STATUS_OPENCODE_CALLS={status_result.get('STATUS_OPENCODE_CALLS')} "
+                                f"STATUS_HERMES_CALLS={status_result.get('STATUS_HERMES_CALLS')}",
+                                flush=True,
+                            )
                         command_name = "natural-language"
                 except HarnessReasoningFailure as exc:
                     input_record = (
