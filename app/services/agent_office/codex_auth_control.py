@@ -314,3 +314,46 @@ def load_checkpoint(path: Path) -> dict[str, Any]:
     if data.get("credential_material_persisted") is not False:
         raise PermissionError("auth checkpoint persisted credential material")
     return data
+
+
+
+def resolve_checkpoint_after_auth(
+    *,
+    checkpoint_path: Path,
+    cwd: Path,
+    environ: Mapping[str, str] | None = None,
+    provider_factory: Callable[..., CodexAuthenticationProvider] = CodexAuthenticationProvider,
+) -> dict[str, Any]:
+    checkpoint = load_checkpoint(checkpoint_path)
+    mission_id = str(checkpoint["mission_id"])
+    preflight = classify_codex_auth(
+        mission_id=mission_id,
+        cwd=cwd,
+        environ=environ,
+        provider_factory=provider_factory,
+    )
+    if not preflight.auth_available or preflight.lease is None:
+        return {
+            "status": "AUTHORIZATION_PENDING_HUMAN",
+            "mission_id": mission_id,
+            "checkpoint_id": checkpoint["checkpoint_id"],
+            "auth_state": preflight.state,
+            "AUTH_GATE_RESOLVED": "NO",
+            "MISSION_RESUMED_FROM_CHECKPOINT": "NO",
+            "credential_material_persisted": False,
+        }
+    return {
+        "status": "RESUME_READY",
+        "mission_id": mission_id,
+        "checkpoint_id": checkpoint["checkpoint_id"],
+        "target_ref": checkpoint["target_ref"],
+        "target_sha": checkpoint["target_sha"],
+        "plan_b64": checkpoint["plan_b64"],
+        "human_goal_b64": checkpoint["human_goal_b64"],
+        "telegram_chat_id": checkpoint["telegram_chat_id"],
+        "auth_state": preflight.state,
+        "auth_lease": preflight.lease.to_dict(),
+        "AUTH_GATE_RESOLVED": "PASS",
+        "MISSION_RESUMED_FROM_CHECKPOINT": "PASS",
+        "credential_material_persisted": False,
+    }
