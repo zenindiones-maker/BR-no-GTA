@@ -351,6 +351,7 @@ def build_semantic_planning_context(
                 & goal_tokens
             ) > 0
         ][:_RELEVANT_DECISION_LIMIT]
+    decisions = decisions[:_RELEVANT_DECISION_LIMIT]
 
     referenced_capability_ids = tuple(dict.fromkeys(
         str(item.get("capability_id") or "").strip()
