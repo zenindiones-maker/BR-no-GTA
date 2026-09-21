@@ -1,0 +1,6 @@
+{
+  "request": "telegram-pending-action-focused",
+  "source_head": "9e6679d7593e79351123bb50a6bc937e27a900af",
+  "requested_at": "2026-09-20T22:08:00-03:00",
+  "scope": "pending-action-persist-reload-approval-resume"
+}
