@@ -183,7 +183,7 @@ def recall_canonical_gta6_knowledge(
         return {
             "status": "NO_CANONICAL_KNOWLEDGE_MATCH",
             "answer": (
-                "Não encontrei conhecimento canônico desse assunto no escopo GTA 6. "
+                "Não há conhecimento canônico suficiente desse assunto no escopo GTA 6. "
                 "Não vou preencher a lacuna com outro jogo nem chamar provider semântico só para fabricar resposta."
             ),
             "query": text,
