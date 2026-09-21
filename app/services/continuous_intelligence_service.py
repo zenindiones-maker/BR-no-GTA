@@ -20,7 +20,11 @@ from app.database.memory_record_claims_repository import insert_memory_record_cl
 from app.database.memory_repository import insert_memory, update_memory_status
 from app.services.bounded_memory_context_service import build_bounded_memory_context
 from app.services.continuous_operation_policy_service import load_continuous_operation_policy
-from app.services.harness_authorization_service import validate_harness_authorization
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+    validate_harness_authorization,
+)
 from app.services.harness_learning_service import record_memory
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
 from app.services.memory_claim_evidence_service import create_memory_claim_evidence
@@ -498,7 +502,7 @@ def gate_verified_gta6_claim(
     candidate_claim: dict[str, Any],
     fact_check: dict[str, Any],
     source_episode_id: str,
-    evaluation_authorization,
+    evaluation_authorization=None,
     supersedes_claim_id: int | None = None,
 ) -> dict[str, Any]:
     verdict = str(fact_check.get("verdict") or "")
@@ -537,6 +541,22 @@ def gate_verified_gta6_claim(
             "episode": source_episode_id,
         },
     )
+    owned_authorization = False
+    if evaluation_authorization is None:
+        evaluation_authorization = issue_harness_authorization(
+            authorized_action="DECISION",
+            subject=f"learning:memory:{candidate['memory_id']}",
+            harness_decision_id=f"decision-knowledge-{candidate['memory_id'][-16:]}",
+            execution_id=f"execution-knowledge-{candidate['memory_id'][-16:]}",
+            lineage={
+                "memory_id": candidate["memory_id"],
+                "source_episode_id": source_episode_id,
+                "subject": candidate_claim.get("subject"),
+                "authority": "DEEPSEEK_HARNESS",
+            },
+        )
+        owned_authorization = True
+
     if verdict == "SUPPORTED" and source_type == "PRIMARY_SOURCE" and evidence_class == "OFFICIAL":
         # The Knowledge Brain claim lineage has its own immutable claim-id
         # supersession chain. Harness memory promotion remains a normal PROMOTE
@@ -556,6 +576,8 @@ def gate_verified_gta6_claim(
             memory_gate=gate,
             supersedes_claim_id=supersedes_claim_id,
         )
+        if owned_authorization:
+            consume_harness_authorization(evaluation_authorization)
         return {
             "status": "PROMOTED",
             "candidate": candidate,
@@ -574,6 +596,8 @@ def gate_verified_gta6_claim(
         evidence_refs=(evidence_ref,),
         authorization=evaluation_authorization,
     )
+    if owned_authorization:
+        consume_harness_authorization(evaluation_authorization)
     return {
         "status": "HUMAN_REVIEW",
         "candidate": candidate,
