@@ -21,8 +21,8 @@ from app.services.harness_collaboration_service import (
 from app.services.local_openweight_ai_provider import (
     LOCAL_OPENWEIGHT_MODEL_ID,
     LOCAL_OPENWEIGHT_PROVIDER_ID,
-    _SEMANTIC_PLANNER_NUM_PREDICT,
     _semantic_context_window,
+    semantic_planner_num_predict,
 )
 from app.services.provider_health_service import semantic_provider_health
 from app.services.semantic_mission_planner_service import (
@@ -153,9 +153,10 @@ def _preflight(goal) -> tuple[dict[str, Any], str, dict[str, Any]]:
         artifact_ref=None,
     )
     prompt = build_semantic_planner_prompt(context)
+    selected_num_predict = semantic_planner_num_predict()
     num_ctx, prompt_token_estimate = _semantic_context_window(
         prompt,
-        num_predict=_SEMANTIC_PLANNER_NUM_PREDICT,
+        num_predict=selected_num_predict,
     )
     retrieval = dict(context.get("context_retrieval_evidence") or {})
     return context, prompt, {
@@ -165,7 +166,7 @@ def _preflight(goal) -> tuple[dict[str, Any], str, dict[str, Any]]:
         "registry_total_executable": retrieval.get("registry_total_executable"),
         "memories_used": _memories_used(retrieval),
         "num_ctx": num_ctx,
-        "num_predict": _SEMANTIC_PLANNER_NUM_PREDICT,
+        "num_predict": selected_num_predict,
         "structured_json_mode": True,
         "context_retrieval": retrieval,
     }
