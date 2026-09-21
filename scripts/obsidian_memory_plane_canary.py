@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,10 @@ from app.services.obsidian_memory_service import (
 
 
 VIDEO_A_GOAL_ID = "93f99ddc-09c7-474b-8849-6981aa78d60c"
-HEAD = "6e3f006631cba21289ef3139c1dc193fb4f47a24"
+HEAD = os.getenv(
+    "GITHUB_SHA",
+    "6e3f006631cba21289ef3139c1dc193fb4f47a24",
+).strip()
 TELEGRAM_HERMES_RUNS = (35549763562, 35550831582)
 OPENCODE_ROOT_CAUSE_RUN = 35537494044
 OPENCODE_ROOT_CAUSE_ARTIFACT = 10612603412
