@@ -109,6 +109,10 @@ TARGETS = (
     "scripts/telegram_harness_gateway_v2.py",
     "scripts/telegram_harness_gateway.py",
 )
+MODULES = {
+    "scripts.telegram_harness_gateway_v2",
+    "scripts.telegram_harness_gateway",
+}
 
 for entry in Path("/proc").iterdir():
     if not entry.name.isdigit():
@@ -121,7 +125,9 @@ for entry in Path("/proc").iterdir():
     except (FileNotFoundError, PermissionError, ProcessLookupError):
         continue
     argv = [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
-    if any(any(arg.endswith(target) for target in TARGETS) for arg in argv):
+    file_style = any(any(arg.endswith(target) for target in TARGETS) for arg in argv)
+    module_style = any(arg in MODULES for arg in argv)
+    if file_style or module_style:
         print(pid)
 PY
 }
@@ -134,6 +140,7 @@ import os
 from pathlib import Path
 
 TARGET = "scripts/telegram_harness_gateway_v2.py"
+MODULE = "scripts.telegram_harness_gateway_v2"
 for entry in Path("/proc").iterdir():
     if not entry.name.isdigit():
         continue
@@ -145,7 +152,7 @@ for entry in Path("/proc").iterdir():
     except (FileNotFoundError, PermissionError, ProcessLookupError):
         continue
     argv = [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
-    if any(arg.endswith(TARGET) for arg in argv):
+    if any(arg.endswith(TARGET) for arg in argv) or MODULE in argv:
         print(pid)
 PY
 }
