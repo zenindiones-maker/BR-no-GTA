@@ -87,6 +87,50 @@ def test_local_provider_normalizes_real_ollama_shape():
     assert response.usage.total_tokens == 10
 
 
+
+
+def test_semantic_planner_prompt_uses_bounded_context_and_native_json_mode():
+    captured = {}
+    payload = {
+        "model": LOCAL_OPENWEIGHT_MODEL_ID,
+        "message": {"role": "assistant", "content": '{"interpreted_goal":"ok"}'},
+        "done": True,
+        "done_reason": "stop",
+        "prompt_eval_count": 1200,
+        "prompt_eval_duration": 6_000_000_000,
+        "eval_count": 120,
+        "eval_duration": 12_000_000_000,
+        "total_duration": 18_500_000_000,
+        "load_duration": 500_000_000,
+    }
+
+    def fake_urlopen(req, timeout):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse(payload)
+
+    provider = OllamaLocalAIProvider(model=LOCAL_OPENWEIGHT_MODEL_ID)
+    prompt = (
+        "Return STRICT JSON only.\n"
+        "OUTPUT_SCHEMA={}\n"
+        "PLANNING_CONTEXT=" + ("x" * 9000)
+    )
+    with patch(
+        "app.services.local_openweight_ai_provider.request.urlopen",
+        side_effect=fake_urlopen,
+    ):
+        response = provider.generate(prompt)
+
+    body = captured["body"]
+    assert body["format"] == "json"
+    assert body["options"]["num_predict"] == 900
+    assert body["options"]["num_ctx"] < 32768
+    assert body["options"]["temperature"] == 0.1
+    assert response.usage.prompt_tokens == 1200
+    assert provider.last_performance_metrics["requested_output_tokens"] == 900
+    assert provider.last_performance_metrics["prompt_eval_tokens_per_second"] == pytest.approx(200.0)
+    assert provider.last_performance_metrics["generation_tokens_per_second"] == pytest.approx(10.0)
+
 def test_zero_cost_routing_can_select_only_registered_local_model():
     decision = route_harness_request(
         HarnessRoutingRequest(
