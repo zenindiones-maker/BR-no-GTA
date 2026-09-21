@@ -256,12 +256,42 @@ def build_snapshot() -> dict[str, Any]:
     }
 
 
+def _compact_capability_usage(value: dict[str, Any]) -> dict[str, Any]:
+    rows = list(value.get("records") or ())
+    exceptional = [
+        row for row in rows
+        if row.get("classification") != "ACTIVE_USAGE"
+    ]
+    active = sorted(
+        (row for row in rows if row.get("classification") == "ACTIVE_USAGE"),
+        key=lambda row: (
+            -int(row.get("execution_count") or 0),
+            -int(row.get("selected_count") or 0),
+            str(row.get("capability_id") or ""),
+        ),
+    )
+    return {
+        "registered": value.get("registered"),
+        "available": value.get("available"),
+        "routable": value.get("routable"),
+        "actually_executed": value.get("actually_executed"),
+        "orphaned": list(value.get("orphaned") or ())[:20],
+        "never_selected": list(value.get("never_selected") or ())[:20],
+        "blocked": list(value.get("blocked") or ())[:20],
+        "records": [*exceptional[:20], *active[:12]],
+        "CAPABILITY_USAGE_AUDIT": value.get("CAPABILITY_USAGE_AUDIT"),
+        "NO_ORPHAN_EXECUTION_PATHS": value.get("NO_ORPHAN_EXECUTION_PATHS"),
+    }
+
+
 def _bounded_context(snapshot: dict[str, Any], focus: str) -> dict[str, Any]:
     context = {
         "focus": focus,
         "git_head": snapshot["git_head"],
         "registry": snapshot["registry"],
-        "capability_usage": snapshot.get("capability_usage", {}),
+        "capability_usage": _compact_capability_usage(
+            dict(snapshot.get("capability_usage") or {})
+        ),
         "workflows": snapshot["workflows"],
         "hotspots": snapshot["hotspots"],
         "known_governed_performance_surfaces": snapshot[
@@ -272,7 +302,7 @@ def _bounded_context(snapshot: dict[str, Any], focus: str) -> dict[str, Any]:
     encoded = json.dumps(context, ensure_ascii=False, sort_keys=True, default=str)
     if len(encoded) <= MAX_CONTEXT_CHARS:
         return context
-    # Deterministically compact the hotspot evidence before sending it to a model.
+
     compact = dict(context)
     hotspots = dict(compact["hotspots"])
     hotspots["top_files_by_category"] = {
@@ -289,6 +319,24 @@ def _bounded_context(snapshot: dict[str, Any], focus: str) -> dict[str, Any]:
                 for key, value in hotspots["top_files_by_category"].items()
             },
         }
+        usage = dict(compact["capability_usage"])
+        usage["records"] = list(usage.get("records") or ())[:12]
+        usage["never_selected"] = list(usage.get("never_selected") or ())[:10]
+        usage["blocked"] = list(usage.get("blocked") or ())[:10]
+        compact["capability_usage"] = usage
+
+    encoded = json.dumps(compact, ensure_ascii=False, sort_keys=True, default=str)
+    if len(encoded) > MAX_CONTEXT_CHARS:
+        compact["capability_usage"] = {
+            key: compact["capability_usage"].get(key)
+            for key in (
+                "registered", "available", "routable", "actually_executed",
+                "orphaned", "CAPABILITY_USAGE_AUDIT", "NO_ORPHAN_EXECUTION_PATHS",
+            )
+        }
+        encoded = json.dumps(compact, ensure_ascii=False, sort_keys=True, default=str)
+    if len(encoded) > MAX_CONTEXT_CHARS:
+        raise RuntimeError("bounded system-improvement context still exceeds MAX_CONTEXT_CHARS")
     return compact
 
 
