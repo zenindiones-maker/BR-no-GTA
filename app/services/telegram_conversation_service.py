@@ -551,6 +551,7 @@ def handle_telegram_conversation(
 
     canonical: dict[str, Any]
     decision = None
+    pending_action_consumed = False
     if plan["kind"] == "STATUS":
         state = get_or_create_conversation_state(telegram_chat_id)
         control_surface_status = build_harness_control_surface_status(
@@ -630,6 +631,7 @@ def handle_telegram_conversation(
         changes: dict[str, Any] = {"last_human_decision": decision_type}
         pending_action = state.get("pending_action") if decision_type == "APPROVAL" else None
         if decision_type == "APPROVAL":
+            pending_action_consumed = isinstance(pending_action, dict)
             changes.update(
                 waiting_for_human=False,
                 pending_human_review=None,
@@ -832,43 +834,57 @@ def handle_telegram_conversation(
         if isinstance(canonical, dict) and isinstance(canonical.get("pending_action"), dict)
         else None
     )
-    next_pending_action = (
-        canonical_pending_action
-        if canonical_pending_action is not None
-        else state.get("pending_action") if waiting else None
-    )
-    state = update_conversation_state(
-        telegram_chat_id,
-        active_goal_id=str(goal_id) if goal_id is not None else state.get("active_goal_id"),
-        active_task=(
-            text[:240]
-            if intent in {"EXECUTION_REQUEST", "RESEARCH_REQUEST"}
-            else state.get("active_task")
-        ),
-        active_artifact=str(artifact_ref) if artifact_ref is not None else state.get("active_artifact"),
-        active_run_id=str(run_id) if run_id is not None else state.get("active_run_id"),
-        active_stage=(
-            "WAITING_FOR_HUMAN"
-            if waiting
-            else "RUNNING" if running
-            else "COMPLETE"
-        ),
-        active_blocker=str(blocker)[:1000] if blocker else None,
-        execution_status=(
-            "WAITING_FOR_HUMAN"
-            if waiting
-            else "RUNNING" if running
-            else ("FAILED" if "FAIL" in status or status == "BLOCKED" else "COMPLETED")
-        ),
-        waiting_for_human=waiting,
-        pending_question=str(pending_question) if pending_question else None,
-        pending_human_review=(str(artifact_ref) if waiting and artifact_ref is not None else state.get("pending_human_review") if waiting else None),
-        pending_action=next_pending_action,
-        last_execution_result={
-            **canonical,
-            "capability_id": capability_id,
-        },
-    )
+
+    # STATUS is an observation, not a state transition.  In particular, asking
+    # "Onde estamos?" must never consume WAITING_FOR_HUMAN or pending_action.
+    if plan["kind"] == "STATUS":
+        state = get_or_create_conversation_state(telegram_chat_id)
+    else:
+        if canonical_pending_action is not None:
+            next_pending_action = canonical_pending_action
+        elif pending_action_consumed:
+            next_pending_action = None
+        else:
+            # Pending actions are durable leases.  Unrelated turns (including
+            # presentation, feedback and provider failures) cannot clear them.
+            next_pending_action = state.get("pending_action")
+
+        state = update_conversation_state(
+            telegram_chat_id,
+            active_goal_id=str(goal_id) if goal_id is not None else state.get("active_goal_id"),
+            active_task=(
+                text[:240]
+                if intent in {"EXECUTION_REQUEST", "RESEARCH_REQUEST"}
+                else state.get("active_task")
+            ),
+            active_artifact=str(artifact_ref) if artifact_ref is not None else state.get("active_artifact"),
+            active_run_id=str(run_id) if run_id is not None else state.get("active_run_id"),
+            active_stage=(
+                "WAITING_FOR_HUMAN"
+                if waiting
+                else "RUNNING" if running
+                else "COMPLETE"
+            ),
+            active_blocker=str(blocker)[:1000] if blocker else None,
+            execution_status=(
+                "WAITING_FOR_HUMAN"
+                if waiting
+                else "RUNNING" if running
+                else ("FAILED" if "FAIL" in status or status == "BLOCKED" else "COMPLETED")
+            ),
+            waiting_for_human=waiting,
+            pending_question=str(pending_question) if pending_question else None,
+            pending_human_review=(
+                str(artifact_ref)
+                if waiting and artifact_ref is not None
+                else state.get("pending_human_review") if waiting else None
+            ),
+            pending_action=next_pending_action,
+            last_execution_result={
+                **canonical,
+                "capability_id": capability_id,
+            },
+        )
 
     answer = _present(
         canonical,
