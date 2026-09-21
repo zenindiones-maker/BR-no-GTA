@@ -1,6 +1,6 @@
 {
   "request": "telegram-natural-interaction-provider-last-validation",
-  "source_head": "ebc0f45f492b9f8fb0d42046f8e66ce4186108a8",
+  "source_head": "dd536281a91ceab5f524688f6e832115d5577bc4",
   "literal_inputs": [
     "Conhecimento",
     "Memória",
@@ -9,7 +9,8 @@
     "Melhora o sistema",
     "Chama os agentes pra descobrir por que está lento"
   ],
-  "scope": "literal-short-controls-mission-router-memory-gate-workflow-fanout",
+  "scope": "latest-head-literal-controls-mission-router-capability-audit-fanout",
+  "bounded_context": true,
   "no_voice": true,
   "no_render": true,
   "no_upload": true,
