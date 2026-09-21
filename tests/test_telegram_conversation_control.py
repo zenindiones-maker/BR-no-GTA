@@ -464,8 +464,11 @@ def test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider():
     )
 
     assert result["intent"] == "EXECUTION_REQUEST"
-    assert seen["plan"]["kind"] == "HERMES_COLLABORATION"
-    assert seen["plan"]["capability_id"] == "collaboration.hermes.execute"
+    assert seen["plan"]["kind"] == "HARNESS_MISSION"
+    assert seen["plan"]["mission_planner"] == "HARNESS_REGISTRY_COMPETENCE"
+    assert seen["plan"]["collaboration_runtime"] == "HERMES_WHEN_MULTI_AGENT_REQUIRED"
+    assert seen["plan"]["mission_plan"]["authority"] == "DEEPSEEK_HARNESS"
+    assert len(seen["plan"]["mission_plan"]["collaboration_plan"]["tasks"]) >= 2
     assert result["conversation_state"]["execution_status"] == "RUNNING"
     assert result["conversation_state"]["active_run_id"] == "35550000001"
     assert result["conversation_state"]["pending_action"]["mission_id"] == "tg-hermes-test-1"
