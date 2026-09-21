@@ -65,7 +65,7 @@ while true; do
     local_head="\$(git -C "\${ROOT}" rev-parse HEAD 2>/dev/null || true)"
     remote_head=""
     if [[ -n "\${branch}" ]]; then
-      remote_head="\$(git -C "\${ROOT}" ls-remote --heads origin "refs/heads/\${branch}" 2>/dev/null | awk 'NR==1 {print $1}')"
+      remote_head="\$(git -C "\${ROOT}" ls-remote --heads origin "refs/heads/\${branch}" 2>/dev/null | awk 'NR==1 {print \$1}')"
     fi
     if [[ -n "\${local_head}" && -n "\${remote_head}" && "\${local_head}" != "\${remote_head}" ]]; then
       reconcile_reason="REMOTE_DRIFT"
