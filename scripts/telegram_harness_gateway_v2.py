@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import time
 import unicodedata
 from typing import Any
@@ -622,6 +623,26 @@ def _handle_live_natural_language_message(
     return reply, learned, conversation
 
 
+def _write_runtime_revision_proof() -> dict[str, Any]:
+    revision = os.getenv("BR_TELEGRAM_GATEWAY_REVISION", "").strip()
+    revision_file = os.getenv("TELEGRAM_GATEWAY_REVISION_FILE", "").strip()
+    proof = {
+        "pid": os.getpid(),
+        "revision": revision,
+    }
+    if not revision or not revision_file:
+        return proof
+    path = Path(revision_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        f"{proof['pid']} {revision}\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+    return proof
+
+
 def main() -> int:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -630,6 +651,7 @@ def main() -> int:
         return 2
 
     initialize_application()
+    revision_proof = _write_runtime_revision_proof()
     api = TelegramApi(token)
     me = api.call("getMe")
     webhook = api.call("getWebhookInfo")
@@ -650,6 +672,12 @@ def main() -> int:
     offset = int(state.get("offset") or 0)
     username = (me or {}).get("username") if isinstance(me, dict) else None
     print("TELEGRAM_GATEWAY=ONLINE", flush=True)
+    print(
+        "TELEGRAM_GATEWAY_REVISION="
+        + (str(revision_proof.get("revision") or "UNSPECIFIED")),
+        flush=True,
+    )
+    print(f"TELEGRAM_GATEWAY_PID={revision_proof.get('pid')}", flush=True)
     print(f"TELEGRAM_BOT_USERNAME={username or ''}", flush=True)
     print("TELEGRAM_HARNESS_SMART_CHAT=ENABLED", flush=True)
     print("TELEGRAM_BRAND_ASSET_INTAKE=ENABLED", flush=True)
