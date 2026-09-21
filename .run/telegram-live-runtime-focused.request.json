@@ -1,0 +1,6 @@
+{
+  "request": "telegram-live-runtime-focused",
+  "source_head": "5e2063dde7cc20300433e9b9513a0dc491de18da",
+  "observed_human_failure": "UNDERSTANDING without final human answer",
+  "scope": "a15-runtime-reconcile-status-silence-group-ingress-policy"
+}
