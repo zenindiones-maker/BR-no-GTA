@@ -55,8 +55,8 @@ while true; do
     continue
   fi
   if ! bash "\${CONTROL}" status >/dev/null 2>&1; then
-    printf '%s TELEGRAM_SUPERVISOR=RESTARTING_GATEWAY\n' "\$(date -Iseconds 2>/dev/null || date)" >>"\${LOG_FILE}"
-    bash "\${CONTROL}" start >>"\${LOG_FILE}" 2>&1 || true
+    printf '%s TELEGRAM_SUPERVISOR=RECONCILING_GATEWAY\n' "\$(date -Iseconds 2>/dev/null || date)" >>"\${LOG_FILE}"
+    # Remote/local/runtime drift must be repaired by ff-only reconcile, not by adopting a stale local process.\n    bash "\${CONTROL}" reconcile >>"\${LOG_FILE}" 2>&1 || true
   fi
   sleep 30
 done
@@ -133,4 +133,4 @@ fi
 printf 'TERMUX_BOOT_APP=%s\n' "${boot_state}"
 printf 'TERMUX_BOOT_SCRIPT=%s\n' "${BOOT_SCRIPT}"
 printf 'TELEGRAM_SUPERVISOR_LOG=%s\n' "${SUPERVISOR_LOG}"
-printf 'NOTE=Supervisor checks every 30s and restarts the Telegram gateway if needed. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
+printf 'NOTE=Supervisor checks every 30s and reconciles ff-only to the remote branch before restarting stale Telegram runtime. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
