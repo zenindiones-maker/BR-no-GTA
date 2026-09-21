@@ -203,6 +203,23 @@ def execute_authorized_agent_office_specialist(
             learning_required=False,
         )
     )
+    write_capable = capability_id == CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID
+    agent_id = "codex-development" if write_capable else "codex"
+    allowed_paths = list(payload.get("allowed_paths") or [])
+    read_set = list(payload.get("read_set") or [])
+    write_set = list(payload.get("write_set") or [])
+    mission_read_scope = list(
+        payload.get("mission_read_scope")
+        if payload.get("mission_read_scope") is not None
+        else allowed_paths
+    )
+    mission_write_scope = list(
+        payload.get("mission_write_scope")
+        if payload.get("mission_write_scope") is not None
+        else allowed_paths
+    )
+    if write_capable and (not allowed_paths or not write_set):
+        raise ValueError("bounded-development requires allowed_paths and write_set")
     child_auth = issue_harness_authorization(
         authorized_action="DEVELOPMENT",
         subject=f"capability:{AGENT_OFFICE_CAPABILITY_ID}",
@@ -215,15 +232,11 @@ def execute_authorized_agent_office_specialist(
             "selected_executor_binding": office_routing.selected_executor_binding,
             "goal_id": goal_id,
             "delegated_specialist_capability": capability_id,
+            "mission_read_scope": list(mission_read_scope),
+            "mission_write_scope": list(mission_write_scope),
+            "scope_authority": "DEEPSEEK_HARNESS",
         },
     )
-    write_capable = capability_id == CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID
-    agent_id = "codex-development" if write_capable else "codex"
-    allowed_paths = list(payload.get("allowed_paths") or [])
-    write_set = list(payload.get("write_set") or [])
-    if write_capable and (not allowed_paths or not write_set):
-        consume_harness_authorization(child_auth)
-        raise ValueError("bounded-development requires allowed_paths and write_set")
 
     task = {
         "task_id": task_id,
@@ -250,7 +263,7 @@ def execute_authorized_agent_office_specialist(
         "expected_outputs": list(payload.get("expected_outputs") or ["structured_result"]),
         "acceptance_criteria": list(payload.get("acceptance_criteria") or ["no authority expansion"]),
         "evidence_requirements": list(payload.get("evidence_requirements") or ["commands", "artifact_ref"]),
-        "read_set": list(payload.get("read_set") or []),
+        "read_set": read_set,
         "write_set": write_set,
         "tool_call_budget": int(payload.get("tool_call_budget") or 32),
         "retry_budget": int(payload.get("retry_budget") or 1),
@@ -270,6 +283,8 @@ def execute_authorized_agent_office_specialist(
                 "allowed_agents": [agent_id],
                 "allowed_capabilities": [capability_id],
                 "allowed_paths": allowed_paths,
+                "mission_read_scope": mission_read_scope,
+                "mission_write_scope": mission_write_scope,
                 "allowed_tools": task["allowed_tools"],
                 "allowed_actions": task["allowed_actions"],
                 "max_parallelism": 1,
