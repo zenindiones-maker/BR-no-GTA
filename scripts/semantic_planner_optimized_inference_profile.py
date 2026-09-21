@@ -13,6 +13,7 @@ from app.services.local_openweight_ai_provider import _semantic_context_window
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     build_semantic_planner_prompt,
+    mission_plan_json_schema,
 )
 from scripts.semantic_planner_inference_profile import (
     _json_bytes,
@@ -25,6 +26,7 @@ MODEL = "qwen3:4b-instruct"
 BUDGETS = (256, 384, 512)
 ATTEMPT_TIMEOUT_SECONDS = 180
 WARMUP_TIMEOUT_SECONDS = 90
+MAX_PROMPT_TOKEN_ESTIMATE = 2000
 
 
 def _rate(count: Any, duration_ns: Any) -> float | None:
@@ -41,7 +43,7 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     )
 
 
-def _curl_payload(payload: dict[str, Any], *, timeout: int, path: Path) -> tuple[int, str, str]:
+def _curl_json(payload: dict[str, Any], *, timeout: int, path: Path) -> tuple[int, str, str]:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     proc = subprocess.run(
         [
@@ -67,10 +69,7 @@ def _warm_model() -> dict[str, Any]:
     payload = {
         "model": MODEL,
         "messages": [
-            {
-                "role": "user",
-                "content": 'Return exactly this JSON object: {"warm":true}',
-            }
+            {"role": "user", "content": 'Return exactly {"warm":true}.'}
         ],
         "stream": False,
         "format": "json",
@@ -82,26 +81,106 @@ def _warm_model() -> dict[str, Any]:
         },
     }
     started = time.perf_counter()
-    return_code, stdout, stderr = _curl_payload(
+    code, stdout, stderr = _curl_json(
         payload,
         timeout=WARMUP_TIMEOUT_SECONDS,
-        path=Path("/tmp/semantic-planner-warmup.json"),
+        path=Path("/tmp/semantic-warmup.json"),
     )
     elapsed = time.perf_counter() - started
     valid = False
     try:
-        response = json.loads(stdout)
-        message = response.get("message") if isinstance(response, dict) else None
-        text = str(message.get("content") or "") if isinstance(message, dict) else ""
-        parsed = json.loads(text)
-        valid = bool(parsed.get("warm") is True) if isinstance(parsed, dict) else False
+        body = json.loads(stdout)
+        message = body.get("message") if isinstance(body, dict) else None
+        parsed = json.loads(str(message.get("content") or ""))
+        valid = isinstance(parsed, dict) and parsed.get("warm") is True
     except Exception:
         valid = False
     return {
-        "return_code": return_code,
+        "return_code": code,
         "latency_seconds": elapsed,
         "valid": valid,
         "stderr": stderr[-1200:],
+    }
+
+
+def _probe_schema_support() -> dict[str, Any]:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["ok"],
+        "properties": {"ok": {"type": "boolean"}},
+    }
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "user", "content": "Return an object with ok=true."}
+        ],
+        "stream": False,
+        "format": schema,
+        "keep_alive": "10m",
+        "options": {
+            "temperature": 0.0,
+            "num_ctx": 2048,
+            "num_predict": 24,
+        },
+    }
+    started = time.perf_counter()
+    code, stdout, stderr = _curl_json(
+        payload,
+        timeout=WARMUP_TIMEOUT_SECONDS,
+        path=Path("/tmp/semantic-schema-probe.json"),
+    )
+    elapsed = time.perf_counter() - started
+    supported = False
+    error = None
+    try:
+        body = json.loads(stdout)
+        message = body.get("message") if isinstance(body, dict) else None
+        parsed = json.loads(str(message.get("content") or ""))
+        supported = isinstance(parsed, dict) and parsed == {"ok": True}
+    except Exception as exc:
+        error = f"{type(exc).__name__}:{exc}"[:800]
+    return {
+        "return_code": code,
+        "latency_seconds": elapsed,
+        "supported": supported,
+        "stderr": stderr[-1200:],
+        "error": error,
+    }
+
+
+def _prompt_components(prompt: str, context: dict[str, Any]) -> dict[str, Any]:
+    output_marker = "\nOUTPUT_CONTRACT="
+    context_marker = "\nCONTEXT="
+    output_at = prompt.find(output_marker)
+    context_at = prompt.find(context_marker)
+    if output_at < 0 or context_at < 0 or context_at <= output_at:
+        return {"prompt_total": len(prompt.encode("utf-8"))}
+    instructions = prompt[:output_at]
+    output_contract = prompt[output_at + len(output_marker):context_at]
+    context_blob = prompt[context_at + len(context_marker):]
+    block_keys = (
+        "registry_summary",
+        "competence_evidence",
+        "bounded_memory_context",
+        "recent_execution_history",
+        "relevant_failure_memories",
+        "human_feedback_decisions",
+        "canonical_state",
+        "conversation_state",
+        "provider_health",
+        "known_bad_paths",
+        "resource_bounds",
+    )
+    return {
+        "prompt_total": len(prompt.encode("utf-8")),
+        "instructions": len(instructions.encode("utf-8")),
+        "output_contract": len(output_contract.encode("utf-8")),
+        "context_serialized": len(context_blob.encode("utf-8")),
+        "context_blocks": {
+            key: _json_bytes(context.get(key))
+            for key in block_keys
+        },
     }
 
 
@@ -110,12 +189,14 @@ def _run_streaming_attempt(
     *,
     num_predict: int,
     num_ctx: int,
+    format_spec: str | dict[str, Any],
+    attempt_index: int,
 ) -> dict[str, Any]:
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
-        "format": "json",
+        "format": format_spec,
         "keep_alive": "10m",
         "options": {
             "temperature": 0.1,
@@ -134,7 +215,6 @@ def _run_streaming_attempt(
         daemon=True,
     )
     sampler.start()
-
     started = time.perf_counter()
     proc = subprocess.Popen(
         [
@@ -155,12 +235,12 @@ def _run_streaming_attempt(
         text=True,
         bufsize=1,
     )
+
     first_token_seconds = None
     content_parts: list[str] = []
     thinking_parts: list[str] = []
     final: dict[str, Any] = {}
     event_count = 0
-
     assert proc.stdout is not None
     for raw_line in proc.stdout:
         line = raw_line.strip()
@@ -216,8 +296,24 @@ def _run_streaming_attempt(
     eval_duration = final.get("eval_duration")
     total_duration = final.get("total_duration")
     load_duration = final.get("load_duration")
+    finish_reason = str(final.get("done_reason") or "") or None
+    output_truncated = bool(
+        finish_reason == "length"
+        or (
+            isinstance(eval_count, int)
+            and eval_count >= num_predict
+            and finish_reason != "stop"
+        )
+    )
 
     return {
+        "attempt_index": attempt_index,
+        "prompt_cache_expected": attempt_index > 0,
+        "latency_role": (
+            "FIRST_REAL_PROMPT_AFTER_WARMUP"
+            if attempt_index == 0
+            else "BUDGET_SEARCH_WITH_PROMPT_CACHE"
+        ),
         "num_predict": num_predict,
         "num_ctx": num_ctx,
         "return_code": return_code,
@@ -230,6 +326,8 @@ def _run_streaming_attempt(
         "thinking_bytes": len("".join(thinking_parts).encode("utf-8")),
         "prompt_eval_count": prompt_eval_count,
         "eval_count": eval_count,
+        "finish_reason": finish_reason,
+        "output_truncated": output_truncated,
         "prompt_eval_duration_seconds": (
             float(prompt_eval_duration) / 1_000_000_000.0
             if isinstance(prompt_eval_duration, int) else None
@@ -258,6 +356,8 @@ def _run_streaming_attempt(
         "task_count": task_count,
         "valid_sufficient_plan": bool(
             return_code == 0
+            and not output_truncated
+            and finish_reason == "stop"
             and strict_json_valid
             and schema_valid
             and registry_valid
@@ -271,44 +371,42 @@ def _run_streaming_attempt(
 def run(output: Path) -> dict[str, Any]:
     context = _semantic_context()
     prompt = build_semantic_planner_prompt(context)
-    block_keys = (
-        "registry_summary",
-        "competence_evidence",
-        "bounded_memory_context",
-        "recent_execution_history",
-        "relevant_failure_memories",
-        "human_feedback_decisions",
-        "canonical_state",
-        "conversation_state",
-        "provider_health",
-        "known_bad_paths",
-        "resource_bounds",
-    )
+    _, prompt_estimate = _semantic_context_window(prompt, num_predict=256)
     retrieval = dict(context.get("context_retrieval_evidence") or {})
     report: dict[str, Any] = {
-        "profile_kind": "BOUNDED_OUTPUT_BUDGET_SEMANTIC_INFERENCE",
+        "profile_kind": "COMPACT_SCHEMA_BOUNDED_OUTPUT_SEARCH",
         "status": "RUNNING",
         "provider": "ollama_local",
         "model": MODEL,
         "prompt_bytes": len(prompt.encode("utf-8")),
-        "prompt_token_estimate": None,
+        "prompt_token_estimate": prompt_estimate,
+        "input_budget_max_tokens": MAX_PROMPT_TOKEN_ESTIMATE,
+        "input_budget_pass": prompt_estimate <= MAX_PROMPT_TOKEN_ESTIMATE,
         "context_capabilities": len(context.get("registry_summary") or ()),
         "context_retrieval": retrieval,
-        "context_block_bytes": {
-            key: _json_bytes(context.get(key)) for key in block_keys
-        },
+        "prompt_component_bytes": _prompt_components(prompt, context),
         "warmup": {},
+        "json_schema_probe": {},
         "budgets_requested": list(BUDGETS),
         "attempt_timeout_seconds": ATTEMPT_TIMEOUT_SECONDS,
         "attempts": [],
         "selected_num_predict": None,
         "selected_num_ctx": None,
+        "selected_format_mode": None,
         "PROFILE_RESULT": "RUNNING",
     }
     _write_json(output, report)
 
+    if not report["input_budget_pass"]:
+        report["status"] = "FAIL"
+        report["failure_stage"] = "input_budget"
+        report["PROFILE_RESULT"] = "FAIL"
+        _write_json(output, report)
+        return report
+
     warmup = _warm_model()
     report["warmup"] = warmup
+    _write_json(output, report)
     if not warmup["valid"]:
         report["status"] = "FAIL"
         report["failure_stage"] = "warmup"
@@ -316,20 +414,30 @@ def run(output: Path) -> dict[str, Any]:
         _write_json(output, report)
         return report
 
-    for budget in BUDGETS:
-        num_ctx, prompt_estimate = _semantic_context_window(
-            prompt,
-            num_predict=budget,
-        )
-        report["prompt_token_estimate"] = prompt_estimate
+    schema_probe = _probe_schema_support()
+    report["json_schema_probe"] = schema_probe
+    _write_json(output, report)
+    schema_supported = bool(schema_probe["supported"])
+    format_spec: str | dict[str, Any] = (
+        mission_plan_json_schema(max_tasks=8)
+        if schema_supported
+        else "json"
+    )
+    report["selected_format_mode"] = (
+        "json_schema" if schema_supported else "json"
+    )
+
+    for index, budget in enumerate(BUDGETS):
+        num_ctx, _ = _semantic_context_window(prompt, num_predict=budget)
         report["current_num_predict"] = budget
         report["current_num_ctx"] = num_ctx
         _write_json(output, report)
-
         attempt = _run_streaming_attempt(
             prompt,
             num_predict=budget,
             num_ctx=num_ctx,
+            format_spec=format_spec,
+            attempt_index=index,
         )
         report["attempts"].append(attempt)
         _write_json(output, report)
@@ -348,10 +456,6 @@ def run(output: Path) -> dict[str, Any]:
         ):
             report["status"] = "FAIL"
             report["failure_stage"] = "pre_first_token_prompt_eval_bound"
-            report["failure_reason"] = (
-                "No first token arrived within the bounded attempt; larger "
-                "generation budgets cannot improve prompt-evaluation latency."
-            )
             report["PROFILE_RESULT"] = "FAIL"
             break
 
@@ -364,50 +468,34 @@ def run(output: Path) -> dict[str, Any]:
 
     print("PROMPT_BYTES=" + str(report["prompt_bytes"]))
     print("PROMPT_TOKEN_ESTIMATE=" + str(report["prompt_token_estimate"]))
+    print(
+        "INPUT_BUDGET_PASS="
+        + ("PASS" if report["input_budget_pass"] else "FAIL")
+    )
     print("CONTEXT_CAPABILITIES=" + str(report["context_capabilities"]))
     print("WARMUP_VALID=" + ("PASS" if warmup["valid"] else "FAIL"))
+    print(
+        "OLLAMA_JSON_SCHEMA_SUPPORTED="
+        + ("PASS" if schema_supported else "FAIL")
+    )
     for attempt in report["attempts"]:
         prefix = "BUDGET_" + str(attempt["num_predict"])
         print(prefix + "_NUM_CTX=" + str(attempt["num_ctx"]))
-        print(
-            prefix + "_LATENCY_SECONDS="
-            + f"{float(attempt['inference_latency_seconds']):.3f}"
-        )
-        print(
-            prefix + "_TTFT_SECONDS="
-            + str(attempt["time_to_first_token_seconds"])
-        )
-        print(
-            prefix + "_PROMPT_EVAL_SECONDS="
-            + str(attempt["prompt_eval_duration_seconds"])
-        )
-        print(
-            prefix + "_PROMPT_EVAL_TOKENS_PER_SECOND="
-            + str(attempt["prompt_eval_tokens_per_second"])
-        )
-        print(
-            prefix + "_GENERATION_SECONDS="
-            + str(attempt["eval_duration_seconds"])
-        )
-        print(
-            prefix + "_GENERATION_TOKENS_PER_SECOND="
-            + str(attempt["generation_tokens_per_second"])
-        )
+        print(prefix + "_LATENCY_SECONDS=" + f"{float(attempt['inference_latency_seconds']):.3f}")
+        print(prefix + "_TTFT_SECONDS=" + str(attempt["time_to_first_token_seconds"]))
+        print(prefix + "_PROMPT_EVAL_SECONDS=" + str(attempt["prompt_eval_duration_seconds"]))
+        print(prefix + "_PROMPT_EVAL_TOKENS_PER_SECOND=" + str(attempt["prompt_eval_tokens_per_second"]))
+        print(prefix + "_GENERATION_SECONDS=" + str(attempt["eval_duration_seconds"]))
+        print(prefix + "_GENERATION_TOKENS_PER_SECOND=" + str(attempt["generation_tokens_per_second"]))
         print(prefix + "_GENERATED_TOKENS=" + str(attempt["eval_count"]))
-        print(
-            prefix + "_STRICT_JSON_VALID="
-            + ("PASS" if attempt["strict_json_valid"] else "FAIL")
-        )
-        print(
-            prefix + "_MISSION_PLAN_SCHEMA_VALID="
-            + ("PASS" if attempt["mission_plan_schema_valid"] else "FAIL")
-        )
-        print(
-            prefix + "_FULL_REGISTRY_VALIDATION="
-            + ("PASS" if attempt["full_registry_validation"] else "FAIL")
-        )
+        print(prefix + "_FINISH_REASON=" + str(attempt["finish_reason"]))
+        print(prefix + "_OUTPUT_TRUNCATED=" + ("YES" if attempt["output_truncated"] else "NO"))
+        print(prefix + "_STRICT_JSON_VALID=" + ("PASS" if attempt["strict_json_valid"] else "FAIL"))
+        print(prefix + "_MISSION_PLAN_SCHEMA_VALID=" + ("PASS" if attempt["mission_plan_schema_valid"] else "FAIL"))
+        print(prefix + "_FULL_REGISTRY_VALIDATION=" + ("PASS" if attempt["full_registry_validation"] else "FAIL"))
     print("SELECTED_NUM_PREDICT=" + str(report["selected_num_predict"]))
     print("SELECTED_NUM_CTX=" + str(report["selected_num_ctx"]))
+    print("SELECTED_FORMAT_MODE=" + str(report["selected_format_mode"]))
     print("PROFILE_RESULT=" + report["PROFILE_RESULT"])
     return report
 
