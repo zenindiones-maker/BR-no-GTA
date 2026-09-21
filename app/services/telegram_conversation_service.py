@@ -329,6 +329,17 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             }
         return _parse_result(server.br_execution_process_next(goal_id=goal_id))
 
+    if plan["kind"] == "HERMES_CLOUD_RESUME":
+        from app.services.telegram_hermes_dispatch_service import (
+            resume_telegram_hermes_mission,
+        )
+
+        return resume_telegram_hermes_mission(
+            pending_action=plan,
+            state=state,
+            message=message,
+        )
+
     if plan["kind"] == "HERMES_COLLABORATION":
         from app.services.telegram_hermes_dispatch_service import (
             dispatch_telegram_hermes_mission,
@@ -815,6 +826,16 @@ def handle_telegram_conversation(
     waiting = status in {"WAITING_FOR_HUMAN", "WAITING", "BLOCKED_HUMAN"}
     blocker = _extract_identity(canonical, "blocker", "error")
     pending_question = canonical.get("pending_question") if isinstance(canonical, dict) else None
+    canonical_pending_action = (
+        canonical.get("pending_action")
+        if isinstance(canonical, dict) and isinstance(canonical.get("pending_action"), dict)
+        else None
+    )
+    next_pending_action = (
+        canonical_pending_action
+        if canonical_pending_action is not None
+        else state.get("pending_action") if waiting else None
+    )
     state = update_conversation_state(
         telegram_chat_id,
         active_goal_id=str(goal_id) if goal_id is not None else state.get("active_goal_id"),
@@ -831,6 +852,7 @@ def handle_telegram_conversation(
         waiting_for_human=waiting,
         pending_question=str(pending_question) if pending_question else None,
         pending_human_review=(str(artifact_ref) if waiting and artifact_ref is not None else state.get("pending_human_review") if waiting else None),
+        pending_action=next_pending_action,
         last_execution_result={
             **canonical,
             "capability_id": capability_id,
