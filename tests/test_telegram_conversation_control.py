@@ -738,3 +738,18 @@ def test_private_human_decision_is_recalled_from_group_canonical_memory():
     assert group["canonical_result"]["provider_independent"] is True
     assert progress == []
     assert private["human_identity"]["thread_id"] == group["human_identity"]["thread_id"]
+
+
+
+def test_natural_system_improvement_goal_does_not_require_hermes_keyword():
+    plan = plan_natural_language_action(
+        "Analisa por que o sistema está demorando e corrige o que for inútil sem reduzir qualidade.",
+        intent="EXECUTION_REQUEST",
+        state={"active_goal_id": "system-health", "active_artifact": None},
+        resolved_reference=None,
+    )
+    assert plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION"
+    assert plan["authorized_action"] == "DEVELOPMENT"
+    assert plan["mission_planner"] == "HARNESS_REGISTRY_COMPETENCE"
+    assert plan["collaboration_runtime"] == "HERMES_WHEN_MULTI_AGENT_REQUIRED"
+    assert "hermes" not in "Analisa por que o sistema está demorando e corrige o que for inútil sem reduzir qualidade.".casefold()
