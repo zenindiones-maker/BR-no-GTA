@@ -157,6 +157,7 @@ jobs:
           BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/continuous-operation/continuous.db
           BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/target/.runtime/hermes-agent
           BR_CONTINUOUS_REGRESSION_EVIDENCE: github-actions:${{ github.run_id }}:continuous-regression
+          BR_CONTINUOUS_CROSS_CHANNEL_EVIDENCE: github-actions:${{ github.run_id }}:test_obsidian_human_decision_is_recalled_by_telegram_without_provider
         run: |
           set -euo pipefail
           python scripts/continuous_intelligence_cycle.py             --mode "$MODE"             --artifact-dir artifacts/continuous-operation             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --target-sha "${{ steps.sha.outputs.sha }}"             --trigger-kind "$GITHUB_EVENT_NAME"
