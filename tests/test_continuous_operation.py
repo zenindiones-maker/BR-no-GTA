@@ -425,3 +425,21 @@ def test_zero_source_fetch_count_is_preserved_for_duplicate_research_gate():
         {"source_fetch_count": 1}
     ) == 1
     assert continuous_cycle._observed_source_fetch_count({}) == -1
+
+
+
+def test_next_execution_changed_gate_is_strict_boolean():
+    changed = continuous_cycle._next_execution_changed(
+        {"status": "NO_MEANINGFUL_GTA6_DELTA"},
+        {"active_delta_policy_memory_id": "memory-delta-reuse"},
+    )
+    assert changed is True
+    assert isinstance(changed, bool)
+    assert continuous_cycle._next_execution_changed(
+        {"status": "PASS"},
+        {"active_delta_policy_memory_id": "memory-delta-reuse"},
+    ) is False
+    assert continuous_cycle._next_execution_changed(
+        {"status": "NO_MEANINGFUL_GTA6_DELTA"},
+        {"active_delta_policy_memory_id": None},
+    ) is False
