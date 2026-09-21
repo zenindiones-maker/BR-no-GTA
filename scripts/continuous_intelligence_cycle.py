@@ -465,6 +465,16 @@ def _observed_source_fetch_count(result: dict[str, Any]) -> int:
     return -1 if value is None else int(value)
 
 
+def _next_execution_changed(
+    next_research: dict[str, Any],
+    next_run: dict[str, Any],
+) -> bool:
+    return bool(
+        next_research.get("status") == "NO_MEANINGFUL_GTA6_DELTA"
+        and bool(next_run.get("active_delta_policy_memory_id"))
+    )
+
+
 def _metrics(*, latency: float, quality: float = 1.0) -> dict[str, float]:
     return {
         "task_success_rate": 1.0,
@@ -892,9 +902,9 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
             == "NO_MEANINGFUL_GTA6_DELTA"
         ),
         "BASELINE_VS_CANDIDATE_COMPARED": evaluation.get("evaluation_mode") == "OBSERVED",
-        "NEXT_REAL_EXECUTION_CHANGED": (
-            next_research.get("status") == "NO_MEANINGFUL_GTA6_DELTA"
-            and bool(next_run.get("active_delta_policy_memory_id"))
+        "NEXT_REAL_EXECUTION_CHANGED": _next_execution_changed(
+            next_research,
+            next_run,
         ),
         "NO_REGRESSION": (
             float(evaluation["candidate_metrics"]["quality"])
