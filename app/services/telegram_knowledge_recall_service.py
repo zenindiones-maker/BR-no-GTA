@@ -55,9 +55,19 @@ def _explicitly_outside_gta6_scope(query: str) -> bool:
     return bool(re.search(r"\bgta\s*(?:7|vii)\b", text))
 
 
-def _lineage_claims(query: str, *, limit: int = 8) -> list[dict[str, Any]]:
+def _lineage_claims(
+    query: str,
+    *,
+    limit: int = 8,
+    project_context: str = "",
+    subject_context: str = "",
+) -> list[dict[str, Any]]:
     query_tokens = _tokens(query)
-    broad = _is_broad_gta6_query(query)
+    broad = _is_broad_gta6_query(
+        query,
+        project_context=project_context,
+        subject_context=subject_context,
+    )
     if not broad and not query_tokens:
         return []
     rows = continuous_repository.list_claim_lineage(limit=500)
