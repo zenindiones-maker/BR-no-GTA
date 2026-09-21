@@ -479,6 +479,96 @@ foreground_gateway() {
   exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
 
+doctor_gateway() {
+  local status=0
+  echo "=== TELEGRAM RUNTIME ==="
+  runtime_revision_report || status=2
+
+  local -a pids=()
+  mapfile -t pids < <(gateway_pids)
+  echo "RUNNING_GATEWAY_INSTANCES=${#pids[@]}"
+  if [[ ${#pids[@]} -eq 1 ]]; then
+    echo "TELEGRAM_GATEWAY_SINGLETON=PASS"
+  else
+    echo "TELEGRAM_GATEWAY_SINGLETON=FAIL"
+    status=2
+  fi
+
+  echo "=== TELEGRAM BOT POLICY ==="
+  load_token
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
+  cd "${ROOT}"
+  "${PYTHON_BIN}" - <<'PY'
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from scripts.telegram_harness_gateway import TelegramApi
+
+token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+if not token:
+    raise SystemExit("TELEGRAM_DOCTOR=FAIL token unavailable")
+
+api = TelegramApi(token)
+me = api.call("getMe")
+webhook = api.call("getWebhookInfo")
+state_path = Path(
+    os.environ.get(
+        "TELEGRAM_CONTROL_STATE_FILE",
+        str(Path.home() / ".local/state/br-no-gta/telegram-control.json"),
+    )
+)
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+except Exception:
+    state = {}
+
+can_join = bool((me or {}).get("can_join_groups"))
+can_read_all = bool((me or {}).get("can_read_all_group_messages"))
+webhook_url = str((webhook or {}).get("url") or "").strip()
+allowed_chats = sorted({
+    int(value)
+    for value in (state.get("allowed_chat_ids") or [])
+    if str(value).lstrip("-").isdigit()
+})
+paired_chat = state.get("chat_id")
+if paired_chat not in (None, ""):
+    try:
+        allowed_chats = sorted(set(allowed_chats) | {int(paired_chat)})
+    except (TypeError, ValueError):
+        pass
+
+print(f"TELEGRAM_BOT_USERNAME={(me or {}).get('username') or ''}")
+print(f"TELEGRAM_BOT_CAN_JOIN_GROUPS={'YES' if can_join else 'NO'}")
+print(
+    "TELEGRAM_BOT_CAN_READ_ALL_GROUP_MESSAGES="
+    + ("YES" if can_read_all else "NO")
+)
+print(
+    "TELEGRAM_GROUP_NATURAL_LANGUAGE_READY="
+    + ("PASS" if can_join and can_read_all else "FAIL")
+)
+print("TELEGRAM_WEBHOOK_CONFLICT=" + ("YES" if webhook_url else "NO"))
+print(f"PAIRED_USER_ID={state.get('allowed_user_id') or 'NONE'}")
+print(
+    "ALLOWED_CHAT_IDS="
+    + (",".join(str(item) for item in allowed_chats) if allowed_chats else "NONE")
+)
+if can_join and not can_read_all:
+    print(
+        "GROUP_BLOCKER=Telegram privacy mode prevents ordinary group messages; "
+        "commands/replies/mentions may still arrive."
+    )
+PY
+
+  echo "=== RECENT GATEWAY LOG ==="
+  tail -n 40 "${LOG_FILE}" 2>/dev/null || true
+  return "${status}"
+}
+
 source_proof() {
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -524,6 +614,9 @@ case "${1:-start}" in
   logs)
     tail -n "${2:-80}" "${LOG_FILE}" 2>/dev/null || true
     ;;
+  doctor)
+    doctor_gateway
+    ;;
   foreground)
     foreground_gateway
     ;;
@@ -534,7 +627,7 @@ case "${1:-start}" in
     presentation_proof "$@"
     ;;
   *)
-    echo "uso: $0 {start|stop|restart|reconcile|status|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|reconcile|status|doctor|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
     exit 2
     ;;
 esac
