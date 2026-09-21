@@ -1,4 +1,5 @@
 from app.services.harness_adaptive_planning_service import (
+    _relevant_registry_summary,
     propose_validated_semantic_plan,
     select_capability_for_requirement,
 )
@@ -51,6 +52,24 @@ def test_provider_health_does_not_confuse_harness_authorization_with_external_au
     assert "github:run:35546356452:opencode-semantic-v3-upstream-403" in opencode.evidence_refs
     assert nvidia.state == "AUTH_REQUIRED"
     assert nvidia.zero_cost_eligible is False
+
+
+
+def test_semantic_context_retrieval_is_bounded_and_keeps_relevant_system_capabilities():
+    rows = _relevant_registry_summary(
+        {
+            "human_goal": "Isso está uma carroça, descobre sozinho o que está acontecendo.",
+            "subject": "desempenho geral do sistema",
+            "mission_class": "SYSTEM_IMPROVEMENT",
+        }
+    )
+    ids = [str(item["capability_id"]) for item in rows]
+
+    assert 6 <= len(rows) <= 18
+    assert len(ids) == len(set(ids))
+    assert "system.improvement.propose" in ids
+    assert all(item["capability_type"] != "PROVIDER" for item in rows)
+    assert all("allowed_actions" in item for item in rows)
 
 def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_once():
     context = {
