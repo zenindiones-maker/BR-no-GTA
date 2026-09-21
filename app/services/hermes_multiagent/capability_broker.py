@@ -20,9 +20,11 @@ from app.services.harness_authorization_service import (
 )
 from app.services.harness_capability_service import CapabilityEvidence, execute_capability
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.bounded_memory_context_service import build_bounded_memory_context
 
 from .contracts import HERMES_RUNTIME_CAPABILITY_ID, HermesMissionExecutionSpec
 from .registry_roster import project_plan_roster
+from .profile_factory import HermesProfileFactory
 
 
 _FORBIDDEN_PAYLOAD_FIELDS = {
@@ -284,6 +286,20 @@ class HermesHarnessCapabilityBroker:
             "runtime": "hermes",
             "routing_id": decision.routing_id,
             "authorization_id": child.authorization_id,
+            "retrieved_memory_ids": [
+                item.get("memory_id")
+                for item in (
+                    (decision.policy_metadata.get("bounded_memory_context") or {}).get("operational_memory") or ()
+                )
+                if item.get("memory_id")
+            ],
+            "retrieved_human_decision_ids": [
+                item.get("decision_id")
+                for item in (
+                    (decision.policy_metadata.get("bounded_memory_context") or {}).get("conversation_memory") or ()
+                )
+                if item.get("decision_id")
+            ],
             "parent_authorization_id": self.parent_authorization.authorization_id,
             "executor_binding": record.executor_binding,
             "started_at": started_at,
@@ -336,14 +352,68 @@ class HermesHarnessCapabilityBroker:
                 size = len(json.dumps(candidate, ensure_ascii=False).encode("utf-8"))
             parents.append(candidate)
             used += size
+
+        record = self.registry.get(task.capability_id)
+        if record is None:
+            raise PermissionError("Hermes task capability disappeared from Registry")
+        artifact_ref = next(
+            (str(ref) for ref in task.input_refs if str(ref).strip()),
+            None,
+        )
+        bounded = build_bounded_memory_context(
+            goal_id=self.spec.goal_id,
+            domain=record.domain,
+            task_class=f"hermes:{task.task_id}",
+            capability_id=task.capability_id,
+            agent_id=task.selected_agent_id,
+            artifact_ref=artifact_ref,
+            intent=task.objective,
+            max_bytes=max(4096, min(max_bytes // 2, 32768)),
+        ).to_dict()
+        profile = HermesProfileFactory(registry=self.registry).project_task(task)
+        evidence_refs = list(dict.fromkeys([
+            *[
+                ref
+                for item in bounded["operational_memory"]
+                for ref in (item.get("evidence_refs") or ())
+            ],
+            *[
+                ref
+                for item in bounded["conversation_memory"]
+                for ref in (item.get("evidence_refs") or ())
+            ],
+            *[
+                ref
+                for item in bounded["artifact_lineage_memory"]
+                for ref in (item.get("evidence_refs") or ())
+            ],
+        ]))
         return {
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
             "goal_id": self.spec.goal_id,
-            "parents": parents,
+            "task": {
+                "objective": task.objective,
+                "capability_id": task.capability_id,
+                "agent_id": task.selected_agent_id,
+                "skill_id": task.selected_skill_id,
+                "action": task.action,
+            },
+            "parent_handoffs": parents,
+            "relevant_memory": {
+                "operational_memory": bounded["operational_memory"],
+                "knowledge_memory": bounded["knowledge_memory"],
+                "artifact_lineage_memory": bounded["artifact_lineage_memory"],
+                "competence_records": bounded["competence_records"],
+            },
+            "relevant_human_decisions": bounded["conversation_memory"],
+            "evidence_refs": evidence_refs[:24],
+            "allowed_tools": list(profile.allowed_tools),
+            "memory_write": profile.memory_write,
             "input_refs": list(task.input_refs),
             "budget_bytes": max_bytes,
-            "used_bytes": used,
+            "used_bytes": used + int(bounded.get("used_bytes") or 0),
+            "bounded_memory_context": True,
         }
 
     def submit_handoff(
