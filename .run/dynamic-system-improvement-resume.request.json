@@ -1,5 +1,5 @@
 {
-  "request": "resume-same-mission-after-paired-human-config",
+  "request": "resume-same-mission-after-human-prerequisites-confirmed",
   "resume_from_parent_run": 35646646448,
   "original_child_run": 35646777560,
   "original_natural_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
@@ -11,5 +11,9 @@
     "FULL_RENDER": "NO",
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
-  }
+  },
+  "human_prerequisites_confirmed": true,
+  "retry_reason": "Codex CLI authenticated and TELEGRAM_ALLOWED_USER_ID already confirmed by human; resume exact existing MissionPlan",
+  "resume_attempt": 1,
+  "requested_at": "2026-09-21T17:22:00-03:00"
 }
