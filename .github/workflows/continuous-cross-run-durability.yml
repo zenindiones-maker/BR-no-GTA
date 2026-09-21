@@ -28,6 +28,20 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install canonical repository runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          echo "CROSS_RUN_VALIDATOR_RUNTIME=PASS"
+
       - name: Download successful live proof evidence
         env:
           GH_TOKEN: ${{ github.token }}
