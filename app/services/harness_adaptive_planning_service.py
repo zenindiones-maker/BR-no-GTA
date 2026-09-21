@@ -98,29 +98,141 @@ def compact_competence(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _registry_summary() -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    for record in GLOBAL_CAPABILITY_REGISTRY.all():
-        if record.capability_type == "PROVIDER" or not record.execution_enabled:
-            continue
-        result.append({
-            "capability_id": record.capability_id,
-            "capability_type": record.capability_type,
-            "domain": record.domain,
-            "implementation": record.implementation,
-            "input_contract": record.input_contract,
-            "output_contract": record.output_contract,
-            "allowed_actions": list(record.allowed_actions),
-            "policy_tags": list(record.policy_tags),
-            "cost_class": record.cost_class,
-            "latency_class": record.latency_class,
-            "quality_class": record.quality_class,
-            "version": record.version,
-            "agent_id": record.agent_id,
-            "skill_id": record.skill_id,
-            "side_effects": list(record.side_effects),
-        })
-    return result
+_REGISTRY_CANDIDATE_LIMIT = 18
+_PER_ACTION_DISCOVERY_LIMIT = 5
+_RELEVANT_MEMORY_LIMIT = 8
+_RELEVANT_HISTORY_LIMIT = 8
+_RELEVANT_DECISION_LIMIT = 6
+_COMPETENCE_LIMIT = 24
+
+_MISSION_RETRIEVAL_TERMS = {
+    "SYSTEM_IMPROVEMENT": (
+        "system improvement performance latency observability profiling debugging "
+        "analysis optimization development review testing benchmark reliability"
+    ),
+    "GTA6_INTELLIGENCE": (
+        "gta6 research evidence fact check source verification analysis editorial"
+    ),
+    "EDITORIAL": (
+        "youtube editorial script strategy review quality research seo thumbnail"
+    ),
+    "OPEN_SEMANTIC": (
+        "analysis evidence planning investigation execution review validation"
+    ),
+}
+
+
+def _compact_registry_record(record: Any) -> dict[str, Any]:
+    return {
+        "capability_id": record.capability_id,
+        "capability_type": record.capability_type,
+        "domain": record.domain,
+        "implementation": str(record.implementation or "")[:280],
+        "output_contract": str(record.output_contract or "")[:240],
+        "allowed_actions": list(record.allowed_actions),
+        "policy_tags": list(record.policy_tags)[:10],
+        "cost_class": record.cost_class,
+        "latency_class": record.latency_class,
+        "quality_class": record.quality_class,
+        "version": record.version,
+        "agent_id": record.agent_id,
+        "skill_id": record.skill_id,
+        "side_effects": list(record.side_effects)[:6],
+    }
+
+
+def _registry_retrieval_query(goal: dict[str, Any]) -> str:
+    mission_class = str(goal.get("mission_class") or "OPEN_SEMANTIC").upper()
+    return " ".join(
+        item
+        for item in (
+            str(goal.get("human_goal") or ""),
+            str(goal.get("subject") or ""),
+            mission_class.replace("_", " "),
+            _MISSION_RETRIEVAL_TERMS.get(
+                mission_class,
+                _MISSION_RETRIEVAL_TERMS["OPEN_SEMANTIC"],
+            ),
+        )
+        if item
+    )
+
+
+def _relevant_registry_summary(
+    goal: dict[str, Any],
+    *,
+    referenced_capability_ids: tuple[str, ...] = (),
+    limit: int = _REGISTRY_CANDIDATE_LIMIT,
+) -> list[dict[str, Any]]:
+    limit = max(6, min(int(limit), 30))
+    query = _registry_retrieval_query(goal)
+    ordered_ids: list[str] = []
+
+    def add(capability_id: Any) -> None:
+        value = str(capability_id or "").strip()
+        if not value or value in ordered_ids:
+            return
+        record = GLOBAL_CAPABILITY_REGISTRY.get(value)
+        if record is None or record.capability_type == "PROVIDER" or not record.execution_enabled:
+            return
+        ordered_ids.append(value)
+
+    for capability_id in referenced_capability_ids:
+        add(capability_id)
+
+    # Preserve action diversity without sending the complete Registry. This is
+    # deterministic retrieval only; Harness still validates proposals against
+    # the complete canonical Registry after inference.
+    for action in ("DEVELOPMENT", "RESEARCH", "EXECUTION", "EDITORIAL", "DECISION"):
+        for item in GLOBAL_CAPABILITY_REGISTRY.discover(
+            intent=query,
+            authorized_action=action,
+            limit=_PER_ACTION_DISCOVERY_LIMIT,
+        ):
+            add(item.get("capability_id"))
+            if len(ordered_ids) >= limit:
+                break
+        if len(ordered_ids) >= limit:
+            break
+
+    if len(ordered_ids) < limit:
+        for item in GLOBAL_CAPABILITY_REGISTRY.discover(intent=query, limit=limit):
+            add(item.get("capability_id"))
+            if len(ordered_ids) >= limit:
+                break
+
+    return [
+        _compact_registry_record(GLOBAL_CAPABILITY_REGISTRY.get(capability_id))
+        for capability_id in ordered_ids[:limit]
+        if GLOBAL_CAPABILITY_REGISTRY.get(capability_id) is not None
+    ]
+
+
+def _compact_bounded_memory_for_prompt(
+    bounded_memory_context: dict[str, Any],
+) -> dict[str, Any]:
+    compact = {
+        key: value
+        for key, value in dict(bounded_memory_context or {}).items()
+        if key not in {
+            "conversation_memory",
+            "operational_memory",
+            "knowledge_memory",
+            "artifact_lineage_memory",
+            "competence_records",
+        }
+    }
+    for key in (
+        "conversation_memory",
+        "operational_memory",
+        "knowledge_memory",
+        "artifact_lineage_memory",
+        "competence_records",
+    ):
+        compact[key] = list(
+            (bounded_memory_context or {}).get(key) or ()
+        )[:6]
+    return compact
 
 
 def _memory_text(memory: dict[str, Any]) -> str:
@@ -183,7 +295,7 @@ def build_semantic_planning_context(
     relevant_memories = [
         item for item in ranked_memories
         if _relevance(item, goal_tokens)[0] > 0
-    ][:20]
+    ][:_RELEVANT_MEMORY_LIMIT]
 
     episodes = learning_repository.list_episodes(limit=120)
     ranked_episodes = sorted(
@@ -198,9 +310,9 @@ def build_semantic_planning_context(
         item
         for item in ranked_episodes
         if len(_tokens(_episode_text(item)) & goal_tokens) > 0
-    ][:20]
+    ][:_RELEVANT_HISTORY_LIMIT]
     if not relevant_episodes:
-        relevant_episodes = ranked_episodes[:8]
+        relevant_episodes = ranked_episodes[:_RELEVANT_HISTORY_LIMIT]
 
     failure_memories = [
         {
@@ -219,7 +331,7 @@ def build_semantic_planning_context(
         for item in relevant_memories
         if str(item.get("memory_type") or "").upper() in _FAILURE_TYPES
         or item.get("failure_pattern")
-    ][:12]
+    ][:_RELEVANT_MEMORY_LIMIT]
 
     decisions = learning_repository.list_canonical_human_decisions(
         goal_id=str(goal.get("goal_id") or "") or None,
@@ -238,10 +350,29 @@ def build_semantic_planning_context(
                 )
                 & goal_tokens
             ) > 0
-        ][:12]
+        ][:_RELEVANT_DECISION_LIMIT]
+
+    referenced_capability_ids = tuple(dict.fromkeys(
+        str(item.get("capability_id") or "").strip()
+        for item in [*relevant_episodes, *decisions]
+        if str(item.get("capability_id") or "").strip()
+    ))
+    registry_summary = _relevant_registry_summary(
+        goal,
+        referenced_capability_ids=referenced_capability_ids,
+    )
+    registry_candidate_ids = {
+        str(item.get("capability_id") or "")
+        for item in registry_summary
+        if str(item.get("capability_id") or "")
+    }
 
     competence_raw = learning_repository.list_competence(status="ACTIVE", limit=160)
-    competence = [compact_competence(item) for item in competence_raw]
+    competence = [
+        compact_competence(item)
+        for item in competence_raw
+        if str(item.get("capability_id") or "") in registry_candidate_ids
+    ]
     competence.sort(
         key=lambda item: (
             -int(item.get("tested_cases") or 0),
@@ -276,7 +407,9 @@ def build_semantic_planning_context(
         "mission_class": str(goal.get("mission_class") or ""),
         "canonical_state": dict(goal.get("canonical_state") or {}),
         "conversation_state": dict(goal.get("conversation_state") or {}),
-        "bounded_memory_context": dict(bounded_memory_context),
+        "bounded_memory_context": _compact_bounded_memory_for_prompt(
+            bounded_memory_context
+        ),
         "recent_execution_history": [
             {
                 "episode_id": item.get("episode_id"),
@@ -308,14 +441,45 @@ def build_semantic_planning_context(
                 "evidence_refs": list(item.get("evidence_refs") or ())[:10],
                 "created_at": item.get("created_at"),
             }
-            for item in decisions[:12]
+            for item in decisions[:_RELEVANT_DECISION_LIMIT]
         ],
         "provider_health": dict(provider_health),
-        "registry_summary": _registry_summary(),
-        "competence_evidence": competence[:100],
+        "registry_summary": registry_summary,
+        "competence_evidence": competence[:_COMPETENCE_LIMIT],
         "resource_bounds": dict(resource_bounds),
         "known_bad_paths": known_bad_paths,
         "artifact_ref": artifact_ref,
+        "context_retrieval_evidence": {
+            "registry_total_executable": sum(
+                1
+                for record in GLOBAL_CAPABILITY_REGISTRY.all()
+                if record.capability_type != "PROVIDER" and record.execution_enabled
+            ),
+            "registry_candidates": len(registry_summary),
+            "registry_candidate_ids": [
+                item["capability_id"] for item in registry_summary
+            ],
+            "competence_rows": min(len(competence), _COMPETENCE_LIMIT),
+            "relevant_failure_memories": len(failure_memories),
+            "recent_execution_history": len(relevant_episodes),
+            "human_feedback_decisions": min(
+                len(decisions), _RELEVANT_DECISION_LIMIT
+            ),
+            "bounded_memory_sections": {
+                key: len(
+                    (_compact_bounded_memory_for_prompt(
+                        bounded_memory_context
+                    ).get(key) or ())
+                )
+                for key in (
+                    "conversation_memory",
+                    "operational_memory",
+                    "knowledge_memory",
+                    "artifact_lineage_memory",
+                    "competence_records",
+                )
+            },
+        },
     }
 
 
