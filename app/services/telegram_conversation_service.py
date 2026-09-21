@@ -368,11 +368,20 @@ def plan_natural_language_action(
         # Natural operational goals are converted into a Harness-owned GoalEnvelope
         # and MissionPlan. The human never selects Hermes, Agent Office or specialists.
         try:
+            subject_context = " ".join(
+                item
+                for item in (
+                    str(state.get("current_subject") or "").strip(),
+                    str(state.get("active_task") or "").strip(),
+                    str(resolved_reference or "").strip(),
+                )
+                if item
+            ) or None
             goal_envelope = build_goal_envelope(
                 human_goal=message,
                 project=str(state.get("active_project") or "BR-no-GTA"),
                 goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
-                subject=str(state.get("current_subject") or "").strip() or None,
+                subject=subject_context,
                 source_surface="telegram",
             )
             mission_plan = plan_mission_from_human_goal(
