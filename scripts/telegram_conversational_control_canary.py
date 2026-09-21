@@ -181,7 +181,9 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
             return _route_only_continue(plan)
         if kind == "RESEARCH_PIPELINE":
             # Real canonical research pipeline. Optional LLM synthesis is tested separately.
-            return json.loads(server.br_research_run())
+            result = json.loads(server.br_research_run())
+            result["capability_id"] = "gta6.research"
+            return result
         if kind == "HERMES_COLLABORATION":
             raw = script_content.encode("utf-8")
             mission_id = f"telegram-control-synergy-{chat_id}"
