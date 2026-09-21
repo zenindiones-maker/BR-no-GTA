@@ -1,12 +1,7 @@
 {
   "request": "dynamic-system-improvement-auth-control-focused",
-  "source_head": "dbb1c6dbf2616051206760a866aba5d716ec54d2",
+  "source_head": "ad2659549fde7c25910674daf5cab97af5bac545",
+  "retry_of": 35643808844,
   "scope": "codex-auth-preflight-human-gate-checkpoint-resume",
-  "incident_run": 35633234932,
-  "preserve": {
-    "mission_scope": true,
-    "hermes_runtime": true,
-    "agent_office_sandbox": true,
-    "zero_cost_operation": true
-  }
+  "incident_run": 35633234932
 }
