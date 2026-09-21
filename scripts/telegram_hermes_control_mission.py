@@ -554,7 +554,11 @@ def _resume(
         expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
         budgets={"max_parallelism": 1, "retry_count": 1, "time_seconds": 900, "cost": 0.0},
         evidence_requirements=("restored Hermes board", "fresh Harness authorization", "human decision"),
-        input_refs=(str(start_proof.get("artifact_ref") or ""),),
+        input_refs=tuple(
+            item
+            for item in (str(start_proof.get("artifact_ref") or "").strip(),)
+            if item
+        ),
     )
     board_id = f"br-{mission_id.lower().replace('_', '-')}"[:64]
     board = HermesBoardAdapter(
