@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt pytest
           mkdir -p artifacts/telegram-canonical-memory/state
 
       - name: Restore real canonical checkpoint
