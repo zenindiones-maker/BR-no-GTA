@@ -170,6 +170,77 @@ current_repo_revision() {
   printf '%s\n' "${head}"
 }
 
+current_branch() {
+  git -C "${ROOT}" branch --show-current 2>/dev/null || true
+}
+
+remote_repo_revision() {
+  local branch remote
+  branch="$(current_branch)"
+  [[ -n "${branch}" ]] || return 1
+  remote="$(git -C "${ROOT}" ls-remote --heads origin "refs/heads/${branch}" 2>/dev/null | awk 'NR==1 {print $1}')"
+  [[ -n "${remote}" ]] || return 1
+  printf '%s\n' "${remote}"
+}
+
+loaded_runtime_revision() {
+  [[ -s "${REVISION_FILE}" ]] || return 1
+  local runtime_pid runtime_revision
+  read -r runtime_pid runtime_revision < "${REVISION_FILE}" || return 1
+  [[ -n "${runtime_revision}" ]] || return 1
+  printf '%s\n' "${runtime_revision}"
+}
+
+working_tree_clean() {
+  [[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]
+}
+
+sync_branch_ff_only() {
+  local branch local_head remote_head
+  branch="$(current_branch)"
+  [[ -n "${branch}" ]] || {
+    echo "TELEGRAM_DEPLOY=FAIL detached HEAD" >&2
+    return 1
+  }
+  if ! working_tree_clean; then
+    echo "TELEGRAM_DEPLOY=FAIL worktree is dirty; refusing automatic sync" >&2
+    return 1
+  fi
+  git -C "${ROOT}" fetch origin "${branch}"
+  local_head="$(git -C "${ROOT}" rev-parse HEAD)"
+  remote_head="$(git -C "${ROOT}" rev-parse "origin/${branch}")"
+  echo "LOCAL_HEAD=${local_head}"
+  echo "REMOTE_HEAD=${remote_head}"
+  if [[ "${local_head}" == "${remote_head}" ]]; then
+    echo "TELEGRAM_DEPLOY_SYNC=ALREADY_CURRENT"
+    return 0
+  fi
+  if ! git -C "${ROOT}" merge-base --is-ancestor "${local_head}" "${remote_head}"; then
+    echo "TELEGRAM_DEPLOY=FAIL local branch is not a fast-forward ancestor of origin/${branch}" >&2
+    return 1
+  fi
+  git -C "${ROOT}" merge --ff-only "origin/${branch}"
+  echo "TELEGRAM_DEPLOY_SYNC=FAST_FORWARDED"
+}
+
+runtime_revision_report() {
+  local local_head remote_head loaded pid
+  local_head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  remote_head="$(remote_repo_revision 2>/dev/null || true)"
+  loaded="$(loaded_runtime_revision 2>/dev/null || true)"
+  pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  echo "RUNNING_GATEWAY_PID=${pid:-NONE}"
+  echo "RUNNING_GATEWAY_REVISION=${loaded:-MISSING}"
+  echo "LOCAL_HEAD=${local_head:-UNKNOWN}"
+  echo "REMOTE_HEAD=${remote_head:-UNAVAILABLE}"
+  if [[ -n "${local_head}" && -n "${remote_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+    echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=PASS"
+    return 0
+  fi
+  echo "TELEGRAM_RUNTIME_REVISION_MATCHES_HEAD=FAIL"
+  return 2
+}
+
 runtime_revision_matches() {
   [[ -s "${REVISION_FILE}" ]] || return 1
   [[ -s "${PID_FILE}" ]] || return 1
@@ -348,29 +419,45 @@ stop_gateway() {
 }
 
 status_gateway() {
+  local status=0
   if is_running; then
     local -a pids=()
     mapfile -t pids < <(gateway_pids)
     if [[ ${#pids[@]} -ne 1 ]]; then
       echo "TELEGRAM_GATEWAY=CONFLICT INSTANCES=${#pids[@]} TRACKED_PID=$(cat "${PID_FILE}")"
-      return 2
+      status=2
+    else
+      echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}") INSTANCES=1"
     fi
-    echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}") INSTANCES=1 REVISION=$(current_repo_revision)"
   else
     local -a pids=()
     mapfile -t pids < <(gateway_pids)
     if [[ ${#pids[@]} -gt 0 ]]; then
       local expected loaded=""
       expected="$(current_repo_revision 2>/dev/null || true)"
-      if [[ -s "${REVISION_FILE}" ]]; then
-        read -r _ loaded < "${REVISION_FILE}" || true
-      fi
+      loaded="$(loaded_runtime_revision 2>/dev/null || true)"
       echo "TELEGRAM_GATEWAY=STALE_CODE INSTANCES=${#pids[@]} PIDS=${pids[*]} EXPECTED_REVISION=${expected:-UNKNOWN} LOADED_REVISION=${loaded:-MISSING}"
-      return 2
+      status=2
+    else
+      echo "TELEGRAM_GATEWAY=NOT_RUNNING"
+      status=1
     fi
-    echo "TELEGRAM_GATEWAY=NOT_RUNNING"
-    return 1
   fi
+  runtime_revision_report || status=2
+  return "${status}"
+}
+
+reconcile_gateway() {
+  : > "${MAINTENANCE_FILE}"
+  trap 'rm -f "${MAINTENANCE_FILE}" "${START_LOCK_DIR}"' EXIT INT TERM
+  echo "TELEGRAM_DEPLOY_RECONCILE=START"
+  sync_branch_ff_only
+  stop_gateway
+  start_gateway
+  runtime_revision_report
+  echo "TELEGRAM_DEPLOY_RECONCILE=PASS"
+  rm -f "${MAINTENANCE_FILE}"
+  trap - EXIT INT TERM
 }
 
 foreground_gateway() {
@@ -428,6 +515,9 @@ case "${1:-start}" in
   restart)
     restart_gateway
     ;;
+  reconcile)
+    reconcile_gateway
+    ;;
   status)
     status_gateway
     ;;
@@ -444,7 +534,7 @@ case "${1:-start}" in
     presentation_proof "$@"
     ;;
   *)
-    echo "uso: $0 {start|stop|restart|status|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
+    echo "uso: $0 {start|stop|restart|reconcile|status|logs [N]|foreground|source-proof [INPUT_ID]|presentation-proof [TEST_INPUT_ID] [SOURCE_INPUT_ID]}" >&2
     exit 2
     ;;
 esac
