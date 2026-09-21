@@ -6,6 +6,13 @@ from scripts.telegram_harness_gateway import (
     _verify_attachment_remote,
 )
 from scripts import telegram_harness_gateway_v2 as gateway_v2
+from app.services.harness_learning_service import register_skill_version
+from app.services.opencode_executor_profile_service import (
+    CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+    OPENCODE_EXECUTOR_SKILL_ID,
+    SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+    executable_opencode_executor_profile,
+)
 
 
 class FakeTelegramApi:
@@ -156,3 +163,40 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
     assert callable(calls["kwargs"]["progress_callback"])
     assert len(api.sent) >= 2
     assert not hasattr(gateway_v2, "chat_under_harness")
+
+
+
+def test_live_status_ignores_malformed_active_opencode_profile(monkeypatch):
+    # Reproduce the exact class of production incident from the real bot:
+    # persisted OpenCode profile metadata disagrees with executable code.
+    # Provider-free STATUS must not resolve or validate that profile at all.
+    profile = executable_opencode_executor_profile(
+        SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION
+    )
+    register_skill_version(
+        skill_id=OPENCODE_EXECUTOR_SKILL_ID,
+        version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+        parent_version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+        content_ref=profile["content_ref"],
+        checksum="0" * 64,
+        status="ACTIVE",
+        evidence_refs=("telegram-real-checksum-mismatch-regression",),
+    )
+
+    api = FakeTelegramApi()
+    reply, learned, result = gateway_v2._handle_live_natural_language_message(
+        api=api,
+        user_id=7701,
+        chat_id=7702,
+        message={"message_id": 7703},
+        update_id=7704,
+        text="Onde estamos?",
+    )
+
+    assert learned["input"]["classification"] == "question"
+    assert result["intent"] == "STATUS_REQUEST"
+    assert result["plan"]["kind"] == "STATUS"
+    assert result["canonical_result"]["status"] == "OBSERVED"
+    assert result["canonical_result"]["control_surface_status"]["provider_independent"] is True
+    assert "checksum does not match" not in reply
+    assert "FAILED" not in reply
