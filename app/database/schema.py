@@ -1672,6 +1672,82 @@ def _migrate_memory_workspace_plane(connection) -> None:
         """
     )
 
+
+def _migrate_continuous_operation_plane(connection) -> None:
+    """Durable operational cursors/scoreboard for event-driven continuous cycles.
+
+    These tables do not replace Knowledge Brain or Learning Plane. They only
+    store source fingerprints, cycle observations and claim lineage indexes.
+    """
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS continuous_source_state (
+            source_key TEXT PRIMARY KEY,
+            source_url TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            content_fingerprint TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            changed_at TEXT NOT NULL,
+            evidence_ref TEXT NOT NULL,
+            etag TEXT,
+            last_modified TEXT,
+            metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS continuous_cycle_runs (
+            cycle_id TEXT PRIMARY KEY,
+            trigger_kind TEXT NOT NULL,
+            cycle_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            meaningful_delta INTEGER NOT NULL DEFAULT 0,
+            source_fetch_count INTEGER NOT NULL DEFAULT 0,
+            memory_hit_count INTEGER NOT NULL DEFAULT 0,
+            memory_miss_count INTEGER NOT NULL DEFAULT 0,
+            failure_memory_preventions INTEGER NOT NULL DEFAULT 0,
+            duplicate_work_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            human_interventions INTEGER NOT NULL DEFAULT 0,
+            useful_findings INTEGER NOT NULL DEFAULT 0,
+            verified_claims INTEGER NOT NULL DEFAULT 0,
+            rejected_claims INTEGER NOT NULL DEFAULT 0,
+            superseded_claims INTEGER NOT NULL DEFAULT 0,
+            latency_seconds REAL NOT NULL DEFAULT 0,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_continuous_cycle_runs_kind_time
+        ON continuous_cycle_runs(cycle_kind, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS gta6_claim_lineage (
+            claim_id INTEGER PRIMARY KEY,
+            subject TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            published_at TEXT,
+            observed_at TEXT NOT NULL,
+            evidence_ref TEXT NOT NULL,
+            evidence_class TEXT NOT NULL,
+            status_snapshot TEXT NOT NULL,
+            supersedes_claim_id INTEGER,
+            related_claims TEXT NOT NULL DEFAULT '[]',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (claim_id) REFERENCES memory_claims(id) ON DELETE CASCADE,
+            FOREIGN KEY (supersedes_claim_id) REFERENCES memory_claims(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_claim_lineage_subject
+        ON gta6_claim_lineage(subject, observed_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_claim_lineage_source
+        ON gta6_claim_lineage(source_id, observed_at DESC);
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1704,6 +1780,7 @@ def initialize_schema() -> None:
         _migrate_harness_authorizations(connection)
         _migrate_harness_learning_plane(connection)
         _migrate_memory_workspace_plane(connection)
+        _migrate_continuous_operation_plane(connection)
         _migrate_agent_execution_leases(connection)
         _migrate_e2e_stage_checkpoints(connection)
         connection.commit()
