@@ -10,13 +10,6 @@ from app.database.memory_claim_evidence_repository import (
     list_memory_claim_evidence_for_claim,
 )
 from app.database.memory_claim_repository import list_memory_claims
-from app.services.memory_plane_service import (
-    ARTIFACT_LINEAGE_MEMORY,
-    CONVERSATION_MEMORY,
-    KNOWLEDGE_MEMORY,
-    OPERATIONAL_MEMORY,
-)
-
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{2,}", re.IGNORECASE)
 
