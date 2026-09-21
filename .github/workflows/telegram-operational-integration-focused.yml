@@ -41,7 +41,9 @@ jobs:
           set -euo pipefail
           bash -n scripts/install_telegram_termux_persistence.sh
           bash -n scripts/telegram_termux_control.sh
-          python -m py_compile             app/services/telegram_control_surface_status.py             app/services/telegram_conversation_service.py             app/services/harness_collaboration_service.py             app/services/provider_health_service.py
+          python -m py_compile             app/services/telegram_control_surface_status.py             app/services/telegram_conversation_service.py             app/services/harness_collaboration_service.py             app/services/provider_health_service.py \
+            app/services/telegram_system_improvement_dispatch_service.py \
+            scripts/dynamic_system_improvement_mission.py
           echo "INTEGRATED_BOUNDARIES_COMPILE=PASS"
           echo "TERMUX_PERSISTENCE_INSTALLER_SYNTAX=PASS"
       - name: Run focused human-control and planner tests
@@ -51,6 +53,24 @@ jobs:
           echo "HUMAN_CONTROL_SURFACE_FOCUSED=PASS"
           echo "MISSION_PLANNER_FOCUSED=PASS"
           echo "PRIVATE_GROUP_CANONICAL_CONTINUITY=PASS"
+      - name: Validate dynamic mission transport contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from app.services.harness_collaboration_service import build_goal_envelope, plan_mission_from_human_goal
+          goal=build_goal_envelope(
+              human_goal="Analisa onde estamos perdendo desempenho no sistema e melhora o que for comprovadamente inútil sem reduzir qualidade.",
+              project="BR-no-GTA",
+              goal_id="goal-system-health",
+          )
+          plan=plan_mission_from_human_goal(goal).to_dict()
+          assert plan["authority"]=="DEEPSEEK_HARNESS"
+          assert len(plan["collaboration_plan"]["tasks"]) >= 2
+          assert len(plan["collaboration_plan"]["tasks"]) <= plan["resource_bounds"]["max_tasks_per_mission"]
+          assert any(x["task_id"]=="candidate" for x in plan["collaboration_plan"]["tasks"])
+          assert any(x["task_id"]=="validate" for x in plan["collaboration_plan"]["tasks"])
+          print("DYNAMIC_MISSION_TRANSPORT_CONTRACT=PASS")
+          PY
       - name: Publish evidence summary
         run: |
           set -euo pipefail
