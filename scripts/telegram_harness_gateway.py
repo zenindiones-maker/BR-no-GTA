@@ -436,7 +436,12 @@ def _extract_attachment(message: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _private_message(update: dict[str, Any]) -> tuple[int, int, dict[str, Any], str] | None:
+def _pairing_private_message(update: dict[str, Any]) -> tuple[int, int, dict[str, Any], str] | None:
+    """Private-chat parser used only for first-time pairing.
+
+    Live ingress is owned by telegram_ingress_policy_service and supports
+    private/group/supergroup under the paired-sender + allowed-chat policy.
+    """
     message = update.get("message")
     if not isinstance(message, dict):
         return None
@@ -455,6 +460,10 @@ def _private_message(update: dict[str, Any]) -> tuple[int, int, dict[str, Any], 
         return int(sender["id"]), int(chat["id"]), message, text.strip()
     except (KeyError, TypeError, ValueError):
         return None
+
+
+# Compatibility for old imports only. Never use this alias for live ingress.
+_private_message = _pairing_private_message
 
 
 def _verify_attachment_remote(
@@ -537,234 +546,16 @@ def _chat_reply(result: dict[str, Any]) -> str:
 
 
 def main() -> int:
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
-        print("TELEGRAM_GATEWAY=FAIL")
-        print("TELEGRAM_GATEWAY_ERROR=TELEGRAM_BOT_TOKEN is not loaded in this process")
-        return 2
+    """Legacy entrypoint delegates to the single governed v2 gateway.
 
-    initialize_application()
-    api = TelegramApi(token)
-    me = api.call("getMe")
-    webhook = api.call("getWebhookInfo")
-    webhook_url = str((webhook or {}).get("url") or "").strip()
-    if webhook_url:
-        print("TELEGRAM_GATEWAY=FAIL")
-        print("TELEGRAM_GATEWAY_ERROR=active Telegram webhook conflicts with Termux long polling")
-        return 3
+    Keeping a second natural-language listener created deployment ambiguity:
+    an old process could remain alive and emit internal progress telemetry.
+    There is now one live ingress implementation.
+    """
+    from scripts.telegram_harness_gateway_v2 import main as governed_main
 
-    state = _load_state()
-    allowed_env = os.getenv("TELEGRAM_ALLOWED_USER_ID", "").strip()
-    allowed_user_id: int | None = None
-    if allowed_env:
-        allowed_user_id = int(allowed_env)
-    elif state.get("allowed_user_id") is not None:
-        allowed_user_id = int(state["allowed_user_id"])
-
-    offset = int(state.get("offset") or 0)
-    username = (me or {}).get("username") if isinstance(me, dict) else None
-    print("TELEGRAM_GATEWAY=ONLINE", flush=True)
-    print(f"TELEGRAM_BOT_USERNAME={username or ''}", flush=True)
-    print("TELEGRAM_HARNESS_SMART_CHAT=ENABLED", flush=True)
-    print("TELEGRAM_BRAND_ASSET_INTAKE=ENABLED", flush=True)
-    if allowed_user_id is None:
-        print(f"TELEGRAM_PAIRING=WAITING_TEXT:{PAIR_TEXT}", flush=True)
-    else:
-        print(f"TELEGRAM_ALLOWED_USER_ID={allowed_user_id}", flush=True)
-
-    while True:
-        try:
-            updates = api.call(
-                "getUpdates",
-                {
-                    "offset": str(offset),
-                    "timeout": "30",
-                    "allowed_updates": json.dumps(["message"]),
-                },
-                timeout=40,
-            )
-            if not isinstance(updates, list):
-                updates = []
-
-            for update in updates:
-                if not isinstance(update, dict):
-                    continue
-                update_id = int(update.get("update_id") or 0)
-                if update_id >= offset:
-                    offset = update_id + 1
-                    state["offset"] = offset
-
-                parsed = _private_message(update)
-                if parsed is None:
-                    continue
-                user_id, chat_id, message, text = parsed
-
-                if allowed_user_id is None:
-                    if text.casefold() != PAIR_TEXT:
-                        continue
-                    allowed_user_id = user_id
-                    state["allowed_user_id"] = user_id
-                    state["chat_id"] = chat_id
-                    _save_state(state)
-                    print(
-                        f"TELEGRAM_PAIRING=PASS USER_ID={user_id} CHAT_ID={chat_id}",
-                        flush=True,
-                    )
-                    api.send(
-                        chat_id,
-                        "BR-no-GTA conectado. Seu Telegram foi pareado como control surface do DeepSeek Harness.\n\n"
-                        + _help_text(),
-                    )
-                    continue
-
-                if user_id != allowed_user_id:
-                    print(f"TELEGRAM_REJECTED_USER_ID={user_id}", flush=True)
-                    continue
-
-                attachment = _extract_attachment(message)
-                if attachment is not None:
-                    asset_type = _classify_brand_asset(text, attachment.get("file_name"))
-                    if asset_type is not None:
-                        try:
-                            result = _register_attachment(
-                                api=api,
-                                attachment=attachment,
-                                asset_type=asset_type,
-                                user_id=user_id,
-                                chat_id=chat_id,
-                                message=message,
-                                update_id=update_id,
-                                caption=text,
-                            )
-                        except Exception as exc:
-                            reply = f"ASSET_REGISTERED=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
-                            print(
-                                f"TELEGRAM_ASSET=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
-                                flush=True,
-                            )
-                        else:
-                            reply = _asset_reply(result)
-                            print(
-                                f"TELEGRAM_ASSET=PASS USER_ID={user_id} TYPE={asset_type} ASSET_ID={result['asset']['id']}",
-                                flush=True,
-                            )
-                        api.send(chat_id, reply)
-                        continue
-
-                    api.typing(chat_id)
-                    reporter = TelegramProgressReporter(api, chat_id)
-                    reporter.start()
-                    try:
-                        verified_attachment = _verify_attachment_remote(
-                            api=api,
-                            attachment=attachment,
-                        )
-                        submission_text = text or (
-                            "Arquivo enviado: "
-                            + str(
-                                verified_attachment.get("file_name")
-                                or verified_attachment.get("media_kind")
-                                or "anexo"
-                            )
-                        )
-                        ingested = ingest_telegram_input_under_harness({
-                            "telegram_user_id": user_id,
-                            "telegram_chat_id": chat_id,
-                            "telegram_message_id": int(message["message_id"]),
-                            "telegram_update_id": update_id,
-                            "input_kind": str(verified_attachment.get("media_kind") or "attachment"),
-                            "text": submission_text,
-                            "attachment": verified_attachment,
-                        })
-                        input_record = dict(ingested.get("input") or {})
-                        conversation = handle_telegram_conversation(
-                            submission_text,
-                            telegram_chat_id=chat_id,
-                            telegram_message_id=int(message["message_id"]),
-                            input_record=input_record,
-                            has_attachment=True,
-                            progress_callback=reporter,
-                        )
-                        reply = _chat_reply(conversation)
-                    except Exception as exc:
-                        reporter.blocker(f"{type(exc).__name__}: {str(exc)[:900]}")
-                        reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
-                        print(
-                            f"TELEGRAM_FILE_SUBMISSION=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
-                            flush=True,
-                        )
-                    else:
-                        print(
-                            f"TELEGRAM_FILE_SUBMISSION=PASS USER_ID={user_id} "
-                            f"KIND={verified_attachment.get('media_kind')}",
-                            flush=True,
-                        )
-                    finally:
-                        reporter.stop()
-                    api.send(chat_id, reply)
-                    continue
-
-                if not text:
-                    continue
-
-                api.typing(chat_id)
-                try:
-                    if text.startswith("/"):
-                        reply = _execute_command(text, chat_id=chat_id)
-                        command_name = text.split()[0]
-                    else:
-                        ingested = ingest_telegram_input_under_harness({
-                            "telegram_user_id": user_id,
-                            "telegram_chat_id": chat_id,
-                            "telegram_message_id": int(message["message_id"]),
-                            "telegram_update_id": update_id,
-                            "input_kind": "text",
-                            "text": text,
-                        })
-                        input_record = dict(ingested.get("input") or {})
-                        reporter = TelegramProgressReporter(api, chat_id)
-                        reporter.start()
-                        try:
-                            conversation = handle_telegram_conversation(
-                                text,
-                                telegram_chat_id=chat_id,
-                                telegram_message_id=int(message["message_id"]),
-                                input_record=input_record,
-                                progress_callback=reporter,
-                            )
-                        except Exception as exc:
-                            reporter.blocker(f"{type(exc).__name__}: {str(exc)[:900]}")
-                            raise
-                        finally:
-                            reporter.stop()
-                        reply = _chat_reply(conversation)
-                        command_name = "natural-language"
-                except Exception as exc:  # command boundary: never crash the listener
-                    reply = f"COMMAND=FAIL\n{type(exc).__name__}: {str(exc)[:1200]}"
-                    print(
-                        f"TELEGRAM_COMMAND=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
-                        flush=True,
-                    )
-                else:
-                    print(
-                        f"TELEGRAM_COMMAND=PASS USER_ID={user_id} COMMAND={command_name}",
-                        flush=True,
-                    )
-                api.send(chat_id, reply)
-
-            _save_state(state)
-        except KeyboardInterrupt:
-            print("TELEGRAM_GATEWAY=STOPPED", flush=True)
-            return 0
-        except TelegramApiError as exc:
-            print(f"TELEGRAM_GATEWAY_RETRY={str(exc)[:1000]}", flush=True)
-            time.sleep(5)
-        except Exception as exc:
-            print(
-                f"TELEGRAM_GATEWAY_RETRY={type(exc).__name__}:{str(exc)[:1000]}",
-                flush=True,
-            )
-            time.sleep(5)
+    print("TELEGRAM_GATEWAY_LEGACY_ENTRYPOINT=DELEGATED_TO_V2", flush=True)
+    return governed_main()
 
 
 if __name__ == "__main__":
