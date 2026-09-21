@@ -30,6 +30,10 @@ _PROVIDER_ALIASES = {
     "nim": "nvidia_nim",
     "nvidia_nim": "nvidia_nim",
     "tuxevil": "tuxevil",
+    "ollama_local": "ollama_local",
+    "ollama-local": "ollama_local",
+    "local_openweight": "ollama_local",
+    "local-openweight": "ollama_local",
     "gemini": "gemini",
     "higgsfield": "higgsfield",
 }
