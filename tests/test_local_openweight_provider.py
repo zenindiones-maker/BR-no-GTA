@@ -89,7 +89,9 @@ def test_local_provider_normalizes_real_ollama_shape():
 
 
 
-def test_semantic_planner_prompt_uses_bounded_context_and_native_json_mode():
+def test_semantic_planner_prompt_uses_bounded_context_and_native_json_mode(monkeypatch):
+    monkeypatch.delenv("BR_LOCAL_SEMANTIC_SCHEMA", raising=False)
+    monkeypatch.delenv("BR_LOCAL_SEMANTIC_NUM_PREDICT", raising=False)
     captured = {}
     payload = {
         "model": LOCAL_OPENWEIGHT_MODEL_ID,
@@ -111,9 +113,9 @@ def test_semantic_planner_prompt_uses_bounded_context_and_native_json_mode():
 
     provider = OllamaLocalAIProvider(model=LOCAL_OPENWEIGHT_MODEL_ID)
     prompt = (
-        "Return STRICT JSON only.\n"
-        "OUTPUT_SCHEMA={}\n"
-        "PLANNING_CONTEXT=" + ("x" * 9000)
+        "You propose a MissionPlan only; authority=NONE.\n"
+        "OUTPUT_CONTRACT={}\n"
+        "CONTEXT=" + ("x" * 9000)
     )
     with patch(
         "app.services.local_openweight_ai_provider.request.urlopen",
@@ -130,6 +132,46 @@ def test_semantic_planner_prompt_uses_bounded_context_and_native_json_mode():
     assert provider.last_performance_metrics["requested_output_tokens"] == 900
     assert provider.last_performance_metrics["prompt_eval_tokens_per_second"] == pytest.approx(200.0)
     assert provider.last_performance_metrics["generation_tokens_per_second"] == pytest.approx(10.0)
+    assert provider.last_performance_metrics["finish_reason"] == "stop"
+    assert provider.last_performance_metrics["output_truncated"] is False
+
+
+def test_semantic_planner_schema_mode_is_explicitly_gated(monkeypatch):
+    captured = {}
+    payload = {
+        "model": LOCAL_OPENWEIGHT_MODEL_ID,
+        "message": {"role": "assistant", "content": '{"interpreted_goal":"ok"}'},
+        "done": True,
+        "done_reason": "length",
+        "prompt_eval_count": 100,
+        "eval_count": 384,
+    }
+
+    def fake_urlopen(req, timeout):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeResponse(payload)
+
+    monkeypatch.setenv("BR_LOCAL_SEMANTIC_SCHEMA", "1")
+    monkeypatch.setenv("BR_LOCAL_SEMANTIC_NUM_PREDICT", "384")
+    provider = OllamaLocalAIProvider(model=LOCAL_OPENWEIGHT_MODEL_ID)
+    prompt = (
+        "You propose a MissionPlan only; authority=NONE.\n"
+        "OUTPUT_CONTRACT={}\n"
+        "CONTEXT={}"
+    )
+    with patch(
+        "app.services.local_openweight_ai_provider.request.urlopen",
+        side_effect=fake_urlopen,
+    ):
+        provider.generate(prompt)
+
+    assert isinstance(captured["body"]["format"], dict)
+    assert captured["body"]["format"]["type"] == "object"
+    assert captured["body"]["options"]["num_predict"] == 384
+    assert provider.last_performance_metrics["structured_json_schema_mode"] is True
+    assert provider.last_performance_metrics["finish_reason"] == "length"
+    assert provider.last_performance_metrics["output_truncated"] is True
+
 
 def test_zero_cost_routing_can_select_only_registered_local_model():
     decision = route_harness_request(
