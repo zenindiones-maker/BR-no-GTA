@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -639,6 +640,37 @@ def _handle_live_natural_language_message(
     return reply, learned, conversation
 
 
+def _send_final_human_response(
+    *,
+    api: TelegramApi,
+    chat_id: int,
+    reply: str,
+    runtime_revision: str,
+) -> int | None:
+    digest = hashlib.sha256(str(reply).encode("utf-8")).hexdigest()
+    try:
+        message_id = api.send(chat_id, reply)
+    except Exception as exc:
+        print(
+            "FINAL_HUMAN_RESPONSE_SENT=NO "
+            f"SEND_PROCESS_PID={os.getpid()} "
+            f"SEND_RUNTIME_REVISION={runtime_revision or 'UNSPECIFIED'} "
+            f"REPLY_SHA256={digest} "
+            f"ERROR={type(exc).__name__}",
+            flush=True,
+        )
+        raise
+    print(
+        "FINAL_HUMAN_RESPONSE_SENT=PASS "
+        f"TELEGRAM_SEND_MESSAGE_ID={message_id if message_id is not None else 'UNKNOWN'} "
+        f"SEND_PROCESS_PID={os.getpid()} "
+        f"SEND_RUNTIME_REVISION={runtime_revision or 'UNSPECIFIED'} "
+        f"REPLY_SHA256={digest}",
+        flush=True,
+    )
+    return message_id
+
+
 def _write_runtime_revision_proof() -> dict[str, Any]:
     revision = os.getenv("BR_TELEGRAM_GATEWAY_REVISION", "").strip()
     revision_file = os.getenv("TELEGRAM_GATEWAY_REVISION_FILE", "").strip()
@@ -883,7 +915,12 @@ def main() -> int:
                             f"TELEGRAM_INGRESS=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                             flush=True,
                         )
-                    api.send(chat_id, reply)
+                    _send_final_human_response(
+                        api=api,
+                        chat_id=chat_id,
+                        reply=reply,
+                        runtime_revision=str(revision_proof.get("revision") or ""),
+                    )
                     continue
 
                 if not text:
@@ -963,7 +1000,7 @@ def main() -> int:
                         )
                     payload = exc.to_dict()
                     print(
-                        "TELEGRAM_COMMAND=FAIL "
+                        "TELEGRAM_COMMAND_EXECUTION=FAIL "
                         f"USER_ID={user_id} "
                         f"ERROR=HarnessReasoningFailure "
                         f"EPISODE_ID={payload.get('episode_id')} "
@@ -1002,15 +1039,20 @@ def main() -> int:
                             flush=True,
                         )
                     print(
-                        f"TELEGRAM_COMMAND=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
+                        f"TELEGRAM_COMMAND_EXECUTION=FAIL USER_ID={user_id} ERROR={type(exc).__name__}",
                         flush=True,
                     )
                 else:
                     print(
-                        f"TELEGRAM_COMMAND=PASS USER_ID={user_id} COMMAND={command_name}",
+                        f"TELEGRAM_COMMAND_EXECUTION=PASS USER_ID={user_id} COMMAND={command_name}",
                         flush=True,
                     )
-                api.send(chat_id, reply)
+                _send_final_human_response(
+                    api=api,
+                    chat_id=chat_id,
+                    reply=reply,
+                    runtime_revision=str(revision_proof.get("revision") or ""),
+                )
 
             _save_state(state)
         except KeyboardInterrupt:
