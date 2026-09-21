@@ -124,18 +124,13 @@ _MISSION_RETRIEVAL_TERMS = {
 def _compact_registry_record(record: Any) -> dict[str, Any]:
     return {
         "capability_id": record.capability_id,
-        "capability_type": record.capability_type,
+        "type": record.capability_type,
         "domain": record.domain,
-        "allowed_actions": list(record.allowed_actions),
-        "policy_tags": list(record.policy_tags)[:6],
-        "output_contract": str(record.output_contract or "")[:140],
-        "cost_class": record.cost_class,
-        "latency_class": record.latency_class,
-        "side_effect_class": (
-            "NONE" if not record.side_effects else "HAS_SIDE_EFFECTS"
-        ),
+        "actions": list(record.allowed_actions),
+        "tags": list(record.policy_tags)[:4],
+        "output": str(record.output_contract or "")[:80],
+        "side_effect": "NONE" if not record.side_effects else "YES",
     }
-
 
 def _registry_retrieval_query(goal: dict[str, Any]) -> str:
     mission_class = str(goal.get("mission_class") or "OPEN_SEMANTIC").upper()
@@ -177,7 +172,7 @@ def _relevant_registry_summary(
     referenced_capability_ids: tuple[str, ...] = (),
     limit: int = _REGISTRY_CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
-    limit = max(6, min(int(limit), 16))
+    limit = max(6, min(int(limit), 10))
     mission_class = str(goal.get("mission_class") or "OPEN_SEMANTIC").upper()
     direct_tokens = _tokens(
         goal.get("human_goal"),
@@ -276,32 +271,20 @@ def _compact_provider_health(provider_health: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         providers.append({
-            "provider_id": item.get("provider_id"),
+            "id": item.get("provider_id"),
             "state": item.get("state"),
-            "reason": str(item.get("reason") or "")[:180],
-            "retry_allowed": bool(item.get("retry_allowed")),
-            "zero_cost_eligible": bool(item.get("zero_cost_eligible")),
-            "evidence_refs": list(item.get("evidence_refs") or ())[:2],
+            "retry": bool(item.get("retry_allowed")),
+            "zero_cost": bool(item.get("zero_cost_eligible")),
         })
-    opencode = dict(provider_health.get("opencode") or {})
     return {
-        "semantic_reasoning_available": bool(
+        "semantic_available": bool(
             provider_health.get("semantic_reasoning_available")
         ),
-        "eligible_zero_cost_provider_ids": list(
+        "eligible_zero_cost": list(
             provider_health.get("eligible_zero_cost_provider_ids") or ()
         ),
         "providers": providers,
-        "opencode": {
-            "provider_id": opencode.get("provider_id"),
-            "state": opencode.get("state"),
-            "reason": str(opencode.get("reason") or "")[:180],
-            "retry_allowed": bool(opencode.get("retry_allowed")),
-            "zero_cost_eligible": bool(opencode.get("zero_cost_eligible")),
-            "evidence_refs": list(opencode.get("evidence_refs") or ())[:2],
-        },
     }
-
 
 def _compact_bounded_memory_for_prompt(
     bounded_memory_context: dict[str, Any],
@@ -326,7 +309,7 @@ def _compact_bounded_memory_for_prompt(
     ):
         compact[key] = list(
             (bounded_memory_context or {}).get(key) or ()
-        )[:6]
+        )[:3]
     return compact
 
 
