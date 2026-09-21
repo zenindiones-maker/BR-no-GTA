@@ -315,7 +315,7 @@ def _start(
             task_mapping["gta6-brain"],
             reason=blocker,
             run_id=brain_run,
-            kind="provider",
+            kind="capability",
         ):
             raise RuntimeError("GTA6 Brain task could not enter provider block")
         emit(
