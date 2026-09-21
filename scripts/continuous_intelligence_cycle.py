@@ -878,6 +878,7 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
         "ROUTING_USES_OBSERVED_COMPETENCE": next_run["routing_used_observed_competence"],
         "FAILURE_MEMORY_RETRIEVAL": failure["FAILURE_MEMORY_RETRIEVAL"] == "PASS",
         "FAILURE_RECURRENCE_PREVENTION": failure["FAILURE_RECURRENCE_PREVENTION"] == "PASS",
+        "FAILURE_PATTERN_REUSED": failure["FAILURE_MEMORY_RETRIEVAL"] == "PASS",
         "REAL_SYSTEM_PROBLEM_OBSERVED": int(baseline_research.get("source_fetch_count") or 0) > 0,
         "BASELINE_MEASURED": baseline["research_elapsed_seconds"] > 0,
         "IMPROVEMENT_CANDIDATE_CREATED": bool(candidate.get("candidate_id")),
@@ -907,6 +908,9 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
             path.startswith("30-Agents/") for path in manifest["files"]
         ),
         "OBSIDIAN_CANONICAL_MEMORY": manifest["OBSIDIAN_CANONICAL_MEMORY"] == "NO",
+        "TELEGRAM_OBSIDIAN_CANONICAL_CONTINUITY": bool(
+            os.getenv("BR_CONTINUOUS_CROSS_CHANNEL_EVIDENCE", "").strip()
+        ),
         "SINGLE_CANONICAL_MEMORY_PLANE": manifest["canonical_source"] == "BR SQLite Learning Plane",
         "LEARNING_PLANE_AUTHORITY_PRESERVED": True,
         "DEEPSEEK_HARNESS_AUTHORITY_PRESERVED": all(
