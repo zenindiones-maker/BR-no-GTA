@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+
 from scripts.telegram_harness_gateway import (
     TelegramProgressReporter,
     _chat_reply,
     _verify_attachment_remote,
 )
 from scripts import telegram_harness_gateway_v2 as gateway_v2
+from app.database.telegram_conversation_repository import (
+    get_or_create_conversation_state,
+    list_recent_telegram_progress_events,
+    update_conversation_state,
+)
 from app.services.harness_learning_service import register_skill_version
 from app.services.telegram_ingress_policy_service import (
     parse_governed_telegram_ingress,
@@ -54,13 +61,32 @@ def test_generic_attachment_is_verified_without_downloading_bytes():
 def test_progress_reporter_sends_only_on_meaningful_stage_changes(monkeypatch):
     api = FakeTelegramApi()
     monkeypatch.setenv("TELEGRAM_PROGRESS_MIN_SECONDS", "999")
+    update_conversation_state(
+        7001,
+        execution_status="COMPLETED",
+        active_stage="COMPLETE",
+        active_blocker="canonical blocker remains untouched",
+    )
+    before = get_or_create_conversation_state(7001)
     reporter = TelegramProgressReporter(api, 7001)
     reporter("RESEARCH", "pesquisando Extended Look")
     reporter("RESEARCH", "18/31 achados analisados")
     reporter("VALIDATION", "validando evidências")
+    after = get_or_create_conversation_state(7001)
+    telemetry = list_recent_telegram_progress_events(7001, limit=10)
+
     assert len(api.sent) == 2
     assert "RESEARCH" in api.sent[0][1]
     assert "VALIDATION" in api.sent[1][1]
+    assert after["execution_status"] == before["execution_status"] == "COMPLETED"
+    assert after["active_stage"] == before["active_stage"] == "COMPLETE"
+    assert after["active_blocker"] == before["active_blocker"]
+    assert {item["stage"] for item in telemetry} >= {"RESEARCH", "VALIDATION"}
+    assert all(
+        item["metadata"].get("canonical_execution_state_authority") is False
+        for item in telemetry
+        if item["event_type"] == "PROGRESS"
+    )
 
 
 def test_waiting_for_human_reply_is_explicit_but_still_natural():
@@ -414,3 +440,56 @@ def test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy
     assert unauthorized_sender is not None
     assert unauthorized_sender.authorized_sender is False
     assert unauthorized_sender.authorized_chat is False
+
+
+
+def test_final_human_response_send_is_logged_only_after_api_success(capsys):
+    class SendApi:
+        def __init__(self):
+            self.calls = []
+
+        def send(self, chat_id, text):
+            self.calls.append((chat_id, text))
+            return 4242
+
+    api = SendApi()
+    reply = "Status humano final."
+    message_id = gateway_v2._send_final_human_response(
+        api=api,
+        chat_id=123,
+        reply=reply,
+        runtime_revision="deadbeef",
+    )
+    out = capsys.readouterr().out
+    digest = hashlib.sha256(reply.encode("utf-8")).hexdigest()
+
+    assert message_id == 4242
+    assert api.calls == [(123, reply)]
+    assert "FINAL_HUMAN_RESPONSE_SENT=PASS" in out
+    assert "TELEGRAM_SEND_MESSAGE_ID=4242" in out
+    assert "SEND_PROCESS_PID=" in out
+    assert "SEND_RUNTIME_REVISION=deadbeef" in out
+    assert f"REPLY_SHA256={digest}" in out
+
+
+def test_final_human_response_send_failure_is_explicit(capsys):
+    class FailingApi:
+        def send(self, _chat_id, _text):
+            raise RuntimeError("send failed")
+
+    reply = "Status humano final."
+    try:
+        gateway_v2._send_final_human_response(
+            api=FailingApi(),
+            chat_id=123,
+            reply=reply,
+            runtime_revision="deadbeef",
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("send failure must propagate")
+    out = capsys.readouterr().out
+    assert "FINAL_HUMAN_RESPONSE_SENT=NO" in out
+    assert "SEND_RUNTIME_REVISION=deadbeef" in out
+    assert "ERROR=RuntimeError" in out
