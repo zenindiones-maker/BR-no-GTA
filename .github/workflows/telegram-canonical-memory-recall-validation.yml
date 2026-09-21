@@ -6,6 +6,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".run/telegram-canonical-memory-recall.request.json"
+      - ".github/workflows/telegram-canonical-memory-recall-validation.yml"
 
 permissions:
   contents: read
