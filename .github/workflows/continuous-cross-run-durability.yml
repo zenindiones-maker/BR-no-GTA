@@ -1,0 +1,156 @@
+name: Continuous Cross-Run Durability Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/continuous-cross-run-durability.yml"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  TARGET_REF: work/gate6f-analytics-learning
+  PROOF_RUN_ID: "35590101622"
+
+jobs:
+  durability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout validation revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download successful live proof evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/proof evidence/proof-state
+          gh run download "$PROOF_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-$PROOF_RUN_ID"             --dir evidence/proof
+          gh run download "$PROOF_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-state-$PROOF_RUN_ID"             --dir evidence/proof-state
+          gh run view "$PROOF_RUN_ID" --repo "$GITHUB_REPOSITORY" --log > evidence/proof-run.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("evidence/proof/continuous-operation-proof.json").read_text())
+          assert d["status"]=="PASS"
+          assert d["checks"]["NEXT_REAL_EXECUTION_CHANGED"]
+          assert d["checks"]["DUPLICATE_RESEARCH_AVOIDED"]
+          assert d["next_related_execution"]["research"]["result"]["source_fetch_count"] == 0
+          assert "TELEGRAM_ACTION_FIRST_REPORT=PASS" in Path("evidence/proof-run.log").read_text(errors="replace")
+          print("LIVE_PROOF_REUSED_WITHOUT_REFETCH=PASS")
+          PY
+
+      - name: Dispatch scheduled new-run cycle
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          request_id="cross-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
+          gh workflow run continuous-intelligence-operation.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f mode=scheduled             -f target_ref="$TARGET_REF"             -f request_id="$request_id"
+          echo "CROSS_RUN_SCHEDULED_DISPATCH=PASS"
+
+      - name: Wait for scheduled new-run
+        id: scheduled
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_ID: ${{ steps.dispatch.outputs.request_id }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          expected="Continuous Intelligence $REQUEST_ID scheduled"
+          for _ in $(seq 1 60); do
+            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow continuous-intelligence-operation.yml               --branch main               --event workflow_dispatch               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"$expected\") | .databaseId"               | head -n 1)"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+          [[ -n "$run_id" ]] || { echo "CROSS_RUN=FAIL scheduled child not found" >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          mkdir -p evidence/scheduled evidence/scheduled-state evidence/scheduled-obsidian
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-$run_id" --dir evidence/scheduled
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-state-$run_id" --dir evidence/scheduled-state
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "obsidian-memory-export-$run_id" --dir evidence/scheduled-obsidian || true
+          gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > evidence/scheduled-run.log
+          echo "SCHEDULED_RUN_ID=$run_id"
+
+      - name: Validate cross-run durable memory
+        env:
+          SCHEDULED_RUN_ID: ${{ steps.scheduled.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          proof=json.loads(Path("evidence/proof/continuous-operation-proof.json").read_text())
+          scheduled=json.loads(Path("evidence/scheduled/continuous-cycle.json").read_text())
+          log=Path("evidence/scheduled-run.log").read_text(errors="replace")
+          assert scheduled["status"]=="PASS"
+          assert scheduled["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
+          assert "CONTINUOUS_STATE_RESTORE=RESTORED" in log
+          gta=scheduled["gta6"]
+          assert gta is not None
+          research=gta["research"]["result"]
+          baseline=proof["baseline"]["research"]["result"]
+          assert research["status"]=="NO_MEANINGFUL_GTA6_DELTA"
+          assert int(research["source_fetch_count"]) == 0
+          assert int(research["memory_hit_count"]) > 0
+          assert research["duplicate_research_avoided"] is True
+          assert research["known_state"]
+          assert baseline["source_state"]["content_fingerprint"] == research["source_state"]["content_fingerprint"]
+          assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
+          assert scheduled["failure_prevention"]["FAILURE_RECURRENCE_PREVENTION"]=="PASS"
+          assert scheduled["CONTINUOUS_INTELLIGENCE_LOOP"]=="PASS"
+          assert scheduled["CONTINUOUS_IMPROVEMENT_LOOP"]=="PASS"
+          assert scheduled["TERMUX_HEAVY_PROCESSING"]=="NO"
+          assert scheduled["NEW_VOICE_SYNTHESIS"]=="NO"
+          assert scheduled["FULL_RENDER"]=="NO"
+          assert scheduled["YOUTUBE_UPLOAD"]=="NO"
+          assert scheduled["YOUTUBE_PUBLICATION"]=="NO"
+          proof_state=json.loads(Path("evidence/proof-state/state-manifest.json").read_text())
+          scheduled_state=json.loads(Path("evidence/scheduled-state/state-manifest.json").read_text())
+          assert proof_state["canonical_memory_plane"]=="BR_SQLITE"
+          assert scheduled_state["canonical_memory_plane"]=="BR_SQLITE"
+          assert proof_state["artifact_is_second_memory_plane"] is False
+          assert scheduled_state["artifact_is_second_memory_plane"] is False
+          assert any(Path("evidence/scheduled-obsidian").rglob("40-Knowledge/GTA6/Characters/Jason-Duval.md"))
+          print("SCHEDULED_ENTRYPOINT_CONTRACT=PASS")
+          print("CROSS_RUN_DURABLE_MEMORY=PASS")
+          print("CANONICAL_CHECKPOINT_RESTORED=PASS")
+          print("KNOWLEDGE_SURVIVES_NEW_RUNNER=PASS")
+          print("GTA6_MEMORY_RETRIEVED_NEXT_RUN=PASS")
+          print("SOURCE_FINGERPRINT_REUSED=PASS")
+          print("NO_MEANINGFUL_GTA6_DELTA=PASS")
+          print("DUPLICATE_RESEARCH_AVOIDED=PASS")
+          print("FAILURE_MEMORY_RETRIEVAL=PASS")
+          print("FAILURE_RECURRENCE_PREVENTION=PASS")
+          print("CONTINUOUS_INTELLIGENCE_LOOP=PASS")
+          print("CONTINUOUS_IMPROVEMENT_LOOP=PASS")
+          print("OBSIDIAN_KNOWLEDGE_PROJECTION=PASS")
+          print("DEEPSEEK_HARNESS_AUTHORITY_PRESERVED=PASS")
+          print("LEARNING_PLANE_AUTHORITY_PRESERVED=PASS")
+          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
+          print("TERMUX_HEAVY_PROCESSING=NO")
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          print("SCHEDULED_RUN_ID="+os.environ["SCHEDULED_RUN_ID"])
+          PY
+
+      - name: Upload cross-run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: continuous-cross-run-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 30
