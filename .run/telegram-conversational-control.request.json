@@ -1,8 +1,9 @@
 {
   "request": "telegram-system-synergy-live-gateway-validation",
-  "source_head": "dcebdebcf7c8e9b96bbc15eaa1e0c3c0fc01addf",
-  "requested_at": "2026-09-20T23:55:00-03:00",
-  "attempt": 4,
+  "source_head": "a384087b45a9978c92ccb6c8e3ea3e41578882f2",
+  "requested_at": "2026-09-20T23:58:00-03:00",
+  "attempt": 5,
   "scope": "live-gateway-conversation-service-harness-hermes-human-loop",
-  "opencode_policy": "contain-external-403-no-bypass"
+  "opencode_policy": "contain-external-403-no-bypass",
+  "correction": "create-hermes-artifact-dir"
 }
