@@ -16,6 +16,66 @@ _ALLOWED_RISK_CLASSES = {
 }
 _TASK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
 
+class SemanticPlannerProviderFailure(RuntimeError):
+    """Provider failure carrying sanitized Harness evidence for fail-closed profiling."""
+
+    def __init__(self, code: str, evidence: dict[str, Any]) -> None:
+        self.code = str(code or "provider_failed")
+        self.evidence = dict(evidence or {})
+        super().__init__(f"SEMANTIC_PLANNER_PROVIDER_FAILED:{self.code}")
+
+
+def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
+    error = dict(getattr(evidence, "error", None) or {})
+    performance = dict(getattr(evidence, "performance", None) or {})
+    safe_performance_keys = {
+        "prompt_bytes",
+        "prompt_token_estimate",
+        "requested_output_tokens",
+        "num_ctx",
+        "structured_json_mode",
+        "timeout_seconds",
+        "latency_seconds",
+        "ollama_total_duration_seconds",
+        "ollama_load_duration_seconds",
+        "prompt_eval_duration_seconds",
+        "eval_duration_seconds",
+        "prompt_eval_tokens",
+        "generation_tokens",
+        "prompt_eval_tokens_per_second",
+        "generation_tokens_per_second",
+        "time_to_first_token_seconds",
+    }
+    safe_error_keys = {
+        "code",
+        "status_code",
+        "retryable",
+        "error_type",
+        "failure_pattern",
+    }
+    return {
+        "provider": getattr(evidence, "provider", None),
+        "model": getattr(evidence, "model", None),
+        "status": getattr(evidence, "status", None),
+        "active": bool(getattr(evidence, "active", False)),
+        "latency_seconds": getattr(evidence, "latency_seconds", None),
+        "executor_binding": getattr(evidence, "executor_binding", None),
+        "error": {
+            key: error.get(key)
+            for key in sorted(safe_error_keys)
+            if error.get(key) is not None
+        },
+        "performance": {
+            key: performance.get(key)
+            for key in sorted(safe_performance_keys)
+            if performance.get(key) is not None
+        },
+        "evidence_refs": list(getattr(evidence, "evidence_refs", ()) or ()),
+        "authority": getattr(evidence, "authority", None),
+        "planner_authority": "NONE",
+    }
+
+
 
 def _required_text(value: Any, field: str, *, max_len: int = 2400) -> str:
     text = str(value or "").strip()
@@ -456,11 +516,17 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     if evidence.status != "EXECUTED" or not evidence.active:
         error = dict(evidence.error or {})
         code = str(error.get("code") or "provider_failed")
-        raise RuntimeError(f"SEMANTIC_PLANNER_PROVIDER_FAILED:{code}")
+        raise SemanticPlannerProviderFailure(
+            code,
+            _sanitized_provider_failure_evidence(evidence),
+        )
     result = dict(evidence.result or {})
     response_text = str(result.get("text") or "").strip()
     if not response_text:
-        raise RuntimeError("SEMANTIC_PLANNER_PROVIDER_FAILED:empty_response")
+        raise SemanticPlannerProviderFailure(
+            "empty_response",
+            _sanitized_provider_failure_evidence(evidence),
+        )
     return response_text, {
         "provider": evidence.provider,
         "model": evidence.model,
