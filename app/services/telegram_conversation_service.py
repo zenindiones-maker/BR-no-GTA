@@ -38,7 +38,9 @@ from app.services.telegram_status_reconciliation_service import (
     reconcile_stale_progress_state,
 )
 from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
+from app.services.telegram_intent_resolution_service import resolve_contextual_intent
 from app.services.telegram_knowledge_recall_service import recall_canonical_gta6_knowledge
+from app.services.telegram_memory_candidate_service import create_telegram_memory_candidate
 
 
 INTENTS = {
@@ -49,6 +51,7 @@ INTENTS = {
     "REJECTION",
     "STATUS_REQUEST",
     "MEMORY_RECALL_REQUEST",
+    "MEMORY_WRITE_REQUEST",
     "KNOWLEDGE_RECALL_REQUEST",
     "FILE_SUBMISSION",
     "RESEARCH_REQUEST",
@@ -140,6 +143,8 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "qual o status", "status agora", "como esta o run", "como esta a tarefa",
     )):
         return "STATUS_REQUEST"
+    if text in {"memoria", "memoria?", "o que voce lembra", "oque voce lembra"}:
+        return "MEMORY_RECALL_REQUEST"
     if any(term in text for term in (
         "o que eu decidi", "oque eu decidi", "qual foi minha decisao",
         "qual minha decisao", "o que eu falei sobre", "oque eu falei sobre",
@@ -147,6 +152,8 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "minha decisao sobre", "minhas decisoes sobre",
     )):
         return "MEMORY_RECALL_REQUEST"
+    if text in {"conhecimento", "conhecimento?"}:
+        return "KNOWLEDGE_RECALL_REQUEST"
     if any(term in text for term in (
         "conhecimento sobre", "memoria sobre", "memória sobre",
         "o que sabemos sobre", "oque sabemos sobre",
@@ -154,6 +161,10 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "conhecimento do gta", "conhecimento do gta6",
     )):
         return "KNOWLEDGE_RECALL_REQUEST"
+    if any(term in text for term in (
+        "lembra disso", "guarda isso", "guarde isso", "anota isso", "anote isso",
+    )):
+        return "MEMORY_WRITE_REQUEST"
     if any(term in text for term in (
         "pesquisa", "pesquise", "procura", "procure", "investiga", "investigue",
         "ultimas informacoes", "ultimas noticias", "verifica nas fontes",
@@ -172,7 +183,7 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
     if gta_subject and information_goal:
         return "RESEARCH_REQUEST"
     if any(term in text for term in (
-        "continua de onde parou", "continue de onde parou", "continua a missao",
+        "continua", "continue", "continua de onde parou", "continue de onde parou", "continua a missao",
         "retoma", "retome", "faz de novo", "refaz", "faz o video", "faca o video",
         "depois que eu aprovar", "quando eu aprovar", "gera ", "gere ", "corrige ",
         "corrija ", "renderiza", "renderize", "produz ", "produza ", "me manda ",
@@ -308,6 +319,8 @@ def plan_natural_language_action(
         return {"kind": "STATUS", "authorized_action": "DECISION"}
     if intent == "MEMORY_RECALL_REQUEST":
         return {"kind": "MEMORY_RECALL", "authorized_action": "DECISION"}
+    if intent == "MEMORY_WRITE_REQUEST":
+        return {"kind": "MEMORY_CANDIDATE", "authorized_action": "DECISION"}
     if intent == "KNOWLEDGE_RECALL_REQUEST":
         return {
             "kind": "KNOWLEDGE_RECALL",
@@ -459,7 +472,7 @@ def _canonical_human_memory_recall(message: str, state: dict[str, Any]) -> dict[
         token for token in re.findall(r"[a-z0-9À-ÿ_-]{3,}", _fold(message))
         if token not in {
             "que", "qual", "foi", "minha", "minhas", "sobre", "decidi",
-            "falei", "pedi", "lembra", "oque",
+            "falei", "pedi", "lembra", "lembrar", "oque", "memoria",
         }
     }
     ranked: list[tuple[int, str, dict[str, Any]]] = []
@@ -475,13 +488,18 @@ def _canonical_human_memory_recall(message: str, state: dict[str, Any]) -> dict[
         score = sum(1 for token in query if token in haystack)
         if query and score <= 0:
             continue
+        if not query:
+            score = 1
         ranked.append((score, str(item.get("created_at") or ""), item))
     ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
     selected = [dict(row[2]) for row in ranked[:5]]
     if not selected:
         return {
             "status": "NO_CANONICAL_HUMAN_DECISION_MATCH",
-            "answer": "Não encontrei uma decisão humana canônica correspondente no Memory/Learning Plane.",
+            "answer": (
+                "Ainda não encontrei decisões humanas canônicas relevantes para este contexto. "
+                "As conversas continuam preservadas, mas não vou inventar memória duradoura."
+            ),
             "human_decisions": [],
             "provider_independent": True,
         }
@@ -537,10 +555,11 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
         return {
             "status": "BLOCKED_PROVIDER",
             "answer": (
-                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
-                "O objetivo exige planejamento semântico aberto e não existe provider zero-cost saudável elegível. "
-                "Controles determinísticos, status, memória e aprovações continuam disponíveis."
+                "Não consigo fazer a parte de raciocínio aberto agora porque nenhum modelo semântico "
+                "zero-cost está disponível. O restante do sistema continua operacional: status, memória, "
+                "conhecimento, pesquisa governada e missões com executores conhecidos continuam funcionando."
             ),
+            "reason_code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
             "provider_retry_performed": False,
             "authority": "DEEPSEEK_HARNESS",
             "NEW_VOICE_SYNTHESIS": "NO",
@@ -857,7 +876,17 @@ def handle_telegram_conversation(
         telegram_chat_type=telegram_chat_type,
     )
     recent_before = list_recent_conversation_turns(telegram_chat_id, limit=10)
-    intent = classify_conversation_intent(text, has_attachment=has_attachment)
+    contextual_resolution = resolve_contextual_intent(
+        text,
+        state=state,
+        recent_turns=recent_before,
+        has_attachment=has_attachment,
+    )
+    intent = (
+        contextual_resolution.intent
+        if contextual_resolution is not None
+        else classify_conversation_intent(text, has_attachment=has_attachment)
+    )
     resolved = resolve_conversation_reference(text, state=state, recent_turns=recent_before)
     human_turn = append_conversation_turn(
         telegram_chat_id=telegram_chat_id,
@@ -875,6 +904,16 @@ def handle_telegram_conversation(
             "human_identity_id": (identity or {}).get("human_identity_id"),
             "thread_id": (identity or {}).get("thread_id"),
             "surface_session_id": (identity or {}).get("surface_session_id"),
+            "intent_resolution": (
+                contextual_resolution.to_dict()
+                if contextual_resolution is not None
+                else {
+                    "intent": intent,
+                    "layer": "LAYER_4_LEGACY_OR_SEMANTIC",
+                    "confidence": "UNRESOLVED",
+                    "reason": "no earlier deterministic/contextual resolution",
+                }
+            ),
         },
     )
     state_changes: dict[str, Any] = {"last_human_intent": intent}
@@ -956,6 +995,17 @@ def handle_telegram_conversation(
         state = get_or_create_conversation_state(telegram_chat_id)
         canonical = recall_canonical_gta6_knowledge(
             str(plan.get("query") or text),
+            project_context=str(state.get("active_project") or ""),
+            subject_context=str(state.get("current_subject") or ""),
+        )
+    elif plan["kind"] == "MEMORY_CANDIDATE":
+        canonical = create_telegram_memory_candidate(
+            message=text,
+            state=state,
+            human_turn=human_turn,
+            identity=identity,
+            telegram_chat_id=telegram_chat_id,
+            telegram_user_id=telegram_user_id,
         )
     elif plan["kind"] == "CANCEL":
         state = update_conversation_state(
@@ -1281,7 +1331,7 @@ def handle_telegram_conversation(
 
     # STATUS is an observation, not a state transition.  In particular, asking
     # "Onde estamos?" must never consume WAITING_FOR_HUMAN or pending_action.
-    if plan["kind"] in {"STATUS", "MEMORY_RECALL"}:
+    if plan["kind"] in {"STATUS", "MEMORY_RECALL", "KNOWLEDGE_RECALL"}:
         state = get_or_create_conversation_state(telegram_chat_id)
     else:
         if canonical_pending_action is not None:
@@ -1377,6 +1427,11 @@ def handle_telegram_conversation(
         "TELEGRAM_CHAT_TYPE_PROPAGATED": (
             "PASS" if telegram_user_id is None or (identity or {}).get("chat_type") == telegram_chat_type
             else "FAIL"
+        ),
+        "intent_resolution": (
+            contextual_resolution.to_dict()
+            if contextual_resolution is not None
+            else None
         ),
         "CONVERSATION_CONTEXT_RETRIEVAL": "PASS",
         "HARNESS_AUTHORITY_PRESERVED": "PASS",
