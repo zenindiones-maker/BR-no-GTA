@@ -298,8 +298,10 @@ def _prompt_payload(context: dict[str, Any], validation_feedback: tuple[str, ...
         "human_goal": context["human_goal"],
         "project": context["project"],
         "subject": context.get("subject"),
+        "canonical_state": context.get("canonical_state") or {},
         "conversation_state": context.get("conversation_state") or {},
         "bounded_memory_context": context.get("bounded_memory_context") or {},
+        "recent_execution_history": context.get("recent_execution_history") or [],
         "relevant_failure_memories": context.get("relevant_failure_memories") or [],
         "human_feedback_decisions": context.get("human_feedback_decisions") or [],
         "provider_health": context.get("provider_health") or {},
@@ -356,7 +358,8 @@ describe the required capability semantically.
 Decompose the human goal into the minimum sufficient dynamic DAG, maximum {max_tasks} tasks. Avoid a generic fixed
 measure->root-cause->candidate->validate template unless the actual goal and evidence make every step necessary.
 Prefer observation before mutation when the problem is uncertain. Reuse validated memory/artifacts/checkpoints when
-relevant. Record how relevant conversation state changed the plan in context_usage_notes. Explicitly avoid known bad paths. Use competence evidence to propose sensible candidates, but never treat
+relevant. Use both recent successful and failed execution history when it materially changes strategy. Record how
+relevant canonical/conversation state changed the plan in context_usage_notes. Explicitly avoid known bad paths. Use competence evidence to propose sensible candidates, but never treat
 competence as authorization. Require independent validation for risky or mutating work. Ask for human clarification
 only when a missing fact prevents a safe feasible plan; do not ask merely because uncertainty exists.
 Do not call a provider for deterministic status/control intents.
