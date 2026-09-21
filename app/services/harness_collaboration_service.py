@@ -1,15 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
 import re
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from app.database import harness_learning_repository as learning_repository
 from app.services.bounded_memory_context_service import build_bounded_memory_context
 from app.services.continuous_operation_policy_service import load_continuous_operation_policy
 from app.services.provider_health_service import semantic_provider_health
+from app.services.harness_adaptive_planning_service import (
+    build_semantic_planning_context,
+    proposal_requirements,
+    propose_validated_semantic_plan,
+    select_capability_for_requirement,
+)
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_routing_policy_service import (
@@ -191,6 +197,7 @@ class GoalEnvelope:
     subject: str | None
     mission_class: str
     source_surface: str = "telegram"
+    conversation_state: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -208,6 +215,11 @@ class HarnessMissionPlan:
     selected_by_competence: bool
     known_bad_paths_avoided: tuple[str, ...]
     human_gates: tuple[str, ...]
+    planning_mode: str = "DETERMINISTIC_FAST_PATH"
+    semantic_plan_proposal: dict[str, Any] | None = None
+    planning_evidence: dict[str, Any] = field(default_factory=dict)
+    memory_influences_strategy: bool = False
+    competence_influences_selection: bool = False
     authority: str = "DEEPSEEK_HARNESS"
 
     def to_dict(self) -> dict[str, Any]:
@@ -222,9 +234,17 @@ class HarnessMissionPlan:
             "selected_by_competence": self.selected_by_competence,
             "known_bad_paths_avoided": list(self.known_bad_paths_avoided),
             "human_gates": list(self.human_gates),
+            "planning_mode": self.planning_mode,
+            "semantic_plan_proposal": (
+                dict(self.semantic_plan_proposal)
+                if self.semantic_plan_proposal is not None
+                else None
+            ),
+            "planning_evidence": dict(self.planning_evidence),
+            "memory_influences_strategy": self.memory_influences_strategy,
+            "competence_influences_selection": self.competence_influences_selection,
             "authority": self.authority,
         }
-
 
 def _goal_class(text: str) -> str:
     folded = re.sub(r"\s+", " ", str(text or "").strip().casefold())
@@ -259,6 +279,7 @@ def build_goal_envelope(
     goal_id: str,
     subject: str | None = None,
     source_surface: str = "telegram",
+    conversation_state: dict[str, Any] | None = None,
 ) -> GoalEnvelope:
     goal = _text(human_goal, "human_goal")
     normalized_subject = str(subject).strip() if subject else None
@@ -272,10 +293,11 @@ def build_goal_envelope(
         subject=normalized_subject,
         mission_class=_goal_class(classification_text),
         source_surface=str(source_surface or "telegram"),
+        conversation_state=dict(conversation_state or {}),
     )
 
 
-def _mission_requirements(goal: GoalEnvelope) -> list[dict[str, Any]]:
+def _legacy_mission_requirements(goal: GoalEnvelope) -> list[dict[str, Any]]:
     folded = goal.human_goal.casefold()
     if goal.mission_class == "SYSTEM_IMPROVEMENT":
         tasks = [
@@ -439,26 +461,62 @@ def _select_requirement(
     return capability_id, competence_used, bad_path_avoided
 
 
+def _deterministic_fast_path_requirements(goal: GoalEnvelope) -> list[dict[str, Any]]:
+    """Keep only narrow, high-confidence cases off the semantic provider."""
+    folded = re.sub(r"\s+", " ", goal.human_goal.strip().casefold())
+    complex_terms = (
+        "descobre", "investiga", "sozinho", "regred", "artificial", "estranha",
+        "inútil", "inutil", "prova", "especialistas", "agentes", "aprendeu",
+        "últimas execuções", "ultimas execucoes", "não sei", "nao sei",
+        "qualidade geral", "sem deixar", "carroça", "carroca",
+    )
+    if any(term in folded for term in complex_terms):
+        return []
+    if goal.mission_class == "GTA6_INTELLIGENCE" and len(folded) <= 180:
+        return _legacy_mission_requirements(goal)
+    if goal.mission_class == "EDITORIAL" and len(folded) <= 140:
+        if any(term in folded for term in ("revisa", "revise", "roteiro", "seo", "thumbnail")):
+            return _legacy_mission_requirements(goal)
+    if goal.mission_class == "SYSTEM_IMPROVEMENT" and len(folded) <= 90:
+        if any(term in folded for term in ("melhora o sistema", "melhore o sistema", "otimiza o pipeline", "otimize o pipeline")):
+            return _legacy_mission_requirements(goal)
+    return []
+
+
+def _resource_bounds(resources: dict[str, Any]) -> dict[str, int]:
+    return {
+        key: int(resources[key])
+        for key in (
+            "max_tasks_per_mission",
+            "max_retries_per_task",
+            "max_reviewer_loops",
+            "max_parallelism",
+            "mission_timeout_seconds",
+            "bounded_memory_bytes",
+        )
+    }
+
+
+def _planning_domain(goal: GoalEnvelope) -> str:
+    return {
+        "SYSTEM_IMPROVEMENT": "system-improvement",
+        "GTA6_INTELLIGENCE": "research",
+        "EDITORIAL": "youtube",
+        "OPEN_SEMANTIC": "general",
+    }.get(goal.mission_class, "general")
+
+
 def plan_mission_from_human_goal(
     goal: GoalEnvelope,
     *,
     artifact_ref: str | None = None,
+    semantic_inference: Callable[[str, dict[str, Any]], str | dict[str, Any]] | None = None,
 ) -> HarnessMissionPlan:
     policy = load_continuous_operation_policy()
     resources = dict(policy.resource_governance)
+    bounds = _resource_bounds(resources)
     health = semantic_provider_health()
-    requirements = _mission_requirements(goal)
-    if not requirements:
-        if not health.get("semantic_reasoning_available"):
-            raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-        raise RuntimeError("MISSION_REQUIREMENTS_UNRESOLVED")
-
-    requirements = requirements[: int(resources["max_tasks_per_mission"])]
-    domain = {
-        "SYSTEM_IMPROVEMENT": "system-improvement",
-        "GTA6_INTELLIGENCE": "research",
-        "EDITORIAL": "youtube",
-    }[goal.mission_class]
+    domain = _planning_domain(goal)
     memory = build_bounded_memory_context(
         goal_id=goal.goal_id,
         domain=domain,
@@ -468,31 +526,118 @@ def plan_mission_from_human_goal(
         max_bytes=int(resources["bounded_memory_bytes"]),
     ).to_dict()
 
-    selected_tasks = []
+    requirements = _deterministic_fast_path_requirements(goal)
+    planning_mode = "DETERMINISTIC_FAST_PATH" if requirements else "SEMANTIC_ADAPTIVE"
+    proposal = None
+    planning_evidence: dict[str, Any] = {
+        "planning_mode": planning_mode,
+        "semantic_provider_call_count": 0,
+        "harness_validated": True,
+        "authority": "DEEPSEEK_HARNESS",
+        "planner_authority": "NONE",
+        "selection": [],
+    }
+    adaptive_context: dict[str, Any] | None = None
+
+    if not requirements:
+        if not health.get("semantic_reasoning_available") and semantic_inference is None:
+            raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
+        adaptive_context = build_semantic_planning_context(
+            goal=goal.to_dict(),
+            bounded_memory_context=memory,
+            resource_bounds=bounds,
+            provider_health=health,
+            artifact_ref=artifact_ref,
+        )
+        semantic_result, semantic_evidence = propose_validated_semantic_plan(
+            adaptive_context,
+            inference=semantic_inference,
+            max_replans=1,
+        )
+        proposal = semantic_result.proposal
+        planning_evidence.update(semantic_evidence)
+        planning_evidence["semantic_provider_call_count"] = int(
+            semantic_evidence.get("proposal_attempts") or 1
+        )
+        if proposal.needs_human_clarification:
+            raise RuntimeError(
+                "MISSION_NEEDS_HUMAN_CLARIFICATION:"
+                + str(proposal.clarification_question or "")
+            )
+        requirements = proposal_requirements(proposal)
+
+    requirements = requirements[: int(resources["max_tasks_per_mission"])]
+    if not requirements:
+        raise RuntimeError("MISSION_REQUIREMENTS_UNRESOLVED")
+
+    selected_tasks: list[dict[str, Any]] = []
     used: set[str] = set()
     competence_used = False
-    bad_path_avoided = False
+    avoided_paths: list[str] = []
+    proposal_reuse_refs = list(proposal.reused_artifact_refs) if proposal else []
+
     for requirement in requirements:
-        capability_id, used_competence, avoided = _select_requirement(
-            requirement,
-            health=health,
-            used=used,
-        )
+        if planning_mode == "SEMANTIC_ADAPTIVE":
+            assert adaptive_context is not None
+            capability_id, used_competence, avoided, selection = (
+                select_capability_for_requirement(
+                    requirement,
+                    context=adaptive_context,
+                    used=used,
+                )
+            )
+            planning_evidence["selection"].append(selection)
+            avoided_paths.extend(avoided)
+        else:
+            capability_id, used_competence, avoided = _select_requirement(
+                requirement,
+                health=health,
+                used=used,
+            )
+            if avoided:
+                avoided_paths.append("opencode_free_tier_403")
+            planning_evidence["selection"].append({
+                "task_id": requirement["task_id"],
+                "selected_capability_id": capability_id,
+                "competence_used": used_competence,
+                "selection_mode": "DETERMINISTIC_FAST_PATH",
+            })
+
         competence_used = competence_used or used_competence
-        bad_path_avoided = bad_path_avoided or avoided
         used.add(capability_id)
+        input_refs: list[str] = []
+        for ref in ([artifact_ref] if artifact_ref else []) + proposal_reuse_refs:
+            if ref and ref not in input_refs:
+                input_refs.append(ref)
         selected_tasks.append({
             "task_id": requirement["task_id"],
             "capability_id": capability_id,
             "action": requirement["action"],
-            "objective": f"{goal.human_goal} :: {requirement['task_class']}",
+            "objective": str(
+                requirement.get("objective")
+                or f"{goal.human_goal} :: {requirement['task_class']}"
+            ),
             "dependencies": requirement["dependencies"],
-            "input_refs": [artifact_ref] if artifact_ref else [],
+            "input_refs": input_refs,
             "expected_output": requirement["expected_output"],
         })
 
+    opencode_state = str((health.get("opencode") or {}).get("state") or "")
+    if opencode_state in {"UPSTREAM_DENIED", "BLOCKED", "QUARANTINED"}:
+        avoided_paths.append("opencode_provider_" + opencode_state.casefold())
+
+    if proposal:
+        for item in proposal.avoided_bad_paths:
+            if item not in avoided_paths:
+                avoided_paths.append(item)
+
     fingerprint = sha256(json.dumps(
-        {"goal": goal.to_dict(), "tasks": selected_tasks},
+        {
+            "goal": goal.to_dict(),
+            "planning_mode": planning_mode,
+            "proposal": proposal.to_dict() if proposal else None,
+            "tasks": selected_tasks,
+        },
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
@@ -504,31 +649,51 @@ def plan_mission_from_human_goal(
         goal_id=goal.goal_id,
         tasks=selected_tasks,
     )
+
+    memory_present = bool(
+        memory.get("conversation_memory")
+        or memory.get("operational_memory")
+        or memory.get("knowledge_memory")
+        or memory.get("artifact_lineage_memory")
+    )
+    memory_influences = bool(
+        proposal
+        and memory_present
+        and (
+            proposal.memory_strategy_notes
+            or proposal.reused_artifact_refs
+            or proposal.avoided_bad_paths
+            or avoided_paths
+        )
+    )
+    gates: list[str] = []
+    if any(str(item.get("task_id") or "") == "candidate" for item in selected_tasks):
+        gates.append("promotion")
+    if proposal and any(
+        task.risk_side_effect_class in {"HIGH", "EXTERNAL_SIDE_EFFECT"}
+        for task in proposal.tasks
+    ):
+        gates.append("human-side-effect-approval")
+
+    planning_evidence["memory_context_present"] = memory_present
+    planning_evidence["memory_influences_strategy"] = memory_influences
+    planning_evidence["competence_influences_selection"] = competence_used
+    planning_evidence["known_bad_paths_avoided"] = list(dict.fromkeys(avoided_paths))
+
     return HarnessMissionPlan(
         mission_id=mission_id,
         plan_id=plan_id,
         goal=goal,
         collaboration_plan=collaboration,
         bounded_memory_context=memory,
-        resource_bounds={
-            key: int(resources[key])
-            for key in (
-                "max_tasks_per_mission",
-                "max_retries_per_task",
-                "max_reviewer_loops",
-                "max_parallelism",
-                "mission_timeout_seconds",
-                "bounded_memory_bytes",
-            )
-        },
+        resource_bounds=bounds,
         provider_health=health,
         selected_by_competence=competence_used,
-        known_bad_paths_avoided=(
-            ("opencode_free_tier_403",) if bad_path_avoided else ()
-        ),
-        human_gates=(
-            ("promotion",)
-            if any(task["task_id"] == "candidate" for task in selected_tasks)
-            else ()
-        ),
+        known_bad_paths_avoided=tuple(dict.fromkeys(avoided_paths)),
+        human_gates=tuple(dict.fromkeys(gates)),
+        planning_mode=planning_mode,
+        semantic_plan_proposal=proposal.to_dict() if proposal else None,
+        planning_evidence=planning_evidence,
+        memory_influences_strategy=memory_influences,
+        competence_influences_selection=competence_used,
     )
