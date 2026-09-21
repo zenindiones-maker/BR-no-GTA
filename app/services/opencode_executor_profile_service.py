@@ -54,9 +54,17 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "semantic_agent": "build",
         "semantic_steps": None,
         "semantic_contract": "SEMANTIC_TEXT_ONLY",
-        "status": "CANDIDATE_ROOT_CAUSE_FIX",
+        "status": "CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",
         "root_cause_evidence_run_id": 35537494044,
         "root_cause_artifact_id": 10612603412,
+        "runtime_blocker": "opencode_console_free_tier_403_before_inference",
+        "runtime_blocker_runs": [
+            35546356452,
+            35546450235,
+            35546663122,
+            35546843689,
+        ],
+        "usable_text_proof": False,
     },
 }
 
