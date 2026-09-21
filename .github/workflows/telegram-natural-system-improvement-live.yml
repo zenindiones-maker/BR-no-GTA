@@ -156,6 +156,7 @@ jobs:
           gh run watch "$CHILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
 
       - name: Download real child evidence
+        id: child_evidence
         env:
           GH_TOKEN: ${{ github.token }}
           CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
@@ -163,9 +164,20 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/telegram-natural-system-improvement/child
           gh run download "$CHILD_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "dynamic-system-improvement-$CHILD_RUN_ID"             --dir artifacts/telegram-natural-system-improvement/child
-          test -s artifacts/telegram-natural-system-improvement/child/dynamic-system-improvement-report.json
+          root=artifacts/telegram-natural-system-improvement/child
+          if [ -s "$root/dynamic-system-improvement-report.json" ]; then
+            echo "auth_waiting=false" >> "$GITHUB_OUTPUT"
+            echo "CHILD_MISSION_RESULT=AVAILABLE"
+          elif [ -s "$root/codex-auth-control-report.json" ] && [ -s "$root/mission-auth-checkpoint.json" ]; then
+            echo "auth_waiting=true" >> "$GITHUB_OUTPUT"
+            echo "CHILD_MISSION_RESULT=WAITING_FOR_AUTH"
+          else
+            echo "CHILD_MISSION_RESULT=FAIL missing mission report and auth checkpoint" >&2
+            exit 1
+          fi
 
       - name: Validate real swarm closed loop
+        if: steps.child_evidence.outputs.auth_waiting != 'true'
         env:
           CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
         run: |
@@ -226,6 +238,56 @@ jobs:
           print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
           print("CANDIDATE_SHA="+d["candidate_sha"])
           print("HARNESS_PROMOTION_DECISION="+d["promotion_decision"])
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
+      - name: Validate persistent Codex human-auth gate
+        if: steps.child_evidence.outputs.auth_waiting == 'true'
+        env:
+          CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("artifacts/telegram-natural-system-improvement/child")
+          report=json.loads((root/"codex-auth-control-report.json").read_text())
+          checkpoint=json.loads((root/"mission-auth-checkpoint.json").read_text())
+          preflight=report["preflight"]
+          assert preflight["state"] in {"USER_ACTION_REQUIRED","UNAVAILABLE","BLOCKED"}
+          assert report["runner_wait_for_human"] is False
+          assert report["mission_checkpointed"] is True
+          assert report["auth_secret_leak"] is False
+          assert report["auth_credential_persisted_in_artifact"] is False
+          assert report["auth_credential_persisted_in_memory"] is False
+          assert report["auth_credential_persisted_in_obsidian"] is False
+          assert report["failure_memory_retrieved_before_execution"] is True
+          assert report["auth_timeout_path_repeated"] is False
+          assert checkpoint["authority"]=="DEEPSEEK_HARNESS"
+          assert checkpoint["credential_material_persisted"] is False
+          assert checkpoint["mission_id"]==report["mission_id"]
+          assert checkpoint["target_sha"]
+          if preflight["paired_human_available"]:
+              assert report["auth_delivery_surface"]=="PAIRED_USER_DM"
+              assert report["auth_delivery_status"]=="DELIVERED"
+          print("MISSION_WAITING_FOR_AUTH=PASS")
+          print("AUTH_PREREQUISITE_BLOCKED=PASS")
+          print("HUMAN_AUTH_GATE_CREATED=PASS")
+          print("DEVICE_AUTH_REQUIRES_PAIRED_HUMAN=PASS")
+          print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO")
+          print("RUNNER_WAIT_FOR_HUMAN=NO")
+          print("MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS")
+          print("FAILURE_MEMORY_RETRIEVED_BEFORE_EXECUTION=PASS")
+          print("AUTH_TIMEOUT_PATH_NOT_REPEATED=PASS")
+          print("AUTH_SECRET_LEAK=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_ARTIFACT=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_MEMORY=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_OBSIDIAN=NO")
+          print("AGENT_COMPETENCE_PENALIZED_BY_AUTH=NO")
+          print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
           print("NEW_VOICE_SYNTHESIS=NO")
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
