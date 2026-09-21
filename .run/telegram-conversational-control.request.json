@@ -1,9 +1,12 @@
 {
   "request": "telegram-system-synergy-live-gateway-validation",
-  "source_head": "855ce3414c027452c78c83423e045fbb7d3fb63f",
-  "requested_at": "2026-09-21T00:06:00-03:00",
-  "attempt": 7,
+  "source_head": "03e69f6cb00fd04fd48e54f73552d6574db57f7a",
+  "requested_at": "2026-09-21T00:10:00-03:00",
+  "attempt": 8,
   "scope": "live-gateway-conversation-service-harness-hermes-human-loop",
   "opencode_policy": "contain-external-403-no-bypass",
-  "correction": "hermes-human-block-kind-needs_input"
+  "corrections": [
+    "hermes-human-block-kind-needs_input",
+    "persist-deepseek-harness-authority-in-broker-audit"
+  ]
 }
