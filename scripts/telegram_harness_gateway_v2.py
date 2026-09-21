@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -671,6 +672,27 @@ def _send_final_human_response(
     return message_id
 
 
+def _acquire_runtime_singleton():
+    lock_path = Path(
+        os.getenv(
+            "TELEGRAM_GATEWAY_RUNTIME_LOCK_FILE",
+            str(STATE_FILE.parent / "telegram-gateway.runtime.lock"),
+        )
+    )
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"{os.getpid()}\n")
+    handle.flush()
+    return handle
+
+
 def _write_runtime_revision_proof() -> dict[str, Any]:
     revision = os.getenv("BR_TELEGRAM_GATEWAY_REVISION", "").strip()
     revision_file = os.getenv("TELEGRAM_GATEWAY_REVISION_FILE", "").strip()
@@ -697,6 +719,12 @@ def main() -> int:
         print("TELEGRAM_GATEWAY=FAIL", flush=True)
         print("TELEGRAM_GATEWAY_ERROR=TELEGRAM_BOT_TOKEN is not loaded in this process", flush=True)
         return 2
+
+    runtime_lock = _acquire_runtime_singleton()
+    if runtime_lock is None:
+        print("TELEGRAM_GATEWAY=FAIL", flush=True)
+        print("TELEGRAM_GATEWAY_ERROR=DUPLICATE_RUNTIME_LOCK_HELD", flush=True)
+        return 4
 
     initialize_application()
     revision_proof = _write_runtime_revision_proof()
