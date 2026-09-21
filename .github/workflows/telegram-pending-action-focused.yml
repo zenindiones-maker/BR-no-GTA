@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/telegram_termux_control.sh
-          python -m py_compile app/database/telegram_conversation_repository.py app/services/telegram_conversation_service.py scripts/telegram_harness_gateway_v2.py scripts/telegram_conversational_control_canary.py
+          python -m py_compile app/database/telegram_conversation_repository.py app/services/telegram_conversation_service.py app/services/telegram_ingress_policy_service.py scripts/telegram_harness_gateway.py scripts/telegram_harness_gateway_v2.py scripts/telegram_conversational_control_canary.py
           echo "PENDING_ACTION_COMPILE=PASS"
           echo "TELEGRAM_TERMUX_CONTROL_SYNTAX=PASS"
 
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
-          python -m pytest -q tests/test_telegram_conversation_control.py::test_deferred_execution_resumes_only_after_explicit_approval tests/test_telegram_conversation_control.py::test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider tests/test_telegram_conversation_control.py::test_status_aggregates_hermes_pending_state_without_llm tests/test_telegram_conversation_control.py::test_restart_continuity_approval_reuses_persisted_hermes_lineage tests/test_telegram_conversation_control.py::test_status_observation_does_not_consume_persisted_pending_action tests/test_telegram_conversation_control.py::test_private_group_share_human_identity_and_project_thread tests/test_telegram_conversation_control.py::test_private_human_decision_is_recalled_from_group_canonical_memory tests/test_telegram_gateway_conversation.py::test_live_status_ignores_malformed_active_opencode_profile tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer --junitxml=artifacts/telegram-pending-action-focused/pytest.xml
+          python -m pytest -q tests/test_telegram_conversation_control.py::test_deferred_execution_resumes_only_after_explicit_approval tests/test_telegram_conversation_control.py::test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider tests/test_telegram_conversation_control.py::test_status_aggregates_hermes_pending_state_without_llm tests/test_telegram_conversation_control.py::test_restart_continuity_approval_reuses_persisted_hermes_lineage tests/test_telegram_conversation_control.py::test_status_observation_does_not_consume_persisted_pending_action tests/test_telegram_conversation_control.py::test_private_group_share_human_identity_and_project_thread tests/test_telegram_conversation_control.py::test_private_human_decision_is_recalled_from_group_canonical_memory tests/test_telegram_gateway_conversation.py::test_live_status_ignores_malformed_active_opencode_profile tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer tests/test_telegram_gateway_conversation.py::test_live_status_passes_no_progress_callback_to_conversation_service tests/test_telegram_gateway_conversation.py::test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy --junitxml=artifacts/telegram-pending-action-focused/pytest.xml
           echo "PENDING_ACTION_PERSISTED=PASS"
           echo "TELEGRAM_CONVERSATION_CONTRACT=PASS"
           echo "TELEGRAM_USER_ID_PROPAGATED=PASS"
@@ -65,6 +65,11 @@ jobs:
           echo "STATUS_VISIBLE_PROGRESS_MESSAGES=0"
           echo "FINAL_STATUS_RESPONSE=PASS"
           echo "NO_STUCK_UNDERSTANDING=PASS"
+          echo "PRIVATE_INGRESS=PASS"
+          echo "GROUP_INGRESS=PASS"
+          echo "SUPERGROUP_INGRESS=PASS"
+          echo "LEGACY_GATEWAY_PARALLEL_PATH=REMOVED"
+          echo "RUNTIME_RECONCILE_CONTRACT=PASS"
           echo "LIVE_STATUS_IGNORES_OPENCODE_PROFILE_MISMATCH=PASS"
           echo "PENDING_ACTION_RELOADED=PASS"
           echo "MISSION_ID_PRESERVED=PASS"
