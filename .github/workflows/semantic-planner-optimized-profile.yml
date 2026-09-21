@@ -61,7 +61,7 @@ jobs:
             sleep 1
           done
           curl --fail --silent --show-error http://127.0.0.1:11434/api/tags >/dev/null
-          ollama pull "$OLLAMA_MODEL"
+          timeout 180s ollama pull "$OLLAMA_MODEL"
           python - <<'PY'
           import json, os, urllib.request
           with urllib.request.urlopen("http://127.0.0.1:11434/api/tags",timeout=5) as r:
