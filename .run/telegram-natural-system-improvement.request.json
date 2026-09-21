@@ -1,0 +1,11 @@
+{
+  "request": "natural-system-improvement-live",
+  "source_head": "89173ff1346813d10a2877fd6c5f2ad7752b94c1",
+  "literal_human_input": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
+  "execute_real_child": true,
+  "provider_fallback_for_known_executor": false,
+  "voice": false,
+  "render": false,
+  "youtube_upload": false,
+  "youtube_publication": false
+}
