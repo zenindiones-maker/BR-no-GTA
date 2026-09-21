@@ -36,6 +36,7 @@ def _chat_stub(message: str, **kwargs):
 def test_intent_classifier_covers_governed_taxonomy():
     assert classify_conversation_intent("onde estamos?") == "STATUS_REQUEST"
     assert classify_conversation_intent("pesquisa as últimas informações do GTA 6") == "RESEARCH_REQUEST"
+    assert classify_conversation_intent("Tudo sobre gta 6") == "RESEARCH_REQUEST"
     assert classify_conversation_intent("continua de onde parou") == "EXECUTION_REQUEST"
     assert classify_conversation_intent("esse ficou melhor") == "FEEDBACK"
     assert classify_conversation_intent("esse roteiro eu aprovo") == "APPROVAL"
@@ -168,56 +169,46 @@ def test_file_submission_is_a_first_class_conversation_intent():
     assert result["conversation_state"]["last_human_intent"] == "FILE_SUBMISSION"
 
 
-def test_natural_language_research_routes_without_slash_command():
-    seen = {}
+def test_natural_language_research_routes_exact_human_query_without_slash_command():
+    seen = {"provider_calls": 0}
 
     def research_execute(plan, state, message):
         seen["plan"] = dict(plan)
+        seen["message"] = message
         return {
             "status": "COMPLETED",
-            "operation": "br_research_run",
-            "result": {
-                "total": 3,
-                "rockstar_newswire": [{"title": "Official update"}],
-                "news_feeds": [{"title": "Secondary report"}],
-                "editorial": [{"decision": "QUEUE"}],
-            },
-            "capability_id": "gta6.research",
-            "routing_id": "route-research",
-            "authorization_id": "auth-research",
-            "execution_id": "exec-research",
+            "answer": "Pesquisei exatamente o pedido e confirmei evidência oficial.",
+            "capability_id": "gta6.research.fresh-cloud",
+            "query": plan["query"],
+            "RESEARCH_EXECUTION": "PASS",
+            "GTA6_FACT_CHECK": "PASS",
+            "SOURCE_PROVENANCE_PRESERVED": "PASS",
         }
 
-    def synthesize(message, **kwargs):
-        seen["skip_fresh_research"] = kwargs.get("skip_fresh_research")
-        seen["reasoning_context"] = kwargs.get("conversation_context")
-        return {
-            "status": "COMPLETED",
-            "answer": "A pesquisa gerou uma avaliação editorial nova; o roteiro precisa ser reavaliado antes de produção.",
-            "capability_id": "ai.reasoning.text",
-            "routing_id": "route-ai",
-            "authorization_id": "auth-ai",
-            "execution_id": "exec-ai",
-        }
+    def forbidden_provider(*_args, **_kwargs):
+        seen["provider_calls"] += 1
+        raise AssertionError("source-grounded GTA6 research must not require ai.reasoning.text")
 
+    message = "pesquisa as últimas informações do GTA 6 e me diz se muda nosso roteiro"
     result = handle_telegram_conversation(
-        "pesquisa as últimas informações do GTA 6 e me diz se muda nosso roteiro",
+        message,
         telegram_chat_id=9983,
         telegram_message_id=201,
         input_record={"id": 55, "telegram_chat_id": 9983, "telegram_message_id": 201},
-        chat_handler=synthesize,
+        chat_handler=forbidden_provider,
         action_executor=research_execute,
         presenter=_presenter,
     )
     assert result["intent"] == "RESEARCH_REQUEST"
-    assert result["plan"]["kind"] == "RESEARCH_PIPELINE"
-    assert result["plan"]["capability_id"] == "gta6.research"
+    assert result["plan"]["kind"] == "QUERY_RESEARCH"
+    assert result["plan"]["capability_id"] == "gta6.research.fresh-cloud"
+    assert result["plan"]["query"] == message
+    assert result["plan"]["mission_planner"] == "HARNESS_REGISTRY_COMPETENCE"
     assert seen["plan"]["authorized_action"] == "RESEARCH"
-    assert seen["skip_fresh_research"] is True
-    compact = seen["reasoning_context"]["governed_research_pipeline_result"]
-    assert compact["total"] == 3
-    assert compact["editorial_count"] == 1
-    assert result["canonical_result"]["capability_id"] == "gta6.research"
+    assert seen["message"] == message
+    assert seen["provider_calls"] == 0
+    assert result["canonical_result"]["query"] == message
+    assert result["canonical_result"]["GTA6_FACT_CHECK"] == "PASS"
     assert result["conversation_state"]["execution_status"] == "COMPLETED"
 
 
@@ -382,42 +373,36 @@ def test_recent_turns_are_compact_and_persisted():
 
 
 
-def test_research_survives_optional_reasoning_provider_failure():
-    from app.services.telegram_harness_service import HarnessReasoningFailure
-
+def test_research_remains_useful_when_semantic_provider_is_unavailable():
     chat_id = 9991
+    calls = {"provider": 0}
 
     def execute(plan, state, message):
-        assert plan["kind"] == "RESEARCH_PIPELINE"
+        assert plan["kind"] == "QUERY_RESEARCH"
+        assert plan["query"] == message
         return {
             "status": "COMPLETED",
-            "operation": "br_research_run",
-            "result": {
-                "total": 2,
-                "rockstar_newswire": [{"title": "Official evidence survives"}],
-                "news_feeds": [{"title": "Secondary evidence survives"}],
-                "editorial": [{"decision": "REVIEW_SCRIPT"}],
-            },
-            "capability_id": "gta6.research",
-            "routing_id": "route-research-provider-free",
-            "authorization_id": "auth-research-provider-free",
-            "execution_id": "exec-research-provider-free",
+            "answer": (
+                "Pesquisei exatamente o seu pedido.\n"
+                "O que consegui confirmar agora em fonte oficial:\n"
+                "• Evidência oficial relevante. [Rockstar: Rockstar Games]\n"
+                "Prova: github-actions:123; 1 afirmação apoiada por evidência oficial.\n"
+                "A síntese semântica aberta está indisponível agora, então mantive a resposta estritamente nas evidências verificadas."
+            ),
+            "capability_id": "gta6.research.fresh-cloud",
+            "query": message,
+            "RESEARCH_EXECUTION": "PASS",
+            "GTA6_FACT_CHECK": "PASS",
+            "SOURCE_PROVENANCE_PRESERVED": "PASS",
+            "semantic_synthesis_used": False,
         }
 
     def unavailable(*_args, **_kwargs):
-        raise HarnessReasoningFailure(
-            {
-                "provider": "opencode",
-                "model": "oc/big-pickle",
-                "provider_error": {
-                    "code": "provider_auth_403",
-                    "message": "OpenCode's free tier can only be used from within OpenCode",
-                },
-            }
-        )
+        calls["provider"] += 1
+        raise AssertionError("provider must not be required for verified evidence answer")
 
     result = handle_telegram_conversation(
-        "pesquisa a novidade X",
+        "pesquisa a novidade X sobre gta 6",
         telegram_chat_id=chat_id,
         telegram_message_id=801,
         action_executor=execute,
@@ -427,10 +412,12 @@ def test_research_survives_optional_reasoning_provider_failure():
 
     canonical = result["canonical_result"]
     assert canonical["RESEARCH_EXECUTION"] == "PASS"
-    assert canonical["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
-    assert canonical["capability_id"] == "gta6.research"
-    assert "Official evidence survives" in result["answer"]
-    assert "não acrescentei interpretação" in result["answer"]
+    assert canonical["GTA6_FACT_CHECK"] == "PASS"
+    assert canonical["capability_id"] == "gta6.research.fresh-cloud"
+    assert canonical["semantic_synthesis_used"] is False
+    assert calls["provider"] == 0
+    assert "Evidência oficial relevante" in result["answer"]
+    assert "review; review" not in result["answer"]
     assert result["conversation_state"]["execution_status"] == "COMPLETED"
 
 
@@ -833,3 +820,16 @@ def test_status_reconciles_legacy_understanding_without_operational_evidence():
         and item["metadata"]["previous_active_stage"] == "UNDERSTANDING"
         for item in events
     )
+
+
+def test_broad_gta6_information_goal_is_not_downgraded_to_generic_chat():
+    plan = plan_natural_language_action(
+        "Tudo sobre gta 6",
+        intent=classify_conversation_intent("Tudo sobre gta 6"),
+        state={"active_project": "BR-no-GTA", "active_goal_id": "gta6-knowledge"},
+        resolved_reference=None,
+    )
+    assert plan["kind"] == "QUERY_RESEARCH"
+    assert plan["query"] == "Tudo sobre gta 6"
+    assert plan["capability_id"] == "gta6.research.fresh-cloud"
+    assert plan["goal_envelope"]["mission_class"] == "GTA6_INTELLIGENCE"
