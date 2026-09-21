@@ -7,6 +7,7 @@ CONFIG_DIR="${HOME}/.config/br-no-gta"
 SECRET_FILE="${CONFIG_DIR}/telegram.env"
 PID_FILE="${STATE_DIR}/telegram-gateway.pid"
 LOG_FILE="${STATE_DIR}/telegram-gateway.log"
+REVISION_FILE="${STATE_DIR}/telegram-gateway.revision"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 START_LOCK_DIR="${STATE_DIR}/telegram-gateway.start.lock"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
@@ -158,6 +159,29 @@ pid_is_current_gateway() {
   return 1
 }
 
+current_repo_revision() {
+  local head
+  head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  [[ -n "${head}" ]] || return 1
+  if ! git -C "${ROOT}" diff --quiet --ignore-submodules -- 2>/dev/null; then
+    printf '%s-dirty\n' "${head}"
+    return 0
+  fi
+  printf '%s\n' "${head}"
+}
+
+runtime_revision_matches() {
+  [[ -s "${REVISION_FILE}" ]] || return 1
+  [[ -s "${PID_FILE}" ]] || return 1
+  local expected runtime_pid runtime_revision tracked_pid
+  expected="$(current_repo_revision)" || return 1
+  tracked_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  read -r runtime_pid runtime_revision < "${REVISION_FILE}" || return 1
+  [[ "${tracked_pid}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${runtime_pid}" == "${tracked_pid}" ]] || return 1
+  [[ "${runtime_revision}" == "${expected}" ]]
+}
+
 acquire_start_lock() {
   local owner=""
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -213,7 +237,8 @@ is_running() {
   pid="$(cat "${PID_FILE}")"
   [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
   kill -0 "${pid}" 2>/dev/null || return 1
-  pid_is_current_gateway "${pid}"
+  pid_is_current_gateway "${pid}" || return 1
+  runtime_revision_matches
 }
 
 start_gateway() {
@@ -259,6 +284,10 @@ start_gateway() {
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
+  export TELEGRAM_GATEWAY_REVISION_FILE="${REVISION_FILE}"
+  export BR_TELEGRAM_GATEWAY_REVISION
+  BR_TELEGRAM_GATEWAY_REVISION="$(current_repo_revision)"
+  rm -f "${REVISION_FILE}"
 
   if command -v termux-wake-lock >/dev/null 2>&1; then
     termux-wake-lock >/dev/null 2>&1 || true
@@ -272,7 +301,15 @@ start_gateway() {
   sleep 2
 
   if kill -0 "${pid}" 2>/dev/null && pid_is_current_gateway "${pid}"; then
+    if ! runtime_revision_matches; then
+      echo "TELEGRAM_GATEWAY=FAIL loaded revision proof mismatch" >&2
+      terminate_gateway_pids "${pid}"
+      rm -f "${PID_FILE}" "${REVISION_FILE}"
+      release_start_lock
+      return 1
+    fi
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
+    echo "TELEGRAM_GATEWAY_REVISION=${BR_TELEGRAM_GATEWAY_REVISION}"
     echo "TELEGRAM_LOG=${LOG_FILE}"
     echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
     release_start_lock
@@ -298,7 +335,7 @@ stop_gateway() {
   fi
 
   terminate_gateway_pids "${pids[@]}"
-  rm -f "${PID_FILE}"
+  rm -f "${PID_FILE}" "${REVISION_FILE}"
   release_start_lock
   if command -v termux-wake-unlock >/dev/null 2>&1; then
     termux-wake-unlock >/dev/null 2>&1 || true
@@ -314,12 +351,17 @@ status_gateway() {
       echo "TELEGRAM_GATEWAY=CONFLICT INSTANCES=${#pids[@]} TRACKED_PID=$(cat "${PID_FILE}")"
       return 2
     fi
-    echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}") INSTANCES=1"
+    echo "TELEGRAM_GATEWAY=RUNNING PID=$(cat "${PID_FILE}") INSTANCES=1 REVISION=$(current_repo_revision)"
   else
     local -a pids=()
     mapfile -t pids < <(gateway_pids)
     if [[ ${#pids[@]} -gt 0 ]]; then
-      echo "TELEGRAM_GATEWAY=UNTRACKED INSTANCES=${#pids[@]} PIDS=${pids[*]}"
+      local expected loaded=""
+      expected="$(current_repo_revision 2>/dev/null || true)"
+      if [[ -s "${REVISION_FILE}" ]]; then
+        read -r _ loaded < "${REVISION_FILE}" || true
+      fi
+      echo "TELEGRAM_GATEWAY=STALE_CODE INSTANCES=${#pids[@]} PIDS=${pids[*]} EXPECTED_REVISION=${expected:-UNKNOWN} LOADED_REVISION=${loaded:-MISSING}"
       return 2
     fi
     echo "TELEGRAM_GATEWAY=NOT_RUNNING"
@@ -338,6 +380,10 @@ foreground_gateway() {
   configure_cloud_routing
   export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
   export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
+  export TELEGRAM_GATEWAY_REVISION_FILE="${REVISION_FILE}"
+  export BR_TELEGRAM_GATEWAY_REVISION
+  BR_TELEGRAM_GATEWAY_REVISION="$(current_repo_revision)"
+  rm -f "${REVISION_FILE}"
   cd "${ROOT}"
   exec "${PYTHON_BIN}" -u scripts/telegram_harness_gateway_v2.py
 }
