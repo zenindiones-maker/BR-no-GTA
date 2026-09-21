@@ -187,8 +187,9 @@ def _reasoning_failure_presentation(
             ),
         },
         "answer": (
-            "A evidência da falha foi preservada. "
-            "Use /evidence para o diagnóstico completo."
+            "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
+            "A tarefa exige raciocínio semântico e nenhum provider elegível está disponível agora. "
+            "Status e controles determinísticos continuam funcionando."
         ),
     }
     return present_canonical_result_under_harness(
