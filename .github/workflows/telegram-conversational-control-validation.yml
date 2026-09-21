@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   statuses: write
 
 concurrency:
@@ -18,12 +19,14 @@ concurrency:
 
 env:
   PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-conversation/canary.db
+  BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
 
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@v4
@@ -36,7 +39,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          printf '%s' '{"state":"pending","context":"telegram-conversational-control","description":"Telegram conversational control validation running"}' > /tmp/status-pending.json
+          printf '%s' '{"state":"pending","context":"telegram-conversational-control","description":"Telegram control-surface synergy validation running"}' > /tmp/status-pending.json
           curl --fail-with-body --silent --show-error \
             -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -52,43 +55,60 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Install project test runtime
+      - name: Install project and bounded Hermes runtime
         run: |
           set -euo pipefail
-          mkdir -p artifacts/telegram-conversation
+          mkdir -p artifacts/telegram-conversation .runtime
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
+          python -m pip install psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 rich==14.3.3 pathspec==1.1.1
+          python scripts/bootstrap_hermes_agent.py \
+            --target "$BR_HERMES_UPSTREAM_ROOT" \
+            --output artifacts/telegram-conversation/hermes-upstream.json
+          test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
+          echo "HERMES_UPSTREAM_PINNED=PASS"
 
-      - name: Compile conversational boundary
+      - name: Compile live control surface
         run: |
           set -euo pipefail
           python -m py_compile \
-            app/database/telegram_conversation_repository.py \
+            app/services/telegram_control_surface_status.py \
             app/services/telegram_conversation_service.py \
-            app/services/telegram_harness_service.py \
+            app/services/telegram_hermes_dispatch_service.py \
             scripts/telegram_harness_gateway.py \
+            scripts/telegram_harness_gateway_v2.py \
+            scripts/telegram_hermes_control_mission.py \
             scripts/telegram_conversational_control_canary.py
-          echo "TELEGRAM_CONVERSATION_COMPILE=PASS"
+          echo "TELEGRAM_LIVE_CONTROL_COMPILE=PASS"
 
-      - name: Run focused conversational tests
+      - name: Run focused control-surface tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
         run: |
           set -euo pipefail
           python -m pytest -q \
             tests/test_telegram_conversation_control.py \
             tests/test_telegram_gateway_conversation.py \
+            tests/test_telegram_harness_integration.py \
+            tests/test_hermes_multiagent_boundary.py \
+            tests/test_hermes_kanban_live_core.py \
             tests/test_deepseek_harness.py \
             --junitxml=artifacts/telegram-conversation/pytest.xml
-          echo "TELEGRAM_CONVERSATION_TESTS=PASS"
+          echo "TELEGRAM_LIVE_CONTROL_TESTS=PASS"
 
-      - name: Run operational service-path canary
+      - name: Run provider-free live gateway and Hermes canary
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
         run: |
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
           python scripts/telegram_conversational_control_canary.py \
+            --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
+            --artifact-dir artifacts/telegram-conversation \
             --output artifacts/telegram-conversation/canary.json \
-            | tee artifacts/telegram-conversation/canary.log
+            2>&1 | tee artifacts/telegram-conversation/canary.log
 
-      - name: Validate required gates
+      - name: Validate required system-synergy gates
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -96,40 +116,61 @@ jobs:
           from pathlib import Path
           p=Path("artifacts/telegram-conversation/canary.json")
           d=json.loads(p.read_text(encoding="utf-8"))
-          assert d["status"]=="PASS",d
+          assert d["status"]=="PASS",d["checks"]
           required=[
-              "TELEGRAM_CONVERSATIONAL_CONTROL_SURFACE",
-              "MULTITURN_CONTEXT",
-              "REFERENCE_RESOLUTION",
-              "NATURAL_LANGUAGE_ACTION_ROUTING",
-              "PROGRESS_TO_TELEGRAM",
-              "WAITING_FOR_HUMAN_SIGNAL",
-              "HUMAN_FEEDBACK_BINDING",
+              "LIVE_GATEWAY_USES_CONVERSATION_SERVICE",
+              "TELEGRAM_PROVIDER_INDEPENDENT_CONTROL",
+              "STATUS_WITHOUT_LLM",
+              "APPROVAL_WITHOUT_LLM",
+              "FEEDBACK_WITHOUT_LLM",
+              "REFERENCE_RESOLUTION_WITHOUT_LLM",
+              "CONTINUE_WITHOUT_LLM",
+              "RESEARCH_WITHOUT_SYNTHESIS_LLM",
+              "PROGRESS_TO_TELEGRAM_LIVE",
+              "HARNESS_STATUS_AGGREGATION",
+              "TELEGRAM_TO_HERMES_MISSION",
+              "HERMES_TO_TELEGRAM_PROGRESS",
+              "HUMAN_BLOCK_RESUME_LIVE",
+              "RESTART_CONTINUITY",
               "HARNESS_AUTHORITY_PRESERVED",
-              "NO_PARALLEL_CONTROL_PLANE",
+              "NO_DIRECT_EXECUTOR_BYPASS",
+              "NO_SECOND_CONTROL_PLANE",
+              "OPENCODE_EXTERNAL_403_CONTAINED",
           ]
           for key in required:
               assert d["checks"].get(key) is True,(key,d["checks"])
               print(f"{key}=PASS")
-          print("CONVERSATION_CONTEXT_RETRIEVAL=PASS")
+          assert d["OPENCODE_V3_STATUS"]=="CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",d
+          assert d["NEW_VOICE_SYNTHESIS"]=="NO",d
+          assert d["FULL_RENDER"]=="NO",d
+          assert d["YOUTUBE_UPLOAD"]=="NO",d
+          assert d["YOUTUBE_PUBLICATION"]=="NO",d
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          print("TELEGRAM_SYSTEM_SYNERGY=PASS")
           PY
 
       - name: Build human-readable Telegram proof
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
           from pathlib import Path
-          d=json.loads(Path("artifacts/telegram-conversation/canary.json").read_text(encoding="utf-8"))
           text=(
-              "Controle conversacional do Telegram validado.\n\n"
-              "O estado multiturmo, resolução de referências, roteamento por linguagem natural, "
-              "feedback humano, sinal de espera e autoridade do Harness passaram no canário operacional.\n\n"
-              "Também validei que progresso/heartbeat saem pela camada Telegram sem despejar telemetria na conversa.\n\n"
-              "Importante: esta mensagem prova a saída real pelo Bot API. "
-              "A entrada humana real será comprovada pelo próprio gateway quando a branch estiver atualizada no A15 e você mandar a próxima mensagem normal."
+              "Corrigi o control surface do Telegram.\n\n"
+              "Agora mensagens normais entram pelo ConversationService antes de qualquer provider. "
+              "Status, roteiro existente, feedback, aprovação, continuidade e pesquisa continuam funcionando "
+              "mesmo quando o OpenCode está bloqueado.\n\n"
+              "Também validei a cadeia Telegram → Harness → Hermes → agentes: o GTA6 Brain ficou isoladamente "
+              "bloqueado pelo provider, enquanto fact-check, TUBEGENT, review e o ciclo humano continuaram. "
+              "A decisão pendente sobreviveu a um restart do gateway e foi retomada com uma aprovação natural.\n\n"
+              "Não houve síntese de voz, render, upload ou publicação. "
+              "Pode fazer o teste humano normal no Telegram quando esta validação terminar."
           )
-          Path("artifacts/telegram-conversation/telegram-proof.txt").write_text(text,encoding="utf-8")
+          Path("artifacts/telegram-conversation/telegram-proof.txt").write_text(
+              text, encoding="utf-8"
+          )
           PY
 
       - name: Send real proof to Telegram
@@ -160,11 +201,11 @@ jobs:
           print("TELEGRAM_PROOF_MESSAGE_ID="+str(d["result"]["message_id"]))
           PY
 
-      - name: Upload validation evidence
+      - name: Upload complete validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-conversational-control-${{ github.run_id }}
+          name: telegram-system-synergy-${{ github.run_id }}
           path: artifacts/telegram-conversation/
           if-no-files-found: error
           retention-days: 30
@@ -181,7 +222,11 @@ jobs:
           print(json.dumps({
               "state": os.environ["STATE"],
               "context": "telegram-conversational-control",
-              "description": "Telegram conversational control validation",
+              "description": "Telegram control-surface synergy validation",
+              "target_url": (
+                  "https://github.com/" + os.environ["GITHUB_REPOSITORY"]
+                  + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+              ),
           }))
           PY
           curl --fail-with-body --silent --show-error \
