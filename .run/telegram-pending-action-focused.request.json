@@ -1,11 +1,7 @@
 {
-  "request": "telegram-identity-contract-and-silent-status-focused",
-  "source_head": "46c9dcfd8926f36d274159f5fbdce2accea5c16b",
-  "scope": "gateway-conversation-contract-human-identity-private-group-zero-progress-status",
-  "observed_failure_run": 35597835103,
-  "a15_sync": "FORBIDDEN_UNTIL_GREEN",
-  "new_voice_synthesis": "NO",
-  "full_render": "NO",
-  "youtube_upload": "NO",
-  "youtube_publication": "NO"
+  "request": "telegram-human-surface-runtime-reconcile",
+  "source_head": "7f9e55039eb7d4f03a911e0724356ae8198211c9",
+  "scope": "hard-silent-status-governed-group-ingress-single-v2-runtime-reconcile",
+  "human_failure_evidence": "private status stuck at UNDERSTANDING; group no functional final reply",
+  "requested_at": "2026-09-21T09:30:00-03:00"
 }
