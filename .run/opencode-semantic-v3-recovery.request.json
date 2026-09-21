@@ -1,6 +1,6 @@
 {
   "request": "opencode-semantic-v3-same-runner-recovery",
-  "source_head": "88d4e5b041aae5649a666dc10dad3188e118f783",
+  "source_head": "aadc9ecdb3ef0cc320b67835d09f9ec0071fb40a",
   "blocker_run_id": 35545294782,
   "blocker_artifact_id": 10616181622,
   "validation": {
@@ -10,6 +10,6 @@
     "tools_exposed": 0,
     "usable_text": true
   },
-  "attempt": 2,
-  "change": "preserve built-in build system identity; keep steps=1 and deny-all"
+  "attempt": 3,
+  "change": "preserve built-in build completely; global deny-all removes tools before model request"
 }
