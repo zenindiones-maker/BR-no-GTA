@@ -20,6 +20,10 @@ from app.services.telegram_harness_service import (
 from app.services.telegram_conversation_service import (
     handle_telegram_conversation,
 )
+from app.services.telegram_ingress_policy_service import (
+    enroll_allowed_chat,
+    parse_governed_telegram_ingress,
+)
 from app.services.human_presentation_service import (
     ACTION_FIRST,
     TECHNICAL_FULL,
@@ -561,6 +565,7 @@ def _handle_live_natural_language_message(
     message: dict[str, Any],
     update_id: int,
     text: str,
+    chat_type: str = "private",
     conversation_handler=None,
     action_executor=None,
     chat_handler=None,
@@ -584,7 +589,9 @@ def _handle_live_natural_language_message(
     reporter = TelegramProgressReporter(api, chat_id)
     reporter.start()
     kwargs: dict[str, Any] = {
+        "telegram_user_id": user_id,
         "telegram_chat_id": chat_id,
+        "telegram_chat_type": chat_type,
         "telegram_message_id": int(message["message_id"]),
         "input_record": learned["input"],
         "progress_callback": reporter,
@@ -712,17 +719,20 @@ def main() -> int:
                     offset = update_id + 1
                     state["offset"] = offset
 
-                parsed = _private_message(update)
-                if parsed is None:
-                    continue
-                user_id, chat_id, message, text = parsed
-
                 if allowed_user_id is None:
+                    parsed = _private_message(update)
+                    if parsed is None:
+                        continue
+                    user_id, chat_id, message, text = parsed
                     if text.casefold() != PAIR_TEXT:
                         continue
                     allowed_user_id = user_id
                     state["allowed_user_id"] = user_id
                     state["chat_id"] = chat_id
+                    state["allowed_chat_ids"] = sorted({
+                        *[int(item) for item in (state.get("allowed_chat_ids") or [])],
+                        int(chat_id),
+                    })
                     _save_state(state)
                     print(
                         f"TELEGRAM_PAIRING=PASS USER_ID={user_id} CHAT_ID={chat_id}",
@@ -735,8 +745,54 @@ def main() -> int:
                     )
                     continue
 
-                if user_id != allowed_user_id:
-                    print(f"TELEGRAM_REJECTED_USER_ID={user_id}", flush=True)
+                ingress = parse_governed_telegram_ingress(
+                    update,
+                    allowed_user_id=allowed_user_id,
+                    state=state,
+                )
+                if ingress is None:
+                    continue
+                user_id = ingress.user_id
+                chat_id = ingress.chat_id
+                message = ingress.message
+                text = ingress.text
+                chat_type = ingress.chat_type
+
+                if not ingress.authorized_sender:
+                    print(
+                        f"TELEGRAM_REJECTED_USER_ID={user_id} CHAT_ID={chat_id} CHAT_TYPE={chat_type}",
+                        flush=True,
+                    )
+                    continue
+
+                if (
+                    not ingress.authorized_chat
+                    and chat_type in {"group", "supergroup"}
+                    and text.split("@", 1)[0].casefold() == "/allow_here"
+                ):
+                    state = enroll_allowed_chat(
+                        state,
+                        chat_id=chat_id,
+                        authorized_user_id=allowed_user_id,
+                        sender_user_id=user_id,
+                    )
+                    _save_state(state)
+                    api.send(
+                        chat_id,
+                        "Este chat foi autorizado como superfície do mesmo humano/projeto. "
+                        "Outros remetentes continuam sem autorização.",
+                    )
+                    print(
+                        f"TELEGRAM_CHAT_ENROLLED=PASS USER_ID={user_id} CHAT_ID={chat_id} CHAT_TYPE={chat_type}",
+                        flush=True,
+                    )
+                    continue
+
+                if not ingress.authorized_chat:
+                    print(
+                        f"TELEGRAM_REJECTED_CHAT=YES USER_ID={user_id} CHAT_ID={chat_id} CHAT_TYPE={chat_type}",
+                        flush=True,
+                    )
                     continue
 
                 attachment = _extract_attachment(message)
@@ -840,6 +896,7 @@ def main() -> int:
                             message=message,
                             update_id=update_id,
                             text=text,
+                            chat_type=chat_type,
                         )
                         print(
                             "TELEGRAM_CONVERSATION_SERVICE=PASS "
