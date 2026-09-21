@@ -628,3 +628,113 @@ def test_status_observation_does_not_consume_persisted_pending_action():
     assert reloaded["execution_status"] == "WAITING_FOR_HUMAN"
     assert reloaded["active_stage"] == "WAITING_FOR_HUMAN"
     assert reloaded["pending_question"] == "Aprova continuar?"
+
+
+
+def test_private_group_share_human_identity_and_project_thread():
+    user_id = 99100
+    private_chat = 99101
+    group_chat = -99102
+
+    update_conversation_state(
+        private_chat,
+        active_goal_id="goal-video-a",
+        active_task="revisão humana do roteiro",
+        active_artifact="script:8",
+        current_subject="voz do vídeo A",
+    )
+
+    private = handle_telegram_conversation(
+        "não gostei dessa voz",
+        telegram_user_id=user_id,
+        telegram_chat_id=private_chat,
+        telegram_chat_type="private",
+        telegram_message_id=99103,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("human decision must remain provider-free")
+        ),
+        presenter=_presenter,
+    )
+    assert private["intent"] == "REJECTION"
+    assert private["TELEGRAM_USER_ID_PROPAGATED"] == "PASS"
+    assert private["TELEGRAM_CHAT_TYPE_PROPAGATED"] == "PASS"
+    assert private["human_identity"]["chat_type"] == "private"
+    assert private["human_identity"]["telegram_user_id"] == user_id
+
+    group = handle_telegram_conversation(
+        "Onde estamos?",
+        telegram_user_id=user_id,
+        telegram_chat_id=group_chat,
+        telegram_chat_type="group",
+        telegram_message_id=99104,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("group status must remain provider-free")
+        ),
+        action_executor=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("group status must not enter Hermes/action execution")
+        ),
+        presenter=_presenter,
+    )
+    assert group["human_identity"]["chat_type"] == "group"
+    assert group["human_identity"]["telegram_user_id"] == user_id
+    assert (
+        private["human_identity"]["human_identity_id"]
+        == group["human_identity"]["human_identity_id"]
+    )
+    assert private["human_identity"]["thread_id"] == group["human_identity"]["thread_id"]
+    assert (
+        private["human_identity"]["surface_session_id"]
+        != group["human_identity"]["surface_session_id"]
+    )
+    assert group["conversation_state"]["active_goal_id"] == "goal-video-a"
+    assert group["conversation_state"]["active_artifact"] == "script:8"
+    assert group["TELEGRAM_USER_ID_PROPAGATED"] == "PASS"
+    assert group["TELEGRAM_CHAT_TYPE_PROPAGATED"] == "PASS"
+
+
+def test_private_human_decision_is_recalled_from_group_canonical_memory():
+    user_id = 99110
+    private_chat = 99111
+    group_chat = -99112
+
+    update_conversation_state(
+        private_chat,
+        active_goal_id="goal-voice-shared",
+        active_task="revisão da voz",
+        active_artifact="script:8",
+        current_subject="voz",
+    )
+    private = handle_telegram_conversation(
+        "não gostei dessa voz",
+        telegram_user_id=user_id,
+        telegram_chat_id=private_chat,
+        telegram_chat_type="private",
+        telegram_message_id=99113,
+        presenter=_presenter,
+    )
+    canonical_decision = private["canonical_result"]["canonical_human_decision"]
+
+    progress = []
+    group = handle_telegram_conversation(
+        "o que eu decidi sobre a voz?",
+        telegram_user_id=user_id,
+        telegram_chat_id=group_chat,
+        telegram_chat_type="group",
+        telegram_message_id=99114,
+        progress_callback=lambda stage, message: progress.append((stage, message)),
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("canonical memory recall must remain provider-free")
+        ),
+        action_executor=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("canonical memory recall must not enter Hermes")
+        ),
+        presenter=_presenter,
+    )
+
+    recalled = group["canonical_result"]["human_decisions"]
+    assert canonical_decision["decision_id"] in {
+        item["decision_id"] for item in recalled
+    }
+    assert group["canonical_result"]["provider_independent"] is True
+    assert progress == []
+    assert private["human_identity"]["thread_id"] == group["human_identity"]["thread_id"]
