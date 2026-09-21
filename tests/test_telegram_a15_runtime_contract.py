@@ -10,10 +10,14 @@ def test_persistence_supervisor_reconciles_remote_runtime_drift():
     text = (ROOT / "scripts/install_telegram_termux_persistence.sh").read_text(
         encoding="utf-8"
     )
-    supervisor = text.split("while true; do", 1)[1].split("done", 1)[0]
+    supervisor = text.split("while true; do", 1)[1]
     assert "TELEGRAM_SUPERVISOR=RECONCILING_GATEWAY" in supervisor
-    assert 'bash "\\${CONTROL}" reconcile' in supervisor
-    assert 'bash "\\${CONTROL}" start' not in supervisor
+    assert "TELEGRAM_SUPERVISOR=REMOTE_DRIFT" in supervisor
+    assert "ls-remote --heads origin" in supervisor
+    assert "local_head=" in supervisor
+    assert "remote_head=" in supervisor
+    assert "reconcile" in supervisor
+    assert "REMOTE_CHECK_SECONDS=60" in text
 
 
 def test_persistence_upgrade_reconciles_instead_of_adopting_old_local_head():
