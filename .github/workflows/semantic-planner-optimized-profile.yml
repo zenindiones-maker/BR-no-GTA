@@ -1,6 +1,7 @@
 name: Semantic Planner Optimized Inference Profile
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -11,15 +12,6 @@ on:
       - "scripts/semantic_planner_optimized_inference_profile.py"
       - "scripts/semantic_planner_single_proposal_proof.py"
       - ".github/workflows/semantic-planner-optimized-profile.yml"
-  workflow_dispatch:
-  push:
-    branches:
-      - work/gate6f-analytics-learning
-    paths:
-      - scripts/semantic_planner_optimized_inference_profile.py
-      - app/services/semantic_mission_planner_service.py
-      - app/services/local_openweight_ai_provider.py
-      - .github/workflows/semantic-planner-optimized-profile.yml
 
 permissions:
   contents: read
