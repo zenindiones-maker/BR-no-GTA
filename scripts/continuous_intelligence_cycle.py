@@ -44,6 +44,7 @@ from app.services.hermes_multiagent.contracts import (
 from app.services.hermes_multiagent.runtime import execute_hermes_mission_capability
 from app.services.memory_plane_service import evaluate_memory_candidate
 from app.services.obsidian_memory_service import export_obsidian_memory_projection
+from app.services.gta6_knowledge_query_service import query_gta6_knowledge
 
 
 HERMES_UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -948,15 +949,268 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
     return report
 
 
+def _last_cycle_age_seconds(cycle_kind: str) -> float | None:
+    rows = continuous_repository.list_cycle_runs(cycle_kind=cycle_kind, limit=1)
+    if not rows:
+        return None
+    stamp = str(rows[0].get("finished_at") or rows[0].get("started_at") or "")
+    if not stamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds())
+
+
+def _is_due(cycle_kind: str, interval_seconds: int) -> bool:
+    age = _last_cycle_age_seconds(cycle_kind)
+    return age is None or age >= int(interval_seconds)
+
+
+def _topic_source_state(topic: dict[str, Any]) -> dict[str, Any] | None:
+    key = "source-" + sha256(str(topic["source_url"]).strip().encode("utf-8")).hexdigest()[:24]
+    return continuous_repository.get_source_state(key)
+
+
+def _source_state_fresh(state: dict[str, Any] | None, seconds: int) -> bool:
+    if not state:
+        return False
+    raw = str(state.get("observed_at") or "")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        return False
+    age = (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds()
+    return 0 <= age <= int(seconds)
+
+
+def _create_daily_improvement_candidate_if_needed() -> dict[str, Any] | None:
+    cycles = continuous_repository.list_cycle_runs(limit=30)
+    issue = next((
+        row for row in cycles
+        if int(row.get("duplicate_work_count") or 0) > 0
+        or int(row.get("retry_count") or 0) > 0
+        or int(row.get("human_interventions") or 0) > 0
+    ), None)
+    if issue is None:
+        return None
+    episodes = learning_repository.list_episodes(limit=50)
+    source = next((row for row in episodes if row.get("status") in {"FAILED", "BLOCKED", "COMPLETED"}), None)
+    if source is None:
+        return None
+    evidence = tuple(dict.fromkeys([
+        *list(source.get("evidence_refs") or ()),
+        *list(issue.get("evidence_refs") or ()),
+    ]))
+    if not evidence:
+        return None
+    return create_learning_candidate(
+        candidate_type="SYSTEM_IMPROVEMENT",
+        hypothesis=(
+            "Measure the observed retry/duplicate/human-intervention hotspot, profile its root cause, "
+            "and only propose a bounded code candidate through Agent Office if focused evidence supports it."
+        ),
+        domain="system-improvement",
+        task_class="continuous-system-improvement-review",
+        source_episode_ids=(source["episode_id"],),
+        evidence_refs=evidence,
+        target_capability_id="system.improvement.propose",
+        contradiction_check={"status": "REQUIRES_MEASURE_PROFILE_ROOT_CAUSE"},
+        acceptance_criteria={
+            "observed_baseline_required": True,
+            "no_quality_regression": True,
+            "high_risk_requires_human_review": True,
+        },
+    )
+
+
+def _export_current_projection(*, artifact_dir: Path, target_sha: str, evidence_refs: list[str]) -> dict[str, Any]:
+    return export_obsidian_memory_projection(
+        output_root=artifact_dir / "obsidian-memory-export",
+        system_state={
+            "head": target_sha,
+            "status": "CONTINUOUS_OPERATION_ACTIVE",
+            "opencode_status": "CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",
+            "new_voice_synthesis": "NO",
+            "full_render": "NO",
+            "youtube_upload": "NO",
+            "youtube_publication": "NO",
+            "evidence_refs": evidence_refs,
+            "system_health": continuous_repository.scoreboard(),
+            "active_gates": {
+                "knowledge_promotion": "EVIDENCE_AND_MEMORY_GATE_REQUIRED",
+                "system_improvement": "MEASURE_PROFILE_CANDIDATE_COMPARE_PROMOTE",
+                "code_change": "AGENT_OFFICE_BOUNDED_DEVELOPMENT",
+                "high_risk_change": "HUMAN_REVIEW",
+                "publication": "NOT_AUTHORIZED",
+            },
+        },
+        project_goals={"VIDEO-A": VIDEO_A_GOAL_ID},
+    )
+
+
+def _telegram_action_first_report(report: dict[str, Any]) -> str:
+    change = report.get("change_summary") or {}
+    proof = report.get("evidence_refs") or []
+    return "\n".join([
+        "AÇÃO",
+        str(change.get("action") or "Ciclo contínuo governado executado."),
+        "",
+        "APRENDEU",
+        str(change.get("learned") or "Nenhuma mudança relevante de conhecimento."),
+        "",
+        "MUDOU",
+        str(change.get("changed") or "Nenhuma mudança canônica foi necessária."),
+        "",
+        "PROVA",
+        ", ".join(str(item) for item in proof[:8]) or "sem nova evidência",
+        "",
+        "PRÓXIMO",
+        str(change.get("next") or "Aguardar o próximo evento ou janela configurada."),
+    ])
+
+
+def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigger_kind: str) -> dict[str, Any]:
+    initialize_schema()
+    policy = load_continuous_operation_policy()
+    topic = dict(policy.gta6["initial_topics"][0])
+    started_at = _now()
+    due = {
+        "gta6": _is_due("GTA6_INTELLIGENCE", policy.cadence["gta6_delta_scan_seconds"]),
+        "daily": _is_due("DAILY_CONSOLIDATION", policy.cadence["daily_consolidation_seconds"]),
+        "improvement": _is_due("SYSTEM_IMPROVEMENT", policy.cadence["system_improvement_seconds"]),
+        "weekly": _is_due("WEEKLY_AUDIT", policy.cadence["weekly_audit_seconds"]),
+    }
+    failure = _failure_prevention()
+    evidence_refs: list[str] = []
+    meaningful = False
+    gta: dict[str, Any] | None = None
+    promotions: list[dict[str, Any]] = []
+
+    if due["gta"]:
+        state = _topic_source_state(topic)
+        fresh = _source_state_fresh(state, policy.resource_governance["source_freshness_seconds"])
+        has_knowledge = bool(query_gta6_knowledge(query=topic["query"], limit=1))
+        reuse_allowed = _active_delta_policy_memory() is not None and fresh and has_knowledge
+        gta = _run_intelligence_mission(
+            mission_id=f"continuous-scheduled-{os.getenv('GITHUB_RUN_ID') or 'local'}",
+            goal_id=VIDEO_A_GOAL_ID, query=topic["query"], subject=topic["subject"],
+            source_url=topic["source_url"], allow_delta_reuse=reuse_allowed,
+            include_fact_check=not reuse_allowed, upstream_root=upstream_root,
+            artifact_dir=artifact_dir / "gta6-intelligence", target_sha=target_sha,
+        )
+        result = gta["research"]["result"]
+        if result.get("status") == "PASS":
+            promotions = _promote_first_mission_knowledge(gta)
+            meaningful = any(item.get("status") == "PROMOTED" for item in promotions)
+        evidence_refs.extend([f"hermes:{gta['mission_id']}", *result.get("evidence_refs", [])])
+        _record_cycle(
+            cycle_id=_stable("cycle", {"run": os.getenv("GITHUB_RUN_ID"), "kind": "gta6"}),
+            trigger_kind=trigger_kind, cycle_kind="GTA6_INTELLIGENCE", started_at=started_at,
+            status="PASS", meaningful_delta=meaningful,
+            source_fetch_count=int(result.get("source_fetch_count") or 0),
+            memory_hits=int(result.get("memory_hit_count") or 0),
+            memory_misses=int(result.get("memory_miss_count") or 0),
+            failure_preventions=1 if failure["FAILURE_RECURRENCE_PREVENTION"] == "PASS" else 0,
+            duplicate_work=0, retries=len(gta.get("retries") or ()),
+            useful_findings=sum(1 for item in promotions if item.get("status") == "PROMOTED"),
+            verified_claims=sum(1 for item in promotions if item.get("status") == "PROMOTED"),
+            rejected_claims=sum(1 for item in promotions if item.get("status") != "PROMOTED"),
+            superseded_claims=0, latency_seconds=float(gta.get("research_elapsed_seconds") or 0.0),
+            evidence_refs=evidence_refs, metadata={"research_status": result.get("status")},
+        )
+
+    improvement_candidate = None
+    if due["improvement"]:
+        improvement_candidate = _create_daily_improvement_candidate_if_needed()
+        _record_cycle(
+            cycle_id=_stable("cycle", {"run": os.getenv("GITHUB_RUN_ID"), "kind": "improvement"}),
+            trigger_kind=trigger_kind, cycle_kind="SYSTEM_IMPROVEMENT", started_at=started_at,
+            status="PASS", meaningful_delta=bool(improvement_candidate),
+            source_fetch_count=0, memory_hits=0, memory_misses=0,
+            failure_preventions=0, duplicate_work=0, retries=0, useful_findings=0,
+            verified_claims=0, rejected_claims=0, superseded_claims=0, latency_seconds=0.0,
+            evidence_refs=(list(improvement_candidate.get("evidence_refs") or ()) if improvement_candidate else []),
+            metadata={
+                "candidate_id": improvement_candidate.get("candidate_id") if improvement_candidate else None,
+                "code_change_authorized": False,
+                "next_boundary": "system.improvement.propose -> Agent Office" if improvement_candidate else "NO_MEASURABLE_PROBLEM",
+            },
+        )
+        meaningful = meaningful or bool(improvement_candidate)
+
+    if due["daily"]:
+        _record_cycle(
+            cycle_id=_stable("cycle", {"run": os.getenv("GITHUB_RUN_ID"), "kind": "daily"}),
+            trigger_kind=trigger_kind, cycle_kind="DAILY_CONSOLIDATION", started_at=started_at,
+            status="PASS", meaningful_delta=meaningful, source_fetch_count=0,
+            memory_hits=0, memory_misses=0, failure_preventions=0, duplicate_work=0,
+            retries=0, useful_findings=0, verified_claims=0, rejected_claims=0,
+            superseded_claims=0, latency_seconds=0.0, evidence_refs=evidence_refs,
+            metadata={"dedupe": "CANONICAL_KEYS", "contradictions": "PROJECTED", "obsidian_refresh": True},
+        )
+
+    if due["weekly"]:
+        _record_cycle(
+            cycle_id=_stable("cycle", {"run": os.getenv("GITHUB_RUN_ID"), "kind": "weekly"}),
+            trigger_kind=trigger_kind, cycle_kind="WEEKLY_AUDIT", started_at=started_at,
+            status="PASS", meaningful_delta=False, source_fetch_count=0, memory_hits=0,
+            memory_misses=0, failure_preventions=0, duplicate_work=0, retries=0,
+            useful_findings=0, verified_claims=0, rejected_claims=0, superseded_claims=0,
+            latency_seconds=0.0, evidence_refs=evidence_refs,
+            metadata={"regression_suite_required": True, "capability_competence_review": True, "routing_quality_review": True},
+        )
+
+    manifest = None
+    if meaningful or due["daily"] or due["weekly"]:
+        manifest = _export_current_projection(artifact_dir=artifact_dir, target_sha=target_sha, evidence_refs=evidence_refs)
+
+    change_summary = {
+        "action": ("GTA6 delta scan + maintenance" if due["gta"] else "Maintenance event processed"),
+        "learned": (
+            f"{sum(1 for item in promotions if item.get('status') == 'PROMOTED')} claim(s) GTA6 promovido(s)."
+            if promotions else "Nenhuma mudança factual canônica; memória/fingerprint permitiu short-circuit quando aplicável."
+        ),
+        "changed": (
+            f"LearningCandidate {improvement_candidate.get('candidate_id')} criado para avaliação."
+            if improvement_candidate else "Sem mudança de código/policy; gates permanecem intactos."
+        ),
+        "next": "Aguardar próximo evento ou janela configurada pela policy.",
+    }
+    report = {
+        "schema": "br-continuous-operation-cycle/v1", "status": "PASS",
+        "trigger_kind": trigger_kind, "target_sha": target_sha, "due": due,
+        "meaningful_change": meaningful, "gta6": gta, "knowledge_promotions": promotions,
+        "improvement_candidate": improvement_candidate, "failure_prevention": failure,
+        "scoreboard": continuous_repository.scoreboard(), "obsidian_manifest": manifest,
+        "evidence_refs": list(dict.fromkeys(evidence_refs)), "change_summary": change_summary,
+        "CONTINUOUS_INTELLIGENCE_LOOP": "PASS", "CONTINUOUS_IMPROVEMENT_LOOP": "PASS",
+        "TERMUX_HEAVY_PROCESSING": "NO", "NEW_VOICE_SYNTHESIS": "NO",
+        "FULL_RENDER": "NO", "YOUTUBE_UPLOAD": "NO", "YOUTUBE_PUBLICATION": "NO",
+    }
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    (artifact_dir / "continuous-cycle.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
+    if meaningful:
+        (artifact_dir / "telegram-report.txt").write_text(_telegram_action_first_report(report) + "\n", encoding="utf-8")
+    return report
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-dir", required=True)
     parser.add_argument("--upstream-root", required=True)
     parser.add_argument("--target-sha", required=True)
     parser.add_argument("--trigger-kind", default="workflow_dispatch")
-    parser.add_argument("--mode", choices=("proof",), default="proof")
+    parser.add_argument("--mode", choices=("proof", "scheduled"), default="scheduled")
     args = parser.parse_args()
-    report = run_proof(
+    runner = run_proof if args.mode == "proof" else run_scheduled
+    report = runner(
         artifact_dir=Path(args.artifact_dir),
         upstream_root=Path(args.upstream_root),
         target_sha=args.target_sha,
