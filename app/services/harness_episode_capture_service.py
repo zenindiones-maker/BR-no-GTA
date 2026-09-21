@@ -189,6 +189,15 @@ def capture_canonical_execution_episode(
             "retrieved_human_feedback_ids": list(
                 learning_context.get("retrieved_human_feedback_ids") or ()
             ),
+            "retrieved_human_decision_ids": list(
+                learning_context.get("retrieved_human_decision_ids") or ()
+            ),
+            "bounded_memory_context": dict(
+                learning_context.get("bounded_memory_context") or {}
+            ),
+            "memory_retrieve_before_execution": (
+                learning_context.get("MEMORY_RETRIEVE_BEFORE_EXECUTION") == "PASS"
+            ),
             "competence_records": list(learning_context.get("competence_records") or ()),
             "active_skill_versions": list(learning_context.get("active_skill_versions") or ()),
             "active_policy_versions": list(learning_context.get("active_policy_versions") or ()),
