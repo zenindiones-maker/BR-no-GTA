@@ -135,6 +135,7 @@ class MissionPlanProposal:
     required_outcomes: tuple[str, ...]
     tasks: tuple[MissionTaskProposal, ...]
     rationale: str
+    context_usage_notes: tuple[str, ...]
     uncertainty: float
     needs_human_clarification: bool
     clarification_question: str | None = None
@@ -212,6 +213,11 @@ class MissionPlanProposal:
             required_outcomes=required_outcomes,
             tasks=tasks,
             rationale=_required_text(value.get("rationale"), "rationale", max_len=5000),
+            context_usage_notes=_string_tuple(
+                value.get("context_usage_notes"),
+                "context_usage_notes",
+                limit=16,
+            ),
             uncertainty=uncertainty,
             needs_human_clarification=needs_clarification,
             clarification_question=clarification,
@@ -241,6 +247,7 @@ class MissionPlanProposal:
             "required_outcomes": list(self.required_outcomes),
             "tasks": [task.to_dict() for task in self.tasks],
             "rationale": self.rationale,
+            "context_usage_notes": list(self.context_usage_notes),
             "uncertainty": self.uncertainty,
             "needs_human_clarification": self.needs_human_clarification,
             "clarification_question": self.clarification_question,
@@ -329,6 +336,7 @@ def build_semantic_planner_prompt(
             }
         ],
         "rationale": "why this decomposition fits this goal and current state",
+        "context_usage_notes": ["which conversation-state facts materially changed the plan; empty only if none were relevant"],
         "uncertainty": "0..1",
         "needs_human_clarification": False,
         "clarification_question": None,
@@ -348,7 +356,7 @@ describe the required capability semantically.
 Decompose the human goal into the minimum sufficient dynamic DAG, maximum {max_tasks} tasks. Avoid a generic fixed
 measure->root-cause->candidate->validate template unless the actual goal and evidence make every step necessary.
 Prefer observation before mutation when the problem is uncertain. Reuse validated memory/artifacts/checkpoints when
-relevant. Explicitly avoid known bad paths. Use competence evidence to propose sensible candidates, but never treat
+relevant. Record how relevant conversation state changed the plan in context_usage_notes. Explicitly avoid known bad paths. Use competence evidence to propose sensible candidates, but never treat
 competence as authorization. Require independent validation for risky or mutating work. Ask for human clarification
 only when a missing fact prevents a safe feasible plan; do not ask merely because uncertainty exists.
 Do not call a provider for deterministic status/control intents.
