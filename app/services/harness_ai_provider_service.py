@@ -229,21 +229,6 @@ def execute_harness_ai_generation(
     )
 
     selector_provider_name = provider_name or expected_provider
-    if selector is select_harness_ai_provider:
-        normalized_provider, provider = selector(
-            provider_name=selector_provider_name,
-            authorization=resolved_authorization,
-            routing_decision=decision,
-        )
-    else:
-        normalized_provider, provider = selector(
-            provider_name=selector_provider_name,
-            authorization=resolved_authorization,
-        )
-
-    if normalize_provider_id(normalized_provider) != expected_provider:
-        raise PermissionError("AI provider selector escaped Harness routing policy")
-
     started_at = _utcnow()
     started_perf = time.perf_counter()
     refs = _execution_evidence_refs(
@@ -251,11 +236,79 @@ def execute_harness_ai_generation(
         authorization=resolved_authorization,
         prompt=prompt,
     )
+    model = decision.selected_model
+
+    # Provider construction is part of provider execution.  Integrity/profile
+    # failures must become observed Harness evidence instead of escaping the
+    # boundary as raw PermissionError text to human-facing surfaces.
+    try:
+        if selector is select_harness_ai_provider:
+            normalized_provider, provider = selector(
+                provider_name=selector_provider_name,
+                authorization=resolved_authorization,
+                routing_decision=decision,
+            )
+        else:
+            normalized_provider, provider = selector(
+                provider_name=selector_provider_name,
+                authorization=resolved_authorization,
+            )
+    except Exception as exc:
+        finished_at = _utcnow()
+        latency = max(0.0, time.perf_counter() - started_perf)
+        message = _safe_error_message(exc)
+        lowered = message.casefold()
+        if (
+            expected_provider == "opencode"
+            and (
+                "checksum does not match executable code" in lowered
+                or "content_ref does not resolve to executable code" in lowered
+                or "profile conflicts with executable definition" in lowered
+            )
+        ):
+            code = "provider_profile_integrity_mismatch"
+            failure_pattern = "opencode_profile_integrity_mismatch"
+        else:
+            code = "provider_initialization_error"
+            failure_pattern = f"{expected_provider}_provider_initialization_error"
+        structured_error = {
+            "provider": expected_provider,
+            "model": model,
+            "code": code,
+            "status_code": None,
+            "retryable": False,
+            "message": message,
+            "error_type": type(exc).__name__,
+            "failure_pattern": failure_pattern,
+        }
+        return HarnessAIProviderEvidence(
+            provider=expected_provider,
+            status="FAILED",
+            active=False,
+            authority=resolved_authorization.authority,
+            authorized_action=resolved_authorization.authorized_action,
+            harness_decision_id=resolved_authorization.harness_decision_id,
+            execution_id=resolved_authorization.execution_id,
+            authorization_id=resolved_authorization.authorization_id,
+            error=structured_error,
+            routing=decision.to_dict(),
+            model=model,
+            executor_binding=decision.selected_provider_executor_binding,
+            started_at=started_at,
+            finished_at=finished_at,
+            latency_seconds=latency,
+            retry_count=0,
+            evidence_refs=refs,
+            performance={},
+        )
+
+    if normalize_provider_id(normalized_provider) != expected_provider:
+        raise PermissionError("AI provider selector escaped Harness routing policy")
+
     executor_binding = (
         getattr(provider, "executor_binding", None)
         or decision.selected_provider_executor_binding
     )
-    model = decision.selected_model
     profile = getattr(provider, "profile", None)
     profile_skill_id = profile.get("skill_id") if isinstance(profile, dict) else None
     profile_version = getattr(provider, "profile_version", None)
