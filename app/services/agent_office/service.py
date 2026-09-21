@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -76,26 +77,56 @@ class AgentOfficeService:
         task_allowed_tools = task.allowed_tools or spec.allowed_tools
         task_allowed_actions = task.allowed_actions or (task.action,)
 
-        def path_within_mission(path: str) -> bool:
+        def path_within(path: str, scope: tuple[str, ...]) -> bool:
             normalized = path.replace("\\", "/").strip("/")
             return any(
                 normalized == allowed.replace("\\", "/").strip("/")
-                or normalized.startswith(f"{allowed.replace('\\\\', '/').strip('/')}/")
-                for allowed in spec.allowed_paths
+                or normalized.startswith(
+                    f"{allowed.replace('\\\\', '/').strip('/')}/"
+                )
+                for allowed in scope
                 if allowed.strip("/")
             )
 
-        if task.allowed_paths and (
-            not spec.allowed_paths
-            or any(not path_within_mission(path) for path in task.allowed_paths)
-        ):
-            raise PermissionError("task allowed_paths exceed mission path scope")
+        mission_union = tuple(dict.fromkeys(
+            (*spec.mission_read_scope, *spec.mission_write_scope)
+        ))
+        out_of_scope_allowed = tuple(
+            path for path in task.allowed_paths
+            if not path_within(path, mission_union)
+        )
+        out_of_scope_read = tuple(
+            path for path in task.read_set
+            if not path_within(path, spec.mission_read_scope)
+        )
+        out_of_scope_write = tuple(
+            path for path in task.write_set
+            if not path_within(path, spec.mission_write_scope)
+        )
+
+        if out_of_scope_allowed or out_of_scope_read or out_of_scope_write:
+            evidence = {
+                "MISSION_PATH_SCOPE": {
+                    "read": list(spec.mission_read_scope),
+                    "write": list(spec.mission_write_scope),
+                },
+                "TASK_ID": task.task_id,
+                "TASK_CAPABILITY": task.capability,
+                "TASK_READ_SET": list(task.read_set),
+                "TASK_WRITE_SET": list(task.write_set),
+                "OUT_OF_SCOPE_READ_PATHS": list(out_of_scope_read),
+                "OUT_OF_SCOPE_WRITE_PATHS": list(out_of_scope_write),
+                "OUT_OF_SCOPE_ALLOWED_PATHS": list(out_of_scope_allowed),
+            }
+            for key, value in evidence.items():
+                print(f"{key}={json.dumps(value, sort_keys=True)}", flush=True)
+            raise PermissionError(
+                "REQUEST_SCOPE_EXPANSION: delegated task exceeds Harness mission path scope"
+            )
         if task.allowed_tools and any(tool not in spec.allowed_tools for tool in task.allowed_tools):
             raise PermissionError("task allowed_tools exceed mission tool scope")
         if any(action not in spec.allowed_actions for action in task_allowed_actions):
             raise PermissionError("task action exceeds mission delegated actions")
-        if spec.allowed_paths and any(not path_within_mission(path) for path in task.read_set):
-            raise PermissionError("task read_set exceeds mission path scope")
         forbidden = tuple(
             sorted(
                 set(spec.forbidden_actions)
