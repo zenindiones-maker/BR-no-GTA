@@ -452,6 +452,39 @@ def export_obsidian_memory_projection(
         ),
     ))
 
+    scoreboard = dict(system_state.get("system_health") or continuous_repository.scoreboard())
+    files.append(_write_markdown(
+        root,
+        "00-System/System-Health.md",
+        _markdown(
+            {
+                "status": "OBJECTIVE_METRICS",
+                "created_at": now,
+                "evidence_refs": evidence_refs,
+                "authority": "DEEPSEEK_HARNESS",
+            },
+            "System Health",
+            _objective_health_body(scoreboard),
+        ),
+    ))
+    active_gates = dict(system_state.get("active_gates") or {})
+    files.append(_write_markdown(
+        root,
+        "00-System/Active-Gates.md",
+        _markdown(
+            {
+                "status": "ACTIVE",
+                "created_at": now,
+                "authority": "DEEPSEEK_HARNESS",
+            },
+            "Active Gates",
+            "\n".join(
+                f"- **{key}**: {value}"
+                for key, value in sorted(active_gates.items())
+            ) or "Nenhum gate adicional informado.",
+        ),
+    ))
+
     decisions = learning_repository.list_canonical_human_decisions(limit=100)
     episodes = learning_repository.list_episodes(limit=200)
     for project_name, goal_id in project_goals.items():
@@ -523,12 +556,23 @@ def export_obsidian_memory_projection(
         memories.extend(learning_repository.list_memories(status=status, limit=100))
 
     for memory in memories:
+        metadata = dict(memory.get("metadata") or {})
         if memory.get("memory_type") == "FAILURE":
             relative = f"20-Learning/Failures/{memory['memory_id']}.md"
             title = f"Failure Memory — {memory.get('failure_pattern') or memory['memory_id']}"
         elif memory.get("status") == "CANDIDATE":
             relative = f"20-Learning/Improvements/{memory['memory_id']}.md"
             title = f"Memory Candidate — {memory['memory_id']}"
+        elif memory.get("status") == "SUPERSEDED":
+            relative = f"20-Learning/Superseded/{memory['memory_id']}.md"
+            title = f"Superseded Memory — {memory['memory_id']}"
+        elif memory.get("status") == "ACTIVE" and (
+            metadata.get("evaluation_id")
+            or metadata.get("memory_gate_decision") == "PROMOTE"
+            or metadata.get("promotion_authorization_id")
+        ):
+            relative = f"20-Learning/Promotions/{memory['memory_id']}.md"
+            title = f"Promoted Memory — {memory['memory_id']}"
         else:
             continue
         files.append(_write_markdown(
@@ -582,6 +626,41 @@ def export_obsidian_memory_projection(
             ) or "No persisted Hermes competence records.",
         ),
     ))
+
+    all_competence = learning_repository.list_competence(limit=300)
+    by_agent: dict[str, list[dict[str, Any]]] = {}
+    for item in all_competence:
+        by_agent.setdefault(str(item.get("agent_id") or "unknown-agent"), []).append(item)
+    for agent_id, rows in sorted(by_agent.items()):
+        refs = list(dict.fromkeys(
+            ref for row in rows for ref in (row.get("evidence_refs") or ())
+        ))[:40]
+        files.append(_write_markdown(
+            root,
+            f"30-Agents/{_safe_slug(agent_id)}/Competence.md",
+            _markdown(
+                {
+                    "agent_id": agent_id,
+                    "status": "OBSERVED_COMPETENCE",
+                    "created_at": now,
+                    "evidence_refs": refs,
+                },
+                f"{agent_id} — Observed Competence",
+                "\n\n".join([
+                    (
+                        f"## {row.get('capability_id')} / {row.get('task_class')}\n"
+                        f"Attempts: {row.get('tested_cases')} | "
+                        f"Successes: {row.get('success_count')} | "
+                        f"Failures: {row.get('failure_count')} | "
+                        f"Retries: {row.get('retry_count')} | "
+                        f"Status: {row.get('status')}"
+                    )
+                    for row in rows
+                ]),
+            ),
+        ))
+
+    files.extend(_knowledge_projection(root=root, now=now))
 
     for episode in episodes[:20]:
         files.append(_write_markdown(
