@@ -370,7 +370,7 @@ def plan_natural_language_action(
                 "pending_action": pending_action,
                 "artifact_ref": resolved_reference or state.get("active_artifact"),
             }
-        if any(term in text for term in ("continua de onde parou", "continue de onde parou", "continua a missao", "retoma", "retome")):
+        if text in {"continua", "continue"} or any(term in text for term in ("continua de onde parou", "continue de onde parou", "continua a missao", "retoma", "retome")):
             return {
                 "kind": "CONTINUE",
                 "authorized_action": "EXECUTION",
@@ -592,49 +592,15 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             message=message,
         )
 
-    if plan["kind"] == "SYSTEM_IMPROVEMENT_MISSION":
-        from app.services.telegram_system_improvement_dispatch_service import (
-            dispatch_telegram_system_improvement_mission,
+    if plan["kind"] in {"SYSTEM_IMPROVEMENT_MISSION", "HARNESS_MISSION"}:
+        from app.services.harness_mission_execution_router import (
+            execute_harness_mission_plan,
         )
-
-        return dispatch_telegram_system_improvement_mission(
+        return execute_harness_mission_plan(
             plan=plan,
             state=state,
             message=message,
         )
-
-    if plan["kind"] == "HARNESS_MISSION":
-        mission_plan = plan.get("mission_plan")
-        mission_goal = (
-            dict(mission_plan.get("goal") or {})
-            if isinstance(mission_plan, dict)
-            else {}
-        )
-        mission_class = str(mission_goal.get("mission_class") or "").strip()
-        if mission_class == "GTA6_INTELLIGENCE":
-            return execute_telegram_gta6_query(
-                query=str(mission_goal.get("human_goal") or message),
-                state=state,
-            )
-        if mission_class == "EDITORIAL":
-            from app.services.telegram_hermes_dispatch_service import (
-                dispatch_telegram_hermes_mission,
-            )
-            return dispatch_telegram_hermes_mission(
-                plan=plan,
-                state=state,
-                message=message,
-            )
-        return {
-            "status": "BLOCKED_PROVIDER",
-            "answer": (
-                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
-                "O Harness montou o objetivo, mas esta missão não possui um executor "
-                "determinístico completo e o provider semântico elegível está indisponível."
-            ),
-            "authority": "DEEPSEEK_HARNESS",
-            "provider_retry_performed": False,
-        }
 
     if plan["kind"] == "HERMES_COLLABORATION":
         from app.services.telegram_hermes_dispatch_service import (
