@@ -1,6 +1,7 @@
 {
-  "request": "telegram-pending-action-focused",
-  "source_head": "9e6679d7593e79351123bb50a6bc937e27a900af",
-  "requested_at": "2026-09-20T22:08:00-03:00",
-  "scope": "pending-action-persist-reload-approval-resume"
+  "request": "telegram-provider-free-status-real-regression",
+  "source_head": "26f61f0afdb89afc1ea16f080c289a82972463cd",
+  "scope": "stale-gateway-revision-proof-and-opencode-checksum-isolation",
+  "observed_real_error": "active OpenCode executor profile checksum does not match executable code",
+  "requested_at": "2026-09-20T22:20:00-03:00"
 }
