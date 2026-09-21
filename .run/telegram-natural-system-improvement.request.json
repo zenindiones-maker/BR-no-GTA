@@ -1,13 +1,30 @@
 {
-  "request": "natural-system-improvement-auth-control-live",
-  "source_head": "a5937eb649e669907784987ebb429cf6e845b866",
-  "original_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
-  "incident_child_run": 35633234932,
-  "focused_auth_run": 35644187623,
+  "request": "telegram-natural-system-improvement-live",
+  "natural_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
+  "source_head": "02e0dbcf57275be66d777ad882703e359260b35b",
+  "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
+  "previous_child_run": "35633234932_DO_NOT_RERUN",
+  "required_closed_loop": [
+    "Harness",
+    "MissionPlan",
+    "Hermes",
+    "Agent Office",
+    "Codex auth preflight",
+    "bounded worktree",
+    "real patch",
+    "independent review",
+    "tests",
+    "operational benchmark",
+    "baseline vs candidate",
+    "Harness decision",
+    "Learning Plane",
+    "next real execution",
+    "Telegram final result"
+  ],
   "preserve": {
-    "hermes": true,
-    "agent_office_scope": true,
-    "sandbox": true,
-    "zero_cost_operation": true
+    "NEW_VOICE_SYNTHESIS": "NO",
+    "FULL_RENDER": "NO",
+    "YOUTUBE_UPLOAD": "NO",
+    "YOUTUBE_PUBLICATION": "NO"
   }
 }
