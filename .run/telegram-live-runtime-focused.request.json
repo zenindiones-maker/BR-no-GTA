@@ -1,6 +1,12 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "5e2063dde7cc20300433e9b9513a0dc491de18da",
-  "observed_human_failure": "UNDERSTANDING without final human answer",
-  "scope": "a15-runtime-reconcile-status-silence-group-ingress-policy"
+  "source_head": "406eb8a73f0e3e457c50fd670b41ef467cc638f0",
+  "observed_human_failure": "stale UNDERSTANDING persisted as canonical RUNNING state",
+  "scope": "progress-telemetry-isolation-stale-state-reconciliation-final-send-observability",
+  "required": [
+    "STALE_PROGRESS_STATE_DETECTED",
+    "STALE_PROGRESS_STATE_RECONCILED",
+    "STATUS_PROVIDER_CALLS=0",
+    "FINAL_HUMAN_RESPONSE_SEND_OBSERVABILITY"
+  ]
 }
