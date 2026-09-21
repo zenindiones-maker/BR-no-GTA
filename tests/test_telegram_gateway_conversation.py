@@ -157,7 +157,9 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
     assert reply == "Estado lido deterministicamente."
     assert learned["input"]["id"] == 901
     assert result["intent"] == "STATUS_REQUEST"
+    assert calls["kwargs"]["telegram_user_id"] == 77
     assert calls["kwargs"]["telegram_chat_id"] == 7007
+    assert calls["kwargs"]["telegram_chat_type"] == "private"
     assert calls["kwargs"]["telegram_message_id"] == 88
     assert calls["kwargs"]["input_record"]["id"] == 901
     assert callable(calls["kwargs"]["progress_callback"])
@@ -200,3 +202,69 @@ def test_live_status_ignores_malformed_active_opencode_profile(monkeypatch):
     assert result["canonical_result"]["control_surface_status"]["provider_independent"] is True
     assert "checksum does not match" not in reply
     assert "FAILED" not in reply
+
+
+
+def test_live_status_sends_no_visible_progress_before_final_answer(monkeypatch):
+    api = FakeTelegramApi()
+    calls = {"provider": 0, "action": 0}
+
+    monkeypatch.setattr(
+        gateway_v2,
+        "_ingest",
+        lambda **kwargs: {
+            "input": {
+                "id": 9901,
+                "telegram_chat_id": kwargs["chat_id"],
+                "telegram_message_id": kwargs["message"]["message_id"],
+                "classification": "question",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "_present_chat_v2",
+        lambda canonical, input_record=None: {
+            "text": canonical.get("answer") or "OK",
+            "mode": "ACTION_FIRST",
+            "canonical_unchanged": True,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "record_telegram_presentation_audit",
+        lambda **kwargs: {
+            "telegram_input_id": kwargs["telegram_input_id"],
+            "reply_sha256": "status-no-progress",
+        },
+    )
+
+    def provider(*_args, **_kwargs):
+        calls["provider"] += 1
+        raise AssertionError("STATUS must not call ai.reasoning.text")
+
+    def action(*_args, **_kwargs):
+        calls["action"] += 1
+        raise AssertionError("STATUS must not call Hermes/action executor")
+
+    reply, _learned, result = gateway_v2._handle_live_natural_language_message(
+        api=api,
+        user_id=9902,
+        chat_id=9903,
+        chat_type="private",
+        message={"message_id": 9904},
+        update_id=9905,
+        text="Onde estamos?",
+        chat_handler=provider,
+        action_executor=action,
+    )
+
+    assert result["intent"] == "STATUS_REQUEST"
+    assert result["plan"]["kind"] == "STATUS"
+    assert result["TELEGRAM_USER_ID_PROPAGATED"] == "PASS"
+    assert result["TELEGRAM_CHAT_TYPE_PROPAGATED"] == "PASS"
+    assert calls == {"provider": 0, "action": 0}
+    assert api.sent == []
+    assert "UNDERSTANDING" not in reply
+    assert reply.strip()
