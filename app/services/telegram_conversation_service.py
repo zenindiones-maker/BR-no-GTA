@@ -28,6 +28,9 @@ from app.services.telegram_harness_service import (
 from app.services.telegram_control_surface_status import (
     build_harness_control_surface_status,
 )
+from app.services.telegram_status_reconciliation_service import (
+    reconcile_stale_progress_state,
+)
 
 
 INTENTS = {
@@ -586,32 +589,83 @@ def _deterministic_research_answer(result: dict[str, Any]) -> str:
 
 
 def _status_answer(state: dict[str, Any]) -> str:
-    status = str(state.get("execution_status") or "IDLE")
-    stage = str(state.get("active_stage") or "").strip()
     task = str(state.get("active_task") or "").strip()
     goal = str(state.get("active_goal_id") or "").strip()
+    project = str(state.get("active_project") or "BR-no-GTA").strip()
+    subject = str(state.get("current_subject") or "").strip()
     run_id = str(state.get("active_run_id") or "").strip()
     blocker = str(state.get("active_blocker") or "").strip()
     waiting = bool(state.get("waiting_for_human"))
+    active = bool(state.get("canonical_execution_active"))
+    stage = str(state.get("active_stage") or "").strip()
+    latest = state.get("latest_canonical_result")
+    latest = latest if isinstance(latest, dict) else {}
+    latest_status = str(
+        _extract_identity(latest, "status", "execution_status", "run_status")
+        or ""
+    ).strip().upper()
+    latest_capability = str(
+        _extract_identity(latest, "capability_id")
+        or ""
+    ).strip()
+
     if waiting:
-        target = str(state.get("pending_human_review") or state.get("pending_question") or "decisão pendente")
+        target = str(
+            state.get("pending_human_review")
+            or state.get("pending_question")
+            or "decisão pendente"
+        )
         mission = str(state.get("hermes_mission_id") or "").strip()
-        suffix = f" Missão Hermes: {mission}." if mission else ""
-        return f"Estou aguardando você: {target}.{suffix} Nenhuma execução passa por cima dessa decisão."
-    if status in {"RUNNING", "IN_PROGRESS"}:
-        details = [item for item in (task, f"etapa {stage}" if stage else "", f"run {run_id}" if run_id else "") if item]
-        text = "Estou executando " + (" — ".join(details) if details else "a tarefa ativa") + "."
+        suffix = f" Missão: {mission}." if mission else ""
+        return (
+            f"Estamos no projeto {project}. Estou aguardando você sobre {target}."
+            f"{suffix} Nenhuma execução passa por cima dessa decisão."
+        )
+
+    if active:
+        details = [
+            item
+            for item in (
+                task,
+                f"etapa {stage}" if stage else "",
+                f"run {run_id}" if run_id else "",
+            )
+            if item
+        ]
+        text = "Há uma execução real ativa"
+        if details:
+            text += ": " + " — ".join(details)
+        text += "."
         if blocker:
             text += f" Blocker atual: {blocker}."
         return text
+
+    parts = [f"Estamos no projeto {project}."]
+    if goal:
+        parts.append(f"Goal atual: {goal}.")
+    if task:
+        parts.append(f"Contexto de trabalho: {task}.")
+    elif subject:
+        parts.append(f"Contexto atual: {subject}.")
+    if latest_status:
+        capability_suffix = (
+            f" pela capability {latest_capability}"
+            if latest_capability
+            else ""
+        )
+        parts.append(
+            f"Último resultado canônico: {latest_status}{capability_suffix}."
+        )
+    if run_id:
+        parts.append(f"Último run conhecido: {run_id}.")
     if blocker:
-        auth = state.get("latest_harness_authorization")
-        capability = auth.get("capability_id") if isinstance(auth, dict) else None
-        suffix = f" Última capability autorizada: {capability}." if capability else ""
-        return f"Estou parado por um blocker real: {blocker}.{suffix}"
-    if task or goal:
-        return f"Não há etapa rodando agora. A tarefa ativa é {task or goal}; posso continuar dela sem você repetir IDs."
-    return "Não há run nem tarefa ativa registrada nesta conversa agora."
+        parts.append(f"Blocker registrado: {blocker}.")
+    if state.get("stale_progress_state_reconciled"):
+        parts.append(
+            "Um estado antigo de progresso foi reconciliado porque não havia execução real correspondente."
+        )
+    parts.append("Não há execução ativa neste momento.")
+    return " ".join(parts)
 
 
 def _resolve_script_for_presentation(reference: str | None) -> dict[str, Any] | None:
@@ -727,16 +781,34 @@ def handle_telegram_conversation(
     pending_action_consumed = False
     if plan["kind"] == "STATUS":
         state = get_or_create_conversation_state(telegram_chat_id)
+        reconciliation = reconcile_stale_progress_state(
+            telegram_chat_id,
+            state=state,
+        )
+        state = dict(reconciliation["state"])
         control_surface_status = build_harness_control_surface_status(
             telegram_chat_id,
             state=state,
         )
+        control_surface_status.update({
+            "stale_progress_state_detected": bool(reconciliation["detected"]),
+            "stale_progress_state_reconciled": bool(reconciliation["reconciled"]),
+        })
         canonical = {
             "status": "OBSERVED",
             "answer": _status_answer(control_surface_status),
             "intent": intent,
             "conversation_state": state,
             "control_surface_status": control_surface_status,
+            "STALE_PROGRESS_STATE_DETECTED": (
+                "PASS" if reconciliation["detected"] else "NOT_PRESENT"
+            ),
+            "STALE_PROGRESS_STATE_RECONCILED": (
+                "PASS" if reconciliation["reconciled"] else "NOT_REQUIRED"
+            ),
+            "STATUS_PROVIDER_CALLS": 0,
+            "STATUS_OPENCODE_CALLS": 0,
+            "STATUS_HERMES_CALLS": 0,
         }
     elif plan["kind"] == "MEMORY_RECALL":
         state = get_or_create_conversation_state(telegram_chat_id)
