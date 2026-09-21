@@ -1,7 +1,9 @@
 {
   "request": "obsidian-memory-plane-validation",
-  "source_head": "e4ca7783b032c69ebf1f9420c1de52c31c373ac1",
-  "scope": "canonical-memory-retrieve-execute-observe-evaluate-promote-obsidian-projection",
+  "source_head": "5621dd002e425160c43ea101f33dca7ae694f273",
+  "scope": "rerun-after-json-context-contract-fix",
+  "prior_run": 35553816279,
+  "prior_failure": "HERMES_MEMORY_CONTEXT tuple/list serialization boundary",
   "android_vault_access": "FORBIDDEN",
   "termux_heavy_processing": "NO"
 }
