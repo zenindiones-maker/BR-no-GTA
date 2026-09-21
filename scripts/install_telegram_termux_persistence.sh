@@ -106,7 +106,9 @@ sleep 1
 if bash "${CONTROL}" status >/dev/null 2>&1; then
   gateway_state="RUNNING"
 else
-  bash "${CONTROL}" start >>"${SUPERVISOR_LOG}" 2>&1 || true
+  # Installation/upgrade must converge runtime + local HEAD + remote HEAD.
+  # start alone can legitimately adopt a process that matches an old local HEAD.
+  bash "${CONTROL}" reconcile >>"${SUPERVISOR_LOG}" 2>&1 || true
   if bash "${CONTROL}" status >/dev/null 2>&1; then
     gateway_state="RUNNING"
   else
