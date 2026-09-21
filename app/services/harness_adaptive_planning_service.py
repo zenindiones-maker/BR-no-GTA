@@ -98,17 +98,16 @@ def compact_competence(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_REGISTRY_CANDIDATE_LIMIT = 18
-_PER_ACTION_DISCOVERY_LIMIT = 5
+_REGISTRY_CANDIDATE_LIMIT = 10
 _RELEVANT_MEMORY_LIMIT = 8
 _RELEVANT_HISTORY_LIMIT = 8
 _RELEVANT_DECISION_LIMIT = 6
-_COMPETENCE_LIMIT = 24
+_COMPETENCE_LIMIT = 16
 
 _MISSION_RETRIEVAL_TERMS = {
     "SYSTEM_IMPROVEMENT": (
         "system improvement performance latency observability profiling debugging "
-        "analysis optimization development review testing benchmark reliability"
+        "optimization development review testing benchmark reliability root cause"
     ),
     "GTA6_INTELLIGENCE": (
         "gta6 research evidence fact check source verification analysis editorial"
@@ -127,17 +126,14 @@ def _compact_registry_record(record: Any) -> dict[str, Any]:
         "capability_id": record.capability_id,
         "capability_type": record.capability_type,
         "domain": record.domain,
-        "implementation": str(record.implementation or "")[:280],
-        "output_contract": str(record.output_contract or "")[:240],
         "allowed_actions": list(record.allowed_actions),
-        "policy_tags": list(record.policy_tags)[:10],
+        "policy_tags": list(record.policy_tags)[:6],
+        "output_contract": str(record.output_contract or "")[:140],
         "cost_class": record.cost_class,
         "latency_class": record.latency_class,
-        "quality_class": record.quality_class,
-        "version": record.version,
-        "agent_id": record.agent_id,
-        "skill_id": record.skill_id,
-        "side_effects": list(record.side_effects)[:6],
+        "side_effect_class": (
+            "NONE" if not record.side_effects else "HAS_SIDE_EFFECTS"
+        ),
     }
 
 
@@ -158,54 +154,153 @@ def _registry_retrieval_query(goal: dict[str, Any]) -> str:
     )
 
 
+def _registry_search_text(record: Any) -> str:
+    return " ".join(
+        [
+            record.capability_id,
+            record.capability_type,
+            record.domain,
+            record.implementation,
+            record.input_contract,
+            record.output_contract,
+            " ".join(record.allowed_actions),
+            " ".join(record.policy_tags),
+            str(record.agent_id or ""),
+            str(record.skill_id or ""),
+        ]
+    )
+
+
 def _relevant_registry_summary(
     goal: dict[str, Any],
     *,
     referenced_capability_ids: tuple[str, ...] = (),
     limit: int = _REGISTRY_CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
-    limit = max(6, min(int(limit), 30))
+    limit = max(6, min(int(limit), 16))
+    mission_class = str(goal.get("mission_class") or "OPEN_SEMANTIC").upper()
+    direct_tokens = _tokens(
+        goal.get("human_goal"),
+        goal.get("subject"),
+        goal.get("project"),
+    )
+    mission_tokens = _tokens(
+        mission_class.replace("_", " "),
+        _MISSION_RETRIEVAL_TERMS.get(
+            mission_class,
+            _MISSION_RETRIEVAL_TERMS["OPEN_SEMANTIC"],
+        ),
+    )
     query = _registry_retrieval_query(goal)
-    ordered_ids: list[str] = []
 
-    def add(capability_id: Any) -> None:
-        value = str(capability_id or "").strip()
-        if not value or value in ordered_ids:
-            return
-        record = GLOBAL_CAPABILITY_REGISTRY.get(value)
-        if record is None or record.capability_type == "PROVIDER" or not record.execution_enabled:
-            return
-        ordered_ids.append(value)
-
+    referenced: list[str] = []
     for capability_id in referenced_capability_ids:
-        add(capability_id)
+        value = str(capability_id or "").strip()
+        record = GLOBAL_CAPABILITY_REGISTRY.get(value)
+        if (
+            value
+            and value not in referenced
+            and record is not None
+            and record.capability_type != "PROVIDER"
+            and record.execution_enabled
+        ):
+            referenced.append(value)
 
-    # Preserve action diversity without sending the complete Registry. This is
-    # deterministic retrieval only; Harness still validates proposals against
-    # the complete canonical Registry after inference.
-    for action in ("DEVELOPMENT", "RESEARCH", "EXECUTION", "EDITORIAL", "DECISION"):
+    discovered_ids = [
+        str(item.get("capability_id") or "")
         for item in GLOBAL_CAPABILITY_REGISTRY.discover(
             intent=query,
-            authorized_action=action,
-            limit=_PER_ACTION_DISCOVERY_LIMIT,
-        ):
-            add(item.get("capability_id"))
-            if len(ordered_ids) >= limit:
-                break
-        if len(ordered_ids) >= limit:
-            break
-
-    if len(ordered_ids) < limit:
-        for item in GLOBAL_CAPABILITY_REGISTRY.discover(intent=query, limit=limit):
-            add(item.get("capability_id"))
-            if len(ordered_ids) >= limit:
-                break
-
-    return [
-        _compact_registry_record(GLOBAL_CAPABILITY_REGISTRY.get(capability_id))
-        for capability_id in ordered_ids[:limit]
-        if GLOBAL_CAPABILITY_REGISTRY.get(capability_id) is not None
+            limit=48,
+        )
+        if str(item.get("capability_id") or "")
     ]
+    ranked: list[tuple[float, str, Any]] = []
+    seen: set[str] = set()
+    for capability_id in [*referenced, *discovered_ids]:
+        if capability_id in seen:
+            continue
+        seen.add(capability_id)
+        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        if (
+            record is None
+            or record.capability_type == "PROVIDER"
+            or not record.execution_enabled
+        ):
+            continue
+        metadata_tokens = _tokens(_registry_search_text(record))
+        direct_overlap = len(metadata_tokens & direct_tokens)
+        mission_overlap = len(metadata_tokens & mission_tokens)
+        reference_bonus = 100.0 if capability_id in referenced else 0.0
+        score = reference_bonus + 5.0 * direct_overlap + float(mission_overlap)
+        if score <= 0.0:
+            continue
+        ranked.append((-score, capability_id, record))
+
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    selected = ranked[:limit]
+
+    # Fail-open for retrieval breadth, never for authorization: if lexical
+    # retrieval is unusually sparse, fill only to six executable candidates.
+    # DeepSeek Harness still validates every proposed ID against the complete
+    # canonical Registry after inference.
+    if len(selected) < min(6, limit):
+        selected_ids = {item[1] for item in selected}
+        for item in GLOBAL_CAPABILITY_REGISTRY.discover(
+            intent=_MISSION_RETRIEVAL_TERMS.get(
+                mission_class,
+                _MISSION_RETRIEVAL_TERMS["OPEN_SEMANTIC"],
+            ),
+            limit=16,
+        ):
+            capability_id = str(item.get("capability_id") or "")
+            if not capability_id or capability_id in selected_ids:
+                continue
+            record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+            if (
+                record is None
+                or record.capability_type == "PROVIDER"
+                or not record.execution_enabled
+            ):
+                continue
+            selected.append((0.0, capability_id, record))
+            selected_ids.add(capability_id)
+            if len(selected) >= min(6, limit):
+                break
+
+    return [_compact_registry_record(item[2]) for item in selected[:limit]]
+
+
+def _compact_provider_health(provider_health: dict[str, Any]) -> dict[str, Any]:
+    providers = []
+    for item in provider_health.get("providers") or ():
+        if not isinstance(item, dict):
+            continue
+        providers.append({
+            "provider_id": item.get("provider_id"),
+            "state": item.get("state"),
+            "reason": str(item.get("reason") or "")[:180],
+            "retry_allowed": bool(item.get("retry_allowed")),
+            "zero_cost_eligible": bool(item.get("zero_cost_eligible")),
+            "evidence_refs": list(item.get("evidence_refs") or ())[:2],
+        })
+    opencode = dict(provider_health.get("opencode") or {})
+    return {
+        "semantic_reasoning_available": bool(
+            provider_health.get("semantic_reasoning_available")
+        ),
+        "eligible_zero_cost_provider_ids": list(
+            provider_health.get("eligible_zero_cost_provider_ids") or ()
+        ),
+        "providers": providers,
+        "opencode": {
+            "provider_id": opencode.get("provider_id"),
+            "state": opencode.get("state"),
+            "reason": str(opencode.get("reason") or "")[:180],
+            "retry_allowed": bool(opencode.get("retry_allowed")),
+            "zero_cost_eligible": bool(opencode.get("zero_cost_eligible")),
+            "evidence_refs": list(opencode.get("evidence_refs") or ())[:2],
+        },
+    }
 
 
 def _compact_bounded_memory_for_prompt(
@@ -444,7 +539,7 @@ def build_semantic_planning_context(
             }
             for item in decisions[:_RELEVANT_DECISION_LIMIT]
         ],
-        "provider_health": dict(provider_health),
+        "provider_health": _compact_provider_health(provider_health),
         "registry_summary": registry_summary,
         "competence_evidence": competence[:_COMPETENCE_LIMIT],
         "resource_bounds": dict(resource_bounds),
