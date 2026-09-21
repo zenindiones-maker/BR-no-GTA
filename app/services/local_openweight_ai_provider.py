@@ -52,8 +52,7 @@ def _rate(count, duration_ns):
 
 def _is_structured_semantic_planner_prompt(value: str) -> bool:
     return (
-        "MissionPlan only" in value
-        and "OUTPUT_CONTRACT=" in value
+        "MissionPlan proposal only" in value
         and "CONTEXT=" in value
     )
 
