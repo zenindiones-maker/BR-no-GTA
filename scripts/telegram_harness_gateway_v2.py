@@ -177,22 +177,24 @@ def _reasoning_failure_presentation(
     payload = exc.to_dict()
     error = payload.get("provider_error")
     error = error if isinstance(error, dict) else {}
+    technical_code = str(error.get("code") or "provider_failure")
     canonical_failure = {
-        "status": "FAILED",
+        "status": "BLOCKED",
         "success": False,
         "error": {
-            "code": str(error.get("code") or "provider_failure"),
-            "message": str(
-                error.get("message")
-                or error.get("safe_message")
-                or "Falha observada no executor de raciocínio."
+            "code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+            "message": (
+                "O raciocínio semântico está indisponível no provider elegível. "
+                "O diagnóstico técnico completo foi preservado em /evidence."
             ),
         },
         "answer": (
             "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
-            "A tarefa exige raciocínio semântico e nenhum provider elegível está disponível agora. "
-            "Status e controles determinísticos continuam funcionando."
+            "Esta mensagem exige raciocínio semântico e nenhum provider elegível está saudável agora. "
+            "Status, memória, aprovações e controles determinísticos continuam funcionando."
         ),
+        "technical_failure_code": technical_code,
+        "technical_failure_preserved": True,
     }
     return present_canonical_result_under_harness(
         canonical_failure,
