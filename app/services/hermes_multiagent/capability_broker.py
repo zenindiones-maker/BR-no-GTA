@@ -394,7 +394,7 @@ class HermesHarnessCapabilityBroker:
         if not normalized:
             raise ValueError("human question is required")
         board_task_id = self.task_mapping[task_id]
-        if not self.board.block(board_task_id, reason=normalized, run_id=run_id, kind="human_input"):
+        if not self.board.block(board_task_id, reason=normalized, run_id=run_id, kind="needs_input"):
             raise RuntimeError("Hermes task could not enter human-input block")
         item = {
             "mission_id": self.spec.mission_id,
