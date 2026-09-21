@@ -1,0 +1,9 @@
+{
+  "request": "telegram-query-intelligence-focused",
+  "source_head": "667ed33a1757bb80523b71e98b49b902f315abcc",
+  "observed_human_failure": [
+    "Pesquisa sobre gta 6 returned generic canonical metadata",
+    "Tudo sobre gta 6 did not preserve the human information goal"
+  ],
+  "scope": "exact-query-fresh-research-fact-check-human-result"
+}
