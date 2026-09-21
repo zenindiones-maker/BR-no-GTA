@@ -1,6 +1,8 @@
 {
-  "request": "telegram-conversational-control-validation",
-  "source_head": "e9a42afbbd1dd0abdbc8ff7ab9401971b9783e34",
-  "requested_at": "2026-09-20T21:04:00Z",
-  "attempt": 3
+  "request": "telegram-system-synergy-live-gateway-validation",
+  "source_head": "dcebdebcf7c8e9b96bbc15eaa1e0c3c0fc01addf",
+  "requested_at": "2026-09-20T23:55:00-03:00",
+  "attempt": 4,
+  "scope": "live-gateway-conversation-service-harness-hermes-human-loop",
+  "opencode_policy": "contain-external-403-no-bypass"
 }
