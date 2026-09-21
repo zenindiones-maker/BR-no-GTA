@@ -85,6 +85,16 @@ jobs:
           mkdir -p artifacts/dynamic-system-improvement .runtime
           echo "AUTH_PREFLIGHT_BEFORE_HEAVY_BOOTSTRAP=PASS"
 
+      - name: Install minimal auth-control Python dependency
+        working-directory: target
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input python-dotenv==1.2.2
+          python - <<'PY'
+          import dotenv
+          print("AUTH_CONTROL_MINIMAL_PYTHON_RUNTIME=PASS")
+          PY
+
       - name: Prepare isolated Codex home
         working-directory: target
         run: |
