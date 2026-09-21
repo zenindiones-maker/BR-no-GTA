@@ -37,6 +37,7 @@ from app.services.telegram_control_surface_status import (
 from app.services.telegram_status_reconciliation_service import (
     reconcile_stale_progress_state,
 )
+from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
 
 
 INTENTS = {
@@ -148,6 +149,18 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "pesquisa", "pesquise", "procura", "procure", "investiga", "investigue",
         "ultimas informacoes", "ultimas noticias", "verifica nas fontes",
     )):
+        return "RESEARCH_REQUEST"
+    gta_subject = any(term in text for term in (
+        "gta 6", "gta6", "gta vi", "grand theft auto vi", "vice city",
+        "leonida", "lucia", "jason",
+    ))
+    information_goal = (
+        text.startswith(("tudo sobre ", "me fala sobre ", "me fale sobre ", "me conta sobre ",
+                         "me conte sobre ", "quero saber sobre ", "o que se sabe sobre ",
+                         "oque se sabe sobre ", "o que sabemos sobre ", "oque sabemos sobre "))
+        or any(term in text for term in ("o que voce sabe sobre", "oque voce sabe sobre"))
+    )
+    if gta_subject and information_goal:
         return "RESEARCH_REQUEST"
     if any(term in text for term in (
         "continua de onde parou", "continue de onde parou", "continua a missao",
@@ -287,10 +300,21 @@ def plan_natural_language_action(
     if intent == "MEMORY_RECALL_REQUEST":
         return {"kind": "MEMORY_RECALL", "authorized_action": "DECISION"}
     if intent == "RESEARCH_REQUEST":
+        goal_envelope = build_goal_envelope(
+            human_goal=message,
+            project=str(state.get("active_project") or "BR-no-GTA"),
+            goal_id=str(state.get("active_goal_id") or "telegram-gta6-research"),
+            subject=str(state.get("current_subject") or "").strip() or None,
+            source_surface="telegram",
+        )
         return {
-            "kind": "RESEARCH_PIPELINE",
+            "kind": "QUERY_RESEARCH",
             "authorized_action": "RESEARCH",
-            "capability_id": "gta6.research",
+            "capability_id": "gta6.research.fresh-cloud",
+            "query": message,
+            "goal_envelope": goal_envelope.to_dict(),
+            "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
+            "collaboration_runtime": "HERMES_WHEN_MULTI_AGENT_REQUIRED",
         }
     if intent == "CANCEL_REQUEST":
         return {"kind": "CANCEL", "authorized_action": "DECISION"}
@@ -359,8 +383,8 @@ def plan_natural_language_action(
                     "active_goal_id": state.get("active_goal_id"),
                     "goal_envelope": goal_envelope.to_dict(),
                     "mission_plan": mission_plan.to_dict(),
-                    "mission_planner": "DEEPSEEK_HARNESS",
-                    "collaboration_runtime": "HERMES",
+                    "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
+                    "collaboration_runtime": "HERMES_WHEN_MULTI_AGENT_REQUIRED",
                 }
             return {
                 "kind": "HARNESS_MISSION",
@@ -369,9 +393,9 @@ def plan_natural_language_action(
                 "active_goal_id": state.get("active_goal_id"),
                 "goal_envelope": goal_envelope.to_dict(),
                 "mission_plan": mission_plan.to_dict(),
-                "mission_planner": "DEEPSEEK_HARNESS",
+                "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
                 "collaboration_runtime": (
-                    "HERMES" if len(mission_plan.collaboration_plan.tasks) > 1 else None
+                    "HERMES_WHEN_MULTI_AGENT_REQUIRED" if len(mission_plan.collaboration_plan.tasks) > 1 else None
                 ),
             }
 
@@ -542,6 +566,12 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             plan=plan,
             state=state,
             message=message,
+        )
+
+    if plan["kind"] == "QUERY_RESEARCH":
+        return execute_telegram_gta6_query(
+            query=str(plan.get("query") or message),
+            state=state,
         )
 
     if plan["kind"] in {"CAPABILITY", "RESEARCH_PIPELINE"}:
@@ -1039,6 +1069,26 @@ def handle_telegram_conversation(
                 "script_version": script.get("version"),
                 "script_status": script.get("status"),
             }
+    elif plan["kind"] == "QUERY_RESEARCH":
+        state = update_conversation_state(
+            telegram_chat_id,
+            execution_status="RUNNING",
+            active_stage="RESEARCH",
+            active_task=text[:240],
+            active_blocker=None,
+            waiting_for_human=False,
+        )
+        if progress_callback is not None:
+            progress_callback(
+                "RESEARCH",
+                "Pesquisando exatamente o seu pedido em fontes GTA 6 governadas pelo Harness.",
+            )
+        canonical = _parse_result(action_executor(plan, state, text))
+        if progress_callback is not None:
+            progress_callback(
+                "RESULT",
+                "Pesquisa e fact-check concluídos; preparando o resultado humano com evidência.",
+            )
     elif plan["kind"] == "RESEARCH_PIPELINE":
         state = update_conversation_state(
             telegram_chat_id,
