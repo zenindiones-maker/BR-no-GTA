@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import threading
 import time
@@ -168,11 +169,15 @@ def _preflight(goal) -> tuple[dict[str, Any], str, dict[str, Any]]:
         "num_ctx": num_ctx,
         "num_predict": selected_num_predict,
         "structured_json_mode": True,
+        "structured_json_schema_mode": str(
+            os.getenv("BR_LOCAL_SEMANTIC_SCHEMA") or ""
+        ).strip() in {"1", "true", "TRUE", "yes", "YES"},
         "context_retrieval": retrieval,
     }
 
 
 def _print_report(report: dict[str, Any]) -> None:
+    print("COLD_START_PROPOSAL=YES")
     print("STATUS=" + str(report.get("status")))
     print("FAILURE_STAGE=" + str(report.get("failure_stage")))
     print("ERROR_CODE=" + str(report.get("error_code")))
@@ -188,6 +193,11 @@ def _print_report(report: dict[str, Any]) -> None:
     print("MEMORIES_USED=" + str(report.get("memories_used")))
     print("NUM_CTX=" + str(report.get("num_ctx")))
     print("NUM_PREDICT=" + str(report.get("num_predict")))
+    print("FINISH_REASON=" + str(report.get("finish_reason")))
+    print(
+        "OUTPUT_TRUNCATED="
+        + ("YES" if report.get("output_truncated") else "NO")
+    )
     print(
         "INFERENCE_LATENCY_SECONDS="
         + f"{float(report.get('inference_latency_seconds') or 0.0):.3f}"
@@ -205,6 +215,14 @@ def _print_report(report: dict[str, Any]) -> None:
     print("GENERATED_TOKENS=" + str(report.get("generated_tokens")))
     print("PEAK_RSS_MB=" + f"{float(report.get('peak_rss_mb') or 0.0):.3f}")
     print("PEAK_CPU=" + f"{float(report.get('peak_cpu') or 0.0):.3f}")
+    print(
+        "STRICT_JSON_VALID="
+        + ("PASS" if report.get("strict_json_valid") else "FAIL")
+    )
+    print(
+        "MISSION_PLAN_SCHEMA_VALID="
+        + ("PASS" if report.get("mission_plan_schema_valid") else "FAIL")
+    )
     print(
         "SEMANTIC_PLAN_JSON_VALID="
         + ("PASS" if report.get("semantic_plan_json_valid") else "FAIL")
@@ -259,6 +277,10 @@ def run(output: Path) -> dict[str, Any]:
         "load_duration_seconds": None,
         "total_duration_seconds": None,
         "time_to_first_token_seconds": None,
+        "finish_reason": None,
+        "output_truncated": None,
+        "strict_json_valid": False,
+        "mission_plan_schema_valid": False,
         "peak_rss_mb": None,
         "peak_cpu": None,
         "average_host_cpu_percent": None,
@@ -339,7 +361,14 @@ def run(output: Path) -> dict[str, Any]:
             provider.get("provider") == LOCAL_OPENWEIGHT_PROVIDER_ID
             and provider.get("status") == "EXECUTED"
         )
-        json_valid = bool(plan.semantic_plan_proposal)
+        schema_valid = bool(plan.semantic_plan_proposal)
+        strict_json_valid = bool(provider.get("strict_json_valid"))
+        finish_reason = str(
+            provider.get("finish_reason")
+            or performance.get("finish_reason")
+            or ""
+        ) or None
+        output_truncated = bool(performance.get("output_truncated"))
         bounded_latency = latency < 180.0
         pass_all = all((
             plan.planning_mode == "SEMANTIC_ADAPTIVE",
@@ -347,9 +376,12 @@ def run(output: Path) -> dict[str, Any]:
             int(performance.get("prompt_bytes") or report["prompt_bytes"]) > 0,
             isinstance(usage.get("prompt_tokens"), int)
             and int(usage.get("prompt_tokens") or 0) > 0,
-            int(retrieval.get("registry_candidates") or 0) <= 18,
-            json_valid,
+            int(retrieval.get("registry_candidates") or 0) <= 10,
+            strict_json_valid,
+            schema_valid,
             registry_ok,
+            finish_reason == "stop",
+            not output_truncated,
             bounded_latency,
         ))
         report.update({
@@ -388,7 +420,15 @@ def run(output: Path) -> dict[str, Any]:
                 "structured_json_mode",
                 report["structured_json_mode"],
             ),
-            "semantic_plan_json_valid": json_valid,
+            "structured_json_schema_mode": performance.get(
+                "structured_json_schema_mode",
+                report["structured_json_schema_mode"],
+            ),
+            "finish_reason": finish_reason,
+            "output_truncated": output_truncated,
+            "strict_json_valid": strict_json_valid,
+            "mission_plan_schema_valid": schema_valid,
+            "semantic_plan_json_valid": schema_valid,
             "registry_validation": registry_ok,
             "registry_validation_errors": registry_errors,
             "task_ids": [
