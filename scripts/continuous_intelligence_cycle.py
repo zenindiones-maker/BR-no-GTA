@@ -936,6 +936,18 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
         "cycle": cycle,
         "scoreboard": scoreboard,
         "obsidian_manifest": manifest,
+        "evidence_refs": list(cycle.get("evidence_refs") or ()),
+        "change_summary": {
+            "action": "Missão live GTA6 executada sob DeepSeek Harness com Hermes, research e fact-check.",
+            "learned": (
+                f"{verified_claims} claim(s) oficial(is) de GTA6 verificado(s) e passado(s) pelo knowledge gate."
+            ),
+            "changed": (
+                f"Candidate {candidate['candidate_id']} foi avaliado como {evaluation['decision']}; "
+                "a execução seguinte usou o aprendizado para evitar pesquisa duplicada."
+            ),
+            "next": "Persistir checkpoint e validar a próxima execução em runner novo pelo ciclo scheduled.",
+        },
         "checks": checks,
         "NEW_VOICE_SYNTHESIS": "NO",
         "FULL_RENDER": "NO",
@@ -945,6 +957,10 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "continuous-operation-proof.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "telegram-report.txt").write_text(
+        _telegram_action_first_report(report) + "\n",
         encoding="utf-8",
     )
     if report["status"] != "PASS":
