@@ -37,19 +37,13 @@ def semantic_text_only_config() -> dict[str, Any]:
         "permissions": deny_all,
         "agents": {
             OPENCODE_SEMANTIC_AGENT_ID: {
-                "description": (
-                    "BR-no-GTA Harness semantic text-only override of the official build agent. "
-                    "No tools, no filesystem, no shell, no browser, no network."
-                ),
+                # Preserve the official built-in build system identity. The free
+                # OpenCode Console tier currently rejects some customized/internal
+                # agent request paths before generation. Text-only behavior is
+                # enforced without replacing the build system prompt: final-step
+                # tool removal + deny-all permissions + the bounded user prompt.
                 "mode": "primary",
                 "steps": OPENCODE_SEMANTIC_MAX_STEPS,
-                "system": (
-                    "You are a text-only semantic reasoning provider. "
-                    "Use only the context supplied in the user prompt. "
-                    "Return the requested final text directly. "
-                    "Do not request or use tools, files, shell, browser, network, "
-                    "subagents, skills, or external state."
-                ),
                 "permissions": deny_all,
             }
         },
