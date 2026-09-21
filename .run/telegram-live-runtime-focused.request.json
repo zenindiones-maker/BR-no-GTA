@@ -1,6 +1,4 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "817a99e9839b0ca0f8dc836d25bc7b3f6bd85bde",
-  "observed_human_failure": "stale UNDERSTANDING persisted as canonical RUNNING state",
-  "scope": "progress-telemetry-isolation-stale-state-reconciliation-strong-active-evidence-final-send-observability"
+  "source_head": "842d89024615aa369884aae6a6cfa5781c279484"
 }
