@@ -767,6 +767,11 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
             "empty_response",
             _sanitized_provider_failure_evidence(evidence),
         )
+    strict_json_valid = False
+    try:
+        strict_json_valid = isinstance(json.loads(response_text), dict)
+    except json.JSONDecodeError:
+        strict_json_valid = False
     return response_text, {
         "provider": evidence.provider,
         "model": evidence.model,
@@ -776,6 +781,7 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
         "latency_seconds": evidence.latency_seconds,
         "usage": dict((result.get("usage") or {})),
         "finish_reason": result.get("finish_reason"),
+        "strict_json_valid": strict_json_valid,
         "performance": dict(evidence.performance or {}),
         "evidence_refs": list(evidence.evidence_refs),
         "status": evidence.status,
