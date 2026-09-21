@@ -76,8 +76,10 @@ def test_progress_reporter_sends_only_on_meaningful_stage_changes(monkeypatch):
     telemetry = list_recent_telegram_progress_events(7001, limit=10)
 
     assert len(api.sent) == 2
-    assert "RESEARCH" in api.sent[0][1]
-    assert "VALIDATION" in api.sent[1][1]
+    assert api.sent[0][1] == "pesquisando Extended Look"
+    assert api.sent[1][1] == "validando evidências"
+    assert "RESEARCH" not in api.sent[0][1]
+    assert "VALIDATION" not in api.sent[1][1]
     assert after["execution_status"] == before["execution_status"] == "COMPLETED"
     assert after["active_stage"] == before["active_stage"] == "COMPLETE"
     assert after["active_blocker"] == before["active_blocker"]
