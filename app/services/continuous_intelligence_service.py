@@ -576,8 +576,6 @@ def gate_verified_gta6_claim(
             memory_gate=gate,
             supersedes_claim_id=supersedes_claim_id,
         )
-        if owned_authorization:
-            consume_harness_authorization(evaluation_authorization)
         return {
             "status": "PROMOTED",
             "candidate": candidate,
@@ -596,8 +594,6 @@ def gate_verified_gta6_claim(
         evidence_refs=(evidence_ref,),
         authorization=evaluation_authorization,
     )
-    if owned_authorization:
-        consume_harness_authorization(evaluation_authorization)
     return {
         "status": "HUMAN_REVIEW",
         "candidate": candidate,
