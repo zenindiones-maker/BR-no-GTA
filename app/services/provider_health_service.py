@@ -6,6 +6,10 @@ from typing import Any
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.zero_cost_policy_service import assess_zero_cost
+from app.services.opencode_executor_profile_service import (
+    SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
+    executable_opencode_executor_profile,
+)
 
 
 PROVIDER_HEALTH_STATES = {
@@ -69,6 +73,36 @@ def provider_health(provider_id: str) -> ProviderHealth:
                 state="UPSTREAM_DENIED",
                 reason="OpenCode free-tier admission is blocked upstream before inference.",
                 evidence_refs=refs,
+                retry_allowed=False,
+                zero_cost_eligible=True,
+            )
+
+        semantic_profile = executable_opencode_executor_profile(
+            SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION
+        )
+        semantic_options = dict(semantic_profile["options"])
+        if (
+            str(semantic_options.get("status") or "").startswith(
+                "CANDIDATE_BLOCKED_UPSTREAM"
+            )
+            and not bool(semantic_options.get("usable_text_proof"))
+        ):
+            blocker_runs = tuple(
+                int(run_id)
+                for run_id in (semantic_options.get("runtime_blocker_runs") or ())
+                if int(run_id) > 0
+            )
+            return ProviderHealth(
+                provider_id="opencode",
+                state="UPSTREAM_DENIED",
+                reason=str(
+                    semantic_options.get("runtime_blocker")
+                    or "OpenCode semantic profile is blocked upstream before inference."
+                ),
+                evidence_refs=tuple(
+                    f"github:run:{run_id}:opencode-semantic-v3-upstream-403"
+                    for run_id in blocker_runs
+                ),
                 retry_allowed=False,
                 zero_cost_eligible=True,
             )
