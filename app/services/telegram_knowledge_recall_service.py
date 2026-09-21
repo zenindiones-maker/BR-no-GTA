@@ -39,9 +39,18 @@ def _is_broad_gta6_query(query: str) -> bool:
     return mentions_gta6 and not _tokens(query)
 
 
+def _explicitly_outside_gta6_scope(query: str) -> bool:
+    text = _fold(query)
+    if any(term in text for term in ("gta 6", "gta6", "gta vi", "grand theft auto vi")):
+        return False
+    return bool(re.search(r"\bgta\s*(?:7|vii)\b", text))
+
+
 def _lineage_claims(query: str, *, limit: int = 8) -> list[dict[str, Any]]:
     query_tokens = _tokens(query)
     broad = _is_broad_gta6_query(query)
+    if not broad and not query_tokens:
+        return []
     rows = continuous_repository.list_claim_lineage(limit=500)
     ranked: list[tuple[int, str, dict[str, Any]]] = []
     seen: set[int] = set()
@@ -170,6 +179,24 @@ def recall_canonical_gta6_knowledge(
     text = str(query or "").strip()
     if not text:
         raise ValueError("knowledge recall query is empty")
+    if _explicitly_outside_gta6_scope(text):
+        return {
+            "status": "NO_CANONICAL_KNOWLEDGE_MATCH",
+            "answer": (
+                "Não encontrei conhecimento canônico desse assunto no escopo GTA 6. "
+                "Não vou preencher a lacuna com outro jogo nem chamar provider semântico só para fabricar resposta."
+            ),
+            "query": text,
+            "claims": [],
+            "semantic_memory_hits": [],
+            "provider_independent": True,
+            "provider_calls": 0,
+            "semantic_provider_required": False,
+            "canonical_memory_plane": "BR_SQLITE",
+            "knowledge_authority": "KNOWLEDGE_BRAIN",
+            "obsidian_role": "PUBLISHED_MEMORY_VIEW",
+            "SOURCE_PROVENANCE_PRESERVED": "NO_MATCH",
+        }
 
     semantic_hits = _semantic_hits(text, limit=min(limit, 5))
     claims = _lineage_claims(text, limit=limit)
