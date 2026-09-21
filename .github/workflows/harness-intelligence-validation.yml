@@ -15,6 +15,7 @@ on:
       - "app/services/harness_routing_policy_service.py"
       - "app/services/global_capability_registry_base.py"
       - "scripts/harness_intelligence_benchmark.py"
+      - "scripts/semantic_planner_single_proposal_proof.py"
       - "tests/test_harness_adaptive_intelligence.py"
       - "tests/test_harness_mission_planner.py"
       - "tests/test_harness_collaboration_service.py"
@@ -102,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt psutil==7.2.2
       - name: Bootstrap proven local semantic provider
         run: |
           set -euo pipefail
@@ -137,8 +138,42 @@ jobs:
           print("LOCAL_SEMANTIC_PROVIDER_BOOTSTRAP=PASS")
           print("LOCAL_SEMANTIC_PROVIDER_MODEL_DIGEST=PASS")
           PY
+      - name: Run isolated real semantic proposal performance gate
+        id: single_proposal
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/harness-intelligence
+          sudo iptables-save > /tmp/iptables-single-before.rules
+          if command -v ip6tables-save >/dev/null; then
+            sudo ip6tables-save > /tmp/ip6tables-single-before.rules
+          fi
+          restore_network() {
+            sudo iptables-restore < /tmp/iptables-single-before.rules || true
+            if [ -f /tmp/ip6tables-single-before.rules ]; then
+              sudo ip6tables-restore < /tmp/ip6tables-single-before.rules || true
+            fi
+          }
+          trap restore_network EXIT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -I OUTPUT 2 -j REJECT
+          if command -v ip6tables >/dev/null; then
+            sudo ip6tables -I OUTPUT 1 -o lo -j ACCEPT
+            sudo ip6tables -I OUTPUT 2 -j REJECT
+          fi
+          python scripts/semantic_planner_single_proposal_proof.py             --output artifacts/harness-intelligence/single-proposal-performance.json
+
+      - name: Upload isolated proposal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-single-proposal-performance
+          path: artifacts/harness-intelligence/single-proposal-performance.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Run live Harness intelligence benchmark
         id: benchmark
+        if: steps.single_proposal.outcome == 'success'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -168,7 +203,7 @@ jobs:
             kill "$(cat /tmp/ollama.pid)" 2>/dev/null || true
           fi
       - name: Upload benchmark evidence
-        if: always()
+        if: always() && steps.single_proposal.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: harness-intelligence-benchmark
@@ -192,5 +227,5 @@ jobs:
           PY
           curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA"             -d @/tmp/status.json
       - name: Enforce live benchmark
-        if: steps.benchmark.outcome != 'success'
+        if: steps.single_proposal.outcome != 'success' || steps.benchmark.outcome != 'success'
         run: exit 1
