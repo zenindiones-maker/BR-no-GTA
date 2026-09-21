@@ -259,12 +259,16 @@ def build_goal_envelope(
     source_surface: str = "telegram",
 ) -> GoalEnvelope:
     goal = _text(human_goal, "human_goal")
+    normalized_subject = str(subject).strip() if subject else None
+    classification_text = " ".join(
+        item for item in (goal, normalized_subject) if item
+    )
     return GoalEnvelope(
         human_goal=goal,
         project=_text(project or "BR-no-GTA", "project"),
         goal_id=_text(goal_id or "human-goal", "goal_id"),
-        subject=str(subject).strip() if subject else None,
-        mission_class=_goal_class(goal),
+        subject=normalized_subject,
+        mission_class=_goal_class(classification_text),
         source_surface=str(source_surface or "telegram"),
     )
 
