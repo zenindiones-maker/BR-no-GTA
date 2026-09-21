@@ -179,7 +179,7 @@ def _reasoning_failure_presentation(
     error = error if isinstance(error, dict) else {}
     technical_code = str(error.get("code") or "provider_failure")
     canonical_failure = {
-        "status": "BLOCKED",
+        "status": "FAILED",
         "success": False,
         "error": {
             "code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
@@ -230,7 +230,7 @@ def _generic_failure_presentation(
     )
     if semantic_provider_boundary:
         canonical_failure = {
-            "status": "BLOCKED",
+            "status": "FAILED",
             "success": False,
             "error": {
                 "code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
