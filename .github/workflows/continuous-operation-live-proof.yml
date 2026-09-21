@@ -139,7 +139,8 @@ jobs:
           assert d["YOUTUBE_UPLOAD"]=="NO"
           assert d["YOUTUBE_PUBLICATION"]=="NO"
           assert Path("live-evidence/proof-state/state-manifest.json").is_file()
-          assert Path("live-evidence/proof/telegram-send.json").is_file()
+          proof_log=Path("live-evidence/proof-run.log").read_text(errors="replace")
+          assert "TELEGRAM_ACTION_FIRST_REPORT=PASS" in proof_log
 
           print("LIVE_GTA6_MISSION_A=PASS")
           print("REAL_OFFICIAL_SOURCE_FETCH=PASS")
