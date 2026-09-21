@@ -974,3 +974,29 @@ def update_memory_lifecycle(
         return _deserialize(updated, _MEMORY_JSON)
     finally:
         connection.close()
+
+
+def list_learning_candidates(
+    *,
+    status: str | None = None,
+    candidate_type: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    connection = get_connection()
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for key, value in (("status", status), ("candidate_type", candidate_type)):
+            if value is not None:
+                clauses.append(f"{key} = ?")
+                params.append(value)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(max(1, min(int(limit), 500)))
+        rows = connection.execute(
+            f"""SELECT * FROM harness_learning_candidates{where}
+                ORDER BY created_at DESC, candidate_id DESC LIMIT ?""",
+            params,
+        ).fetchall()
+        return [_deserialize(row, _CANDIDATE_JSON) for row in rows]
+    finally:
+        connection.close()
