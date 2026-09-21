@@ -695,6 +695,26 @@ def main() -> int:
     )
     print(f"TELEGRAM_GATEWAY_PID={revision_proof.get('pid')}", flush=True)
     print(f"TELEGRAM_BOT_USERNAME={username or ''}", flush=True)
+    print(
+        "TELEGRAM_BOT_CAN_JOIN_GROUPS="
+        + ("YES" if bool((me or {}).get("can_join_groups")) else "NO"),
+        flush=True,
+    )
+    print(
+        "TELEGRAM_BOT_CAN_READ_ALL_GROUP_MESSAGES="
+        + ("YES" if bool((me or {}).get("can_read_all_group_messages")) else "NO"),
+        flush=True,
+    )
+    print(
+        "TELEGRAM_GROUP_NATURAL_LANGUAGE_READY="
+        + (
+            "PASS"
+            if bool((me or {}).get("can_join_groups"))
+            and bool((me or {}).get("can_read_all_group_messages"))
+            else "FAIL"
+        ),
+        flush=True,
+    )
     print("TELEGRAM_HARNESS_SMART_CHAT=ENABLED", flush=True)
     print("TELEGRAM_BRAND_ASSET_INTAKE=ENABLED", flush=True)
     print("TELEGRAM_TOTAL_INGRESS=ENABLED", flush=True)
