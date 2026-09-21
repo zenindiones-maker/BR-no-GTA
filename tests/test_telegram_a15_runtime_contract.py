@@ -131,3 +131,13 @@ def test_persistence_supervisor_has_singleton_lock_and_reaps_untracked_old_super
     assert "SINGLETON_ALREADY_HELD" in text
     assert "Remove untracked supervisors from older installations" in text
     assert "telegram-supervisor.sh" in text
+
+
+
+def test_remote_runtime_health_requires_exactly_one_gateway_listener():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(encoding="utf-8")
+    assert "RUNNING_GATEWAY_INSTANCES=" in text
+    assert "TELEGRAM_GATEWAY_SINGLETON=PASS" in text
+    assert "instances=${#pids[@]}" in text
+    assert 'if [[ "${#pids[@]}" -eq 1' in text
+    assert "reap_untracked_legacy_supervisors" in text
