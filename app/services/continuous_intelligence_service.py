@@ -538,21 +538,18 @@ def gate_verified_gta6_claim(
         },
     )
     if verdict == "SUPPORTED" and source_type == "PRIMARY_SOURCE" and evidence_class == "OFFICIAL":
-        decision = "SUPERSEDE" if supersedes_claim_id else "PROMOTE"
+        # The Knowledge Brain claim lineage has its own immutable claim-id
+        # supersession chain. Harness memory promotion remains a normal PROMOTE
+        # gate so the two identity namespaces are never conflated.
         gate = evaluate_memory_candidate(
             memory_id=candidate["memory_id"],
-            decision=decision,
-            supersedes_memory_id=None,
+            decision="PROMOTE",
             reason=(
                 "Official primary-source claim passed deterministic provenance-complete fact-check."
             ),
             evidence_refs=(evidence_ref,),
             authorization=evaluation_authorization,
         )
-        if decision == "SUPERSEDE":
-            # Harness memory supersession is separate from Knowledge Brain claim-id
-            # supersession; use PROMOTE here and preserve claim lineage below.
-            raise RuntimeError("knowledge claim supersession requires an explicit Harness memory lineage id")
         knowledge = _materialize_knowledge_brain(
             candidate_claim=candidate_claim,
             fact_check=fact_check,
