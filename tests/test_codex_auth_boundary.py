@@ -7,6 +7,7 @@ from app.services.codex_addy_capability_executor import execute_codex_addy_capab
 from app.services.agent_office.codex_auth import CodexAuthenticationProvider
 from app.services.agent_office.codex_auth_control import (
     AUTH_AVAILABLE,
+    AUTH_BLOCKED,
     AUTH_UNAVAILABLE,
     AUTH_USER_ACTION_REQUIRED,
     build_mission_checkpoint,
@@ -187,7 +188,7 @@ def test_auth_control_preflight_existing_auth_continues(tmp_path):
     assert state.auth_timeout_path_repeated is False
 
 
-def test_auth_control_unavailable_with_paired_human_creates_checkpoint_without_wait(tmp_path):
+def test_auth_control_missing_cloud_wif_is_not_misreported_as_local_login_request(tmp_path):
     state = classify_codex_auth(
         mission_id="mission-auth-human-gate",
         cwd=tmp_path,
@@ -198,10 +199,17 @@ def test_auth_control_unavailable_with_paired_human_creates_checkpoint_without_w
         },
         provider_factory=_provider_factory([(1, "")]),
     )
-    assert state.state == AUTH_USER_ACTION_REQUIRED
+    assert state.state == AUTH_BLOCKED
     assert state.auth_available is False
-    assert state.user_action_required is True
-    assert state.delivery_surface == "PAIRED_USER_DM"
+    assert state.user_action_required is False
+    assert state.local_codex_auth_context == "SEPARATE_USER_CONTEXT"
+    assert state.cloud_runner_codex_auth_context == "EPHEMERAL_RUNNER"
+    assert state.missing_auth_configuration == (
+        "OPENAI_FEDERATION_RULE_ID",
+        "OPENAI_IDENTITY_TOKEN_FILE",
+        "OPENAI_FEDERATION_AUDIENCE",
+    )
+    assert "does not invalidate or disconnect" in state.reason
     assert state.auth_timeout_path_repeated is False
 
     checkpoint = build_mission_checkpoint(
@@ -236,7 +244,7 @@ def test_auth_control_unavailable_without_paired_human_fails_fast(tmp_path):
         },
         provider_factory=_provider_factory([(1, "")]),
     )
-    assert state.state == AUTH_UNAVAILABLE
+    assert state.state == AUTH_BLOCKED
     assert state.auth_available is False
     assert state.user_action_required is False
     assert state.paired_human_available is False
