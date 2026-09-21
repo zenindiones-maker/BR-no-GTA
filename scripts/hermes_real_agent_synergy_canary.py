@@ -45,8 +45,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _activate_ephemeral_semantic_v3() -> dict[str, Any]:
-    """Activate already-proven v3 only inside the canary SQLite database."""
+def _record_ephemeral_semantic_v3_candidate() -> dict[str, Any]:
+    """Record v3 in the canary DB without promoting a disproven runtime sample.
+
+    Zero-tool isolation is structurally enforced, but current GitHub Actions
+    execution is blocked before inference by the OpenCode Console free-tier
+    admission policy. The canary must not manufacture an ACTIVE profile from
+    a candidate that has no usable-text proof.
+    """
     profile = executable_opencode_executor_profile(SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION)
     existing = harness_learning_repository.get_version(
         table="harness_skill_versions",
@@ -54,8 +60,16 @@ def _activate_ephemeral_semantic_v3() -> dict[str, Any]:
         identity=OPENCODE_EXECUTOR_SKILL_ID,
         version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
     )
+    evidence_refs = [
+        "github:run:35546356452:opencode-free-tier-403",
+        "github:run:35546450235:opencode-free-tier-403",
+        "github:run:35546663122:opencode-free-tier-403",
+        "github:run:35546843689:stable-opencode-free-tier-403",
+        f"github:run:{CONFIRMED_RUN_ID}:root-cause",
+        f"github:artifact:{CONFIRMED_ARTIFACT_ID}",
+    ]
     if existing is None:
-        harness_learning_repository.insert_version(
+        existing = harness_learning_repository.insert_version(
             table="harness_skill_versions",
             identity_field="skill_id",
             record={
@@ -65,29 +79,23 @@ def _activate_ephemeral_semantic_v3() -> dict[str, Any]:
                 "content_ref": profile["content_ref"],
                 "checksum": profile["checksum"],
                 "status": "CANDIDATE",
-                "evidence_refs": [
-                    "artifact:opencode-semantic-v3-proof.json",
-                    f"github:run:{CONFIRMED_RUN_ID}:root-cause",
-                    f"github:artifact:{CONFIRMED_ARTIFACT_ID}",
-                ],
+                "evidence_refs": evidence_refs,
                 "created_at": _now(),
                 "promoted_at": None,
             },
         )
-    active = harness_learning_repository.activate_version(
-        table="harness_skill_versions",
-        identity_field="skill_id",
-        identity=OPENCODE_EXECUTOR_SKILL_ID,
-        version=SEMANTIC_TEXT_OPENCODE_EXECUTOR_VERSION,
-        promoted_at=_now(),
-    )
     return {
         "scope": "EPHEMERAL_CANARY_DB_ONLY",
-        "skill_id": active["skill_id"],
-        "version": active["version"],
-        "status": active["status"],
-        "content_ref": active["content_ref"],
-        "checksum": active["checksum"],
+        "skill_id": existing["skill_id"],
+        "version": existing["version"],
+        "status": existing["status"],
+        "content_ref": existing["content_ref"],
+        "checksum": existing["checksum"],
+        "activation_performed": False,
+        "runtime_status": "BLOCKED_UPSTREAM_FREE_TIER_403",
+        "usable_text_proof": False,
+        "zero_tool_observed": True,
+        "evidence_refs": evidence_refs,
     }
 
 
@@ -834,7 +842,7 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     assert facts["full_render_authorized"] == "NO"
     assert facts["youtube_publication"] == "NO"
 
-    semantic_v3 = _activate_ephemeral_semantic_v3()
+    semantic_v3 = _record_ephemeral_semantic_v3_candidate()
     progress: list[str] = []
     video = _run_video_a_mission(
         upstream_root=upstream_root,
