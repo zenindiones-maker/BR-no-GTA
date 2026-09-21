@@ -578,3 +578,53 @@ def test_restart_continuity_approval_reuses_persisted_hermes_lineage():
     assert result["canonical_result"]["mission_id"] == "tg-hermes-restart-1"
     assert result["conversation_state"]["active_run_id"] == "35550000004"
     assert result["conversation_state"]["pending_action"] is None
+
+
+
+def test_status_observation_does_not_consume_persisted_pending_action():
+    chat_id = 9995
+    pending = {
+        "kind": "HERMES_CLOUD_RESUME",
+        "mission_id": "tg-hermes-status-restart-1",
+        "task_id": "production-management",
+        "goal_id": "goal-video-a",
+        "artifact_ref": "script:8",
+        "parent_run_id": "35550000005",
+        "authorized_action": "EXECUTION",
+    }
+    persisted = update_conversation_state(
+        chat_id,
+        active_goal_id="goal-video-a",
+        active_artifact="script:8",
+        active_run_id="35550000005",
+        active_stage="WAITING_FOR_HUMAN",
+        execution_status="WAITING_FOR_HUMAN",
+        waiting_for_human=True,
+        pending_human_review="script:8",
+        pending_question="Aprova continuar?",
+        pending_action=pending,
+    )
+    assert persisted["pending_action"] == pending
+
+    observed = handle_telegram_conversation(
+        "Onde estamos?",
+        telegram_chat_id=chat_id,
+        telegram_message_id=805,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("status observation must not use an LLM")
+        ),
+        presenter=_presenter,
+    )
+    assert observed["canonical_result"]["control_surface_status"]["pending_action"] == pending
+
+    # get_or_create opens a new SQLite connection on every call, so this is a
+    # durable reload rather than an in-memory state check.
+    reloaded = get_or_create_conversation_state(chat_id)
+    assert reloaded["conversation_id"] == f"telegram:{chat_id}"
+    assert reloaded["pending_action"] == pending
+    assert reloaded["pending_action"]["mission_id"] == "tg-hermes-status-restart-1"
+    assert reloaded["pending_action"]["task_id"] == "production-management"
+    assert reloaded["waiting_for_human"] is True
+    assert reloaded["execution_status"] == "WAITING_FOR_HUMAN"
+    assert reloaded["active_stage"] == "WAITING_FOR_HUMAN"
+    assert reloaded["pending_question"] == "Aprova continuar?"
