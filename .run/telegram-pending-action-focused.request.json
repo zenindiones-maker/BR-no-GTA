@@ -1,7 +1,5 @@
 {
-  "request": "telegram-human-surface-runtime-reconcile",
+  "request": "telegram-human-surface-governed-ingress-runtime-reconcile",
   "source_head": "7f9e55039eb7d4f03a911e0724356ae8198211c9",
-  "scope": "hard-silent-status-governed-group-ingress-single-v2-runtime-reconcile",
-  "human_failure_evidence": "private status stuck at UNDERSTANDING; group no functional final reply",
-  "requested_at": "2026-09-21T09:30:00-03:00"
+  "requested_at": "2026-09-21T12:36:00Z"
 }
