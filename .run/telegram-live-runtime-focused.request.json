@@ -1,8 +1,12 @@
 {
-  "request": "telegram-live-runtime-focused",
-  "source_head": "9747587479de737d1288990b62742519a7d02bb8",
-  "incident": "human status received stale reasoning failure plus deterministic answer",
-  "expected": "singleton listener and one clean provider-free final status response",
-  "retry_reason": "previous focused failure was stale presentation assertion after intentional UX change",
-  "requested_at": "2026-09-21T11:46:00-03:00"
+  "request": "telegram-live-semantic-provider-failure-regression",
+  "source_head": "300195e26ca70af41c8e00509c3d7875efda9c08",
+  "observed_human_failure": "active OpenCode executor profile checksum does not match executable code",
+  "expected_human_result": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+  "preserve": {
+    "new_voice_synthesis": "NO",
+    "full_render": "NO",
+    "youtube_upload": "NO",
+    "youtube_publication": "NO"
+  }
 }
