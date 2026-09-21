@@ -151,7 +151,12 @@ def dispatch_telegram_system_improvement_mission(
                 "target_sha": target_sha,
                 "plan_b64": base64.b64encode(plan_raw).decode("ascii"),
                 "human_goal_b64": base64.b64encode(goal_raw).decode("ascii"),
-                "telegram_chat_id": str(state.get("telegram_chat_id") or 0),
+                "telegram_chat_id": str(
+                    os.getenv(
+                        "BR_TELEGRAM_FINAL_RESULT_CHAT_ID",
+                        str(state.get("telegram_chat_id") or 0),
+                    )
+                ),
             },
         )
     finally:
