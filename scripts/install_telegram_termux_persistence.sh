@@ -8,6 +8,7 @@ BOOT_DIR="${HOME}/.termux/boot"
 SUPERVISOR="${CONFIG_DIR}/telegram-supervisor.sh"
 SUPERVISOR_PID="${STATE_DIR}/telegram-supervisor.pid"
 SUPERVISOR_LOG="${STATE_DIR}/telegram-supervisor.log"
+SUPERVISOR_LOCK="${STATE_DIR}/telegram-supervisor.lock"
 MAINTENANCE_FILE="${STATE_DIR}/telegram-gateway.maintenance"
 BOOT_SCRIPT="${BOOT_DIR}/br-no-gta-telegram.sh"
 CONTROL="${ROOT}/scripts/telegram_termux_control.sh"
@@ -29,6 +30,7 @@ CONTROL_Q="$(shell_quote "${CONTROL}")"
 STATE_DIR_Q="$(shell_quote "${STATE_DIR}")"
 SUPERVISOR_PID_Q="$(shell_quote "${SUPERVISOR_PID}")"
 SUPERVISOR_LOG_Q="$(shell_quote "${SUPERVISOR_LOG}")"
+SUPERVISOR_LOCK_Q="$(shell_quote "${SUPERVISOR_LOCK}")"
 MAINTENANCE_FILE_Q="$(shell_quote "${MAINTENANCE_FILE}")"
 SUPERVISOR_Q="$(shell_quote "${SUPERVISOR}")"
 
@@ -40,10 +42,16 @@ CONTROL=${CONTROL_Q}
 STATE_DIR=${STATE_DIR_Q}
 PID_FILE=${SUPERVISOR_PID_Q}
 LOG_FILE=${SUPERVISOR_LOG_Q}
+LOCK_FILE=${SUPERVISOR_LOCK_Q}
 MAINTENANCE_FILE=${MAINTENANCE_FILE_Q}
 REMOTE_CHECK_SECONDS=60
 LAST_REMOTE_CHECK=0
 mkdir -p "\${STATE_DIR}"
+exec 9>"\${LOCK_FILE}"
+if ! flock -n 9; then
+  printf '%s TELEGRAM_SUPERVISOR=SINGLETON_ALREADY_HELD\n' "\$(date -Iseconds 2>/dev/null || date)" >>"\${LOG_FILE}"
+  exit 0
+fi
 printf '%s\n' "\$\$" > "\${PID_FILE}"
 trap 'rm -f "\${PID_FILE}"' EXIT INT TERM
 
@@ -110,6 +118,38 @@ fi
 nohup bash "\${SUPERVISOR}" >>"\${LOG_FILE}" 2>&1 </dev/null &
 EOF
 chmod 700 "${BOOT_SCRIPT}"
+
+# Remove untracked supervisors from older installations before starting the
+# lock-enforced supervisor. An old supervisor can otherwise resurrect an old
+# gateway after the current control script has killed it.
+CURRENT_SHELL_PID="$"
+while IFS= read -r stale_pid; do
+  [[ "${stale_pid}" =~ ^[0-9]+$ ]] || continue
+  [[ "${stale_pid}" == "${CURRENT_SHELL_PID}" ]] && continue
+  kill "${stale_pid}" 2>/dev/null || true
+done < <(
+  python - "${SUPERVISOR}" <<'PY'
+from pathlib import Path
+import os, sys
+target = str(Path(sys.argv[1]).resolve())
+for entry in Path("/proc").iterdir():
+    if not entry.name.isdigit():
+        continue
+    pid = int(entry.name)
+    if pid == os.getpid():
+        continue
+    try:
+        argv = [
+            part.decode("utf-8", errors="replace")
+            for part in (entry / "cmdline").read_bytes().split(b"\0")
+            if part
+        ]
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        continue
+    if any(arg == target or arg.endswith("/telegram-supervisor.sh") for arg in argv):
+        print(pid)
+PY
+)
 
 supervisor_running=false
 if [[ -s "${SUPERVISOR_PID}" ]]; then
