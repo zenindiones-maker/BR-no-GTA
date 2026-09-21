@@ -552,6 +552,9 @@ def plan_mission_from_human_goal(
             provider_health=health,
             artifact_ref=artifact_ref,
         )
+        planning_evidence["context_retrieval"] = dict(
+            adaptive_context.get("context_retrieval_evidence") or {}
+        )
         semantic_result, semantic_evidence = propose_validated_semantic_plan(
             adaptive_context,
             inference=semantic_inference,
