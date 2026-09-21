@@ -109,7 +109,7 @@ def _hermes_parent(plan, *, target_sha: str):
 
 def _find_episode(*, mission_id: str, task_id: str) -> dict[str, Any]:
     rows = learning_repository.list_episodes(
-        task_class=f"hermes.{task_id}",
+        task_class=f"hermes:{task_id}",
         limit=100,
     )
     for row in rows:
