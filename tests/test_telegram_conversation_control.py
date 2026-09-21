@@ -10,6 +10,7 @@ from app.database.telegram_conversation_repository import (
 from app.services.telegram_conversation_service import (
     classify_conversation_intent,
     handle_telegram_conversation,
+    plan_natural_language_action,
     resolve_conversation_reference,
 )
 
