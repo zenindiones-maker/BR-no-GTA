@@ -1,12 +1,6 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "406eb8a73f0e3e457c50fd670b41ef467cc638f0",
+  "source_head": "817a99e9839b0ca0f8dc836d25bc7b3f6bd85bde",
   "observed_human_failure": "stale UNDERSTANDING persisted as canonical RUNNING state",
-  "scope": "progress-telemetry-isolation-stale-state-reconciliation-final-send-observability",
-  "required": [
-    "STALE_PROGRESS_STATE_DETECTED",
-    "STALE_PROGRESS_STATE_RECONCILED",
-    "STATUS_PROVIDER_CALLS=0",
-    "FINAL_HUMAN_RESPONSE_SEND_OBSERVABILITY"
-  ]
+  "scope": "progress-telemetry-isolation-stale-state-reconciliation-strong-active-evidence-final-send-observability"
 }
