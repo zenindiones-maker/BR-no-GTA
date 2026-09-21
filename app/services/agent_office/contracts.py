@@ -140,6 +140,8 @@ class AgentOfficeExecutionSpec:
     allowed_agents: tuple[str, ...]
     allowed_capabilities: tuple[str, ...]
     allowed_paths: tuple[str, ...]
+    mission_read_scope: tuple[str, ...]
+    mission_write_scope: tuple[str, ...]
     forbidden_actions: tuple[str, ...]
     max_parallelism: int
     time_budget_seconds: int
