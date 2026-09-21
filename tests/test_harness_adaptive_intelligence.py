@@ -58,7 +58,11 @@ def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_o
     def inference(prompt, _context):
         calls.append(prompt)
         if len(calls) == 1:
+            assert "validation_feedback" in prompt
             return _proposal(candidate_id="capability.that.does.not.exist")
+        assert "The previous proposal was rejected by DeepSeek Harness validation." in prompt
+        assert "capability.that.does.not.exist" in prompt
+        assert "does not exist in Registry" in prompt
         return _proposal(candidate_id="agent-office.codex.readonly-analysis")
 
     result, evidence = propose_validated_semantic_plan(
@@ -205,15 +209,15 @@ def test_ambiguous_natural_goal_uses_dynamic_semantic_dag_without_agent_names():
             "tasks": [
                 {
                     "task_id": "inspect-output",
-                    "objective": "inspecionar tecnicamente o resultado atual e localizar sinais anormais",
+                    "objective": "inspecionar evidência técnica já produzida do resultado atual e localizar sinais anormais",
                     "task_class": "media-anomaly-analysis",
-                    "required_capability_description": "análise técnica de mídia existente",
+                    "required_capability_description": "análise read-only de artifacts e evidência técnica de mídia",
                     "candidate_capability_ids": ["agent-office.codex.readonly-analysis"],
                     "dependencies": [],
                     "expected_output": "MediaAnomalyEvidence",
                     "acceptance_criteria": ["anomalia localizada ou hipótese explicitamente refutada"],
                     "risk_side_effect_class": "READ_ONLY",
-                    "action": "EXECUTION",
+                    "action": "DEVELOPMENT",
                 },
                 {
                     "task_id": "trace-cause",
