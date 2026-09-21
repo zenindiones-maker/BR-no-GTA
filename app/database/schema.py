@@ -1616,6 +1616,62 @@ def _migrate_agent_execution_leases(connection) -> None:
     )
 
 
+
+def _migrate_memory_workspace_plane(connection) -> None:
+    """Extend the existing Harness Learning Plane for cross-surface human memory.
+
+    Obsidian remains a projection/input surface only. These canonical tables live
+    in the same SQLite authority as HarnessEpisode, harness_memories and competence.
+    """
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS harness_human_decisions (
+            decision_id TEXT PRIMARY KEY,
+            decision_type TEXT NOT NULL,
+            source_surface TEXT NOT NULL,
+            source_ref TEXT NOT NULL,
+            goal_id TEXT,
+            task_id TEXT,
+            capability_id TEXT,
+            agent_id TEXT,
+            artifact_ref TEXT,
+            content TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            UNIQUE(source_surface, source_ref, decision_type)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_human_decisions_context
+        ON harness_human_decisions(goal_id, task_id, capability_id, agent_id);
+
+        CREATE INDEX IF NOT EXISTS idx_harness_human_decisions_artifact
+        ON harness_human_decisions(artifact_ref);
+
+        CREATE TABLE IF NOT EXISTS harness_memory_evaluations (
+            evaluation_id TEXT PRIMARY KEY,
+            memory_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            supersedes_memory_id TEXT,
+            authority TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (memory_id)
+                REFERENCES harness_memories(memory_id)
+                ON DELETE RESTRICT,
+            FOREIGN KEY (supersedes_memory_id)
+                REFERENCES harness_memories(memory_id)
+                ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_harness_memory_evaluations_memory
+        ON harness_memory_evaluations(memory_id, created_at DESC);
+        """
+    )
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1647,6 +1703,7 @@ def initialize_schema() -> None:
         _migrate_gta6_media_intelligence(connection)
         _migrate_harness_authorizations(connection)
         _migrate_harness_learning_plane(connection)
+        _migrate_memory_workspace_plane(connection)
         _migrate_agent_execution_leases(connection)
         _migrate_e2e_stage_checkpoints(connection)
         connection.commit()
