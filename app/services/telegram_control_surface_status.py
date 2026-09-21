@@ -460,7 +460,7 @@ def render_canonical_project_status(snapshot: CanonicalProjectStatusSnapshot) ->
         context.append(f"assunto {data['current_subject']}")
     if data["current_blocker"]:
         context.append(f"blocker {data['current_blocker']}")
-    return "\\n".join([
+    return "\n".join([
         first + ".",
         f"Último avanço: {last}.",
         f"Agora: {now}.",
