@@ -2,9 +2,6 @@ name: VIDEO A Real Render Learning Proof
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - work/gate6f-analytics-learning
 
 permissions:
   contents: read
