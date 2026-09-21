@@ -341,9 +341,23 @@ def run(output: Path) -> dict[str, Any]:
             report["PROFILE_RESULT"] = "PASS"
             break
 
+        if (
+            attempt["timed_out"]
+            and attempt["time_to_first_token_seconds"] is None
+            and int(attempt["response_content_bytes"] or 0) == 0
+        ):
+            report["status"] = "FAIL"
+            report["failure_stage"] = "pre_first_token_prompt_eval_bound"
+            report["failure_reason"] = (
+                "No first token arrived within the bounded attempt; larger "
+                "generation budgets cannot improve prompt-evaluation latency."
+            )
+            report["PROFILE_RESULT"] = "FAIL"
+            break
+
     if report["selected_num_predict"] is None:
         report["status"] = "FAIL"
-        report["failure_stage"] = "bounded_budget_search"
+        report.setdefault("failure_stage", "bounded_budget_search")
         report["PROFILE_RESULT"] = "FAIL"
 
     _write_json(output, report)
