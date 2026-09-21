@@ -465,4 +465,5 @@ def execute_harness_ai_generation(
         provider_profile_version=profile_version,
         provider_profile_content_ref=profile_content_ref,
         provider_profile_checksum=profile_checksum,
+        performance=dict(getattr(provider, "last_performance_metrics", {}) or {}),
     )
