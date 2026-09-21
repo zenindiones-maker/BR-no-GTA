@@ -617,7 +617,7 @@ def handle_telegram_conversation(
     canonical: dict[str, Any]
     decision = None
     pending_action_consumed = False
-    if plan["kind"] in {"STATUS", "MEMORY_RECALL"}:
+    if plan["kind"] == "STATUS":
         state = get_or_create_conversation_state(telegram_chat_id)
         control_surface_status = build_harness_control_surface_status(
             telegram_chat_id,
@@ -932,7 +932,7 @@ def handle_telegram_conversation(
 
     # STATUS is an observation, not a state transition.  In particular, asking
     # "Onde estamos?" must never consume WAITING_FOR_HUMAN or pending_action.
-    if plan["kind"] == "STATUS":
+    if plan["kind"] in {"STATUS", "MEMORY_RECALL"}:
         state = get_or_create_conversation_state(telegram_chat_id)
     else:
         if canonical_pending_action is not None:
