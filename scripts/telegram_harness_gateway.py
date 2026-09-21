@@ -21,7 +21,7 @@ from app.services.telegram_conversation_service import handle_telegram_conversat
 from app.services.telegram_learning_service import ingest_telegram_input_under_harness
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
-    update_conversation_state,
+    record_telegram_progress_event,
 )
 
 
@@ -111,11 +111,16 @@ class TelegramProgressReporter:
         self._stage = normalized_stage
         self._message = rendered
         try:
-            update_conversation_state(
-                self.chat_id,
-                active_stage=normalized_stage,
-                execution_status="RUNNING",
-                active_blocker=None,
+            record_telegram_progress_event(
+                telegram_chat_id=self.chat_id,
+                stage=normalized_stage,
+                message=rendered,
+                event_type="PROGRESS",
+                metadata={
+                    "presentation_only": True,
+                    "canonical_execution_state_authority": False,
+                    "process_id": os.getpid(),
+                },
             )
         except Exception:
             pass
@@ -129,11 +134,16 @@ class TelegramProgressReporter:
         self._stage = "BLOCKED"
         self._message = detail
         try:
-            update_conversation_state(
-                self.chat_id,
-                active_stage="BLOCKED",
-                active_blocker=detail,
-                execution_status="FAILED",
+            record_telegram_progress_event(
+                telegram_chat_id=self.chat_id,
+                stage="BLOCKED",
+                message=detail,
+                event_type="BLOCKER_TELEMETRY",
+                metadata={
+                    "presentation_only": True,
+                    "canonical_execution_state_authority": False,
+                    "process_id": os.getpid(),
+                },
             )
         except Exception:
             pass
