@@ -72,6 +72,11 @@ jobs:
           cache: pip
           cache-dependency-path: target/requirements.txt
 
+      - name: Setup Node.js for bounded Codex runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Install bounded cloud runtime
         working-directory: target
         run: |
@@ -83,6 +88,30 @@ jobs:
           python scripts/bootstrap_hermes_agent.py             --target "$BR_HERMES_UPSTREAM_ROOT"             --output artifacts/dynamic-system-improvement/hermes-upstream.json
           test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
           echo "HERMES_UPSTREAM_PINNED=PASS"
+
+      - name: Bootstrap bounded Codex Agent Office runtime
+        working-directory: target
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap.sh codex
+          codex_home="$RUNNER_TEMP/br-dynamic-system-improvement-codex-$GITHUB_RUN_ID"
+          install -d -m 700 "$codex_home"
+          echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
+          bash scripts/prepare_codex_linux_sandbox.sh
+          python scripts/codex_sandbox_preflight.py             --repository-root "$GITHUB_WORKSPACE/target"             --output artifacts/dynamic-system-improvement/codex-sandbox-preflight.json
+          codex --version
+          echo "AGENT_OFFICE_RUNTIME=PASS"
+
+      - name: Trusted Codex authentication bootstrap
+        working-directory: target
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          python scripts/codex_auth_bootstrap.py             --output artifacts/dynamic-system-improvement/codex-auth-status.json             --allow-device-auth             --timeout-seconds 1200
+          echo "CODEX_AUTH_PREREQUISITE=PASS"
 
       - name: Compile dynamic mission
         working-directory: target
