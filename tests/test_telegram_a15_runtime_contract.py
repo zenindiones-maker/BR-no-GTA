@@ -99,3 +99,35 @@ def test_termux_reconciler_detects_file_and_module_gateway_invocations():
     assert "scripts.telegram_harness_gateway" in text
     assert "module_style" in text
     assert "TELEGRAM_GATEWAY_SINGLETON=RECONCILING" in text
+
+
+
+def test_gateway_singleton_is_bot_scoped_when_no_explicit_lock(tmp_path, monkeypatch):
+    from scripts import telegram_harness_gateway_v2 as gateway
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("TELEGRAM_GATEWAY_RUNTIME_LOCK_FILE", raising=False)
+    token = "123456:bot-token-test"
+    first = gateway._acquire_runtime_singleton(token)
+    assert first is not None
+    try:
+        second = gateway._acquire_runtime_singleton(token)
+        assert second is None
+        other = gateway._acquire_runtime_singleton("654321:other-bot")
+        assert other is not None
+        fcntl.flock(other.fileno(), fcntl.LOCK_UN)
+        other.close()
+    finally:
+        fcntl.flock(first.fileno(), fcntl.LOCK_UN)
+        first.close()
+
+
+def test_persistence_supervisor_has_singleton_lock_and_reaps_untracked_old_supervisors():
+    text = (ROOT / "scripts/install_telegram_termux_persistence.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "telegram-supervisor.lock" in text
+    assert "flock -n 9" in text
+    assert "SINGLETON_ALREADY_HELD" in text
+    assert "Remove untracked supervisors from older installations" in text
+    assert "telegram-supervisor.sh" in text
