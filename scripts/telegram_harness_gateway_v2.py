@@ -560,7 +560,7 @@ def _handle_live_natural_language_message(
     message: dict[str, Any],
     update_id: int,
     text: str,
-    conversation_handler=handle_telegram_conversation,
+    conversation_handler=None,
     action_executor=None,
     chat_handler=None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
@@ -592,8 +592,9 @@ def _handle_live_natural_language_message(
         kwargs["action_executor"] = action_executor
     if chat_handler is not None:
         kwargs["chat_handler"] = chat_handler
+    handler = conversation_handler or handle_telegram_conversation
     try:
-        conversation = conversation_handler(text, **kwargs)
+        conversation = handler(text, **kwargs)
     finally:
         reporter.stop()
 
