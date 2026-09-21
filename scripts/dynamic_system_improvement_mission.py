@@ -35,6 +35,21 @@ WRITE_SET = (
     "tests/test_system_improvement_dynamic_selection.py",
 )
 
+ROOT_CAUSE_READ_SCOPE = (
+    "scripts/run_system_improvement_review.py",
+    ".github/workflows/system-improvement-review.yml",
+    "app/services/harness_collaboration_service.py",
+)
+CANDIDATE_READ_SCOPE = (
+    "scripts/run_system_improvement_review.py",
+    "app/services/harness_collaboration_service.py",
+    "tests/test_system_improvement_dynamic_selection.py",
+)
+VALIDATE_READ_SCOPE = (
+    "scripts/run_system_improvement_review.py",
+    "tests/test_system_improvement_dynamic_selection.py",
+)
+
 
 def _decode_plan(value: str) -> dict[str, Any]:
     raw = base64.b64decode(value.encode("ascii"), validate=True)
@@ -209,11 +224,9 @@ def _payload(
                 "Harness mission selection instead of requiring exactly seven specialists. "
                 "Do not modify files. Preserve evidence, quality and authority gates."
             ),
-            "read_set": [
-                "scripts/run_system_improvement_review.py",
-                ".github/workflows/system-improvement-review.yml",
-                "app/services/harness_collaboration_service.py",
-            ],
+            "mission_read_scope": list(ROOT_CAUSE_READ_SCOPE),
+            "mission_write_scope": [],
+            "read_set": list(ROOT_CAUSE_READ_SCOPE),
             "expected_outputs": ["root_cause", "recommended_write_set"],
             "acceptance_criteria": [
                 "evidence-backed root cause",
@@ -230,12 +243,11 @@ def _payload(
                 "Harness-selected task set without weakening evidence, review, quality or authority gates. "
                 "Add a focused regression test. Do not touch any other path."
             ),
+            "mission_read_scope": list(CANDIDATE_READ_SCOPE),
+            "mission_write_scope": list(WRITE_SET),
             "allowed_paths": list(WRITE_SET),
             "write_set": list(WRITE_SET),
-            "read_set": [
-                "scripts/run_system_improvement_review.py",
-                "app/services/harness_collaboration_service.py",
-            ],
+            "read_set": list(CANDIDATE_READ_SCOPE),
             "allowed_tools": ["git", "python", "pytest", "codex", "rg", "cat"],
             "allowed_actions": ["analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"],
             "expected_outputs": ["candidate_commit", "focused_test_result"],
@@ -256,10 +268,9 @@ def _payload(
                 "verify it addresses only the fixed-team selection overhead and does not weaken QA, memory, "
                 "Harness authority or promotion gates. Do not modify files."
             ),
-            "read_set": [
-                "scripts/run_system_improvement_review.py",
-                "tests/test_system_improvement_dynamic_selection.py",
-            ],
+            "mission_read_scope": list(VALIDATE_READ_SCOPE),
+            "mission_write_scope": [],
+            "read_set": list(VALIDATE_READ_SCOPE),
             "expected_outputs": ["independent_review"],
             "acceptance_criteria": [
                 "builder and reviewer are separate",
@@ -270,6 +281,8 @@ def _payload(
     return {
         **common,
         "task": human_goal,
+        "mission_read_scope": ["scripts/run_system_improvement_review.py"],
+        "mission_write_scope": [],
         "read_set": ["scripts/run_system_improvement_review.py"],
         "expected_outputs": ["evidence"],
         "acceptance_criteria": ["no authority expansion"],
