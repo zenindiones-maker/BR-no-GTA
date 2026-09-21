@@ -563,7 +563,7 @@ def _resume(
         board_id=board_id,
     )
     mapping = _mapping_from_snapshot(board)
-    expected = {task.task_id for task in spec.routed_tasks}
+    expected = {task.task_id for task in spec.collaboration_plan.tasks}
     if set(mapping) != expected:
         raise RuntimeError(f"Restored Hermes board mapping mismatch: {sorted(mapping)}")
     emit, progress = _emit_factory(chat_id)
