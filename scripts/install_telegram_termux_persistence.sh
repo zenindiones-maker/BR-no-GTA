@@ -41,6 +41,8 @@ STATE_DIR=${STATE_DIR_Q}
 PID_FILE=${SUPERVISOR_PID_Q}
 LOG_FILE=${SUPERVISOR_LOG_Q}
 MAINTENANCE_FILE=${MAINTENANCE_FILE_Q}
+REMOTE_CHECK_SECONDS=60
+LAST_REMOTE_CHECK=0
 mkdir -p "\${STATE_DIR}"
 printf '%s\n' "\$\$" > "\${PID_FILE}"
 trap 'rm -f "\${PID_FILE}"' EXIT INT TERM
@@ -54,9 +56,33 @@ while true; do
     sleep 1
     continue
   fi
-  if ! bash "\${CONTROL}" status >/dev/null 2>&1; then
-    printf '%s TELEGRAM_SUPERVISOR=RECONCILING_GATEWAY\n' "\$(date -Iseconds 2>/dev/null || date)" >>"\${LOG_FILE}"
-    # Remote/local/runtime drift must be repaired by ff-only reconcile, not by adopting a stale local process.\n    bash "\${CONTROL}" reconcile >>"\${LOG_FILE}" 2>&1 || true
+
+  reconcile_reason=""
+  now="\$(date +%s 2>/dev/null || echo 0)"
+  if [[ "\${now}" =~ ^[0-9]+$ ]] && (( now - LAST_REMOTE_CHECK >= REMOTE_CHECK_SECONDS )); then
+    LAST_REMOTE_CHECK="\${now}"
+    branch="\$(git -C "\${ROOT}" branch --show-current 2>/dev/null || true)"
+    local_head="\$(git -C "\${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+    remote_head=""
+    if [[ -n "\${branch}" ]]; then
+      remote_head="\$(git -C "\${ROOT}" ls-remote --heads origin "refs/heads/\${branch}" 2>/dev/null | awk 'NR==1 {print $1}')"
+    fi
+    if [[ -n "\${local_head}" && -n "\${remote_head}" && "\${local_head}" != "\${remote_head}" ]]; then
+      reconcile_reason="REMOTE_DRIFT"
+      printf '%s TELEGRAM_SUPERVISOR=REMOTE_DRIFT LOCAL_HEAD=%s REMOTE_HEAD=%s\n' \
+        "\$(date -Iseconds 2>/dev/null || date)" "\${local_head}" "\${remote_head}" >>"\${LOG_FILE}"
+    fi
+  fi
+
+  if [[ -z "\${reconcile_reason}" ]] && ! bash "\${CONTROL}" status >/dev/null 2>&1; then
+    reconcile_reason="RUNTIME_OR_LOCAL_DRIFT"
+  fi
+
+  if [[ -n "\${reconcile_reason}" ]]; then
+    printf '%s TELEGRAM_SUPERVISOR=RECONCILING_GATEWAY REASON=%s\n' \
+      "\$(date -Iseconds 2>/dev/null || date)" "\${reconcile_reason}" >>"\${LOG_FILE}"
+    # Reconcile remains ff-only and fail-closed on a dirty/diverged worktree.
+    bash "\${CONTROL}" reconcile >>"\${LOG_FILE}" 2>&1 || true
   fi
   sleep 30
 done
@@ -135,4 +161,4 @@ fi
 printf 'TERMUX_BOOT_APP=%s\n' "${boot_state}"
 printf 'TERMUX_BOOT_SCRIPT=%s\n' "${BOOT_SCRIPT}"
 printf 'TELEGRAM_SUPERVISOR_LOG=%s\n' "${SUPERVISOR_LOG}"
-printf 'NOTE=Supervisor checks every 30s and reconciles ff-only to the remote branch before restarting stale Telegram runtime. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
+printf 'NOTE=Supervisor checks runtime every 30s and remote branch drift every 60s, then reconciles ff-only before restarting stale Telegram runtime. Reboot autostart requires the Termux:Boot companion app to be installed and opened once.\n'
