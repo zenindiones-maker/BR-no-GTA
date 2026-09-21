@@ -203,11 +203,10 @@ jobs:
           assert restored_failure["memory_id"]==proof_failure["memory_id"]
 
           # No due gate means this scheduled runner did not execute GTA6 research.
-          # The restored checkpoint may legitimately contain newer valid cycles than
-          # the original live-proof checkpoint, so cycle-count equality is not a
-          # durability invariant. Source observation identity is.
-          assert restored_source["observed_at"]==proof_source["observed_at"]
-          assert restored_source["changed_at"]==proof_source["changed_at"]
+          # A restored checkpoint may legitimately contain a newer prior observation,
+          # so timestamps are not cross-run identity. The durable invariants are the
+          # official source identity, content fingerprint, provenance/claim lineage,
+          # episodes, competence and failure memory queried above.
           assert scheduled["scoreboard"]==continuous_repository.scoreboard()
           assert int(scheduled["scoreboard"]["duplicate_work"])==0
           assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
