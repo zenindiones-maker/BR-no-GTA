@@ -672,13 +672,22 @@ def _send_final_human_response(
     return message_id
 
 
-def _acquire_runtime_singleton():
-    lock_path = Path(
-        os.getenv(
-            "TELEGRAM_GATEWAY_RUNTIME_LOCK_FILE",
-            str(STATE_FILE.parent / "telegram-gateway.runtime.lock"),
+def _acquire_runtime_singleton(token: str | None = None):
+    configured = os.getenv("TELEGRAM_GATEWAY_RUNTIME_LOCK_FILE", "").strip()
+    if configured:
+        lock_path = Path(configured)
+    else:
+        token_identity = str(token or os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
+        fingerprint = (
+            hashlib.sha256(token_identity.encode("utf-8")).hexdigest()[:16]
+            if token_identity
+            else "unbound"
         )
-    )
+        lock_path = (
+            Path.home()
+            / ".local/state/br-no-gta"
+            / f"telegram-gateway.bot-{fingerprint}.runtime.lock"
+        )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = lock_path.open("a+", encoding="utf-8")
     try:
@@ -720,7 +729,7 @@ def main() -> int:
         print("TELEGRAM_GATEWAY_ERROR=TELEGRAM_BOT_TOKEN is not loaded in this process", flush=True)
         return 2
 
-    runtime_lock = _acquire_runtime_singleton()
+    runtime_lock = _acquire_runtime_singleton(token)
     if runtime_lock is None:
         print("TELEGRAM_GATEWAY=FAIL", flush=True)
         print("TELEGRAM_GATEWAY_ERROR=DUPLICATE_RUNTIME_LOCK_HELD", flush=True)
