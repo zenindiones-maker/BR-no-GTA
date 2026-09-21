@@ -129,13 +129,13 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
         kwargs["progress_callback"]("UNDERSTANDING", "resolvendo estado")
         kwargs["progress_callback"]("ROUTING", "roteando sem provider global")
         return {
-            "answer": "Estado lido deterministicamente.",
-            "intent": "STATUS_REQUEST",
-            "plan": {"kind": "STATUS"},
+            "answer": "Missão natural roteada pelo ConversationService.",
+            "intent": "EXECUTION_REQUEST",
+            "plan": {"kind": "CAPABILITY_DISCOVERY"},
             "conversation_state": {"waiting_for_human": False},
             "canonical_result": {
                 "status": "OBSERVED",
-                "answer": "Estado lido deterministicamente.",
+                "answer": "Missão natural roteada pelo ConversationService.",
             },
         }
 
@@ -151,12 +151,12 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
         chat_id=7007,
         message={"message_id": 88},
         update_id=99,
-        text="Onde estamos?",
+        text="Analisa esse problema e encontre a ação correta",
     )
 
-    assert reply == "Estado lido deterministicamente."
+    assert reply == "Missão natural roteada pelo ConversationService."
     assert learned["input"]["id"] == 901
-    assert result["intent"] == "STATUS_REQUEST"
+    assert result["intent"] == "EXECUTION_REQUEST"
     assert calls["kwargs"]["telegram_user_id"] == 77
     assert calls["kwargs"]["telegram_chat_id"] == 7007
     assert calls["kwargs"]["telegram_chat_type"] == "private"
@@ -268,3 +268,69 @@ def test_live_status_sends_no_visible_progress_before_final_answer(monkeypatch):
     assert api.sent == []
     assert "UNDERSTANDING" not in reply
     assert reply.strip()
+
+
+
+def test_live_status_passes_no_progress_callback_to_conversation_service(monkeypatch):
+    api = FakeTelegramApi()
+    observed = {}
+
+    monkeypatch.setattr(
+        gateway_v2,
+        "_ingest",
+        lambda **kwargs: {
+            "input": {
+                "id": 99901,
+                "telegram_chat_id": kwargs["chat_id"],
+                "telegram_message_id": kwargs["message"]["message_id"],
+                "classification": "question",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "_present_chat_v2",
+        lambda canonical, input_record=None: {
+            "text": canonical.get("answer") or "OK",
+            "mode": "ACTION_FIRST",
+            "canonical_unchanged": True,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "record_telegram_presentation_audit",
+        lambda **kwargs: {
+            "telegram_input_id": kwargs["telegram_input_id"],
+            "reply_sha256": "status-hard-silent",
+        },
+    )
+
+    def conversation_service(message, **kwargs):
+        observed.update(kwargs)
+        return {
+            "intent": "STATUS_REQUEST",
+            "plan": {"kind": "STATUS"},
+            "canonical_result": {
+                "status": "OBSERVED",
+                "answer": "Status final humano.",
+            },
+            "answer": "Status final humano.",
+            "conversation_state": {"waiting_for_human": False},
+        }
+
+    reply, _learned, _result = gateway_v2._handle_live_natural_language_message(
+        api=api,
+        user_id=991,
+        chat_id=992,
+        chat_type="private",
+        message={"message_id": 993},
+        update_id=994,
+        text="Onde estamos?",
+        conversation_handler=conversation_service,
+    )
+
+    assert observed["progress_callback"] is None
+    assert api.sent == []
+    assert reply == "Status final humano."
+    assert "UNDERSTANDING" not in reply
