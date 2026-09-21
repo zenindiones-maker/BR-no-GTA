@@ -5,6 +5,16 @@ import pytest
 
 from app.services.codex_addy_capability_executor import execute_codex_addy_capability
 from app.services.agent_office.codex_auth import CodexAuthenticationProvider
+from app.services.agent_office.codex_auth_control import (
+    AUTH_AVAILABLE,
+    AUTH_UNAVAILABLE,
+    AUTH_USER_ACTION_REQUIRED,
+    build_mission_checkpoint,
+    classify_codex_auth,
+    load_checkpoint,
+    resolve_checkpoint_after_auth,
+    write_checkpoint,
+)
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
 )
@@ -148,3 +158,146 @@ def test_agent_office_model_command_environment_policy_is_allowlisted():
         "--config",
         'shell_environment_policy.include_only=["PATH","USER","LOGNAME","LANG","LC_ALL","LC_CTYPE","TERM","TMPDIR","TEMP","TMP","PYTHONPATH","SHELL"]',
     )
+
+
+
+def _provider_factory(statuses):
+    def factory(*, environ=None):
+        return _StubAuthProvider(list(statuses), environ=environ)
+    return factory
+
+
+def test_auth_control_preflight_existing_auth_continues(tmp_path):
+    state = classify_codex_auth(
+        mission_id="mission-auth-available",
+        cwd=tmp_path,
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+            "TELEGRAM_ALLOWED_USER_ID": "12345",
+        },
+        provider_factory=_provider_factory([(0, "Logged in using ChatGPT")]),
+    )
+    assert state.state == AUTH_AVAILABLE
+    assert state.auth_available is True
+    assert state.user_action_required is False
+    assert state.lease is not None
+    assert state.lease.credential_material_persisted is False
+    assert state.failure_memory_retrieved is True
+    assert state.auth_timeout_path_repeated is False
+
+
+def test_auth_control_unavailable_with_paired_human_creates_checkpoint_without_wait(tmp_path):
+    state = classify_codex_auth(
+        mission_id="mission-auth-human-gate",
+        cwd=tmp_path,
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+            "TELEGRAM_ALLOWED_USER_ID": "12345",
+        },
+        provider_factory=_provider_factory([(1, "")]),
+    )
+    assert state.state == AUTH_USER_ACTION_REQUIRED
+    assert state.auth_available is False
+    assert state.user_action_required is True
+    assert state.delivery_surface == "PAIRED_USER_DM"
+    assert state.auth_timeout_path_repeated is False
+
+    checkpoint = build_mission_checkpoint(
+        dispatch_id="dispatch-auth-human",
+        mission_id="mission-auth-human-gate",
+        target_ref="work/gate6f-analytics-learning",
+        target_sha="a" * 40,
+        plan_b64="cGxhbg==",
+        human_goal_b64="Z29hbA==",
+        telegram_chat_id="12345",
+        preflight=state,
+    )
+    path = tmp_path / "checkpoint.json"
+    write_checkpoint(path, checkpoint)
+    persisted = load_checkpoint(path)
+    assert persisted["mission_id"] == "mission-auth-human-gate"
+    assert persisted["credential_material_persisted"] is False
+    raw = path.read_text(encoding="utf-8").lower()
+    assert "access_token" not in raw
+    assert "refresh_token" not in raw
+    assert "user_code" not in raw
+    assert "api_key" not in raw
+
+
+def test_auth_control_unavailable_without_paired_human_fails_fast(tmp_path):
+    state = classify_codex_auth(
+        mission_id="mission-auth-no-human",
+        cwd=tmp_path,
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+        },
+        provider_factory=_provider_factory([(1, "")]),
+    )
+    assert state.state == AUTH_UNAVAILABLE
+    assert state.auth_available is False
+    assert state.user_action_required is False
+    assert state.paired_human_available is False
+    assert state.delivery_surface == "NONE"
+    assert state.auth_timeout_path_repeated is False
+
+
+def test_auth_gate_resolves_and_resumes_same_checkpoint_after_auth_available(tmp_path):
+    unavailable = classify_codex_auth(
+        mission_id="mission-auth-resume",
+        cwd=tmp_path,
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+            "TELEGRAM_ALLOWED_USER_ID": "12345",
+        },
+        provider_factory=_provider_factory([(1, "")]),
+    )
+    checkpoint = build_mission_checkpoint(
+        dispatch_id="dispatch-auth-resume",
+        mission_id="mission-auth-resume",
+        target_ref="work/gate6f-analytics-learning",
+        target_sha="b" * 40,
+        plan_b64="cGxhbg==",
+        human_goal_b64="Z29hbA==",
+        telegram_chat_id="12345",
+        preflight=unavailable,
+    )
+    path = tmp_path / "checkpoint.json"
+    write_checkpoint(path, checkpoint)
+
+    resumed = resolve_checkpoint_after_auth(
+        checkpoint_path=path,
+        cwd=tmp_path,
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+            "TELEGRAM_ALLOWED_USER_ID": "12345",
+        },
+        provider_factory=_provider_factory([(0, "Logged in using ChatGPT")]),
+    )
+    assert resumed["AUTH_GATE_RESOLVED"] == "PASS"
+    assert resumed["MISSION_RESUMED_FROM_CHECKPOINT"] == "PASS"
+    assert resumed["mission_id"] == "mission-auth-resume"
+    assert resumed["target_sha"] == "b" * 40
+    assert resumed["credential_material_persisted"] is False
+
+
+def test_legacy_device_auth_refuses_review_group_fallback(tmp_path):
+    provider = _StubAuthProvider(
+        [(1, "")],
+        environ={
+            "PATH": "/usr/bin",
+            "ZERO_COST_OPERATION": "TRUE",
+            "TELEGRAM_BOT_TOKEN": "test-only-token",
+            "TELEGRAM_REVIEW_CHAT_ID": "review-group-only",
+            "GITHUB_RUN_ID": "1",
+        },
+    )
+    state = provider.bootstrap(cwd=tmp_path, allow_device_auth=True, timeout=0.01)
+    assert state.available is False
+    assert state.method == "device_auth"
+    assert state.user_action_required is True
+    assert provider.commands == []
