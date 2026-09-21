@@ -2,6 +2,7 @@ from app.services.harness_adaptive_planning_service import (
     propose_validated_semantic_plan,
     select_capability_for_requirement,
 )
+from app.services.provider_health_service import provider_health
 from app.services.harness_collaboration_service import (
     build_goal_envelope,
     plan_mission_from_human_goal,
@@ -36,6 +37,17 @@ def _proposal(*, candidate_id: str):
         "avoided_bad_paths": [],
     }
 
+
+
+
+def test_provider_health_does_not_confuse_harness_authorization_with_external_auth():
+    opencode = provider_health("opencode")
+    nvidia = provider_health("nvidia_nim")
+
+    assert opencode.state == "AVAILABLE"
+    assert opencode.zero_cost_eligible is True
+    assert nvidia.state == "AUTH_REQUIRED"
+    assert nvidia.zero_cost_eligible is False
 
 def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_once():
     context = {
