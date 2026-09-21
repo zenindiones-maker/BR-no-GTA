@@ -159,3 +159,23 @@ def test_static_presentation_contract_proof_is_executable():
     assert result["NO_MEMORY_AUTHORITY"] == "PASS"
     assert result["NO_ROUTING_AUTHORITY"] == "PASS"
     assert result["NO_PUBLICATION_AUTHORITY"] == "PASS"
+
+
+
+def test_reasoning_failure_is_explicit_human_provider_unavailable_result():
+    exc = HarnessReasoningFailure(
+        {
+            "provider": "opencode",
+            "model": "oc/big-pickle",
+            "execution_id": "exec-provider-unavailable",
+            "episode_id": "episode-provider-unavailable",
+            "failure_memory_id": "memory-provider-unavailable",
+            "provider_error": {
+                "code": "upstream_http_403",
+                "message": "HTTP 403 Forbidden",
+            },
+        }
+    )
+    presentation = gateway._reasoning_failure_presentation(exc)
+    assert "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE" in presentation["text"]
+    assert "UNDERSTANDING" not in presentation["text"]
