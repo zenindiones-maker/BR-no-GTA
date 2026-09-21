@@ -1,0 +1,102 @@
+name: OpenCode Semantic v3 Same-Runner Recovery
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/opencode-semantic-v3-recovery.request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencode-semantic-v3-same-runner-recovery
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: .
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/opencode-semantic-v3-recovery/proof.db
+  BR_OPENCODE_NATIVE_REPOSITORY: ${{ github.repository }}
+  BR_OPENCODE_NATIVE_REF: ${{ github.ref_name }}
+  BR_OPENCODE_NATIVE_SOURCE_SHA: ${{ github.sha }}
+  BR_OPENCODE_NATIVE_EXECUTION_MODE: same_runner
+  BR_OPENCODE_NATIVE_ARTIFACT_ROOT: ${{ github.workspace }}/artifacts/opencode-semantic-v3-recovery/native
+  ZERO_COST_OPERATION: "TRUE"
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact recovery revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pinned semantic runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/opencode-semantic-v3-recovery
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          npm install --global @opencode/cli@2.0.8
+          test "$(opencode --version | awk '{print $NF}' | tr -d '\r' | sed -E 's/^v//')" = "2.0.8"
+
+      - name: Run focused zero-tool boundary tests
+        run: |
+          set -euo pipefail
+          python -m py_compile app/services/opencode_native_ai_provider.py app/services/opencode_semantic_profile.py scripts/opencode_semantic_text_v3_proof.py
+          python -m pytest -q tests/test_opencode_semantic_text_profile.py tests/test_opencode_native_retry_policy.py tests/test_opencode_stream_recovery.py tests/test_harness_ai_provider_service.py tests/test_harness_routing_policy_service.py --junitxml=artifacts/opencode-semantic-v3-recovery/pytest.xml
+          echo "OPENCODE_V3_FOCUSED=PASS"
+
+      - name: Execute isolated and contextual same-runner proof
+        run: |
+          set -euo pipefail
+          python scripts/opencode_semantic_text_v3_proof.py --output artifacts/opencode-semantic-v3-recovery/proof.json | tee artifacts/opencode-semantic-v3-recovery/proof.log
+
+      - name: Enforce exact text-only contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/opencode-semantic-v3-recovery/proof.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS",d
+          isolated=d["isolated"]
+          contextual=d["contextual"]
+          assert isolated["text"]=="TESTE_OK",isolated
+          assert contextual["text"].strip(),contextual
+          for item in (isolated,contextual):
+              assert item["tool_call_count"]==0,item
+              assert item["tools_exposed"]==0,item
+              assert item["semantic_text_only_pass"] is True,item
+              assert item["diagnostics"]["CLI_EXECUTION_MODE"]=="shared_client",item
+          print("OPENCODE_V3_ZERO_TOOL=PASS")
+          print("OPENCODE_V3_USABLE_TEXT=PASS")
+          print("ISOLATED_TEXT=TESTE_OK")
+          print("CONTEXTUAL_TEXT_PRESENT=YES")
+          PY
+
+      - name: Upload recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-semantic-v3-recovery-${{ github.run_id }}
+          path: artifacts/opencode-semantic-v3-recovery/
+          if-no-files-found: error
+          retention-days: 30
