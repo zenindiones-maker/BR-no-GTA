@@ -1,6 +1,1 @@
-{
-  "request": "telegram-query-intelligence-focused",
-  "source_head": "68738f59d3e5682fe483093190aba72811d8c8a9",
-  "attempt": 2,
-  "scope": "exact-query-routing-context-aware-mission-execution"
-}
+{"attempt":3,"scope":"context-aware-intelligence"}
