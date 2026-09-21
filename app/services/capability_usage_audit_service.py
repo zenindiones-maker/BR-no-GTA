@@ -43,13 +43,15 @@ def build_capability_usage_audit(*, authorization_limit: int = 1000, episode_lim
         reviews = sum(1 for e in eps if bool(e.get("human_intervention")))
         reachable = bool(record.execution_enabled and record.executor_binding)
         reason = None
-        if not reachable:
-            reason = "missing executable Registry binding or capability unavailable"
+        intentionally_blocked = not record.available
+        if intentionally_blocked:
+            reason = "Registry availability/policy blocks execution"
+            blocked.append(record.capability_id)
+        elif not reachable:
+            reason = "AVAILABLE capability has no executable Registry binding"
             unreachable.append(record.capability_id)
         elif selected.get(record.capability_id, 0) == 0 and not eps:
             never_selected.append(record.capability_id)
-        if not record.available:
-            blocked.append(record.capability_id)
         rows.append({
             "capability_id": record.capability_id,
             "domain": record.domain,
@@ -65,7 +67,8 @@ def build_capability_usage_audit(*, authorization_limit: int = 1000, episode_lim
             "competence_records": len(by_comp.get(record.capability_id, [])),
             "blocked_reason": reason,
             "classification": (
-                "REGISTERED_BUT_UNREACHABLE" if not reachable
+                "BLOCKED_BY_POLICY_OR_AVAILABILITY" if intentionally_blocked
+                else "REGISTERED_BUT_UNREACHABLE" if not reachable
                 else "REGISTERED_BUT_NEVER_SELECTED" if selected.get(record.capability_id, 0) == 0 and not eps
                 else "ACTIVE_USAGE"
             ),
