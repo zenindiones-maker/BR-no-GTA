@@ -349,6 +349,24 @@ def plan_natural_language_action(
                 "active_goal_id": state.get("active_goal_id"),
                 "active_task": state.get("active_task"),
             }
+        # Deterministic known actions stay deterministic. Mission planning is for
+        # goals that actually require decomposition, not for simple retrieval or
+        # an already-known capability.
+        if "roteiro" in text and any(term in text for term in ("manda", "envia", "mostra")):
+            return {
+                "kind": "PRESENT_EXISTING",
+                "authorized_action": "DECISION",
+                "artifact_ref": resolved_reference or state.get("active_artifact") or "script:last",
+            }
+        if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")) and any(
+            term in text for term in ("gera", "gere", "produz", "produza", "cria", "crie")
+        ):
+            return {
+                "kind": "CAPABILITY",
+                "authorized_action": "EXECUTION",
+                "capability_id": "narration.generate.pt-BR",
+                "artifact_ref": resolved_reference or state.get("active_artifact"),
+            }
         # Natural operational goals are converted into a Harness-owned GoalEnvelope
         # and MissionPlan. The human never selects Hermes, Agent Office or specialists.
         try:
@@ -399,19 +417,6 @@ def plan_natural_language_action(
                 ),
             }
 
-        if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
-            return {
-                "kind": "CAPABILITY",
-                "authorized_action": "EXECUTION",
-                "capability_id": "narration.generate.pt-BR",
-                "artifact_ref": resolved_reference or state.get("active_artifact"),
-            }
-        if "roteiro" in text and any(term in text for term in ("manda", "envia", "mostra")):
-            return {
-                "kind": "PRESENT_EXISTING",
-                "authorized_action": "DECISION",
-                "artifact_ref": resolved_reference or state.get("active_artifact") or "script:last",
-            }
         return {
             "kind": "CAPABILITY_DISCOVERY",
             "authorized_action": "EXECUTION",
@@ -556,6 +561,39 @@ def _default_action_executor(plan: dict[str, Any], state: dict[str, Any], messag
             state=state,
             message=message,
         )
+
+    if plan["kind"] == "HARNESS_MISSION":
+        mission_plan = plan.get("mission_plan")
+        mission_goal = (
+            dict(mission_plan.get("goal") or {})
+            if isinstance(mission_plan, dict)
+            else {}
+        )
+        mission_class = str(mission_goal.get("mission_class") or "").strip()
+        if mission_class == "GTA6_INTELLIGENCE":
+            return execute_telegram_gta6_query(
+                query=str(mission_goal.get("human_goal") or message),
+                state=state,
+            )
+        if mission_class == "EDITORIAL":
+            from app.services.telegram_hermes_dispatch_service import (
+                dispatch_telegram_hermes_mission,
+            )
+            return dispatch_telegram_hermes_mission(
+                plan=plan,
+                state=state,
+                message=message,
+            )
+        return {
+            "status": "BLOCKED_PROVIDER",
+            "answer": (
+                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
+                "O Harness montou o objetivo, mas esta missão não possui um executor "
+                "determinístico completo e o provider semântico elegível está indisponível."
+            ),
+            "authority": "DEEPSEEK_HARNESS",
+            "provider_retry_performed": False,
+        }
 
     if plan["kind"] == "HERMES_COLLABORATION":
         from app.services.telegram_hermes_dispatch_service import (
@@ -1164,7 +1202,7 @@ def handle_telegram_conversation(
                     "execution_id": synthesis.get("execution_id"),
                 },
             }
-    elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY", "HERMES_COLLABORATION"}:
+    elif plan["kind"] in {"CONTINUE", "CAPABILITY", "CAPABILITY_DISCOVERY", "HERMES_COLLABORATION", "HARNESS_MISSION", "SYSTEM_IMPROVEMENT_MISSION"}:
         update_conversation_state(
             telegram_chat_id,
             execution_status="RUNNING",
