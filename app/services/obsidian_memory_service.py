@@ -8,6 +8,8 @@ import re
 from typing import Any, Mapping
 
 from app.database import harness_learning_repository as learning_repository
+from app.database import continuous_operation_repository as continuous_repository
+from app.database.memory_claim_repository import get_memory_claim
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     validate_harness_authorization,
