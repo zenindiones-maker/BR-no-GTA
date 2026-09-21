@@ -412,19 +412,16 @@ def _ensure_opencode_failure_memory() -> dict[str, Any]:
         execution_id="execution-promote-opencode-free-tier-403",
         lineage={"memory_id": candidate["memory_id"], "authority": "DEEPSEEK_HARNESS"},
     )
-    try:
-        gate = evaluate_memory_candidate(
-            memory_id=candidate["memory_id"],
-            decision="PROMOTE",
-            reason=(
-                "Recover the already observed external OpenCode free-tier 403 so future "
-                "missions do not repeat the same blocked provider approach."
-            ),
-            evidence_refs=tuple(blocker.get("evidence_refs") or ()),
-            authorization=authorization,
-        )
-    finally:
-        consume_harness_authorization(authorization)
+    gate = evaluate_memory_candidate(
+        memory_id=candidate["memory_id"],
+        decision="PROMOTE",
+        reason=(
+            "Recover the already observed external OpenCode free-tier 403 so future "
+            "missions do not repeat the same blocked provider approach."
+        ),
+        evidence_refs=tuple(blocker.get("evidence_refs") or ()),
+        authorization=authorization,
+    )
     return {"memory": gate["memory"], "recovered": True}
 
 
