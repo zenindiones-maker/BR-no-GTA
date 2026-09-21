@@ -517,31 +517,136 @@ def mission_plan_json_schema(*, max_tasks: int) -> dict[str, Any]:
     }
 
 
+def _compact_prompt_memory(value: dict[str, Any]) -> dict[str, Any]:
+    source = dict(value or {})
+    result: dict[str, Any] = {}
+    for key in (
+        "conversation_memory",
+        "operational_memory",
+        "knowledge_memory",
+        "artifact_lineage_memory",
+        "competence_records",
+    ):
+        rows = []
+        for item in list(source.get(key) or ())[:2]:
+            if not isinstance(item, dict):
+                continue
+            compact = {
+                field: item.get(field)
+                for field in (
+                    "memory_id", "claim", "task_class", "capability_id",
+                    "failure_pattern", "status", "confidence", "artifact_ref",
+                )
+                if item.get(field) not in (None, "", [], {})
+            }
+            if compact:
+                rows.append(compact)
+        if rows:
+            result[key] = rows
+    return result
+
+
+def _compact_prompt_rows(
+    rows: Any,
+    *,
+    fields: tuple[str, ...],
+    limit: int,
+    content_limit: int | None = None,
+) -> list[dict[str, Any]]:
+    result = []
+    for item in list(rows or ())[:limit]:
+        if not isinstance(item, dict):
+            continue
+        compact = {
+            key: item.get(key)
+            for key in fields
+            if item.get(key) not in (None, "", [], {})
+        }
+        if content_limit and "content" in compact:
+            compact["content"] = str(compact["content"])[:content_limit]
+        if compact:
+            result.append(compact)
+    return result
+
+
 def _prompt_payload(
     context: dict[str, Any],
     validation_feedback: tuple[str, ...],
 ) -> dict[str, Any]:
     payload = {
-        "human_goal": context["human_goal"],
+        "goal": context["human_goal"],
         "subject": context.get("subject"),
-        "canonical_state": context.get("canonical_state") or {},
-        "conversation_state": context.get("conversation_state") or {},
-        "memory": context.get("bounded_memory_context") or {},
-        "history": context.get("recent_execution_history") or [],
-        "failure_memory": context.get("relevant_failure_memories") or [],
-        "human_decisions": context.get("human_feedback_decisions") or [],
-        "provider_health": context.get("provider_health") or {},
+        "canonical": context.get("canonical_state") or {},
+        "conversation": context.get("conversation_state") or {},
+        "memory": _compact_prompt_memory(
+            context.get("bounded_memory_context") or {}
+        ),
+        "history": _compact_prompt_rows(
+            context.get("recent_execution_history"),
+            fields=(
+                "task_class", "capability_id", "status", "actual_outcome",
+                "error_type", "retry_count",
+            ),
+            limit=3,
+        ),
+        "failures": _compact_prompt_rows(
+            context.get("relevant_failure_memories"),
+            fields=(
+                "failure_pattern", "capability_id", "skill_id", "confidence",
+            ),
+            limit=3,
+        ),
+        "decisions": _compact_prompt_rows(
+            context.get("human_feedback_decisions"),
+            fields=("decision_type", "content", "task_id", "capability_id"),
+            limit=2,
+            content_limit=240,
+        ),
         "capabilities": context.get("registry_summary") or [],
-        "competence": context.get("competence_evidence") or [],
-        "resource_bounds": context.get("resource_bounds") or {},
-        "known_bad_paths": context.get("known_bad_paths") or [],
-        "validation_feedback": list(validation_feedback),
+        "competence": _compact_prompt_rows(
+            context.get("competence_evidence"),
+            fields=(
+                "capability_id", "tested_cases", "success_rate",
+                "failure_rate", "retry_rate", "mean_latency_seconds",
+                "confidence",
+            ),
+            limit=6,
+        ),
+        "bad_paths": _compact_prompt_rows(
+            context.get("known_bad_paths"),
+            fields=(
+                "failure_pattern", "capability_id", "provider_id",
+                "skill_version",
+            ),
+            limit=3,
+        ),
+        "validation_feedback": list(validation_feedback)[:4],
     }
     return {
         key: value
         for key, value in payload.items()
         if value not in (None, "", [], {})
     }
+
+
+def semantic_prompt_component_bytes(
+    context: dict[str, Any],
+    *,
+    validation_feedback: tuple[str, ...] = (),
+) -> dict[str, int]:
+    payload = _prompt_payload(context, validation_feedback)
+    return {
+        key: len(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        )
+        for key, value in payload.items()
+    }
+
 
 def build_semantic_planner_prompt(
     context: dict[str, Any],
@@ -552,41 +657,20 @@ def build_semantic_planner_prompt(
         (context.get("resource_bounds") or {}).get("max_tasks_per_mission")
         or 8
     )
-    contract = {
-        "assumptions": "max2",
-        "required_outcomes": "max4",
-        "tasks": "minimum sufficient; max" + str(max_tasks),
-        "task": {
-            "candidate_capability_ids": "max3 exact Registry IDs; [] if unsure",
-            "acceptance_criteria": "1-2 observable criteria",
-            "dependencies": "task_id list",
-        },
-        "rationale": "1 short sentence",
-        "context_usage_notes": "max3",
-        "memory_strategy_notes": "max3",
-        "reused_artifact_refs": "max3",
-        "avoided_bad_paths": "max3",
-    }
     instructions = (
-        "You propose a MissionPlan only; authority=NONE. Return one strict JSON "
-        "object using the required MissionPlan fields. Use the minimum sufficient "
-        "dynamic DAG, observe before mutation when cause is unknown, reuse relevant "
-        "memory/checkpoints, account for competence and known failures, and require "
-        "independent validation for risky/mutating work. Never invent capability "
-        "IDs, choose executor bindings, authorize, publish, promote, or mutate policy. "
-        "Do not repeat the human goal or explain known capability IDs. Keep every "
-        "string concise. Ask for clarification only when a missing fact prevents a "
-        "safe feasible plan."
+        "MissionPlan proposal only; authority=NONE. Strict JSON, minimum "
+        "sufficient dynamic DAG. Unknown cause: observe before mutation. Use "
+        "relevant memory, competence and bad paths. Risky/mutating work needs "
+        "independent validation. Capability IDs must come from capabilities. "
+        "Never authorize/publish/promote/change policy. Be terse: assumptions<=2, "
+        "outcomes<=4, candidates<=3/task, criteria<=2/task, context/memory/"
+        "bad-path notes<=3 each, rationale=one short sentence. Do not repeat goal "
+        "or explain capability IDs. Use <=%d tasks; clarify only if required for "
+        "a safe feasible plan." % max_tasks
     )
     return "\n".join(
         [
             instructions,
-            "OUTPUT_CONTRACT="
-            + json.dumps(
-                contract,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
             "CONTEXT="
             + json.dumps(
                 _prompt_payload(context, validation_feedback),
@@ -596,6 +680,7 @@ def build_semantic_planner_prompt(
             ),
         ]
     )
+
 
 def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     from app.services.harness_ai_provider_service import execute_harness_ai_generation
