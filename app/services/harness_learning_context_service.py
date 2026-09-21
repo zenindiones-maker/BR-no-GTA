@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.database import harness_learning_repository as repository
 from app.services.operational_efficiency_policy import policy_metadata as operational_efficiency_policy_metadata
+from app.services.bounded_memory_context_service import build_bounded_memory_context
 
 
 MIN_COMPETENCE_CASES = 2
@@ -58,6 +59,10 @@ def load_operational_learning_context(
     capability_id: str | None = None,
     agent_id: str | None = None,
     skill_id: str | None = None,
+    goal_id: str | None = None,
+    artifact_ref: str | None = None,
+    failure_pattern: str | None = None,
+    intent: str | None = None,
 ) -> dict[str, Any]:
     if not domain or not task_class:
         raise ValueError("domain and task_class are required for operational learning")
@@ -75,21 +80,27 @@ def load_operational_learning_context(
     usable_competence = [
         item for item in competence if item.get("evidence_sufficient") is True
     ]
-    memories = repository.list_memories(
-        status="ACTIVE",
+    bounded = build_bounded_memory_context(
+        goal_id=goal_id,
         domain=domain,
         task_class=task_class,
         capability_id=capability_id,
-        limit=20,
+        agent_id=agent_id,
+        artifact_ref=artifact_ref,
+        failure_pattern=failure_pattern,
+        intent=intent,
     )
-    failures = repository.list_memories(
-        status="ACTIVE",
-        memory_type="FAILURE",
-        domain=domain,
-        task_class=task_class,
-        capability_id=capability_id,
-        limit=20,
-    )
+    bounded_dict = bounded.to_dict()
+    memories = [
+        item
+        for item in bounded_dict["operational_memory"]
+        if item.get("memory_id")
+    ]
+    failures = [
+        item
+        for item in memories
+        if item.get("memory_type") == "FAILURE"
+    ]
     feedback = repository.list_human_corrections(
         affected_capability=capability_id,
         affected_skill=skill_id,
@@ -106,6 +117,14 @@ def load_operational_learning_context(
         "retrieved_memory_ids": [item["memory_id"] for item in memories],
         "retrieved_failure_memory_ids": [item["memory_id"] for item in failures],
         "retrieved_human_feedback_ids": [item["correction_id"] for item in feedback],
+        "retrieved_human_decision_ids": [
+            item["decision_id"]
+            for item in bounded_dict["conversation_memory"]
+            if item.get("decision_id")
+        ],
+        "bounded_memory_context": bounded_dict,
+        "MEMORY_RETRIEVE_BEFORE_EXECUTION": "PASS",
+        "BOUNDED_MEMORY_CONTEXT": "PASS",
         "competence_records": usable_competence,
         "active_skill_versions": [
             {
@@ -128,7 +147,11 @@ def load_operational_learning_context(
         "mandatory_operational_policies": [operational_efficiency_policy_metadata()],
         "operational_efficiency_history": efficiency_history,
         "learning_participated": bool(
-            memories or failures or feedback or usable_competence or skills or policies
+            memories or failures or feedback
+            or bounded_dict["conversation_memory"]
+            or bounded_dict["knowledge_memory"]
+            or bounded_dict["artifact_lineage_memory"]
+            or usable_competence or skills or policies
             or efficiency_history.get("observations")
         ),
     }
