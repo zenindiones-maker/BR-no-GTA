@@ -126,6 +126,29 @@ def _ensure_schema(connection) -> None:
         ON telegram_human_decisions(conversation_id, decision_id DESC)
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_progress_events (
+            event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            telegram_chat_id INTEGER NOT NULL,
+            stage TEXT NOT NULL,
+            message TEXT NOT NULL DEFAULT '',
+            event_type TEXT NOT NULL DEFAULT 'PROGRESS',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(conversation_id)
+                REFERENCES telegram_conversation_states(conversation_id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_telegram_progress_events_context
+        ON telegram_progress_events(conversation_id, event_id DESC)
+        """
+    )
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS telegram_human_identities (
@@ -399,6 +422,80 @@ def update_conversation_state(
             (state["conversation_id"],),
         ).fetchone()
         return _state_record(row) or {}
+
+
+def record_telegram_progress_event(
+    *,
+    telegram_chat_id: int,
+    stage: str,
+    message: str = "",
+    event_type: str = "PROGRESS",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Persist presentation/progress telemetry without mutating canonical state."""
+
+    state = get_or_create_conversation_state(telegram_chat_id)
+    normalized_stage = str(stage or "WORKING").strip().upper()
+    normalized_type = str(event_type or "PROGRESS").strip().upper()
+    if not normalized_stage:
+        raise ValueError("progress stage is required")
+    if normalized_type not in {
+        "PROGRESS",
+        "BLOCKER_TELEMETRY",
+        "STALE_PROGRESS_RECONCILIATION",
+    }:
+        raise ValueError("unsupported Telegram progress event type")
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        cursor = connection.execute(
+            """
+            INSERT INTO telegram_progress_events (
+                conversation_id, telegram_chat_id, stage, message,
+                event_type, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                state["conversation_id"],
+                int(telegram_chat_id),
+                normalized_stage,
+                str(message or "")[:2000],
+                normalized_type,
+                _dump(metadata or {}),
+                _utcnow(),
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM telegram_progress_events WHERE event_id = ?",
+            (int(cursor.lastrowid),),
+        ).fetchone()
+        record = dict(row)
+        record["metadata"] = _load(record.get("metadata"), {})
+        return record
+
+
+def list_recent_telegram_progress_events(
+    telegram_chat_id: int,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    state = get_or_create_conversation_state(telegram_chat_id)
+    with get_connection() as connection:
+        _ensure_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT * FROM telegram_progress_events
+            WHERE conversation_id = ?
+            ORDER BY event_id DESC
+            LIMIT ?
+            """,
+            (state["conversation_id"], max(1, min(int(limit), 200))),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = _load(item.get("metadata"), {})
+            result.append(item)
+        return result
 
 
 def append_conversation_turn(
