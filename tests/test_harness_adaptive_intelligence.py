@@ -208,7 +208,7 @@ def test_ambiguous_natural_goal_uses_dynamic_semantic_dag_without_agent_names():
                     "objective": "inspecionar tecnicamente o resultado atual e localizar sinais anormais",
                     "task_class": "media-anomaly-analysis",
                     "required_capability_description": "análise técnica de mídia existente",
-                    "candidate_capability_ids": ["media.technical-analysis"],
+                    "candidate_capability_ids": ["agent-office.codex.readonly-analysis"],
                     "dependencies": [],
                     "expected_output": "MediaAnomalyEvidence",
                     "acceptance_criteria": ["anomalia localizada ou hipótese explicitamente refutada"],
