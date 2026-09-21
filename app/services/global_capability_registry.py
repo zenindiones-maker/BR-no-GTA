@@ -364,6 +364,57 @@ NARRATION_GENERATE_PTBR_RECORD = CapabilityRecord(
     side_effects=("narration bundle artifact", "content-addressed segment cache", "voice speed evidence"),
 )
 
+GTA6_DELTA_RESEARCH_RECORD = CapabilityRecord(
+    capability_id="gta6.research.delta",
+    capability_type="AGENT",
+    domain="gta6",
+    implementation=(
+        "Harness-governed continuous GTA6 delta research agent with bounded "
+        "Knowledge Brain retrieval and source-fingerprint short circuit"
+    ),
+    input_contract=(
+        "topic query + subject + official source URL + goal_id + persisted Harness RESEARCH authorization"
+    ),
+    output_contract=(
+        "KNOWN_STATE vs CURRENT_SOURCE_STATE delta + bounded candidate claims + provenance + source metrics"
+    ),
+    requirements=(
+        "DeepSeek Harness RESEARCH authorization",
+        "Global Capability Registry routing",
+        "GitHub Actions cloud execution for live network collection",
+        "bounded Knowledge Brain retrieval before collection",
+        "official Rockstar source for automatic knowledge promotion",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH",),
+    policy_tags=(
+        "gta6", "research", "delta", "continuous-intelligence", "knowledge",
+        "provenance", "memory-retrieval", "zero-cost",
+    ),
+    security_boundary=(
+        "DeepSeek Harness is sole authority. The research agent may read public sources and "
+        "operational source fingerprints, but cannot promote canonical knowledge, write Obsidian, "
+        "change policy, render media, synthesize voice, upload or publish."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="PUBLIC_WEB_GITHUB_ACTIONS",
+    latency_class="DELTA_SHORT_CIRCUIT_OR_REMOTE_WEB",
+    quality_class="SOURCE_GROUNDED_PROVENANCE_FIRST",
+    evidence_contract="delta research result + official source fingerprint + candidate claim provenance",
+    fallback_eligibility=False,
+    executor_binding="app.services.continuous_intelligence_service.execute_gta6_delta_research_capability",
+    version="1",
+    provider_id="internal",
+    agent_id="gta6-research-agent",
+    side_effects=("continuous_source_state checkpoint update",),
+    authority="DELEGATED_ONLY",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+)
+
 FRESH_GTA6_RESEARCH_RECORD = CapabilityRecord(
     capability_id="gta6.research.fresh-cloud",
     capability_type="EXECUTOR",
@@ -760,6 +811,7 @@ for _record in (
     PRODUCTION_BRAND_ASSET_BINDING_RECORD,
     PRODUCTION_RENDER_RECORD,
     NARRATION_GENERATE_PTBR_RECORD,
+    GTA6_DELTA_RESEARCH_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
     YOUTUBE_PACKAGE_PERSIST_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
