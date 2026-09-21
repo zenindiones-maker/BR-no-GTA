@@ -1,14 +1,7 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "8a369cf9f287050273ee4a525ba5390218a2838b",
-  "scope": "single-runtime-status-final-response-multiline-regression-rerun",
-  "observed_human_failure": "duplicate status plus reasoning/OpenCode failure after deterministic status",
-  "previous_focused_run": 35612247832,
-  "previous_failure": "stale textual assertion only",
-  "required": [
-    "runtime-singleton",
-    "module-style-process-reconciliation",
-    "status-real-newlines",
-    "provider-free-status"
-  ]
+  "source_head": "53289790d7a83573c32739409fce7a0cc2dcd91b",
+  "incident": "human status received stale REASONING/OpenCode failure plus deterministic status",
+  "expected": "one bot-scoped listener; status zero provider/progress; one clean final response",
+  "requested_at": "2026-09-21T11:40:00-03:00"
 }
