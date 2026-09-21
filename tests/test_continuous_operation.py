@@ -316,3 +316,101 @@ def test_scheduled_entrypoint_contract_runs_main_without_checks_keyerror(
         "improvement": False,
         "weekly": False,
     }
+
+
+
+def test_improvement_observations_deduplicate_evidence_refs(monkeypatch, tmp_path):
+    baseline = {
+        "mission_id": "baseline-real-run",
+        "research_elapsed_seconds": 1.0,
+        "research": {
+            "result": {
+                "status": "PASS",
+                "evidence_refs": ["evidence:baseline", "evidence:baseline"],
+            }
+        },
+    }
+    trial = {
+        "mission_id": "candidate-real-run",
+        "research_elapsed_seconds": 0.1,
+        "research": {
+            "result": {
+                "status": "NO_MEANINGFUL_GTA6_DELTA",
+                "evidence_refs": ["evidence:candidate", "evidence:candidate"],
+            }
+        },
+    }
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_find_episode",
+        lambda **_kwargs: {
+            "episode_id": "episode-baseline-real",
+            "evidence_refs": ["evidence:baseline", "evidence:baseline"],
+        },
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "create_learning_candidate",
+        lambda **_kwargs: {"candidate_id": "candidate-delta-reuse-test"},
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "_run_intelligence_mission",
+        lambda **_kwargs: trial,
+    )
+
+    captured = {}
+
+    def fake_evaluate(**kwargs):
+        captured.update(kwargs)
+        return {
+            "decision": "PROMOTE",
+            "evaluation_id": "evaluation-delta-reuse-test",
+            "evaluation_mode": "OBSERVED",
+            "baseline_metrics": kwargs["baseline_observation"]["metrics"],
+            "candidate_metrics": kwargs["candidate_observation"]["metrics"],
+        }
+
+    monkeypatch.setattr(
+        continuous_cycle,
+        "evaluate_candidate_from_observed_results",
+        fake_evaluate,
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "issue_harness_authorization",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "promote_candidate",
+        lambda **_kwargs: {"status": "PROMOTED"},
+    )
+    monkeypatch.setattr(
+        continuous_cycle,
+        "consume_harness_authorization",
+        lambda *_args, **_kwargs: None,
+    )
+
+    candidate, evaluation, improvement = (
+        continuous_cycle._create_and_test_improvement_candidate(
+            baseline=baseline,
+            topic={
+                "query": QUERY,
+                "subject": "Jason Duval",
+                "source_url": SOURCE_URL,
+            },
+            upstream_root=tmp_path / "hermes",
+            artifact_root=tmp_path / "artifacts",
+            target_sha="a" * 40,
+            regression_evidence_ref="regression:real",
+        )
+    )
+
+    baseline_refs = captured["baseline_observation"]["evidence_refs"]
+    candidate_refs = captured["candidate_observation"]["evidence_refs"]
+    assert baseline_refs == list(dict.fromkeys(baseline_refs))
+    assert candidate_refs == list(dict.fromkeys(candidate_refs))
+    assert evaluation["decision"] == "PROMOTE"
+    assert candidate["candidate_id"] == "candidate-delta-reuse-test"
+    assert improvement["trial"]["mission_id"] == "candidate-real-run"
