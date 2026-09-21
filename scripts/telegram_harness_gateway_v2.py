@@ -221,18 +221,47 @@ def _generic_failure_presentation(
     telegram_message_id: int | None = None,
     telegram_update_id: int | None = None,
 ) -> dict[str, Any]:
-    canonical_failure = {
-        "status": "FAILED",
-        "success": False,
-        "error": {
-            "code": type(exc).__name__,
-            "message": str(exc)[:1200] or type(exc).__name__,
-        },
-        "answer": (
-            "Corrija a causa mostrada acima e repita a ação. "
-            "Use /evidence quando houver input persistido."
-        ),
-    }
+    raw_message = str(exc)[:1200] or type(exc).__name__
+    lowered = raw_message.casefold()
+    semantic_provider_boundary = (
+        "opencode executor profile checksum does not match executable code" in lowered
+        or "opencode executor profile content_ref does not resolve to executable code" in lowered
+        or "opencode semantic" in lowered and "403" in lowered
+    )
+    if semantic_provider_boundary:
+        canonical_failure = {
+            "status": "BLOCKED",
+            "success": False,
+            "error": {
+                "code": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
+                "message": (
+                    "O raciocínio semântico está indisponível no provider elegível. "
+                    "O diagnóstico técnico completo foi preservado em /evidence."
+                ),
+            },
+            "answer": (
+                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. "
+                "Esta mensagem exige raciocínio semântico e nenhum provider elegível está saudável agora. "
+                "Status e controles determinísticos continuam funcionando."
+            ),
+            "technical_error": {
+                "type": type(exc).__name__,
+                "message": raw_message,
+            },
+        }
+    else:
+        canonical_failure = {
+            "status": "FAILED",
+            "success": False,
+            "error": {
+                "code": type(exc).__name__,
+                "message": raw_message,
+            },
+            "answer": (
+                "Corrija a causa mostrada acima e repita a ação. "
+                "Use /evidence quando houver input persistido."
+            ),
+        }
     return present_canonical_result_under_harness(
         canonical_failure,
         surface="telegram",
