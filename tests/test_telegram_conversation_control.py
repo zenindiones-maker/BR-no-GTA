@@ -260,6 +260,14 @@ def test_status_answer_comes_from_persisted_real_state_not_model_guess():
         active_stage="ACOUSTIC_EXTRACTION",
         execution_status="RUNNING",
         active_blocker=None,
+        last_execution_result={
+            "status": "RUNNING",
+            "execution_id": "exec-acoustic-35499900001",
+            "run_id": "35499900001",
+            "goal_id": "goal-voice",
+            "task_id": "extração acústica PT-BR",
+            "capability_id": "media.analysis.cloud",
+        },
     )
 
     result = handle_telegram_conversation(
