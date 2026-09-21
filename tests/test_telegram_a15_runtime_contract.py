@@ -51,3 +51,17 @@ def test_gateway_startup_logs_real_group_readiness():
     assert "TELEGRAM_BOT_CAN_JOIN_GROUPS=" in text
     assert "TELEGRAM_BOT_CAN_READ_ALL_GROUP_MESSAGES=" in text
     assert "TELEGRAM_GROUP_NATURAL_LANGUAGE_READY=" in text
+
+
+
+def test_a15_runtime_status_is_remotely_observable():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "publish_runtime_status()" in text
+    assert "telegram-a15-runtime" in text
+    assert "repos/" in text and "/statuses/" in text
+    assert "RUNNING_GATEWAY_PID=" in text
+    assert "RUNNING_GATEWAY_REVISION=" in text
+    assert "LOCAL_HEAD=" in text
+    assert "REMOTE_HEAD=" in text
