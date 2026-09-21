@@ -102,11 +102,8 @@ class CodexAuthenticationProvider:
     ) -> int:
         token = self._environ.get("TELEGRAM_BOT_TOKEN", "").strip()
         paired_user_id = self._environ.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
-        review_chat_id = self._environ.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
-        chat_id = paired_user_id or review_chat_id
-        destination_class = (
-            "paired_user_dm" if paired_user_id else "review_channel_or_group"
-        )
+        chat_id = paired_user_id
+        destination_class = "paired_user_dm"
         run_id = self._environ.get("GITHUB_RUN_ID", "").strip()
         if not token or not chat_id or not run_id:
             raise RuntimeError("private Telegram device-auth delivery is not configured")
@@ -219,15 +216,10 @@ class CodexAuthenticationProvider:
                         raise
                     delivered = True
                     print("TELEGRAM_DESTINATION_CONFIGURED=YES", flush=True)
-                    destination = (
-                        "PAIRED_USER_DM"
-                        if self._environ.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
-                        else "REVIEW_CHANNEL_OR_GROUP"
-                    )
-                    print(f"TELEGRAM_DESTINATION={destination}", flush=True)
+                    print("AUTH_DELIVERY_SURFACE=PAIRED_USER_DM", flush=True)
                     print("TELEGRAM_DELIVERY_ACCEPTED=YES", flush=True)
                     print(f"TELEGRAM_MESSAGE_ID={message_id}", flush=True)
-                    print("USER_CODE_DELIVERY=PRIVATE", flush=True)
+                    print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO", flush=True)
                     print("WAITING_FOR_USER_AUTH=YES", flush=True)
             return int(process.returncode or 0)
         finally:
@@ -295,10 +287,7 @@ class CodexAuthenticationProvider:
         print("CODEX_AUTH_COST_CLASS=subscription_or_workspace", flush=True)
         private_delivery = bool(
             source.get("TELEGRAM_BOT_TOKEN", "").strip()
-            and (
-                source.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
-                or source.get("TELEGRAM_REVIEW_CHAT_ID", "").strip()
-            )
+            and source.get("TELEGRAM_ALLOWED_USER_ID", "").strip()
             and source.get("GITHUB_RUN_ID", "").strip()
         )
         if private_delivery:
@@ -308,8 +297,9 @@ class CodexAuthenticationProvider:
                 env=trusted_env,
             )
         else:
-            print("TELEGRAM_DESTINATION_CONFIGURED=NO", flush=True)
+            print("AUTH_DELIVERY_SURFACE=NONE", flush=True)
             print("TELEGRAM_DELIVERY_ACCEPTED=NO", flush=True)
+            print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO", flush=True)
             return CodexAuthenticationState(
                 available=False,
                 method="device_auth",
