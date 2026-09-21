@@ -1,6 +1,6 @@
 {
   "request": "continuous-operation-focused",
-  "source_head": "2c89c75ba294eedee5b1d6f84ca63819fb1a8ca4",
-  "scope": "scheduled-entrypoint-contract-before-live-jason",
+  "source_head": "b3e29e46efec64fa73976e9fb938399aa74c739f",
+  "scope": "scheduled-entrypoint-contract-gta6-due-key",
   "expected": "SCHEDULED_ENTRYPOINT_CONTRACT=PASS"
 }
