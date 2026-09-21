@@ -346,6 +346,8 @@ def run(output: Path) -> dict[str, Any]:
         "status": "PASS" if pass_all else "FAIL",
         "failure_stage": None if pass_all else "cold_single_proposal_gate",
         "prompt_token_target_pass": prompt_bound,
+        "selected_num_predict": OUTPUT_TOKEN_BUDGET if pass_all else None,
+        "selected_format_mode": "json_schema" if pass_all else None,
         "PROFILE_RESULT": "PASS" if pass_all else "FAIL",
     })
     _write_json(output, report)
