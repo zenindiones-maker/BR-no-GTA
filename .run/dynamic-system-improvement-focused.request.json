@@ -1,7 +1,5 @@
 {
-  "request": "dynamic-system-improvement-auth-control-focused",
-  "source_head": "b7f51f8a1219f9c2369507d140b0272603317ad7",
-  "retry_of": 35643980669,
-  "scope": "codex-auth-preflight-human-gate-checkpoint-resume",
-  "incident_run": 35633234932
+  "request": "codex-cloud-auth-continuity-focused",
+  "source_head": "eaa9e30b6c7492f3d408d03afa44924c4f9431aa",
+  "scope": "local-vs-cloud-auth-context-and-no-ephemeral-loop"
 }
