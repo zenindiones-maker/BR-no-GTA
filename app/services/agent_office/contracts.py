@@ -190,9 +190,30 @@ class AgentOfficeExecutionSpec:
         )
 
         allowed_paths = _string_tuple(value.get("allowed_paths"), "allowed_paths", allow_empty=True)
-        for path in allowed_paths:
-            if path.startswith(("/", "\\")) or ".." in path.replace("\\", "/").split("/"):
-                raise ValueError("allowed_paths must be repository-relative and traversal-free")
+        mission_read_scope = _string_tuple(
+            value.get("mission_read_scope")
+            if value.get("mission_read_scope") is not None
+            else allowed_paths,
+            "mission_read_scope",
+            allow_empty=True,
+        )
+        mission_write_scope = _string_tuple(
+            value.get("mission_write_scope")
+            if value.get("mission_write_scope") is not None
+            else allowed_paths,
+            "mission_write_scope",
+            allow_empty=True,
+        )
+        for field_name, paths in (
+            ("allowed_paths", allowed_paths),
+            ("mission_read_scope", mission_read_scope),
+            ("mission_write_scope", mission_write_scope),
+        ):
+            for path in paths:
+                if path.startswith(("/", "\\")) or ".." in path.replace("\\", "/").split("/"):
+                    raise ValueError(
+                        f"{field_name} must be repository-relative and traversal-free"
+                    )
 
         mission_id = _identifier(
             value.get("mission_id") or value.get("execution_id"),
@@ -245,6 +266,8 @@ class AgentOfficeExecutionSpec:
                 value.get("allowed_capabilities"), "allowed_capabilities"
             ),
             allowed_paths=allowed_paths,
+            mission_read_scope=mission_read_scope,
+            mission_write_scope=mission_write_scope,
             forbidden_actions=forbidden,
             max_parallelism=parallelism,
             time_budget_seconds=time_budget,
