@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
 import re
 import unicodedata
 from typing import Any
@@ -249,7 +250,7 @@ def execute_telegram_gta6_query(
         raise ValueError("Telegram GTA6 query is empty")
     goal_id = str(
         state.get("active_goal_id")
-        or f"telegram-gta6-query:{abs(hash(text)) % 10_000_000}"
+        or "telegram-gta6-query:" + sha256(text.encode("utf-8")).hexdigest()[:16]
     )
     known = _knowledge_hits(text)
     fresh = research_fresh_gta6_under_harness(text)
