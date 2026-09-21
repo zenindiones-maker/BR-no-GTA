@@ -9,10 +9,16 @@ on:
       - "app/services/harness_adaptive_planning_service.py"
       - "app/services/harness_collaboration_service.py"
       - "app/services/telegram_conversation_service.py"
+      - "app/services/local_openweight_ai_provider.py"
+      - "app/services/provider_health_service.py"
+      - "app/services/harness_ai_provider_service.py"
+      - "app/services/harness_routing_policy_service.py"
+      - "app/services/global_capability_registry_base.py"
       - "scripts/harness_intelligence_benchmark.py"
       - "tests/test_harness_adaptive_intelligence.py"
       - "tests/test_harness_mission_planner.py"
       - "tests/test_harness_collaboration_service.py"
+      - "tests/test_local_openweight_provider.py"
       - ".github/workflows/harness-intelligence-validation.yml"
   workflow_dispatch:
 
@@ -42,12 +48,12 @@ jobs:
       - name: Compile adaptive planner
         run: |
           set -euo pipefail
-          python -m py_compile             app/services/semantic_mission_planner_service.py             app/services/harness_adaptive_planning_service.py             app/services/harness_collaboration_service.py             app/services/telegram_conversation_service.py             scripts/harness_intelligence_benchmark.py
+          python -m py_compile             app/services/semantic_mission_planner_service.py             app/services/harness_adaptive_planning_service.py             app/services/harness_collaboration_service.py             app/services/telegram_conversation_service.py             app/services/local_openweight_ai_provider.py             app/services/provider_health_service.py             app/services/harness_ai_provider_service.py             scripts/harness_intelligence_benchmark.py
           echo "INTELLIGENCE_PLANNER_COMPILE=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_harness_adaptive_intelligence.py             tests/test_harness_mission_planner.py             tests/test_harness_collaboration_service.py
+          python -m pytest -q             tests/test_harness_adaptive_intelligence.py             tests/test_harness_mission_planner.py             tests/test_harness_collaboration_service.py             tests/test_local_openweight_provider.py
           echo "INTELLIGENCE_FOCUSED_TESTS=PASS"
       - name: Publish intelligence status
         if: always()
@@ -74,6 +80,13 @@ jobs:
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
+      BR_LOCAL_OPENWEIGHT_ENABLED: "1"
+      BR_LOCAL_OPENWEIGHT_URL: "http://127.0.0.1:11434"
+      OLLAMA_VERSION: "0.34.2"
+      OLLAMA_MODEL: "qwen3:4b-instruct"
+      OLLAMA_EXPECTED_DIGEST: "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0"
+      OLLAMA_HOST: "127.0.0.1:11434"
+      OLLAMA_NO_CLOUD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,13 +99,70 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+      - name: Bootstrap proven local semantic provider
+        run: |
+          set -euo pipefail
+          command -v zstd >/dev/null || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq zstd
+          }
+          curl --fail --show-error --location             "https://raw.githubusercontent.com/ollama/ollama/v0.34.2/scripts/install.sh"             -o /tmp/ollama-install.sh
+          OLLAMA_VERSION="$OLLAMA_VERSION" OLLAMA_NO_START=1 sh /tmp/ollama-install.sh
+          ollama --version | grep -F "$OLLAMA_VERSION"
+          nohup env OLLAMA_HOST="$OLLAMA_HOST" OLLAMA_NO_CLOUD="$OLLAMA_NO_CLOUD"             ollama serve > /tmp/ollama.log 2>&1 &
+          echo "$!" > /tmp/ollama.pid
+          for i in {1..60}; do
+            curl --connect-timeout 1 --max-time 2 -fsS               http://127.0.0.1:11434/api/tags >/tmp/tags.json 2>/dev/null && break
+            kill -0 "$(cat /tmp/ollama.pid)"
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:11434/api/tags >/dev/null
+          ollama pull "$OLLAMA_MODEL"
+          python - <<'PY'
+          import json, os, urllib.request
+          with urllib.request.urlopen("http://127.0.0.1:11434/api/tags",timeout=5) as r:
+              data=json.load(r)
+          rows=[
+              item for item in data.get("models",[])
+              if item.get("name")==os.environ["OLLAMA_MODEL"]
+              or item.get("model")==os.environ["OLLAMA_MODEL"]
+          ]
+          assert len(rows)==1, rows
+          digest=str(rows[0].get("digest") or "").removeprefix("sha256:")
+          assert digest==os.environ["OLLAMA_EXPECTED_DIGEST"], digest
+          print("LOCAL_SEMANTIC_PROVIDER_BOOTSTRAP=PASS")
+          print("LOCAL_SEMANTIC_PROVIDER_MODEL_DIGEST=PASS")
+          PY
       - name: Run live Harness intelligence benchmark
         id: benchmark
         continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p artifacts/harness-intelligence
+          sudo iptables-save > /tmp/iptables-before.rules
+          if command -v ip6tables-save >/dev/null; then
+            sudo ip6tables-save > /tmp/ip6tables-before.rules
+          fi
+          restore_network() {
+            sudo iptables-restore < /tmp/iptables-before.rules || true
+            if [ -f /tmp/ip6tables-before.rules ]; then
+              sudo ip6tables-restore < /tmp/ip6tables-before.rules || true
+            fi
+          }
+          trap restore_network EXIT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -I OUTPUT 2 -j REJECT
+          if command -v ip6tables >/dev/null; then
+            sudo ip6tables -I OUTPUT 1 -o lo -j ACCEPT
+            sudo ip6tables -I OUTPUT 2 -j REJECT
+          fi
           python scripts/harness_intelligence_benchmark.py             --output artifacts/harness-intelligence/intelligence-benchmark.json
+      - name: Shutdown local semantic provider
+        if: always()
+        run: |
+          if [ -f /tmp/ollama.pid ]; then
+            kill "$(cat /tmp/ollama.pid)" 2>/dev/null || true
+          fi
       - name: Upload benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
