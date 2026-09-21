@@ -824,6 +824,7 @@ def handle_telegram_conversation(
     if str(canonical.get("USER_GOAL_COMPLETED") or "").upper() == "NO" and status == "COMPLETED":
         status = "FAILED"
     waiting = status in {"WAITING_FOR_HUMAN", "WAITING", "BLOCKED_HUMAN"}
+    running = status in {"RUNNING", "IN_PROGRESS", "QUEUED", "DISPATCHED"}
     blocker = _extract_identity(canonical, "blocker", "error")
     pending_question = canonical.get("pending_question") if isinstance(canonical, dict) else None
     canonical_pending_action = (
@@ -846,9 +847,19 @@ def handle_telegram_conversation(
         ),
         active_artifact=str(artifact_ref) if artifact_ref is not None else state.get("active_artifact"),
         active_run_id=str(run_id) if run_id is not None else state.get("active_run_id"),
-        active_stage="WAITING_FOR_HUMAN" if waiting else "COMPLETE",
+        active_stage=(
+            "WAITING_FOR_HUMAN"
+            if waiting
+            else "RUNNING" if running
+            else "COMPLETE"
+        ),
         active_blocker=str(blocker)[:1000] if blocker else None,
-        execution_status="WAITING_FOR_HUMAN" if waiting else ("FAILED" if "FAIL" in status or status == "BLOCKED" else "COMPLETED"),
+        execution_status=(
+            "WAITING_FOR_HUMAN"
+            if waiting
+            else "RUNNING" if running
+            else ("FAILED" if "FAIL" in status or status == "BLOCKED" else "COMPLETED")
+        ),
         waiting_for_human=waiting,
         pending_question=str(pending_question) if pending_question else None,
         pending_human_review=(str(artifact_ref) if waiting and artifact_ref is not None else state.get("pending_human_review") if waiting else None),
