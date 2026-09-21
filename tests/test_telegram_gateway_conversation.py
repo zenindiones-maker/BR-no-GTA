@@ -7,6 +7,9 @@ from scripts.telegram_harness_gateway import (
 )
 from scripts import telegram_harness_gateway_v2 as gateway_v2
 from app.services.harness_learning_service import register_skill_version
+from app.services.telegram_ingress_policy_service import (
+    parse_governed_telegram_ingress,
+)
 from app.services.opencode_executor_profile_service import (
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
     OPENCODE_EXECUTOR_SKILL_ID,
@@ -334,3 +337,80 @@ def test_live_status_passes_no_progress_callback_to_conversation_service(monkeyp
     assert api.sent == []
     assert reply == "Status final humano."
     assert "UNDERSTANDING" not in reply
+
+
+
+def test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy():
+    state = {
+        "chat_id": 11001,
+        "allowed_chat_ids": [-22002, -10033003],
+    }
+
+    private = parse_governed_telegram_ingress(
+        {
+            "message": {
+                "from": {"id": 77},
+                "chat": {"id": 11001, "type": "private"},
+                "text": "Onde estamos?",
+            }
+        },
+        allowed_user_id=77,
+        state=state,
+    )
+    group = parse_governed_telegram_ingress(
+        {
+            "message": {
+                "from": {"id": 77},
+                "chat": {"id": -22002, "type": "group"},
+                "text": "Onde estamos?",
+            }
+        },
+        allowed_user_id=77,
+        state=state,
+    )
+    supergroup = parse_governed_telegram_ingress(
+        {
+            "message": {
+                "from": {"id": 77},
+                "chat": {"id": -10033003, "type": "supergroup"},
+                "text": "Onde estamos?",
+            }
+        },
+        allowed_user_id=77,
+        state=state,
+    )
+    unauthorized_chat = parse_governed_telegram_ingress(
+        {
+            "message": {
+                "from": {"id": 77},
+                "chat": {"id": -44004, "type": "group"},
+                "text": "Onde estamos?",
+            }
+        },
+        allowed_user_id=77,
+        state=state,
+    )
+    unauthorized_sender = parse_governed_telegram_ingress(
+        {
+            "message": {
+                "from": {"id": 88},
+                "chat": {"id": -22002, "type": "group"},
+                "text": "Onde estamos?",
+            }
+        },
+        allowed_user_id=77,
+        state=state,
+    )
+
+    assert private is not None and private.accepted is True
+    assert private.chat_type == "private"
+    assert group is not None and group.accepted is True
+    assert group.chat_type == "group"
+    assert supergroup is not None and supergroup.accepted is True
+    assert supergroup.chat_type == "supergroup"
+    assert unauthorized_chat is not None
+    assert unauthorized_chat.authorized_sender is True
+    assert unauthorized_chat.authorized_chat is False
+    assert unauthorized_sender is not None
+    assert unauthorized_sender.authorized_sender is False
+    assert unauthorized_sender.authorized_chat is False
