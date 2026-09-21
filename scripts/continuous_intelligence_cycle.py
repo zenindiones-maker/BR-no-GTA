@@ -894,7 +894,7 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
         "BASELINE_VS_CANDIDATE_COMPARED": evaluation.get("evaluation_mode") == "OBSERVED",
         "NEXT_REAL_EXECUTION_CHANGED": (
             next_research.get("status") == "NO_MEANINGFUL_GTA6_DELTA"
-            and next_run.get("active_delta_policy_memory_id")
+            and bool(next_run.get("active_delta_policy_memory_id"))
         ),
         "NO_REGRESSION": (
             float(evaluation["candidate_metrics"]["quality"])
