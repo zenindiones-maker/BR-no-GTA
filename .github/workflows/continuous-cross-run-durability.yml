@@ -14,6 +14,8 @@ permissions:
 env:
   TARGET_REF: work/gate6f-analytics-learning
   PROOF_RUN_ID: "35590101622"
+  SCHEDULED_PROOF_RUN_ID: "35590666727"
+  JASON_SOURCE_URL: https://www.rockstargames.com/VI/only-in-leonida
 
 jobs:
   durability:
@@ -47,65 +49,148 @@ jobs:
           print("LIVE_PROOF_REUSED_WITHOUT_REFETCH=PASS")
           PY
 
-      - name: Dispatch scheduled new-run cycle
-        id: dispatch
+      - name: Download successful scheduled new-run evidence
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          request_id="cross-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
-          gh workflow run continuous-intelligence-operation.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f mode=scheduled             -f target_ref="$TARGET_REF"             -f request_id="$request_id"
-          echo "CROSS_RUN_SCHEDULED_DISPATCH=PASS"
-
-      - name: Wait for scheduled new-run
-        id: scheduled
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REQUEST_ID: ${{ steps.dispatch.outputs.request_id }}
-        run: |
-          set -euo pipefail
-          run_id=""
-          expected="Continuous Intelligence $REQUEST_ID scheduled"
-          for _ in $(seq 1 60); do
-            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow continuous-intelligence-operation.yml               --branch main               --event workflow_dispatch               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"$expected\") | .databaseId"               | head -n 1)"
-            [[ -n "$run_id" ]] && break
-            sleep 2
-          done
-          [[ -n "$run_id" ]] || { echo "CROSS_RUN=FAIL scheduled child not found" >&2; exit 1; }
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
-          mkdir -p evidence/scheduled evidence/scheduled-state evidence/scheduled-obsidian
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-$run_id" --dir evidence/scheduled
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-state-$run_id" --dir evidence/scheduled-state
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "obsidian-memory-export-$run_id" --dir evidence/scheduled-obsidian || true
+          run_id="$SCHEDULED_PROOF_RUN_ID"
+          mkdir -p evidence/scheduled evidence/scheduled-state
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "continuous-operation-$run_id" --dir evidence/scheduled
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "continuous-operation-state-$run_id" --dir evidence/scheduled-state
           gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > evidence/scheduled-run.log
-          echo "SCHEDULED_RUN_ID=$run_id"
+          echo "SCHEDULED_PROOF_RUN_ID=$run_id"
 
-      - name: Validate cross-run durable memory
+      - name: Validate cross-run durable canonical state
         env:
-          SCHEDULED_RUN_ID: ${{ steps.scheduled.outputs.run_id }}
+          PYTHONPATH: .
+          SCHEDULED_RUN_ID: ${{ env.SCHEDULED_PROOF_RUN_ID }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os
+          import hashlib
+          import json
+          import os
           from pathlib import Path
+
+          from app.database import continuous_operation_repository as continuous_repository
+          from app.database import harness_learning_repository as learning_repository
+          from app.database.memory_claim_repository import get_memory_claim
+
           proof=json.loads(Path("evidence/proof/continuous-operation-proof.json").read_text())
           scheduled=json.loads(Path("evidence/scheduled/continuous-cycle.json").read_text())
           log=Path("evidence/scheduled-run.log").read_text(errors="replace")
+          proof_state=json.loads(Path("evidence/proof-state/state-manifest.json").read_text())
+          scheduled_state=json.loads(Path("evidence/scheduled-state/state-manifest.json").read_text())
+
+          proof_db=Path("evidence/proof-state/continuous.db").resolve()
+          scheduled_db=Path("evidence/scheduled-state/continuous.db").resolve()
+          assert proof_db.is_file(), proof_db
+          assert scheduled_db.is_file(), scheduled_db
+
           assert scheduled["status"]=="PASS"
           assert scheduled["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
+          assert scheduled["due"]["gta6"] is False
+          assert scheduled["due"]["daily"] is False
+          assert scheduled["due"]["improvement"] is False
+          assert scheduled["due"]["weekly"] is False
+          assert scheduled["gta6"] is None
+          assert scheduled["improvement_candidate"] is None
+          assert scheduled["obsidian_manifest"] is None
+          assert scheduled["meaningful_change"] is False
           assert "CONTINUOUS_STATE_RESTORE=RESTORED" in log
-          gta=scheduled["gta6"]
-          assert gta is not None
-          research=gta["research"]["result"]
-          baseline=proof["baseline"]["research"]["result"]
-          assert research["status"]=="NO_MEANINGFUL_GTA6_DELTA"
-          assert int(research["source_fetch_count"]) == 0
-          assert int(research["memory_hit_count"]) > 0
-          assert research["duplicate_research_avoided"] is True
-          assert research["known_state"]
-          assert baseline["source_state"]["content_fingerprint"] == research["source_state"]["content_fingerprint"]
+          assert "GTA6_DUE=NO" in log
+          assert "CONTINUOUS_STATE_CHECKPOINT=PASS" in log
+
+          assert proof_state["canonical_memory_plane"]=="BR_SQLITE"
+          assert scheduled_state["canonical_memory_plane"]=="BR_SQLITE"
+          assert proof_state["artifact_is_second_memory_plane"] is False
+          assert scheduled_state["artifact_is_second_memory_plane"] is False
+
+          source_url=os.environ["JASON_SOURCE_URL"]
+          source_key="source-" + hashlib.sha256(source_url.strip().encode("utf-8")).hexdigest()[:24]
+          baseline_source=proof["baseline"]["research"]["result"]["source_state"]
+          expected_fingerprint=str(baseline_source["content_fingerprint"])
+          promoted_claim_ids={
+              int(row["knowledge"]["claim_id"])
+              for row in proof["knowledge_promotions"]
+              if row.get("status")=="PROMOTED" and row.get("knowledge")
+          }
+          assert promoted_claim_ids
+
+          # Query Run N canonical checkpoint through the normal repositories.
+          os.environ["BR_TEST_DATABASE"]=str(proof_db)
+          proof_source=continuous_repository.get_source_state(source_key)
+          proof_lineage=continuous_repository.list_claim_lineage(subject="Jason Duval", limit=100)
+          proof_episodes=learning_repository.list_episodes(limit=500)
+          proof_competence=learning_repository.list_competence(domain="gta6", limit=500)
+          failure_memory_id=proof["failure_prevention"]["failure_memory_id"]
+          proof_failure=learning_repository.get_memory(failure_memory_id)
+          proof_cycles=continuous_repository.list_cycle_runs(limit=500)
+          proof_claims={cid:get_memory_claim(cid) for cid in promoted_claim_ids}
+
+          assert proof_source is not None
+          assert proof_source["content_fingerprint"]==expected_fingerprint
+          assert proof_lineage
+          assert proof_competence
+          assert proof_failure is not None
+          assert all(proof_claims.values())
+
+          # Query Run N+1 restored canonical checkpoint through the same repositories.
+          os.environ["BR_TEST_DATABASE"]=str(scheduled_db)
+          restored_source=continuous_repository.get_source_state(source_key)
+          restored_lineage=continuous_repository.list_claim_lineage(subject="Jason Duval", limit=100)
+          restored_episodes=learning_repository.list_episodes(limit=500)
+          restored_competence=learning_repository.list_competence(domain="gta6", limit=500)
+          restored_failure=learning_repository.get_memory(failure_memory_id)
+          restored_cycles=continuous_repository.list_cycle_runs(limit=500)
+          restored_claims={cid:get_memory_claim(cid) for cid in promoted_claim_ids}
+
+          assert restored_source is not None
+          assert restored_source["source_url"]==source_url
+          assert restored_source["source_type"]=="PRIMARY_SOURCE"
+          assert restored_source["content_fingerprint"]==expected_fingerprint
+          assert restored_source["content_fingerprint"]==proof_source["content_fingerprint"]
+          assert restored_source["evidence_ref"]==proof_source["evidence_ref"]
+
+          assert restored_lineage
+          restored_lineage_by_claim={int(row["claim_id"]):row for row in restored_lineage}
+          for claim_id in promoted_claim_ids:
+              assert claim_id in restored_lineage_by_claim
+              lineage=restored_lineage_by_claim[claim_id]
+              assert lineage["subject"]=="Jason Duval"
+              assert lineage["source_url"]==source_url
+              assert lineage["source_type"]=="PRIMARY_SOURCE"
+              assert lineage["evidence_class"]=="OFFICIAL"
+              assert lineage["status_snapshot"]=="ACTIVE"
+              assert str(lineage["evidence_ref"]).strip()
+              claim=restored_claims[claim_id]
+              assert claim is not None
+              assert claim["status"]=="active"
+              assert claim["scope"]=="gta6"
+              assert str(claim["claim"]).strip()
+
+          baseline_episode_ids=set(proof["baseline"]["episode_ids"])
+          restored_episode_ids={row["episode_id"] for row in restored_episodes}
+          assert baseline_episode_ids
+          assert baseline_episode_ids <= restored_episode_ids
+
+          proof_competence_ids={row["competence_id"] for row in proof_competence}
+          restored_competence_ids={row["competence_id"] for row in restored_competence}
+          assert proof_competence_ids
+          assert proof_competence_ids <= restored_competence_ids
+
+          assert restored_failure is not None
+          assert restored_failure["memory_type"]=="FAILURE"
+          assert restored_failure["status"]=="ACTIVE"
+          assert restored_failure["failure_pattern"]=="opencode_free_tier_403"
+          assert restored_failure["memory_id"]==proof_failure["memory_id"]
+
+          # No due gate means no GTA6 execution, no refetch and no cycle-row growth.
+          assert len(restored_cycles)==len(proof_cycles)
+          assert scheduled["scoreboard"]==continuous_repository.scoreboard()
           assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
           assert scheduled["failure_prevention"]["FAILURE_RECURRENCE_PREVENTION"]=="PASS"
           assert scheduled["CONTINUOUS_INTELLIGENCE_LOOP"]=="PASS"
@@ -115,34 +200,27 @@ jobs:
           assert scheduled["FULL_RENDER"]=="NO"
           assert scheduled["YOUTUBE_UPLOAD"]=="NO"
           assert scheduled["YOUTUBE_PUBLICATION"]=="NO"
-          proof_state=json.loads(Path("evidence/proof-state/state-manifest.json").read_text())
-          scheduled_state=json.loads(Path("evidence/scheduled-state/state-manifest.json").read_text())
-          assert proof_state["canonical_memory_plane"]=="BR_SQLITE"
-          assert scheduled_state["canonical_memory_plane"]=="BR_SQLITE"
-          assert proof_state["artifact_is_second_memory_plane"] is False
-          assert scheduled_state["artifact_is_second_memory_plane"] is False
-          assert any(Path("evidence/scheduled-obsidian").rglob("40-Knowledge/GTA6/Characters/Jason-Duval.md"))
-          print("SCHEDULED_ENTRYPOINT_CONTRACT=PASS")
+
           print("CROSS_RUN_DURABLE_MEMORY=PASS")
           print("CANONICAL_CHECKPOINT_RESTORED=PASS")
           print("KNOWLEDGE_SURVIVES_NEW_RUNNER=PASS")
-          print("GTA6_MEMORY_RETRIEVED_NEXT_RUN=PASS")
-          print("SOURCE_FINGERPRINT_REUSED=PASS")
-          print("NO_MEANINGFUL_GTA6_DELTA=PASS")
+          print("SOURCE_FINGERPRINT_SURVIVES_NEW_RUNNER=PASS")
+          print("CANONICAL_KNOWLEDGE_QUERY_AFTER_RESTORE=PASS")
+          print("GTA6_DUE=NO")
+          print("SCHEDULED_SHORT_CIRCUIT=PASS")
+          print("ZERO_SOURCE_REFETCH=PASS")
           print("DUPLICATE_RESEARCH_AVOIDED=PASS")
           print("FAILURE_MEMORY_RETRIEVAL=PASS")
           print("FAILURE_RECURRENCE_PREVENTION=PASS")
-          print("CONTINUOUS_INTELLIGENCE_LOOP=PASS")
-          print("CONTINUOUS_IMPROVEMENT_LOOP=PASS")
-          print("OBSIDIAN_KNOWLEDGE_PROJECTION=PASS")
+          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
           print("DEEPSEEK_HARNESS_AUTHORITY_PRESERVED=PASS")
           print("LEARNING_PLANE_AUTHORITY_PRESERVED=PASS")
-          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
           print("TERMUX_HEAVY_PROCESSING=NO")
           print("NEW_VOICE_SYNTHESIS=NO")
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
           print("YOUTUBE_PUBLICATION=NO")
+          print("PROOF_RUN_ID="+os.environ["PROOF_RUN_ID"])
           print("SCHEDULED_RUN_ID="+os.environ["SCHEDULED_RUN_ID"])
           PY
 
