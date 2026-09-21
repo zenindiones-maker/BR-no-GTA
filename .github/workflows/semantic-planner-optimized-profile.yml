@@ -1,6 +1,16 @@
 name: Semantic Planner Optimized Inference Profile
 
 on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/semantic_mission_planner_service.py"
+      - "app/services/harness_adaptive_planning_service.py"
+      - "app/services/local_openweight_ai_provider.py"
+      - "scripts/semantic_planner_optimized_inference_profile.py"
+      - "scripts/semantic_planner_single_proposal_proof.py"
+      - ".github/workflows/semantic-planner-optimized-profile.yml"
   workflow_dispatch:
   push:
     branches:
@@ -76,6 +86,8 @@ jobs:
           print("OPTIMIZED_PROFILE_MODEL_DIGEST=PASS")
           PY
       - name: Profile optimized semantic inference
+        id: profile
+        continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p artifacts/semantic-optimized-profile
@@ -97,9 +109,82 @@ jobs:
             sudo ip6tables -I OUTPUT 2 -j REJECT
           fi
           python scripts/semantic_planner_optimized_inference_profile.py             --output artifacts/semantic-optimized-profile/optimized-profile.json
+      - name: Select proven bounded semantic configuration
+        if: steps.profile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          p="artifacts/semantic-optimized-profile/optimized-profile.json"
+          data=json.load(open(p, encoding="utf-8"))
+          budget=data.get("selected_num_predict")
+          mode=data.get("selected_format_mode")
+          assert budget in (256,384,512), data
+          assert data.get("PROFILE_RESULT")=="PASS", data
+          print(f"BR_LOCAL_SEMANTIC_NUM_PREDICT={budget}")
+          print("BR_LOCAL_SEMANTIC_SCHEMA=" + ("1" if mode=="json_schema" else "0"))
+          PY
+
+      - name: Restart Ollama for cold single proposal
+        if: steps.profile.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/ollama-optimized-profile.pid ]; then
+            kill "$(cat /tmp/ollama-optimized-profile.pid)" 2>/dev/null || true
+          fi
+          sudo systemctl stop ollama 2>/dev/null || true
+          sudo pkill -x ollama 2>/dev/null || true
+          sleep 2
+          nohup env OLLAMA_HOST="$OLLAMA_HOST" OLLAMA_NO_CLOUD="$OLLAMA_NO_CLOUD"             ollama serve >/tmp/ollama-cold-single.log 2>&1 &
+          echo "$!" >/tmp/ollama-cold-single.pid
+          for i in {1..60}; do
+            curl --connect-timeout 1 --max-time 2 -fsS               http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl --fail --silent --show-error             http://127.0.0.1:11434/api/tags >/dev/null
+          echo "COLD_RUNTIME_RESTART=PASS"
+          ollama ps || true
+
+      - name: Run cold single proposal gate
+        id: cold
+        if: steps.profile.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          sudo iptables-save >/tmp/cold-iptables-before.rules
+          if command -v ip6tables-save >/dev/null; then
+            sudo ip6tables-save >/tmp/cold-ip6tables-before.rules
+          fi
+          restore_network() {
+            sudo iptables-restore </tmp/cold-iptables-before.rules || true
+            if [ -f /tmp/cold-ip6tables-before.rules ]; then
+              sudo ip6tables-restore </tmp/cold-ip6tables-before.rules || true
+            fi
+          }
+          trap restore_network EXIT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -I OUTPUT 2 -j REJECT
+          if command -v ip6tables >/dev/null; then
+            sudo ip6tables -I OUTPUT 1 -o lo -j ACCEPT
+            sudo ip6tables -I OUTPUT 2 -j REJECT
+          fi
+          python scripts/semantic_planner_single_proposal_proof.py             --output artifacts/semantic-optimized-profile/cold-single-proposal.json
+
+      - name: Upload cold single proposal evidence
+        if: steps.profile.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-cold-single-proposal
+          path: artifacts/semantic-optimized-profile/cold-single-proposal.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Shutdown runtime
         if: always()
         run: |
+          if [ -f /tmp/ollama-cold-single.pid ]; then
+            kill "$(cat /tmp/ollama-cold-single.pid)" 2>/dev/null || true
+          fi
           if [ -f /tmp/ollama-optimized-profile.pid ]; then
             kill "$(cat /tmp/ollama-optimized-profile.pid)" 2>/dev/null || true
           fi
@@ -111,3 +196,7 @@ jobs:
           path: artifacts/semantic-optimized-profile/optimized-profile.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Enforce bounded profile and cold gate
+        if: always() && (steps.profile.outcome != 'success' || steps.cold.outcome != 'success')
+        run: exit 1
