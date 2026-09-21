@@ -35,7 +35,7 @@ else
   exit 1
 fi
 
-"$PYTHON_BIN" - "$EXPORT_ROOT" "$VAULT_ROOT" <<'PY'
+"$PYTHON_BIN" - "$EXPORT_ROOT" "$VAULT_ROOT" "$RUN_ID" <<'PY'
 from pathlib import Path
 import json
 import shutil
@@ -88,7 +88,7 @@ for src,rel in validated:
 
 receipt={
     "status":"PASS",
-    "run_id":sys.argv[1],
+    "run_id":sys.argv[3],
     "files_copied":len(validated),
     "bytes_copied":total,
     "canonical_source":"BR SQLite Learning Plane",
