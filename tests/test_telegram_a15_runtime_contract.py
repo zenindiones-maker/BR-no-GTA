@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 from pathlib import Path
 
 
@@ -65,3 +66,36 @@ def test_a15_runtime_status_is_remotely_observable():
     assert "RUNNING_GATEWAY_REVISION=" in text
     assert "LOCAL_HEAD=" in text
     assert "REMOTE_HEAD=" in text
+
+
+
+def test_live_gateway_enforces_process_level_singleton_lock(tmp_path, monkeypatch):
+    from scripts import telegram_harness_gateway_v2 as gateway
+
+    lock_path = tmp_path / "telegram-runtime.lock"
+    monkeypatch.setenv("TELEGRAM_GATEWAY_RUNTIME_LOCK_FILE", str(lock_path))
+    first = gateway._acquire_runtime_singleton()
+    assert first is not None
+    try:
+        second = gateway._acquire_runtime_singleton()
+        assert second is None
+    finally:
+        fcntl.flock(first.fileno(), fcntl.LOCK_UN)
+        first.close()
+
+    third = gateway._acquire_runtime_singleton()
+    assert third is not None
+    fcntl.flock(third.fileno(), fcntl.LOCK_UN)
+    third.close()
+
+
+def test_termux_reconciler_detects_file_and_module_gateway_invocations():
+    text = (ROOT / "scripts/telegram_termux_control.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "scripts/telegram_harness_gateway_v2.py" in text
+    assert "scripts/telegram_harness_gateway.py" in text
+    assert "scripts.telegram_harness_gateway_v2" in text
+    assert "scripts.telegram_harness_gateway" in text
+    assert "module_style" in text
+    assert "TELEGRAM_GATEWAY_SINGLETON=RECONCILING" in text
