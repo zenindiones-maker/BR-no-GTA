@@ -124,8 +124,20 @@ class TelegramProgressReporter:
             )
         except Exception:
             pass
+        # Internal control-plane stages remain audit telemetry only. Human-facing
+        # Telegram must show useful work/result, never UNDERSTANDING/ROUTING/
+        # REASONING as if those were product output.
+        internal_only = normalized_stage in {
+            "STARTING",
+            "UNDERSTANDING",
+            "ROUTING",
+            "AUTHORIZATION",
+            "REASONING",
+        }
+        if internal_only:
+            return
         if stage_changed or now - self._last_sent >= self.progress_min_seconds:
-            body = f"AÇÃO: {rendered}\nAGORA: {normalized_stage}" if rendered else f"AGORA: {normalized_stage}"
+            body = rendered or "Equipe trabalhando."
             self._publish(body)
             self._last_sent = now
 
@@ -167,9 +179,10 @@ class TelegramProgressReporter:
             if now - self._last_sent < self.heartbeat_seconds:
                 continue
             stage = self._stage or "WORKING"
-            self._publish(
-                f"Ainda trabalhando — etapa: {stage}. Nenhum blocker novo."
-            )
+            if stage in {"STARTING", "UNDERSTANDING", "ROUTING", "AUTHORIZATION", "REASONING"}:
+                self._publish("Equipe trabalhando no seu pedido. Nenhum blocker novo.")
+            else:
+                self._publish("Equipe trabalhando — " + (self._message or "progresso em andamento."))
             self._last_sent = now
 
 
