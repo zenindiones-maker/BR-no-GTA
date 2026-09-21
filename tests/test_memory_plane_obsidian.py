@@ -170,6 +170,9 @@ def test_bounded_context_separates_human_failure_and_artifact_lineage():
         intent="semantic reasoning",
     ).to_dict()
     assert context["used_bytes"] <= context["max_bytes"]
+    assert isinstance(context["conversation_memory"], list)
+    assert isinstance(context["operational_memory"], list)
+    assert isinstance(context["artifact_lineage_memory"], list)
     assert decision["decision_id"] in {
         item["decision_id"] for item in context["conversation_memory"]
     }
