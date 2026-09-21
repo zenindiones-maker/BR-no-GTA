@@ -123,6 +123,12 @@ def infer_failure_pattern(episode: dict[str, Any]) -> str:
         return "hermes_review_loop"
     if "pending_action" in text or ("restart" in text and "pending" in text):
         return "pending_action_restart_loss"
+    if (
+        "read_set exceeds mission path scope" in text
+        or "request_scope_expansion" in text
+        or ("read_set" in text and "mission path scope" in text)
+    ):
+        return "task_read_set_exceeds_mission_path_scope"
     compact = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:64]
     if compact:
         return compact
