@@ -1,9 +1,15 @@
 {
-  "request": "resume-dynamic-system-improvement-after-auth-control-fix",
-  "resume_from_parent_run": 35644414796,
-  "original_child_run": 35644480187,
-  "original_mission_id": "mission-b8f8e084b1a229cf5fa0",
-  "original_plan_id": "plan-b8f8e084b1a229cf5fa0",
-  "dispatcher_main_commit": "6d5e45263e976b28e228411a34585ef4ad2d13e0",
-  "focused_auth_run": 35644187623
+  "request": "resume-dynamic-system-improvement-same-mission-after-dispatcher-bootstrap-fix",
+  "resume_from_parent_run": 35646646448,
+  "original_child_run": 35646777560,
+  "original_natural_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
+  "dispatcher_main_commit": "10337044f0bf58dac2883293d441d5f722a69b87",
+  "preserve_auth_control_plane": true,
+  "no_replanning": true,
+  "preserve": {
+    "NEW_VOICE_SYNTHESIS": "NO",
+    "FULL_RENDER": "NO",
+    "YOUTUBE_UPLOAD": "NO",
+    "YOUTUBE_PUBLICATION": "NO"
+  }
 }
