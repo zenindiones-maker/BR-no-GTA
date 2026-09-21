@@ -33,13 +33,6 @@ jobs:
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
-      BR_LOCAL_OPENWEIGHT_ENABLED: "1"
-      BR_LOCAL_OPENWEIGHT_URL: "http://127.0.0.1:11434"
-      OLLAMA_VERSION: "0.34.2"
-      OLLAMA_MODEL: "qwen3:4b-instruct"
-      OLLAMA_EXPECTED_DIGEST: "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0"
-      OLLAMA_HOST: "127.0.0.1:11434"
-      OLLAMA_NO_CLOUD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,56 +99,6 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-      - name: Install pinned local semantic runtime
-        run: |
-          set -euo pipefail
-          command -v zstd >/dev/null || {
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq zstd
-          }
-          curl --fail --show-error --location             "https://raw.githubusercontent.com/ollama/ollama/v0.34.2/scripts/install.sh"             -o /tmp/ollama-install.sh
-          OLLAMA_VERSION="$OLLAMA_VERSION" OLLAMA_NO_START=1 sh /tmp/ollama-install.sh
-          ollama --version | grep -F "$OLLAMA_VERSION"
-
-      - name: Start proven loopback-only semantic runtime
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/harness-intelligence
-          nohup env OLLAMA_HOST="$OLLAMA_HOST" OLLAMA_NO_CLOUD="$OLLAMA_NO_CLOUD"             ollama serve > artifacts/harness-intelligence/ollama.log 2>&1 &
-          echo "$!" > artifacts/harness-intelligence/ollama.pid
-          READY=0
-          for i in {1..60}; do
-            if curl --connect-timeout 1 --max-time 2 -fsS               http://127.0.0.1:11434/api/tags >/tmp/ollama-tags.json 2>/dev/null; then
-              READY=1
-              break
-            fi
-            sleep 1
-          done
-          test "$READY" = "1"
-          ss -H -ltn 'sport = :11434' > artifacts/harness-intelligence/ollama-listener.txt
-          python - <<'PY'
-          import subprocess
-          rows=subprocess.check_output(["ss","-H","-ltn","sport = :11434"], text=True).splitlines()
-          assert rows
-          addresses=[row.split()[3] for row in rows]
-          assert all(a in {"127.0.0.1:11434","[::1]:11434"} for a in addresses), addresses
-          print("LOCAL_SEMANTIC_LOOPBACK_ONLY=PASS")
-          PY
-
-      - name: Load exact proven semantic model
-        run: |
-          set -euo pipefail
-          ollama pull "$OLLAMA_MODEL" | tee artifacts/harness-intelligence/model-pull.txt
-          curl --fail --show-error --silent http://127.0.0.1:11434/api/tags             > artifacts/harness-intelligence/tags-after-pull.json
-          python - <<'PY'
-          import json, os
-          data=json.load(open("artifacts/harness-intelligence/tags-after-pull.json"))
-          rows=[x for x in data.get("models",[]) if (x.get("name") or x.get("model"))==os.environ["OLLAMA_MODEL"]]
-          assert len(rows)==1, rows
-          observed=str(rows[0].get("digest") or "").removeprefix("sha256:")
-          assert observed==os.environ["OLLAMA_EXPECTED_DIGEST"], (observed, os.environ["OLLAMA_EXPECTED_DIGEST"])
-          print("LOCAL_SEMANTIC_MODEL_DIGEST=PASS")
-          PY
       - name: Bootstrap proven local semantic provider
         run: |
           set -euo pipefail
@@ -220,13 +163,6 @@ jobs:
           if [ -f /tmp/ollama.pid ]; then
             kill "$(cat /tmp/ollama.pid)" 2>/dev/null || true
           fi
-      - name: Shutdown local semantic runtime
-        if: always()
-        run: |
-          if [ -f artifacts/harness-intelligence/ollama.pid ]; then
-            kill "$(cat artifacts/harness-intelligence/ollama.pid)" 2>/dev/null || true
-          fi
-
       - name: Upload benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
