@@ -57,7 +57,18 @@
       "QA",
       "COMPARE",
       "PROMOTE"
-    ]
+    ],
+    "known_external_blockers": {
+      "opencode": {
+        "status": "CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",
+        "failure_pattern": "opencode_free_tier_403",
+        "retry_condition": "provider admission contract changes or explicit new zero-cost evidence",
+        "evidence_refs": [
+          "contract:OPENCODE_V3=CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",
+          "code:scripts/telegram_hermes_control_mission.py"
+        ]
+      }
+    }
   },
   "safety": {
     "new_voice_synthesis": false,
