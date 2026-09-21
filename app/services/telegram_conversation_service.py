@@ -360,7 +360,7 @@ def plan_natural_language_action(
                     "goal_envelope": goal_envelope.to_dict(),
                     "mission_plan": mission_plan.to_dict(),
                     "mission_planner": "DEEPSEEK_HARNESS",
-                    "collaboration_runtime": mission_plan.collaboration_plan.authority,
+                    "collaboration_runtime": "HERMES",
                 }
             return {
                 "kind": "HARNESS_MISSION",
