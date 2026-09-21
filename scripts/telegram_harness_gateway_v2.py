@@ -14,8 +14,10 @@ from app.services.channel_branding_standard_service import (
 from app.services.telegram_fresh_research_service import requires_fresh_research
 from app.services.telegram_harness_service import (
     HarnessReasoningFailure,
-    chat_under_harness,
     list_governed_brand_assets,
+)
+from app.services.telegram_conversation_service import (
+    handle_telegram_conversation,
 )
 from app.services.human_presentation_service import (
     ACTION_FIRST,
@@ -53,6 +55,7 @@ from scripts.telegram_harness_gateway import (
     STATE_FILE,
     TelegramApi,
     TelegramApiError,
+    TelegramProgressReporter,
     _asset_reply,
     _chat_reply,
     _classify_brand_asset,
@@ -549,6 +552,75 @@ def _execute_v2_command(text: str) -> str:
     return _execute_command(text)
 
 
+def _handle_live_natural_language_message(
+    *,
+    api: TelegramApi,
+    user_id: int,
+    chat_id: int,
+    message: dict[str, Any],
+    update_id: int,
+    text: str,
+    conversation_handler=handle_telegram_conversation,
+    action_executor=None,
+    chat_handler=None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Execute the exact live v2 ingress through ConversationService.
+
+    This helper is intentionally testable without Telegram long-polling.  It
+    preserves the real ingress/provenance record, then delegates intent/state
+    resolution to ConversationService.  It never calls ai.reasoning.text
+    directly.
+    """
+
+    learned = _ingest(
+        user_id=user_id,
+        chat_id=chat_id,
+        message=message,
+        update_id=update_id,
+        text=text,
+        classification_override=_conversation_classification_override(text),
+    )
+    reporter = TelegramProgressReporter(api, chat_id)
+    reporter.start()
+    kwargs: dict[str, Any] = {
+        "telegram_chat_id": chat_id,
+        "telegram_message_id": int(message["message_id"]),
+        "input_record": learned["input"],
+        "progress_callback": reporter,
+    }
+    if action_executor is not None:
+        kwargs["action_executor"] = action_executor
+    if chat_handler is not None:
+        kwargs["chat_handler"] = chat_handler
+    try:
+        conversation = conversation_handler(text, **kwargs)
+    finally:
+        reporter.stop()
+
+    reply = _chat_reply(conversation)
+    canonical = conversation.get("canonical_result")
+    if isinstance(canonical, dict):
+        presentation = _present_chat_v2(
+            canonical,
+            input_record=learned["input"],
+        )
+        audit = record_telegram_presentation_audit(
+            telegram_input_id=int(learned["input"]["id"]),
+            presentation=presentation,
+            reply_text=reply,
+        )
+        print(
+            "TELEGRAM_PRESENTATION=PASS "
+            f"MODE={presentation.get('mode')} "
+            f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
+            f"INPUT_ID={audit.get('telegram_input_id')} "
+            f"REPLY_SHA256={audit.get('reply_sha256')} "
+            f"AUTHORITY={presentation.get('authority')}",
+            flush=True,
+        )
+    return reply, learned, conversation
+
+
 def main() -> int:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -732,44 +804,19 @@ def main() -> int:
                         reply = _execute_v2_command(text)
                         command_name = text.split()[0]
                     else:
-                        learned = _ingest(
+                        reply, learned, conversation = _handle_live_natural_language_message(
+                            api=api,
                             user_id=user_id,
                             chat_id=chat_id,
                             message=message,
                             update_id=update_id,
                             text=text,
-                            classification_override=_conversation_classification_override(text),
-                        )
-                        def progress(stage: str, message_text: str) -> None:
-                            print(
-                                f"TELEGRAM_PROGRESS=PASS USER_ID={user_id} STAGE={stage}",
-                                flush=True,
-                            )
-
-                        chat_result = chat_under_harness(
-                            text,
-                            progress_callback=progress,
-                            input_record=learned["input"],
-                        )
-                        presentation = _present_chat_v2(
-                            chat_result,
-                            input_record=learned["input"],
-                        )
-                        reply = str(presentation["text"])
-                        presentation_audit = record_telegram_presentation_audit(
-                            telegram_input_id=int(learned["input"]["id"]),
-                            presentation=presentation,
-                            reply_text=reply,
                         )
                         print(
-                            "TELEGRAM_PRESENTATION=PASS "
-                            f"MODE={presentation.get('mode')} "
-                            f"CANONICAL_UNCHANGED={presentation.get('canonical_unchanged')} "
-                            f"CANONICAL_CHARS={presentation.get('canonical_chars')} "
-                            f"PRESENTED_CHARS={presentation.get('presented_chars')} "
-                            f"INPUT_ID={presentation_audit.get('telegram_input_id')} "
-                            f"REPLY_SHA256={presentation_audit.get('reply_sha256')} "
-                            f"AUTHORITY={presentation.get('authority')}",
+                            "TELEGRAM_CONVERSATION_SERVICE=PASS "
+                            f"USER_ID={user_id} "
+                            f"INTENT={conversation.get('intent')} "
+                            f"PLAN={(conversation.get('plan') or {}).get('kind')}",
                             flush=True,
                         )
                         command_name = "natural-language"
