@@ -102,7 +102,7 @@ class _StubAuthProvider(CodexAuthenticationProvider):
                 "PATH": "/usr/bin",
                 "ZERO_COST_OPERATION": "TRUE",
                 "TELEGRAM_BOT_TOKEN": "test-only-token",
-                "TELEGRAM_REVIEW_CHAT_ID": "test-only-review",
+                "TELEGRAM_ALLOWED_USER_ID": "test-only-user",
                 "GITHUB_RUN_ID": "1",
             }
         )
