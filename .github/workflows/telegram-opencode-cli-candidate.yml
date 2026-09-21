@@ -2,9 +2,6 @@ name: Telegram OpenCode CLI Recovery Candidate
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - work/gate6f-analytics-learning
 
 permissions:
   contents: read
