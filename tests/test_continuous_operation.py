@@ -414,3 +414,14 @@ def test_improvement_observations_deduplicate_evidence_refs(monkeypatch, tmp_pat
     assert evaluation["decision"] == "PROMOTE"
     assert candidate["candidate_id"] == "candidate-delta-reuse-test"
     assert improvement["trial"]["mission_id"] == "candidate-real-run"
+
+
+
+def test_zero_source_fetch_count_is_preserved_for_duplicate_research_gate():
+    assert continuous_cycle._observed_source_fetch_count(
+        {"source_fetch_count": 0}
+    ) == 0
+    assert continuous_cycle._observed_source_fetch_count(
+        {"source_fetch_count": 1}
+    ) == 1
+    assert continuous_cycle._observed_source_fetch_count({}) == -1
