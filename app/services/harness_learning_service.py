@@ -28,7 +28,7 @@ MEMORY_TYPES = {
     "HUMAN_FEEDBACK",
     "COMPETENCE",
 }
-MEMORY_STATUSES = {"CANDIDATE", "ACTIVE", "STALE", "CONTRADICTED", "RETIRED"}
+MEMORY_STATUSES = {"CANDIDATE", "ACTIVE", "STALE", "CONTRADICTED", "SUPERSEDED", "RETIRED"}
 CANDIDATE_TYPES = {
     "SEMANTIC_LESSON",
     "PROCEDURAL_CHANGE",
@@ -218,6 +218,10 @@ def persist_episode(episode: HarnessEpisode) -> dict[str, Any]:
     persisted, inserted = repository.insert_episode(episode.to_record())
     if inserted:
         _update_competence_from_episode(persisted)
+        # Every terminal observed episode may produce a candidate, but never an
+        # ACTIVE canonical memory directly. Promotion remains a separate Harness gate.
+        from app.services.memory_plane_service import capture_episode_memory_candidate
+        capture_episode_memory_candidate(persisted)
     return persisted
 
 
