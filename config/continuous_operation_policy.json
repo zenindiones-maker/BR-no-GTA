@@ -1,0 +1,72 @@
+{
+  "schema": "br-continuous-operation-policy/v1",
+  "target_ref": "work/gate6f-analytics-learning",
+  "cadence": {
+    "gta6_delta_scan_seconds": 21600,
+    "daily_consolidation_seconds": 86400,
+    "system_improvement_seconds": 86400,
+    "weekly_audit_seconds": 604800
+  },
+  "resource_governance": {
+    "max_tasks_per_mission": 6,
+    "max_retries_per_task": 1,
+    "max_reviewer_loops": 2,
+    "max_research_sources_no_delta": 1,
+    "mission_timeout_seconds": 900,
+    "max_parallelism": 2,
+    "bounded_memory_bytes": 32768,
+    "source_freshness_seconds": 21600
+  },
+  "gta6": {
+    "official_sources": [
+      "https://www.rockstargames.com/VI",
+      "https://www.rockstargames.com/VI/only-in-leonida",
+      "https://www.rockstargames.com/newswire",
+      "https://store.rockstargames.com/game/buy-gta-vi"
+    ],
+    "initial_topics": [
+      {
+        "topic_id": "jason-duval-background",
+        "subject": "Jason Duval",
+        "query": "What has Rockstar officially confirmed about Jason Duval's background, including the Army, the Keys and local drug runners?",
+        "source_url": "https://www.rockstargames.com/VI/only-in-leonida"
+      }
+    ],
+    "source_classes": [
+      "OFFICIAL",
+      "PRIMARY_SOURCE",
+      "SECONDARY_CONFIRMED",
+      "COMMUNITY_OBSERVATION",
+      "RUMOR",
+      "UNVERIFIED",
+      "CONTRADICTED"
+    ]
+  },
+  "system_improvement": {
+    "minimum_new_episodes": 3,
+    "promotion_requires_observed_evaluation": true,
+    "high_risk_requires_human_review": true,
+    "optimization_order": [
+      "MEASURE",
+      "PROFILE",
+      "REMOVE_REDUNDANT_WORK",
+      "CACHE",
+      "REUSE",
+      "PARALLELIZE_SAFE",
+      "CHECKPOINT",
+      "QA",
+      "COMPARE",
+      "PROMOTE"
+    ]
+  },
+  "safety": {
+    "new_voice_synthesis": false,
+    "full_render": false,
+    "youtube_upload": false,
+    "youtube_publication": false,
+    "authority_mutation": false,
+    "memory_gate_bypass": false,
+    "secret_access_expansion": false,
+    "qa_threshold_reduction": false
+  }
+}
