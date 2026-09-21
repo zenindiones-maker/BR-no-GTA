@@ -137,6 +137,22 @@ def _memory_text(memory: dict[str, Any]) -> str:
     )
 
 
+def _episode_text(episode: dict[str, Any]) -> str:
+    return " ".join(
+        str(episode.get(key) or "")
+        for key in (
+            "domain",
+            "task_class",
+            "capability_id",
+            "agent_id",
+            "status",
+            "actual_outcome",
+            "error_type",
+            "failure_pattern",
+        )
+    )
+
+
 def _relevance(item: dict[str, Any], goal_tokens: set[str]) -> tuple[int, float, str]:
     overlap = len(_tokens(_memory_text(item)) & goal_tokens)
     confidence = float(item.get("confidence") or 0.0)
@@ -168,6 +184,23 @@ def build_semantic_planning_context(
         item for item in ranked_memories
         if _relevance(item, goal_tokens)[0] > 0
     ][:20]
+
+    episodes = learning_repository.list_episodes(limit=120)
+    ranked_episodes = sorted(
+        episodes,
+        key=lambda item: (
+            len(_tokens(_episode_text(item)) & goal_tokens),
+            str(item.get("created_at") or ""),
+        ),
+        reverse=True,
+    )
+    relevant_episodes = [
+        item
+        for item in ranked_episodes
+        if len(_tokens(_episode_text(item)) & goal_tokens) > 0
+    ][:20]
+    if not relevant_episodes:
+        relevant_episodes = ranked_episodes[:8]
 
     failure_memories = [
         {
@@ -241,8 +274,27 @@ def build_semantic_planning_context(
         "subject": goal.get("subject"),
         "goal_id": str(goal.get("goal_id") or ""),
         "mission_class": str(goal.get("mission_class") or ""),
+        "canonical_state": dict(goal.get("canonical_state") or {}),
         "conversation_state": dict(goal.get("conversation_state") or {}),
         "bounded_memory_context": dict(bounded_memory_context),
+        "recent_execution_history": [
+            {
+                "episode_id": item.get("episode_id"),
+                "domain": item.get("domain"),
+                "task_class": item.get("task_class"),
+                "capability_id": item.get("capability_id"),
+                "agent_id": item.get("agent_id"),
+                "status": item.get("status"),
+                "actual_outcome": item.get("actual_outcome"),
+                "retry_count": item.get("retry_count"),
+                "duration_seconds": item.get("duration_seconds"),
+                "cost": item.get("cost"),
+                "error_type": item.get("error_type"),
+                "evidence_refs": list(item.get("evidence_refs") or ())[:10],
+                "created_at": item.get("created_at"),
+            }
+            for item in relevant_episodes
+        ],
         "relevant_failure_memories": failure_memories,
         "human_feedback_decisions": [
             {
@@ -486,6 +538,17 @@ def select_capability_for_requirement(
             context=context,
         )
         duplicate_penalty = 1.25 if capability_id in used else 0.0
+        cost_class = str(record.cost_class or "").upper()
+        latency_class = str(record.latency_class or "").upper()
+        registry_cost_penalty = 0.0 if any(
+            marker in cost_class
+            for marker in ("FREE", "LOCAL", "NONE", "ZERO")
+        ) else (1.25 if cost_class not in {"", "UNKNOWN"} else 0.35)
+        registry_latency_penalty = (
+            0.9
+            if any(marker in latency_class for marker in ("REMOTE", "EXTERNAL", "HEAVY"))
+            else (0.25 if latency_class in {"", "UNKNOWN"} else 0.0)
+        )
         side_effect_penalty = 0.0
         if (
             str(requirement.get("risk_side_effect_class") or "").upper() == "READ_ONLY"
@@ -498,6 +561,8 @@ def select_capability_for_requirement(
             + proposal_bonus
             + competence_score
             - duplicate_penalty
+            - registry_cost_penalty
+            - registry_latency_penalty
             - side_effect_penalty
         )
         reasons = [
@@ -506,6 +571,8 @@ def select_capability_for_requirement(
             f"proposal_hint_bonus={proposal_bonus:.3f}",
             f"competence_score={competence_score:.3f}",
             f"duplicate_penalty={duplicate_penalty:.3f}",
+            f"registry_cost_penalty={registry_cost_penalty:.3f}",
+            f"registry_latency_penalty={registry_latency_penalty:.3f}",
             f"side_effect_penalty={side_effect_penalty:.3f}",
         ]
         ranked.append((total, capability_id, competence_used, competence, reasons))
