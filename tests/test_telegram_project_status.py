@@ -62,5 +62,7 @@ def test_status_query_never_replaces_project_subject_and_exposes_canonical_snaps
     assert "Último avanço:" in result["answer"]
     assert "Agora:" in result["answer"]
     assert "Próximo:" in result["answer"]
+    assert "\\n" not in result["answer"]
+    assert "\nÚltimo avanço:" in result["answer"]
     assert result["canonical_result"]["STATUS_PROVIDER_CALLS"] == 0
     assert result["canonical_result"]["STATUS_HERMES_CALLS"] == 0
