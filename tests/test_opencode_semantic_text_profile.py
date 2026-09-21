@@ -125,7 +125,10 @@ def test_v3_profile_is_a_distinct_candidate_identity():
     assert options["semantic_agent"] == OPENCODE_SEMANTIC_AGENT_ID
     assert options["semantic_steps"] is None
     assert options["semantic_contract"] == OPENCODE_SEMANTIC_CONTRACT
-    assert options["status"] == "CANDIDATE_ROOT_CAUSE_FIX"
+    assert options["status"] == "CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403"
+    assert options["runtime_blocker"] == "opencode_console_free_tier_403_before_inference"
+    assert options["usable_text_proof"] is False
+    assert 35546843689 in options["runtime_blocker_runs"]
 
 
 def test_learning_persists_exact_confirmed_failure_pattern_and_scope():
