@@ -468,6 +468,8 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
         "authorization_id": evidence.authorization_id,
         "executor_binding": evidence.executor_binding,
         "latency_seconds": evidence.latency_seconds,
+        "usage": dict((result.get("usage") or {})),
+        "performance": dict(evidence.performance or {}),
         "evidence_refs": list(evidence.evidence_refs),
         "status": evidence.status,
         "authority": evidence.authority,
