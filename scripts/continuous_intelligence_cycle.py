@@ -1096,7 +1096,7 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
     gta: dict[str, Any] | None = None
     promotions: list[dict[str, Any]] = []
 
-    if due["gta"]:
+    if due["gta6"]:
         state = _topic_source_state(topic)
         fresh = _source_state_fresh(state, policy.resource_governance["source_freshness_seconds"])
         has_knowledge = bool(query_gta6_knowledge(query=topic["query"], limit=1))
@@ -1175,7 +1175,7 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
         manifest = _export_current_projection(artifact_dir=artifact_dir, target_sha=target_sha, evidence_refs=evidence_refs)
 
     change_summary = {
-        "action": ("GTA6 delta scan + maintenance" if due["gta"] else "Maintenance event processed"),
+        "action": ("GTA6 delta scan + maintenance" if due["gta6"] else "Maintenance event processed"),
         "learned": (
             f"{sum(1 for item in promotions if item.get('status') == 'PROMOTED')} claim(s) GTA6 promovido(s)."
             if promotions else "Nenhuma mudança factual canônica; memória/fingerprint permitiu short-circuit quando aplicável."
