@@ -44,15 +44,18 @@ jobs:
       - name: Compile persistent conversation lifecycle
         run: |
           set -euo pipefail
-          python -m py_compile             app/database/telegram_conversation_repository.py             app/services/telegram_conversation_service.py             scripts/telegram_conversational_control_canary.py
+          bash -n scripts/telegram_termux_control.sh
+          python -m py_compile app/database/telegram_conversation_repository.py app/services/telegram_conversation_service.py scripts/telegram_harness_gateway_v2.py scripts/telegram_conversational_control_canary.py
           echo "PENDING_ACTION_COMPILE=PASS"
+          echo "TELEGRAM_TERMUX_CONTROL_SYNTAX=PASS"
 
       - name: Run pending-action focused tests
         run: |
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
-          python -m pytest -q             tests/test_telegram_conversation_control.py::test_deferred_execution_resumes_only_after_explicit_approval             tests/test_telegram_conversation_control.py::test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider             tests/test_telegram_conversation_control.py::test_status_aggregates_hermes_pending_state_without_llm             tests/test_telegram_conversation_control.py::test_restart_continuity_approval_reuses_persisted_hermes_lineage             tests/test_telegram_conversation_control.py::test_status_observation_does_not_consume_persisted_pending_action             --junitxml=artifacts/telegram-pending-action-focused/pytest.xml
+          python -m pytest -q tests/test_telegram_conversation_control.py::test_deferred_execution_resumes_only_after_explicit_approval tests/test_telegram_conversation_control.py::test_team_analysis_routes_to_hermes_action_boundary_without_chat_provider tests/test_telegram_conversation_control.py::test_status_aggregates_hermes_pending_state_without_llm tests/test_telegram_conversation_control.py::test_restart_continuity_approval_reuses_persisted_hermes_lineage tests/test_telegram_conversation_control.py::test_status_observation_does_not_consume_persisted_pending_action tests/test_telegram_gateway_conversation.py::test_live_status_ignores_malformed_active_opencode_profile --junitxml=artifacts/telegram-pending-action-focused/pytest.xml
           echo "PENDING_ACTION_PERSISTED=PASS"
+          echo "LIVE_STATUS_IGNORES_OPENCODE_PROFILE_MISMATCH=PASS"
           echo "PENDING_ACTION_RELOADED=PASS"
           echo "MISSION_ID_PRESERVED=PASS"
           echo "TASK_ID_PRESERVED=PASS"
