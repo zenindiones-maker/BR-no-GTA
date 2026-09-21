@@ -99,9 +99,19 @@ def provider_health(provider_id: str) -> ProviderHealth:
             retry_allowed=False,
             zero_cost_eligible=assessment.eligible,
         )
+    external_auth_markers = (
+        "API_KEY",
+        "API KEY",
+        "ACCESS_TOKEN",
+        "AUTH_TOKEN",
+        "BEARER_TOKEN",
+        "OAUTH",
+        "CREDENTIAL",
+        "LOGIN_REQUIRED",
+        "ACCOUNT_AUTH",
+    )
     auth_required = any(
-        "API_KEY" in str(requirement).upper()
-        or "AUTH" in str(requirement).upper()
+        any(marker in str(requirement).upper() for marker in external_auth_markers)
         for requirement in record.requirements
     )
     return ProviderHealth(
