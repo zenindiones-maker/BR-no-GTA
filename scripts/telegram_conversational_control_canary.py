@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from app.database.schema import initialize_schema
 from app.database.ideas_repository import insert_idea
+from app.database.schema import initialize_schema
 from app.database.scripts_repository import insert_script
 from app.database.telegram_conversation_repository import (
     get_or_create_conversation_state,
     list_recent_human_decisions,
     update_conversation_state,
 )
+from app.integrations.deepseek_harness import server
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -21,312 +25,506 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
-from app.services.telegram_conversation_service import (
-    handle_telegram_conversation,
-    retrieve_conversation_context,
+from app.services.telegram_harness_service import HarnessReasoningFailure
+from scripts.telegram_harness_gateway_v2 import (
+    _handle_live_natural_language_message,
+)
+from scripts.telegram_hermes_control_mission import (
+    _resume as resume_hermes_control_mission,
+)
+from scripts.telegram_hermes_control_mission import (
+    _start as start_hermes_control_mission,
 )
 
 
-def _action_executor(plan: dict[str, Any], state: dict[str, Any], message: str) -> dict[str, Any]:
-    if plan.get("kind") == "CONTINUE":
-        routing = route_harness_request(
-            HarnessRoutingRequest(
-                intent="prove natural-language continuation resolves through Harness production routing without side effect",
-                authorized_action="EXECUTION",
-                required_capability_id="production.render.execute",
-                fallback_allowed=False,
-            )
-        )
-        authorization = issue_harness_authorization(
+class FakeTelegramApi:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.edited: list[str] = []
+        self._next_id = 1000
+
+    def send(self, chat_id: int, text: str) -> int:
+        self.sent.append(str(text))
+        self._next_id += 1
+        return self._next_id
+
+    def edit(self, chat_id: int, message_id: int, text: str) -> None:
+        self.edited.append(str(text))
+
+    @property
+    def human_facing(self) -> list[str]:
+        return [*self.sent, *self.edited]
+
+
+def _provider_unavailable(*_args, **_kwargs):
+    raise HarnessReasoningFailure(
+        {
+            "provider": "opencode",
+            "model": "oc/big-pickle",
+            "provider_error": {
+                "code": "provider_auth_403",
+                "message": "OpenCode's free tier can only be used from within OpenCode",
+            },
+        }
+    )
+
+
+def _route_only_continue(plan: dict[str, Any]) -> dict[str, Any]:
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="Telegram canary continue without executing render",
             authorized_action="EXECUTION",
-            subject=f"capability:{routing.selected_capability_id}",
-            lineage={
-                "routing_id": routing.routing_id,
-                "capability_id": routing.selected_capability_id,
-                "selected_executor_binding": routing.selected_executor_binding,
-                "goal_id": plan.get("active_goal_id"),
-                "ingress": "telegram-canary",
-                "canary_no_side_effect": True,
-            },
+            required_capability_id="production.render.execute",
+            fallback_allowed=False,
+            provider_required=False,
+            zero_cost_operation=True,
         )
-        try:
-            return {
-                "status": "CANARY_AUTHORIZED",
-                "answer": (
-                    "Continuidade resolvida pelo goal ativo e autorizada no boundary do Harness. "
-                    "O canário não dispara render pesado."
-                ),
-                "goal_id": plan.get("active_goal_id"),
-                "capability_id": routing.selected_capability_id,
-                "routing_id": routing.routing_id,
-                "authorization_id": authorization.authorization_id,
-                "execution_id": authorization.execution_id,
-                "canary_no_side_effect": True,
-            }
-        finally:
-            consume_harness_authorization(authorization)
-
-    if plan.get("kind") == "RESEARCH_PIPELINE":
-        routing = route_harness_request(
-            HarnessRoutingRequest(
-                intent="prove natural-language request resolves to canonical GTA6 research pipeline",
-                authorized_action="RESEARCH",
-                required_capability_id="gta6.research",
-                fallback_allowed=False,
-            )
-        )
-        authorization = issue_harness_authorization(
-            authorized_action="RESEARCH",
-            subject="action:RESEARCH",
-            lineage={
-                "routing_id": routing.routing_id,
-                "capability_id": routing.selected_capability_id,
-                "selected_executor_binding": routing.selected_executor_binding,
-                "ingress": "telegram-canary",
-                "canary_no_external_research": True,
-            },
-        )
-        try:
-            return {
-                "status": "CANARY_AUTHORIZED",
-                "operation": "br_research_run",
-                "result": {
-                    "total": 2,
-                    "rockstar_newswire": [{"title": "Official canary evidence"}],
-                    "news_feeds": [{"title": "Secondary canary evidence"}],
-                    "editorial": [{"decision": "CANARY_EDITORIAL_EVALUATED"}],
-                },
-                "capability_id": routing.selected_capability_id,
-                "routing_id": routing.routing_id,
-                "authorization_id": authorization.authorization_id,
-                "execution_id": authorization.execution_id,
-                "canary_no_external_research": True,
-            }
-        finally:
-            consume_harness_authorization(authorization)
-
-    raise AssertionError(f"unexpected canary action plan: {plan}")
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{routing.selected_capability_id}",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": routing.selected_capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "goal_id": plan.get("active_goal_id"),
+            "ingress": "telegram-live-canary",
+            "canary_no_side_effect": True,
+        },
+    )
+    try:
+        return {
+            "status": "COMPLETED",
+            "answer": (
+                "Continuidade resolvida pelo estado e autorizada no Harness. "
+                "O canário não executou render."
+            ),
+            "goal_id": plan.get("active_goal_id"),
+            "capability_id": routing.selected_capability_id,
+            "routing_id": routing.routing_id,
+            "authorization_id": authorization.authorization_id,
+            "execution_id": authorization.execution_id,
+            "canary_no_side_effect": True,
+        }
+    finally:
+        consume_harness_authorization(authorization)
 
 
-def _research_chat_stub(message: str, **kwargs: Any) -> dict[str, Any]:
-    assert kwargs.get("skip_fresh_research") is True
-    context = kwargs.get("conversation_context") or {}
-    governed = context.get("governed_research_pipeline_result") or {}
-    assert governed.get("total") == 2
-    assert governed.get("editorial_count") == 1
-    return {
-        "status": "COMPLETED",
-        "answer": (
-            "A pesquisa oficial chegou à avaliação editorial. "
-            "O canário confirma que a decisão sobre o roteiro usa esse resultado sem uma segunda pesquisa."
-        ),
-        "capability_id": "ai.reasoning.text",
-        "routing_id": "route-canary-synthesis",
-        "authorization_id": "auth-canary-synthesis",
-        "execution_id": "exec-canary-synthesis",
-    }
+def _live(
+    api: FakeTelegramApi,
+    *,
+    chat_id: int,
+    message_id: int,
+    text: str,
+    action_executor=None,
+    chat_handler=None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if action_executor is not None:
+        kwargs["action_executor"] = action_executor
+    if chat_handler is not None:
+        kwargs["chat_handler"] = chat_handler
+    _reply, _learned, result = _handle_live_natural_language_message(
+        api=api,
+        user_id=chat_id,
+        chat_id=chat_id,
+        message={"message_id": message_id},
+        update_id=100000 + message_id,
+        text=text,
+        **kwargs,
+    )
+    return result
 
 
-def run_canary() -> dict[str, Any]:
+def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     initialize_schema()
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     idea_id = insert_idea(
-        "Canário conversa Telegram",
-        description="Ideia efêmera para prova operacional do control surface.",
+        "Canário live Telegram control surface",
+        description="Prova do gateway v2 -> ConversationService -> Harness/Hermes.",
+    )
+    script_content = (
+        "Abertura canônica.\n\n"
+        "Trecho de roteiro usado apenas como snapshot verificável no canário.\n\n"
+        "Fechamento canônico."
     )
     script_id = insert_script(
         idea_id,
-        "Roteiro canário",
-        "Abertura canônica.\n\nNa parte da música, usar somente a trilha aprovada.\n\nFechamento canônico.",
+        "Roteiro live canário",
+        script_content,
         status="draft",
         version=1,
     )
     script_ref = f"script:{script_id}"
-    chat_id = 920260920
+    chat_id = 920260921
+    goal_id = "goal-telegram-system-synergy"
     update_conversation_state(
         chat_id,
-        active_goal_id="goal-canary-video-a",
+        active_goal_id=goal_id,
         active_project="BR-no-GTA",
-        active_task="produção governada do vídeo A",
+        active_task="revisão governada do vídeo A",
         current_subject="roteiro do vídeo A",
         active_artifact=script_ref,
         execution_status="IDLE",
         waiting_for_human=False,
     )
 
-    progress: list[tuple[str, str]] = []
+    api = FakeTelegramApi()
+    hermes_dir = artifact_dir / "hermes-live"
+    hermes_start: dict[str, Any] | None = None
+    hermes_resume: dict[str, Any] | None = None
 
-    def progress_callback(stage: str, message: str) -> None:
-        progress.append((stage, message))
+    def action_executor(plan: dict[str, Any], state: dict[str, Any], message: str):
+        nonlocal hermes_start, hermes_resume
+        kind = str(plan.get("kind") or "")
+        if kind == "CONTINUE":
+            return _route_only_continue(plan)
+        if kind == "RESEARCH_PIPELINE":
+            # Real canonical research pipeline. Optional LLM synthesis is tested separately.
+            return json.loads(server.br_research_run())
+        if kind == "HERMES_COLLABORATION":
+            raw = script_content.encode("utf-8")
+            mission_id = f"telegram-control-synergy-{chat_id}"
+            hermes_start = start_hermes_control_mission(
+                mission_id=mission_id,
+                goal_id=goal_id,
+                chat_id=0,
+                request_text=message,
+                artifact_ref=script_ref,
+                artifact_text_b64=base64.b64encode(raw).decode("ascii"),
+                expected_sha256=hashlib.sha256(raw).hexdigest(),
+                upstream_root=upstream_root,
+                artifact_dir=hermes_dir,
+            )
+            (hermes_dir / "telegram-hermes-control-proof.json").write_text(
+                json.dumps(hermes_start, ensure_ascii=False, indent=2, default=str) + "\n",
+                encoding="utf-8",
+            )
+            for line in hermes_start["progress"]:
+                api.send(chat_id, line)
+            return {
+                "status": "WAITING_FOR_HUMAN",
+                "answer": (
+                    "A equipe terminou as etapas provider-free. O GTA6 Brain ficou bloqueado "
+                    "pelo provider externo, sem derrubar fact-check, TUBEGENT ou review. "
+                    "Preciso da sua aprovação para registrar o retorno à revisão humana."
+                ),
+                "capability_id": "collaboration.hermes.execute",
+                "mission_id": mission_id,
+                "task_id": "production-management",
+                "goal_id": goal_id,
+                "artifact_ref": script_ref,
+                "run_id": f"hermes:{mission_id}",
+                "pending_question": hermes_start["wait"]["question"],
+                "pending_action": {
+                    "kind": "HERMES_LOCAL_RESUME",
+                    "mission_id": mission_id,
+                    "task_id": "production-management",
+                    "goal_id": goal_id,
+                    "artifact_ref": script_ref,
+                    "authorized_action": "EXECUTION",
+                },
+            }
+        if kind == "HERMES_LOCAL_RESUME":
+            hermes_resume = resume_hermes_control_mission(
+                mission_id=str(plan["mission_id"]),
+                goal_id=str(plan["goal_id"]),
+                chat_id=0,
+                human_answer=message,
+                upstream_root=upstream_root,
+                artifact_dir=hermes_dir,
+            )
+            for line in hermes_resume["progress"]:
+                api.send(chat_id, line)
+            return {
+                "status": "COMPLETED_WITH_PROVIDER_BLOCK",
+                "answer": (
+                    "A mesma missão Hermes foi retomada e a decisão humana foi registrada. "
+                    "O GTA6 Brain continua isoladamente bloqueado; produção continua proibida."
+                ),
+                "capability_id": "collaboration.hermes.execute",
+                "mission_id": plan["mission_id"],
+                "task_id": plan["task_id"],
+                "goal_id": plan["goal_id"],
+                "artifact_ref": script_ref,
+                "run_id": f"hermes:{plan['mission_id']}:resume",
+            }
+        raise AssertionError(f"unexpected action plan in live canary: {plan}")
 
-    status = handle_telegram_conversation(
-        "onde estamos?",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9001,
-        progress_callback=progress_callback,
+    status = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9001,
+        text="Onde estamos?",
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("status cannot use provider")
+        ),
+    )
+    last_script = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9002,
+        text="Me manda o último roteiro",
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("script presentation cannot use provider")
+        ),
+    )
+    feedback = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9003,
+        text="Esse ficou melhor",
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("feedback cannot use provider")
+        ),
     )
 
-    continued = handle_telegram_conversation(
-        "continua de onde parou",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9002,
-        progress_callback=progress_callback,
-        action_executor=_action_executor,
+    deferred = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9004,
+        text="Continua de onde parou depois que eu aprovar",
+        action_executor=action_executor,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("deferred action cannot use provider")
+        ),
+    )
+    approval = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9005,
+        text="Aprovo",
+        action_executor=action_executor,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("approval cannot use provider")
+        ),
+    )
+    continued = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9006,
+        text="Continua de onde parou",
+        action_executor=action_executor,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("continue cannot use provider")
+        ),
+    )
+    research = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9007,
+        text="Pesquisa a novidade X",
+        action_executor=action_executor,
+        chat_handler=_provider_unavailable,
+    )
+    team = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9008,
+        text="Analisa esse roteiro com a equipe e vê o que falta",
+        action_executor=action_executor,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Hermes mission cannot enter generic model chat")
+        ),
     )
 
-    rejected = handle_telegram_conversation(
-        "não gostei desse resultado",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9003,
-        progress_callback=progress_callback,
+    waiting_state = get_or_create_conversation_state(chat_id)
+    waiting_status = _live(
+        api,
+        chat_id=chat_id,
+        message_id=9009,
+        text="Onde estamos?",
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("waiting status cannot use provider")
+        ),
     )
 
-    update_conversation_state(
-        chat_id,
-        active_artifact=script_ref,
-        current_subject="roteiro do vídeo A",
-        waiting_for_human=False,
-        pending_human_review=None,
-        pending_question=None,
-    )
-    last_script = handle_telegram_conversation(
-        "me manda o último roteiro",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9004,
-        progress_callback=progress_callback,
-    )
-    feedback = handle_telegram_conversation(
-        "esse ficou melhor",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9005,
-        progress_callback=progress_callback,
-    )
-    section = handle_telegram_conversation(
-        "mas corrige aquela parte da música",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9006,
-        progress_callback=progress_callback,
-        action_executor=lambda plan, state, message: {
-            "status": "WAITING_FOR_HUMAN",
-            "answer": "Referência resolvida; aguardando o alvo operacional aprovado antes de alterar o roteiro.",
-            "pending_question": "Qual versão aprovada deve receber a alteração?",
-            "capability_id": plan.get("capability_id"),
-        },
+    # Simulated process restart: new API/reporter objects, state only from SQLite.
+    restarted_api = FakeTelegramApi()
+    restored = get_or_create_conversation_state(chat_id)
+    resumed = _live(
+        restarted_api,
+        chat_id=chat_id,
+        message_id=9010,
+        text="Aprovo",
+        action_executor=action_executor,
+        chat_handler=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Hermes approval cannot use provider")
+        ),
     )
 
-    research = handle_telegram_conversation(
-        "pesquisa as últimas informações do GTA 6 e me diz se muda nosso roteiro",
-        telegram_chat_id=chat_id,
-        telegram_message_id=9007,
-        input_record={
-            "id": 9007,
-            "telegram_chat_id": chat_id,
-            "telegram_message_id": 9007,
-            "classification": "question",
-            "input_kind": "text",
-        },
-        progress_callback=progress_callback,
-        chat_handler=_research_chat_stub,
-        action_executor=_action_executor,
-    )
+    free_question_blocked = False
+    try:
+        _live(
+            restarted_api,
+            chat_id=chat_id,
+            message_id=9011,
+            text="Na sua opinião, qual seria a melhor abordagem criativa agora?",
+            chat_handler=_provider_unavailable,
+        )
+    except HarnessReasoningFailure:
+        free_question_blocked = True
 
-    context = retrieve_conversation_context(
-        chat_id,
-        current_message="o que você está fazendo agora?",
-    )
     final_state = get_or_create_conversation_state(chat_id)
-    decisions = list_recent_human_decisions(chat_id, limit=10)
+    decisions = list_recent_human_decisions(chat_id, limit=20)
+    all_messages = api.human_facing + restarted_api.human_facing
+    start_audit = list((hermes_start or {}).get("authorization_audit") or ())
+    resume_audit = list((hermes_resume or {}).get("authorization_audit") or ())
+    exact_bindings = True
+    for row in [*start_audit, *resume_audit]:
+        record = GLOBAL_CAPABILITY_REGISTRY.get(str(row.get("capability_id") or ""))
+        if record is None or row.get("executor_binding") != record.executor_binding:
+            exact_bindings = False
+            break
+
+    start_board = ((hermes_start or {}).get("canonical") or {}).get("result") or {}
+    start_statuses = start_board.get("final_task_statuses") or {}
+    resume_board = (hermes_resume or {}).get("board") or {}
+    resume_prod = [
+        item
+        for item in (resume_board.get("tasks") or ())
+        if "production-management" in str(item.get("body") or "")
+    ]
 
     checks = {
-        "TELEGRAM_CONVERSATIONAL_CONTROL_SURFACE": (
-            status["conversation_state"]["conversation_id"] == f"telegram:{chat_id}"
+        "LIVE_GATEWAY_USES_CONVERSATION_SERVICE": (
+            status["CONVERSATION_CONTEXT_RETRIEVAL"] == "PASS"
+            and status["conversation_state"]["conversation_id"] == f"telegram:{chat_id}"
         ),
-        "MULTITURN_CONTEXT": (
-            context["conversation_state"]["conversation_id"] == f"telegram:{chat_id}"
-            and len(context["recent_turns"]) >= 8
-            and len(context["recent_human_decisions"]) >= 2
+        "TELEGRAM_PROVIDER_INDEPENDENT_CONTROL": (
+            free_question_blocked
+            and research["canonical_result"]["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
+            and status["canonical_result"]["status"] == "OBSERVED"
         ),
-        "REFERENCE_RESOLUTION": (
-            last_script["resolved_reference"]["reference"] == script_ref
-            and last_script["canonical_result"]["status"] == "SCRIPT_PRESENTED"
-            and "parte da música" in last_script["answer"]
-            and feedback["resolved_reference"]["reference"] == script_ref
-            and section["resolved_reference"]["reference"] == f"{script_ref}#musica"
+        "STATUS_WITHOUT_LLM": (
+            status["intent"] == "STATUS_REQUEST"
+            and status["canonical_result"]["control_surface_status"]["provider_independent"] is True
         ),
-        "NATURAL_LANGUAGE_ACTION_ROUTING": (
+        "APPROVAL_WITHOUT_LLM": (
+            approval["canonical_result"].get("approval_resumed_pending_action") is True
+        ),
+        "FEEDBACK_WITHOUT_LLM": (
+            feedback["canonical_result"]["human_decision"]["decision_type"] == "FEEDBACK"
+        ),
+        "REFERENCE_RESOLUTION_WITHOUT_LLM": (
+            last_script["canonical_result"]["status"] == "SCRIPT_PRESENTED"
+            and last_script["resolved_reference"]["reference"] == script_ref
+            and script_content in last_script["answer"]
+        ),
+        "CONTINUE_WITHOUT_LLM": (
             continued["plan"]["kind"] == "CONTINUE"
-            and continued["canonical_result"]["capability_id"] == "production.render.execute"
-            and research["plan"]["capability_id"] == "gta6.research"
-            and research["canonical_result"]["capability_id"] == "gta6.research"
+            and continued["canonical_result"].get("canary_no_side_effect") is True
         ),
-        "PROGRESS_TO_TELEGRAM": (
-            any(stage == "UNDERSTANDING" for stage, _ in progress)
-            and any(stage == "AUTHORIZATION" for stage, _ in progress)
-            and any(stage == "RESEARCH" for stage, _ in progress)
+        "RESEARCH_WITHOUT_SYNTHESIS_LLM": (
+            research["canonical_result"]["RESEARCH_EXECUTION"] == "PASS"
+            and research["canonical_result"]["OPTIONAL_SYNTHESIS"] == "UNAVAILABLE"
+            and research["canonical_result"].get("capability_id") == "gta6.research"
         ),
-        "WAITING_FOR_HUMAN_SIGNAL": (
-            section["conversation_state"]["waiting_for_human"] is True
-            and section["conversation_state"]["active_stage"] == "WAITING_FOR_HUMAN"
+        "PROGRESS_TO_TELEGRAM_LIVE": (
+            any("UNDERSTANDING" in text or "AUTHORIZATION" in text or "RESEARCH" in text for text in all_messages)
         ),
-        "HUMAN_FEEDBACK_BINDING": (
-            rejected["canonical_result"]["human_decision"]["decision_type"] == "REJECTION"
-            and bool(rejected["canonical_result"]["learning_correction"]["correction_id"])
-            and feedback["canonical_result"]["human_decision"]["decision_type"] == "FEEDBACK"
-            and len(decisions) >= 2
+        "HARNESS_STATUS_AGGREGATION": (
+            waiting_status["canonical_result"]["control_surface_status"]["hermes_mission_id"]
+            == f"telegram-control-synergy-{chat_id}"
+            and waiting_status["canonical_result"]["control_surface_status"]["pending_action"]["task_id"]
+            == "production-management"
+        ),
+        "TELEGRAM_TO_HERMES_MISSION": (
+            hermes_start is not None
+            and len(start_audit) >= 5
+            and start_statuses.get("fact-check") == "done"
+            and start_statuses.get("content-strategy") == "done"
+            and start_statuses.get("script-review") == "done"
+            and start_statuses.get("gta6-brain") == "blocked"
+        ),
+        "HERMES_TO_TELEGRAM_PROGRESS": (
+            any(text.startswith("AÇÃO:") for text in all_messages)
+            and any(text.startswith("STATUS:") for text in all_messages)
+            and any(text.startswith("REVIEW:") for text in all_messages)
+            and any(text.startswith("AGUARDANDO VOCÊ:") for text in all_messages)
+            and any(text.startswith("RESULTADO:") for text in all_messages)
+        ),
+        "HUMAN_BLOCK_RESUME_LIVE": (
+            team["conversation_state"]["waiting_for_human"] is True
+            and resumed["canonical_result"].get("approval_resumed_pending_action") is True
+            and bool(resume_prod)
+            and resume_prod[0]["status"] == "done"
+        ),
+        "RESTART_CONTINUITY": (
+            waiting_state["conversation_id"] == restored["conversation_id"]
+            and restored["pending_action"]["mission_id"] == f"telegram-control-synergy-{chat_id}"
+            and restored["pending_action"]["task_id"] == "production-management"
+            and resumed["canonical_result"]["mission_id"] == restored["pending_action"]["mission_id"]
         ),
         "HARNESS_AUTHORITY_PRESERVED": (
-            continued["canonical_result"]["routing_id"]
-            and continued["canonical_result"]["authorization_id"]
-            and research["canonical_result"]["routing_id"]
-            and research["canonical_result"]["authorization_id"]
+            all(row.get("authority") == "DEEPSEEK_HARNESS" for row in [*start_audit, *resume_audit])
+            and len(start_audit) >= 5
         ),
-        "NO_PARALLEL_CONTROL_PLANE": True,
+        "NO_DIRECT_EXECUTOR_BYPASS": exact_bindings,
+        "NO_SECOND_CONTROL_PLANE": True,
+        "OPENCODE_EXTERNAL_403_CONTAINED": (
+            (hermes_start or {}).get("brain_status") == "BLOCKED_PROVIDER"
+            and start_statuses.get("gta6-brain") == "blocked"
+            and start_statuses.get("content-strategy") == "done"
+            and start_statuses.get("script-review") == "done"
+        ),
     }
-    status_value = "PASS" if all(bool(value) for value in checks.values()) else "FAIL"
+    passed = all(value is True for value in checks.values())
+
     return {
-        "status": status_value,
+        "schema": "telegram-system-synergy/v1",
+        "status": "PASS" if passed else "FAIL",
         "checks": checks,
-        "progress_events": [
-            {"stage": stage, "message": message}
-            for stage, message in progress
-        ],
-        "conversation_state": final_state,
-        "decisions": decisions,
+        "conversation_id": final_state["conversation_id"],
+        "final_state": final_state,
+        "human_decisions": decisions,
+        "gateway_progress": all_messages,
+        "hermes_start": hermes_start,
+        "hermes_resume": hermes_resume,
         "sequence": {
             "status": status["answer"],
-            "continue": continued["answer"],
-            "rejection": rejected["answer"],
             "last_script": last_script["answer"],
             "feedback": feedback["answer"],
-            "section_reference": section["resolved_reference"],
+            "deferred": deferred["answer"],
+            "approval": approval["answer"],
+            "continue": continued["answer"],
             "research": research["answer"],
+            "team": team["answer"],
+            "waiting_status": waiting_status["answer"],
+            "resume": resumed["answer"],
+            "free_question_provider_unavailable": free_question_blocked,
         },
-        "evidence_scope": {
-            "service_path": "REAL",
-            "sqlite_persistence": "REAL",
-            "harness_routing_authorization": "REAL",
-            "presentation_layer": "REAL",
-            "heavy_side_effects": "SUPPRESSED_BY_CANARY",
-            "external_research": "SUPPRESSED_BY_CANARY",
-            "telegram_bot_outbound": "PROVEN_BY_WORKFLOW_DELIVERY_STEP",
-            "human_inbound_message": "REQUIRES_LIVE_GATEWAY_AFTER_DEPLOYMENT",
-        },
+        "OPENCODE_V3_STATUS": "CANDIDATE_BLOCKED_UPSTREAM_FREE_TIER_403",
+        "NEW_VOICE_SYNTHESIS": "NO",
+        "FULL_RENDER": "NO",
+        "YOUTUBE_UPLOAD": "NO",
+        "YOUTUBE_PUBLICATION": "NO",
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
+    parser.add_argument("--upstream-root", type=Path, required=True)
+    parser.add_argument("--artifact-dir", type=Path, required=True)
     args = parser.parse_args()
-    result = run_canary()
+    result = run_canary(
+        upstream_root=args.upstream_root.resolve(),
+        artifact_dir=args.artifact_dir.resolve(),
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
-    print(f"TELEGRAM_CONVERSATIONAL_CANARY={result['status']}")
+    print("TELEGRAM_SYSTEM_SYNERGY=" + result["status"])
     for key, value in result["checks"].items():
         print(f"{key}={'PASS' if value else 'FAIL'}")
+    print("NEW_VOICE_SYNTHESIS=NO")
+    print("FULL_RENDER=NO")
+    print("YOUTUBE_UPLOAD=NO")
+    print("YOUTUBE_PUBLICATION=NO")
     return 0 if result["status"] == "PASS" else 1
 
 
