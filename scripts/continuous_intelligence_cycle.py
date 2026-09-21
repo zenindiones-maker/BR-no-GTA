@@ -460,6 +460,11 @@ def _promote_first_mission_knowledge(mission: dict[str, Any]) -> list[dict[str, 
     return promoted
 
 
+def _observed_source_fetch_count(result: dict[str, Any]) -> int:
+    value = result.get("source_fetch_count")
+    return -1 if value is None else int(value)
+
+
 def _metrics(*, latency: float, quality: float = 1.0) -> dict[str, float]:
     return {
         "task_success_rate": 1.0,
@@ -858,7 +863,7 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
         "GTA6_MEMORY_RETRIEVED_NEXT_RUN": int(next_research.get("memory_hit_count") or 0) > 0,
         "DUPLICATE_RESEARCH_AVOIDED": (
             next_research.get("duplicate_research_avoided") is True
-            and int(next_research.get("source_fetch_count") or -1) == 0
+            and _observed_source_fetch_count(next_research) == 0
         ),
         "SOURCE_PROVENANCE_PRESERVED": all(
             (row.get("knowledge") or {}).get("lineage", {}).get("evidence_ref")
