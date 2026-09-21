@@ -560,3 +560,86 @@ def test_live_status_group_and_supergroup_return_final_human_answer_without_prog
         assert api.sent == []
         assert reply.strip()
         assert "UNDERSTANDING" not in reply
+
+
+
+def test_live_status_exact_human_path_sends_one_clean_final_message(monkeypatch):
+    api = FakeTelegramApi()
+
+    monkeypatch.setattr(
+        gateway_v2,
+        "_ingest",
+        lambda **kwargs: {
+            "input": {
+                "id": 12001,
+                "telegram_chat_id": kwargs["chat_id"],
+                "telegram_message_id": kwargs["message"]["message_id"],
+                "classification": "question",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "_present_chat_v2",
+        lambda canonical, input_record=None: {
+            "text": canonical.get("answer") or "OK",
+            "mode": "ACTION_FIRST",
+            "canonical_unchanged": True,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+    monkeypatch.setattr(
+        gateway_v2,
+        "record_telegram_presentation_audit",
+        lambda **kwargs: {
+            "telegram_input_id": kwargs["telegram_input_id"],
+            "reply_sha256": "human-status-path",
+        },
+    )
+
+    def forbidden_provider(*_args, **_kwargs):
+        raise AssertionError("Onde estamos? must never call ai.reasoning.text")
+
+    def forbidden_action(*_args, **_kwargs):
+        raise AssertionError("Onde estamos? must never dispatch Hermes/action execution")
+
+    reply, _learned, result = gateway_v2._handle_live_natural_language_message(
+        api=api,
+        user_id=12002,
+        chat_id=12003,
+        chat_type="private",
+        message={"message_id": 12004},
+        update_id=12005,
+        text="Onde estamos?",
+        chat_handler=forbidden_provider,
+        action_executor=forbidden_action,
+    )
+
+    assert result["intent"] == "STATUS_REQUEST"
+    assert api.sent == []
+    assert "UNDERSTANDING" not in reply
+    assert "REASONING" not in reply
+    assert "FAILED" not in reply
+    assert "\\n" not in reply
+
+    gateway_v2._send_final_human_response(
+        api=api,
+        chat_id=12003,
+        reply=reply,
+        runtime_revision="test-head",
+    )
+    assert api.sent == [(12003, reply)]
+
+
+def test_progress_reporter_keeps_internal_control_stages_telemetry_only(monkeypatch):
+    api = FakeTelegramApi()
+    monkeypatch.setenv("TELEGRAM_PROGRESS_MIN_SECONDS", "5")
+    reporter = TelegramProgressReporter(api, 13001)
+
+    reporter("UNDERSTANDING", "resolvendo contexto")
+    reporter("ROUTING", "roteando")
+    reporter("REASONING", "raciocínio governado")
+    assert api.sent == []
+
+    reporter("RESEARCH", "Equipe pesquisando fontes oficiais — 1/3.")
+    assert api.sent == [(13001, "Equipe pesquisando fontes oficiais — 1/3.")]
