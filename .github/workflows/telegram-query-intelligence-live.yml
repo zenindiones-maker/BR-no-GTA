@@ -1,0 +1,107 @@
+name: Telegram Query Intelligence Live
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/telegram-query-intelligence-live.request.json"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  GH_TOKEN: ${{ github.token }}
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-query-intelligence-live/live.db
+  BR_FRESH_RESEARCH_REPOSITORY: zenindiones-maker/BR-no-GTA
+  BR_FRESH_RESEARCH_REF: work/gate6f-analytics-learning
+  BR_FRESH_RESEARCH_POLL_INTERVAL: "2"
+  BR_FRESH_RESEARCH_RUN_TIMEOUT: "600"
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install project runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/telegram-query-intelligence-live
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Execute real Telegram GTA6 query boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee artifacts/telegram-query-intelligence-live/live.log
+          import json
+          from pathlib import Path
+          from app.database.schema import initialize_schema
+          from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
+
+          initialize_schema()
+          query="Pesquisa sobre gta 6"
+          result=execute_telegram_gta6_query(
+              query=query,
+              state={
+                  "active_project":"BR-no-GTA",
+                  "active_goal_id":"telegram-live-gta6-query",
+                  "active_task":"pesquisa humana GTA6",
+              },
+          )
+          Path("artifacts/telegram-query-intelligence-live/result.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str)+"\n",
+              encoding="utf-8",
+          )
+          assert result["status"]=="COMPLETED", result
+          assert result["query"]==query, result
+          assert result["RESEARCH_EXECUTION"]=="PASS", result
+          assert result["SOURCE_PROVENANCE_PRESERVED"]=="PASS", result
+          assert int(result["official_source_count"]) >= 1, result
+          assert result["fact_checks"], result
+          assert any(str(x.get("verdict") or "")=="SUPPORTED" for x in result["fact_checks"]), result
+          assert "Pesquisei exatamente o seu pedido" in result["answer"], result["answer"]
+          assert "Rockstar" in result["answer"], result["answer"]
+          assert "review; review" not in result["answer"], result["answer"]
+          assert result["provider_required_for_evidence_answer"] is False
+          assert result["semantic_synthesis_used"] is False
+          assert result["NEW_VOICE_SYNTHESIS"]=="NO"
+          assert result["FULL_RENDER"]=="NO"
+          assert result["YOUTUBE_UPLOAD"]=="NO"
+          assert result["YOUTUBE_PUBLICATION"]=="NO"
+          print("LIVE_TELEGRAM_QUERY_BOUNDARY=PASS")
+          print("HUMAN_QUERY_PRESERVED=PASS")
+          print("REAL_FRESH_RESEARCH=PASS")
+          print("OFFICIAL_SOURCE_EVIDENCE=PASS")
+          print("GTA6_FACT_CHECK=PASS")
+          print("SOURCE_PROVENANCE_PRESERVED=PASS")
+          print("SEMANTIC_PROVIDER_REQUIRED=NO")
+          print("HUMAN_READABLE_EVIDENCE_RESULT=PASS")
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
+      - name: Upload live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-query-intelligence-live-${{ github.run_id }}
+          path: artifacts/telegram-query-intelligence-live/
+          if-no-files-found: error
+          retention-days: 30
