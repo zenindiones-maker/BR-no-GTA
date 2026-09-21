@@ -1,7 +1,8 @@
 {
   "request": "telegram-live-runtime-focused",
-  "source_head": "53289790d7a83573c32739409fce7a0cc2dcd91b",
-  "incident": "human status received stale REASONING/OpenCode failure plus deterministic status",
-  "expected": "one bot-scoped listener; status zero provider/progress; one clean final response",
-  "requested_at": "2026-09-21T11:40:00-03:00"
+  "source_head": "9747587479de737d1288990b62742519a7d02bb8",
+  "incident": "human status received stale reasoning failure plus deterministic answer",
+  "expected": "singleton listener and one clean provider-free final status response",
+  "retry_reason": "previous focused failure was stale presentation assertion after intentional UX change",
+  "requested_at": "2026-09-21T11:46:00-03:00"
 }
