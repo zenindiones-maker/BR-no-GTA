@@ -269,15 +269,19 @@ start_gateway() {
 
   if [[ ${#all_pids[@]} -eq 1 && ${#current_pids[@]} -eq 1 && "${all_pids[0]}" == "${current_pids[0]}" ]]; then
     printf '%s\n' "${current_pids[0]}" > "${PID_FILE}"
-    echo "TELEGRAM_GATEWAY=ADOPTED_EXISTING PID=${current_pids[0]}"
-    release_start_lock
-    return 0
+    if runtime_revision_matches; then
+      echo "TELEGRAM_GATEWAY=ADOPTED_EXISTING PID=${current_pids[0]} REVISION=$(current_repo_revision)"
+      release_start_lock
+      return 0
+    fi
+    echo "TELEGRAM_GATEWAY=STALE_CODE refusing to adopt PID=${current_pids[0]}"
+    rm -f "${PID_FILE}"
   fi
 
   if [[ ${#all_pids[@]} -gt 0 ]]; then
     echo "TELEGRAM_GATEWAY_SINGLETON=RECONCILING STALE_OR_DUPLICATE_COUNT=${#all_pids[@]}"
     terminate_gateway_pids "${all_pids[@]}"
-    rm -f "${PID_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}"
   fi
 
   load_token
@@ -317,7 +321,7 @@ start_gateway() {
   else
     echo "TELEGRAM_GATEWAY=FAIL"
     tail -n 80 "${LOG_FILE}" || true
-    rm -f "${PID_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}"
     release_start_lock
     return 1
   fi
@@ -328,7 +332,7 @@ stop_gateway() {
   mapfile -t pids < <(gateway_pids)
 
   if [[ ${#pids[@]} -eq 0 ]]; then
-    rm -f "${PID_FILE}"
+    rm -f "${PID_FILE}" "${REVISION_FILE}"
     release_start_lock
     echo "TELEGRAM_GATEWAY=STOPPED"
     return 0
