@@ -5,6 +5,7 @@ import re
 import unicodedata
 from typing import Any, Callable
 
+from app.database import harness_learning_repository as learning_repository
 from app.database.telegram_conversation_repository import (
     append_conversation_turn,
     get_or_create_conversation_state,
@@ -34,6 +35,7 @@ INTENTS = {
     "APPROVAL",
     "REJECTION",
     "STATUS_REQUEST",
+    "MEMORY_RECALL_REQUEST",
     "FILE_SUBMISSION",
     "RESEARCH_REQUEST",
     "EXECUTION_REQUEST",
@@ -70,6 +72,13 @@ def classify_conversation_intent(message: str, *, has_attachment: bool = False) 
         "qual o status", "status agora", "como esta o run", "como esta a tarefa",
     )):
         return "STATUS_REQUEST"
+    if any(term in text for term in (
+        "o que eu decidi", "oque eu decidi", "qual foi minha decisao",
+        "qual minha decisao", "o que eu falei sobre", "oque eu falei sobre",
+        "o que eu pedi sobre", "oque eu pedi sobre", "lembra o que eu decidi",
+        "minha decisao sobre", "minhas decisoes sobre",
+    )):
+        return "MEMORY_RECALL_REQUEST"
     if any(term in text for term in (
         "pesquisa", "pesquise", "procura", "procure", "investiga", "investigue",
         "ultimas informacoes", "ultimas noticias", "verifica nas fontes",
@@ -210,6 +219,8 @@ def plan_natural_language_action(
     text = _fold(message)
     if intent == "STATUS_REQUEST":
         return {"kind": "STATUS", "authorized_action": "DECISION"}
+    if intent == "MEMORY_RECALL_REQUEST":
+        return {"kind": "MEMORY_RECALL", "authorized_action": "DECISION"}
     if intent == "RESEARCH_REQUEST":
         return {
             "kind": "RESEARCH_PIPELINE",
@@ -282,6 +293,59 @@ def plan_natural_language_action(
             "artifact_ref": resolved_reference,
         }
     return {"kind": "CHAT", "authorized_action": "DECISION"}
+
+
+def _canonical_human_memory_recall(message: str, state: dict[str, Any]) -> dict[str, Any]:
+    goal_id = str(state.get("active_goal_id") or "").strip() or None
+    rows = learning_repository.list_canonical_human_decisions(
+        goal_id=goal_id,
+        limit=100,
+    )
+    if not rows and goal_id is not None:
+        rows = learning_repository.list_canonical_human_decisions(limit=100)
+    query = {
+        token for token in re.findall(r"[a-z0-9À-ÿ_-]{3,}", _fold(message))
+        if token not in {
+            "que", "qual", "foi", "minha", "minhas", "sobre", "decidi",
+            "falei", "pedi", "lembra", "oque",
+        }
+    }
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for item in rows:
+        metadata = dict(item.get("metadata") or {})
+        haystack = _fold(" ".join([
+            str(item.get("content") or ""),
+            str(item.get("artifact_ref") or ""),
+            str(item.get("task_id") or ""),
+            str(metadata.get("target") or ""),
+            json.dumps(metadata, ensure_ascii=False, default=str),
+        ]))
+        score = sum(1 for token in query if token in haystack)
+        if query and score <= 0:
+            continue
+        ranked.append((score, str(item.get("created_at") or ""), item))
+    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    selected = [dict(row[2]) for row in ranked[:5]]
+    if not selected:
+        return {
+            "status": "NO_CANONICAL_HUMAN_DECISION_MATCH",
+            "answer": "Não encontrei uma decisão humana canônica correspondente no Memory/Learning Plane.",
+            "human_decisions": [],
+            "provider_independent": True,
+        }
+    lines = []
+    for item in selected:
+        source = str(item.get("source_surface") or "").upper()
+        decision = str(item.get("decision_type") or "")
+        content = str(item.get("content") or "").strip()
+        lines.append(f"{decision} via {source}: {content}")
+    return {
+        "status": "CANONICAL_HUMAN_MEMORY_RECALLED",
+        "answer": "\n".join(lines),
+        "human_decisions": selected,
+        "provider_independent": True,
+        "canonical_memory_plane": "HARNESS_LEARNING_PLANE",
+    }
 
 
 def _parse_result(value: Any) -> dict[str, Any]:
@@ -553,7 +617,7 @@ def handle_telegram_conversation(
     canonical: dict[str, Any]
     decision = None
     pending_action_consumed = False
-    if plan["kind"] == "STATUS":
+    if plan["kind"] in {"STATUS", "MEMORY_RECALL"}:
         state = get_or_create_conversation_state(telegram_chat_id)
         control_surface_status = build_harness_control_surface_status(
             telegram_chat_id,
@@ -566,6 +630,9 @@ def handle_telegram_conversation(
             "conversation_state": state,
             "control_surface_status": control_surface_status,
         }
+    elif plan["kind"] == "MEMORY_RECALL":
+        state = get_or_create_conversation_state(telegram_chat_id)
+        canonical = _canonical_human_memory_recall(text, state)
     elif plan["kind"] == "CANCEL":
         state = update_conversation_state(
             telegram_chat_id,
