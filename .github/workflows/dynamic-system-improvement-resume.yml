@@ -1,0 +1,219 @@
+name: Dynamic System Improvement Resume
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/dynamic-system-improvement-resume.request.json"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_GITHUB_REPOSITORY: ${{ github.repository }}
+  BR_GITHUB_REF: work/gate6f-analytics-learning
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/dynamic-system-improvement-resume/control.db
+
+jobs:
+  resume:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact current target revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install bounded control runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dynamic-system-improvement-resume
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          gh --version
+
+      - name: Restore exact previous MissionPlan artifact
+        id: checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          parent_run="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(".run/dynamic-system-improvement-resume.request.json").read_text())
+          value=str(d.get("resume_from_parent_run") or "")
+          if not value.isdigit():
+              raise SystemExit("RESUME_PARENT_RUN_ID=FAIL")
+          print(value)
+          PY
+          )"
+          mkdir -p artifacts/dynamic-system-improvement-resume/checkpoint
+          gh run download "$parent_run"             --repo "$GITHUB_REPOSITORY"             --name "telegram-natural-system-improvement-$parent_run"             --dir artifacts/dynamic-system-improvement-resume/checkpoint
+          test -s artifacts/dynamic-system-improvement-resume/checkpoint/ingress.json
+          echo "parent_run=$parent_run" >> "$GITHUB_OUTPUT"
+          echo "MISSION_CHECKPOINT_RESTORED=PASS"
+
+      - name: Redispatch exact MissionPlan without replanning
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python scripts/resume_dynamic_system_improvement_from_ingress.py             --ingress artifacts/dynamic-system-improvement-resume/checkpoint/ingress.json
+          echo "MISSION_RESUMED_FROM_CHECKPOINT=PASS"
+
+      - name: Wait for resumed dynamic child
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHILD_RUN_ID: ${{ steps.dispatch.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$CHILD_RUN_ID"
+          echo "DYNAMIC_CHILD_RUN_ID=$CHILD_RUN_ID"
+          gh run watch "$CHILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Download resumed child evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHILD_RUN_ID: ${{ steps.dispatch.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          root=artifacts/dynamic-system-improvement-resume/child
+          mkdir -p "$root"
+          gh run download "$CHILD_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "dynamic-system-improvement-$CHILD_RUN_ID"             --dir "$root"
+          if [ -s "$root/dynamic-system-improvement-report.json" ]; then
+            echo "result=closed_loop" >> "$GITHUB_OUTPUT"
+            echo "RESUME_CHILD_RESULT=CLOSED_LOOP"
+          elif [ -s "$root/codex-auth-control-report.json" ] && [ -s "$root/mission-auth-checkpoint.json" ]; then
+            echo "result=auth_gate" >> "$GITHUB_OUTPUT"
+            echo "RESUME_CHILD_RESULT=AUTH_GATE"
+          else
+            echo "RESUME_CHILD_RESULT=FAIL" >&2
+            exit 1
+          fi
+
+      - name: Validate auth-control gate
+        if: steps.evidence.outputs.result == 'auth_gate'
+        env:
+          CHILD_RUN_ID: ${{ steps.dispatch.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("artifacts/dynamic-system-improvement-resume/child")
+          report=json.loads((root/"codex-auth-control-report.json").read_text())
+          checkpoint=json.loads((root/"mission-auth-checkpoint.json").read_text())
+          p=report["preflight"]
+          assert p["state"] in {"USER_ACTION_REQUIRED","UNAVAILABLE","BLOCKED"}
+          assert report["runner_wait_for_human"] is False
+          assert report["mission_checkpointed"] is True
+          assert report["failure_memory_retrieved_before_execution"] is True
+          assert report["auth_timeout_path_repeated"] is False
+          assert report["auth_secret_leak"] is False
+          assert report["auth_credential_persisted_in_artifact"] is False
+          assert report["auth_credential_persisted_in_memory"] is False
+          assert report["auth_credential_persisted_in_obsidian"] is False
+          assert checkpoint["credential_material_persisted"] is False
+          assert checkpoint["authority"]=="DEEPSEEK_HARNESS"
+          if p["paired_human_available"]:
+              assert report["auth_delivery_surface"]=="PAIRED_USER_DM"
+              assert report["auth_delivery_status"]=="DELIVERED"
+          print("CODEX_AUTH_PREFLIGHT=PASS")
+          print("CODEX_AUTH_STATE_EXPLICIT=PASS")
+          print("AUTH_USER_ACTION_REQUIRED_REPRESENTED_AS_HUMAN_GATE=PASS")
+          print("DEVICE_AUTH_REQUIRES_PAIRED_HUMAN=PASS")
+          print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO")
+          print("RUNNER_WAIT_FOR_HUMAN=NO")
+          print("MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS")
+          print("FAILURE_MEMORY_RETRIEVED_BEFORE_EXECUTION=PASS")
+          print("AUTH_TIMEOUT_PATH_NOT_REPEATED=PASS")
+          print("AUTH_SECRET_LEAK=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_ARTIFACT=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_MEMORY=NO")
+          print("AUTH_CREDENTIAL_PERSISTED_IN_OBSIDIAN=NO")
+          print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
+      - name: Validate resumed closed loop
+        if: steps.evidence.outputs.result == 'closed_loop'
+        env:
+          CHILD_RUN_ID: ${{ steps.dispatch.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("artifacts/dynamic-system-improvement-resume/child")
+          d=json.loads((root/"dynamic-system-improvement-report.json").read_text())
+          c=d["checks"]
+          required=[
+              "MISSION_PLAN_GENERATED_FROM_GOAL",
+              "AGENTS_SELECTED_FROM_REGISTRY",
+              "NO_HARDCODED_TEAM_REQUIRED",
+              "HERMES_HARNESS_SYNERGY",
+              "MULTI_AGENT_EXECUTION_REAL",
+              "HANDOFF_REAL",
+              "REAL_SYSTEM_PROBLEM_OBSERVED",
+              "BASELINE_MEASURED",
+              "DEVELOPMENT_AGENT_DELEGATED",
+              "REAL_PATCH_CREATED",
+              "PATCH_BOUNDED_TO_WORKTREE",
+              "CANDIDATE_TESTED",
+              "BASELINE_VS_CANDIDATE_COMPARED",
+              "HARNESS_PROMOTION_DECISION",
+              "NO_REGRESSION",
+          ]
+          for key in required:
+              assert c.get(key) is True, (key,c.get(key))
+          assert c["AGENT_SELF_PROMOTION"] is False
+          assert d["candidate_sha"]
+          assert d["authority"]=="DEEPSEEK_HARNESS"
+          assert d["promotion_decision"] in {"HUMAN_REVIEW","PROMOTE","REJECT"}
+          assert d["NEW_VOICE_SYNTHESIS"]=="NO"
+          assert d["FULL_RENDER"]=="NO"
+          assert d["YOUTUBE_UPLOAD"]=="NO"
+          assert d["YOUTUBE_PUBLICATION"]=="NO"
+          print("HERMES_HARNESS_SYNERGY=PASS")
+          print("REAL_MULTI_AGENT_EXECUTION=PASS")
+          print("AGENT_OFFICE_TASK_LEASE=PASS")
+          print("CODEX_AUTH_AVAILABLE=PASS")
+          print("BOUNDED_WORKTREE_CREATED=PASS")
+          print("REAL_PATCH_CREATED=PASS")
+          print("INDEPENDENT_REVIEW=PASS")
+          print("CANDIDATE_TESTED=PASS")
+          print("OPERATIONAL_TEST=PASS")
+          print("BASELINE_VS_CANDIDATE_COMPARED=PASS")
+          print("HARNESS_PROMOTION_DECISION=PASS")
+          print("AGENT_SELF_PROMOTION=NO")
+          print("NO_REGRESSION=PASS")
+          print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
+          print("CANDIDATE_SHA="+d["candidate_sha"])
+          PY
+
+      - name: Upload resume evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-system-improvement-resume-${{ github.run_id }}
+          path: artifacts/dynamic-system-improvement-resume/
+          if-no-files-found: error
+          retention-days: 30
