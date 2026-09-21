@@ -493,3 +493,70 @@ def test_final_human_response_send_failure_is_explicit(capsys):
     assert "FINAL_HUMAN_RESPONSE_SENT=NO" in out
     assert "SEND_RUNTIME_REVISION=deadbeef" in out
     assert "ERROR=RuntimeError" in out
+
+
+
+def test_live_status_group_and_supergroup_return_final_human_answer_without_progress(monkeypatch):
+    for chat_type, chat_id in (("group", -77021), ("supergroup", -10077022)):
+        api = FakeTelegramApi()
+        calls = {"provider": 0, "action": 0}
+
+        monkeypatch.setattr(
+            gateway_v2,
+            "_ingest",
+            lambda **kwargs: {
+                "input": {
+                    "id": abs(int(kwargs["chat_id"])) + 1000,
+                    "telegram_chat_id": kwargs["chat_id"],
+                    "telegram_message_id": kwargs["message"]["message_id"],
+                    "classification": "question",
+                }
+            },
+        )
+        monkeypatch.setattr(
+            gateway_v2,
+            "_present_chat_v2",
+            lambda canonical, input_record=None: {
+                "text": canonical.get("answer") or "OK",
+                "mode": "ACTION_FIRST",
+                "canonical_unchanged": True,
+                "authority": "DEEPSEEK_HARNESS",
+            },
+        )
+        monkeypatch.setattr(
+            gateway_v2,
+            "record_telegram_presentation_audit",
+            lambda **kwargs: {
+                "telegram_input_id": kwargs["telegram_input_id"],
+                "reply_sha256": "group-status-final",
+            },
+        )
+
+        def provider(*_args, **_kwargs):
+            calls["provider"] += 1
+            raise AssertionError("group STATUS must not call ai.reasoning.text")
+
+        def action(*_args, **_kwargs):
+            calls["action"] += 1
+            raise AssertionError("group STATUS must not call Hermes/action executor")
+
+        reply, _learned, result = gateway_v2._handle_live_natural_language_message(
+            api=api,
+            user_id=77020,
+            chat_id=chat_id,
+            chat_type=chat_type,
+            message={"message_id": 77023},
+            update_id=77024,
+            text="Onde estamos?",
+            chat_handler=provider,
+            action_executor=action,
+        )
+
+        assert result["intent"] == "STATUS_REQUEST"
+        assert result["plan"]["kind"] == "STATUS"
+        assert result["TELEGRAM_CHAT_TYPE_PROPAGATED"] == "PASS"
+        assert result["human_identity"]["chat_type"] == chat_type
+        assert calls == {"provider": 0, "action": 0}
+        assert api.sent == []
+        assert reply.strip()
+        assert "UNDERSTANDING" not in reply
