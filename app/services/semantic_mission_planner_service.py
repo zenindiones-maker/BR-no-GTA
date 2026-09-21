@@ -353,18 +353,21 @@ competence as authorization. Require independent validation for risky or mutatin
 only when a missing fact prevents a safe feasible plan; do not ask merely because uncertainty exists.
 Do not call a provider for deterministic status/control intents.
 """
-    return (
-        instructions.strip()
-        + "
-
-OUTPUT_SCHEMA=
-"
-        + json.dumps(schema, ensure_ascii=False, sort_keys=True)
-        + "
-
-PLANNING_CONTEXT=
-"
-        + json.dumps(_prompt_payload(context, validation_feedback), ensure_ascii=False, sort_keys=True, default=str)
+    return "\n\n".join(
+        [
+            instructions.strip(),
+            "OUTPUT_SCHEMA=\n" + json.dumps(
+                schema,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "PLANNING_CONTEXT=\n" + json.dumps(
+                _prompt_payload(context, validation_feedback),
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ),
+        ]
     )
 
 
