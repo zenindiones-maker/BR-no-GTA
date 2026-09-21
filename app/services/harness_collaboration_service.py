@@ -234,8 +234,10 @@ def _goal_class(text: str) -> str:
             "latência", "demorando", "lento", "telegram",
         ))
         and any(term in folded for term in (
-            "melhora", "melhore", "corrige", "corrija", "otimiza",
-            "otimize", "analisa", "descobre", "investiga",
+            "melhora", "melhore", "melhorar", "corrige", "corrija", "corrigir",
+            "otimiza", "otimize", "otimizar", "analisa", "analise", "analisar",
+            "descobre", "descobrir", "investiga", "investigue", "investigar",
+            "resolve", "resolver",
         ))
     ):
         return "SYSTEM_IMPROVEMENT"
