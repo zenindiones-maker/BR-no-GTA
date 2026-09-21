@@ -1,3 +1,4 @@
+from app.services.harness_mission_execution_router import select_mission_execution_route
 from app.services.harness_collaboration_service import (
     build_goal_envelope,
     plan_mission_from_human_goal,
@@ -96,3 +97,39 @@ def test_open_semantic_goal_fails_explicitly_when_no_zero_cost_provider_is_healt
         assert str(exc) == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
     else:
         raise AssertionError("open semantic goal must not silently bypass provider health")
+
+
+
+def test_execution_router_keeps_known_missions_off_provider_fallback():
+    _active_opencode_failure()
+
+    improvement = plan_mission_from_human_goal(build_goal_envelope(
+        human_goal="Melhora o sistema sem reduzir qualidade.",
+        project="BR-no-GTA",
+        goal_id="goal-router-system",
+        subject="pipeline lento",
+    ))
+    improvement_route = select_mission_execution_route(improvement.to_dict())
+    assert improvement_route.runtime == "SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE"
+    assert improvement_route.provider_required is False
+
+    gta6 = plan_mission_from_human_goal(build_goal_envelope(
+        human_goal="O que sabemos sobre Jason no GTA 6?",
+        project="BR-no-GTA",
+        goal_id="goal-router-gta6",
+        subject="Jason Duval",
+    ))
+    gta6_route = select_mission_execution_route(gta6.to_dict())
+    assert gta6_route.runtime == "GTA6_RESEARCH_PIPELINE"
+    assert gta6_route.provider_required is False
+
+    editorial = plan_mission_from_human_goal(build_goal_envelope(
+        human_goal="Revisa o roteiro e melhora a estratégia editorial.",
+        project="BR-no-GTA",
+        goal_id="goal-router-editorial",
+        subject="script:8",
+    ))
+    editorial_route = select_mission_execution_route(editorial.to_dict())
+    assert editorial_route.runtime == "HERMES_COLLABORATION"
+    assert editorial_route.task_count >= 2
+    assert editorial_route.provider_required is False
