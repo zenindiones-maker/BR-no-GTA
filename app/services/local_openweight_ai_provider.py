@@ -52,9 +52,9 @@ def _rate(count, duration_ns):
 
 def _is_structured_semantic_planner_prompt(value: str) -> bool:
     return (
-        "Return STRICT JSON only." in value
-        and "OUTPUT_SCHEMA=" in value
-        and "PLANNING_CONTEXT=" in value
+        "MissionPlan only" in value
+        and "OUTPUT_CONTRACT=" in value
+        and "CONTEXT=" in value
     )
 
 
