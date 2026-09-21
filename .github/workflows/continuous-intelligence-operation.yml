@@ -46,6 +46,7 @@ env:
   TARGET_REF: ${{ inputs.target_ref || 'work/gate6f-analytics-learning' }}
   MODE: ${{ inputs.mode || 'scheduled' }}
   ZERO_COST_OPERATION: "TRUE"
+  PYTHONPATH: .
 
 jobs:
   cycle:
