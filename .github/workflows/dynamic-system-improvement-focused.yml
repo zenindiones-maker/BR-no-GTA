@@ -1,0 +1,66 @@
+name: Dynamic System Improvement Focused
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/dynamic-system-improvement-focused.request.json"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/dynamic-system-improvement-focused/focused.db
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install focused dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dynamic-system-improvement-focused
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Compile scope boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office_harness_service.py             scripts/dynamic_system_improvement_mission.py
+          echo "DYNAMIC_SCOPE_BOUNDARIES_COMPILE=PASS"
+
+      - name: Run scope focused tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_agent_office.py::test_agent_office_separate_mission_scopes_are_fail_closed             tests/test_agent_office.py::test_delegated_task_cannot_expand_mission_scope             tests/test_dynamic_system_improvement_scope.py             --junitxml=artifacts/dynamic-system-improvement-focused/pytest.xml
+          echo "TASK_READ_SET_SCOPE_ENFORCED=PASS"
+          echo "TASK_WRITE_SET_SCOPE_ENFORCED=PASS"
+          echo "AGENT_OFFICE_FAIL_CLOSED=PASS"
+          echo "HERMES_SCOPE_EXPANSION_REJECTED=PASS"
+          echo "MISSION_SCOPE_VALID=PASS"
+
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-system-improvement-focused-${{ github.run_id }}
+          path: artifacts/dynamic-system-improvement-focused/
+          if-no-files-found: error
+          retention-days: 30
