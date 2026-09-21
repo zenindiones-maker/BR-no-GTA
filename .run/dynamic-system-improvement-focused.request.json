@@ -1,7 +1,12 @@
 {
-  "request": "dynamic-system-improvement-focused",
-  "source_head": "8a227dc843c64bf7ff318978eb659b33b7d36450",
-  "scope": "mission-read-write-scope-fail-closed",
-  "previous_blocker": "task read_set exceeds mission path scope",
-  "requested_at": "2026-09-21T14:24:00-03:00"
+  "request": "dynamic-system-improvement-auth-control-focused",
+  "source_head": "dbb1c6dbf2616051206760a866aba5d716ec54d2",
+  "scope": "codex-auth-preflight-human-gate-checkpoint-resume",
+  "incident_run": 35633234932,
+  "preserve": {
+    "mission_scope": true,
+    "hermes_runtime": true,
+    "agent_office_sandbox": true,
+    "zero_cost_operation": true
+  }
 }
