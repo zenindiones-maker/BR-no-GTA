@@ -197,6 +197,7 @@ class GoalEnvelope:
     subject: str | None
     mission_class: str
     source_surface: str = "telegram"
+    canonical_state: dict[str, Any] = field(default_factory=dict)
     conversation_state: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -279,6 +280,7 @@ def build_goal_envelope(
     goal_id: str,
     subject: str | None = None,
     source_surface: str = "telegram",
+    canonical_state: dict[str, Any] | None = None,
     conversation_state: dict[str, Any] | None = None,
 ) -> GoalEnvelope:
     goal = _text(human_goal, "human_goal")
@@ -293,6 +295,7 @@ def build_goal_envelope(
         subject=normalized_subject,
         mission_class=_goal_class(classification_text),
         source_surface=str(source_surface or "telegram"),
+        canonical_state=dict(canonical_state or {}),
         conversation_state=dict(conversation_state or {}),
     )
 
