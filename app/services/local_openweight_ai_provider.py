@@ -127,9 +127,19 @@ class OllamaLocalAIProvider:
                 "num_predict": num_predict,
             },
         }
-        if structured_planner:
-            # Ollama's native JSON mode constrains syntax only. Python schema and
-            # complete Registry validation remain authoritative downstream.
+        schema_mode = (
+            structured_planner
+            and str(os.getenv("BR_LOCAL_SEMANTIC_SCHEMA") or "").strip()
+            in {"1", "true", "TRUE", "yes", "YES"}
+        )
+        if schema_mode:
+            from app.services.semantic_mission_planner_service import (
+                mission_plan_json_schema,
+            )
+            request_body["format"] = mission_plan_json_schema(max_tasks=8)
+        elif structured_planner:
+            # JSON mode remains the safe fallback until schema support is
+            # operationally proven on the pinned Ollama runtime.
             request_body["format"] = "json"
 
         payload = json.dumps(
@@ -149,6 +159,7 @@ class OllamaLocalAIProvider:
             "requested_output_tokens": num_predict,
             "num_ctx": num_ctx,
             "structured_json_mode": structured_planner,
+            "structured_json_schema_mode": schema_mode,
             "timeout_seconds": self.timeout,
         }
         try:
@@ -204,8 +215,19 @@ class OllamaLocalAIProvider:
 
         prompt_eval_duration = data.get("prompt_eval_duration")
         eval_duration = data.get("eval_duration")
+        finish_reason = str(data.get("done_reason") or "stop")
+        output_truncated = bool(
+            finish_reason == "length"
+            or (
+                isinstance(completion_tokens, int)
+                and completion_tokens >= num_predict
+                and finish_reason != "stop"
+            )
+        )
         self.last_performance_metrics.update({
             "latency_seconds": time.perf_counter() - started,
+            "finish_reason": finish_reason,
+            "output_truncated": output_truncated,
             "ollama_total_duration_seconds": _seconds_from_ns(
                 data.get("total_duration")
             ),
@@ -241,5 +263,5 @@ class OllamaLocalAIProvider:
                 ),
                 total_tokens=total_tokens,
             ),
-            finish_reason=str(data.get("done_reason") or "stop"),
+            finish_reason=finish_reason,
         )
