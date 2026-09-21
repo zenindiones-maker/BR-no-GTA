@@ -50,6 +50,7 @@ jobs:
             app/services/telegram_control_surface_status.py \
             app/services/telegram_status_reconciliation_service.py \
             app/services/telegram_conversation_service.py \
+            app/services/harness_ai_provider_service.py \
             scripts/telegram_harness_gateway.py \
             scripts/telegram_harness_gateway_v2.py
           echo "TELEGRAM_RUNTIME_CONTRACT_COMPILE=PASS"
@@ -66,6 +67,9 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_live_status_passes_no_progress_callback_to_conversation_service \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_is_logged_only_after_api_success \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_failure_is_explicit \
+            tests/test_telegram_gateway_conversation.py::test_semantic_provider_integrity_failure_is_human_safe \
+            tests/test_telegram_gateway_conversation.py::test_generic_semantic_provider_boundary_leak_is_sanitized \
+            tests/test_harness_ai_provider_service.py::test_provider_constructor_integrity_error_is_captured_as_evidence \
             tests/test_telegram_gateway_conversation.py::test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy \
             tests/test_telegram_conversation_control.py::test_status_reconciles_legacy_understanding_without_operational_evidence \
             tests/test_telegram_project_status.py::test_status_query_never_replaces_project_subject_and_exposes_canonical_snapshot \
@@ -84,6 +88,8 @@ jobs:
           echo "ONE_FINAL_STATUS_RESPONSE_CONTRACT=PASS"
           echo "STATUS_PROVIDER_INDEPENDENT_CONTRACT=PASS"
           echo "GROUP_INGRESS_POLICY_CONTRACT=PASS"
+          echo "SEMANTIC_PROVIDER_FAILURE_CONTAINMENT=PASS"
+          echo "HUMAN_UX_NO_PROFILE_CHECKSUM_LEAK=PASS"
 
       - name: Upload focused evidence
         if: always()
