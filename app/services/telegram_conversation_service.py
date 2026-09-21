@@ -307,6 +307,36 @@ def retrieve_conversation_context(
     }
 
 
+def _planner_canonical_state(state: dict[str, Any]) -> dict[str, Any]:
+    observation = build_gta6_observation()
+    compact = {
+        "active_project": state.get("active_project") or "BR-no-GTA",
+        "active_goal_id": state.get("active_goal_id"),
+        "active_task": state.get("active_task"),
+        "active_run_id": state.get("active_run_id"),
+        "active_stage": state.get("active_stage"),
+        "execution_status": state.get("execution_status"),
+        "domain": observation.get("domain"),
+        "source_of_truth": observation.get("source_of_truth"),
+        "monitor": observation.get("monitor"),
+    }
+    serialized = json.dumps(compact, ensure_ascii=False, default=str)
+    if len(serialized.encode("utf-8")) <= 12000:
+        return compact
+    return {
+        "active_project": compact["active_project"],
+        "active_goal_id": compact["active_goal_id"],
+        "active_task": compact["active_task"],
+        "active_run_id": compact["active_run_id"],
+        "active_stage": compact["active_stage"],
+        "execution_status": compact["execution_status"],
+        "domain": compact["domain"],
+        "source_of_truth": compact["source_of_truth"],
+        "monitor_excerpt": serialized[:8000],
+        "bounded": True,
+    }
+
+
 def plan_natural_language_action(
     message: str,
     *,
@@ -334,6 +364,7 @@ def plan_natural_language_action(
             goal_id=str(state.get("active_goal_id") or "telegram-gta6-research"),
             subject=str(state.get("current_subject") or "").strip() or None,
             source_surface="telegram",
+            canonical_state=_planner_canonical_state(state),
             conversation_state={
                 key: state.get(key)
                 for key in (
@@ -428,6 +459,7 @@ def plan_natural_language_action(
                 goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
                 subject=subject_context,
                 source_surface="telegram",
+                canonical_state=_planner_canonical_state(state),
                 conversation_state={
                     key: state.get(key)
                     for key in (
