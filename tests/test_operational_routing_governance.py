@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 _EXPLICIT_ONLY = (
     ".github/workflows/video-a-render-profile-benchmark.yml",
+    ".github/workflows/video-a-render-learning-benchmark.yml",
     ".github/workflows/video-a-real-render-learning-proof.yml",
     ".github/workflows/video-a-governed-promotion.yml",
     ".github/workflows/native-opencode-telegram-recovery-experiment.yml",
