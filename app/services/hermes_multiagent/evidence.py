@@ -84,7 +84,7 @@ def capture_hermes_harness_episodes(
             agent_id=str(canonical_agent_id),
             capability_id=routed.capability_id,
             domain=record.domain,
-            task_class=f"hermes.{plan_task_id}",
+            task_class=f"hermes:{plan_task_id}",
             started_at=_iso(started),
             finished_at=_iso(ended),
             duration_seconds=max(0.0, float(ended - started)),
