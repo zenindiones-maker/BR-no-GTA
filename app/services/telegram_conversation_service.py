@@ -26,7 +26,9 @@ from app.services.telegram_harness_service import (
     chat_under_harness,
 )
 from app.services.telegram_control_surface_status import (
+    build_canonical_project_status_snapshot,
     build_harness_control_surface_status,
+    render_canonical_project_status,
 )
 from app.services.telegram_status_reconciliation_service import (
     reconcile_stale_progress_state,
@@ -750,10 +752,17 @@ def handle_telegram_conversation(
             "surface_session_id": (identity or {}).get("surface_session_id"),
         },
     )
+    state_changes: dict[str, Any] = {"last_human_intent": intent}
+    # Observation/recall queries inspect project state; they must never become it.
+    if intent not in {"STATUS_REQUEST", "MEMORY_RECALL_REQUEST"}:
+        state_changes["current_subject"] = (
+            resolved.get("reference")
+            or state.get("current_subject")
+            or text[:240]
+        )
     state = update_conversation_state(
         telegram_chat_id,
-        last_human_intent=intent,
-        current_subject=resolved.get("reference") or state.get("current_subject") or text[:240],
+        **state_changes,
     )
     context = retrieve_conversation_context(
         telegram_chat_id,
@@ -794,12 +803,17 @@ def handle_telegram_conversation(
             "stale_progress_state_detected": bool(reconciliation["detected"]),
             "stale_progress_state_reconciled": bool(reconciliation["reconciled"]),
         })
+        project_snapshot = build_canonical_project_status_snapshot(
+            control_surface_status,
+            human_identity=identity,
+        )
         canonical = {
             "status": "OBSERVED",
-            "answer": _status_answer(control_surface_status),
+            "answer": render_canonical_project_status(project_snapshot),
             "intent": intent,
             "conversation_state": state,
             "control_surface_status": control_surface_status,
+            "project_status_snapshot": project_snapshot.to_dict(),
             "STALE_PROGRESS_STATE_DETECTED": (
                 "PASS" if reconciliation["detected"] else "NOT_PRESENT"
             ),
