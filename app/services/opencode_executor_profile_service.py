@@ -52,7 +52,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "cli_version": "2.0.8",
         "semantic_profile": "opencode-semantic-text-v3",
         "semantic_agent": "build",
-        "semantic_steps": 1,
+        "semantic_steps": None,
         "semantic_contract": "SEMANTIC_TEXT_ONLY",
         "status": "CANDIDATE_ROOT_CAUSE_FIX",
         "root_cause_evidence_run_id": 35537494044,
