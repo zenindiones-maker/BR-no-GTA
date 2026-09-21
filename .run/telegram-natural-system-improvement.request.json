@@ -1,23 +1,13 @@
 {
-  "request": "telegram-natural-system-improvement-live",
-  "source_head": "7b662eb3374381ad5e241f55226bb26af500ef10",
-  "prerequisite_focused_run": 35631819743,
-  "prerequisite_focused_artifact": 10654695552,
-  "previous_children": [
-    35632043346,
-    35632684300
-  ],
-  "previous_blockers": [
-    "codex executable missing from dynamic-system-improvement child",
-    "codex sandbox preflight executed before GITHUB_PATH became active"
-  ],
-  "scope": "resume-real-closed-loop-after-staged-codex-bootstrap",
-  "human_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
+  "request": "natural-system-improvement-auth-control-live",
+  "source_head": "a5937eb649e669907784987ebb429cf6e845b866",
+  "original_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
+  "incident_child_run": 35633234932,
+  "focused_auth_run": 35644187623,
   "preserve": {
-    "opencode": "blocked-known-upstream-403",
-    "new_voice_synthesis": "NO",
-    "full_render": "NO",
-    "youtube_upload": "NO",
-    "youtube_publication": "NO"
+    "hermes": true,
+    "agent_office_scope": true,
+    "sandbox": true,
+    "zero_cost_operation": true
   }
 }
