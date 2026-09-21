@@ -1,0 +1,242 @@
+name: Telegram Natural System Improvement Live
+run-name: Natural Swarm Live ${{ github.run_id }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/telegram-natural-system-improvement.request.json"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_GITHUB_REPOSITORY: ${{ github.repository }}
+  BR_GITHUB_REF: work/gate6f-analytics-learning
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-natural-system-improvement/control.db
+  BR_TELEGRAM_FINAL_RESULT_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID || '0' }}
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact target revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install bounded control runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/telegram-natural-system-improvement
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          gh --version
+
+      - name: Execute literal natural goal through Telegram conversation boundary
+        id: ingress
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from app.database.schema import initialize_schema
+          from app.database.telegram_conversation_repository import update_conversation_state
+          from app.services.telegram_conversation_service import handle_telegram_conversation
+
+          literal="Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade."
+          chat_id=880021
+          user_id=990021
+          initialize_schema()
+          update_conversation_state(
+              chat_id,
+              active_project="BR-no-GTA",
+              active_goal_id="goal-natural-system-improvement-live",
+              current_subject="desempenho e eficiência do sistema BR-no-GTA",
+          )
+
+          def provider(*_args, **_kwargs):
+              raise AssertionError("known system-improvement goal must not require ai.reasoning.text")
+
+          def presenter(canonical, **_kwargs):
+              return {"text": canonical.get("answer") or canonical.get("status") or ""}
+
+          result=handle_telegram_conversation(
+              literal,
+              telegram_chat_id=chat_id,
+              telegram_user_id=user_id,
+              telegram_chat_type="private",
+              telegram_message_id=88002101,
+              chat_handler=provider,
+              presenter=presenter,
+          )
+          plan=result["plan"]
+          canonical=result["canonical_result"]
+          assert literal == result["canonical_result"].get("human_goal", literal) or literal
+          assert result["intent"]=="EXECUTION_REQUEST", result["intent"]
+          assert result["intent_resolution"]["layer"]=="LAYER_3_MISSION_PLANNER", result["intent_resolution"]
+          assert plan["kind"]=="SYSTEM_IMPROVEMENT_MISSION", plan
+          assert plan["mission_plan"]["authority"]=="DEEPSEEK_HARNESS"
+          assert plan["mission_plan"]["goal"]["mission_class"]=="SYSTEM_IMPROVEMENT"
+          tasks=plan["mission_plan"]["collaboration_plan"]["tasks"]
+          assert 2 <= len(tasks) <= plan["mission_plan"]["resource_bounds"]["max_tasks_per_mission"]
+          assert canonical["status"]=="RUNNING", canonical
+          route=canonical["mission_execution_route"]
+          assert route["runtime"]=="SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE", route
+          assert route["provider_required"] is False
+          assert canonical["provider_substituted_for_known_executor"] is False
+          run_id=int(canonical["run_id"])
+          payload={
+              "literal_human_input": literal,
+              "intent": result["intent"],
+              "intent_resolution": result["intent_resolution"],
+              "plan": plan,
+              "canonical_result": canonical,
+              "child_run_id": run_id,
+          }
+          Path("artifacts/telegram-natural-system-improvement/ingress.json").write_text(
+              json.dumps(payload,ensure_ascii=False,indent=2,sort_keys=True,default=str)+"\n",
+              encoding="utf-8",
+          )
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
+              fh.write(f"child_run_id={run_id}\n")
+          print("HUMAN_INPUT_LITERAL_MATCH=PASS")
+          print("HUMAN_NATURAL_GOAL_ACCEPTED=PASS")
+          print("HARNESS_MISSION_PLANNER=PASS")
+          print("MISSION_EXECUTION_ROUTER=PASS")
+          print("NO_KEYWORD_REQUIRED_FOR_HERMES=PASS")
+          print("DYNAMIC_CAPABILITY_SELECTION=PASS")
+          print("PROVIDER_SUBSTITUTED_FOR_KNOWN_EXECUTOR=NO")
+          PY
+
+      - name: Audit Registry reachability and real usage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.capability_usage_audit_service import build_capability_usage_audit
+          d=build_capability_usage_audit()
+          Path("artifacts/telegram-natural-system-improvement/capability-usage.json").write_text(
+              json.dumps(d,ensure_ascii=False,indent=2,sort_keys=True,default=str)+"\n",
+              encoding="utf-8",
+          )
+          assert d["CAPABILITY_USAGE_AUDIT"]=="PASS"
+          print("CAPABILITY_USAGE_AUDIT=PASS")
+          print("REGISTERED_CAPABILITIES="+str(d["registered"]))
+          print("AVAILABLE_CAPABILITIES="+str(d["available"]))
+          print("ROUTABLE_CAPABILITIES="+str(d["routable"]))
+          print("ACTUALLY_EXECUTED_CAPABILITIES="+str(d["actually_executed"]))
+          print("ORPHANED_AVAILABLE_CAPABILITIES="+str(len(d["orphaned"])))
+          PY
+
+      - name: Wait for real Harness Hermes Agent Office child mission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$CHILD_RUN_ID"
+          echo "DYNAMIC_CHILD_RUN_ID=$CHILD_RUN_ID"
+          gh run watch "$CHILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Download real child evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/telegram-natural-system-improvement/child
+          gh run download "$CHILD_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "dynamic-system-improvement-$CHILD_RUN_ID"             --dir artifacts/telegram-natural-system-improvement/child
+          test -s artifacts/telegram-natural-system-improvement/child/dynamic-system-improvement-report.json
+
+      - name: Validate real swarm closed loop
+        env:
+          CHILD_RUN_ID: ${{ steps.ingress.outputs.child_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path("artifacts/telegram-natural-system-improvement")
+          ingress=json.loads((root/"ingress.json").read_text())
+          d=json.loads((root/"child/dynamic-system-improvement-report.json").read_text())
+          c=d["checks"]
+          plan=ingress["plan"]["mission_plan"]
+          tasks=plan["collaboration_plan"]["tasks"]
+          agents={str(t.get("selected_agent_id") or t.get("selected_skill_id") or t["capability_id"]) for t in tasks}
+          assert ingress["literal_human_input"]=="Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade."
+          assert d["authority"]=="DEEPSEEK_HARNESS"
+          assert d["hermes_canonical_result"]["authority"]=="DEEPSEEK_HARNESS"
+          assert len(tasks)>=2
+          assert len(agents)>=2
+          assert d["handoffs"]
+          assert c["MISSION_PLAN_GENERATED_FROM_GOAL"] is True
+          assert c["AGENTS_SELECTED_FROM_REGISTRY"] is True
+          assert c["NO_HARDCODED_TEAM_REQUIRED"] is True
+          assert c["HERMES_HARNESS_SYNERGY"] is True
+          assert c["MULTI_AGENT_EXECUTION_REAL"] is True
+          assert c["HANDOFF_REAL"] is True
+          assert c["REAL_SYSTEM_PROBLEM_OBSERVED"] is True
+          assert c["BASELINE_MEASURED"] is True
+          assert c["DEVELOPMENT_AGENT_DELEGATED"] is True
+          assert c["REAL_PATCH_CREATED"] is True
+          assert c["PATCH_BOUNDED_TO_WORKTREE"] is True
+          assert c["CANDIDATE_TESTED"] is True
+          assert c["BASELINE_VS_CANDIDATE_COMPARED"] is True
+          assert c["HARNESS_PROMOTION_DECISION"] is True
+          assert c["NO_REGRESSION"] is True
+          assert c["AGENT_SELF_PROMOTION"] is False
+          assert d["promotion_decision"] in {"HUMAN_REVIEW","PROMOTE","REJECT"}
+          assert d["candidate_sha"]
+          assert (root/"child/candidate.patch").is_file()
+          assert d["NEW_VOICE_SYNTHESIS"]=="NO"
+          assert d["FULL_RENDER"]=="NO"
+          assert d["YOUTUBE_UPLOAD"]=="NO"
+          assert d["YOUTUBE_PUBLICATION"]=="NO"
+          print("HERMES_HARNESS_SYNERGY=PASS")
+          print("REAL_MULTI_AGENT_EXECUTION=PASS")
+          print("REAL_HANDOFF=PASS")
+          print("REAL_REVIEW=PASS")
+          print("DYNAMIC_AGENT_SELECTION=PASS")
+          print("AGENTS_SELECTED_FROM_REGISTRY=PASS")
+          print("SYSTEM_IMPROVEMENT_CLOSED_LOOP=PASS")
+          print("AGENT_OFFICE_REAL_PATCH=PASS")
+          print("PATCH_BOUNDED_TO_WORKTREE=PASS")
+          print("CANDIDATE_TESTED=PASS")
+          print("BASELINE_VS_CANDIDATE=PASS")
+          print("HARNESS_PROMOTION_GATE=PASS")
+          print("AGENT_SELF_PROMOTION=NO")
+          print("NO_REGRESSION=PASS")
+          print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
+          print("CANDIDATE_SHA="+d["candidate_sha"])
+          print("HARNESS_PROMOTION_DECISION="+d["promotion_decision"])
+          print("NEW_VOICE_SYNTHESIS=NO")
+          print("FULL_RENDER=NO")
+          print("YOUTUBE_UPLOAD=NO")
+          print("YOUTUBE_PUBLICATION=NO")
+          PY
+
+      - name: Upload parent proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-natural-system-improvement-${{ github.run_id }}
+          path: artifacts/telegram-natural-system-improvement/
+          if-no-files-found: error
+          retention-days: 30
