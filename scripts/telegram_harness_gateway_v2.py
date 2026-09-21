@@ -18,6 +18,7 @@ from app.services.telegram_harness_service import (
     list_governed_brand_assets,
 )
 from app.services.telegram_conversation_service import (
+    classify_conversation_intent,
     handle_telegram_conversation,
 )
 from app.services.telegram_ingress_policy_service import (
@@ -68,7 +69,7 @@ from scripts.telegram_harness_gateway import (
     _extract_attachment,
     _help_text,
     _load_state,
-    _private_message,
+    _pairing_private_message,
     _register_attachment,
     _render_result,
     _save_state,
@@ -586,8 +587,14 @@ def _handle_live_natural_language_message(
         text=text,
         classification_override=_conversation_classification_override(text),
     )
-    reporter = TelegramProgressReporter(api, chat_id)
-    reporter.start()
+    preclassified_intent = classify_conversation_intent(text)
+    deterministic_control = preclassified_intent in {
+        "STATUS_REQUEST",
+        "MEMORY_RECALL_REQUEST",
+    }
+    reporter = None if deterministic_control else TelegramProgressReporter(api, chat_id)
+    if reporter is not None:
+        reporter.start()
     kwargs: dict[str, Any] = {
         "telegram_user_id": user_id,
         "telegram_chat_id": chat_id,
@@ -604,7 +611,8 @@ def _handle_live_natural_language_message(
     try:
         conversation = handler(text, **kwargs)
     finally:
-        reporter.stop()
+        if reporter is not None:
+            reporter.stop()
 
     reply = _chat_reply(conversation)
     canonical = conversation.get("canonical_result")
@@ -720,7 +728,7 @@ def main() -> int:
                     state["offset"] = offset
 
                 if allowed_user_id is None:
-                    parsed = _private_message(update)
+                    parsed = _pairing_private_message(update)
                     if parsed is None:
                         continue
                     user_id, chat_id, message, text = parsed
