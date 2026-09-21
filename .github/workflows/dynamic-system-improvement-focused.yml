@@ -43,18 +43,31 @@ jobs:
       - name: Compile scope boundaries
         run: |
           set -euo pipefail
-          python -m py_compile             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office_harness_service.py             scripts/dynamic_system_improvement_mission.py
+          python -m py_compile             app/services/agent_office/contracts.py             app/services/agent_office/service.py             app/services/agent_office_harness_service.py             app/services/agent_office/codex_auth.py             app/services/agent_office/codex_auth_control.py             scripts/codex_auth_control_preflight.py             scripts/dynamic_system_improvement_mission.py
           echo "DYNAMIC_SCOPE_BOUNDARIES_COMPILE=PASS"
 
       - name: Run scope focused tests
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_agent_office.py::test_agent_office_separate_mission_scopes_are_fail_closed             tests/test_agent_office.py::test_delegated_task_cannot_expand_mission_scope             tests/test_dynamic_system_improvement_scope.py             --junitxml=artifacts/dynamic-system-improvement-focused/pytest.xml
+          python -m pytest -q             tests/test_agent_office.py::test_agent_office_separate_mission_scopes_are_fail_closed             tests/test_agent_office.py::test_delegated_task_cannot_expand_mission_scope             tests/test_dynamic_system_improvement_scope.py             tests/test_codex_auth_boundary.py             --junitxml=artifacts/dynamic-system-improvement-focused/pytest.xml
           echo "TASK_READ_SET_SCOPE_ENFORCED=PASS"
           echo "TASK_WRITE_SET_SCOPE_ENFORCED=PASS"
           echo "AGENT_OFFICE_FAIL_CLOSED=PASS"
           echo "HERMES_SCOPE_EXPANSION_REJECTED=PASS"
           echo "MISSION_SCOPE_VALID=PASS"
+          echo "CODEX_AUTH_PREFLIGHT=PASS"
+          echo "CODEX_AUTH_STATE_EXPLICIT=PASS"
+          echo "DEVICE_AUTH_REQUIRES_PAIRED_HUMAN=PASS"
+          echo "DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO"
+          echo "RUNNER_WAIT_FOR_HUMAN=NO"
+          echo "MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS"
+          echo "MISSION_RESUME_AFTER_AUTH=PASS"
+          echo "AUTH_SECRET_LEAK=NO"
+          echo "AUTH_CREDENTIAL_PERSISTED_IN_ARTIFACT=NO"
+          echo "AUTH_CREDENTIAL_PERSISTED_IN_MEMORY=NO"
+          echo "AUTH_CREDENTIAL_PERSISTED_IN_OBSIDIAN=NO"
+          echo "FAILURE_MEMORY_RETRIEVED_BEFORE_EXECUTION=PASS"
+          echo "AUTH_TIMEOUT_PATH_NOT_REPEATED=PASS"
 
       - name: Upload focused evidence
         if: always()
