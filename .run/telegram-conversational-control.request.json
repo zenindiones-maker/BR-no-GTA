@@ -1,13 +1,7 @@
 {
-  "request": "telegram-conversation-contract-private-group-silent-status-validation",
-  "source_head": "9cf0dff30071cbb5999e98ddcd9d305b584d2dbf",
-  "prerequisite_focused_run": 35598938726,
-  "prerequisite_focused_artifact": 10637912330,
-  "observed_failure_run": 35597835103,
-  "scope": "identity-contract-private-group-provider-free-status-no-visible-progress",
-  "a15_sync": "FORBIDDEN_UNTIL_VALIDATION_AND_CI_GREEN",
-  "new_voice_synthesis": "NO",
-  "full_render": "NO",
-  "youtube_upload": "NO",
-  "youtube_publication": "NO"
+  "request": "telegram-conversational-control-validation",
+  "source_head": "0bafb8456350ba2661e6be6d02a2225642d3607f",
+  "scope": "exact-query-intelligence-plus-goal-planned-hermes-human-ux",
+  "prerequisite_live_query_run": 35619206864,
+  "prerequisite_live_query_artifact": 10647174236
 }
