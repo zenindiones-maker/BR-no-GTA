@@ -7,6 +7,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from app.database import harness_learning_repository as learning_repository
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
@@ -73,6 +74,35 @@ def dispatch_telegram_system_improvement_mission(
         or state.get("active_goal_id")
         or f"telegram-system-improvement-{uuid4().hex[:12]}"
     ).strip()
+    provider_failure = learning_repository.list_memories(
+        status="ACTIVE",
+        memory_type="FAILURE",
+        failure_pattern="opencode_free_tier_403",
+        limit=1,
+    )
+    if provider_failure:
+        return {
+            "status": "BLOCKED_PROVIDER",
+            "answer": (
+                "Aceitei o objetivo de melhoria, mas a etapa semântica especializada está bloqueada: "
+                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. O Harness recuperou a falha OpenCode 403 "
+                "antes da execução e não repetiu a abordagem comprovadamente inválida. "
+                "Controles e medições determinísticas continuam disponíveis."
+            ),
+            "goal_id": goal_id,
+            "capability_id": CAPABILITY_ID,
+            "failure_memory_id": provider_failure[0].get("memory_id"),
+            "failure_pattern": "opencode_free_tier_403",
+            "FAILURE_MEMORY_RETRIEVAL": "PASS",
+            "FAILURE_RECURRENCE_PREVENTION": "PASS",
+            "provider_retry_performed": False,
+            "authority": "DEEPSEEK_HARNESS",
+            "agent_direct_promotion": False,
+            "NEW_VOICE_SYNTHESIS": "NO",
+            "FULL_RENDER": "NO",
+            "YOUTUBE_UPLOAD": "NO",
+            "YOUTUBE_PUBLICATION": "NO",
+        }
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent=str(message or "system improvement"),
