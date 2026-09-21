@@ -253,6 +253,29 @@ runtime_revision_matches() {
   [[ "${runtime_revision}" == "${expected}" ]]
 }
 
+publish_runtime_status() {
+  command -v gh >/dev/null 2>&1 || return 0
+  gh auth status >/dev/null 2>&1 || return 0
+  configure_cloud_routing >/dev/null 2>&1 || return 0
+
+  local local_head remote_head loaded pid state description repo
+  local_head="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  remote_head="$(remote_repo_revision 2>/dev/null || true)"
+  loaded="$(loaded_runtime_revision 2>/dev/null || true)"
+  pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  repo="${GITHUB_ACTIONS_REPOSITORY:-zenindiones-maker/BR-no-GTA}"
+
+  [[ -n "${remote_head}" ]] || return 0
+  state="error"
+  if [[ -n "${local_head}" && -n "${loaded}" && "${local_head}" == "${remote_head}" && "${loaded}" == "${local_head}" ]]; then
+    if [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null; then
+      state="success"
+    fi
+  fi
+  description="pid=${pid:-none} local=${local_head:0:12} runtime=${loaded:0:12} remote=${remote_head:0:12}"
+  gh api     --method POST     -H "Accept: application/vnd.github+json"     "repos/${repo}/statuses/${remote_head}"     -f "state=${state}"     -f "context=telegram-a15-runtime"     -f "description=${description}"     >/dev/null 2>&1 || true
+}
+
 acquire_start_lock() {
   local owner=""
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -385,6 +408,7 @@ start_gateway() {
     fi
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
     echo "TELEGRAM_GATEWAY_REVISION=${BR_TELEGRAM_GATEWAY_REVISION}"
+    publish_runtime_status
     echo "TELEGRAM_LOG=${LOG_FILE}"
     echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
     release_start_lock
@@ -455,6 +479,7 @@ reconcile_gateway() {
   stop_gateway
   start_gateway
   runtime_revision_report
+  publish_runtime_status
   echo "TELEGRAM_DEPLOY_RECONCILE=PASS"
   rm -f "${MAINTENANCE_FILE}"
   trap - EXIT INT TERM
