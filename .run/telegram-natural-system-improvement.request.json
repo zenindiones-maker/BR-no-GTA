@@ -1,9 +1,11 @@
 {
   "request": "telegram-natural-system-improvement-live",
-  "source_head": "549933e179aeaf64dfa882ccabc92f28f1234b49",
+  "source_head": "825895c7357b620cac0560c074e3386e82eebc62",
   "prerequisite_focused_run": 35631819743,
   "prerequisite_focused_artifact": 10654695552,
-  "scope": "resume-real-closed-loop-after-agent-office-scope-fix",
+  "previous_child_run": 35632043346,
+  "previous_blocker": "codex executable missing from dynamic-system-improvement child",
+  "scope": "resume-real-closed-loop-with-bounded-codex-runtime",
   "human_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
   "preserve": {
     "opencode": "blocked-known-upstream-403",
