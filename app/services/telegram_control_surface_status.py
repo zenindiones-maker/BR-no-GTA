@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+import re
 from typing import Any
+
+from app.database import continuous_operation_repository as continuous_repository
+from app.database import harness_learning_repository as learning_repository
 
 from app.database.harness_authorization_repository import (
     list_recent_harness_authorizations,
@@ -238,6 +243,230 @@ def _compact_authorization(record: dict[str, Any] | None) -> dict[str, Any] | No
         "issued_at": record.get("issued_at"),
     }
 
+
+
+_STATUS_QUERY_RE = re.compile(
+    r"^\\s*(?:onde\\s+estamos|qual\\s+o\\s+status|status(?:\\s+agora)?|"
+    r"o\\s+que\\s+(?:voce|você)\\s+esta\\s+fazendo)\\s*[?!.]*\\s*$",
+    re.IGNORECASE,
+)
+
+
+def _human_text(value: Any, limit: int = 600) -> str | None:
+    text = str(value or "").strip()
+    return text[:limit] if text else None
+
+
+@dataclass(frozen=True)
+class CanonicalProjectStatusSnapshot:
+    project: str
+    current_goal: str | None
+    current_subject: str | None
+    pending_human_decision: dict[str, Any] | None
+    active_real_execution: dict[str, Any] | None
+    active_harness_mission: dict[str, Any] | None
+    active_hermes_mission: dict[str, Any] | None
+    latest_meaningful_result: dict[str, Any] | None
+    latest_failure: dict[str, Any] | None
+    latest_learning: dict[str, Any] | None
+    current_blocker: str | None
+    latest_system_improvement: dict[str, Any] | None
+    next_action: str
+    github_execution_state: dict[str, Any] | None
+    conversation_continuity: dict[str, Any]
+    provider_calls: int = 0
+    hermes_calls: int = 0
+    authority: str = "DEEPSEEK_HARNESS"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def build_canonical_project_status_snapshot(
+    control_status: dict[str, Any],
+    *,
+    human_identity: dict[str, Any] | None = None,
+) -> CanonicalProjectStatusSnapshot:
+    status = dict(control_status)
+    goal_id = _human_text(status.get("active_goal_id"), 240)
+    subject = _human_text(status.get("current_subject"), 240)
+    if subject and _STATUS_QUERY_RE.match(subject):
+        subject = None
+    latest_raw = status.get("latest_canonical_result")
+    latest_raw = latest_raw if isinstance(latest_raw, dict) else {}
+    latest = {
+        "status": _human_text(_nested_value(latest_raw, "status", "execution_status", "run_status"), 80),
+        "capability_id": _human_text(_nested_value(latest_raw, "capability_id"), 180),
+        "answer": _human_text(_nested_value(latest_raw, "answer", "summary", "message"), 600),
+    }
+    if not any(latest.values()):
+        latest = None
+
+    try:
+        failure_rows = [
+            *learning_repository.list_episodes(status="FAILED", limit=3),
+            *learning_repository.list_episodes(status="BLOCKED", limit=3),
+        ]
+    except Exception:
+        failure_rows = []
+    failure_rows.sort(
+        key=lambda item: str(item.get("finished_at") or item.get("created_at") or ""),
+        reverse=True,
+    )
+    latest_failure = None
+    if failure_rows:
+        item = failure_rows[0]
+        latest_failure = {
+            "episode_id": item.get("episode_id"),
+            "task_id": item.get("task_id"),
+            "capability_id": item.get("capability_id"),
+            "status": item.get("status"),
+            "error": _human_text(item.get("error"), 500),
+        }
+
+    try:
+        learning_rows = learning_repository.list_learning_candidates(limit=1)
+    except Exception:
+        learning_rows = []
+    latest_learning = None
+    if learning_rows:
+        item = learning_rows[0]
+        latest_learning = {
+            "candidate_id": item.get("candidate_id"),
+            "candidate_type": item.get("candidate_type"),
+            "status": item.get("status"),
+            "hypothesis": _human_text(item.get("hypothesis"), 500),
+        }
+
+    try:
+        improvement_rows = continuous_repository.list_cycle_runs(
+            cycle_kind="system_improvement",
+            limit=1,
+        )
+    except Exception:
+        improvement_rows = []
+    latest_improvement = dict(improvement_rows[0]) if improvement_rows else None
+
+    try:
+        decision_rows = learning_repository.list_canonical_human_decisions(
+            goal_id=goal_id,
+            limit=1,
+        )
+        if not decision_rows and goal_id:
+            decision_rows = learning_repository.list_canonical_human_decisions(limit=1)
+    except Exception:
+        decision_rows = []
+    latest_decision = dict(decision_rows[0]) if decision_rows else None
+
+    waiting = bool(status.get("waiting_for_human"))
+    active = bool(status.get("canonical_execution_active"))
+    run_id = _human_text(status.get("active_run_id"), 160)
+    blocker = _human_text(status.get("active_blocker"), 600)
+    pending_action = status.get("pending_action")
+    active_execution = None
+    if active:
+        active_execution = {
+            "task": _human_text(status.get("active_task"), 400),
+            "stage": _human_text(status.get("active_stage"), 160),
+            "run_id": run_id,
+            "artifact_ref": status.get("active_artifact"),
+        }
+
+    if waiting:
+        next_action = (
+            _human_text(status.get("pending_question"), 500)
+            or "Aguardar a decisão humana pendente antes de continuar."
+        )
+    elif active:
+        next_action = (
+            f"Acompanhar a execução real{f' no run {run_id}' if run_id else ''} "
+            "até produzir resultado canônico."
+        )
+    elif blocker:
+        next_action = f"Resolver o blocker registrado antes de retomar execução: {blocker}"
+    else:
+        next_action = "Aguardar o próximo objetivo humano ou ciclo agendado vencido."
+
+    identity = dict(human_identity or {})
+    return CanonicalProjectStatusSnapshot(
+        project=str(status.get("active_project") or "BR-no-GTA"),
+        current_goal=goal_id,
+        current_subject=subject,
+        pending_human_decision=latest_decision or (
+            {
+                "question": status.get("pending_question"),
+                "review": status.get("pending_human_review"),
+                "action": pending_action,
+            }
+            if waiting or pending_action else None
+        ),
+        active_real_execution=active_execution,
+        active_harness_mission=(
+            dict(status["latest_harness_authorization"])
+            if isinstance(status.get("latest_harness_authorization"), dict)
+            else None
+        ),
+        active_hermes_mission=(
+            {"mission_id": status.get("hermes_mission_id")}
+            if status.get("hermes_mission_id") else None
+        ),
+        latest_meaningful_result=latest,
+        latest_failure=latest_failure,
+        latest_learning=latest_learning,
+        current_blocker=blocker,
+        latest_system_improvement=latest_improvement,
+        next_action=next_action,
+        github_execution_state=(
+            {"run_id": run_id, "state": status.get("execution_status")}
+            if run_id else None
+        ),
+        conversation_continuity={
+            "conversation_id": status.get("conversation_id"),
+            "human_identity_id": identity.get("human_identity_id"),
+            "thread_id": identity.get("thread_id"),
+            "surface_session_id": identity.get("surface_session_id"),
+            "chat_type": identity.get("chat_type"),
+            "shared_project_context": bool(identity.get("thread_id")),
+        },
+    )
+
+
+def render_canonical_project_status(snapshot: CanonicalProjectStatusSnapshot) -> str:
+    data = snapshot.to_dict()
+    first = f"Projeto: {data['project']}"
+    if data["current_goal"]:
+        first += f" — goal {data['current_goal']}"
+    latest = data["latest_meaningful_result"] or {}
+    last = latest.get("answer") or latest.get("status") or "sem resultado canônico resumível ainda"
+    if data["active_real_execution"]:
+        execution = data["active_real_execution"]
+        now = "execução real ativa"
+        if execution.get("task"):
+            now += f" — {execution['task']}"
+        if execution.get("run_id"):
+            now += f" — run {execution['run_id']}"
+    elif data["pending_human_decision"]:
+        decision = data["pending_human_decision"]
+        now = "aguardando decisão humana — " + str(
+            decision.get("question")
+            or decision.get("content")
+            or decision.get("review")
+            or "gate humano pendente"
+        )
+    else:
+        now = "não há execução real ativa"
+    context = []
+    if data["current_subject"]:
+        context.append(f"assunto {data['current_subject']}")
+    if data["current_blocker"]:
+        context.append(f"blocker {data['current_blocker']}")
+    return "\\n".join([
+        first + ".",
+        f"Último avanço: {last}.",
+        f"Agora: {now}.",
+        "Contexto: " + ("; ".join(context) + "." if context else "sem blocker ativo registrado."),
+        f"Próximo: {data['next_action']}",
+    ])
 
 def build_harness_control_surface_status(
     telegram_chat_id: int,
