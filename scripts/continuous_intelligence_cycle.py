@@ -551,19 +551,19 @@ def _create_and_test_improvement_candidate(
         "observed": True,
         "workload_fingerprint": workload,
         "metrics": _metrics(latency=baseline["research_elapsed_seconds"]),
-        "evidence_refs": [
+        "evidence_refs": list(dict.fromkeys([
             f"hermes:{baseline['mission_id']}",
             *baseline["research"]["result"].get("evidence_refs", []),
-        ],
+        ])),
     }
     candidate_observation = {
         "observed": True,
         "workload_fingerprint": workload,
         "metrics": _metrics(latency=trial["research_elapsed_seconds"]),
-        "evidence_refs": [
+        "evidence_refs": list(dict.fromkeys([
             f"hermes:{trial['mission_id']}",
             *trial_result.get("evidence_refs", []),
-        ],
+        ])),
     }
     evaluation = evaluate_candidate_from_observed_results(
         candidate_id=candidate["candidate_id"],
