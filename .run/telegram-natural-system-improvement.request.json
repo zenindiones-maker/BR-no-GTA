@@ -1,11 +1,17 @@
 {
   "request": "telegram-natural-system-improvement-live",
-  "source_head": "825895c7357b620cac0560c074e3386e82eebc62",
+  "source_head": "7b662eb3374381ad5e241f55226bb26af500ef10",
   "prerequisite_focused_run": 35631819743,
   "prerequisite_focused_artifact": 10654695552,
-  "previous_child_run": 35632043346,
-  "previous_blocker": "codex executable missing from dynamic-system-improvement child",
-  "scope": "resume-real-closed-loop-with-bounded-codex-runtime",
+  "previous_children": [
+    35632043346,
+    35632684300
+  ],
+  "previous_blockers": [
+    "codex executable missing from dynamic-system-improvement child",
+    "codex sandbox preflight executed before GITHUB_PATH became active"
+  ],
+  "scope": "resume-real-closed-loop-after-staged-codex-bootstrap",
   "human_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
   "preserve": {
     "opencode": "blocked-known-upstream-403",
