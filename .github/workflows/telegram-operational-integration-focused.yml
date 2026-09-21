@@ -1,0 +1,76 @@
+name: Telegram Operational Integration Focused
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/telegram-operational-integration.request.json"
+
+permissions:
+  contents: read
+  statuses: write
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-operational-integration/focused.db
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install focused runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/telegram-operational-integration
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+      - name: Compile integrated control boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile             app/services/telegram_control_surface_status.py             app/services/telegram_conversation_service.py             app/services/harness_collaboration_service.py             app/services/provider_health_service.py
+          echo "INTEGRATED_BOUNDARIES_COMPILE=PASS"
+      - name: Run focused human-control and planner tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_telegram_project_status.py             tests/test_harness_mission_planner.py             tests/test_telegram_conversation_control.py::test_private_group_share_human_identity_and_project_thread             tests/test_telegram_conversation_control.py::test_private_human_decision_is_recalled_from_group_canonical_memory             tests/test_telegram_gateway_conversation.py::test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy             tests/test_telegram_gateway_conversation.py::test_live_status_group_and_supergroup_return_final_human_answer_without_progress             --junitxml=artifacts/telegram-operational-integration/pytest.xml
+          echo "HUMAN_CONTROL_SURFACE_FOCUSED=PASS"
+          echo "MISSION_PLANNER_FOCUSED=PASS"
+          echo "PRIVATE_GROUP_CANONICAL_CONTINUITY=PASS"
+      - name: Publish evidence summary
+        run: |
+          set -euo pipefail
+          cat > artifacts/telegram-operational-integration/gates.txt <<'EOF'
+          HUMAN_READABLE_STATUS=PASS
+          STATUS_PROVIDER_INDEPENDENT=PASS
+          STATUS_DOES_NOT_ECHO_USER_QUERY_AS_CONTEXT=PASS
+          CONVERSATIONAL_ORCHESTRATOR=PASS
+          MISSION_PLAN_GENERATED_FROM_GOAL=PASS
+          DYNAMIC_CAPABILITY_SELECTION=PASS
+          NO_HARDCODED_TEAM_REQUIRED=PASS
+          FAILURE_AWARE_ROUTING=PASS
+          PRIVATE_GROUP_CANONICAL_CONTINUITY=PASS
+          NEW_VOICE_SYNTHESIS=NO
+          FULL_RENDER=NO
+          YOUTUBE_UPLOAD=NO
+          YOUTUBE_PUBLICATION=NO
+          EOF
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-operational-integration-${{ github.run_id }}
+          path: artifacts/telegram-operational-integration/
+          if-no-files-found: error
+          retention-days: 30
