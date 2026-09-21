@@ -1,0 +1,13 @@
+{
+  "request": "opencode-semantic-v3-same-runner-recovery",
+  "source_head": "974940612175a16af79218ad1aba8a2b5ee1d943",
+  "blocker_run_id": 35545294782,
+  "blocker_artifact_id": 10616181622,
+  "validation": {
+    "prompt_1": "Responda apenas: TESTE_OK",
+    "prompt_2": "Onde estamos?",
+    "tool_call_count": 0,
+    "tools_exposed": 0,
+    "usable_text": true
+  }
+}
