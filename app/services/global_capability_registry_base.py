@@ -470,6 +470,55 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             quality_class="PROVIDER_DEPENDENT",
         ),
         _record(
+            capability_id="ai.provider.ollama-local-qwen3-4b",
+            capability_type="PROVIDER",
+            domain="ai",
+            implementation=(
+                "Ollama 0.34.2 loopback-only local inference with "
+                "qwen3:4b-instruct exact proven model digest"
+            ),
+            input_contract="Harness-selected prompt + exact local model identity",
+            output_contract="HarnessAIProviderEvidence",
+            requirements=(
+                "standard public GitHub Actions runner",
+                "Ollama 0.34.2",
+                "qwen3:4b-instruct@0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+                "loopback-only runtime",
+                "ZERO_COST_OPERATION",
+                "no external provider credentials",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
+            allowed_actions=(
+                "RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT",
+                "DECISION", "YOUTUBE",
+            ),
+            policy_tags=(
+                "ai", "provider", "ollama", "local", "open-weight",
+                "qwen3", "zero-cost", "no-external-billing",
+            ),
+            security_boundary=(
+                "DeepSeek Harness exact provider/model authorization; local Ollama "
+                "must bind loopback only; qwen3:4b-instruct digest is pinned; no "
+                "external provider credential or autonomous fallback is permitted."
+            ),
+            executor_binding=(
+                "app.services.local_openweight_ai_provider.OllamaLocalAIProvider"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
+            provider_id="ollama_local",
+            model_id="qwen3:4b-instruct",
+            side_effects=("local model load",),
+            cost_class="FREE_NO_BILLING",
+            quota_class="PUBLIC_STANDARD_GITHUB_ACTIONS_LOCAL_RUNTIME",
+            latency_class="LOCAL_CPU",
+            quality_class="QWEN3_4B_INSTRUCT_PROVEN_RUNTIME",
+            fallback_eligibility=False,
+            version="ollama-0.34.2-qwen3-4b-instruct-0edcdef34593",
+        ),
+        _record(
             capability_id="ai.provider.opencode-free",
             capability_type="PROVIDER",
             domain="ai",
