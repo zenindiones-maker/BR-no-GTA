@@ -825,7 +825,8 @@ def test_status_reconciles_legacy_understanding_without_operational_evidence():
         assert internal_stage not in upper_answer
     assert "BR-no-GTA" in result["answer"]
     assert "goal-telegram-human-interface-regression" in result["answer"]
-    assert "Não há execução ativa neste momento." in result["answer"]
+    assert "Agora: não há execução real ativa." in result["answer"]
+    assert "\\n" not in result["answer"]
     assert any(
         item["event_type"] == "STALE_PROGRESS_RECONCILIATION"
         and item["metadata"]["previous_execution_status"] == "RUNNING"
