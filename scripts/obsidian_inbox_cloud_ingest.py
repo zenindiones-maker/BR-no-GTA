@@ -82,6 +82,8 @@ def run(
             "artifact_ref": artifact_ref,
             "workflow_run_id": os.getenv("GITHUB_RUN_ID"),
             "workflow_sha": os.getenv("GITHUB_SHA"),
+            "target_ref": os.getenv("OBSIDIAN_TARGET_REF"),
+            "target_sha": os.getenv("OBSIDIAN_TARGET_SHA"),
         },
     )
     ingested = execute_obsidian_inbox_capability(
@@ -138,6 +140,8 @@ def run(
         "goal_id": goal_id,
         "workflow_run_id": os.getenv("GITHUB_RUN_ID"),
         "workflow_sha": os.getenv("GITHUB_SHA"),
+        "target_ref": os.getenv("OBSIDIAN_TARGET_REF"),
+        "target_sha": os.getenv("OBSIDIAN_TARGET_SHA"),
         "human_decision": decision,
         "episode": episode,
         "memory_candidate": memory,
