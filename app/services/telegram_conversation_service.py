@@ -334,6 +334,23 @@ def plan_natural_language_action(
             goal_id=str(state.get("active_goal_id") or "telegram-gta6-research"),
             subject=str(state.get("current_subject") or "").strip() or None,
             source_surface="telegram",
+            conversation_state={
+                key: state.get(key)
+                for key in (
+                    "active_goal_id",
+                    "active_task",
+                    "current_subject",
+                    "active_artifact",
+                    "active_run_id",
+                    "active_stage",
+                    "execution_status",
+                    "last_human_decision",
+                    "waiting_for_human",
+                    "pending_question",
+                    "pending_human_review",
+                )
+                if state.get(key) is not None
+            },
         )
         return {
             "kind": "QUERY_RESEARCH",
@@ -411,20 +428,51 @@ def plan_natural_language_action(
                 goal_id=str(state.get("active_goal_id") or "telegram-human-goal"),
                 subject=subject_context,
                 source_surface="telegram",
+                conversation_state={
+                    key: state.get(key)
+                    for key in (
+                        "active_goal_id",
+                        "active_task",
+                        "current_subject",
+                        "active_artifact",
+                        "active_run_id",
+                        "active_stage",
+                        "execution_status",
+                        "last_human_decision",
+                        "waiting_for_human",
+                        "pending_question",
+                        "pending_human_review",
+                    )
+                    if state.get(key) is not None
+                },
             )
             mission_plan = plan_mission_from_human_goal(
                 goal_envelope,
                 artifact_ref=resolved_reference or state.get("active_artifact"),
             )
         except RuntimeError as exc:
-            if str(exc) == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE":
+            reason = str(exc)
+            if reason == "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE":
                 return {
                     "kind": "SEMANTIC_REASONING_UNAVAILABLE",
                     "authorized_action": "DECISION",
                     "reason": "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE",
                 }
-            mission_plan = None
-            goal_envelope = None
+            if reason.startswith("MISSION_NEEDS_HUMAN_CLARIFICATION:"):
+                return {
+                    "kind": "CLARIFICATION",
+                    "authorized_action": "DECISION",
+                    "reason": "MISSION_NEEDS_HUMAN_CLARIFICATION",
+                    "question": reason.split(":", 1)[1].strip(),
+                }
+            if reason.startswith("SEMANTIC_MISSION_PROPOSAL_REJECTED:"):
+                return {
+                    "kind": "MISSION_PLANNING_REJECTED",
+                    "authorized_action": "DECISION",
+                    "reason": reason,
+                    "authority": "DEEPSEEK_HARNESS",
+                }
+            raise
 
         if mission_plan is not None and goal_envelope is not None:
             if goal_envelope.mission_class == "SYSTEM_IMPROVEMENT":
