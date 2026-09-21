@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -7,7 +8,6 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from app.database import harness_learning_repository as learning_repository
 from app.services.github_actions_dispatcher import GitHubActionsDispatcher
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
@@ -19,11 +19,11 @@ from app.services.harness_routing_policy_service import (
 )
 
 
-WORKFLOW = "system-improvement-review.yml"
+WORKFLOW = "dynamic-system-improvement.yml"
 CAPABILITY_ID = "system.improvement.propose"
 
 
-def _runner(*, repository: str, ref: str, expected_head: str):
+def _runner(*, repository: str, expected_title: str):
     def run(command) -> str:
         subprocess.run(
             list(command),
@@ -34,9 +34,9 @@ def _runner(*, repository: str, ref: str, expected_head: str):
         )
         query = [
             "gh", "run", "list", "--repo", repository,
-            "--workflow", WORKFLOW, "--branch", ref,
-            "--event", "workflow_dispatch", "--limit", "20",
-            "--json", "databaseId,url,headSha,createdAt",
+            "--workflow", WORKFLOW, "--branch", "main",
+            "--event", "workflow_dispatch", "--limit", "30",
+            "--json", "databaseId,url,displayTitle,createdAt",
         ]
         for _ in range(30):
             listed = subprocess.run(
@@ -48,10 +48,10 @@ def _runner(*, repository: str, ref: str, expected_head: str):
             )
             rows = json.loads(listed.stdout or "[]")
             for row in rows:
-                if str(row.get("headSha") or "") == expected_head:
+                if str(row.get("displayTitle") or "") == expected_title:
                     return str(row.get("url") or "")
             time.sleep(1)
-        raise RuntimeError("GitHub Actions did not expose the system-improvement run")
+        raise RuntimeError("GitHub Actions did not expose the dynamic system-improvement run")
     return run
 
 
@@ -61,54 +61,34 @@ def dispatch_telegram_system_improvement_mission(
     state: dict[str, Any],
     message: str,
 ) -> dict[str, Any]:
-    """Dispatch the existing governed system-improvement review from a natural goal.
+    """Dispatch one Harness-planned dynamic improvement mission to cloud execution.
 
-    This boundary intentionally does not implement improvement logic. It only
-    authorizes the registered capability and moves heavy work to GitHub Actions.
-    The review workflow remains proposal-only until a separately evidenced
-    development/promotion gate is satisfied.
+    Provider failure memory is already consumed by the Mission Planner. A blocked
+    semantic provider excludes only affected tasks; it must not globally block
+    deterministic measurement, Hermes coordination or Agent Office execution.
     """
+
+    mission_plan = plan.get("mission_plan")
+    if not isinstance(mission_plan, dict):
+        raise ValueError("system improvement dispatch requires a Harness MissionPlan")
+    if mission_plan.get("authority") != "DEEPSEEK_HARNESS":
+        raise PermissionError("system improvement MissionPlan escaped Harness authority")
+    collaboration = mission_plan.get("collaboration_plan")
+    if not isinstance(collaboration, dict) or len(collaboration.get("tasks") or []) < 2:
+        raise ValueError("system improvement MissionPlan requires a collaboration DAG")
 
     goal_id = str(
         plan.get("active_goal_id")
         or state.get("active_goal_id")
+        or mission_plan.get("goal", {}).get("goal_id")
         or f"telegram-system-improvement-{uuid4().hex[:12]}"
     ).strip()
-    provider_failure = learning_repository.list_memories(
-        status="ACTIVE",
-        memory_type="FAILURE",
-        failure_pattern="opencode_free_tier_403",
-        limit=1,
-    )
-    if provider_failure:
-        return {
-            "status": "BLOCKED_PROVIDER",
-            "answer": (
-                "Aceitei o objetivo de melhoria, mas a etapa semântica especializada está bloqueada: "
-                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE. O Harness recuperou a falha OpenCode 403 "
-                "antes da execução e não repetiu a abordagem comprovadamente inválida. "
-                "Controles e medições determinísticas continuam disponíveis."
-            ),
-            "goal_id": goal_id,
-            "capability_id": CAPABILITY_ID,
-            "failure_memory_id": provider_failure[0].get("memory_id"),
-            "failure_pattern": "opencode_free_tier_403",
-            "FAILURE_MEMORY_RETRIEVAL": "PASS",
-            "FAILURE_RECURRENCE_PREVENTION": "PASS",
-            "provider_retry_performed": False,
-            "authority": "DEEPSEEK_HARNESS",
-            "agent_direct_promotion": False,
-            "NEW_VOICE_SYNTHESIS": "NO",
-            "FULL_RENDER": "NO",
-            "YOUTUBE_UPLOAD": "NO",
-            "YOUTUBE_PUBLICATION": "NO",
-        }
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent=str(message or "system improvement"),
             authorized_action="DEVELOPMENT",
             domain="system-improvement",
-            task_class="telegram-system-improvement",
+            task_class="telegram-system-improvement-dispatch",
             goal_id=goal_id,
             required_capability_id=CAPABILITY_ID,
             fallback_allowed=False,
@@ -125,48 +105,81 @@ def dispatch_telegram_system_improvement_mission(
             "capability_id": CAPABILITY_ID,
             "selected_executor_binding": routing.selected_executor_binding,
             "goal_id": goal_id,
+            "mission_id": mission_plan.get("mission_id"),
+            "plan_id": mission_plan.get("plan_id"),
             "ingress": "telegram-natural-goal",
-            "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
-            "requested_collaboration_runtime": "HERMES",
+            "mission_planner": "DEEPSEEK_HARNESS",
+            "collaboration_runtime": "HERMES",
+            "known_bad_paths_avoided": mission_plan.get("known_bad_paths_avoided") or [],
             "agent_direct_promotion": False,
         },
     )
+
     repository = os.getenv("BR_GITHUB_REPOSITORY", "zenindiones-maker/BR-no-GTA")
-    ref = os.getenv("BR_GITHUB_REF", "work/gate6f-analytics-learning")
-    head = subprocess.check_output(
+    target_ref = os.getenv("BR_GITHUB_REF", "work/gate6f-analytics-learning")
+    target_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"],
         text=True,
     ).strip()
+    dispatch_id = f"tg-system-improvement-{uuid4().hex[:12]}"
+    expected_title = f"System Improvement {dispatch_id}"
+    plan_raw = json.dumps(
+        mission_plan,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(plan_raw) > 96 * 1024:
+        consume_harness_authorization(authorization)
+        raise ValueError("Harness MissionPlan exceeds bounded dispatch envelope")
+    goal_raw = str(message or "").encode("utf-8")
+    if len(goal_raw) > 24 * 1024:
+        consume_harness_authorization(authorization)
+        raise ValueError("human goal exceeds bounded dispatch envelope")
+
     dispatcher = GitHubActionsDispatcher(
-        _runner(repository=repository, ref=ref, expected_head=head)
+        _runner(repository=repository, expected_title=expected_title)
     )
     try:
         dispatched = dispatcher.dispatch(
             repository=repository,
             workflow=WORKFLOW,
-            ref=ref,
-            inputs={},
+            ref="main",
+            inputs={
+                "dispatch_id": dispatch_id,
+                "target_ref": target_ref,
+                "target_sha": target_sha,
+                "plan_b64": base64.b64encode(plan_raw).decode("ascii"),
+                "human_goal_b64": base64.b64encode(goal_raw).decode("ascii"),
+                "telegram_chat_id": str(state.get("telegram_chat_id") or 0),
+            },
         )
     finally:
         consume_harness_authorization(authorization)
 
+    avoided = list(mission_plan.get("known_bad_paths_avoided") or [])
     return {
         "status": "RUNNING",
         "answer": (
-            "A análise de melhoria foi autorizada pelo Harness e enviada ao executor cloud. "
-            "A equipe vai medir evidências antes de propor qualquer mudança. "
-            "Nenhum agente tem autorização para promover o próprio patch."
+            "Vou medir o problema com a equipe mínima selecionada pelo Harness. "
+            "A missão está no executor cloud; Hermes coordena apenas as tarefas necessárias. "
+            "Se houver candidate de código, ele fica isolado até testes, comparação e decisão do Harness."
         ),
         "goal_id": goal_id,
-        "capability_id": CAPABILITY_ID,
+        "mission_id": mission_plan.get("mission_id"),
+        "plan_id": mission_plan.get("plan_id"),
+        "selected_tasks": len(collaboration.get("tasks") or []),
         "workflow": WORKFLOW,
         "workflow_run_id": dispatched.run_id,
         "run_id": dispatched.run_id,
         "routing_id": routing.routing_id,
         "authorization_id": authorization.authorization_id,
         "authority": "DEEPSEEK_HARNESS",
-        "mission_planner": "HARNESS_REGISTRY_COMPETENCE",
-        "collaboration_requested": True,
+        "mission_planner": "DEEPSEEK_HARNESS",
+        "collaboration_runtime": "HERMES",
+        "failure_memory_retrieval": bool(avoided),
+        "known_bad_paths_avoided": avoided,
+        "provider_retry_performed": False,
         "agent_direct_promotion": False,
         "NEW_VOICE_SYNTHESIS": "NO",
         "FULL_RENDER": "NO",
