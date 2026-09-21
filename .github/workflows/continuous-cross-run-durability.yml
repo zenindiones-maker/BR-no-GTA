@@ -202,9 +202,14 @@ jobs:
           assert restored_failure["failure_pattern"]=="opencode_free_tier_403"
           assert restored_failure["memory_id"]==proof_failure["memory_id"]
 
-          # No due gate means no GTA6 execution, no refetch and no cycle-row growth.
-          assert len(restored_cycles)==len(proof_cycles)
+          # No due gate means this scheduled runner did not execute GTA6 research.
+          # The restored checkpoint may legitimately contain newer valid cycles than
+          # the original live-proof checkpoint, so cycle-count equality is not a
+          # durability invariant. Source observation identity is.
+          assert restored_source["observed_at"]==proof_source["observed_at"]
+          assert restored_source["changed_at"]==proof_source["changed_at"]
           assert scheduled["scoreboard"]==continuous_repository.scoreboard()
+          assert int(scheduled["scoreboard"]["duplicate_work"])==0
           assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
           assert scheduled["failure_prevention"]["FAILURE_RECURRENCE_PREVENTION"]=="PASS"
           assert scheduled["CONTINUOUS_INTELLIGENCE_LOOP"]=="PASS"
