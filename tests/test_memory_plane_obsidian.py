@@ -14,6 +14,7 @@ from app.services.memory_plane_service import (
     evaluate_memory_candidate,
     record_canonical_human_decision,
 )
+from scripts.obsidian_inbox_cloud_ingest import run as run_obsidian_cloud_ingest
 from app.services.obsidian_memory_service import (
     OBSIDIAN_INBOX_CAPABILITY_ID,
     execute_obsidian_inbox_capability,
@@ -286,3 +287,38 @@ def test_obsidian_export_is_projection_only_and_refuses_android_vault(tmp_path):
             system_state={},
             project_goals={},
         )
+
+
+
+def test_obsidian_cloud_ingest_preserves_target_transport_lineage(tmp_path, monkeypatch):
+    note = """---
+type: human_note
+target: video-a
+---
+
+Não produzir nova voz antes da revisão do roteiro.
+"""
+    note_file = tmp_path / "note.md"
+    note_file.write_text(note, encoding="utf-8")
+    monkeypatch.setenv("OBSIDIAN_TARGET_REF", "work/gate6f-analytics-learning")
+    monkeypatch.setenv("OBSIDIAN_TARGET_SHA", "a" * 40)
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456")
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+
+    envelope = run_obsidian_cloud_ingest(
+        note_file=note_file,
+        source_ref="Inbox/transport-proof.md",
+        goal_id=GOAL,
+        task_id="script-human-review",
+        artifact_ref="script:8",
+        output_dir=tmp_path / "result",
+    )
+
+    assert envelope["target_ref"] == "work/gate6f-analytics-learning"
+    assert envelope["target_sha"] == "a" * 40
+    assert envelope["authority"] == "DEEPSEEK_HARNESS"
+    assert envelope["canonical_target"] == "BR SQLite Learning Plane"
+    assert envelope["memory_candidate"]["status"] == "CANDIDATE"
+    assert envelope["memory_evaluation"]["decision"] == "HUMAN_REVIEW"
+    assert envelope["canonical_auto_promotion"] is False
+    assert envelope["termux_processing_class"] == "DETERMINISTIC_SMALL_ENVELOPE_ONLY"
