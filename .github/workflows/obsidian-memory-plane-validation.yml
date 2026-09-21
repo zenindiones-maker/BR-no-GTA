@@ -45,8 +45,11 @@ jobs:
       - name: Compile memory plane
         run: |
           set -euo pipefail
-          python -m py_compile             app/database/schema.py             app/database/harness_learning_repository.py             app/services/harness_learning_service.py             app/services/memory_plane_service.py             app/services/bounded_memory_context_service.py             app/services/harness_learning_context_service.py             app/services/harness_routing_policy_service.py             app/services/obsidian_memory_service.py             app/services/hermes_multiagent/capability_broker.py             app/services/telegram_conversation_service.py             scripts/obsidian_memory_plane_canary.py
+          bash -n scripts/obsidian_inbox_dispatch.sh
+          bash -n scripts/obsidian_sync_export.sh
+          python -m py_compile app/database/schema.py app/database/harness_learning_repository.py app/services/harness_learning_service.py app/services/memory_plane_service.py app/services/bounded_memory_context_service.py app/services/harness_learning_context_service.py app/services/harness_routing_policy_service.py app/services/harness_episode_capture_service.py app/services/obsidian_memory_service.py app/services/hermes_multiagent/capability_broker.py app/services/telegram_conversation_service.py scripts/obsidian_memory_plane_canary.py scripts/obsidian_inbox_cloud_ingest.py scripts/obsidian_apply_memory_envelope.py
           echo "MEMORY_PLANE_COMPILE=PASS"
+          echo "A15_LIGHTWEIGHT_SCRIPTS_SYNTAX=PASS"
 
       - name: Run focused memory and authority tests
         run: |
@@ -58,6 +61,42 @@ jobs:
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
           python scripts/obsidian_memory_plane_canary.py             --artifact-dir artifacts/obsidian-memory-plane
+
+      - name: Prove explicit Inbox cloud envelope transport
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/obsidian-memory-plane/inbox-transport
+          cat > artifacts/obsidian-memory-plane/inbox-transport/voice-feedback.md <<'EOF'
+          ---
+          type: human_note
+          target: video-a
+          ---
+
+          Não produzir nova voz antes da revisão do roteiro.
+          EOF
+          python scripts/obsidian_inbox_cloud_ingest.py             --note-file artifacts/obsidian-memory-plane/inbox-transport/voice-feedback.md             --source-ref Inbox/workflow-voice-feedback.md             --goal-id 93f99ddc-09c7-474b-8849-6981aa78d60c             --task-id script-human-review             --artifact-ref script:8             --output-dir artifacts/obsidian-memory-plane/inbox-transport/result
+          python scripts/obsidian_apply_memory_envelope.py             artifacts/obsidian-memory-plane/inbox-transport/result/canonical-memory-envelope.json             --receipt artifacts/obsidian-memory-plane/inbox-transport/materialization-receipt.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/obsidian-memory-plane/inbox-transport/result/obsidian-inbox-result.json")
+          d=json.loads(p.read_text())
+          assert d["OBSIDIAN_NOTE_INGESTED"]=="PASS"
+          assert d["MEMORY_CANDIDATE_CREATED"]=="PASS"
+          assert d["CANONICAL_AUTO_PROMOTION"]=="NO"
+          assert d["HARNESS_EVALUATION_REQUIRED"]=="PASS"
+          assert d["HARNESS_EVALUATION_DECISION"]=="HUMAN_REVIEW"
+          r=json.loads(Path("artifacts/obsidian-memory-plane/inbox-transport/materialization-receipt.json").read_text())
+          assert r["memory_status"]=="CANDIDATE"
+          assert r["evaluation_decision"]=="HUMAN_REVIEW"
+          assert r["TERMUX_HEAVY_PROCESSING"]=="NO"
+          print("OBSIDIAN_INBOX_TRANSPORT=PASS")
+          print("MEMORY_ENVELOPE_MATERIALIZATION=PASS")
+          print("CANONICAL_AUTO_PROMOTION=NO")
+          print("HERMES_DIRECT_MEMORY_WRITE=NO")
+          print("OBSIDIAN_CANONICAL_MEMORY=NO")
+          print("TERMUX_HEAVY_PROCESSING=NO")
+          PY
 
       - name: Validate required memory gates
         run: |
@@ -101,6 +140,10 @@ jobs:
           assert any((export/"20-Learning/Improvements").glob("*.md"))
           assert any((export/"90-Runs/HarnessEpisodes").glob("*.md"))
           print("OBSIDIAN_MEMORY_EXPORT_PACKAGE=PASS")
+          print("HERMES_DIRECT_MEMORY_WRITE=NO")
+          print("OBSIDIAN_CANONICAL_MEMORY=NO")
+          print("TERMUX_HEAVY_PROCESSING=NO")
+          print("CANONICAL_AUTO_PROMOTION=NO")
           print("NEW_VOICE_SYNTHESIS=NO")
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
