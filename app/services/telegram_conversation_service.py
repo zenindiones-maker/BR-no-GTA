@@ -12,7 +12,9 @@ from app.database.telegram_conversation_repository import (
     list_recent_conversation_turns,
     list_recent_human_decisions,
     record_human_decision,
+    resolve_telegram_human_context,
     update_conversation_state,
+    update_shared_thread_context,
 )
 from app.services.gta6_observation_service import build_gta6_observation
 from app.services.harness_learning_service import record_human_correction
@@ -47,6 +49,60 @@ INTENTS = {
 ProgressCallback = Callable[[str, str], None]
 ChatHandler = Callable[..., dict[str, Any]]
 ActionExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
+
+
+_SHARED_THREAD_FIELDS = (
+    "active_goal_id",
+    "active_task",
+    "current_subject",
+    "active_artifact",
+    "active_run_id",
+    "last_human_decision",
+    "waiting_for_human",
+    "pending_question",
+    "pending_human_review",
+)
+
+
+def _bind_surface_identity(
+    *,
+    telegram_user_id: int | None,
+    telegram_chat_id: int,
+    telegram_chat_type: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    state = get_or_create_conversation_state(telegram_chat_id)
+    if telegram_user_id is None:
+        return None, state
+
+    identity = resolve_telegram_human_context(
+        telegram_user_id=int(telegram_user_id),
+        telegram_chat_id=int(telegram_chat_id),
+        chat_type=telegram_chat_type,
+        project_key=str(state.get("active_project") or "BR-no-GTA"),
+        allowed=True,
+    )
+    shared = dict((identity.get("thread") or {}).get("canonical_context") or {})
+    hydrate = {
+        key: shared[key]
+        for key in _SHARED_THREAD_FIELDS
+        if key in shared and shared.get(key) is not None and state.get(key) != shared.get(key)
+    }
+    if hydrate:
+        state = update_conversation_state(telegram_chat_id, **hydrate)
+    return identity, state
+
+
+def _sync_shared_thread(
+    identity: dict[str, Any] | None,
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(identity, dict):
+        return None
+    changes = {
+        key: state.get(key)
+        for key in _SHARED_THREAD_FIELDS
+    }
+    return update_shared_thread_context(str(identity["thread_id"]), **changes)
 
 
 def _fold(value: str) -> str:
@@ -568,6 +624,8 @@ def handle_telegram_conversation(
     message: str,
     *,
     telegram_chat_id: int,
+    telegram_user_id: int | None = None,
+    telegram_chat_type: str = "private",
     telegram_message_id: int | None = None,
     input_record: dict[str, Any] | None = None,
     has_attachment: bool = False,
@@ -580,7 +638,11 @@ def handle_telegram_conversation(
     if not text:
         raise ValueError("Telegram conversation message is empty")
 
-    state = get_or_create_conversation_state(telegram_chat_id)
+    identity, state = _bind_surface_identity(
+        telegram_user_id=telegram_user_id,
+        telegram_chat_id=telegram_chat_id,
+        telegram_chat_type=telegram_chat_type,
+    )
     recent_before = list_recent_conversation_turns(telegram_chat_id, limit=10)
     intent = classify_conversation_intent(text, has_attachment=has_attachment)
     resolved = resolve_conversation_reference(text, state=state, recent_turns=recent_before)
@@ -593,7 +655,14 @@ def handle_telegram_conversation(
         resolved_reference=resolved.get("reference"),
         artifact_ref=state.get("active_artifact"),
         run_id=state.get("active_run_id"),
-        metadata={"reference_basis": resolved.get("basis")},
+        metadata={
+            "reference_basis": resolved.get("basis"),
+            "telegram_user_id": telegram_user_id,
+            "telegram_chat_type": telegram_chat_type,
+            "human_identity_id": (identity or {}).get("human_identity_id"),
+            "thread_id": (identity or {}).get("thread_id"),
+            "surface_session_id": (identity or {}).get("surface_session_id"),
+        },
     )
     state = update_conversation_state(
         telegram_chat_id,
@@ -611,8 +680,15 @@ def handle_telegram_conversation(
         resolved_reference=resolved.get("reference"),
     )
 
-    if progress_callback is not None:
-        progress_callback("UNDERSTANDING", f"Entendi como {intent.lower().replace('_', ' ')}; resolvendo contexto e autorização.")
+    # Short deterministic control paths must return the result directly.
+    # A visible UNDERSTANDING heartbeat is product noise and can become a
+    # misleading final message if the process dies before presentation.
+    visible_progress_allowed = plan["kind"] not in {"STATUS", "MEMORY_RECALL"}
+    if progress_callback is not None and visible_progress_allowed:
+        progress_callback(
+            "UNDERSTANDING",
+            f"Entendi como {intent.lower().replace('_', ' ')}; resolvendo contexto e autorização.",
+        )
 
     canonical: dict[str, Any]
     decision = None
@@ -699,7 +775,12 @@ def handle_telegram_conversation(
             artifact_ref=state.get("active_artifact"),
             metadata={
                 "conversation_id": state["conversation_id"],
+                "telegram_user_id": telegram_user_id,
                 "telegram_chat_id": telegram_chat_id,
+                "telegram_chat_type": telegram_chat_type,
+                "human_identity_id": (identity or {}).get("human_identity_id"),
+                "thread_id": (identity or {}).get("thread_id"),
+                "surface_session_id": (identity or {}).get("surface_session_id"),
                 "telegram_message_id": telegram_message_id,
                 "learning_correction_id": (correction or {}).get("correction_id"),
             },
@@ -981,6 +1062,8 @@ def handle_telegram_conversation(
             },
         )
 
+    shared_thread = _sync_shared_thread(identity, state)
+
     answer = _present(
         canonical,
         telegram_chat_id=telegram_chat_id,
@@ -1000,6 +1083,11 @@ def handle_telegram_conversation(
             "plan": plan,
             "capability_id": capability_id,
             "waiting_for_human": waiting,
+            "telegram_user_id": telegram_user_id,
+            "telegram_chat_type": telegram_chat_type,
+            "human_identity_id": (identity or {}).get("human_identity_id"),
+            "thread_id": (identity or {}).get("thread_id"),
+            "surface_session_id": (identity or {}).get("surface_session_id"),
         },
     )
     return {
@@ -1012,6 +1100,16 @@ def handle_telegram_conversation(
         "assistant_turn_id": assistant_turn["turn_id"],
         "canonical_result": canonical,
         "human_decision": decision,
+        "human_identity": identity,
+        "shared_thread": shared_thread,
+        "TELEGRAM_USER_ID_PROPAGATED": (
+            "PASS" if telegram_user_id is None or (identity or {}).get("telegram_user_id") == int(telegram_user_id)
+            else "FAIL"
+        ),
+        "TELEGRAM_CHAT_TYPE_PROPAGATED": (
+            "PASS" if telegram_user_id is None or (identity or {}).get("chat_type") == telegram_chat_type
+            else "FAIL"
+        ),
         "CONVERSATION_CONTEXT_RETRIEVAL": "PASS",
         "HARNESS_AUTHORITY_PRESERVED": "PASS",
     }
