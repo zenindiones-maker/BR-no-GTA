@@ -490,6 +490,7 @@ class HermesHarnessCapabilityBroker:
                 if parent_task_id in self._child_tasks
                 else parent_task_id
             ),
+            parent_envelope=parent,
             child=child,
             depth=proposed_depth,
             existing_child_count=len(self._child_tasks),
