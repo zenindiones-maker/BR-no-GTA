@@ -225,7 +225,14 @@ def _select_primary_source(packet: Mapping[str, Any], requested_url: str) -> dic
     raise RuntimeError("delta research has no primary official source")
 
 
-def _collect_live(query: str, *, execution_id: str, source_url: str) -> dict[str, Any]:
+def _collect_live(
+    query: str,
+    *,
+    execution_id: str,
+    source_url: str,
+    source_etag: str = "",
+    source_last_modified: str = "",
+) -> dict[str, Any]:
     if os.getenv("GITHUB_ACTIONS", "").casefold() != "true" and os.getenv(
         "BR_ALLOW_CONTINUOUS_NETWORK_TEST", ""
     ).casefold() not in {"1", "true", "yes"}:
@@ -235,6 +242,8 @@ def _collect_live(query: str, *, execution_id: str, source_url: str) -> dict[str
         query,
         execution_id=execution_id,
         source_url=source_url,
+        source_etag=source_etag,
+        source_last_modified=source_last_modified,
         classification="continuous-intelligence",
         input_kind="scheduled",
     )
@@ -324,8 +333,85 @@ def execute_gta6_delta_research_capability(
         }
 
     started = time.perf_counter()
-    packet = _collect_live(query, execution_id=auth.execution_id, source_url=source_url)
+    registry_source = brain_repository.get_source(source_key) or {}
+    packet = _collect_live(
+        query,
+        execution_id=auth.execution_id,
+        source_url=source_url,
+        source_etag=str(registry_source.get("etag") or ""),
+        source_last_modified=str(registry_source.get("last_modified") or ""),
+    )
     latency = max(0.0, time.perf_counter() - started)
+    submitted = packet.get("submitted_source")
+    if (
+        isinstance(submitted, Mapping)
+        and submitted.get("resolution_status") == "NOT_MODIFIED"
+    ):
+        observed_at = str(packet.get("checked_at") or _now())
+        updated_registry = brain_repository.upsert_source({
+            **registry_source,
+            "source_id": source_key,
+            "url": source_url,
+            "domain": str(registry_source.get("domain") or _source_domain(source_url)),
+            "source_type": str(registry_source.get("source_type") or "PRIMARY_SOURCE"),
+            "authority_class": str(
+                registry_source.get("authority_class")
+                or _source_authority_class(source_url, "PRIMARY_SOURCE")
+            ),
+            "discovered_at": str(
+                registry_source.get("discovered_at") or observed_at
+            ),
+            "last_checked_at": observed_at,
+            "last_success_at": observed_at,
+            "etag": submitted.get("etag") or registry_source.get("etag"),
+            "last_modified": (
+                submitted.get("last_modified")
+                or registry_source.get("last_modified")
+            ),
+            "refresh_state": "CURRENT",
+            "active": True,
+        })
+        if known_source is not None:
+            continuous_repository.upsert_source_state({
+                **known_source,
+                "source_key": source_key,
+                "source_url": source_url,
+                "observed_at": observed_at,
+                "etag": updated_registry.get("etag"),
+                "last_modified": updated_registry.get("last_modified"),
+            })
+        return {
+            "status": "NO_MEANINGFUL_GTA6_DELTA",
+            "authority": auth.authority,
+            "goal_id": goal_id,
+            "query": query,
+            "subject": subject,
+            "source_url": source_url,
+            "source_state": known_source,
+            "source_registry": updated_registry,
+            "known_state": knowledge_hits,
+            "bounded_knowledge_context": bounded,
+            "candidate_claims": [],
+            "delta": {
+                "NEW_FINDINGS": [],
+                "CHANGED_FINDINGS": [],
+                "SUPERSEDED_FINDINGS": [],
+                "CONTRADICTIONS": [],
+                "NO_CHANGE": [source_url],
+            },
+            "source_fetch_count": 1,
+            "memory_hit_count": len(knowledge_hits),
+            "memory_miss_count": int(not knowledge_hits),
+            "duplicate_research_avoided": True,
+            "SOURCE_UNCHANGED": "YES",
+            "HTTP_CONDITIONAL_NOT_MODIFIED": "PASS",
+            "LLM_EXTRACTION_SKIPPED": "YES",
+            "checked_at": observed_at,
+            "latency_seconds": latency,
+            "evidence_refs": [
+                str((known_source or {}).get("evidence_ref") or ""),
+            ],
+        }
     primary = _select_primary_source(packet, source_url)
     if primary["source_type"] != "PRIMARY_SOURCE":
         raise PermissionError("continuous GTA6 auto-promotion requires an official primary source")
@@ -390,6 +476,16 @@ def execute_gta6_delta_research_capability(
         "last_success_at": observed_at,
         "content_hash": (
             str(primary.get("content_sha256") or "").strip() or fingerprint
+        ),
+        "etag": (
+            (packet.get("submitted_source") or {}).get("etag")
+            if isinstance(packet.get("submitted_source"), Mapping)
+            else None
+        ),
+        "last_modified": (
+            (packet.get("submitted_source") or {}).get("last_modified")
+            if isinstance(packet.get("submitted_source"), Mapping)
+            else None
         ),
         "refresh_priority": 100,
         "refresh_interval_seconds": freshness,
