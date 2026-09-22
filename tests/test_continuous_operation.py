@@ -102,7 +102,20 @@ def test_real_delta_contract_reuses_promoted_canonical_knowledge(monkeypatch):
     )
     fingerprint = sha256(excerpt.encode("utf-8")).hexdigest()
 
-    def fake_collect(query, *, execution_id, source_url):
+    observed_collect_contract = {}
+
+    def fake_collect(
+        query,
+        *,
+        execution_id,
+        source_url,
+        source_etag="",
+        source_last_modified="",
+    ):
+        observed_collect_contract.update({
+            "source_etag": source_etag,
+            "source_last_modified": source_last_modified,
+        })
         return {
             "status": "PASS",
             "execution_id": execution_id,
@@ -147,6 +160,10 @@ def test_real_delta_contract_reuses_promoted_canonical_knowledge(monkeypatch):
     assert first["candidate_claims"]
     assert first["candidate_claims"][0]["source_type"] == "PRIMARY_SOURCE"
     assert first["candidate_claims"][0]["evidence_class"] == "OFFICIAL"
+    assert observed_collect_contract == {
+        "source_etag": "",
+        "source_last_modified": "",
+    }
 
     episode = _observed_episode("episode-delta-knowledge")
     promoted = gate_verified_gta6_claim(
