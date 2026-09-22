@@ -1,14 +1,19 @@
 {
   "schema": "br-tuxevil-codex-antigravity-proof-request/v1",
-  "reason": "final proof after layered readiness and regression guard synchronization",
+  "reason": "prove existing Antigravity store materialization and Codex read-only through Tuxevil",
   "requested_checks": [
+    "ephemeral_existing_store_materialization",
+    "mode_0600",
+    "account_count_4",
+    "google_antigravity_present",
     "process_liveness",
     "loopback_port",
     "admin_status",
-    "runtime_account_shape",
     "models_readiness",
-    "responses_only_if_upstream_ready",
-    "precise_nonlive_auth_classification"
+    "responses_live_inference",
+    "tool_calling",
+    "codex_read_only_via_responses_proxy",
+    "account_store_cleanup"
   ],
   "credential_values_in_request": false
 }
