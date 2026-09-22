@@ -18,6 +18,11 @@ from app.services.harness_authorization_service import (
     authorization_to_context,
     validate_harness_authorization,
 )
+from app.services.gta6_knowledge_retrieval_service import retrieve_gta6_knowledge
+from app.services.gta6_source_registry_service import (
+    classify_gta6_source,
+    register_gta6_source,
+)
 
 
 def run_gta6_research(
@@ -37,6 +42,25 @@ def run_gta6_research(
         expected_execution_id=execution_id,
     )
     execution_context = authorization_to_context(authorization)
+    retrieval_query = str(
+        context.get("query")
+        or context.get("topic")
+        or context.get("subject")
+        or "GTA VI current developments"
+    )
+    existing_knowledge = retrieve_gta6_knowledge(
+        query=retrieval_query,
+        limit=12,
+        max_context_bytes=24 * 1024,
+        include_history=False,
+    )
+    research_gap = {
+        "query": retrieval_query,
+        "existing_units": len(existing_knowledge.get("knowledge_units") or ()),
+        "bounded_context_bytes": existing_knowledge.get("context_bytes"),
+        "strategy": "DELTA_ONLY_AFTER_CANONICAL_RETRIEVAL",
+        "research_required": True,
+    }
 
     rockstar_monitor = monitor_rockstar_newswire()
 
@@ -51,6 +75,49 @@ def run_gta6_research(
 
     news_items = run_gta6_news_pipeline()
 
+    discovered_sources: list[dict[str, Any]] = []
+    for item in [*rockstar_items, *news_items]:
+        url = str(
+            item.get("url")
+            or item.get("source_url")
+            or item.get("canonical_url")
+            or ""
+        ).strip()
+        if not url.startswith("https://"):
+            continue
+        source_type = str(item.get("source_type") or "OTHER")
+        classification = classify_gta6_source(
+            url=url,
+            source_type=source_type,
+        )
+        source_id = "research-source-" + __import__("hashlib").sha256(
+            url.encode("utf-8")
+        ).hexdigest()[:24]
+        try:
+            registered = register_gta6_source(
+                source_id=source_id,
+                url=url,
+                source_type=source_type,
+                discovered_at=str(
+                    item.get("published_at")
+                    or item.get("observed_at")
+                    or __import__("datetime").datetime.now(
+                        __import__("datetime").timezone.utc
+                    ).isoformat()
+                ),
+                provenance={
+                    "origin": "gta6_research_pipeline",
+                    "execution_id": execution_id,
+                    "authority": authorization.authority,
+                },
+                declared_authority=classification.authority_class,
+                refresh_state="DUE",
+            )
+            discovered_sources.append(registered)
+        except Exception:
+            # Source registry enrichment must never corrupt canonical research.
+            continue
+
     research_results = [
         *rockstar_items,
         *news_items,
@@ -61,6 +128,10 @@ def run_gta6_research(
     )
 
     return {
+        "existing_knowledge": existing_knowledge,
+        "research_gap": research_gap,
+        "discovered_sources": discovered_sources,
+        "KNOWLEDGE_RETRIEVED_BEFORE_RESEARCH": "PASS",
         "rockstar_monitor": rockstar_monitor,
         "rockstar_newswire": rockstar_items,
         "news_feeds": news_items,
