@@ -227,6 +227,14 @@ def test_obsidian_projection_exposes_objective_health_and_knowledge_map(tmp_path
     assert "40-Knowledge/GTA6/Mechanics/Index.md" in files
     assert "40-Knowledge/GTA6/Official-Sources/Index.md" in files
     assert "40-Knowledge/GTA6/Contradictions/Index.md" in files
+    assert "00-Brain/Dashboard.md" in files
+    assert "00-Brain/Research-Frontier.md" in files
+    assert "00-Brain/Daily-Knowledge.md" in files
+    assert "50-Editorial/Never-Used.md" in files
+    assert "50-Editorial/Used-In-Videos.md" in files
+    assert "50-Editorial/Opportunities.md" in files
+    assert manifest["obsidian_role"] == "LONG_TERM_HUMAN_KNOWLEDGE_VIEW"
+    assert manifest["graph_projection"] is True
     assert manifest["OBSIDIAN_CANONICAL_MEMORY"] == "NO"
     assert manifest["TERMUX_HEAVY_PROCESSING"] == "NO"
 
