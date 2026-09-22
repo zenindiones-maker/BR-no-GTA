@@ -757,6 +757,15 @@ def test_semantic_registry_mismatch_replans_to_harness_selected_capability(
     assert "DeepSeek Harness performs final Registry selection" in prompts[1]
 
 
+def test_natural_goal_plan_uses_canonical_learning_competence_api():
+    source = Path(
+        "scripts/delegation_plane_natural_goal_plan.py"
+    ).read_text(encoding="utf-8")
+    assert "list_competence_profiles" not in source
+    assert "learning_repository.list_competence(" in source
+    assert 'status="ACTIVE"' in source
+
+
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
     monkeypatch.setenv(
         "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
