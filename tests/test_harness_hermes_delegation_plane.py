@@ -44,6 +44,7 @@ from app.services.hermes_multiagent.runtime import (
     export_hermes_mission_checkpoint,
     restore_hermes_mission_checkpoint,
 )
+from app.services.hermes_multiagent.profile_factory import HermesProfileFactory
 from app.services.agent_office.contracts import AgentOfficeTask
 from app.services.agent_office.munder_adapter import deterministic_read_only_worker
 from datetime import datetime, timedelta, timezone
@@ -171,6 +172,54 @@ def test_dynamic_mission_generic_payload_carries_semantic_query_without_capabili
     )
     assert payload["query"] == payload["gaps"][0]
     assert "capability_id" not in payload["query"]
+
+
+def test_hermes_profiles_are_task_scoped_when_one_specialist_owns_multiple_tasks():
+    tasks = [
+        TaskEnvelope(
+            task_id="inspect-one",
+            capability_id="agent-office.deterministic.readonly-analysis",
+            action="DEVELOPMENT",
+            objective="Inspect first bounded architecture concern",
+            task_class="system-root-cause-analysis",
+            expected_output="EvidenceOne",
+            review_policy="NONE",
+            risk_side_effect_class="READ_ONLY",
+        ),
+        TaskEnvelope(
+            task_id="inspect-two",
+            capability_id="agent-office.deterministic.readonly-analysis",
+            action="DEVELOPMENT",
+            objective="Inspect second bounded architecture concern",
+            task_class="system-root-cause-analysis",
+            expected_output="EvidenceTwo",
+            review_policy="NONE",
+            risk_side_effect_class="READ_ONLY",
+        ),
+    ]
+    plan = build_collaboration_plan(
+        mission_id="mission-shared-specialist",
+        goal_id="goal-shared-specialist",
+        tasks=tasks,
+    )
+    assert len(plan.tasks) == 2
+    assert plan.tasks[0].selected_agent_id == plan.tasks[1].selected_agent_id
+
+    factory = HermesProfileFactory()
+    first = factory.project_plan(plan)
+    second = factory.project_plan(plan)
+
+    assert len({profile.profile_name for profile in first}) == 2
+    assert [profile.profile_name for profile in first] == [
+        profile.profile_name for profile in second
+    ]
+    assert [profile.task_id for profile in first] == [
+        "inspect-one",
+        "inspect-two",
+    ]
+    assert first[0].runtime_role == first[1].runtime_role
+    assert first[0].canonical_agent_id == first[1].canonical_agent_id
+    assert all(profile.profile_name.startswith("hermes-") for profile in first)
 
 
 def test_competence_confidence_adjustment_prefers_robust_history_over_one_of_one():
