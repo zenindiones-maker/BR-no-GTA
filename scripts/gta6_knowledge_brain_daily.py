@@ -103,12 +103,15 @@ def run(
     upstream_root: Path,
     target_sha: str,
     trigger_kind: str,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     cycle = run_scheduled(
         artifact_dir=artifact_dir,
         upstream_root=upstream_root,
         target_sha=target_sha,
         trigger_kind=trigger_kind,
+        force_gta6_refresh=bool(force_refresh),
+        force_daily_projection=True,
     )
     dispatch = _send_digest(cycle)
     report = {
@@ -125,6 +128,8 @@ def run(
         "AGENT_DIRECT_CANONICAL_WRITE": "NO",
         "ZERO_COST_OPERATION": os.getenv("ZERO_COST_OPERATION", "UNKNOWN"),
         "TERMUX_HEAVY_PROCESSING": "NO",
+        "FORCED_SOURCE_CHECK": "YES" if force_refresh else "NO",
+        "CONDITIONAL_CHANGE_DETECTION": "PRESERVED",
     }
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "gta6-knowledge-brain-daily.json").write_text(
@@ -149,12 +154,14 @@ def main() -> int:
     parser.add_argument("--upstream-root", required=True)
     parser.add_argument("--target-sha", required=True)
     parser.add_argument("--trigger-kind", default="workflow_dispatch")
+    parser.add_argument("--force-refresh", action="store_true")
     args = parser.parse_args()
     run(
         artifact_dir=Path(args.artifact_dir),
         upstream_root=Path(args.upstream_root),
         target_sha=args.target_sha,
         trigger_kind=args.trigger_kind,
+        force_refresh=args.force_refresh,
     )
     return 0
 
