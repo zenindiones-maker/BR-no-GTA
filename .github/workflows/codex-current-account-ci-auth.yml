@@ -99,6 +99,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           sandbox: read-only
           safety-strategy: drop-sudo
+          codex-args: '["--ephemeral"]'
           prompt: |
             This is an authentication-only CI probe.
             Do not modify files, do not use network tools, do not inspect environment
@@ -107,10 +108,19 @@ jobs:
             CODEX_AUTH_AVAILABLE=PASS
             CODEX_AUTH_METHOD=OPENAI_API_KEY_VIA_CODEX_ACTION
 
-      - name: Record non-persistent auth proof
+  verify-auth-proof:
+    needs:
+      - readiness
+      - authenticated-probe
+    if: ${{ needs.authenticated-probe.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Record non-persistent auth proof outside the secret-bearing job
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain --untracked-files=no)"
           echo "CODEX_AUTH_AVAILABLE=PASS"
           echo "CODEX_AUTH_METHOD=OPENAI_API_KEY_VIA_CODEX_ACTION"
           echo "AUTH_SECRET_LEAK=NO"
