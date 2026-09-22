@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import json
+import os
 from typing import Any
 
 from app.database import harness_learning_repository as learning_repository
@@ -67,6 +69,57 @@ def _failure_memories(capability_id: str) -> list[dict[str, Any]]:
         return []
 
 
+_RUNTIME_HEALTH_STATES = {
+    HEALTHY,
+    DEGRADED,
+    BLOCKED,
+    QUARANTINED,
+    UNKNOWN,
+}
+
+
+def _runtime_health_override(capability_id: str) -> CapabilityHealth | None:
+    raw = str(os.getenv("BR_RUNTIME_CAPABILITY_HEALTH_JSON") or "").strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    item = payload.get(str(capability_id))
+    if not isinstance(item, dict):
+        return None
+    state = str(item.get("state") or "").strip().upper()
+    if state not in _RUNTIME_HEALTH_STATES:
+        return None
+    reason = str(item.get("reason") or "runtime capability health preflight").strip()
+    refs = tuple(
+        str(ref)
+        for ref in (item.get("evidence_refs") or ())
+        if str(ref).strip()
+    )
+    return CapabilityHealth(
+        capability_id=str(capability_id),
+        state=state,
+        reason=reason[:500],
+        retry_allowed=bool(item.get("retry_allowed", state in {HEALTHY, DEGRADED})),
+        confidence=max(0.0, min(1.0, float(item.get("confidence") or 1.0))),
+        sample_size=max(0, int(item.get("sample_size") or 0)),
+        last_success_at=(
+            str(item.get("last_success_at"))
+            if item.get("last_success_at") else None
+        ),
+        last_failure_at=(
+            str(item.get("last_failure_at"))
+            if item.get("last_failure_at") else None
+        ),
+        evidence_refs=refs,
+        source="RUNTIME_PREFLIGHT",
+    )
+
+
 def capability_health(capability_id: str) -> CapabilityHealth:
     record = GLOBAL_CAPABILITY_REGISTRY.get(str(capability_id or "").strip())
     if record is None:
@@ -98,6 +151,10 @@ def capability_health(capability_id: str) -> CapabilityHealth:
             evidence_refs=(),
             source="REGISTRY",
         )
+
+    runtime_override = _runtime_health_override(record.capability_id)
+    if runtime_override is not None:
+        return runtime_override
 
     if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
         episodes = _episodes(record.capability_id)
