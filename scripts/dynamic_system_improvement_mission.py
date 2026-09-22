@@ -207,6 +207,26 @@ def _grounded_profile_gaps(parent_context: dict[str, Any]) -> list[str]:
     return gaps[:8]
 
 
+def _hermes_subordinate_proven(
+    canonical: dict[str, Any],
+    *,
+    spec,
+) -> bool:
+    evidence = dict(canonical.get("evidence") or {})
+    return bool(
+        str(canonical.get("authority") or "").strip().casefold()
+        == "deepseek_harness"
+        and str(getattr(spec, "authority", "") or "").strip().upper()
+        == "DELEGATED_ONLY"
+        and str(evidence.get("hermes_authority") or "").strip().upper()
+        == "DELEGATED_ONLY"
+        and evidence.get("global_registry_canonical") is True
+        and evidence.get("canonical_memory") is False
+        and str(evidence.get("publication_authority") or "").strip().upper()
+        == "NONE"
+    )
+
+
 def _generic_payload(
     *,
     task,
@@ -628,8 +648,9 @@ def run(
                 len(unique_owners) <= len(collaboration.tasks)
             ),
             "TASK_HARDCODED_EXECUTION_LOGIC": 0,
-            "HERMES_SUBORDINATE": (
-                canonical.get("authority") == "DEEPSEEK_HARNESS"
+            "HERMES_SUBORDINATE": _hermes_subordinate_proven(
+                canonical,
+                spec=spec,
             ),
             "HERMES_DELEGATION_ENVELOPE": True,
             "HERMES_AUTHORITY_EXPANSION": False,
