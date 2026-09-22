@@ -787,7 +787,16 @@ def _record_cycle(
 def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigger_kind: str) -> dict[str, Any]:
     initialize_schema()
     policy = load_continuous_operation_policy()
-    topic = dict(policy.gta6["initial_topics"][0])
+    topics = [dict(item) for item in policy.gta6["initial_topics"]]
+    topic = next(
+        (
+            item
+            for item in topics
+            if _topic_source_state(item) is None
+            and not query_gta6_knowledge(query=item["query"], limit=1)
+        ),
+        topics[0],
+    )
     started_at = _now()
     failure = _failure_prevention()
     if failure["FAILURE_MEMORY_RETRIEVAL"] != "PASS":
