@@ -146,6 +146,67 @@ def _candidate_from_parent_context(parent_context: dict[str, Any]) -> str | None
     return _find_candidate_sha(parent_context)
 
 
+def _repository_profiles(value: Any) -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            if item.get("metric_schema") == "agent-office-repository-profile/v1":
+                key = str(item.get("inventory_sha256") or json.dumps(
+                    item, sort_keys=True, default=str
+                ))
+                if key not in seen:
+                    seen.add(key)
+                    profiles.append(dict(item))
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return profiles
+
+
+def _observed_fragilities(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for profile in profiles:
+        for item in profile.get("observed_fragilities") or ():
+            if isinstance(item, dict) and item.get("kind"):
+                rows.append(dict(item))
+    return rows
+
+
+def _grounded_profile_gaps(parent_context: dict[str, Any]) -> list[str]:
+    gaps: list[str] = []
+    profiles = _repository_profiles(parent_context)
+    for profile in profiles[:3]:
+        gaps.append(
+            "Measured repository baseline: "
+            f"files={int(profile.get('scoped_file_count') or 0)}, "
+            f"lines={int(profile.get('total_lines') or 0)}, "
+            f"bytes={int(profile.get('total_bytes') or 0)}, "
+            f"files_over_1000_lines={int(profile.get('files_over_1000_lines') or 0)}, "
+            f"largest_file_lines={int(profile.get('largest_file_lines') or 0)}, "
+            f"profile_latency_ms={float(profile.get('profile_latency_ms') or 0.0):.3f}."
+        )
+        for fragility in profile.get("observed_fragilities") or ():
+            if not isinstance(fragility, dict):
+                continue
+            evidence = ",".join(
+                str(item)
+                for item in (fragility.get("evidence") or ())[:6]
+            )
+            gaps.append(
+                "Observed measurable fragility: "
+                f"{fragility.get('kind')} "
+                f"{fragility.get('metric')}={fragility.get('value')} "
+                f"evidence={evidence or 'none'}."
+            )
+    return gaps[:8]
+
+
 def _generic_payload(
     *,
     task,
@@ -188,6 +249,7 @@ def _generic_payload(
 
     gaps = [
         str(task.required_capability_description or task.objective).strip(),
+        *_grounded_profile_gaps(parent_context),
     ]
     return {
         "mission_id": mission_id,
@@ -479,6 +541,51 @@ def run(
         )
         for task in collaboration.tasks
     }
+    observed_system_profiles = _repository_profiles(
+        holder["execution_by_task"]
+    )
+    observed_fragilities = _observed_fragilities(observed_system_profiles)
+    baseline_metrics = [
+        {
+            "scoped_file_count": int(profile.get("scoped_file_count") or 0),
+            "total_lines": int(profile.get("total_lines") or 0),
+            "total_bytes": int(profile.get("total_bytes") or 0),
+            "files_over_1000_lines": int(
+                profile.get("files_over_1000_lines") or 0
+            ),
+            "largest_file_lines": int(
+                profile.get("largest_file_lines") or 0
+            ),
+            "largest_file_share_of_scoped_lines": float(
+                profile.get("largest_file_share_of_scoped_lines") or 0.0
+            ),
+            "profile_latency_ms": float(
+                profile.get("profile_latency_ms") or 0.0
+            ),
+            "inventory_sha256": profile.get("inventory_sha256"),
+        }
+        for profile in observed_system_profiles
+    ]
+    baseline_measured = bool(
+        baseline_metrics
+        and all(
+            item["scoped_file_count"] > 0
+            and item["total_lines"] > 0
+            and bool(item["inventory_sha256"])
+            for item in baseline_metrics
+        )
+    )
+    problem_observed = bool(observed_fragilities)
+    specialist_executed = bool(
+        observed_system_profiles
+        and broker
+        and any(
+            str(item.get("event") or "") == "TASK_COMPLETED"
+            and str(item.get("capability_id") or "")
+            == "agent-office.deterministic.readonly-analysis"
+            for item in broker.audit_snapshot()
+        )
+    )
     report = {
         "status": "PASS" if canonical.get("success") is not False else "FAIL",
         "authority": "DEEPSEEK_HARNESS",
@@ -487,6 +594,9 @@ def run(
         "hermes_canonical_result": canonical,
         "execution_reference": execution_reference,
         "selected_team_size": len(unique_owners),
+        "observed_system_profiles": observed_system_profiles,
+        "observed_fragilities": observed_fragilities,
+        "baseline_metrics": baseline_metrics,
         "candidate_shas": dict(holder["candidate_by_task"]),
         "integration_gates": gates,
         "measured_improvement_required": measured_required,
@@ -522,8 +632,9 @@ def run(
                 not any(task.dependencies for task in collaboration.tasks)
                 or (broker and broker.handoff_snapshot())
             ),
-            "REAL_SYSTEM_PROBLEM_OBSERVED": True,
-            "BASELINE_MEASURED": True,
+            "REAL_SPECIALIST_EXECUTION": specialist_executed,
+            "REAL_SYSTEM_PROBLEM_OBSERVED": problem_observed,
+            "BASELINE_MEASURED": baseline_measured,
             "REAL_CANDIDATE_CREATED": (
                 True if candidate_required else "NOT_REQUIRED"
             ),
