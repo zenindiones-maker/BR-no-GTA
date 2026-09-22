@@ -52,7 +52,7 @@ def _select_message(updates: list[dict]) -> tuple[dict, dict]:
         sender = message.get("from")
         if not isinstance(chat, dict) or not isinstance(sender, dict):
             continue
-        if chat.get("type") != "private":
+        if str(chat.get("type") or "") not in {"group", "supergroup"}:
             continue
         if sender.get("is_bot") is True:
             continue
@@ -62,7 +62,7 @@ def _select_message(updates: list[dict]) -> tuple[dict, dict]:
 
     if not candidates:
         raise RuntimeError(
-            "No private /start or 'oi harness' message found. Send 'oi harness' to @Brnogta_bot and rerun."
+            "No authorized group /start or 'oi harness' message found."
         )
     return candidates[-1]
 
@@ -89,17 +89,8 @@ def main() -> int:
     print(f"TELEGRAM_USERNAME={username or 'sem_username'}")
     print(f"TELEGRAM_UPDATE_ID={update_id}")
 
-    _api(
-        "sendMessage",
-        payload={
-            "chat_id": chat_id,
-            "text": (
-                "BR no GTA: conexão do bot com o runtime cloud confirmada. "
-                "Sua mensagem chegou com sucesso. O ingress do DeepSeek Harness está sendo habilitado agora."
-            ),
-        },
-    )
-    print("TELEGRAM_REPLY=PASS")
+    print("TELEGRAM_BOOTSTRAP_EGRESS=0")
+    print("UNSOLICITED_TELEGRAM_EGRESS=NO")
     return 0
 
 
