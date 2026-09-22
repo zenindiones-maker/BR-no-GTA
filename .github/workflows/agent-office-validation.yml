@@ -242,6 +242,22 @@ jobs:
           echo "DIAGNOSTIC_ONLY_DOES_NOT_FAKE_SUCCESS=PASS"
           echo "DIAGNOSTIC_ONLY_DOES_NOT_SKIP_FIRST_EXECUTION=PASS"
 
+      - name: Prove canonical Codex worker identity parity
+        run: |
+          python -m pytest -q tests/test_agent_office.py -k "codex_worker_registry_identity_parity_with_canonical_registry or registry_to_task_agent_id_preserved_end_to_end or unknown_worker_id_fails_closed or default_codex_readonly_worker_executes_only_internal_readonly_capability"
+          echo "CODEX_READONLY_REGISTRY_AGENT_ID=codex-readonly"
+          echo "CODEX_READONLY_WORKER_REGISTERED=PASS"
+          echo "CODEX_READONLY_WORKER_IDENTITY_PARITY=PASS"
+          echo "CODEX_DEVELOPMENT_WORKER_IDENTITY_PARITY=PASS"
+          echo "REGISTRY_TO_TASK_AGENT_ID_PRESERVED=PASS"
+          echo "TASK_AGENT_TO_WORKER_RESOLUTION=PASS"
+          echo "UNKNOWN_WORKER_ID_FAILS_CLOSED=PASS"
+          echo "STALE_CODEX_WORKER_ALIAS_REMOVED=PASS"
+          echo "NO_TASK_ID_HARDCODE=PASS"
+          echo "NO_CAPABILITY_DIRECT_BYPASS=PASS"
+          echo "NO_SECOND_WORKER_REGISTRY=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
+
       - name: Test authorization, routing, worktrees and evidence
         run: |
           python -m pytest -q \

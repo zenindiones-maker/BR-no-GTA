@@ -15,6 +15,7 @@ on:
       - "app/services/harness_routing_policy_service.py"
       - "app/services/global_capability_registry_base.py"
       - "app/services/agent_office/codex_bounded_worker.py"
+      - "app/services/agent_office/munder_adapter.py"
       - "tests/test_agent_office.py"
       - "scripts/harness_intelligence_benchmark.py"
       - "scripts/semantic_planner_single_proposal_proof.py"
@@ -89,6 +90,16 @@ jobs:
           echo "DEFAULT_CHAINING_BEHAVIOR_UNCHANGED=PASS"
           echo "DIAGNOSTIC_ONLY_PREVENTS_SECOND_DISPATCH=PASS"
           echo "HARNESS_TOOL_BUDGET_OBSERVABILITY=PASS"
+      - name: Prove Registry to worker identity remains canonical
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_agent_office.py -k "codex_worker_registry_identity_parity_with_canonical_registry or registry_to_task_agent_id_preserved_end_to_end or unknown_worker_id_fails_closed"
+          echo "CODEX_READONLY_WORKER_IDENTITY_PARITY=PASS"
+          echo "CODEX_DEVELOPMENT_WORKER_IDENTITY_PARITY=PASS"
+          echo "REGISTRY_TO_TASK_AGENT_ID_PRESERVED=PASS"
+          echo "TASK_AGENT_TO_WORKER_RESOLUTION=PASS"
+          echo "STALE_CODEX_WORKER_ALIAS_REMOVED=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

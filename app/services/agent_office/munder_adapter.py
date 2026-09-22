@@ -433,7 +433,7 @@ def codex_readonly_worker(
 def registered_worker_runners() -> dict[str, WorkerRunner]:
     return {
         "deterministic-analysis": deterministic_read_only_worker,
-        "codex": codex_readonly_worker,
+        "codex-readonly": codex_readonly_worker,
         "codex-development": codex_bounded_development_worker,
         "addy-specialist": addy_specialist_task_owner_worker,
     }
@@ -627,7 +627,7 @@ class MunderAdapter:
                     break
                 except Exception as exc:
                     if (
-                        task.agent in {"codex", "codex-development"}
+                        task.agent in {"codex-readonly", "codex-development"}
                         and is_codex_sandbox_host_policy_failure(str(exc))
                     ):
                         result = {
@@ -748,7 +748,7 @@ class MunderAdapter:
             input_size=len(task.objective.encode("utf-8")),
             output_size=len(json.dumps(result, default=str).encode("utf-8")),
             provider=specialist.get("semantic_provider") or (
-                "codex" if task.agent in {"codex", "codex-development"} else None
+                "codex" if task.agent in {"codex-readonly", "codex-development"} else None
             ),
             model=specialist.get("semantic_model"),
             success=result.get("status") == "SUCCEEDED",

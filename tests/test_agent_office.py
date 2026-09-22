@@ -20,16 +20,26 @@ from app.services.agent_office.codex_bounded_worker import (
     _rejected_command_shape,
     _tool_budget_evidence,
     _validate_command,
+    codex_bounded_development_worker,
     codex_execution_failure,
     codex_tuxevil_provider_args,
 )
-from app.services.agent_office.munder_adapter import CODEX_READONLY_CAPABILITY, MunderAdapter
+from app.services.agent_office.munder_adapter import (
+    CODEX_READONLY_CAPABILITY,
+    MunderAdapter,
+    codex_readonly_worker,
+    registered_worker_runners,
+)
 from app.services.agent_office.service import AgentOfficeService
 from app.services.agent_office_harness_service import (
     build_agent_office_specialist_contract,
     execute_authorized_agent_office,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.harness_collaboration_service import (
+    TaskEnvelope,
+    build_collaboration_plan,
+)
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
@@ -82,7 +92,7 @@ def _spec(root: Path, sha: str, authorization=None, **overrides):
         "repository": "zenindiones-maker/BR-no-GTA",
         "branch": "main",
         "base_sha": sha,
-        "allowed_agents": ["deterministic-analysis", "codex"],
+        "allowed_agents": ["deterministic-analysis", "codex-readonly"],
         "allowed_capabilities": ["repository.read", "addy:code-review-and-quality"],
         "allowed_paths": ["README.md"],
         "forbidden_actions": [
@@ -220,11 +230,114 @@ def test_worker_failure_and_partial_failure_are_aggregated(tmp_path):
     assert failed.status == "FAILED"
 
 
-def test_codex_requires_a_trusted_registered_runner(tmp_path):
+def test_codex_worker_registry_identity_parity_with_canonical_registry():
+    readonly = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.readonly-analysis"
+    )
+    development = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert readonly is not None and development is not None
+    assert readonly.execution_enabled is True
+    assert development.execution_enabled is True
+    assert readonly.agent_id == "codex-readonly"
+    assert development.agent_id == "codex-development"
+
+    executable_stale = [
+        record.capability_id
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.execution_enabled and record.agent_id == "codex"
+    ]
+    assert executable_stale == []
+
+    runners = registered_worker_runners()
+    assert "codex" not in runners
+    assert runners[readonly.agent_id] is codex_readonly_worker
+    assert runners[development.agent_id] is codex_bounded_development_worker
+    assert readonly.capability_id not in runners
+    assert development.capability_id not in runners
+
+
+def test_registry_to_task_agent_id_preserved_end_to_end():
+    readonly = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.readonly-analysis"
+    )
+    development = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert readonly is not None and development is not None
+    runners = registered_worker_runners()
+
+    for record, write_scope in (
+        (readonly, ()),
+        (development, ("app/services/agent_office",)),
+    ):
+        envelope = TaskEnvelope(
+            task_id=f"identity-{record.agent_id}",
+            capability_id=record.capability_id,
+            action="DEVELOPMENT",
+            objective="Prove canonical worker identity remains stable.",
+            task_class="bounded-development" if write_scope else "readonly-analysis",
+            expected_output="IdentityEvidence",
+            read_scope=("app/services/agent_office",),
+            write_scope=write_scope,
+            allowed_tools=record.allowed_tools,
+            risk_side_effect_class=record.side_effect_class,
+        )
+        plan = build_collaboration_plan(
+            mission_id=f"mission-{record.agent_id}",
+            goal_id=f"goal-{record.agent_id}",
+            tasks=[envelope],
+        )
+        routed = plan.tasks[0]
+        assert routed.selected_agent_id == record.agent_id
+
+        payload = {
+            "task_id": envelope.task_id,
+            "task_class": envelope.task_class,
+            "objective": envelope.objective,
+            "read_set": list(envelope.read_scope),
+            "write_set": list(envelope.write_scope),
+            "mission_read_scope": list(envelope.read_scope),
+            "mission_write_scope": list(envelope.write_scope),
+            "allowed_paths": list(envelope.write_scope),
+            "allowed_tools": list(record.allowed_tools),
+        }
+        contract = build_agent_office_specialist_contract(
+            record=record,
+            payload=payload,
+        )
+        office_task = AgentOfficeTask.from_mapping(contract["task"])
+        assert contract["agent_id"] == record.agent_id
+        assert office_task.agent == routed.selected_agent_id
+        assert runners[office_task.agent] is (
+            codex_bounded_development_worker
+            if record.agent_id == "codex-development"
+            else codex_readonly_worker
+        )
+
+
+def test_unknown_worker_id_fails_closed(tmp_path):
+    root, sha = _repo(tmp_path)
+    spec = _spec(
+        root,
+        sha,
+        allowed_agents=["unknown-worker"],
+        allowed_capabilities=["repository.read"],
+    )
+    result = AgentOfficeService(
+        root,
+        adapter=MunderAdapter(worker_runners={}),
+    ).execute(spec, [_task(agent="unknown-worker")])
+    assert result.status == "FAILED"
+    assert "worker engine is not registered by the Harness" in result.errors
+
+
+def test_codex_readonly_requires_a_trusted_registered_runner(tmp_path):
     root, sha = _repo(tmp_path)
     blocked = AgentOfficeService(
         root, adapter=MunderAdapter(worker_runners={})
-    ).execute(_spec(root, sha), [_task(agent="codex")])
+    ).execute(_spec(root, sha), [_task(agent="codex-readonly")])
     assert blocked.status == "FAILED"
     assert "not registered by the Harness" in blocked.errors[0]
 
@@ -234,19 +347,19 @@ def test_codex_requires_a_trusted_registered_runner(tmp_path):
         calls.append(task.capability)
         return {"status": "SUCCEEDED", "summary": "bounded Codex result"}
 
-    adapter = MunderAdapter(worker_runners={"codex": registered_codex})
+    adapter = MunderAdapter(worker_runners={"codex-readonly": registered_codex})
     result = AgentOfficeService(root, adapter=adapter).execute(
-        _spec(root, sha), [_task(agent="codex", capability="addy:code-review-and-quality")]
+        _spec(root, sha), [_task(agent="codex-readonly", capability="addy:code-review-and-quality")]
     )
     assert result.status == "SUCCEEDED"
     assert calls == ["addy:code-review-and-quality"]
 
 
-def test_default_codex_worker_refuses_canonical_addy_bypass(tmp_path):
+def test_default_codex_readonly_worker_refuses_canonical_addy_bypass(tmp_path):
     root, sha = _repo(tmp_path)
     result = AgentOfficeService(root).execute(
         _spec(root, sha),
-        [_task(agent="codex", capability="addy:code-review-and-quality")],
+        [_task(agent="codex-readonly", capability="addy:code-review-and-quality")],
     )
     assert result.status == "FAILED"
     assert (
@@ -255,7 +368,7 @@ def test_default_codex_worker_refuses_canonical_addy_bypass(tmp_path):
     )
 
 
-def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_path, monkeypatch):
+def test_default_codex_readonly_worker_executes_only_internal_readonly_capability(tmp_path, monkeypatch):
     root, sha = _repo(tmp_path)
     calls = []
 
@@ -294,7 +407,7 @@ def test_default_codex_worker_executes_only_internal_readonly_capability(tmp_pat
             sha,
             allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
         ),
-        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
+        [_task(agent="codex-readonly", capability=CODEX_READONLY_CAPABILITY)],
     )
     assert result.status == "SUCCEEDED"
     assert calls[0][0] == ["codex", "login", "status"]
@@ -357,7 +470,7 @@ def test_codex_readonly_sandbox_block_is_never_success(tmp_path, monkeypatch):
             sha,
             allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
         ),
-        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
+        [_task(agent="codex-readonly", capability=CODEX_READONLY_CAPABILITY)],
     )
     assert result.status == "FAILED"
     item = result.per_agent_results[0]
@@ -386,7 +499,7 @@ def test_codex_subprocess_receives_enforced_time_budget(tmp_path, monkeypatch):
             time_budget_seconds=1,
             allowed_capabilities=["repository.read", CODEX_READONLY_CAPABILITY],
         ),
-        [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
+        [_task(agent="codex-readonly", capability=CODEX_READONLY_CAPABILITY)],
     )
     assert result.status == "FAILED"
     assert "worker execution timed out" in result.errors
