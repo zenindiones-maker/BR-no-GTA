@@ -1,0 +1,14 @@
+{
+  "schema": "agent-office-bounded-development-diagnostic-request/v1",
+  "canonical_contract": "HARNESS–HERMES DELEGATION PLANE V1 items 1–42",
+  "purpose": "reproduce current agent-office.codex.bounded-development worker failure with sanitized diagnostics only",
+  "source_failed_run_id": 35724273957,
+  "focused_tests": [
+    "tests/test_agent_office.py",
+    "tests/test_harness_hermes_delegation_plane.py",
+    "tests/test_harness_candidate_integration_service.py",
+    "tests/test_delegated_agent_autonomy.py"
+  ],
+  "telegram_egress": false,
+  "credential_values_in_request": false
+}
