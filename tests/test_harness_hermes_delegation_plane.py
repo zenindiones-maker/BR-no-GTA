@@ -2596,6 +2596,28 @@ def test_task_envelope_mutation_candidate_matrix():
     })
     assert conditional.candidate_requirement == "CONDITIONAL"
 
+    derived_readonly = TaskEnvelope.from_mapping({
+        "task_id": "inspect-derived",
+        "capability_id": "agent-office.codex.readonly-analysis",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Derive readonly candidate semantics.",
+        "read_scope": ["app"],
+        "write_scope": [],
+        "risk_side_effect_class": "READ_ONLY",
+    })
+    assert derived_readonly.candidate_requirement == "NOT_APPLICABLE"
+
+    derived_mutating = TaskEnvelope.from_mapping({
+        "task_id": "mutate-derived",
+        "capability_id": "agent-office.codex.bounded-development",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Derive mutating candidate semantics.",
+        "read_scope": ["app", "tests"],
+        "write_scope": ["app/services"],
+        "risk_side_effect_class": "BOUNDED_MUTATION",
+    })
+    assert derived_mutating.candidate_requirement == "REQUIRED"
+
     with pytest.raises(
         ValueError,
         match="mutating TaskEnvelope cannot mark candidate NOT_APPLICABLE",
