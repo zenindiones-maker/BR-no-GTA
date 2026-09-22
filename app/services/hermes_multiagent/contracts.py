@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Mapping
 
-from app.services.harness_collaboration_service import CollaborationPlan
+from app.services.harness_collaboration_service import CollaborationPlan, TaskEnvelope
 
 
 HERMES_RUNTIME_CAPABILITY_ID = "collaboration.hermes.execute"
@@ -71,6 +71,36 @@ def _iso_timestamp(value: Any, field_name: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _scope_subset(child: tuple[str, ...], parent: tuple[str, ...]) -> bool:
+    if not child:
+        return True
+    if not parent:
+        return False
+    normalized_parent = tuple(str(item).strip("/").replace("\\", "/") for item in parent)
+    for raw in child:
+        value = str(raw).strip("/").replace("\\", "/")
+        if not any(
+            value == root or value.startswith(root + "/")
+            for root in normalized_parent
+            if root
+        ):
+            return False
+    return True
+
+
+def _objective_within_parent(child: str, parent: str) -> bool:
+    token_re = re.compile(r"[a-z0-9][a-z0-9_-]{2,}", re.IGNORECASE)
+    child_tokens = {item.casefold() for item in token_re.findall(str(child or ""))}
+    parent_tokens = {item.casefold() for item in token_re.findall(str(parent or ""))}
+    generic = {
+        "task", "work", "execute", "analyze", "analysis", "system",
+        "mission", "resultado", "result", "inspect", "check",
+    }
+    child_tokens -= generic
+    parent_tokens -= generic
+    return bool(child_tokens and parent_tokens and child_tokens & parent_tokens)
+
+
 @dataclass(frozen=True)
 class HermesRuntimeProfile:
     profile_name: str
@@ -96,6 +126,37 @@ class HermesRuntimeProfile:
 
 
 @dataclass(frozen=True)
+class TypedHandoff:
+    from_task_id: str
+    to_task_id: str
+    evidence_refs: tuple[str, ...]
+    result_ref: str
+    output_contract: str
+    summary: str
+    acceptance_state: str
+    artifact_lineage: dict[str, Any]
+    producer_capability_id: str
+    producer_agent_id: str | None
+    producer_skill_id: str | None
+    producer_version: str
+    observed_at: str
+
+    def __post_init__(self) -> None:
+        if not self.from_task_id or not self.to_task_id:
+            raise ValueError("TypedHandoff task ids are required")
+        if not self.evidence_refs:
+            raise ValueError("TypedHandoff evidence_refs are required")
+        if not self.result_ref:
+            raise ValueError("TypedHandoff result_ref is required")
+        if len(self.summary.encode("utf-8")) > 4096:
+            raise ValueError("TypedHandoff summary exceeds bounded size")
+        _iso_timestamp(self.observed_at, "observed_at")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class HermesMissionExecutionSpec:
     mission_id: str
     goal_id: str
@@ -110,6 +171,12 @@ class HermesMissionExecutionSpec:
     evidence_requirements: tuple[str, ...]
     forbidden_actions: tuple[str, ...]
     expires_at: str
+    authorized_read_scope: tuple[str, ...] = ()
+    authorized_write_scope: tuple[str, ...] = ()
+    allowed_side_effects: tuple[str, ...] = ()
+    human_gates: tuple[str, ...] = ()
+    max_child_depth: int = 1
+    max_child_tasks: int = 8
     profile_roles: dict[str, str] = field(default_factory=dict)
     input_refs: tuple[str, ...] = ()
     authority: str = HERMES_AUTHORITY
@@ -161,6 +228,37 @@ class HermesMissionExecutionSpec:
             raise ValueError("retry_count budget cannot be negative")
         if int(self.budgets.get("max_parallelism", 1)) < 1:
             raise ValueError("max_parallelism must be positive")
+        if self.max_child_depth < 0 or self.max_child_depth > 4:
+            raise ValueError("max_child_depth must be in [0, 4]")
+        if self.max_child_tasks < 0 or self.max_child_tasks > 64:
+            raise ValueError("max_child_tasks must be in [0, 64]")
+
+        plan_tasks = [
+            task for task in self.collaboration_plan.tasks
+            if task.task_id in allowed_tasks
+        ]
+        plan_read_scope = tuple(dict.fromkeys(
+            path for task in plan_tasks for path in task.read_scope
+        ))
+        plan_write_scope = tuple(dict.fromkeys(
+            path for task in plan_tasks for path in task.write_scope
+        ))
+        plan_side_effects = tuple(dict.fromkeys(
+            effect for task in plan_tasks for effect in task.allowed_side_effects
+        ))
+        if not self.authorized_read_scope:
+            object.__setattr__(self, "authorized_read_scope", plan_read_scope)
+        elif not _scope_subset(plan_read_scope, self.authorized_read_scope):
+            raise PermissionError("DelegationEnvelope read scope excludes planned task scope")
+        if not self.authorized_write_scope:
+            object.__setattr__(self, "authorized_write_scope", plan_write_scope)
+        elif not _scope_subset(plan_write_scope, self.authorized_write_scope):
+            raise PermissionError("DelegationEnvelope write scope excludes planned task scope")
+        if not self.allowed_side_effects:
+            object.__setattr__(self, "allowed_side_effects", plan_side_effects)
+        elif not set(plan_side_effects) <= set(self.allowed_side_effects):
+            raise PermissionError("DelegationEnvelope side effects exclude planned task effects")
+
         unknown_role_tasks = set(self.profile_roles) - allowed_tasks
         if unknown_role_tasks:
             raise PermissionError(f"profile role assigned outside allowed task scope: {sorted(unknown_role_tasks)}")
@@ -179,6 +277,9 @@ class HermesMissionExecutionSpec:
         forbidden_actions: tuple[str, ...] | list[str] = (),
         profile_roles: Mapping[str, str] | None = None,
         input_refs: tuple[str, ...] | list[str] = (),
+        human_gates: tuple[str, ...] | list[str] = (),
+        max_child_depth: int = 1,
+        max_child_tasks: int | None = None,
     ) -> "HermesMissionExecutionSpec":
         task_ids = tuple(task.task_id for task in collaboration_plan.tasks)
         capability_ids = tuple(dict.fromkeys(task.capability_id for task in collaboration_plan.tasks))
@@ -210,6 +311,28 @@ class HermesMissionExecutionSpec:
             ),
             forbidden_actions=forbidden,
             expires_at=expires_at,
+            authorized_read_scope=tuple(dict.fromkeys(
+                path for task in collaboration_plan.tasks for path in task.read_scope
+            )),
+            authorized_write_scope=tuple(dict.fromkeys(
+                path for task in collaboration_plan.tasks for path in task.write_scope
+            )),
+            allowed_side_effects=tuple(dict.fromkeys(
+                effect
+                for task in collaboration_plan.tasks
+                for effect in task.allowed_side_effects
+            )),
+            human_gates=_string_tuple(
+                human_gates,
+                "human_gates",
+                allow_empty=True,
+            ),
+            max_child_depth=int(max_child_depth),
+            max_child_tasks=(
+                int(max_child_tasks)
+                if max_child_tasks is not None
+                else max(4, len(collaboration_plan.tasks) * 3)
+            ),
             profile_roles=dict(profile_roles or {}),
             input_refs=_string_tuple(input_refs, "input_refs", allow_empty=True),
         )
@@ -217,12 +340,138 @@ class HermesMissionExecutionSpec:
     def task(self, task_id: str):
         if task_id not in self.allowed_task_ids:
             raise PermissionError("Hermes task is outside the authorized mission scope")
-        return next(task for task in self.collaboration_plan.tasks if task.task_id == task_id)
+        return next(
+            task for task in self.collaboration_plan.tasks
+            if task.task_id == task_id
+        )
+
+    def validate_child_task(
+        self,
+        *,
+        parent_task_id: str,
+        child: Mapping[str, Any],
+        depth: int,
+        existing_child_count: int,
+    ) -> TaskEnvelope:
+        parent = self.task(parent_task_id)
+        if depth < 1 or depth > self.max_child_depth:
+            raise PermissionError("Hermes child task depth exceeds DelegationEnvelope")
+        if existing_child_count >= self.max_child_tasks:
+            raise PermissionError("Hermes child task count exceeds DelegationEnvelope")
+        capability_id = _required(child.get("capability_id"), "child.capability_id")
+        if capability_id not in self.allowed_capability_ids:
+            raise PermissionError("Hermes child capability is outside allowlist")
+        action = _required(
+            child.get("authorized_action") or child.get("action"),
+            "child.authorized_action",
+        ).upper()
+        if action != parent.action:
+            raise PermissionError("Hermes child task attempted authority expansion")
+        objective = _required(child.get("objective"), "child.objective")
+        if not _objective_within_parent(objective, parent.objective):
+            raise PermissionError("Hermes child objective escaped parent objective")
+        read_scope = _string_tuple(
+            child.get("read_scope"),
+            "child.read_scope",
+            allow_empty=True,
+        )
+        write_scope = _string_tuple(
+            child.get("write_scope"),
+            "child.write_scope",
+            allow_empty=True,
+        )
+        if not _scope_subset(read_scope, parent.read_scope):
+            raise PermissionError("Hermes child read scope expands parent")
+        if not _scope_subset(write_scope, parent.write_scope):
+            raise PermissionError("Hermes child write scope expands parent")
+        if not _scope_subset(read_scope, self.authorized_read_scope):
+            raise PermissionError("Hermes child read scope expands mission")
+        if not _scope_subset(write_scope, self.authorized_write_scope):
+            raise PermissionError("Hermes child write scope expands mission")
+        side_effects = _string_tuple(
+            child.get("allowed_side_effects"),
+            "child.allowed_side_effects",
+            allow_empty=True,
+        )
+        if not set(side_effects) <= set(parent.allowed_side_effects):
+            raise PermissionError("Hermes child side effects expand parent")
+        if not set(side_effects) <= set(self.allowed_side_effects):
+            raise PermissionError("Hermes child side effects expand mission")
+        if set(side_effects) & set(parent.forbidden_side_effects):
+            raise PermissionError("Hermes child requested forbidden side effect")
+
+        child_time = int(child.get("time_budget_seconds") or parent.time_budget_seconds)
+        child_cost = float(
+            child.get("cost_budget")
+            if child.get("cost_budget") is not None
+            else parent.cost_budget
+        )
+        child_context = int(
+            child.get("context_budget_bytes") or parent.context_budget_bytes
+        )
+        child_tools = int(child.get("tool_budget") or parent.tool_budget)
+        child_retry = int(
+            child.get("retry_budget")
+            if child.get("retry_budget") is not None
+            else parent.retry_budget
+        )
+        if child_time > parent.time_budget_seconds:
+            raise PermissionError("Hermes child time budget expands parent")
+        if child_cost > parent.cost_budget:
+            raise PermissionError("Hermes child cost budget expands parent")
+        if child_context > parent.context_budget_bytes:
+            raise PermissionError("Hermes child context budget expands parent")
+        if child_tools > parent.tool_budget:
+            raise PermissionError("Hermes child tool budget expands parent")
+        if child_retry > parent.retry_budget:
+            raise PermissionError("Hermes child retry budget expands parent")
+
+        return TaskEnvelope.from_mapping({
+            **dict(child),
+            "task_id": _required(child.get("task_id"), "child.task_id"),
+            "capability_id": capability_id,
+            "action": action,
+            "objective": objective,
+            "task_class": str(
+                child.get("task_class") or parent.task_class
+            ),
+            "dependencies": tuple(child.get("dependencies") or ()),
+            "read_scope": read_scope,
+            "write_scope": write_scope,
+            "allowed_tools": tuple(
+                item for item in (child.get("allowed_tools") or parent.allowed_tools)
+                if item in parent.allowed_tools
+            ),
+            "allowed_side_effects": side_effects,
+            "forbidden_side_effects": parent.forbidden_side_effects,
+            "time_budget_seconds": child_time,
+            "cost_budget": child_cost,
+            "context_budget_bytes": child_context,
+            "tool_budget": child_tools,
+            "retry_budget": child_retry,
+            "evidence_contract": str(
+                child.get("evidence_contract") or parent.evidence_contract
+            ),
+            "review_policy": str(
+                child.get("review_policy") or parent.review_policy
+            ),
+            "risk_side_effect_class": str(
+                child.get("risk_side_effect_class")
+                or parent.risk_side_effect_class
+            ),
+            "human_gate_policy": parent.human_gate_policy,
+            "mission_id": self.mission_id,
+            "goal_id": self.goal_id,
+        })
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["collaboration_plan"] = self.collaboration_plan.to_dict()
         return data
+
+
+# Canonical name requested by the control plane; no second envelope exists.
+DelegationEnvelope = HermesMissionExecutionSpec
 
 
 @dataclass(frozen=True)
