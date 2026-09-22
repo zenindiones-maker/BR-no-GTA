@@ -306,9 +306,17 @@ class HermesHarnessCapabilityBroker:
             raise PermissionError(
                 "candidate NOT_REQUIRED is valid only for a CONDITIONAL TaskEnvelope"
             )
-        if not tuple(task.write_scope or ()):
+        mutation_intent = bool(tuple(task.write_scope or ())) or str(
+            getattr(task, "risk_side_effect_class", "") or ""
+        ).strip().upper() in {
+            "BOUNDED_MUTATION",
+            "MUTATING",
+            "MEDIUM",
+            "HIGH",
+        }
+        if not mutation_intent:
             raise PermissionError(
-                "candidate NOT_REQUIRED requires a mutation-capable TaskEnvelope"
+                "candidate NOT_REQUIRED requires a typed mutation-intent TaskEnvelope"
             )
         refs = tuple(dict.fromkeys(
             str(ref).strip() for ref in evidence_refs if str(ref).strip()

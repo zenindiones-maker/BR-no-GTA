@@ -2491,3 +2491,68 @@ def test_broker_not_required_result_is_typed_and_preserves_handoff_lineage(
         )
     finally:
         consume_harness_authorization(parent)
+
+
+def test_broker_not_required_does_not_require_allocated_write_scope(
+    tmp_path,
+):
+    plan = build_collaboration_plan(
+        mission_id="mission-not-required-no-write-scope",
+        goal_id="goal-not-required-no-write-scope",
+        tasks=[
+            TaskEnvelope(
+                task_id="conditional-candidate",
+                capability_id="agent-office.codex.bounded-development",
+                action="DEVELOPMENT",
+                objective="Mutate only if grounded evidence proves it necessary.",
+                expected_output="CandidateEvidence",
+                acceptance_criteria=("no mutation without evidence",),
+                candidate_requirement="CONDITIONAL",
+                read_scope=("app",),
+                write_scope=(),
+                allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+                risk_side_effect_class="BOUNDED_MUTATION",
+            ),
+        ],
+    )
+    parent = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="capability:collaboration.hermes.execute",
+        harness_decision_id="decision-not-required-no-write-scope",
+        execution_id="execution-not-required-no-write-scope",
+        lineage={"test": "not-required-no-write-scope"},
+    )
+    envelope = DelegationEnvelope.from_plan(
+        collaboration_plan=plan,
+        harness_decision_id=parent.harness_decision_id,
+        authorization_id=parent.authorization_id,
+        base_sha="a" * 40,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=10)
+        ).isoformat(),
+    )
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent,
+            board=_FakeHermesBoard(),
+            task_mapping={"conditional-candidate": "board-candidate"},
+            artifact_dir=tmp_path,
+        )
+        result = broker.record_candidate_not_required(
+            task_id="conditional-candidate",
+            reason="No measurable problem requires a code mutation.",
+            evidence_refs=("artifact:diagnosis.json",),
+        )
+        assert result["executed"] is False
+        assert result["not_required"] is True
+        assert result["result"]["candidate_decision"] == "NOT_REQUIRED"
+        assert result["result"]["candidate"] is None
+        assert result["result"]["builder_self_approval"] is False
+        assert not any(
+            row.get("event") == "TASK_COMPLETED"
+            and row.get("capability_id") == "agent-office.codex.bounded-development"
+            for row in broker.audit_snapshot()
+        )
+    finally:
+        consume_harness_authorization(parent)
