@@ -161,7 +161,7 @@ def test_selector_excludes_blocked_health_and_records_health_evidence(monkeypatc
         "agent-office.codex.readonly-analysis"
     )
     alternate = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.codex.bounded-development"
+        "agent-office.deterministic.readonly-analysis"
     )
     assert primary is not None and alternate is not None
 
@@ -216,6 +216,114 @@ def test_selector_excludes_blocked_health_and_records_health_evidence(monkeypatc
     assert any(primary.capability_id in item for item in avoided)
     assert evidence["health_evidence"]["state"] == HEALTHY
     assert evidence["top_candidates"][0]["health_state"] == HEALTHY
+
+
+def test_mutating_requirement_rejects_readonly_profiler(monkeypatch):
+    profiler = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    assert profiler is not None
+
+    class Registry:
+        def discover(self, **_kwargs):
+            return [{"capability_id": profiler.capability_id}]
+
+        def get(self, capability_id):
+            return profiler if capability_id == profiler.capability_id else None
+
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", Registry())
+    monkeypatch.setattr(
+        adaptive,
+        "capability_health",
+        lambda capability_id: CapabilityHealth(
+            capability_id=capability_id,
+            state=HEALTHY,
+            reason="healthy readonly profiler",
+            retry_allowed=True,
+            confidence=1.0,
+            sample_size=20,
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=("test:readonly",),
+            source="TEST",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="no healthy Registry capability"):
+        adaptive.select_capability_for_requirement(
+            {
+                "task_id": "implement",
+                "task_class": "bounded-development",
+                "action": "DEVELOPMENT",
+                "query": "implement bounded repository change",
+                "objective": "create isolated candidate",
+                "candidate_capability_ids": [profiler.capability_id],
+                "risk_side_effect_class": "BOUNDED_MUTATION",
+            },
+            context={"competence_evidence": [], "relevant_failure_memories": []},
+            used=set(),
+        )
+
+
+def test_readonly_requirement_rejects_mutating_executor(monkeypatch):
+    profiler = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    mutator = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert profiler is not None and mutator is not None
+
+    class Registry:
+        def discover(self, **_kwargs):
+            return [
+                {"capability_id": mutator.capability_id},
+                {"capability_id": profiler.capability_id},
+            ]
+
+        def get(self, capability_id):
+            return {
+                mutator.capability_id: mutator,
+                profiler.capability_id: profiler,
+            }.get(capability_id)
+
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", Registry())
+    monkeypatch.setattr(
+        adaptive,
+        "capability_health",
+        lambda capability_id: CapabilityHealth(
+            capability_id=capability_id,
+            state=HEALTHY,
+            reason="healthy",
+            retry_allowed=True,
+            confidence=1.0,
+            sample_size=20,
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=("test:health",),
+            source="TEST",
+        ),
+    )
+    selected, _, avoided, _ = adaptive.select_capability_for_requirement(
+        {
+            "task_id": "observe",
+            "task_class": "system-observation",
+            "action": "DEVELOPMENT",
+            "query": "profile repository performance without mutation",
+            "objective": "measure current repository state",
+            "candidate_capability_ids": [
+                mutator.capability_id,
+                profiler.capability_id,
+            ],
+            "risk_side_effect_class": "READ_ONLY",
+        },
+        context={"competence_evidence": [], "relevant_failure_memories": []},
+        used=set(),
+    )
+    assert selected == profiler.capability_id
+    assert any(
+        item == f"{mutator.capability_id}:side-effect-exceeds:read-only"
+        for item in avoided
+    )
 
 
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
