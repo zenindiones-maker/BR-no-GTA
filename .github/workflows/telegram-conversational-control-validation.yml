@@ -126,10 +126,11 @@ jobs:
               "REFERENCE_RESOLUTION_WITHOUT_LLM",
               "CONTINUE_WITHOUT_LLM",
               "RESEARCH_WITHOUT_SYNTHESIS_LLM",
-              "PROGRESS_TO_TELEGRAM_LIVE",
+              "PROGRESS_HEARTBEAT_TELEGRAM_EGRESS_ZERO",
+              "EXPLICIT_HUMAN_MESSAGE_REPLY",
               "HARNESS_STATUS_AGGREGATION",
               "TELEGRAM_TO_HERMES_MISSION",
-              "HERMES_TO_TELEGRAM_PROGRESS",
+              "HERMES_PROGRESS_AUDIT_ONLY",
               "PENDING_ACTION_PERSISTED",
               "PENDING_ACTION_RELOADED",
               "MISSION_ID_PRESERVED",
@@ -158,54 +159,14 @@ jobs:
           print("TELEGRAM_SYSTEM_SYNERGY=PASS")
           PY
 
-      - name: Build human-readable Telegram proof
+      - name: Assert CI has no human Telegram egress
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          text=(
-              "Corrigi o control surface do Telegram.\n\n"
-              "Agora mensagens normais entram pelo ConversationService antes de qualquer provider. "
-              "Status, roteiro existente, feedback, aprovação, continuidade e pesquisa continuam funcionando "
-              "mesmo quando o OpenCode está bloqueado.\n\n"
-              "Também validei a cadeia Telegram → Harness → Hermes → agentes: o GTA6 Brain ficou isoladamente "
-              "bloqueado pelo provider, enquanto fact-check, TUBEGENT, review e o ciclo humano continuaram. "
-              "A decisão pendente sobreviveu a um restart do gateway e foi retomada com uma aprovação natural.\n\n"
-              "Não houve síntese de voz, render, upload ou publicação. "
-              "Pode fazer o teste humano normal no Telegram quando esta validação terminar."
-          )
-          Path("artifacts/telegram-conversation/telegram-proof.txt").write_text(
-              text, encoding="utf-8"
-          )
-          PY
-
-      - name: Send real proof to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-        run: |
-          set -euo pipefail
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
-            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"
-            exit 1
-          fi
-          if [ -z "${TELEGRAM_REVIEW_CHAT_ID:-}" ]; then
-            echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"
-            exit 1
-          fi
-          curl --fail-with-body --silent --show-error \
-            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
-            --data-urlencode "text@artifacts/telegram-conversation/telegram-proof.txt" \
-            > artifacts/telegram-conversation/telegram-response.json
-          python - <<'PY'
-          import json
-          d=json.load(open("artifacts/telegram-conversation/telegram-response.json",encoding="utf-8"))
-          assert d.get("ok") is True,d
-          assert isinstance(d.get("result",{}).get("message_id"),int),d
-          print("REAL_TELEGRAM_OUTBOUND=PASS")
-          print("TELEGRAM_PROOF_MESSAGE_ID="+str(d["result"]["message_id"]))
-          PY
+          test ! -e artifacts/telegram-conversation/telegram-response.json
+          echo "CI_STATUS_TELEGRAM_EGRESS=0"
+          echo "PROGRESS_HEARTBEAT_TELEGRAM_EGRESS=0"
+          echo "HERMES_PROGRESS_TELEGRAM_EGRESS=0"
+          echo "UNSOLICITED_TELEGRAM_EGRESS=NO"
 
       - name: Upload complete validation evidence
         if: always()
