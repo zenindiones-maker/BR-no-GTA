@@ -1,7 +1,9 @@
 {
-  "request": "codex-cloud-auth-continuity",
-  "source_head": "388fb821cca49e93729471e41589f7a60a331c9b",
+  "request": "codex-cloud-auth-continuity-delegation-full-synergy",
+  "source_head": "9d90b27e80fc06bfec3d5d0bd43dbbd86c97f67d",
+  "purpose": "verify current write-executor health before real delegation proof",
   "runner_a": "fresh",
   "runner_b": "fresh",
-  "credential_artifact": "FORBIDDEN"
+  "credential_artifact": "FORBIDDEN",
+  "telegram_egress": 0
 }
