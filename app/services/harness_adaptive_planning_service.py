@@ -288,13 +288,20 @@ def _compact_provider_health(provider_health: dict[str, Any]) -> dict[str, Any]:
             "retry": bool(item.get("retry_allowed")),
             "zero_cost": bool(item.get("zero_cost_eligible")),
         })
+    semantic_available = bool(
+        provider_health.get("semantic_reasoning_available")
+    )
+    eligible_zero_cost = list(
+        provider_health.get("eligible_zero_cost_provider_ids") or ()
+    )
     return {
-        "semantic_available": bool(
-            provider_health.get("semantic_reasoning_available")
-        ),
-        "eligible_zero_cost": list(
-            provider_health.get("eligible_zero_cost_provider_ids") or ()
-        ),
+        # Preserve canonical keys because the live semantic planner consumes
+        # this same bounded context after retrieval/compaction.
+        "semantic_reasoning_available": semantic_available,
+        "eligible_zero_cost_provider_ids": eligible_zero_cost,
+        # Retain the compact aliases for existing prompt/evidence consumers.
+        "semantic_available": semantic_available,
+        "eligible_zero_cost": eligible_zero_cost,
         "providers": providers,
     }
 
