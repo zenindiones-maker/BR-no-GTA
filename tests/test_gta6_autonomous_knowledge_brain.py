@@ -7,6 +7,7 @@ from app.services.gta6_knowledge_retrieval_service import retrieve_gta6_knowledg
 from app.services.continuous_intelligence_service import _materialize_nonactive_claim
 from app.services.telegram_knowledge_recall_service import recall_canonical_gta6_knowledge
 from scripts import gta6_fresh_research_worker as fresh_worker
+from scripts import continuous_intelligence_cycle as continuous_cycle
 from app.services.memory_claim_service import create_memory_claim
 
 
@@ -188,6 +189,95 @@ def test_hybrid_retrieval_is_bounded_and_prefers_official_source():
         result["knowledge_units"][0]["scores"]["source_quality"]
         > result["knowledge_units"][1]["scores"]["source_quality"]
     )
+
+
+def test_cross_run_harness_probe_recalls_canonical_fingerprint_without_network():
+    source_id = "source-cross-run-recall"
+    url = "https://www.rockstargames.com/VI"
+    fingerprint = "fingerprint-cross-run-001"
+    content_hash = "content-hash-cross-run-001"
+    brain_repository.upsert_source({
+        "source_id": source_id,
+        "url": url,
+        "domain": "rockstargames.com",
+        "source_type": "PRIMARY_SOURCE",
+        "authority_class": "ROCKSTAR_OFFICIAL",
+        "reliability_score": 1.0,
+        "discovered_at": NOW,
+        "last_checked_at": NOW,
+        "last_changed_at": NOW,
+        "content_hash": content_hash,
+        "refresh_priority": 100,
+        "refresh_interval_seconds": 21600,
+        "refresh_state": "CURRENT",
+        "active": True,
+    })
+    continuous_repository.upsert_source_state({
+        "source_key": source_id,
+        "source_url": url,
+        "source_type": "PRIMARY_SOURCE",
+        "content_fingerprint": fingerprint,
+        "observed_at": NOW,
+        "changed_at": NOW,
+        "evidence_ref": "evidence:cross-run-source",
+        "metadata": {"proof": "cross-run"},
+    })
+    claim_text = (
+        "Grand Theft Auto VI cross-run durable knowledge survives a clean runner."
+    )
+    claim_id = _claim(
+        claim_text,
+        source_id=source_id,
+        url=url,
+        source_type="PRIMARY_SOURCE",
+        subject="GTA VI",
+    )
+    brain_repository.upsert_claim_metadata({
+        "claim_id": claim_id,
+        "brain_status": "ACTIVE",
+        "first_seen_at": NOW,
+        "last_verified_at": NOW,
+        "related_claims": [],
+        "used_in_content": [],
+        "world_novelty": "HIGH",
+        "knowledge_novelty": "NEW",
+        "editorial_novelty": "UNUSED",
+        "freshness_class": "HIGH",
+    })
+
+    seed = continuous_cycle._latest_active_gta6_recall_seed()
+    assert seed is not None
+    assert seed["claim_id"] == claim_id
+    assert seed["source_fingerprint"] == fingerprint
+
+    probe = continuous_cycle._run_harness_knowledge_probe(
+        query=claim_text,
+        goal_id=continuous_cycle.VIDEO_A_GOAL_ID,
+        target_sha="a" * 40,
+        expected_claim_id=claim_id,
+    )
+    assert probe["status"] == "PASS"
+    assert probe["authority"] == "deepseek_harness"
+    assert probe["authorized_action"] == "RESEARCH"
+    assert probe["provider_calls"] == 0
+    assert probe["canonical_memory_plane"] == "BR_SQLITE"
+    assert probe["registry_validation"] == "PASS"
+    assert probe["matched_expected_claim"] is True
+    assert probe["source_provenance_preserved"] is True
+    assert probe["NEW_NETWORK_FETCH"] == "NO"
+    assert probe["network_fetch_count"] == 0
+    assert probe["source_fetch_count"] == 0
+    assert probe["HERMES_DIRECT_CANONICAL_WRITE"] == "NO"
+    assert probe["OBSIDIAN_CANONICAL_MEMORY"] == "NO"
+    unit = probe["matched_knowledge_unit"]
+    assert unit["claim_id"] == claim_id
+    assert unit["status"] == "active"
+    assert unit["brain_status"] == "ACTIVE"
+    assert unit["evidence_ref"] == f"evidence:{source_id}:{claim_id}"
+    assert unit["source_id"] == source_id
+    assert unit["source_url"] == url
+    assert unit["source_fingerprint"] == fingerprint
+    assert unit["source_content_hash"] == content_hash
 
 
 def test_claim_metadata_preserves_supersession_history():
