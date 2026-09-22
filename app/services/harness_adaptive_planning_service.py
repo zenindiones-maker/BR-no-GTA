@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import log1p
+from math import log1p, sqrt
 import re
 from typing import Any, Callable
 
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.capability_health_service import capability_health
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     SemanticPlannerResult,
@@ -679,6 +680,21 @@ def _competence_for(
     return exact or rows
 
 
+def _wilson_lower_bound(successes: float, total: int, *, z: float = 1.96) -> float:
+    if total <= 0:
+        return 0.0
+    successes = max(0.0, min(float(total), float(successes)))
+    p = successes / float(total)
+    z2 = z * z
+    denominator = 1.0 + z2 / float(total)
+    centre = p + z2 / (2.0 * float(total))
+    margin = z * sqrt(
+        (p * (1.0 - p) + z2 / (4.0 * float(total)))
+        / float(total)
+    )
+    return max(0.0, (centre - margin) / denominator)
+
+
 def _competence_score(
     record: Any,
     *,
@@ -692,35 +708,73 @@ def _competence_score(
     )
     if not rows:
         return 0.0, False, None
-    rows.sort(
+
+    enriched: list[dict[str, Any]] = []
+    for raw in rows:
+        item = dict(raw)
+        tested = max(0, int(item.get("tested_cases") or 0))
+        success_rate = max(0.0, min(1.0, float(item.get("success_rate") or 0.0)))
+        successes = success_rate * tested
+        lower = _wilson_lower_bound(successes, tested)
+        sample_strength = min(
+            1.0,
+            log1p(max(0, tested)) / log1p(50),
+        )
+        exact_task = (
+            str(item.get("task_class") or "")
+            == str(requirement.get("task_class") or "")
+        )
+        version_match = (
+            not item.get("version")
+            or str(item.get("version") or "") == str(record.version or "")
+        )
+        confidence_adjusted = (
+            lower
+            * (0.45 + 0.55 * sample_strength)
+            * (0.65 + 0.35 * float(item.get("confidence") or 0.0))
+        )
+        item["wilson_success_lower_bound"] = round(lower, 6)
+        item["sample_strength"] = round(sample_strength, 6)
+        item["confidence_adjusted_success"] = round(confidence_adjusted, 6)
+        item["task_similarity"] = "EXACT" if exact_task else "CAPABILITY_HISTORY"
+        item["version_match"] = bool(version_match)
+        enriched.append(item)
+
+    enriched.sort(
         key=lambda item: (
-            -float(item.get("success_rate") or 0.0),
+            -float(item.get("confidence_adjusted_success") or 0.0),
+            -int(item.get("tested_cases") or 0),
             float(item.get("failure_rate") or 0.0),
             float(item.get("human_correction_rate") or 0.0),
             float(item.get("retry_rate") or 0.0),
             float(item.get("mean_latency_seconds") or 0.0),
             float(item.get("mean_cost") or 0.0),
-            -int(item.get("tested_cases") or 0),
             -float(item.get("freshness_score") or 0.0),
         )
     )
-    best = rows[0]
+    best = enriched[0]
     tested = int(best.get("tested_cases") or 0)
     score = (
-        7.0 * float(best.get("success_rate") or 0.0)
-        - 5.0 * float(best.get("failure_rate") or 0.0)
-        - 3.0 * float(best.get("human_correction_rate") or 0.0)
-        - 2.0 * min(1.0, float(best.get("retry_rate") or 0.0))
-        - min(2.5, float(best.get("mean_latency_seconds") or 0.0) / 120.0)
-        - min(2.5, float(best.get("mean_cost") or 0.0))
-        + min(2.0, log1p(max(0, tested)) / 2.0)
-        + 1.25 * float(best.get("freshness_score") or 0.0)
-        + 0.5 * float(best.get("confidence") or 0.0)
+        9.0 * float(best.get("confidence_adjusted_success") or 0.0)
+        - 4.0 * float(best.get("failure_rate") or 0.0)
+        - 2.5 * float(best.get("human_correction_rate") or 0.0)
+        - 1.5 * min(1.0, float(best.get("retry_rate") or 0.0))
+        - min(2.0, float(best.get("mean_latency_seconds") or 0.0) / 120.0)
+        - min(2.0, float(best.get("mean_cost") or 0.0))
+        + 1.25 * float(best.get("sample_strength") or 0.0)
+        + 0.9 * float(best.get("freshness_score") or 0.0)
+        + (0.7 if best.get("task_similarity") == "EXACT" else 0.0)
     )
-    if str(best.get("version") or "") == str(record.version or ""):
-        score += 0.75
-    elif best.get("version"):
-        score -= 0.75
+    if best.get("version_match"):
+        score += 0.55
+    else:
+        score -= 0.9
+    best["competence_score"] = round(score, 6)
+    best["sample_size_interpretation"] = (
+        "LOW_CONFIDENCE" if tested < 5
+        else "MODERATE_CONFIDENCE" if tested < 20
+        else "ESTABLISHED"
+    )
     return score, True, best
 
 
@@ -745,7 +799,17 @@ def select_capability_for_requirement(
         if capability_id not in ordered_ids:
             ordered_ids.append(capability_id)
 
-    ranked: list[tuple[float, str, bool, dict[str, Any] | None, list[str]]] = []
+    ranked: list[
+        tuple[
+            float,
+            str,
+            bool,
+            dict[str, Any] | None,
+            list[str],
+            dict[str, Any],
+            dict[str, float],
+        ]
+    ] = []
     avoided: list[str] = []
     query_tokens = _tokens(requirement.get("query"), requirement.get("objective"))
     proposal_bonus_ids = set(proposed)
@@ -760,6 +824,13 @@ def select_capability_for_requirement(
         if failure is not None:
             avoided.append(
                 str(failure.get("failure_pattern") or capability_id)
+            )
+            continue
+        health = capability_health(capability_id).to_dict()
+        health_state = str(health.get("state") or "UNKNOWN")
+        if health_state in {"BLOCKED", "QUARANTINED"}:
+            avoided.append(
+                f"{capability_id}:health:{health_state.casefold()}"
             )
             continue
 
@@ -798,16 +869,23 @@ def select_capability_for_requirement(
             and record.side_effects
         ):
             side_effect_penalty = 1.5
-        total = (
-            lexical
-            + discovery_bonus
-            + proposal_bonus
-            + competence_score
-            - duplicate_penalty
-            - registry_cost_penalty
-            - registry_latency_penalty
-            - side_effect_penalty
+        health_penalty = (
+            1.35 if health_state == "DEGRADED"
+            else 0.65 if health_state == "UNKNOWN"
+            else 0.0
         )
+        components = {
+            "semantic_overlap": lexical,
+            "registry_discovery": discovery_bonus,
+            "proposal_hint": proposal_bonus,
+            "competence": competence_score,
+            "duplicate_penalty": -duplicate_penalty,
+            "registry_cost": -registry_cost_penalty,
+            "registry_latency": -registry_latency_penalty,
+            "side_effect": -side_effect_penalty,
+            "health": -health_penalty,
+        }
+        total = sum(components.values())
         reasons = [
             f"semantic_overlap={overlap}",
             f"registry_discovery_bonus={discovery_bonus:.3f}",
@@ -817,8 +895,18 @@ def select_capability_for_requirement(
             f"registry_cost_penalty={registry_cost_penalty:.3f}",
             f"registry_latency_penalty={registry_latency_penalty:.3f}",
             f"side_effect_penalty={side_effect_penalty:.3f}",
+            f"health_state={health_state}",
+            f"health_penalty={health_penalty:.3f}",
         ]
-        ranked.append((total, capability_id, competence_used, competence, reasons))
+        ranked.append((
+            total,
+            capability_id,
+            competence_used,
+            competence,
+            reasons,
+            health,
+            components,
+        ))
 
     if not ranked:
         raise RuntimeError(
@@ -826,13 +914,25 @@ def select_capability_for_requirement(
             + str(requirement.get("task_class") or "")
         )
     ranked.sort(key=lambda item: (-item[0], item[1]))
-    best_score, capability_id, competence_used, competence, reasons = ranked[0]
+    (
+        best_score,
+        capability_id,
+        competence_used,
+        competence,
+        reasons,
+        selected_health,
+        score_components,
+    ) = ranked[0]
     selection = {
         "task_id": requirement.get("task_id"),
         "selected_capability_id": capability_id,
         "score": best_score,
         "competence_used": competence_used,
         "competence_evidence": competence,
+        "health_evidence": selected_health,
+        "score_components": score_components,
+        "failure_memory_used": False,
+        "failure_memory_avoided": list(dict.fromkeys(avoided)),
         "proposal_candidates": proposed,
         "harness_substituted_proposal": bool(
             proposed and capability_id not in proposal_bonus_ids
@@ -843,6 +943,14 @@ def select_capability_for_requirement(
                 "capability_id": item[1],
                 "score": item[0],
                 "competence_used": item[2],
+                "health_state": item[5].get("state"),
+                "sample_size": (
+                    int((item[3] or {}).get("tested_cases") or 0)
+                ),
+                "confidence_adjusted_success": (
+                    (item[3] or {}).get("confidence_adjusted_success")
+                ),
+                "score_components": item[6],
             }
             for item in ranked[:5]
         ],
