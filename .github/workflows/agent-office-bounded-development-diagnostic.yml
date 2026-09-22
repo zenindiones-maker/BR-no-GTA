@@ -249,7 +249,7 @@ jobs:
           )
 
           allowed_paths=("app/services/agent_office","tests")
-          allowed_tools=("git","python","pytest","codex","rg","cat")
+          allowed_tools=("git","python","pytest","codex","rg","cat","ls")
           acceptance=(
               "implement one safe measurable improvement in the Agent Office bounded-development path",
               "preserve DeepSeek Harness authority and all security boundaries",
