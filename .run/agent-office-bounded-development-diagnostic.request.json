@@ -13,8 +13,10 @@
   "credential_values_in_request": false,
   "previous_diagnostic_run_id": 35725732177,
   "planner_bypassed_for_worker_isolation": true,
-  "reason": "classify whether BR_METRIC_JSON was emitted anywhere in Codex JSONL",
+  "reason": "verify ls allowlist plus read-only metric repair reaches bounded candidate commit",
   "previous_direct_diagnostic_run_id": 35726532265,
   "expected_previous_blocker": "COMMAND_ALLOWLIST: ls",
-  "metric_diagnostic": "agent_message_count_and_metric_marker_count_only"
+  "metric_diagnostic": "agent_message_count_and_metric_marker_count_only",
+  "previous_metric_diagnostic_run_id": 35726923872,
+  "expected_metric_repair": "READ_ONLY_SECOND_PASS_WITH_FROZEN_CANDIDATE"
 }
