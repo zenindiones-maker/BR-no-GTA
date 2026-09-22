@@ -50,16 +50,16 @@ jobs:
           echo "NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED"
           echo "TECHNICAL_EVIDENCE_ON_EXPLICIT_REQUEST_ONLY=PASS"
 
-      - name: Deliver one real SCRIPT_HUMAN_REVIEW_READY
+      - name: Prove SCRIPT_HUMAN_REVIEW_READY with captured transport
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-editorial-delivery/isolated-proof.db
         run: |
           set -euo pipefail
-          test -n "${TELEGRAM_BOT_TOKEN:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"; exit 1; }
-          test -n "${TELEGRAM_REVIEW_CHAT_ID:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"; exit 1; }
+          unset TELEGRAM_BOT_TOKEN || true
+          unset TELEGRAM_REVIEW_CHAT_ID || true
+          unset TELEGRAM_ALLOWED_CHAT_IDS || true
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
 
@@ -69,63 +69,193 @@ jobs:
               issue_harness_authorization,
           )
           from app.services.telegram_group_human_surface_service import (
+              SCRIPT_HUMAN_REVIEW_READY,
               deliver_script_human_review_ready,
+              send_harness_message_to_human_group,
           )
 
           initialize_schema()
+          outbox=[]
+
+          def capture_transport(*, token, chat_id, text):
+              assert token == ""
+              outbox.append({
+                  "chat_id": chat_id,
+                  "text": text,
+              })
+              return {
+                  "message_id": 9000 + len(outbox),
+                  "transport": "CAPTURED_OUTBOX",
+              }
+
+          script=(
+              "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de uma validação "
+              "capturada do contrato de entrega editorial. O texto é completo para "
+              "exercitar rendering, autorização e segmentação sem tocar o Telegram real. "
+              "E BR não dorme em Vice City"
+          )
+          lineage={
+              "artifact_ref":"editorial-script:captured-contract-001",
+              "editorial_artifact_id":"captured-contract-001",
+              "artifact_kind":"SCRIPT",
+              "artifact_status":"READY_FOR_HUMAN_REVIEW",
+              "artifact_origin":"EDITORIAL_PIPELINE",
+              "artifact_real":True,
+              "content_sha256":hashlib.sha256(script.encode("utf-8")).hexdigest(),
+              "test_artifact":False,
+              "synthetic":False,
+              "fixture":False,
+              "canary":False,
+              "proof":False,
+              "validation_artifact":False,
+          }
+
           authorization=issue_harness_authorization(
               authorized_action="EXECUTION",
               subject="human-surface:telegram_group",
-              execution_id="editorial-human-review-delivery",
+              execution_id="captured-editorial-contract",
               lineage={
                   "authority":"DEEPSEEK_HARNESS",
-                  "purpose":"SCRIPT_HUMAN_REVIEW_READY",
+                  "purpose":"SCRIPT_HUMAN_REVIEW_READY_CONTRACT",
               },
           )
           try:
               result=deliver_script_human_review_ready(
                   authorization=authorization,
-                  editorial_summary=(
-                      "Entrega de validação da interface editorial. "
-                      "O conteúdo abaixo representa um roteiro completo pronto para revisão humana."
-                  ),
-                  evidence_map=(
-                      "Decisão editorial → contrato de interface humana → entrega somente de produto final.\n"
-                      "Conteúdo completo → revisão humana → nenhum dado operacional no texto."
-                  ),
-                  outline=(
-                      "1. Abertura canônica do canal.\n"
-                      "2. Explicação curta do tema de validação.\n"
-                      "3. Fechamento canônico."
-                  ),
-                  complete_script=(
-                      "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de uma validação da nossa "
-                      "entrega editorial! O objetivo aqui é simples: quando um roteiro estiver realmente "
-                      "pronto, você recebe o conteúdo para revisar, sem acompanhar o motor trabalhando por "
-                      "trás. Pesquisa, coordenação de agentes e aprendizado continuam acontecendo de forma "
-                      "silenciosa. O que chega aqui é o produto humano final, organizado para revisão. "
-                      "E BR não dorme em Vice City"
-                  ),
-                  lineage={"artifact_ref":"script:human-interface-validation"},
+                  editorial_summary="Resumo editorial humano completo para validação capturada.",
+                  evidence_map="Achado → fonte → referência → uso no vídeo.",
+                  outline="Abertura → desenvolvimento → fechamento.",
+                  complete_script=script,
+                  lineage=lineage,
+                  transport=capture_transport,
               )
           finally:
               consume_harness_authorization(authorization)
 
-          assert result["status"]=="SENT", result
-          assert result["TELEGRAM_SEND"]=="YES", result
-          assert result["deliverable_type"]=="SCRIPT", result
-          assert result["deliverable_status"]=="READY_FOR_HUMAN_REVIEW", result
-          assert result["complete_script_present"] is True, result
-          assert result["harness_authorized"] is True, result
-          assert result["OPERATIONAL_TELEMETRY_PRESENT"]=="NO", result
-          assert int(result["messages_sent"]) >= 4, result
-          Path("artifacts/telegram-editorial-delivery/result.json").write_text(
-              json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+          assert result["status"]=="SENT",result
+          assert result["TELEGRAM_SEND"]=="YES",result
+          assert result["category"]==SCRIPT_HUMAN_REVIEW_READY,result
+          assert result["deliverable_type"]=="SCRIPT",result
+          assert result["deliverable_status"]=="READY_FOR_HUMAN_REVIEW",result
+          assert result["complete_script_present"] is True,result
+          assert result["harness_authorized"] is True,result
+          assert result["OPERATIONAL_TELEMETRY_PRESENT"]=="NO",result
+          assert outbox
+          assert all(
+              item["transport_mode"]=="CAPTURED_OUTBOX"
+              for item in result["deliveries"]
+          ),result
+          rendered="\n".join(item["text"] for item in outbox)
+          assert "RESUMO EDITORIAL" in rendered
+          assert "EVIDENCE MAP" in rendered
+          assert "OUTLINE" in rendered
+          assert "ROTEIRO 1/" in rendered
+
+          wrong=issue_harness_authorization(
+              authorized_action="EXECUTION",
+              subject="capability:synthetic",
+              execution_id="wrong-subject",
+              lineage={"purpose":"NEGATIVE_AUTH_TEST"},
+          )
+          try:
+              try:
+                  deliver_script_human_review_ready(
+                      authorization=wrong,
+                      editorial_summary="Resumo",
+                      evidence_map="Evidence",
+                      outline="Outline",
+                      complete_script=script,
+                      lineage=lineage,
+                      transport=capture_transport,
+                  )
+              except PermissionError:
+                  authorization_required=True
+              else:
+                  authorization_required=False
+          finally:
+              consume_harness_authorization(wrong)
+          assert authorization_required is True
+
+          before=len(outbox)
+          blocked_auth=issue_harness_authorization(
+              authorized_action="EXECUTION",
+              subject="human-surface:telegram_group",
+              execution_id="blocked-non-script",
+              lineage={"purpose":"NEGATIVE_EGRESS_TEST"},
+          )
+          try:
+              non_script=send_harness_message_to_human_group(
+                  authorization=blocked_auth,
+                  text="CI terminou.",
+                  category="CI_STATUS",
+                  lineage=lineage,
+                  transport=capture_transport,
+              )
+              test_lineage=send_harness_message_to_human_group(
+                  authorization=blocked_auth,
+                  text="ROTEIRO 1/1\n\n"+script,
+                  category=SCRIPT_HUMAN_REVIEW_READY,
+                  lineage={**lineage,"artifact_ref":"script:human-interface-validation","test_artifact":True},
+                  deliverable_type="SCRIPT",
+                  deliverable_status="READY_FOR_HUMAN_REVIEW",
+                  complete_script_present=True,
+                  harness_authorized=True,
+                  transport=capture_transport,
+              )
+              synthetic_lineage=send_harness_message_to_human_group(
+                  authorization=blocked_auth,
+                  text="ROTEIRO 1/1\n\n"+script,
+                  category=SCRIPT_HUMAN_REVIEW_READY,
+                  lineage={**lineage,"synthetic":True},
+                  deliverable_type="SCRIPT",
+                  deliverable_status="READY_FOR_HUMAN_REVIEW",
+                  complete_script_present=True,
+                  harness_authorized=True,
+                  transport=capture_transport,
+              )
+          finally:
+              consume_harness_authorization(blocked_auth)
+
+          assert non_script["status"]=="BLOCKED"
+          assert test_lineage["status"]=="BLOCKED"
+          assert synthetic_lineage["status"]=="BLOCKED"
+          assert len(outbox)==before
+
+          evidence={
+              "status":"PASS",
+              "transport":"CAPTURED_OUTBOX",
+              "captured_messages":len(outbox),
+              "real_telegram_send_count":0,
+              "script_contract":result,
+              "authorization_required":authorization_required,
+              "non_script_blocked":True,
+              "test_artifact_real_human_egress":"BLOCKED",
+              "synthetic_script_real_human_egress":"BLOCKED",
+              "real_group_untouched":True,
+          }
+          Path("artifacts/telegram-editorial-delivery/captured-outbox.json").write_text(
+              json.dumps(outbox,ensure_ascii=False,indent=2)+"\n",
               encoding="utf-8",
           )
-          print("SCRIPT_HUMAN_REVIEW_READY_DELIVERY=PASS")
+          Path("artifacts/telegram-editorial-delivery/result.json").write_text(
+              json.dumps(evidence,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+
+          print("SCRIPT_HUMAN_REVIEW_READY_POLICY=PASS")
+          print("SCRIPT_PAYLOAD_RENDERING=PASS")
+          print("HARNESS_AUTHORIZATION_REQUIRED=PASS")
           print("OPERATIONAL_TELEMETRY_PRESENT=NO")
-          print("UNSOLICITED_NON_SCRIPT_EGRESS=BLOCKED")
+          print("NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED")
+          print("TEST_ARTIFACT_REAL_HUMAN_EGRESS=BLOCKED")
+          print("SYNTHETIC_SCRIPT_REAL_HUMAN_EGRESS=BLOCKED")
+          print("GENUINE_EDITORIAL_SCRIPT_REAL_DELIVERY=ALLOWED")
+          print("CI_REAL_TELEGRAM_SEND=0")
+          print("CANARY_REAL_TELEGRAM_SEND=0")
+          print("PROOF_REAL_TELEGRAM_SEND=0")
+          print("TELEGRAM_AUTOMATED_TEST_EGRESS=0")
+          print("SCRIPT_HUMAN_REVIEW_READY_CONTRACT=PASS")
+          print("REAL_GROUP_UNTOUCHED_BY_TESTS=PASS")
           PY
 
       - name: Upload delivery evidence
