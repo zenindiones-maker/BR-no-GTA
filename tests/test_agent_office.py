@@ -843,6 +843,166 @@ def test_bounded_metric_diagnostic_reports_counts_without_message_text():
     assert _agent_message_metric_stats(stdout) == (2, 1)
 
 
+def _bounded_worker_metric_repair_fixture(monkeypatch, *, mutate_on_repair=False):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+    from app.services.agent_office.delegation import (
+        DelegatedTaskLease,
+        MANDATORY_FORBIDDEN_ACTIONS,
+    )
+    from datetime import datetime, timedelta, timezone
+
+    base_sha = "a" * 40
+    task = AgentOfficeTask(
+        task_id="bounded.metric.repair",
+        agent="codex-development",
+        capability=worker_module.CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+        action="development",
+        objective="Implement one measurable local improvement.",
+        allowed_paths=("app/services/agent_office",),
+        allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls"),
+        allowed_actions=("analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"),
+        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+        expected_outputs=("bounded candidate commit", "before/after metric"),
+        acceptance_criteria=("measurable improvement with real before/after evidence",),
+        evidence_requirements=("candidate commit", "metric"),
+        read_set=("app/services/agent_office",),
+        write_set=("app/services/agent_office",),
+        tool_call_budget=8,
+        retry_budget=0,
+        time_budget_seconds=120,
+        cost_budget=0.0,
+    )
+    lease = DelegatedTaskLease(
+        mission_id="metric-repair-mission",
+        task_id=task.task_id,
+        goal_id="metric-repair-goal",
+        harness_decision_id="metric-repair-decision",
+        authorization_id="metric-repair-auth",
+        delegation_id="delegation:metric-repair",
+        agent_id=task.agent,
+        capability_ids=(worker_module.CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,),
+        base_sha=base_sha,
+        allowed_paths=task.allowed_paths,
+        allowed_tools=task.allowed_tools,
+        allowed_actions=task.allowed_actions,
+        forbidden_actions=task.forbidden_actions,
+        input_artifact_refs=(),
+        expected_outputs=task.expected_outputs,
+        acceptance_criteria=task.acceptance_criteria,
+        evidence_requirements=task.evidence_requirements,
+        time_budget_seconds=120,
+        cost_budget=0.0,
+        tool_call_budget=8,
+        retry_budget=0,
+        max_parallelism=1,
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        escalation_conditions=("scope_change", "non_recoverable_error"),
+        owned_task_class="bounded-development",
+        role="SPECIALIST_TASK_OWNER",
+        read_set=task.read_set,
+        write_set=task.write_set,
+    )
+
+    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    codex_calls = []
+    first_stdout = "\n".join([
+        json.dumps({
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "ls app/services/agent_office"},
+        }),
+        json.dumps({
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "candidate implemented and validated"},
+        }),
+    ])
+    repair_stdout = "\n".join([
+        json.dumps({
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "python -c \"print(1)\""},
+        }),
+        json.dumps({
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": (
+                    "measurement complete\n"
+                    "BR_METRIC_JSON={\"metric_name\":\"operations\","
+                    "\"baseline\":2,\"candidate\":1,\"unit\":\"count\","
+                    "\"direction\":\"LOWER_IS_BETTER\","
+                    "\"measurement_command\":\"python -c print(1)\"}"
+                ),
+            },
+        }),
+    ])
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command[:3] == ["git", "rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout=base_sha + "\n", stderr="")
+        if command and command[0] == "codex":
+            codex_calls.append(list(command))
+            stdout = first_stdout if len(codex_calls) == 1 else repair_stdout
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+        if command[:3] == ["git", "diff", "--stat"]:
+            return subprocess.CompletedProcess(command, 0, stdout="1 file changed", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    changed = ("app/services/agent_office/munder_adapter.py",)
+    if mutate_on_repair:
+        states = iter((
+            changed,
+            (*changed, "app/services/agent_office/extra.py"),
+        ))
+        monkeypatch.setattr(worker_module, "_changed_paths", lambda *_args: next(states))
+    else:
+        monkeypatch.setattr(worker_module, "_changed_paths", lambda *_args: changed)
+    monkeypatch.setattr(worker_module, "_candidate_commit", lambda **_kwargs: "b" * 40)
+    return worker_module, task, lease, codex_calls
+
+
+def test_bounded_worker_repairs_missing_metric_in_readonly_second_pass(monkeypatch, tmp_path):
+    worker_module, task, lease, codex_calls = _bounded_worker_metric_repair_fixture(
+        monkeypatch
+    )
+
+    result = worker_module.codex_bounded_development_worker(
+        task,
+        tmp_path,
+        120.0,
+        lease,
+    )
+
+    assert result["status"] == "SUCCEEDED"
+    assert result["metric_repair_used"] is True
+    assert result["performance_evidence"]["baseline"] == 2.0
+    assert result["performance_evidence"]["candidate"] == 1.0
+    assert result["performance_evidence"]["improved"] is True
+    assert len(codex_calls) == 2
+    assert codex_calls[1][codex_calls[1].index("--sandbox") + 1] == "read-only"
+
+
+def test_bounded_metric_repair_cannot_mutate_frozen_candidate(monkeypatch, tmp_path):
+    worker_module, task, lease, _ = _bounded_worker_metric_repair_fixture(
+        monkeypatch,
+        mutate_on_repair=True,
+    )
+
+    with pytest.raises(PermissionError, match="metric repair mutated"):
+        worker_module.codex_bounded_development_worker(
+            task,
+            tmp_path,
+            120.0,
+            lease,
+        )
+
+
 def test_codex_structured_metric_parser_requires_real_numeric_before_after():
     from app.services.agent_office.codex_bounded_worker import _structured_metric
 
