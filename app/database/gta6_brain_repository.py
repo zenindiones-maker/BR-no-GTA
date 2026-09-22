@@ -229,6 +229,17 @@ def insert_evidence(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         connection.close()
 
 
+def get_evidence(evidence_id: str) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        return _decode(connection.execute(
+            "SELECT * FROM gta6_raw_evidence WHERE evidence_id = ?",
+            (str(evidence_id),),
+        ).fetchone())
+    finally:
+        connection.close()
+
+
 def list_evidence(*, source_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
     connection = get_connection()
     try:
@@ -273,6 +284,17 @@ def upsert_entity(record: dict[str, Any]) -> dict[str, Any]:
             "SELECT * FROM gta6_entities WHERE entity_id = ?",
             (str(record["entity_id"]),),
         ).fetchone()) or {}
+    finally:
+        connection.close()
+
+
+def get_entity(entity_id: str) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        return _decode(connection.execute(
+            "SELECT * FROM gta6_entities WHERE entity_id = ?",
+            (str(entity_id),),
+        ).fetchone())
     finally:
         connection.close()
 
@@ -461,6 +483,17 @@ def upsert_claim_metadata(record: dict[str, Any]) -> dict[str, Any]:
             "SELECT * FROM gta6_claim_metadata WHERE claim_id = ?",
             (int(record["claim_id"]),),
         ).fetchone()) or {}
+    finally:
+        connection.close()
+
+
+def get_claim_metadata(claim_id: int) -> dict[str, Any] | None:
+    connection = get_connection()
+    try:
+        return _decode(connection.execute(
+            "SELECT * FROM gta6_claim_metadata WHERE claim_id = ?",
+            (int(claim_id),),
+        ).fetchone())
     finally:
         connection.close()
 
