@@ -163,3 +163,146 @@ def test_addy_certification_inventory_is_exactly_24_unique_skills():
     assert len(ADDY_SKILLS) == 24
     assert len(set(ADDY_SKILLS)) == 24
     assert "browser-testing-with-devtools" not in ADDY_SKILLS
+
+
+def test_addy_nested_semantic_provider_is_harness_selected_not_hardcoded(
+    monkeypatch,
+):
+    skill_name = "code-review-and-quality"
+    capability_id = f"addy:{skill_name}"
+
+    import app.services.provider_health_service as health_service
+
+    original_provider_health = health_service.provider_health
+
+    def controlled_health(provider_id: str, **kwargs):
+        normalized = str(provider_id).strip().lower().replace("-", "_")
+        if normalized == "opencode":
+            return ProviderHealth(
+                provider_id="opencode",
+                state="UPSTREAM_DENIED",
+                reason="deterministic blocked fixture",
+                evidence_refs=("test:opencode:blocked",),
+                retry_allowed=False,
+                zero_cost_eligible=True,
+            )
+        if normalized == "nvidia_nim":
+            return ProviderHealth(
+                provider_id="nvidia_nim",
+                state="AVAILABLE",
+                reason="deterministic healthy NVIDIA fixture",
+                evidence_refs=("test:nvidia:available",),
+                retry_allowed=True,
+                zero_cost_eligible=True,
+            )
+        return ProviderHealth(
+            provider_id=normalized,
+            state="BLOCKED",
+            reason="deterministic non-candidate fixture",
+            evidence_refs=(),
+            retry_allowed=False,
+            zero_cost_eligible=True,
+        )
+
+    monkeypatch.setattr(
+        health_service,
+        "provider_health",
+        controlled_health,
+    )
+    monkeypatch.setattr(
+        addy_harness_service,
+        "semantic_provider_health",
+        health_service.semantic_provider_health,
+    )
+    monkeypatch.setattr(
+        addy_harness_service,
+        "resolve_pinned_addy_skill",
+        lambda name: (
+            f"# {name}\nReturn a bounded evidence-first review.",
+            "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39",
+            "2" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        addy_harness_service,
+        "capture_canonical_execution_episode",
+        lambda *args, **kwargs: {"status": "captured"},
+    )
+
+    outer = route_harness_request(
+        HarnessRoutingRequest(
+            intent=f"execute pinned Addy skill {skill_name}",
+            authorized_action="DEVELOPMENT",
+            domain="development",
+            task_class="test-addy-provider-pool",
+            goal_id="goal-addy-provider-pool",
+            required_capability_id=capability_id,
+            provider_required=False,
+            preferred_providers=("opencode",),
+            unavailable_provider_ids=("opencode",),
+            fallback_allowed=False,
+            learning_required=True,
+        )
+    )
+    assert outer.selected_provider is None
+    assert outer.fallback_occurred is False
+
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{capability_id}",
+        harness_decision_id="addy-provider-pool-decision",
+        execution_id="addy-provider-pool-execution",
+        lineage={
+            "routing_id": outer.routing_id,
+            "capability_id": outer.selected_capability_id,
+            "selected_executor_binding": outer.selected_executor_binding,
+            "goal_id": "goal-addy-provider-pool",
+        },
+    )
+
+    def fake_generate(*, routing_decision, authorization, **kwargs):
+        assert routing_decision.selected_provider == "nvidia_nim"
+        assert routing_decision.selected_model
+        assert routing_decision.fallback_occurred is False
+        return HarnessAIProviderEvidence(
+            provider="nvidia_nim",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            authorization_id=authorization.authorization_id,
+            result={
+                "text": "nvidia-governed-review",
+                "model": routing_decision.selected_model,
+            },
+            routing=routing_decision.to_dict(),
+            model=routing_decision.selected_model,
+            executor_binding=routing_decision.selected_provider_executor_binding,
+            latency_seconds=0.01,
+            evidence_refs=("test:nvidia:routed",),
+        )
+
+    monkeypatch.setattr(
+        addy_harness_service,
+        "execute_harness_ai_generation",
+        fake_generate,
+    )
+    try:
+        evidence = execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=outer,
+            payload={
+                "mission_id": "mission-addy-provider-pool",
+                "task_id": "review",
+                "goal_id": "goal-addy-provider-pool",
+                "task": "Review this bounded candidate.",
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+
+    assert evidence.status == "EXECUTED"
+    assert evidence.result["semantic_provider"] == "nvidia_nim"
+    assert evidence.result["semantic_model"]

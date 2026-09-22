@@ -25,6 +25,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.provider_health_service import semantic_provider_health
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
 
@@ -189,39 +190,54 @@ def execute_authorized_addy_skill(
     if not mission_id or not task_id or not goal_id:
         raise ValueError("mission_id, task_id and goal_id must be non-empty")
 
+    provider_health = semantic_provider_health()
+    eligible_providers = tuple(
+        str(item).strip()
+        for item in (
+            provider_health.get("eligible_zero_cost_provider_ids") or ()
+        )
+        if str(item).strip()
+    )
+    if not eligible_providers:
+        raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
+
     provider_routing = route_harness_request(
         HarnessRoutingRequest(
-            intent=f"execute pinned Addy skill {skill_name} with governed semantic reasoning",
+            intent=(
+                f"execute pinned Addy skill {skill_name} with governed "
+                "semantic reasoning and structured output"
+            ),
             authorized_action="DEVELOPMENT",
             domain="ai",
             task_class=f"addy-semantic:{skill_name}",
             goal_id=goal_id,
-            agent_id="provider:opencode",
             required_capability_id="ai.reasoning.text",
             provider_required=True,
             provider_domain="ai",
-            preferred_providers=("opencode",),
-            allowed_providers=("opencode",),
-            preferred_models=("oc/big-pickle",),
+            allowed_providers=eligible_providers,
             fallback_allowed=False,
             zero_cost_operation=True,
             learning_required=True,
         )
     )
-    if provider_routing.selected_provider != "opencode":
-        raise RuntimeError("Harness did not select the governed OpenCode provider")
+    selected_provider = str(
+        provider_routing.selected_provider or ""
+    ).strip()
+    if not selected_provider:
+        raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
 
     provider_auth = issue_harness_authorization(
         authorized_action="DEVELOPMENT",
-        subject="provider:opencode",
+        subject=f"provider:{selected_provider}",
         harness_decision_id=auth.harness_decision_id,
         execution_id=auth.execution_id,
         lineage={
             "parent_authorization_id": auth.authorization_id,
             "routing_id": provider_routing.routing_id,
             "capability_id": provider_routing.selected_capability_id,
-            "selected_provider": provider_routing.selected_provider,
+            "selected_provider": selected_provider,
             "selected_model": provider_routing.selected_model,
+            "eligible_zero_cost_provider_ids": list(eligible_providers),
             "selected_executor_binding": provider_routing.selected_provider_executor_binding,
             "mission_id": mission_id,
             "task_id": task_id,
