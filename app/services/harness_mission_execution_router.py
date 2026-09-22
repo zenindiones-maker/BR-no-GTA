@@ -212,22 +212,7 @@ def execute_harness_mission_plan(
     route_dict = route.to_dict()
     mission_goal = dict(mission_plan.get("goal") or {})
 
-    if route.runtime == "SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE":
-        from app.services.telegram_system_improvement_dispatch_service import (
-            dispatch_telegram_system_improvement_mission,
-        )
-        result = dispatch_telegram_system_improvement_mission(
-            plan=plan,
-            state=state,
-            message=message,
-        )
-    elif route.runtime == "GTA6_RESEARCH_PIPELINE":
-        from app.services.telegram_gta6_query_service import execute_telegram_gta6_query
-        result = execute_telegram_gta6_query(
-            query=str(mission_goal.get("human_goal") or message),
-            state=state,
-        )
-    elif route.runtime == "HERMES_COLLABORATION":
+    if route.runtime in {"HERMES_COLLABORATION", "HERMES_KANBAN"}:
         from app.services.telegram_hermes_dispatch_service import (
             dispatch_telegram_hermes_mission,
         )
@@ -273,5 +258,7 @@ def execute_harness_mission_plan(
         **dict(result),
         "mission_execution_route": route_dict,
         "MISSION_EXECUTION_ROUTER": "PASS",
+        "HERMES_USED": "YES" if route.hermes_used else "NO",
+        "HERMES_SELECTION_REASON": route.hermes_selection_reason,
         "provider_substituted_for_known_executor": False,
     }
