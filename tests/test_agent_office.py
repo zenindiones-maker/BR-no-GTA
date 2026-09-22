@@ -691,3 +691,19 @@ def test_registry_driven_specialist_rejects_tool_expansion():
                 "allowed_tools": ["git", "curl"],
             },
         )
+
+
+def test_codex_structured_metric_parser_requires_real_numeric_before_after():
+    from app.services.agent_office.codex_bounded_worker import _structured_metric
+
+    metric = _structured_metric(
+        'Resumo\nBR_METRIC_JSON={"metric_name":"latency_ms","baseline":120.0,'
+        '"candidate":90.0,"unit":"ms","direction":"LOWER_IS_BETTER",'
+        '"measurement_command":"python benchmark.py"}'
+    )
+    assert metric is not None
+    assert metric["baseline"] == 120.0
+    assert metric["candidate"] == 90.0
+    assert metric["improvement_delta"] == 30.0
+    assert metric["improved"] is True
+    assert metric["evidence_kind"] == "MEASURED_BEFORE_AFTER"
