@@ -258,44 +258,19 @@ jobs:
           print("YOUTUBE_PUBLICATION=NO")
           PY
 
-      - name: Send final human result to Telegram
-        if: steps.auth.outputs.auth_available == 'true' && inputs.telegram_chat_id != '0'
+      - name: Assert autonomous Telegram silence
+        if: steps.auth.outputs.auth_available == 'true'
         working-directory: target
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
-            echo "TELEGRAM_FINAL_RESULT=SKIPPED_NO_TOKEN"
-            exit 0
-          fi
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          from scripts.telegram_harness_gateway import TelegramApi
-          d=json.loads(Path("artifacts/dynamic-system-improvement/dynamic-system-improvement-report.json").read_text())
-          b=d["baseline"]
-          gate=d.get("integration_gate") or {}
-          decision=d["promotion_decision"]
-          text="\n".join([
-              "AÇÃO",
-              "Medi o caminho legado de melhoria e executei a equipe mínima selecionada pelo Harness.",
-              "",
-              "RESULTADO",
-              f"O fluxo legado chamava {b['legacy_fixed_specialists']} especialistas fixos; o plano atual usou {b['dynamic_selected_tasks']}.",
-              "",
-              "O QUE MUDOU",
-              "O Agent Office criou um candidate isolado e o reviewer independente avaliou o patch.",
-              "",
-              "PROVA",
-              f"Integration gate: {gate.get('status','UNAVAILABLE')}. Decisão do Harness: {decision}.",
-              "",
-              "PRÓXIMO",
-              "Nenhum agente promoveu o próprio patch. Se a decisão exigir revisão humana, o candidate permanece isolado.",
-          ])
-          TelegramApi(os.environ["TELEGRAM_BOT_TOKEN"]).send(int(os.environ["TELEGRAM_CHAT_ID_INPUT"]), text)
-          print("TELEGRAM_HUMAN_READABLE_RESULT=PASS")
-          PY
+          test ! -e artifacts/dynamic-system-improvement/telegram-response.json
+          test ! -e artifacts/dynamic-system-improvement/telegram-send.json
+          echo "SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS=0"
+          echo "HARNESS_DELEGATION_TELEGRAM_EGRESS=0"
+          echo "HERMES_PROGRESS_TELEGRAM_EGRESS=0"
+          echo "AGENT_PROGRESS_TELEGRAM_EGRESS=0"
+          echo "CI_REAL_TELEGRAM_EGRESS=0"
+          echo "PROOF_REAL_TELEGRAM_EGRESS=0"
 
       - name: Classify auth-gated mission state
         if: steps.auth.outputs.auth_available != 'true'
