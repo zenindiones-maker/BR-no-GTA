@@ -397,6 +397,25 @@ def test_worker_failure_reason_preserves_only_allowlisted_internal_diagnostics()
     )
     assert safe == "Codex bounded-development produced no candidate patch"
 
+    repair = munder_adapter._safe_worker_exception_reason(
+        RuntimeError(
+            "Codex bounded-development candidate repair produced no candidate patch"
+            "; initial_commands=3; repair_commands=2; grounded_targets=1"
+        )
+    )
+    assert repair.endswith(
+        "initial_commands=3; repair_commands=2; grounded_targets=1"
+    )
+
+    no_context = munder_adapter._safe_worker_exception_reason(
+        RuntimeError(
+            "Codex bounded-development no-op lacks grounded candidate repair context"
+        )
+    )
+    assert no_context == (
+        "Codex bounded-development no-op lacks grounded candidate repair context"
+    )
+
     hidden = munder_adapter._safe_worker_exception_reason(
         RuntimeError("provider raw response contained arbitrary text")
     )
@@ -1531,6 +1550,103 @@ def test_bounded_worker_candidate_repair_is_single_pass_and_fails_closed(
             )
         assert len(codex_calls) == 2
         assert "NO_CANDIDATE_PATCH_DETECTED" in codex_calls[1][-1]
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == base_sha
+        assert subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == ""
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(workspace)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
+def test_candidate_repair_fails_before_second_call_without_grounded_target(
+    monkeypatch,
+    tmp_path,
+):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+
+    root, workspace, base_sha, task, lease = _real_bounded_candidate_fixture(
+        tmp_path
+    )
+    task = replace(
+        task,
+        objective="Implement one safe bounded improvement without inventing scope.",
+        acceptance_criteria=("produce a real bounded candidate",),
+        expected_outputs=("bounded candidate commit",),
+        evidence_requirements=("candidate commit",),
+    )
+    lease = replace(
+        lease,
+        acceptance_criteria=task.acceptance_criteria,
+        expected_outputs=task.expected_outputs,
+        evidence_requirements=task.evidence_requirements,
+    )
+    monkeypatch.setenv(
+        "BR_CODEX_AUTH_MODE",
+        worker_module.CODEX_TUXEVIL_AUTH_MODE,
+    )
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    original_run = worker_module._run
+    codex_calls = []
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command and command[0] == "codex":
+            codex_calls.append(list(command))
+            stdout = json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "analysis completed but no grounded writable target found",
+                },
+            })
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=stdout + "\n",
+                stderr="",
+            )
+        return original_run(
+            command,
+            cwd=Path(cwd),
+            timeout=timeout,
+            sanitized_env=sanitized_env,
+        )
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="no-op lacks grounded candidate repair context",
+        ):
+            worker_module.codex_bounded_development_worker(
+                task,
+                workspace,
+                120.0,
+                lease,
+            )
+        assert len(codex_calls) == 1
+        assert worker_module.MAX_CANDIDATE_REPAIR_PASSES == 1
         assert subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=workspace,
