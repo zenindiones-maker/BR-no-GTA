@@ -158,6 +158,66 @@ HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
 
 
 
+AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD = CapabilityRecord(
+    capability_id="agent-office.deterministic.readonly-analysis",
+    capability_type="AGENT",
+    domain="development",
+    implementation=(
+        "Agent Office deterministic task-owner repository profiler in a "
+        "disposable git worktree"
+    ),
+    input_contract=(
+        "DelegatedTaskLease + exact base SHA + bounded repository read scope"
+    ),
+    output_contract=(
+        "structured repository profile with file/line/size concentration metrics "
+        "+ AgentOfficeExecutionResult"
+    ),
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "Agent Office delegated lease",
+        "git worktree support",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "agent-office", "deterministic", "readonly", "analysis",
+        "profiling", "performance", "observability", "architecture",
+        "redundancy", "task-owner", "zero-cost",
+    ),
+    security_boundary=(
+        "DeepSeek Harness sole authority; deterministic specialist reads only "
+        "the Registry-authorized repository scope in a disposable worktree and "
+        "cannot mutate, push, merge, publish, access secrets or change policy."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="DETERMINISTIC_REPOSITORY_PROFILE_WITH_EVIDENCE",
+    evidence_contract="app.services.agent_office.contracts.AgentOfficeExecutionResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service."
+        "execute_authorized_agent_office_specialist"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="deterministic-analysis",
+    side_effects=("ephemeral worktree", "structured runtime artifact"),
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(
+        "app", "scripts", "tests", ".github/workflows", "config", "integrations"
+    ),
+    default_write_scope=(),
+    allowed_tools=("git",),
+    health_policy="DEFAULT",
+)
+
 AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
     capability_id="agent-office.codex.readonly-analysis",
     capability_type="AGENT",
@@ -897,6 +957,7 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 for _record in (
     AGENT_OFFICE_RECORD,
     HERMES_MULTIAGENT_RUNTIME_RECORD,
+    AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD,
     AGENT_OFFICE_CODEX_READONLY_RECORD,
     AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD,
     PHONE_CONTROL_RECORD,
