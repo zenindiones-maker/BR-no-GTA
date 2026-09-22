@@ -11,6 +11,7 @@ import socket
 import sys
 import urllib.parse
 import urllib.request
+import urllib.error
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -120,6 +121,68 @@ def _platform(url: str) -> str:
     return "web"
 
 
+def _fetch_text_conditional(
+    url: str,
+    *,
+    etag: str = "",
+    last_modified: str = "",
+    timeout: int = 25,
+) -> dict[str, Any]:
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
+    }
+    if str(etag or "").strip():
+        headers["If-None-Match"] = str(etag).strip()
+    if str(last_modified or "").strip():
+        headers["If-Modified-Since"] = str(last_modified).strip()
+    req = urllib.request.Request(url, headers=headers)
+    host = urllib.parse.urlparse(url).hostname or "unknown"
+    try:
+        with PerformanceSpan(
+            "research.source_conditional_fetch",
+            "EXTERNAL_RESEARCH_TIME",
+            input_size=len(url.encode("utf-8")),
+            metadata={"host": host, "conditional": bool(etag or last_modified)},
+        ) as perf:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                final_url = response.geturl()
+                content_type = str(response.headers.get("Content-Type") or "").casefold()
+                raw_bytes = response.read(2_000_000)
+                response_etag = str(response.headers.get("ETag") or "")
+                response_last_modified = str(response.headers.get("Last-Modified") or "")
+            perf.set(network_ms=perf.elapsed_ms(), output_size=len(raw_bytes), attempt_count=1)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            return {
+                "status": "NOT_MODIFIED",
+                "url": url,
+                "resolved_url": url,
+                "etag": str(exc.headers.get("ETag") or etag or ""),
+                "last_modified": str(
+                    exc.headers.get("Last-Modified") or last_modified or ""
+                ),
+                "text": "",
+            }
+        raise
+    if "text/" not in content_type and "json" not in content_type and content_type:
+        raise ValueError("submitted source is not textual")
+    raw = raw_bytes.decode("utf-8", errors="replace")
+    raw = re.sub(r"<script\b[^>]*>.*?</script>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<style\b[^>]*>.*?</style>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    text = " ".join(html.unescape(raw).split())
+    return {
+        "status": "CHANGED",
+        "url": url,
+        "resolved_url": final_url,
+        "etag": response_etag,
+        "last_modified": response_last_modified,
+        "text": text,
+    }
+
+
 def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
     request = urllib.request.Request(
         url,
@@ -150,11 +213,40 @@ def _fetch_text(url: str, *, timeout: int = 25) -> tuple[str, str]:
     text = " ".join(html.unescape(raw).split())
     return text, final_url
 
-def _resolve_submitted_source(source_url: str, *, checked_at: str) -> dict[str, Any]:
+def _resolve_submitted_source(
+    source_url: str,
+    *,
+    checked_at: str,
+    etag: str = "",
+    last_modified: str = "",
+) -> dict[str, Any]:
     try:
         safe_url = _public_https_url(source_url)
-        text, final_url = _fetch_text(safe_url)
-        final_url = _public_https_url(final_url)
+        fetched = _fetch_text_conditional(
+            safe_url,
+            etag=etag,
+            last_modified=last_modified,
+        )
+        if fetched["status"] == "NOT_MODIFIED":
+            return {
+                "resolution_status": "NOT_MODIFIED",
+                "source_name": urllib.parse.urlparse(safe_url).hostname,
+                "url": safe_url,
+                "resolved_url": safe_url,
+                "platform": _platform(safe_url),
+                "retrieved_at": checked_at,
+                "source_hierarchy": _source_hierarchy(safe_url),
+                "original_source_retrieved": False,
+                "content_excerpt": "",
+                "content_sha256": None,
+                "independent_group": _root_domain(safe_url),
+                "content_fingerprint": None,
+                "etag": fetched.get("etag"),
+                "last_modified": fetched.get("last_modified"),
+                "http_not_modified": True,
+            }
+        text = str(fetched["text"])
+        final_url = _public_https_url(str(fetched["resolved_url"]))
         platform = _platform(safe_url)
         lowered = text.casefold()
         unusable_markers = (
@@ -185,6 +277,9 @@ def _resolve_submitted_source(source_url: str, *, checked_at: str) -> dict[str, 
             "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
             "independent_group": _root_domain(safe_url),
             "content_fingerprint": _content_fingerprint(excerpt),
+            "etag": fetched.get("etag"),
+            "last_modified": fetched.get("last_modified"),
+            "http_not_modified": False,
         }
     except Exception as exc:
         return {
@@ -259,6 +354,8 @@ def collect(
     *,
     execution_id: str,
     source_url: str = "",
+    source_etag: str = "",
+    source_last_modified: str = "",
     telegram_input_id: str = "",
     classification: str = "",
     input_kind: str = "",
@@ -266,7 +363,12 @@ def collect(
 ) -> dict[str, Any]:
     checked_at = datetime.now(timezone.utc).isoformat()
     submitted_source = (
-        _resolve_submitted_source(source_url, checked_at=checked_at)
+        _resolve_submitted_source(
+            source_url,
+            checked_at=checked_at,
+            etag=source_etag,
+            last_modified=source_last_modified,
+        )
         if source_url else None
     )
     official: list[dict[str, Any]] = []
