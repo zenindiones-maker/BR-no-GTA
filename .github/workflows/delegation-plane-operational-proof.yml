@@ -235,6 +235,50 @@ jobs:
           print("model=" + str(d["selected_model"]))
           PY
 
+      - name: Publish runner-local Codex health from live Tuxevil proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          proof=json.loads(
+              Path("artifacts/delegation-plane-operational/tuxevil-responses-proof.json").read_text()
+          )
+          for key in (
+              "TUXEVIL_RESPONSES_API",
+              "ANTIGRAVITY_UPSTREAM_AUTH",
+              "TUXEVIL_LIVE_INFERENCE",
+              "TUXEVIL_TOOL_CALLING",
+          ):
+              assert proof[key] == "PASS", (key,proof[key])
+          health={
+              capability:{
+                  "state":"HEALTHY",
+                  "reason":"Tuxevil Antigravity Responses transport passed live on the executing runner",
+                  "retry_allowed":True,
+                  "confidence":0.99,
+                  "sample_size":1,
+                  "evidence_refs":[
+                      f"github:run:{os.environ['GITHUB_RUN_ID']}:tuxevil-live-proof",
+                      "github:run:35690620457:item19-auth-proof",
+                  ],
+              }
+              for capability in (
+                  "agent-office.codex.readonly-analysis",
+                  "agent-office.codex.bounded-development",
+              )
+          }
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as handle:
+              handle.write(
+                  "BR_RUNTIME_CAPABILITY_HEALTH_JSON="
+                  + json.dumps(health,separators=(",",":"))
+                  + "\n"
+              )
+          print("CODEX_RUNTIME_HEALTH_PREFLIGHT=PASS")
+          PY
+
       - name: Execute first real natural-goal mission
         if: env.OP_PHASE == 'first'
         env:
@@ -272,7 +316,7 @@ jobs:
           assert plan["HEALTH_CONTEXT_USED"] == "PASS"
           assert plan["MINIMUM_SUFFICIENT_TEAM"] == "PASS"
           assert plan["MISSION_EXECUTION_ROUTER"] == "PASS"
-          assert plan["HERMES_USED"] in {"YES","NO"}
+          assert plan["HERMES_USED"] == "YES", plan.get("HERMES_SELECTION_REASON")
           assert str(plan.get("HERMES_SELECTION_REASON") or "").strip()
 
           checks=report["checks"]
@@ -295,19 +339,19 @@ jobs:
                   print("DURABLE_KANBAN=PASS")
 
           candidates=report.get("candidate_shas") or {}
-          if candidates:
-              for key in (
-                  "PATCH_BOUNDED_TO_WORKTREE",
-                  "INDEPENDENT_REVIEW",
-                  "CANDIDATE_TESTED",
-                  "BASELINE_VS_CANDIDATE_COMPARED",
-              ):
-                  assert checks[key] is True, (key, checks[key])
-              assert checks["BUILDER_SELF_APPROVAL"] is False
-              assert checks["AGENT_SELF_PROMOTION"] is False
-              print("WRITE_CAPABLE_CODEX_EXECUTOR=PASS")
-          else:
-              print("WRITE_CAPABLE_CODEX_EXECUTOR=NOT_REQUIRED_BY_REAL_PLAN")
+          assert candidates, "bounded-development candidate is mandatory for this acceptance run"
+          assert report.get("integration_gates"), "candidate integration gate missing"
+          for key in (
+              "PATCH_BOUNDED_TO_WORKTREE",
+              "INDEPENDENT_REVIEW",
+              "CANDIDATE_TESTED",
+              "BASELINE_VS_CANDIDATE_COMPARED",
+          ):
+              assert checks[key] is True, (key, checks[key])
+          assert checks["BUILDER_SELF_APPROVAL"] is False
+          assert checks["AGENT_SELF_PROMOTION"] is False
+          assert report.get("promotion_decision") == "HUMAN_REVIEW", report.get("promotion_decision")
+          print("WRITE_CAPABLE_CODEX_EXECUTOR=PASS")
           print("ITEM35_OPERATIONAL_PROOF=PASS")
           print("ITEM36_FIRST_REAL_EXECUTION=PASS")
           PY
