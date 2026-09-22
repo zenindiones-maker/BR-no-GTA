@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from dataclasses import replace
 
@@ -162,6 +164,79 @@ def test_tuxevil_unregistered_concrete_model_is_rejected(monkeypatch):
             authorization=auth("tuxevil"),
             routing_decision=decision,
         )
+
+
+def test_tuxevil_current_run_runtime_model_is_accepted_at_execution_boundary(
+    monkeypatch,
+):
+    import app.services.harness_ai_provider_service as service
+
+    run_id = "2001"
+    evidence_ref = f"github:run:{run_id}:tuxevil-live-proof"
+    monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        json.dumps({
+            "tuxevil": {
+                "provider_id": "tuxevil",
+                "state": "AVAILABLE",
+                "scope": "CURRENT_GITHUB_RUN",
+                "github_run_id": run_id,
+                "model_id": "gemini-3-flash",
+                "zero_cost_eligible": True,
+                "proof": {
+                    "TUXEVIL_RESPONSES_API": "PASS",
+                    "ANTIGRAVITY_UPSTREAM_AUTH": "PASS",
+                    "TUXEVIL_LIVE_INFERENCE": "PASS",
+                    "TUXEVIL_TOOL_CALLING": "PASS",
+                    "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
+                },
+                "evidence_refs": [evidence_ref],
+            }
+        }),
+    )
+    decision = HarnessRoutingDecision(
+        routing_id="routing-tuxevil-runtime-model",
+        intent="semantic mission planning proposal only",
+        authorized_action="EDITORIAL",
+        candidate_capability_ids=("ai.reasoning.text",),
+        selected_capability_id="ai.reasoning.text",
+        selected_provider="tuxevil",
+        selected_model="gemini-3-flash",
+        selected_executor_binding="harness_ai_provider_service",
+        selected_provider_executor_binding=(
+            "app.services.ai_provider_factory.create_ai_provider"
+        ),
+        primary_provider="tuxevil",
+        fallback_allowed=False,
+        fallback_candidates=(),
+        fallback_occurred=False,
+        evidence_expectations=("HarnessAIProviderEvidence",),
+        rationale=("current-run model binding",),
+        rejected_candidates=(),
+        policy_metadata={
+            "runtime_provider_binding_used": True,
+            "runtime_provider_evidence_refs": [evidence_ref],
+        },
+    )
+    calls = []
+
+    class RuntimeProvider:
+        pass
+
+    monkeypatch.setattr(
+        service,
+        "create_ai_provider",
+        lambda *, model=None: calls.append(model) or RuntimeProvider(),
+    )
+    provider_name, provider = service.select_harness_ai_provider(
+        provider_name="tuxevil",
+        authorization=auth("tuxevil"),
+        routing_decision=decision,
+    )
+    assert provider_name == "tuxevil"
+    assert isinstance(provider, RuntimeProvider)
+    assert calls == ["gemini-3-flash"]
 
 
 def test_provider_failure_does_not_trigger_silent_fallback(monkeypatch):
