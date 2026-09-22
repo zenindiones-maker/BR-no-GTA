@@ -60,10 +60,10 @@ jobs:
           set -euo pipefail
           python -m pytest -q \
             tests/test_telegram_a15_runtime_contract.py \
-            tests/test_telegram_gateway_conversation.py::test_progress_reporter_sends_only_on_meaningful_stage_changes \
+            tests/test_telegram_gateway_conversation.py::test_progress_reporter_is_audit_only_for_all_stages \
             tests/test_telegram_gateway_conversation.py::test_live_status_sends_no_visible_progress_before_final_answer \
             tests/test_telegram_gateway_conversation.py::test_live_status_exact_human_path_sends_one_clean_final_message \
-            tests/test_telegram_gateway_conversation.py::test_progress_reporter_keeps_internal_control_stages_telemetry_only \
+            tests/test_telegram_gateway_conversation.py::test_progress_reporter_keeps_every_stage_telemetry_only \
             tests/test_telegram_gateway_conversation.py::test_live_status_passes_no_progress_callback_to_conversation_service \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_is_logged_only_after_api_success \
             tests/test_telegram_gateway_conversation.py::test_final_human_response_send_failure_is_explicit \
@@ -73,8 +73,16 @@ jobs:
             tests/test_telegram_gateway_conversation.py::test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy \
             tests/test_telegram_conversation_control.py::test_status_reconciles_legacy_understanding_without_operational_evidence \
             tests/test_telegram_project_status.py::test_status_query_never_replaces_project_subject_and_exposes_canonical_snapshot \
+            tests/test_telegram_human_egress_policy.py \
             --junitxml=artifacts/telegram-live-runtime-focused/pytest.xml
           echo "PROGRESS_TELEMETRY_NOT_CANONICAL_STATE=PASS"
+          echo "PROGRESS_HEARTBEAT_TELEGRAM_EGRESS=0"
+          echo "BLOCKER_TELEMETRY_TELEGRAM_EGRESS=0"
+          echo "LEARNING_PROMOTION_TELEGRAM_EGRESS=0"
+          echo "CI_STATUS_TELEGRAM_EGRESS=0"
+          echo "NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED"
+          echo "SCRIPT_HUMAN_REVIEW_READY_DELIVERY=PASS"
+          echo "TECHNICAL_EVIDENCE_ON_EXPLICIT_REQUEST_ONLY=PASS"
           echo "STALE_PROGRESS_STATE_DETECTED=PASS"
           echo "STALE_PROGRESS_STATE_RECONCILED=PASS"
           echo "STATUS_PROVIDER_CALLS=0"
