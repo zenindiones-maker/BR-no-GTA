@@ -1256,6 +1256,16 @@ def select_capability_for_requirement(
             "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
         }:
             raise ValueError("candidate_requirement is invalid")
+        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"} and not mutation_capable:
+            avoided.append(
+                f"{capability_id}:side-effect-insufficient:{record_side_effect.casefold()}"
+            )
+            continue
+        if required_side_effect == "READ_ONLY" and mutation_capable:
+            avoided.append(
+                f"{capability_id}:side-effect-exceeds:read-only"
+            )
+            continue
         if (
             candidate_requirement in {"REQUIRED", "CONDITIONAL"}
             and not mutation_capable
@@ -1268,16 +1278,6 @@ def select_capability_for_requirement(
         if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
             avoided.append(
                 f"{capability_id}:candidate-semantics-exceeds:not-applicable"
-            )
-            continue
-        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"} and not mutation_capable:
-            avoided.append(
-                f"{capability_id}:side-effect-insufficient:{record_side_effect.casefold()}"
-            )
-            continue
-        if required_side_effect == "READ_ONLY" and mutation_capable:
-            avoided.append(
-                f"{capability_id}:side-effect-exceeds:read-only"
             )
             continue
         failure = _capability_failure_memory(capability_id, context=context)
