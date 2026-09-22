@@ -718,9 +718,11 @@ def propose_validated_semantic_plan(
                     "Replan with the exact wire contract only. Wire types are "
                     "mandatory: u must be exactly one JSON number in 0..1, never "
                     "an array/object/string; ask must be boolean; q must be "
-                    "null|string. Use risk enum RO|L|M|H|EXT and action enum "
-                    "R|E|D|X|C exactly; do not replace enum values with prose "
-                    "or explanations."
+                    "null|string. Every task id must be lowercase and match "
+                    "^[a-z0-9][a-z0-9._-]{0,79}$; ids must be unique and dep "
+                    "entries must reference those exact ids. Use risk enum "
+                    "RO|L|M|H|EXT and action enum R|E|D|X|C exactly; do not "
+                    "replace enum values with prose or explanations."
                 ),
             )
             evidence["replan_count"] += 1
