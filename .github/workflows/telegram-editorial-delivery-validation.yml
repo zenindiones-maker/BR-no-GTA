@@ -63,6 +63,7 @@ jobs:
           import json
           from pathlib import Path
 
+          from app.database.schema import initialize_schema
           from app.services.harness_authorization_service import (
               consume_harness_authorization,
               issue_harness_authorization,
@@ -71,6 +72,7 @@ jobs:
               deliver_script_human_review_ready,
           )
 
+          initialize_schema()
           authorization=issue_harness_authorization(
               authorized_action="EXECUTION",
               subject="human-surface:telegram_group",
