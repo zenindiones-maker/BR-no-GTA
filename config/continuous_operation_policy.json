@@ -30,6 +30,12 @@
         "subject": "Jason Duval",
         "query": "What has Rockstar officially confirmed about Jason Duval's background, including the Army, the Keys and local drug runners?",
         "source_url": "https://www.rockstargames.com/VI/only-in-leonida"
+      },
+      {
+        "topic_id": "gta6-official-overview",
+        "subject": "GTA VI",
+        "query": "What has Rockstar officially confirmed on the GTA VI official page about the game, its setting and protagonists?",
+        "source_url": "https://www.rockstargames.com/VI"
       }
     ],
     "source_classes": [
