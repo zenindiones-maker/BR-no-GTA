@@ -242,6 +242,7 @@ def phase_a(
         "status": "PASS",
         "canonical_status": canonical["status"],
         "mission_status": mission_result.get("status"),
+        "mission_status": mission_result.get("status"),
         "partial_mission_fail_closed": True,
         "completed_before_restart": holder["completed"],
         "primary_evidence_ref": holder["primary"]["evidence_ref"],
@@ -359,7 +360,10 @@ def phase_b(
     finally:
         consume_harness_authorization(auth)
 
-    assert canonical["status"] == "COMPLETED", canonical
+    mission_result = dict(canonical.get("result") or {})
+    assert canonical["status"] == "EXECUTED", canonical
+    assert canonical["success"] is True, canonical
+    assert mission_result.get("status") == "COMPLETED", canonical
     assert holder["after"] == [
         "retrieve-primary",
         "retrieve-dependent",
