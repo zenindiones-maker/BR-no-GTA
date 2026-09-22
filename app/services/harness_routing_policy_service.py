@@ -115,9 +115,11 @@ def normalize_provider_id(provider_id: str) -> str:
 
 
 def _runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
-    from app.services.provider_health_service import runtime_provider_binding
+    from app.services.provider_health_service import (
+        runtime_provider_binding as resolve_runtime_provider_binding,
+    )
 
-    return _runtime_provider_binding(provider_id)
+    return resolve_runtime_provider_binding(provider_id)
 
 
 def _record_matches_security(
