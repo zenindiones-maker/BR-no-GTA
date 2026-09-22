@@ -697,12 +697,32 @@ def propose_validated_semantic_plan(
         "rejection_reasons": [],
     }
     for attempt in range(max_replans + 1):
-        result = propose_semantic_mission_plan(
-            context,
-            inference=inference,
-            validation_feedback=feedback,
-        )
         evidence["proposal_attempts"] += 1
+        try:
+            result = propose_semantic_mission_plan(
+                context,
+                inference=inference,
+                validation_feedback=feedback,
+            )
+        except ValueError as exc:
+            schema_error = f"schema_validation:{type(exc).__name__}:{exc}"
+            evidence["rejection_reasons"].append([schema_error])
+            if attempt >= max_replans:
+                raise RuntimeError(
+                    "SEMANTIC_MISSION_PROPOSAL_REJECTED:" + schema_error
+                ) from exc
+            feedback = (
+                "The previous proposal failed DeepSeek Harness schema validation.",
+                schema_error,
+                (
+                    "Replan with the exact wire contract only. Use risk enum "
+                    "RO|L|M|H|EXT and action enum R|E|D|X|C exactly; do not "
+                    "replace enum values with prose or explanations."
+                ),
+            )
+            evidence["replan_count"] += 1
+            continue
+
         errors = proposal_registry_errors(result.proposal)
         if not errors:
             evidence["provider_evidence"] = dict(result.provider_evidence)
