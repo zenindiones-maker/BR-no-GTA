@@ -106,7 +106,7 @@ class HermesHarnessCapabilityBroker:
     def _task(self, task_id: str):
         if task_id in self._child_tasks:
             return self._child_tasks[task_id]
-        return self._task(task_id)
+        return self.spec.task(task_id)
 
     def list_allowed_capabilities(self, *, mission_id: str, task_id: str) -> tuple[dict[str, Any], ...]:
         if str(mission_id) != self.spec.mission_id:
