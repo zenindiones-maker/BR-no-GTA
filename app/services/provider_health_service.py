@@ -117,6 +117,72 @@ def _local_openweight_health() -> ProviderHealth:
     )
 
 
+_RUNTIME_PROVIDER_PROOF_GATES = (
+    "TUXEVIL_RESPONSES_API",
+    "ANTIGRAVITY_UPSTREAM_AUTH",
+    "TUXEVIL_LIVE_INFERENCE",
+    "TUXEVIL_TOOL_CALLING",
+)
+
+
+def _runtime_provider_health_override(
+    provider_id: str,
+    *,
+    zero_cost_eligible: bool,
+) -> ProviderHealth | None:
+    raw = str(os.getenv("BR_RUNTIME_PROVIDER_HEALTH_JSON") or "").strip()
+    current_run_id = str(os.getenv("GITHUB_RUN_ID") or "").strip()
+    if not raw or not current_run_id:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    normalized = str(provider_id or "").strip().lower().replace("-", "_")
+    item = payload.get(normalized)
+    if not isinstance(item, dict):
+        return None
+    if str(item.get("provider_id") or normalized).strip().lower().replace("-", "_") != normalized:
+        return None
+    if str(item.get("scope") or "").strip().upper() != "CURRENT_GITHUB_RUN":
+        return None
+    if str(item.get("github_run_id") or "").strip() != current_run_id:
+        return None
+    if str(item.get("state") or "").strip().upper() != "AVAILABLE":
+        return None
+    if not zero_cost_eligible or not bool(item.get("zero_cost_eligible", False)):
+        return None
+
+    proof = item.get("proof")
+    if not isinstance(proof, dict):
+        return None
+    if any(str(proof.get(key) or "").strip().upper() != "PASS" for key in _RUNTIME_PROVIDER_PROOF_GATES):
+        return None
+
+    refs = tuple(
+        str(ref).strip()
+        for ref in (item.get("evidence_refs") or ())
+        if str(ref).strip()
+    )
+    expected_prefix = f"github:run:{current_run_id}:"
+    if not refs or not any(ref.startswith(expected_prefix) for ref in refs):
+        return None
+
+    return ProviderHealth(
+        provider_id=normalized,
+        state="AVAILABLE",
+        reason=(
+            "Provider is Registry-available and live authenticated for the "
+            "current GitHub execution only."
+        ),
+        evidence_refs=refs,
+        retry_allowed=True,
+        zero_cost_eligible=True,
+    )
+
+
 def provider_health(provider_id: str) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
     if not provider:
@@ -206,6 +272,13 @@ def provider_health(provider_id: str) -> ProviderHealth:
             retry_allowed=False,
             zero_cost_eligible=assessment.eligible,
         )
+
+    runtime_override = _runtime_provider_health_override(
+        provider,
+        zero_cost_eligible=assessment.eligible,
+    )
+    if runtime_override is not None:
+        return runtime_override
     external_auth_markers = (
         "API_KEY",
         "API KEY",
