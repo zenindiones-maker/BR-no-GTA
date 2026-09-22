@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
-import importlib
-import inspect
 import time
 from typing import Any
 
@@ -12,6 +10,13 @@ from app.services.harness_authorization_service import (
     validate_harness_authorization,
 )
 from app.services.harness_capability_service import execute_capability
+from app.services.harness_executor_contract_service import (
+    AUTH_ROUTING_PAYLOAD,
+    CAPABILITY_PAYLOAD,
+    EXECUTION_CONTEXT,
+    executor_invocation_contract,
+    resolve_registry_executor,
+)
 from app.services.harness_collaboration_service import RoutedCollaborationTask, TaskEnvelope
 
 
@@ -70,40 +75,25 @@ class CapabilityAdapter:
 
     @staticmethod
     def resolve_binding(binding: str):
-        module_name, sep, attr = str(binding or "").rpartition(".")
-        if not sep or not module_name or not attr:
-            raise PermissionError("Registry executor binding is invalid")
-        module = importlib.import_module(module_name)
-        executor = getattr(module, attr, None)
-        if not callable(executor):
-            raise PermissionError("Registry executor binding is not callable")
-        actual = (
-            f"{getattr(executor, '__module__', '')}."
-            f"{getattr(executor, '__name__', '')}"
-        )
-        if actual != binding:
-            raise PermissionError(
-                "Resolved executor does not match exact Registry binding"
-            )
-        return executor
+        return resolve_registry_executor(binding)
 
     @staticmethod
     def authorization_subject(executor, task: RoutedCollaborationTask | TaskEnvelope) -> str:
-        params = inspect.signature(executor).parameters
-        if "execution_context" in params and "authorization" not in params:
+        contract = executor_invocation_contract(executor)
+        if contract == EXECUTION_CONTEXT:
             return f"action:{task.action}"
         return f"capability:{task.capability_id}"
 
     @staticmethod
     def _invoke(*, executor, task, decision, authorization, payload):
-        params = inspect.signature(executor).parameters
-        if {"authorization", "routing_decision", "payload"}.issubset(params):
+        contract = executor_invocation_contract(executor)
+        if contract == AUTH_ROUTING_PAYLOAD:
             return executor(
                 authorization=authorization,
                 routing_decision=decision,
                 payload=payload,
             )
-        if "capability" in params and "payload" in params:
+        if contract == CAPABILITY_PAYLOAD:
             return execute_capability(
                 capability_id=task.capability_id,
                 authorization=authorization,
@@ -111,7 +101,7 @@ class CapabilityAdapter:
                 routing_decision=decision,
                 executor=executor,
             )
-        if "execution_context" in params:
+        if contract == EXECUTION_CONTEXT:
             return executor(authorization_to_context(authorization))
         raise PermissionError(
             "Registry executor signature is not supported by CapabilityAdapter"
