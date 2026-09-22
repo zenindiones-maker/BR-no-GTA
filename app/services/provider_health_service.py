@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 import os
+import re
 from typing import Any
 from urllib import request
 
@@ -123,7 +124,7 @@ _RUNTIME_PROVIDER_PROOF_GATES = (
     "TUXEVIL_LIVE_INFERENCE",
     "TUXEVIL_TOOL_CALLING",
 )
-_RUNTIME_MODEL_ID_RE = __import__("re").compile(
+_RUNTIME_MODEL_ID_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 )
 
