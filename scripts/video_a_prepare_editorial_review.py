@@ -454,15 +454,8 @@ def main()->int:
         human_messages.append(("outline",message))
     for message in human_script_messages(sections):
         human_messages.append(("script",message))
-    human_messages.append(("qa",human_qa_message(
-        word_count=wc,
-        findings_total=len(findings),
-        high_value=evidence_map["HIGH_VALUE_NEW_FINDINGS"],
-        meta_count=meta_count,
-        info_density=info_density,
-        repetition_status=qa["REPETITION_STATUS"],
-        unsupported_claims=unsupported_claims,
-    )))
+    # QA remains a technical artifact only. It is not part of the human-facing
+    # Telegram product surface.
 
     message_dir=args.output_dir/"telegram-human-readable"
     message_dir.mkdir(parents=True,exist_ok=True)
@@ -491,11 +484,35 @@ def main()->int:
             "technical_attachments_default":"FORBIDDEN",
             "exceptions":["audio","video","image"],
             "SCRIPT_HUMAN_REVIEW":"PENDING",
+            "DELIVERABLE_STATUS":"READY_FOR_HUMAN_REVIEW",
+            "TECHNICAL_QA_HUMAN_EGRESS":"FORBIDDEN",
             "NEW_VOICE_SYNTHESIS":"NO",
             "FULL_RENDER_AUTHORIZED":"NO",
         },ensure_ascii=False,indent=2)+"\n",
         encoding="utf-8",
     )
+
+    script_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest()
+    delivery_manifest={
+        "schema":"editorial-script-delivery/v1",
+        "deliverable_type":"SCRIPT",
+        "status":"READY_FOR_HUMAN_REVIEW",
+        "complete_script_present":bool(text.strip()),
+        "artifact_origin":"EDITORIAL_PIPELINE",
+        "artifact_real":True,
+        "editorial_artifact_id":package["candidate_id"],
+        "artifact_ref":f"editorial-script:{package['candidate_id']}:{script_sha256[:16]}",
+        "content_sha256":script_sha256,
+        "artifact_file":"runtime/video-a-editorial-review/human-final-script.txt",
+        "test_artifact":False,
+        "synthetic":False,
+        "fixture":False,
+        "canary":False,
+        "proof":False,
+        "validation_artifact":False,
+        "human_sections":["RESUMO EDITORIAL","EVIDENCE MAP","OUTLINE","ROTEIRO COMPLETO"],
+        "technical_qa_human_egress":"FORBIDDEN",
+    }
 
     files={
         "01-principais-descobertas.txt":"\n".join(summary_lines)+"\n",
@@ -504,6 +521,8 @@ def main()->int:
         "04-roteiro-completo-revisado.md":"\n".join(script_md),
         "05-script-qa.json":json.dumps(qa,ensure_ascii=False,indent=2)+"\n",
         "06-diferencas-vs-roteiro-rejeitado.json":json.dumps(differences,ensure_ascii=False,indent=2)+"\n",
+        "human-final-script.txt":text+"\n",
+        "editorial-delivery-manifest.json":json.dumps(delivery_manifest,ensure_ascii=False,indent=2)+"\n",
         "review-metrics.json":json.dumps({
             "SCRIPT_WORD_COUNT":wc,
             "EXTENDED_LOOK_FINDINGS_TOTAL":len(findings),
@@ -531,6 +550,8 @@ def main()->int:
     print("TECHNICAL_ATTACHMENTS_TO_HUMAN=NO")
     print("NEW_VOICE_SYNTHESIS=NO")
     print("SCRIPT_HUMAN_REVIEW=PENDING")
+    print("SCRIPT_HUMAN_REVIEW_READY=PASS")
+    print("TECHNICAL_QA_HUMAN_EGRESS=FORBIDDEN")
     print("WAITING_FOR_HUMAN_REVIEW=YES")
     print("REVIEW_TARGET=SCRIPT")
     return 0
