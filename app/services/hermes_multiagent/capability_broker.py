@@ -58,6 +58,39 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+class DelegatedCapabilityFailure(RuntimeError):
+    def __init__(
+        self,
+        *,
+        task_id: str,
+        capability_id: str,
+        failure_mode: str,
+        retry_attempt: int,
+        retry_allowed: bool,
+        requires_harness_replan: bool,
+    ) -> None:
+        super().__init__(
+            f"{failure_mode}: task={task_id} capability={capability_id}"
+        )
+        self.task_id = task_id
+        self.capability_id = capability_id
+        self.failure_mode = failure_mode
+        self.retry_attempt = retry_attempt
+        self.retry_allowed = retry_allowed
+        self.requires_harness_replan = requires_harness_replan
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "capability_id": self.capability_id,
+            "failure_mode": self.failure_mode,
+            "retry_attempt": self.retry_attempt,
+            "retry_allowed": self.retry_allowed,
+            "requires_harness_replan": self.requires_harness_replan,
+            "authority": "DEEPSEEK_HARNESS",
+        }
+
+
 class HermesHarnessCapabilityBroker:
     """Mission-scoped broker between Hermes coordination and Harness execution.
 
@@ -102,6 +135,32 @@ class HermesHarnessCapabilityBroker:
         self._handoffs: list[dict[str, Any]] = []
         self._human_requests: list[dict[str, Any]] = []
         self._audit: list[dict[str, Any]] = []
+        self._load_persisted_results()
+
+    def _load_persisted_results(self) -> None:
+        for path in sorted(self.result_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if payload.get("mission_id") != self.spec.mission_id:
+                continue
+            task_id = str(payload.get("task_id") or "").strip()
+            if not task_id:
+                continue
+            raw = json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+            relative = path.relative_to(self.artifact_dir)
+            record = {
+                **payload,
+                "evidence_ref": f"artifact:{relative.as_posix()}",
+                "sha256": sha256(raw.encode("utf-8")).hexdigest(),
+            }
+            self._task_results.setdefault(task_id, []).append(record)
 
     def _task(self, task_id: str):
         if task_id in self._child_tasks:
@@ -185,6 +244,9 @@ class HermesHarnessCapabilityBroker:
         authorization_id: str,
         elapsed_seconds: float,
         result: Any,
+        idempotency_key: str,
+        capability_version: str,
+        retry_count: int,
     ) -> dict[str, Any]:
         normalized = _jsonable(result)
         index = len(self._task_results.get(task_id, ())) + 1
@@ -198,6 +260,10 @@ class HermesHarnessCapabilityBroker:
             "runtime": "hermes",
             "routing_id": routing_id,
             "authorization_id": authorization_id,
+            "idempotency_key": idempotency_key,
+            "capability_version": capability_version,
+            "retry_count": int(retry_count),
+            "status": "COMPLETED",
             "elapsed_seconds": round(elapsed_seconds, 6),
             "cost": 0.0,
             "policy_violations": 0,
@@ -214,20 +280,72 @@ class HermesHarnessCapabilityBroker:
         self._task_results.setdefault(task_id, []).append(record)
         return record
 
+    def _existing_result(self, task) -> dict[str, Any] | None:
+        if not task.idempotency_key:
+            return None
+        for row in reversed(self._task_results.get(task.task_id, ())):
+            if (
+                row.get("status") == "COMPLETED"
+                and row.get("idempotency_key") == task.idempotency_key
+                and row.get("capability_id") == task.capability_id
+                and str(row.get("capability_version") or "1")
+                == str(task.capability_version or "1")
+            ):
+                return dict(row)
+        return None
+
     def execute_delegated_capability(
         self,
         *,
         task_id: str,
         capability_id: str,
         payload: dict[str, Any],
+        retry_attempt: int = 0,
     ) -> dict[str, Any]:
         task = self._task(task_id)
         if capability_id != task.capability_id:
-            raise PermissionError("Hermes task may execute only its CollaborationPlan capability")
+            raise PermissionError(
+                "Hermes cannot reroute a task to another capability; "
+                "return to DeepSeek Harness for replan"
+            )
         if any(str(key).lower() in _FORBIDDEN_PAYLOAD_FIELDS for key in payload):
-            raise PermissionError("Hermes payload attempted to override authority or routing")
+            raise PermissionError(
+                "Hermes payload attempted to override authority or routing"
+            )
         if capability_id not in self.spec.allowed_capability_ids:
             raise PermissionError("Hermes capability is outside mission lease")
+
+        existing = self._existing_result(task)
+        if existing is not None:
+            self._audit.append({
+                "event": "TASK_COMPLETED_REUSED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "capability_id": capability_id,
+                "idempotency_key": task.idempotency_key,
+                "evidence_ref": existing["evidence_ref"],
+                "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
+            })
+            return {
+                "authority": "DEEPSEEK_HARNESS",
+                "executed": False,
+                "reused": True,
+                "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
+                "capability_id": capability_id,
+                "agent_id": existing.get("agent_id"),
+                "routing_id": existing.get("routing_id"),
+                "authorization_id": existing.get("authorization_id"),
+                "executor_binding": task.selected_executor_binding,
+                "evidence_ref": existing["evidence_ref"],
+                "result": existing.get("result"),
+            }
+
+        if retry_attempt < 0 or retry_attempt > int(task.retry_budget):
+            raise PermissionError("retry attempt exceeds TaskEnvelope retry budget")
+        if retry_attempt > 0 and not task.supports_retry:
+            raise PermissionError("capability does not support retry")
+
         record, decision = self._route(task)
         executor = self.adapter.resolve_binding(str(record.executor_binding or ""))
         child = self._issue_child(
@@ -248,8 +366,40 @@ class HermesHarnessCapabilityBroker:
             )
             result = adapted.result
             elapsed = float(adapted.elapsed_seconds)
+        except Exception as exc:
+            retry_allowed = (
+                bool(task.supports_retry)
+                and retry_attempt < int(task.retry_budget)
+            )
+            failure = DelegatedCapabilityFailure(
+                task_id=task_id,
+                capability_id=capability_id,
+                failure_mode=type(exc).__name__,
+                retry_attempt=retry_attempt,
+                retry_allowed=retry_allowed,
+                requires_harness_replan=not retry_allowed,
+            )
+            self._audit.append({
+                "event": "TASK_FAILED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "task_class": task.task_class,
+                "capability_id": capability_id,
+                "routing_id": decision.routing_id,
+                "authorization_id": child.authorization_id,
+                "parent_authorization_id": self.parent_authorization.authorization_id,
+                "idempotency_key": task.idempotency_key,
+                "retry_count": retry_attempt,
+                "retry_allowed": retry_allowed,
+                "requires_harness_replan": not retry_allowed,
+                "failure_mode": type(exc).__name__,
+                "evidence_refs": [],
+            })
+            raise failure from exc
         finally:
             consume_harness_authorization(child)
+
         result_row = self._persist_result(
             task_id=task_id,
             capability_id=capability_id,
@@ -258,8 +408,12 @@ class HermesHarnessCapabilityBroker:
             authorization_id=child.authorization_id,
             elapsed_seconds=elapsed,
             result=result,
+            idempotency_key=task.idempotency_key,
+            capability_version=task.capability_version,
+            retry_count=retry_attempt,
         )
         audit = {
+            "event": "TASK_COMPLETED",
             "authority": "DEEPSEEK_HARNESS",
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
@@ -272,14 +426,18 @@ class HermesHarnessCapabilityBroker:
             "retrieved_memory_ids": [
                 item.get("memory_id")
                 for item in (
-                    (decision.policy_metadata.get("bounded_memory_context") or {}).get("operational_memory") or ()
+                    (decision.policy_metadata.get("bounded_memory_context") or {}).get(
+                        "operational_memory"
+                    ) or ()
                 )
                 if item.get("memory_id")
             ],
             "retrieved_human_decision_ids": [
                 item.get("decision_id")
                 for item in (
-                    (decision.policy_metadata.get("bounded_memory_context") or {}).get("conversation_memory") or ()
+                    (decision.policy_metadata.get("bounded_memory_context") or {}).get(
+                        "conversation_memory"
+                    ) or ()
                 )
                 if item.get("decision_id")
             ],
@@ -294,7 +452,7 @@ class HermesHarnessCapabilityBroker:
             "capability_version": task.capability_version,
             "human_correction": False,
             "review_rejection": False,
-            "retry_count": 0,
+            "retry_count": retry_attempt,
             "policy_violations": 0,
             "cost": 0.0,
             "evidence_ref": result_row["evidence_ref"],
@@ -303,6 +461,7 @@ class HermesHarnessCapabilityBroker:
         return {
             "authority": "DEEPSEEK_HARNESS",
             "executed": True,
+            "reused": False,
             "capability_id": capability_id,
             "agent_id": record.agent_id,
             "routing_id": decision.routing_id,
@@ -311,6 +470,26 @@ class HermesHarnessCapabilityBroker:
             "evidence_ref": result_row["evidence_ref"],
             "result": _jsonable(result),
         }
+
+    def retry_delegated_capability(
+        self,
+        *,
+        failure: DelegatedCapabilityFailure,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        task = self._task(failure.task_id)
+        if failure.capability_id != task.capability_id:
+            raise PermissionError("retry capability differs from TaskEnvelope")
+        if failure.requires_harness_replan or not failure.retry_allowed:
+            raise PermissionError(
+                "retry exhausted; capability/strategy change requires DeepSeek Harness replan"
+            )
+        return self.execute_delegated_capability(
+            task_id=failure.task_id,
+            capability_id=failure.capability_id,
+            payload=payload,
+            retry_attempt=failure.retry_attempt + 1,
+        )
 
     def parent_context(self, *, task_id: str) -> dict[str, Any]:
         task = self._task(task_id)
