@@ -3,20 +3,19 @@
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
   "diagnostic_only": true,
-  "requested_base_sha": "26f3694922df58abe6ccc3654e321909a49412b1",
-  "mode": "DIAGNOSTIC_READONLY_WORKER_IDENTITY_THEN_TOOL_BUDGET",
-  "previous_failed_run_id": 35787664138,
-  "previous_blocker": "worker engine is not registered by the Harness",
-  "fixed_capability": "agent-office.codex.readonly-analysis",
-  "canonical_agent_id": "codex-readonly",
-  "worker_runner_key": "codex-readonly",
-  "fix_sha": "26f3694922df58abe6ccc3654e321909a49412b1",
-  "validation_runs": {
-    "agent_office": 35789188477,
-    "harness_intelligence": 35789188309,
-    "br_no_gta_ci": 35789189055
+  "requested_base_sha": "d27fce527ea8d9cf05b53e016081777b5c886ba7",
+  "mode": "PERFORMANCE_INSTRUMENTED_BASELINE_ONLY",
+  "baseline_run_id": 35789429747,
+  "observability_head": "d27fce527ea8d9cf05b53e016081777b5c886ba7",
+  "objective": "Measure the real end-to-end critical path, worker attempts, Codex process launches, git invocations, context bytes, duplicate work and retries without applying a functional optimization.",
+  "restrictions": {
+    "functional_fix_during_run": false,
+    "second_phase": false,
+    "tool_call_budget_change": false,
+    "retry_budget_change": false,
+    "qa_reduction": false,
+    "authority_change": false
   },
-  "target": "Prove readonly worker identity registration is fixed; continue first real mission; if bounded-development executes, persist codex-tool-budget/v1; stop at first new blocker; never auto-dispatch second phase",
   "live_run_budget": 1,
   "no_parallel_proof": true
 }
