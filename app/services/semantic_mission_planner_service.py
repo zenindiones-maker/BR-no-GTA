@@ -671,7 +671,10 @@ def build_semantic_planner_prompt(
         "bad-path notes<=3 each, rationale=one short sentence. Do not repeat goal "
         "or explain capability IDs. Native wire keys are g,a,o,t,why,ctx,u,ask,q,"
         "mem,reuse,avoid; task keys id,obj,cls,need,caps,dep,out,ok,risk,act. "
-        "Set need='' when caps is nonempty. Prefer 2-4 tasks when sufficient; "
+        "Wire types are strict: u is exactly one JSON number in 0..1 (never "
+        "array/object/string); ask is boolean; q is null|string; a,o,ctx,mem,"
+        "reuse,avoid,caps,dep,ok are arrays of strings; t is an array of task "
+        "objects. Set need='' when caps is nonempty. Prefer 2-4 tasks when sufficient; "
         "use <=%d tasks; clarify only if required for a safe feasible plan." % max_tasks
     )
     return "\n".join(
