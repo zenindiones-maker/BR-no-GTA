@@ -19,9 +19,11 @@ def test_candidate_requires_real_acoustic_selection():
     chars={x["identity"]:x for x in d["entries"] if str(x.get("identity","")).startswith("character-")}
     assert set(chars)=={"character-jason","character-lucia"}
     assert all(x["locale"]=="pt-BR" for x in chars.values())
-    assert chars["character-jason"]["reference_status"]=="ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED"\n    assert chars["character-lucia"]["reference_status"]=="HUMAN_CORRECTED_ALIAS"
+    assert chars["character-jason"]["reference_status"]=="ROCKSTAR_TRAILER2_ACOUSTIC_SELECTION_REQUIRED"
+    assert chars["character-lucia"]["reference_status"]=="HUMAN_CORRECTED_ALIAS"
     assert all("synthesis_text" not in x for x in chars.values())
-    assert all(x.get("synthesis_candidates") for x in chars.values())\n    assert chars["character-lucia"]["human_selected_synthesis_alias"]=="Lucía"
+    assert all(x.get("synthesis_candidates") for x in chars.values())
+    assert chars["character-lucia"]["human_selected_synthesis_alias"]=="Lucía"
 
 def test_runtime_aliases_do_not_split_ptbr_sentence(tmp_path):
     d=load(CANDIDATE)

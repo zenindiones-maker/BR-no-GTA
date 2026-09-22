@@ -1,14 +1,158 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import requests
 
 from app.services.performance_telemetry_service import PerformanceSpan
+
+
+MAX_TELEGRAM_UPLOAD_BYTES = 50 * 1024 * 1024
+TARGET_PROXY_BYTES = 44 * 1024 * 1024
+FALLBACK_PROXY_BYTES = 38 * 1024 * 1024
+
+
+def _single_mp4(root: Path) -> Path:
+    matches = sorted(path for path in root.rglob("*.mp4") if path.is_file())
+    if len(matches) != 1:
+        raise RuntimeError(f"expected exactly one rendered MP4, found {len(matches)}")
+    return matches[0]
+
+
+def _duration_seconds(path: Path) -> float:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    value = json.loads(completed.stdout)["format"]["duration"]
+    duration = float(value)
+    if duration <= 0:
+        raise RuntimeError("render duration must be positive")
+    return duration
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _video_bitrate_kbps(
+    duration: float,
+    target_bytes: int,
+    *,
+    audio_kbps: int = 48,
+) -> int:
+    total_kbps = int((target_bytes * 8) / duration / 1000)
+    return max(96, min(2500, total_kbps - audio_kbps - 12))
+
+
+def _encode_proxy(
+    source: Path,
+    target: Path,
+    *,
+    duration: float,
+    target_bytes: int,
+) -> None:
+    video_kbps = _video_bitrate_kbps(duration, target_bytes)
+    width = 854 if video_kbps >= 180 else 640
+    scale = f"scale='min({width},iw)':-2"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+            "-vf",
+            scale,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-profile:v",
+            "main",
+            "-pix_fmt",
+            "yuv420p",
+            "-b:v",
+            f"{video_kbps}k",
+            "-maxrate",
+            f"{max(video_kbps + 24, int(video_kbps * 1.12))}k",
+            "-bufsize",
+            f"{max(256, video_kbps * 2)}k",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "48k",
+            "-ac",
+            "2",
+            "-ar",
+            "44100",
+            "-movflags",
+            "+faststart",
+            str(target),
+        ],
+        check=True,
+    )
+
+
+def build_review_proxy(
+    source: Path,
+    output_dir: Path,
+) -> tuple[Path, dict[str, Any]]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_duration = _duration_seconds(source)
+    proxy = output_dir / "telegram-review.mp4"
+    _encode_proxy(
+        source,
+        proxy,
+        duration=source_duration,
+        target_bytes=TARGET_PROXY_BYTES,
+    )
+    if proxy.stat().st_size >= MAX_TELEGRAM_UPLOAD_BYTES:
+        _encode_proxy(
+            source,
+            proxy,
+            duration=source_duration,
+            target_bytes=FALLBACK_PROXY_BYTES,
+        )
+    size = proxy.stat().st_size
+    if size >= MAX_TELEGRAM_UPLOAD_BYTES:
+        raise RuntimeError(
+            "Telegram review proxy is too large after fallback compression: "
+            f"{size} bytes"
+        )
+    proxy_duration = _duration_seconds(proxy)
+    duration_tolerance = max(0.5, source_duration * 0.001)
+    if abs(proxy_duration - source_duration) > duration_tolerance:
+        raise RuntimeError("Telegram review proxy duration does not match the master")
+    return proxy, {
+        "duration_seconds": proxy_duration,
+        "source_duration_seconds": source_duration,
+        "size_bytes": size,
+        "sha256": _sha256(proxy),
+    }
 
 
 def _load_upload_result(path: Path) -> dict[str, Any]:
