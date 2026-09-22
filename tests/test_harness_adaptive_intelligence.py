@@ -4,6 +4,11 @@ from app.services.harness_adaptive_planning_service import (
     select_capability_for_requirement,
 )
 from app.services.provider_health_service import provider_health
+from app.services.semantic_mission_planner_service import (
+    MissionPlanProposal,
+    expand_compact_mission_plan_mapping,
+    mission_plan_json_schema,
+)
 from app.services.harness_collaboration_service import (
     build_goal_envelope,
     plan_mission_from_human_goal,
@@ -70,6 +75,58 @@ def test_semantic_context_retrieval_is_bounded_and_keeps_relevant_system_capabil
     assert "system.improvement.propose" in ids
     assert all(item["type"] != "PROVIDER" for item in rows)
     assert all("actions" in item for item in rows)
+
+def test_compact_wire_expands_to_canonical_mission_plan():
+    wire = {
+        "g": "Diagnosticar lentidão antes de alterar.",
+        "a": ["causa ainda não comprovada"],
+        "o": ["causa comprovada"],
+        "t": [
+            {
+                "id": "inspect",
+                "obj": "medir gargalo observado",
+                "cls": "system-root-cause-analysis",
+                "need": "",
+                "caps": ["agent-office.codex.readonly-analysis"],
+                "dep": [],
+                "out": "RootCauseEvidence",
+                "ok": ["causa ligada a evidência"],
+                "risk": "RO",
+                "act": "D",
+            }
+        ],
+        "why": "Observar antes de mutar.",
+        "ctx": ["latência aumentou"],
+        "u": 0.25,
+        "ask": False,
+        "q": None,
+        "mem": [],
+        "reuse": [],
+        "avoid": [],
+    }
+    canonical = expand_compact_mission_plan_mapping(wire)
+    proposal = MissionPlanProposal.from_mapping(canonical, max_tasks=8)
+
+    assert proposal.tasks[0].action == "DEVELOPMENT"
+    assert proposal.tasks[0].risk_side_effect_class == "READ_ONLY"
+    assert proposal.tasks[0].required_capability_description == ""
+    assert proposal.tasks[0].candidate_capability_ids == (
+        "agent-office.codex.readonly-analysis",
+    )
+
+
+def test_compact_native_schema_uses_short_wire_keys():
+    schema = mission_plan_json_schema(max_tasks=8)
+
+    assert "g" in schema["properties"]
+    assert "t" in schema["properties"]
+    assert "interpreted_goal" not in schema["properties"]
+    task = schema["properties"]["t"]["items"]
+    assert "obj" in task["properties"]
+    assert "caps" in task["properties"]
+    assert task["properties"]["act"]["enum"] == ["C", "D", "E", "R", "X"]
+    assert task["properties"]["risk"]["enum"] == ["EXT", "H", "L", "M", "RO"]
+
 
 def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_once():
     context = {
