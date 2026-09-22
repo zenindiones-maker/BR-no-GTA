@@ -23,9 +23,11 @@ from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
+    CODEX_TUXEVIL_AUTH_MODE,
     codex_bounded_development_worker,
     codex_execution_failure,
     codex_sanitized_environment,
+    codex_tuxevil_provider_args,
     is_codex_sandbox_host_policy_failure,
 )
 from app.services.agent_office.addy_task_owner_worker import (
@@ -287,13 +289,15 @@ def codex_readonly_worker(
             raise subprocess.TimeoutExpired(["codex"], timeout_seconds)
         return value
 
-    auth = _codex_process(
-        ["codex", "login", "status"],
-        cwd=workspace,
-        timeout_seconds=remaining(),
-    )
-    if auth.returncode != 0:
-        raise RuntimeError("Codex authentication prerequisite is unavailable")
+    provider_args = codex_tuxevil_provider_args()
+    if not provider_args:
+        auth = _codex_process(
+            ["codex", "login", "status"],
+            cwd=workspace,
+            timeout_seconds=remaining(),
+        )
+        if auth.returncode != 0:
+            raise RuntimeError("Codex authentication prerequisite is unavailable")
 
     prompt = (
         "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
@@ -308,6 +312,7 @@ def codex_readonly_worker(
     )
     command = [
         "codex",
+        *provider_args,
         *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
         "exec",
         "--ephemeral",
@@ -372,6 +377,14 @@ def codex_readonly_worker(
             "canonical_addy_bypass": False,
             "observed_command_count": len(observed_commands),
             "inspected_paths": list(inspected_paths),
+            "codex_auth_method": (
+                CODEX_TUXEVIL_AUTH_MODE
+                if provider_args
+                else "EXISTING_CODEX_LOGIN"
+            ),
+            "codex_responses_endpoint": (
+                "TUXEVIL_LOOPBACK" if provider_args else "DEFAULT"
+            ),
         },
     }
 
