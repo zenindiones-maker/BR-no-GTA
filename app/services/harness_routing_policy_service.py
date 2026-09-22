@@ -18,6 +18,7 @@ from app.services.zero_cost_policy_service import (
     ZERO_COST_OPERATION,
     assess_zero_cost,
 )
+from app.services.provider_health_service import runtime_provider_binding
 
 
 _MATURITY_RANK = {
@@ -288,16 +289,22 @@ def _provider_records(
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
         if request.zero_cost_operation:
-            assessment = assess_zero_cost(
-                record.cost_class,
-                quota_available=(provider_id not in exhausted_free_quota),
+            runtime_binding = runtime_provider_binding(provider_id)
+            runtime_zero_cost = bool(
+                runtime_binding is not None
+                and runtime_binding.get("zero_cost_eligible") is True
             )
-            if not assessment.eligible:
-                reasons.append(
-                    assessment.reason.value
-                    if assessment.reason
-                    else "ZERO_COST_POLICY_BLOCKED"
+            if not runtime_zero_cost:
+                assessment = assess_zero_cost(
+                    record.cost_class,
+                    quota_available=(provider_id not in exhausted_free_quota),
                 )
+                if not assessment.eligible:
+                    reasons.append(
+                        assessment.reason.value
+                        if assessment.reason
+                        else "ZERO_COST_POLICY_BLOCKED"
+                    )
 
         if reasons:
             rejected.append(
@@ -579,7 +586,16 @@ def route_harness_request(
         if provider is not None
         else None
     )
-    selected_model = provider.model_id if provider is not None else None
+    runtime_provider = (
+        runtime_provider_binding(selected_provider)
+        if selected_provider
+        else None
+    )
+    selected_model = (
+        provider.model_id
+        if provider is not None and provider.model_id
+        else str((runtime_provider or {}).get("model_id") or "") or None
+    )
     evidence_expectations = tuple(
         expectation
         for expectation in (
@@ -672,6 +688,10 @@ def route_harness_request(
             and item.get("evidence_sufficient") is True
         ],
         "selected_provider_cost_class": provider.cost_class if provider is not None else None,
+        "runtime_provider_binding_used": bool(runtime_provider),
+        "runtime_provider_evidence_refs": list(
+            (runtime_provider or {}).get("evidence_refs") or ()
+        ),
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "selected_implementation": {
             "type": capability.capability_type,
