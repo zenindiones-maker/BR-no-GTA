@@ -804,6 +804,73 @@ def test_codex_shell_wrapper_validates_inner_allowlisted_tools():
     )
 
 
+def test_python3_is_only_a_canonical_alias_for_allowlisted_python():
+    _validate_command(
+        "python3 -m pytest -q tests/test_agent_office.py",
+        ("python", "pytest"),
+    )
+    with pytest.raises(PermissionError, match="COMMAND_ALLOWLIST"):
+        _validate_command(
+            "python3 -m pytest -q tests/test_agent_office.py",
+            ("pytest",),
+        )
+
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    assert "python" in record.allowed_tools
+    assert "python3" not in record.allowed_tools
+
+
+def test_munder_lease_command_validation_uses_same_python_alias():
+    from datetime import datetime, timedelta, timezone
+    from app.services.agent_office.delegation import (
+        DelegatedTaskLease,
+        MANDATORY_FORBIDDEN_ACTIONS,
+    )
+
+    lease = DelegatedTaskLease(
+        mission_id="alias-mission",
+        task_id="alias-task",
+        goal_id="alias-goal",
+        harness_decision_id="alias-decision",
+        authorization_id="alias-auth",
+        delegation_id="delegation:alias-mission:alias-task",
+        agent_id="codex-development",
+        capability_ids=("agent-office.codex.bounded-development",),
+        base_sha="a" * 40,
+        allowed_paths=("app",),
+        allowed_tools=("python",),
+        allowed_actions=("analyze", "edit", "commit_candidate"),
+        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+        input_artifact_refs=(),
+        expected_outputs=("candidate",),
+        acceptance_criteria=("bounded",),
+        evidence_requirements=("evidence",),
+        time_budget_seconds=60,
+        cost_budget=0.0,
+        tool_call_budget=4,
+        retry_budget=0,
+        max_parallelism=1,
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+        escalation_conditions=("scope_change",),
+        owned_task_class="bounded-development",
+        role="SPECIALIST_TASK_OWNER",
+        read_set=("app",),
+        write_set=("app",),
+    )
+    munder_adapter._commands_within_lease(
+        ["python3 -c 'print(1)'"],
+        lease,
+    )
+    with pytest.raises(PermissionError, match="outside allowed_tools"):
+        munder_adapter._commands_within_lease(
+            ["ruby -e 'puts 1'"],
+            lease,
+        )
+
+
 def test_bounded_codex_registry_allows_only_explicit_readonly_inspection_extensions():
     record = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
