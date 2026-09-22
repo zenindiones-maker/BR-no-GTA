@@ -456,6 +456,11 @@ def codex_bounded_development_worker(
         f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}\n"
         f"EXPECTED_OUTPUTS={json.dumps(lease.expected_outputs)}\n"
         f"OBJECTIVE={task.objective}\n"
+        "MUTATION_REQUIRED=true\n"
+        "A successful bounded-development task MUST leave at least one real working-tree "
+        "change inside WRITE_SET before returning. Analysis-only success is invalid. "
+        "If the objective leaves multiple safe options, choose the smallest evidence-backed "
+        "change that satisfies the acceptance criteria without widening scope. "
         "Return a concise engineering summary only after local validation. "
         "When the objective or acceptance criteria require a measurable improvement, "
         "measure the same metric before and after the candidate using local allowed tools. "
@@ -498,13 +503,77 @@ def codex_bounded_development_worker(
         _validate_command(observed, lease.allowed_tools)
 
     changed = _changed_paths(workspace, lease.base_sha)
+    candidate_repair_used = False
+    final_text = _final_text(completed.stdout)
     if not changed:
-        raise RuntimeError("Codex bounded-development produced no candidate patch")
+        candidate_repair_used = True
+        if len(observed_commands) >= lease.tool_call_budget:
+            raise RuntimeError("Codex exceeded tool_call_budget")
+        candidate_repair_prompt = (
+            "NO_CANDIDATE_PATCH_DETECTED. The previous bounded-development pass "
+            "returned without any working-tree change, so it did not satisfy the "
+            "authorized mutation contract. Continue inside the SAME lease and SAME "
+            "disposable worktree. Produce the smallest safe real candidate change "
+            "entirely inside WRITE_SET, validate it locally, and do not only analyze "
+            "or describe a possible change. Do not commit; the deterministic Agent "
+            "Office boundary will create the candidate commit. Do not widen scope, "
+            "change authority/policy, access secrets, use network tools, publish, "
+            "deploy, push, merge, fetch, checkout, reset, or stash. If no safe change "
+            "can satisfy the objective, report a blocker rather than claiming success.\n\n"
+            f"TASK_ID={lease.task_id}\n"
+            f"DELEGATION_ID={lease.delegation_id}\n"
+            f"BASE_SHA={lease.base_sha}\n"
+            f"WRITE_SET={json.dumps(lease.write_set)}\n"
+            f"READ_SET={json.dumps(lease.read_set)}\n"
+            f"ALLOWED_TOOLS={json.dumps(lease.allowed_tools)}\n"
+            f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}\n"
+            f"EXPECTED_OUTPUTS={json.dumps(lease.expected_outputs)}\n"
+            f"OBJECTIVE={task.objective}\n"
+            "MUTATION_REQUIRED=true"
+        )
+        candidate_repair_command = [
+            "codex",
+            *provider_args,
+            *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--color", "never",
+            "--json",
+            "--sandbox", "workspace-write",
+            "-C", str(workspace),
+            candidate_repair_prompt,
+        ]
+        candidate_repair = _run(
+            candidate_repair_command,
+            cwd=workspace,
+            timeout=remaining(),
+            sanitized_env=True,
+        )
+        candidate_repair_failure = codex_execution_failure(
+            candidate_repair,
+            failure_stage="bounded_development_candidate_repair",
+        )
+        if candidate_repair_failure is not None:
+            return candidate_repair_failure
+
+        candidate_repair_commands = _commands(candidate_repair.stdout)
+        if len(observed_commands) + len(candidate_repair_commands) > lease.tool_call_budget:
+            raise RuntimeError("Codex exceeded tool_call_budget")
+        for observed in candidate_repair_commands:
+            _validate_command(observed, lease.allowed_tools)
+        observed_commands = (*observed_commands, *candidate_repair_commands)
+        changed = _changed_paths(workspace, lease.base_sha)
+        if not changed:
+            raise RuntimeError("Codex bounded-development produced no candidate patch")
+        candidate_repair_text = _final_text(candidate_repair.stdout)
+        if candidate_repair_text:
+            final_text = candidate_repair_text
+
     outside = tuple(path for path in changed if not lease.allows_path(path, write=True))
     if outside:
         raise PermissionError(f"Codex changed paths outside lease: {outside}")
 
-    final_text = _final_text(completed.stdout)
     metric = _structured_metric(final_text)
     measurement_required = _measurement_required(task, lease)
     metric_repair_used = False
@@ -611,6 +680,7 @@ def codex_bounded_development_worker(
         "summary": final_text or "Codex bounded candidate created",
         "performance_evidence": metric,
         "measurement_required": measurement_required,
+        "candidate_repair_used": candidate_repair_used,
         "metric_repair_used": metric_repair_used,
         "commands": list(observed_commands),
         "artifacts": [f"candidate-commit:{candidate_sha}"],
