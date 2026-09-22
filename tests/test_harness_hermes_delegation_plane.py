@@ -537,6 +537,73 @@ def test_semantic_live_inference_preserves_harness_authority(monkeypatch):
     assert provider_evidence["planner_authority"] == "NONE"
 
 
+def test_semantic_schema_replan_rejects_invalid_uncertainty_type_without_coercion(
+    monkeypatch,
+):
+    invalid = {
+        "interpreted_goal": "inspect repository safely",
+        "assumptions": [],
+        "required_outcomes": ["bounded observation"],
+        "tasks": [
+            {
+                "task_id": "observe",
+                "objective": "Inspect current repository evidence",
+                "task_class": "readonly-analysis",
+                "required_capability_description": "bounded repository analysis",
+                "candidate_capability_ids": [],
+                "dependencies": [],
+                "expected_output": "analysis evidence",
+                "acceptance_criteria": ["stay read only"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "DEVELOPMENT",
+            }
+        ],
+        "rationale": "observe before mutation",
+        "context_usage_notes": [],
+        "uncertainty": [0.2],
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+    valid = dict(invalid)
+    valid["uncertainty"] = 0.2
+
+    with pytest.raises(ValueError, match="uncertainty must be numeric"):
+        semantic_planner_module.MissionPlanProposal.from_mapping(
+            invalid,
+            max_tasks=4,
+        )
+
+    prompts = []
+    def inference(prompt, _context):
+        prompts.append(prompt)
+        return invalid if len(prompts) == 1 else valid
+
+    monkeypatch.setattr(
+        adaptive,
+        "proposal_registry_errors",
+        lambda _proposal: (),
+    )
+    result, evidence = adaptive.propose_validated_semantic_plan(
+        {
+            "human_goal": "Inspect repository and plan safely",
+            "resource_bounds": {"max_tasks_per_mission": 4},
+        },
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert result.proposal.uncertainty == 0.2
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert len(prompts) == 2
+    assert "u is exactly one JSON number in 0..1" in prompts[0]
+    assert "uncertainty must be numeric" in prompts[1]
+    assert "u must be exactly one JSON number in 0..1" in prompts[1]
+
+
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
     monkeypatch.setenv(
         "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
