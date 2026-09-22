@@ -390,6 +390,55 @@ def _final_text(stdout: str) -> str:
 
 _SHELL_WRAPPER_TOOLS = {"bash", "sh"}
 _SHELL_OPERATORS = {"&&", "||", ";", "|"}
+_SAFE_SED_PRINT_SCRIPT_RE = re.compile(
+    r"^(?:(?:\d+|\$)(?:,(?:\d+|\$))?|/[^\n/]{1,240}/)p$"
+)
+
+
+def _validate_readonly_sed(parts: list[str]) -> None:
+    args = parts[1:]
+    if not args:
+        raise PermissionError("sed command is outside the read-only inspection contract")
+    if any(
+        arg == "-i"
+        or arg.startswith("-i")
+        or arg == "--in-place"
+        or arg.startswith("--in-place=")
+        or arg in {"-f", "--file"}
+        for arg in args
+    ):
+        raise PermissionError("sed mutation/script-file mode is forbidden")
+
+    quiet = False
+    scripts: list[str] = []
+    paths: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in {"-n", "--quiet", "--silent"}:
+            quiet = True
+            index += 1
+            continue
+        if arg in {"-e", "--expression"}:
+            if index + 1 >= len(args):
+                raise PermissionError("sed expression is missing")
+            scripts.append(args[index + 1].strip())
+            index += 2
+            continue
+        if arg.startswith("-"):
+            raise PermissionError("sed option is outside the read-only inspection contract")
+        if not scripts:
+            scripts.append(arg.strip())
+        else:
+            paths.append(arg)
+        index += 1
+
+    if not quiet or not scripts or not paths:
+        raise PermissionError("sed must use quiet print-only inspection with explicit paths")
+    if any(not _SAFE_SED_PRINT_SCRIPT_RE.fullmatch(script) for script in scripts):
+        raise PermissionError("sed script is outside the read-only print contract")
+
+
 
 
 def _shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
@@ -450,6 +499,9 @@ def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
         return
     if tool not in allowed_tools:
         raise PermissionError(f"Codex command is outside COMMAND_ALLOWLIST: {tool}")
+    if tool == "sed":
+        _validate_readonly_sed(parts)
+        return
 
 
 def _candidate_commit(
