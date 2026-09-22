@@ -252,10 +252,13 @@ def authorized_provider_model_binding(
 
 
 def _runtime_provider_health_override(
-    provider_id: str,
+    record: Any,
 ) -> ProviderHealth | None:
-    binding = runtime_provider_binding(provider_id)
-    if binding is None:
+    binding = authorized_provider_model_binding(record)
+    if (
+        binding is None
+        or binding.get("source") != "CURRENT_RUN_RUNTIME_PROOF"
+    ):
         return None
     return ProviderHealth(
         provider_id=str(binding["provider_id"]),
@@ -359,7 +362,7 @@ def provider_health(provider_id: str) -> ProviderHealth:
             zero_cost_eligible=assessment.eligible,
         )
 
-    runtime_override = _runtime_provider_health_override(provider)
+    runtime_override = _runtime_provider_health_override(record)
     if runtime_override is not None:
         return runtime_override
     external_auth_markers = (
