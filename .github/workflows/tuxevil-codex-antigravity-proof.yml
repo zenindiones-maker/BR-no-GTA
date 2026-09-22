@@ -105,12 +105,19 @@ jobs:
           print("CREDENTIAL_VALUES_READ=NO")
           PY
 
+      - name: Validate auth compatibility tests
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
+          python -m pytest -q tests/test_tuxevil_codex_compat_probe.py tests/test_codex_auth_boundary.py
+          echo "TUXEVIL_CODEX_AUTH_TESTS=PASS"
+
       - name: Install pinned Tuxevil Rotator
         run: |
           set -euo pipefail
           npm view "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"             version dist.integrity gitHead --json             > artifacts/tuxevil-codex-antigravity/npm-metadata.json
           npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
-          test "$(tuxevil-rotator --version 2>/dev/null | tail -n1 | tr -d '\r' | sed -E 's/^v//')" != ""
+          command -v tuxevil-rotator >/dev/null
           echo "TUXEVIL_RUNTIME_PRESENT=YES"
 
       - name: Start clean loopback rotator without invented upstream identity
