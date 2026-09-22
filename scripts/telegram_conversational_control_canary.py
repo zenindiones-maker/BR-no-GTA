@@ -223,8 +223,6 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
                 json.dumps(hermes_start, ensure_ascii=False, indent=2, default=str) + "\n",
                 encoding="utf-8",
             )
-            for line in hermes_start["progress"]:
-                api.send(chat_id, line)
             return {
                 "status": "WAITING_FOR_HUMAN",
                 "answer": (
@@ -257,8 +255,6 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
                 upstream_root=upstream_root,
                 artifact_dir=hermes_dir,
             )
-            for line in hermes_resume["progress"]:
-                api.send(chat_id, line)
             return {
                 "status": "COMPLETED_WITH_PROVIDER_BLOCK",
                 "answer": (
@@ -485,15 +481,16 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
             and research["canonical_result"].get("semantic_synthesis_used") is False
             and research["canonical_result"].get("query") == "Pesquisa a novidade X"
         ),
-        "PROGRESS_TO_TELEGRAM_LIVE": (
-            any(
-                "Pesquisando exatamente" in text
-                or text.startswith("AÇÃO:")
-                or text.startswith("STATUS:")
-                or text.startswith("REVIEW:")
+        "PROGRESS_HEARTBEAT_TELEGRAM_EGRESS_ZERO": (
+            not any(
+                text.startswith(("AÇÃO:", "STATUS:", "REVIEW:", "AGUARDANDO VOCÊ:", "RESULTADO:"))
                 for text in all_messages
             )
             and not any("UNDERSTANDING" in text for text in all_messages)
+        ),
+        "EXPLICIT_HUMAN_MESSAGE_REPLY": (
+            any("Pesquisei exatamente o seu pedido" in text for text in all_messages)
+            and any("A equipe terminou as etapas provider-free" in text for text in all_messages)
         ),
         "HARNESS_STATUS_AGGREGATION": (
             waiting_status["canonical_result"]["control_surface_status"]["hermes_mission_id"]
@@ -509,12 +506,13 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
             and start_statuses.get("script-review") == "done"
             and start_statuses.get("gta6-brain") == "blocked"
         ),
-        "HERMES_TO_TELEGRAM_PROGRESS": (
-            any(text.startswith("AÇÃO:") for text in all_messages)
-            and any(text.startswith("STATUS:") for text in all_messages)
-            and any(text.startswith("REVIEW:") for text in all_messages)
-            and any(text.startswith("AGUARDANDO VOCÊ:") for text in all_messages)
-            and any(text.startswith("RESULTADO:") for text in all_messages)
+        "HERMES_PROGRESS_AUDIT_ONLY": (
+            bool((hermes_start or {}).get("progress"))
+            and bool((hermes_resume or {}).get("progress"))
+            and not any(
+                text.startswith(("AÇÃO:", "STATUS:", "REVIEW:", "AGUARDANDO VOCÊ:", "RESULTADO:"))
+                for text in all_messages
+            )
         ),
         "PENDING_ACTION_PERSISTED": (
             waiting_pending_action.get("mission_id") == f"telegram-control-synergy-{chat_id}"
@@ -588,7 +586,12 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         "conversation_id": final_state["conversation_id"],
         "final_state": final_state,
         "human_decisions": decisions,
-        "gateway_progress": all_messages,
+        "human_replies": all_messages,
+        "hermes_progress_audit": {
+            "start": list((hermes_start or {}).get("progress") or ()),
+            "resume": list((hermes_resume or {}).get("progress") or ()),
+            "telegram_egress": 0,
+        },
         "hermes_start": hermes_start,
         "hermes_resume": hermes_resume,
         "sequence": {
