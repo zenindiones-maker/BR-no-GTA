@@ -459,35 +459,14 @@ def _extract_attachment(message: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _pairing_private_message(update: dict[str, Any]) -> tuple[int, int, dict[str, Any], str] | None:
-    """Private-chat parser used only for first-time pairing.
+def _pairing_private_message(update: dict[str, Any]) -> None:
+    """Legacy private pairing is intentionally disabled.
 
-    Live ingress is owned by telegram_ingress_policy_service and supports
-    private/group/supergroup under the paired-sender + allowed-chat policy.
+    The only human interaction surface is an explicitly authorized Telegram
+    group/supergroup. Keep this symbol only for compatibility with old imports.
     """
-    message = update.get("message")
-    if not isinstance(message, dict):
-        return None
-    chat = message.get("chat")
-    sender = message.get("from")
-    if not isinstance(chat, dict) or chat.get("type") != "private":
-        return None
-    if not isinstance(sender, dict):
-        return None
-    text = message.get("text")
-    if not isinstance(text, str):
-        text = message.get("caption")
-    if not isinstance(text, str):
-        text = ""
-    try:
-        return int(sender["id"]), int(chat["id"]), message, text.strip()
-    except (KeyError, TypeError, ValueError):
-        return None
 
-
-# Compatibility for old imports only. Never use this alias for live ingress.
-_private_message = _pairing_private_message
-
+    return None
 
 def _verify_attachment_remote(
     *,
