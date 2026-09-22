@@ -17,6 +17,7 @@ from app.services.harness_collaboration_service import (
 from app.services.harness_mission_execution_router import (
     select_mission_execution_route,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 
 
 NATURAL_GOAL = (
@@ -110,21 +111,27 @@ def run(
         raise AssertionError(
             "natural goal leaks implementation identity: " + ",".join(leaked)
         )
-    goal = build_goal_envelope(
-        human_goal=NATURAL_GOAL,
-        project="BR-no-GTA",
+    with PerformanceSpan(
+        stage="harness.planning.natural-goal-parse",
+        category="PLANNING_NATURAL_GOAL_PARSE_TIME",
+        input_size=len(NATURAL_GOAL.encode("utf-8")),
         goal_id=goal_id,
-        source_surface="github-actions-control",
-        canonical_state={
-            "authority": "DEEPSEEK_HARNESS",
-            "zero_cost_operation": True,
-            "learning_source_run_id": (
-                int(learning_source_run_id)
-                if int(learning_source_run_id) > 0
-                else 0
-            ),
-        },
-    )
+    ):
+        goal = build_goal_envelope(
+            human_goal=NATURAL_GOAL,
+            project="BR-no-GTA",
+            goal_id=goal_id,
+            source_surface="github-actions-control",
+            canonical_state={
+                "authority": "DEEPSEEK_HARNESS",
+                "zero_cost_operation": True,
+                "learning_source_run_id": (
+                    int(learning_source_run_id)
+                    if int(learning_source_run_id) > 0
+                    else 0
+                ),
+            },
+        )
     started = time.perf_counter()
     plan = plan_mission_from_human_goal(goal)
     planning_seconds = time.perf_counter() - started

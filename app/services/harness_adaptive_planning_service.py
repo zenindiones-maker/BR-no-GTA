@@ -17,6 +17,7 @@ from app.services.semantic_mission_planner_service import (
     SemanticPlannerResult,
     propose_semantic_mission_plan,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{2,}", re.IGNORECASE)
@@ -109,6 +110,35 @@ _RELEVANT_HISTORY_LIMIT = 8
 _RELEVANT_DECISION_LIMIT = 6
 _COMPETENCE_LIMIT = 16
 
+def _profiled_registry_get(capability_id: str):
+    with PerformanceSpan(
+        stage="harness.planning.registry.get",
+        category="PLANNING_REGISTRY_RETRIEVAL_TIME",
+        capability_id=str(capability_id or "") or None,
+        metadata={"registry_read_count": 1, "registry_operation": "get"},
+    ):
+        return GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+
+
+def _profiled_registry_discover(**kwargs):
+    with PerformanceSpan(
+        stage="harness.planning.registry.discover",
+        category="PLANNING_REGISTRY_RETRIEVAL_TIME",
+        metadata={"registry_read_count": 1, "registry_operation": "discover"},
+    ):
+        return GLOBAL_CAPABILITY_REGISTRY.discover(**kwargs)
+
+
+def _profiled_capability_health(capability_id: str):
+    with PerformanceSpan(
+        stage="harness.planning.health.capability",
+        category="PLANNING_HEALTH_LOOKUP_TIME",
+        capability_id=str(capability_id or "") or None,
+        metadata={"health_read_count": 1, "health_scope": "capability"},
+    ):
+        return capability_health(capability_id)
+
+
 _MISSION_RETRIEVAL_TERMS = {
     "SYSTEM_IMPROVEMENT": (
         "system improvement performance latency observability profiling debugging "
@@ -128,7 +158,7 @@ _MISSION_RETRIEVAL_TERMS = {
 
 def _compact_registry_record(record: Any) -> dict[str, Any]:
     try:
-        health = capability_health(record.capability_id).to_dict()
+        health = _profiled_capability_health(record.capability_id).to_dict()
     except Exception:
         health = {"state": "UNKNOWN", "reason": "health lookup unavailable"}
     return {
@@ -207,7 +237,7 @@ def _relevant_registry_summary(
     referenced: list[str] = []
     for capability_id in referenced_capability_ids:
         value = str(capability_id or "").strip()
-        record = GLOBAL_CAPABILITY_REGISTRY.get(value)
+        record = _profiled_registry_get(value)
         if (
             value
             and value not in referenced
@@ -222,7 +252,7 @@ def _relevant_registry_summary(
 
     discovered_ids = [
         str(item.get("capability_id") or "")
-        for item in GLOBAL_CAPABILITY_REGISTRY.discover(
+        for item in _profiled_registry_discover(
             intent=query,
             limit=48,
         )
@@ -234,7 +264,7 @@ def _relevant_registry_summary(
         if capability_id in seen:
             continue
         seen.add(capability_id)
-        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        record = _profiled_registry_get(capability_id)
         if (
             record is None
             or record.capability_type == "PROVIDER"
@@ -262,7 +292,7 @@ def _relevant_registry_summary(
     # canonical Registry after inference.
     if len(selected) < min(6, limit):
         selected_ids = {item[1] for item in selected}
-        for item in GLOBAL_CAPABILITY_REGISTRY.discover(
+        for item in _profiled_registry_discover(
             intent=_MISSION_RETRIEVAL_TERMS.get(
                 mission_class,
                 _MISSION_RETRIEVAL_TERMS["OPEN_SEMANTIC"],
@@ -272,7 +302,7 @@ def _relevant_registry_summary(
             capability_id = str(item.get("capability_id") or "")
             if not capability_id or capability_id in selected_ids:
                 continue
-            record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+            record = _profiled_registry_get(capability_id)
             if (
                 record is None
                 or record.capability_type == "PROVIDER"
@@ -393,7 +423,12 @@ def build_semantic_planning_context(
         goal.get("project"),
     )
 
-    memories = learning_repository.list_memories(status="ACTIVE", limit=120)
+    with PerformanceSpan(
+        stage="harness.planning.failure-memory.lookup",
+        category="PLANNING_FAILURE_MEMORY_LOOKUP_TIME",
+        metadata={"failure_memory_read_count": 1},
+    ):
+        memories = learning_repository.list_memories(status="ACTIVE", limit=120)
     ranked_memories = sorted(
         memories,
         key=lambda item: _relevance(item, goal_tokens),
@@ -465,17 +500,27 @@ def build_semantic_planning_context(
         for item in [*relevant_episodes, *decisions]
         if str(item.get("capability_id") or "").strip()
     ))
-    registry_summary = _relevant_registry_summary(
-        goal,
-        referenced_capability_ids=referenced_capability_ids,
-    )
+    with PerformanceSpan(
+        stage="harness.planning.registry-summary",
+        category="PLANNING_REGISTRY_RETRIEVAL_TIME",
+        metadata={"registry_summary_count": 1},
+    ):
+        registry_summary = _relevant_registry_summary(
+            goal,
+            referenced_capability_ids=referenced_capability_ids,
+        )
     registry_candidate_ids = {
         str(item.get("capability_id") or "")
         for item in registry_summary
         if str(item.get("capability_id") or "")
     }
 
-    competence_raw = learning_repository.list_competence(status="ACTIVE", limit=160)
+    with PerformanceSpan(
+        stage="harness.planning.competence.lookup",
+        category="PLANNING_COMPETENCE_LOOKUP_TIME",
+        metadata={"competence_read_count": 1},
+    ):
+        competence_raw = learning_repository.list_competence(status="ACTIVE", limit=160)
     competence = [
         compact_competence(item)
         for item in competence_raw
@@ -693,7 +738,7 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             dependencies=task.dependencies,
         )
         for capability_id in task.candidate_capability_ids:
-            record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+            record = _profiled_registry_get(capability_id)
             if record is None:
                 errors.append(
                     f"{task.task_id}: capability does not exist in Registry: {capability_id}"
@@ -755,7 +800,7 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                     f"{task.task_id}: {capability_id} exceeds READ_ONLY side effects"
                 )
                 continue
-            health = capability_health(capability_id)
+            health = _profiled_capability_health(capability_id)
             if health.state in {"BLOCKED", "QUARANTINED"}:
                 errors.append(
                     f"{task.task_id}: capability health {health.state}: "
@@ -806,7 +851,7 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                 continue
             if required_side_effect == "READ_ONLY" and mutation_capable:
                 continue
-            health = capability_health(record.capability_id)
+            health = _profiled_capability_health(record.capability_id)
             if health.state in {"BLOCKED", "QUARANTINED"}:
                 continue
             feasible = True
@@ -823,7 +868,7 @@ def _candidate_hint_is_hard_compatible(
     task: Any,
     capability_id: str,
 ) -> bool:
-    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    record = _profiled_registry_get(capability_id)
     if record is None:
         return True
     if (
@@ -1184,7 +1229,7 @@ def select_capability_for_requirement(
             f"action={str(requirement.get('action') or '').strip().upper()}:"
             f"allowed_actions={allowed}"
         )
-    discovered = GLOBAL_CAPABILITY_REGISTRY.discover(
+    discovered = _profiled_registry_discover(
         intent=str(requirement["query"]),
         authorized_action=str(requirement["action"]),
         limit=40,
@@ -1220,7 +1265,7 @@ def select_capability_for_requirement(
                 f"{capability_id}:execution-topology-not-task-capability"
             )
             continue
-        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        record = _profiled_registry_get(capability_id)
         if record is None or record.capability_type == "PROVIDER":
             continue
         if not record.execution_enabled or str(requirement["action"]) not in record.allowed_actions:
@@ -1286,7 +1331,7 @@ def select_capability_for_requirement(
                 str(failure.get("failure_pattern") or capability_id)
             )
             continue
-        health = capability_health(capability_id).to_dict()
+        health = _profiled_capability_health(capability_id).to_dict()
         health_state = str(health.get("state") or "UNKNOWN")
         if health_state in {"BLOCKED", "QUARANTINED"}:
             avoided.append(

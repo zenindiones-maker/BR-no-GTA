@@ -10,6 +10,7 @@ from typing import Any, Callable
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import HarnessAuthorization, validate_harness_authorization
 from app.services.harness_routing_policy_service import HarnessRoutingDecision
+from app.services.performance_telemetry_service import PerformanceSpan
 
 from .board_adapter import HermesBoardAdapter
 from .contracts import (
@@ -334,9 +335,21 @@ def execute_hermes_mission_capability(
         hermes_home=hermes_home,
         board_id=board_id,
     )
-    mapping, profiles = materialize_board_from_plan(spec=spec, board=board)
+    with PerformanceSpan(
+        stage="hermes.board.materialize",
+        category="HERMES_BOARD_MATERIALIZATION_TIME",
+        mission_id=spec.mission_id,
+        goal_id=spec.goal_id,
+    ):
+        mapping, profiles = materialize_board_from_plan(spec=spec, board=board)
     try:
-        runner(spec=spec, board=board, task_mapping=mapping, profiles=profiles)
+        with PerformanceSpan(
+            stage="hermes.coordination.runner",
+            category="HERMES_COORDINATION_TIME",
+            mission_id=spec.mission_id,
+            goal_id=spec.goal_id,
+        ):
+            runner(spec=spec, board=board, task_mapping=mapping, profiles=profiles)
     except TimeoutError as exc:
         snapshot = board.snapshot()
         timeout_board_path = out_dir / "hermes-board-timeout.json"
@@ -364,21 +377,35 @@ def execute_hermes_mission_capability(
         ) from exc
 
     board_path = out_dir / "hermes-board.json"
-    board.export(board_path)
-    snapshot = board.snapshot()
-    final_statuses = {
-        plan_id: str(board.get_task(board_id_value)["status"])
-        for plan_id, board_id_value in mapping.items()
-    }
-    evidence_ref = f"artifact:{board_path.name}"
-    episode_ids = capture_hermes_harness_episodes(
-        spec=spec,
-        profiles=profiles,
-        board_snapshot=snapshot,
-        plan_to_board_task=mapping,
-        board_evidence_ref=evidence_ref,
-        upstream_sha=upstream_sha,
-    )
+    with PerformanceSpan(
+        stage="hermes.artifact.capture",
+        category="HERMES_ARTIFACT_TIME",
+        mission_id=spec.mission_id,
+        goal_id=spec.goal_id,
+    ) as artifact_span:
+        board.export(board_path)
+        snapshot = board.snapshot()
+        final_statuses = {
+            plan_id: str(board.get_task(board_id_value)["status"])
+            for plan_id, board_id_value in mapping.items()
+        }
+        evidence_ref = f"artifact:{board_path.name}"
+        episode_ids = capture_hermes_harness_episodes(
+            spec=spec,
+            profiles=profiles,
+            board_snapshot=snapshot,
+            plan_to_board_task=mapping,
+            board_evidence_ref=evidence_ref,
+            upstream_sha=upstream_sha,
+        )
+        artifact_span.set(
+            metadata={
+                "kanban_op_count": len(snapshot.get("events") or ()) + len(snapshot.get("comments") or ()),
+                "kanban_event_count": len(snapshot.get("events") or ()),
+                "kanban_comment_count": len(snapshot.get("comments") or ()),
+                "kanban_run_count": len(snapshot.get("runs") or ()),
+            },
+        )
 
     reviews = tuple(
         event for event in snapshot["events"]

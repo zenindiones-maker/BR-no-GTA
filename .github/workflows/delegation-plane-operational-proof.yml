@@ -97,11 +97,39 @@ jobs:
       - name: Prepare canonical runtime and focused delegation gates
         run: |
           set -euo pipefail
+          perf_span() {
+            local stage="$1" category="$2" start_ns="$3"
+            local end_ns
+            end_ns="$(date +%s%N)"
+            PERF_STAGE="$stage" PERF_CATEGORY="$category" PERF_START_NS="$start_ns" PERF_END_NS="$end_ns" \
+              python - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          from app.services.performance_telemetry_service import emit_performance_event
+          start_ns=int(os.environ["PERF_START_NS"])
+          end_ns=int(os.environ["PERF_END_NS"])
+          def iso(ns):
+              return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat()
+          emit_performance_event(
+              stage=os.environ["PERF_STAGE"],
+              category=os.environ["PERF_CATEGORY"],
+              started_at=iso(start_ns),
+              finished_at=iso(end_ns),
+              duration_ms=max(0.0, (end_ns-start_ns)/1_000_000.0),
+              metadata={"source":"github-actions-substep"},
+          )
+          PY
+          }
+          other_start="$(date +%s%N)"
           mkdir -p artifacts/delegation-plane-operational/state .runtime
+          perf_span "delegation-plane.preflight.other.setup" "PREFLIGHT_OTHER_TIME" "$other_start"
+          pip_start="$(date +%s%N)"
           python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
           python -m pip install --disable-pip-version-check --no-input \
             psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 \
             rich==14.3.3 pathspec==1.1.1
+          perf_span "delegation-plane.preflight.pip-install" "PREFLIGHT_PIP_INSTALL_TIME" "$pip_start"
+          focused_start="$(date +%s%N)"
           python -m pytest -q \
             tests/test_harness_hermes_delegation_plane.py \
             tests/test_harness_adaptive_intelligence.py \
@@ -111,6 +139,8 @@ jobs:
             tests/test_harness_ai_provider_service.py \
             tests/test_semantic_planner_provider_contract.py \
             tests/test_codex_auth_boundary.py
+          perf_span "delegation-plane.preflight.focused-tests" "PREFLIGHT_FOCUSED_TESTS_TIME" "$focused_start"
+          codex_start="$(date +%s%N)"
           bash scripts/agent-tooling/bootstrap.sh codex
           tooling_root="${BR_AGENT_TOOLING_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/br-agent-tooling}"
           export PATH="$tooling_root/bin:$PATH"
@@ -120,12 +150,17 @@ jobs:
           install -d -m 700 "$codex_home"
           echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
           bash scripts/prepare_codex_linux_sandbox.sh
+          perf_span "delegation-plane.preflight.codex-bootstrap" "PREFLIGHT_CODEX_BOOTSTRAP_TIME" "$codex_start"
+          hermes_start="$(date +%s%N)"
           python scripts/bootstrap_hermes_agent.py \
             --target "$BR_HERMES_UPSTREAM_ROOT" \
             --output artifacts/delegation-plane-operational/hermes-upstream.json
           test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
           test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" status --porcelain)" = ""
+          perf_span "delegation-plane.preflight.hermes-bootstrap" "PREFLIGHT_HERMES_BOOTSTRAP_TIME" "$hermes_start"
+          other_start="$(date +%s%N)"
           npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
+          perf_span "delegation-plane.preflight.other.tuxevil-package" "PREFLIGHT_OTHER_TIME" "$other_start"
           echo "DELEGATION_PLANE_FOCUSED_GATES=PASS"
 
       - name: Restore first real execution and Learning Plane state
@@ -207,7 +242,31 @@ jobs:
         id: provider
         run: |
           set -euo pipefail
+          perf_span() {
+            local stage="$1" category="$2" start_ns="$3"
+            local end_ns
+            end_ns="$(date +%s%N)"
+            PERF_STAGE="$stage" PERF_CATEGORY="$category" PERF_START_NS="$start_ns" PERF_END_NS="$end_ns" \
+              python - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          from app.services.performance_telemetry_service import emit_performance_event
+          start_ns=int(os.environ["PERF_START_NS"])
+          end_ns=int(os.environ["PERF_END_NS"])
+          def iso(ns):
+              return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat()
+          emit_performance_event(
+              stage=os.environ["PERF_STAGE"],
+              category=os.environ["PERF_CATEGORY"],
+              started_at=iso(start_ns),
+              finished_at=iso(end_ns),
+              duration_ms=max(0.0, (end_ns-start_ns)/1_000_000.0),
+              metadata={"source":"github-actions-substep"},
+          )
+          PY
+          }
           raw_log="$RUNNER_TEMP/delegation-plane-tuxevil.raw.log"
+          startup_start="$(date +%s%N)"
           redacted_log="artifacts/delegation-plane-operational/tuxevil-rotator.redacted.log"
           nohup tuxevil-rotator start --config-dir "$TUXEVIL_OPERATIONAL_CONFIG_DIR" \
             > "$raw_log" 2>&1 &
@@ -237,6 +296,8 @@ jobs:
           assert d["ANTIGRAVITY_ACCOUNT_PRESENT"] == "YES"
           assert d["TUXEVIL_MODELS_READY"] == "PASS"
           PY
+          perf_span "delegation-plane.provider.tuxevil-startup" "TUXEVIL_STARTUP_TIME" "$startup_start"
+          live_proof_start="$(date +%s%N)"
 
           python scripts/tuxevil_codex_compat_probe.py \
             --output artifacts/delegation-plane-operational/tuxevil-responses-proof.json \
@@ -266,6 +327,7 @@ jobs:
           assert d["AUTH_SECRET_LEAK"] == "NO"
           print("model=" + str(d["selected_model"]))
           PY
+          perf_span "delegation-plane.provider.tuxevil-live-proof" "TUXEVIL_LIVE_PROOF_TIME" "$live_proof_start"
 
       - name: Publish runner-local Codex health from live Tuxevil proof
         run: |

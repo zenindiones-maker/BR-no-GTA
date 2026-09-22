@@ -31,6 +31,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.hermes_multiagent.capability_broker import (
     HermesHarnessCapabilityBroker,
 )
@@ -713,10 +714,19 @@ def run(
     upstream_root: Path,
     artifact_dir: Path,
 ):
-    initialize_schema()
-    mission_plan = _decode_plan(plan_b64)
-    collaboration = _rebuild_plan(mission_plan)
-    snapshot = build_snapshot()
+    with PerformanceSpan(
+        stage="delegation-plane.mission.prepare",
+        category="MISSION_PREPARATION_TIME",
+        input_size=len(plan_b64.encode("ascii")),
+    ):
+        initialize_schema()
+        mission_plan = _decode_plan(plan_b64)
+        collaboration = _rebuild_plan(mission_plan)
+    with PerformanceSpan(
+        stage="delegation-plane.mission.snapshot",
+        category="MISSION_SNAPSHOT_TIME",
+    ):
+        snapshot = build_snapshot()
     snapshot["dynamic_selected_task_count"] = len(collaboration.tasks)
     execution_reference = {
         "selected_task_count": len(collaboration.tasks),
@@ -734,7 +744,13 @@ def run(
         "source": "HARNESS_MISSION_PLAN",
         "legacy_comparison": "SEPARATE_BENCHMARK",
     }
-    routing, authorization = _auth(collaboration)
+    with PerformanceSpan(
+        stage="delegation-plane.mission.authorization",
+        category="MISSION_AUTHORIZATION_TIME",
+        mission_id=collaboration.mission_id,
+        goal_id=collaboration.goal_id,
+    ):
+        routing, authorization = _auth(collaboration)
     resource_bounds = dict(mission_plan.get("resource_bounds") or {})
     spec = HermesMissionExecutionSpec.from_plan(
         collaboration_plan=collaboration,
@@ -797,17 +813,35 @@ def run(
                             f"dependency result missing: {dependency}"
                         )
                     row = rows[-1]
-                    broker.submit_handoff(
-                        from_task_id=dependency,
-                        to_task_id=task_id,
-                        evidence_refs=[row["evidence_ref"]],
-                        summary=(
-                            "Observed typed evidence from the authorized "
-                            f"dependency {dependency}."
-                        ),
-                    )
+                    with PerformanceSpan(
+                        stage="hermes.handoff",
+                        category="HERMES_HANDOFF_TIME",
+                        mission_id=spec.mission_id,
+                        task_id=task_id,
+                        metadata={"handoff_count": 1},
+                    ):
+                        broker.submit_handoff(
+                            from_task_id=dependency,
+                            to_task_id=task_id,
+                            evidence_refs=[row["evidence_ref"]],
+                            summary=(
+                                "Observed typed evidence from the authorized "
+                                f"dependency {dependency}."
+                            ),
+                        )
                 run_id = _claim(board, task_mapping, profiles, task_id)
-                parent_context = broker.parent_context(task_id=task_id)
+                with PerformanceSpan(
+                    stage="hermes.context.package",
+                    category="HERMES_CONTEXT_PACKAGE_TIME",
+                    mission_id=spec.mission_id,
+                    task_id=task_id,
+                ) as context_span:
+                    parent_context = broker.parent_context(task_id=task_id)
+                    context_bytes = len(json.dumps(parent_context, ensure_ascii=False, default=str).encode("utf-8"))
+                    context_span.set(
+                        output_size=context_bytes,
+                        metadata={"context_package_count": 1, "context_bytes": context_bytes},
+                    )
                 candidate_context = _candidate_execution_decision(
                     task=task,
                     parent_context=parent_context,
@@ -853,11 +887,19 @@ def run(
                     snapshot=snapshot,
                     parent_context=parent_context,
                 )
-                executed = broker.execute_delegated_capability(
+                with PerformanceSpan(
+                    stage="hermes.specialist.execute",
+                    category="HERMES_SPECIALIST_EXECUTION_TIME",
+                    mission_id=spec.mission_id,
                     task_id=task_id,
+                    agent_id=task.selected_agent_id,
                     capability_id=task.capability_id,
-                    payload=payload,
-                )
+                ):
+                    executed = broker.execute_delegated_capability(
+                        task_id=task_id,
+                        capability_id=task.capability_id,
+                        payload=payload,
+                    )
                 holder["execution_by_task"][task_id] = executed
 
                 if _is_mutating(task):
@@ -939,16 +981,22 @@ def run(
                     )
 
     try:
-        canonical = execute_hermes_mission_capability(
-            authorization=authorization,
-            routing_decision=routing,
-            spec=spec,
-            upstream_root=upstream_root,
-            hermes_home=artifact_dir / "hermes-home",
-            artifact_dir=artifact_dir,
-            runner=runner,
-            upstream_sha=UPSTREAM_SHA,
-        )
+        with PerformanceSpan(
+            stage="delegation-plane.mission.hermes-runtime",
+            category="HERMES_RUNTIME_TIME",
+            mission_id=spec.mission_id,
+            goal_id=spec.goal_id,
+        ):
+            canonical = execute_hermes_mission_capability(
+                authorization=authorization,
+                routing_decision=routing,
+                spec=spec,
+                upstream_root=upstream_root,
+                hermes_home=artifact_dir / "hermes-home",
+                artifact_dir=artifact_dir,
+                runner=runner,
+                upstream_sha=UPSTREAM_SHA,
+            )
     finally:
         consume_harness_authorization(authorization)
 

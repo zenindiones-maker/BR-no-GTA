@@ -23,6 +23,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 
 
 def _text(value: Any, field: str) -> str:
@@ -874,23 +875,59 @@ def plan_mission_from_human_goal(
     policy = load_continuous_operation_policy()
     resources = dict(policy.resource_governance)
     bounds = _resource_bounds(resources)
-    health = semantic_provider_health()
-    domain = _planning_domain(goal)
-    memory = build_bounded_memory_context(
+    with PerformanceSpan(
+        stage="harness.planning.provider-health",
+        category="PLANNING_HEALTH_LOOKUP_TIME",
         goal_id=goal.goal_id,
-        domain=domain,
-        task_class=goal.mission_class.casefold().replace("_", "-"),
-        artifact_ref=artifact_ref,
-        intent=goal.human_goal,
-        max_bytes=int(resources["bounded_memory_bytes"]),
-    ).to_dict()
-    adaptive_context = build_semantic_planning_context(
-        goal=goal.to_dict(),
-        bounded_memory_context=memory,
-        resource_bounds=bounds,
-        provider_health=health,
-        artifact_ref=artifact_ref,
-    )
+        metadata={"health_read_count": 1, "health_scope": "provider"},
+    ):
+        health = semantic_provider_health()
+    domain = _planning_domain(goal)
+    with PerformanceSpan(
+        stage="harness.planning.bounded-memory-context",
+        category="PLANNING_CONTEXT_BUILD_TIME",
+        goal_id=goal.goal_id,
+        input_size=len(goal.human_goal.encode("utf-8")),
+    ) as memory_span:
+        memory = build_bounded_memory_context(
+            goal_id=goal.goal_id,
+            domain=domain,
+            task_class=goal.mission_class.casefold().replace("_", "-"),
+            artifact_ref=artifact_ref,
+            intent=goal.human_goal,
+            max_bytes=int(resources["bounded_memory_bytes"]),
+        ).to_dict()
+        memory_span.set(
+            output_size=len(json.dumps(memory, default=str).encode("utf-8")),
+            metadata={"context_build_count": 1, "context_kind": "bounded-memory"},
+        )
+    with PerformanceSpan(
+        stage="harness.planning.semantic-context-build",
+        category="PLANNING_CONTEXT_BUILD_TIME",
+        goal_id=goal.goal_id,
+    ) as context_span:
+        adaptive_context = build_semantic_planning_context(
+            goal=goal.to_dict(),
+            bounded_memory_context=memory,
+            resource_bounds=bounds,
+            provider_health=health,
+            artifact_ref=artifact_ref,
+        )
+        context_raw = json.dumps(
+            adaptive_context,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        context_span.set(
+            output_size=len(context_raw),
+            metadata={
+                "context_build_count": 1,
+                "context_kind": "semantic-planning",
+                "context_fingerprint": sha256(context_raw).hexdigest(),
+            },
+        )
 
     requirements = _deterministic_fast_path_requirements(goal)
     planning_mode = "DETERMINISTIC_FAST_PATH" if requirements else "SEMANTIC_ADAPTIVE"
@@ -910,11 +947,24 @@ def plan_mission_from_human_goal(
     if not requirements:
         if not health.get("semantic_reasoning_available") and semantic_inference is None:
             raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-        semantic_result, semantic_evidence = propose_validated_semantic_plan(
-            adaptive_context,
-            inference=semantic_inference,
-            max_replans=1,
-        )
+        with PerformanceSpan(
+            stage="harness.planning.semantic-planner",
+            category="PLANNING_SEMANTIC_PLANNER_TIME",
+            goal_id=goal.goal_id,
+            input_size=len(json.dumps(adaptive_context, default=str).encode("utf-8")),
+        ) as semantic_span:
+            semantic_result, semantic_evidence = propose_validated_semantic_plan(
+                adaptive_context,
+                inference=semantic_inference,
+                max_replans=1,
+            )
+            semantic_span.set(
+                output_size=len(json.dumps(semantic_result.proposal.to_dict(), default=str).encode("utf-8")),
+                metadata={
+                    "planner_model_calls": int(semantic_evidence.get("proposal_attempts") or 1),
+                    "replan_count": int(semantic_evidence.get("replan_count") or 0),
+                },
+            )
         proposal = semantic_result.proposal
         planning_evidence.update(semantic_evidence)
         planning_evidence["semantic_provider_call_count"] = int(
@@ -1039,24 +1089,41 @@ def plan_mission_from_human_goal(
             if item not in avoided_paths:
                 avoided_paths.append(item)
 
-    fingerprint = sha256(json.dumps(
-        {
-            "goal": goal.to_dict(),
-            "planning_mode": planning_mode,
-            "proposal": proposal.to_dict() if proposal else None,
-            "tasks": selected_tasks,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")).hexdigest()[:20]
-    mission_id = f"mission-{fingerprint}"
-    plan_id = f"plan-{fingerprint}"
-    collaboration = build_collaboration_plan(
-        mission_id=mission_id,
+    with PerformanceSpan(
+        stage="harness.planning.mission-plan-normalization",
+        category="PLANNING_MISSION_PLAN_NORMALIZATION_TIME",
         goal_id=goal.goal_id,
-        tasks=selected_tasks,
-    )
+        input_size=len(json.dumps(selected_tasks, default=str).encode("utf-8")),
+    ):
+        fingerprint = sha256(json.dumps(
+            {
+                "goal": goal.to_dict(),
+                "planning_mode": planning_mode,
+                "proposal": proposal.to_dict() if proposal else None,
+                "tasks": selected_tasks,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()[:20]
+        mission_id = f"mission-{fingerprint}"
+        plan_id = f"plan-{fingerprint}"
+    with PerformanceSpan(
+        stage="harness.planning.task-envelope-build",
+        category="PLANNING_TASK_ENVELOPE_BUILD_TIME",
+        goal_id=goal.goal_id,
+        mission_id=mission_id,
+        input_size=len(json.dumps(selected_tasks, default=str).encode("utf-8")),
+    ) as envelope_span:
+        collaboration = build_collaboration_plan(
+            mission_id=mission_id,
+            goal_id=goal.goal_id,
+            tasks=selected_tasks,
+        )
+        envelope_span.set(
+            output_size=len(json.dumps(collaboration.to_dict(), default=str).encode("utf-8")),
+            metadata={"task_envelope_count": len(collaboration.tasks)},
+        )
 
     memory_present = bool(
         memory.get("conversation_memory")
