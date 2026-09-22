@@ -70,7 +70,7 @@ def test_semantic_context_retrieval_is_bounded_and_keeps_relevant_system_capabil
     )
     ids = [str(item["capability_id"]) for item in rows]
 
-    assert 6 <= len(rows) <= 18
+    assert 6 <= len(rows) <= 8
     assert len(ids) == len(set(ids))
     assert "system.improvement.propose" in ids
     assert all(item["type"] != "PROVIDER" for item in rows)
