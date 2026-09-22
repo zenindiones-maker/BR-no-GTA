@@ -1,0 +1,11 @@
+{
+  "request": "HERMES_DURABLE_RESUME_CROSS_RUN_002",
+  "purpose": "prove clean-runner durable resume after unique runtime lane fix",
+  "expected": {
+    "DURABLE_MISSION_RESUME": "PASS",
+    "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
+    "CROSS_RUNNER_TYPED_HANDOFF": "PASS",
+    "HERMES_AUTHORITY_EXPANSION": "NO",
+    "CI_REAL_TELEGRAM_EGRESS": 0
+  }
+}
