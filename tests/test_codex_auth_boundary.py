@@ -321,27 +321,42 @@ def test_headless_synergy_never_falls_back_to_device_auth_or_telegram():
     assert "AUTH_CREDENTIAL_IN_TELEGRAM=NO" in workflow
 
 
-def test_current_plus_ci_auth_contract_is_api_key_gated_without_wif_regression():
+def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_regression():
     current = Path(
         ".github/workflows/codex-current-account-ci-auth.yml"
+    ).read_text(encoding="utf-8")
+    tuxevil = Path(
+        ".github/workflows/tuxevil-codex-antigravity-proof.yml"
     ).read_text(encoding="utf-8")
     wif = Path(
         ".github/workflows/openai-codex-wif-admin-bootstrap.yml"
     ).read_text(encoding="utf-8")
 
-    assert "CODEX_PLUS_HEADLESS_AUTH: \"UNSUPPORTED\"" in current
+    assert "CODEX_PLUS_DIRECT_HEADLESS_AUTH: \"UNSUPPORTED\"" in current
     assert (
-        "OFFICIAL_CI_AUTH_METHOD: \"OPENAI_API_KEY_VIA_CODEX_ACTION\""
+        "PRIMARY_CI_AUTH_CANDIDATE: "
+        "\"TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY\""
         in current
     )
-    assert "REQUIRES_SEPARATE_API_BILLING: \"YES\"" in current
-    assert "REQUIRES_LONG_LIVED_SECRET: \"YES\"" in current
-    assert "AUTH_SECRET_NAME: \"OPENAI_API_KEY\"" in current
-    assert "uses: openai/codex-action@v1" in current
-    assert "openai-api-key: ${{ secrets.OPENAI_API_KEY }}" in current
-    assert "persist-credentials: false" in current
-    assert "DEVICE_AUTH_IN_CI=NO" in current
+    assert "OFFICIAL_CI_EXECUTION_SURFACE: \"openai/codex-action@v1\"" in current
+    assert (
+        "OPENAI_PLATFORM_API_KEY_REQUIRED: \"NOT_BEFORE_TUXEVIL_PROOF\""
+        in current
+    )
+    assert "secrets.OPENAI_API_KEY" not in current
+    assert "NEW_OPENAI_API_KEY_REQUESTED=NO" in current
     assert "AUTH_JSON_COPIED_TO_GITHUB=NO" in current
+    assert "DEVICE_AUTH_IN_CI=NO" in current
+
+    assert "uses: openai/codex-action@v1" in tuxevil
+    assert (
+        'responses-api-endpoint: "http://127.0.0.1:51200/v1/responses"'
+        in tuxevil
+    )
+    assert 'openai-api-key: "tuxevil"' in tuxevil
+    assert 'permission-profile: ":read-only"' in tuxevil
+    assert "ANTIGRAVITY_RUNTIME_AUTH=BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION" in tuxevil
+    assert "persist-credentials: false" in tuxevil
 
     assert (
         "OPENAI_WIF_ACCOUNT_ELIGIBILITY=UNAVAILABLE_FOR_CURRENT_PLUS_ACCOUNT"
@@ -355,3 +370,4 @@ def test_current_plus_ci_auth_contract_is_api_key_gated_without_wif_regression()
     assert "id-token: write" in wif
     assert "scripts/openai_codex_wif_admin_bootstrap.py" in wif
     assert "codex-cloud-auth-continuity.yml" in wif
+
