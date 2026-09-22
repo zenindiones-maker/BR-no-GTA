@@ -292,6 +292,8 @@ def run(
     runtime_auth = (
         "PASS"
         if antigravity_upstream_auth
+        else "NOT_ATTEMPTED_RUNTIME_UNAVAILABLE"
+        if not process_ready
         else "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
         if not antigravity_account_present and ci_credential_path == "NONE"
         else "BLOCKED_EXISTING_CREDENTIAL_PATH_NOT_AUTHENTICATED"
