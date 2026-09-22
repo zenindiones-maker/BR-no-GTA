@@ -1,0 +1,8 @@
+{
+  "schema": "harness-hermes-delegation-plane-v1-request/v1",
+  "phase": "first",
+  "first_run_id": 0,
+  "reason": "item35-36 first real natural-goal execution after item19 auth closure",
+  "natural_goal_contract": "CANONICAL_FROM_scripts/delegation_plane_natural_goal_plan.py",
+  "credential_values_in_request": false
+}
