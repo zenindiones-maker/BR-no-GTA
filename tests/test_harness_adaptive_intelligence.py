@@ -287,6 +287,57 @@ def test_semantic_overlong_goal_replans_with_explicit_wire_bounds():
     )
 
 
+def test_semantic_assumption_overflow_replans_with_explicit_collection_bounds():
+    context = {
+        "human_goal": "Analise o sistema e encontre uma melhoria mensurável segura.",
+        "project": "BR-no-GTA",
+        "goal_id": "goal-collection-bound-replan",
+        "subject": "system",
+        "conversation_state": {},
+        "bounded_memory_context": {},
+        "relevant_failure_memories": [],
+        "human_feedback_decisions": [],
+        "provider_health": {},
+        "registry_summary": [],
+        "competence_evidence": [],
+        "resource_bounds": {"max_tasks_per_mission": 8},
+        "known_bad_paths": [],
+    }
+    calls = []
+
+    def inference(prompt, _context):
+        calls.append(prompt)
+        proposal = _proposal(
+            candidate_id="agent-office.codex.readonly-analysis"
+        )
+        if len(calls) == 1:
+            proposal["assumptions"] = ["a", "b", "c"]
+            return proposal
+        assert "assumptions exceeds bounded item count" in prompt
+        assert "a<=2 items" in prompt
+        assert "o<=4" in prompt
+        assert "task caps<=3" in prompt
+        assert "task ok<=2" in prompt
+        return proposal
+
+    result, evidence = propose_validated_semantic_plan(
+        context,
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert len(result.proposal.assumptions) <= 2
+    assert len(calls) == 2
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert any(
+        "schema_validation:ValueError:assumptions exceeds bounded item count"
+        in reason
+        for batch in evidence["rejection_reasons"]
+        for reason in batch
+    )
+
+
 def test_competence_can_override_semantic_candidate_hint():
     requirement = {
         "task_id": "inspect",
