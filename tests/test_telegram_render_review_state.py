@@ -46,16 +46,11 @@ def test_successful_delivery_persists_ready_for_human_review() -> None:
             },
         )
 
-        proxy = Path(tmp) / "review-proxy.mp4"
-        proxy.write_bytes(b"proxy")
         with patch(
-            "scripts.telegram_render_review_worker.build_review_proxy",
-            return_value=(proxy, {"status": "PASS"}),
-        ), patch(
-            "scripts.telegram_render_review_worker._send_video",
+            "scripts.telegram_render_review_worker._send_document",
             return_value={
                 "message_id": 77,
-                "video": {"file_id": "file-1", "file_unique_id": "unique-1"},
+                "document": {"file_id": "file-1", "file_unique_id": "unique-1"},
             },
         ), patch(
             "scripts.telegram_render_review_worker._sha256",
@@ -66,6 +61,8 @@ def test_successful_delivery_persists_ready_for_human_review() -> None:
                 token="test-token",
                 review_chat_id="123456",
                 run_id="999",
+                explicit_human_request=True,
+                human_request_ref="telegram-turn:test-review-request",
             )
 
         assert result["status"] == "DELIVERED"

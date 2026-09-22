@@ -61,7 +61,11 @@ def test_vice_city_remains_only_en_us_span(tmp_path):
         if x.pronunciation_identity in {"character-jason","character-lucia"}
     )
 
-def test_production_lexicon_not_promoted_implicitly():
-    ids={x["identity"] for x in load(PRODUCTION)["entries"]}
-    assert "character-jason" not in ids
-    assert "character-lucia" not in ids
+def test_only_human_approved_character_alias_is_promoted_to_production():
+    production=load(PRODUCTION)
+    entries={x["identity"]:x for x in production["entries"]}
+    assert "character-jason" not in entries
+    assert entries["character-lucia"]["locale"]=="pt-BR"
+    assert entries["character-lucia"]["strategy"]=="alias"
+    assert entries["character-lucia"]["synthesis_text"]=="Lucía"
+    assert "human-approved synthesis-only alias" in entries["character-lucia"]["source"]

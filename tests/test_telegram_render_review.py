@@ -86,6 +86,10 @@ def test_render_review_delivers_full_duration_proxy_and_persists_evidence(
     monkeypatch.setattr(
         "scripts.telegram_render_review_worker.build_review_proxy", fake_proxy
     )
+    monkeypatch.setattr(
+        "scripts.telegram_render_review_worker.STANDARD_BOT_API_MAX_UPLOAD_BYTES",
+        1,
+    )
 
     def fake_send(**kwargs):
         sent.update(kwargs)
@@ -222,6 +226,12 @@ def test_render_review_transport_error_does_not_retain_bot_token(
 
     monkeypatch.setattr("scripts.telegram_render_review_worker.requests.post", fail_post)
     with pytest.raises(RuntimeError) as caught:
-        _send_video(token=token, chat_id="-100123", video=video, caption="review")
+        _send_video(
+            token=token,
+            chat_id="-100123",
+            video=video,
+            caption="review",
+            api_base_url="https://api.telegram.org",
+        )
     assert token not in str(caught.value)
     assert caught.value.__cause__ is None
