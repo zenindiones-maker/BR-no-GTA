@@ -68,8 +68,8 @@ def test_semantic_context_retrieval_is_bounded_and_keeps_relevant_system_capabil
     assert 6 <= len(rows) <= 18
     assert len(ids) == len(set(ids))
     assert "system.improvement.propose" in ids
-    assert all(item["capability_type"] != "PROVIDER" for item in rows)
-    assert all("allowed_actions" in item for item in rows)
+    assert all(item["type"] != "PROVIDER" for item in rows)
+    assert all("actions" in item for item in rows)
 
 def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_once():
     context = {
@@ -92,7 +92,7 @@ def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_o
     def inference(prompt, _context):
         calls.append(prompt)
         if len(calls) == 1:
-            assert "validation_feedback" in prompt
+            assert "CONTEXT=" in prompt
             return _proposal(candidate_id="capability.that.does.not.exist")
         assert "The previous proposal was rejected by DeepSeek Harness validation." in prompt
         assert "capability.that.does.not.exist" in prompt
