@@ -785,18 +785,46 @@ def test_codex_shell_wrapper_validates_inner_allowlisted_tools():
     )
 
 
-def test_bounded_codex_registry_allows_only_explicit_readonly_ls_extension():
+def test_bounded_codex_registry_allows_only_explicit_readonly_inspection_extensions():
     record = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
     )
     assert record is not None
     assert "ls" in record.allowed_tools
+    assert "sed" in record.allowed_tools
     for forbidden in ("curl", "wget", "ssh", "scp", "rsync", "gh"):
         assert forbidden not in record.allowed_tools
 
     _validate_command("ls -la app/services/agent_office", record.allowed_tools)
+    _validate_command(
+        "sed -n '1,120p' app/services/agent_office/codex_bounded_worker.py",
+        record.allowed_tools,
+    )
+    _validate_command(
+        "sed --quiet -e '/candidate/p' tests/test_agent_office.py",
+        record.allowed_tools,
+    )
     with pytest.raises(PermissionError, match="forbidden command"):
         _validate_command("curl https://example.invalid", record.allowed_tools)
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        "sed -i 's/a/b/' app/services/agent_office/codex_bounded_worker.py",
+        "sed --in-place 's/a/b/' app/services/agent_office/codex_bounded_worker.py",
+        "sed -f /tmp/script.sed app/services/agent_office/codex_bounded_worker.py",
+        "sed -n '1,2w /tmp/out' app/services/agent_office/codex_bounded_worker.py",
+        "sed '1,10p' app/services/agent_office/codex_bounded_worker.py",
+    ),
+)
+def test_bounded_codex_sed_extension_is_strictly_read_only(command):
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    with pytest.raises(PermissionError):
+        _validate_command(command, record.allowed_tools)
 
 
 @pytest.mark.parametrize(
