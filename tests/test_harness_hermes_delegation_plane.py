@@ -36,6 +36,11 @@ from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
 )
+from app.services.harness_capability_adapter import (
+    CapabilityAdapter,
+    CapabilityReturnedFailure,
+)
+from app.services.harness_capability_service import CapabilityEvidence
 from app.services.hermes_multiagent.capability_broker import (
     DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
@@ -1342,6 +1347,93 @@ def test_hermes_subordinate_check_requires_harness_authority_and_bounded_evidenc
         publisher,
         spec=spec,
     ) is False
+
+
+def test_capability_adapter_rejects_failed_capability_evidence(
+    monkeypatch,
+):
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    assert record is not None
+
+    task = TaskEnvelope.from_mapping({
+        "task_id": "observe-failure",
+        "capability_id": record.capability_id,
+        "authorized_action": "DEVELOPMENT",
+        "objective": "observe executor failure boundary",
+        "task_class": "readonly-analysis",
+        "required_capability_description": "read-only analysis",
+        "dependencies": [],
+        "input_refs": [],
+        "expected_output": "Evidence",
+        "acceptance_criteria": ["fail closed"],
+        "read_scope": list(record.default_read_scope),
+        "write_scope": [],
+        "allowed_tools": list(record.allowed_tools),
+        "allowed_side_effects": [],
+        "forbidden_side_effects": ["publication"],
+        "time_budget_seconds": 60,
+        "cost_budget": 0.0,
+        "context_budget_bytes": 4096,
+        "tool_budget": 4,
+        "retry_budget": 0,
+        "evidence_contract": str(record.evidence_contract or ""),
+        "review_policy": "NONE",
+        "risk_side_effect_class": "READ_ONLY",
+        "human_gate_policy": "NONE",
+    })
+
+    def executor(*, authorization, routing_decision, payload):
+        return CapabilityEvidence(
+            capability_id=record.capability_id,
+            provider=record.provider,
+            status="FAILED",
+            active=False,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={"errors": ["bounded worker produced no candidate patch"]},
+            boundary=record.security_boundary,
+        )
+
+    adapter = CapabilityAdapter()
+    monkeypatch.setattr(adapter, "resolve_binding", lambda _binding: executor)
+    decision = SimpleNamespace(
+        selected_capability_id=record.capability_id,
+        selected_executor_binding=record.executor_binding,
+        routing_id="route-failed-evidence",
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{record.capability_id}",
+        harness_decision_id="decision-failed-evidence",
+        execution_id="execution-failed-evidence",
+    )
+    try:
+        with pytest.raises(
+            CapabilityReturnedFailure,
+            match="bounded worker produced no candidate patch",
+        ):
+            adapter.execute(
+                authorization=authorization,
+                task_envelope=task,
+                routing_decision=decision,
+                payload={},
+            )
+    finally:
+        consume_harness_authorization(authorization)
+
+
+def test_bounded_development_prompt_requires_non_empty_candidate_patch():
+    source = Path(
+        "app/services/agent_office/codex_bounded_worker.py"
+    ).read_text(encoding="utf-8")
+    assert "successful completion requires a " in source
+    assert "non-empty candidate patch entirely inside WRITE_SET" in source
+    assert "report a blocker instead of claiming success" in source
+    assert "Do NOT commit" in source
 
 
 def test_system_improvement_gates_require_measured_profiler_evidence():
