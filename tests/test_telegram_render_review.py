@@ -83,6 +83,8 @@ def test_render_review_delivers_full_duration_proxy_and_persists_evidence(
         token="bot-token",
         review_chat_id="-100123",
         run_id="35110000000",
+        explicit_human_request=True,
+        human_request_ref="telegram-turn:test-review-request",
     )
 
     assert result["status"] == "DELIVERED"
@@ -90,7 +92,10 @@ def test_render_review_delivers_full_duration_proxy_and_persists_evidence(
     assert result["proxy"]["duration_seconds"] == 1510.005333
     assert result["asset_ids"] == [1, 2]
     assert "NÃO PUBLICAR" in sent["caption"]
-    assert "intro=10.005333s" in sent["caption"]
+    assert "run_id" not in sent["caption"]
+    assert "execution_id" not in sent["caption"]
+    assert "render_job_id" not in sent["caption"]
+    assert "Revise o vídeo" in sent["caption"]
     assert sent["video"] == proxy
     assert sent["chat_id"] == "-100123"
     assert not proxy_request["output_dir"].is_relative_to(tmp_path / "output")
@@ -98,6 +103,21 @@ def test_render_review_delivers_full_duration_proxy_and_persists_evidence(
     persisted = json.loads(
         (folder / "telegram-review.json").read_text(encoding="utf-8")
     )
+    assert persisted == result
+
+
+def test_render_review_requires_explicit_human_request(tmp_path: Path):
+    folder = _write_render_evidence(tmp_path / "output")
+    result = deliver_render_review(
+        artifact_root=tmp_path / "output",
+        token="",
+        review_chat_id="",
+        run_id="35110000000",
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["TELEGRAM_SEND"] == "NO"
+    assert result["reason"] == "EXPLICIT_HUMAN_REQUEST_REQUIRED"
+    persisted = json.loads((folder / "telegram-review.json").read_text(encoding="utf-8"))
     assert persisted == result
 
 
@@ -115,6 +135,8 @@ def test_render_review_requires_telegram_delivery_configuration(
             token=token,
             review_chat_id=chat_id,
             run_id="35110000000",
+            explicit_human_request=True,
+            human_request_ref="telegram-turn:test-review-request",
         )
 
 
@@ -129,6 +151,8 @@ def test_render_review_refuses_non_passing_branding_qa(tmp_path: Path):
             token="bot-token",
             review_chat_id="-100123",
             run_id="35110000000",
+            explicit_human_request=True,
+            human_request_ref="telegram-turn:test-review-request",
         )
 
 
@@ -147,19 +171,23 @@ def test_render_review_refuses_swapped_official_asset_types(tmp_path: Path):
             token="bot-token",
             review_chat_id="-100123",
             run_id="35110000000",
+            explicit_human_request=True,
+            human_request_ref="telegram-turn:test-review-request",
         )
 
 
-def test_render_worker_checkpoints_qa_passed_render_before_telegram_review():
+def test_render_worker_checkpoints_product_without_autonomous_telegram_review():
     workflow = Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
     apply_index = workflow.index("Apply governed intro and watermark")
     qa_index = workflow.index("Finalize professional QA gates")
     artifact_index = workflow.index("Checkpoint QA-passed render before external review")
-    review_index = workflow.index("Deliver full-duration branded review to Telegram")
-    assert apply_index < qa_index < artifact_index < review_index
-    assert "scripts/telegram_render_review_worker.py" in workflow
-    assert "TELEGRAM_REVIEW_CHAT_ID" in workflow
-    assert "if-no-files-found: error" in workflow[artifact_index:review_index]
+    silent_index = workflow.index("Keep completed render silent until explicit human request")
+    assert apply_index < qa_index < artifact_index < silent_index
+    segment = workflow[artifact_index:silent_index + 500]
+    assert "TELEGRAM_BOT_TOKEN" not in segment
+    assert "telegram_render_review_worker.py" not in segment
+    assert "RENDER_AUTONOMOUS_TELEGRAM_EGRESS=0" in workflow
+    assert "NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED" in workflow
 
 
 def test_render_review_transport_error_does_not_retain_bot_token(
