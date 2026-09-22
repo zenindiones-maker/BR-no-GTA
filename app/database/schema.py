@@ -1748,6 +1748,190 @@ def _migrate_continuous_operation_plane(connection) -> None:
         """
     )
 
+
+def _migrate_gta6_autonomous_knowledge_plane(connection) -> None:
+    """Extend the existing GTA6 Knowledge Brain with durable autonomous research state.
+
+    Canonical factual identity remains memory_claims + gta6_claim_lineage. These
+    tables add source state, raw evidence, entity/graph structure, research
+    frontier, novelty/freshness metadata and daily-run observability.
+    """
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS gta6_source_registry (
+            source_id TEXT PRIMARY KEY,
+            url TEXT NOT NULL UNIQUE,
+            domain TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            authority_class TEXT NOT NULL,
+            reliability_score REAL NOT NULL DEFAULT 0.5,
+            reliability_history TEXT NOT NULL DEFAULT '[]',
+            discovered_at TEXT NOT NULL,
+            last_checked_at TEXT,
+            last_changed_at TEXT,
+            last_success_at TEXT,
+            last_failure_at TEXT,
+            etag TEXT,
+            last_modified TEXT,
+            content_hash TEXT,
+            refresh_priority INTEGER NOT NULL DEFAULT 50,
+            refresh_interval_seconds INTEGER NOT NULL DEFAULT 86400,
+            refresh_state TEXT NOT NULL DEFAULT 'DUE',
+            active INTEGER NOT NULL DEFAULT 1,
+            provenance TEXT NOT NULL DEFAULT '{}',
+            metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_source_registry_due
+        ON gta6_source_registry(active, refresh_state, refresh_priority, last_checked_at);
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_source_registry_authority
+        ON gta6_source_registry(authority_class, active);
+
+        CREATE TABLE IF NOT EXISTS gta6_raw_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            publication_date TEXT,
+            observed_at TEXT NOT NULL,
+            excerpt TEXT NOT NULL,
+            video_timestamp REAL,
+            frame_ref TEXT,
+            artifact_ref TEXT,
+            content_hash TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT '{}',
+            extraction_method TEXT NOT NULL,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (source_id)
+                REFERENCES gta6_source_registry(source_id)
+                ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_raw_evidence_source
+        ON gta6_raw_evidence(source_id, observed_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_raw_evidence_hash
+        ON gta6_raw_evidence(content_hash);
+
+        CREATE TABLE IF NOT EXISTS gta6_entities (
+            entity_id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            canonical_name TEXT NOT NULL,
+            aliases TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'ACTIVE',
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(entity_type, canonical_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_entities_name
+        ON gta6_entities(canonical_name, entity_type);
+
+        CREATE TABLE IF NOT EXISTS gta6_relations (
+            relation_id TEXT PRIMARY KEY,
+            subject_id TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object_id TEXT NOT NULL,
+            claim_id INTEGER,
+            evidence_id TEXT,
+            confidence REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'ACTIVE',
+            observed_at TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT '{}',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (subject_id) REFERENCES gta6_entities(entity_id) ON DELETE RESTRICT,
+            FOREIGN KEY (object_id) REFERENCES gta6_entities(entity_id) ON DELETE RESTRICT,
+            FOREIGN KEY (claim_id) REFERENCES memory_claims(id) ON DELETE SET NULL,
+            FOREIGN KEY (evidence_id) REFERENCES gta6_raw_evidence(evidence_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_relations_subject
+        ON gta6_relations(subject_id, predicate);
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_relations_object
+        ON gta6_relations(object_id, predicate);
+
+        CREATE TABLE IF NOT EXISTS gta6_research_frontier (
+            question_id TEXT PRIMARY KEY,
+            question TEXT NOT NULL,
+            topic TEXT,
+            entity_ids TEXT NOT NULL DEFAULT '[]',
+            priority INTEGER NOT NULL DEFAULT 50,
+            current_confidence REAL NOT NULL DEFAULT 0.0,
+            supporting_evidence TEXT NOT NULL DEFAULT '[]',
+            contradictory_evidence TEXT NOT NULL DEFAULT '[]',
+            missing_evidence TEXT NOT NULL DEFAULT '[]',
+            next_research_strategy TEXT,
+            sources_to_watch TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            last_checked_at TEXT,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_research_frontier_priority
+        ON gta6_research_frontier(status, priority DESC, last_checked_at);
+
+        CREATE TABLE IF NOT EXISTS gta6_claim_metadata (
+            claim_id INTEGER PRIMARY KEY,
+            subject_entity_id TEXT,
+            predicate TEXT,
+            object_entity_id TEXT,
+            brain_status TEXT NOT NULL DEFAULT 'DISCOVERED',
+            first_seen_at TEXT NOT NULL,
+            last_verified_at TEXT,
+            superseded_by_claim_id INTEGER,
+            related_claims TEXT NOT NULL DEFAULT '[]',
+            used_in_content TEXT NOT NULL DEFAULT '[]',
+            world_novelty TEXT NOT NULL DEFAULT 'UNKNOWN',
+            knowledge_novelty TEXT NOT NULL DEFAULT 'UNKNOWN',
+            editorial_novelty TEXT NOT NULL DEFAULT 'UNUSED',
+            freshness_class TEXT NOT NULL DEFAULT 'MEDIUM',
+            freshness_due_at TEXT,
+            consolidated_key TEXT,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (claim_id) REFERENCES memory_claims(id) ON DELETE CASCADE,
+            FOREIGN KEY (subject_entity_id) REFERENCES gta6_entities(entity_id) ON DELETE SET NULL,
+            FOREIGN KEY (object_entity_id) REFERENCES gta6_entities(entity_id) ON DELETE SET NULL,
+            FOREIGN KEY (superseded_by_claim_id) REFERENCES memory_claims(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_claim_metadata_status
+        ON gta6_claim_metadata(brain_status, freshness_due_at);
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_claim_metadata_novelty
+        ON gta6_claim_metadata(world_novelty, knowledge_novelty, editorial_novelty);
+
+        CREATE TABLE IF NOT EXISTS gta6_brain_daily_runs (
+            run_id TEXT PRIMARY KEY,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            sources_checked INTEGER NOT NULL DEFAULT 0,
+            sources_changed INTEGER NOT NULL DEFAULT 0,
+            new_sources INTEGER NOT NULL DEFAULT 0,
+            new_claims INTEGER NOT NULL DEFAULT 0,
+            verified_claims INTEGER NOT NULL DEFAULT 0,
+            contradicted_claims INTEGER NOT NULL DEFAULT 0,
+            superseded_claims INTEGER NOT NULL DEFAULT 0,
+            duplicates_avoided INTEGER NOT NULL DEFAULT 0,
+            open_questions INTEGER NOT NULL DEFAULT 0,
+            resolved_questions INTEGER NOT NULL DEFAULT 0,
+            obsidian_notes_updated INTEGER NOT NULL DEFAULT 0,
+            retrieval_context_bytes INTEGER NOT NULL DEFAULT 0,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gta6_brain_daily_runs_time
+        ON gta6_brain_daily_runs(started_at DESC);
+        """
+    )
+
+
 def initialize_schema() -> None:
     """Cria as tabelas estruturais e aplica migrações necessárias."""
 
@@ -1781,6 +1965,7 @@ def initialize_schema() -> None:
         _migrate_harness_learning_plane(connection)
         _migrate_memory_workspace_plane(connection)
         _migrate_continuous_operation_plane(connection)
+        _migrate_gta6_autonomous_knowledge_plane(connection)
         _migrate_agent_execution_leases(connection)
         _migrate_e2e_stage_checkpoints(connection)
         connection.commit()
