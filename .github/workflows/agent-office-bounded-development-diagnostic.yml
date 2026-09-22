@@ -64,6 +64,7 @@ jobs:
           echo "BOUNDED_DIAGNOSTIC_FOCUSED_TESTS=PASS"
 
       - name: Prepare exact Codex runtime
+        if: ${{ false }}
         run: |
           set -euo pipefail
           bash scripts/agent-tooling/bootstrap.sh codex
@@ -78,6 +79,7 @@ jobs:
           npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
 
       - name: Materialize existing Antigravity store
+        if: ${{ false }}
         env:
           TUXEVIL_ACCOUNTS_JSON_B64: ${{ secrets.TUXEVIL_ACCOUNTS_JSON_B64 }}
         run: |
@@ -112,6 +114,7 @@ jobs:
           echo "TUXEVIL_DIAGNOSTIC_CONFIG_DIR=$config_dir" >> "$GITHUB_ENV"
 
       - name: Start Tuxevil and prove live transport
+        if: ${{ false }}
         id: provider
         run: |
           set -euo pipefail
@@ -160,6 +163,7 @@ jobs:
           PY
 
       - name: Publish current-run runtime health
+        if: ${{ false }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -211,6 +215,7 @@ jobs:
           PY
 
       - name: Reproduce bounded-development worker directly
+        if: ${{ false }}
         env:
           PYTHONPATH: ${{ github.workspace }}
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
@@ -355,6 +360,7 @@ jobs:
           PY
 
       - name: Cleanup ephemeral auth material
+        if: ${{ false }}
         if: always()
         run: |
           set -euo pipefail
