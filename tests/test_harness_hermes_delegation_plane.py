@@ -128,6 +128,51 @@ def test_canonical_task_envelope_carries_scope_budget_review_and_idempotency():
     assert routed.goal_id == "goal-task-envelope"
 
 
+def test_dynamic_mission_generic_payload_carries_semantic_query_without_capability_hardcode():
+    task = TaskEnvelope.from_mapping({
+        "task_id": "inspect-system",
+        "capability_id": "gta6.knowledge.retrieve",
+        "authorized_action": "RESEARCH",
+        "objective": "Inspect architecture evidence",
+        "task_class": "system-root-cause-analysis",
+        "required_capability_description": (
+            "bounded repository architecture evidence retrieval"
+        ),
+        "dependencies": [],
+        "input_refs": [],
+        "expected_output": "Evidence",
+        "acceptance_criteria": ["return evidence"],
+        "read_scope": [],
+        "write_scope": [],
+        "allowed_tools": [],
+        "allowed_side_effects": [],
+        "forbidden_side_effects": [],
+        "time_budget_seconds": 90,
+        "cost_budget": 0.0,
+        "context_budget_bytes": 8192,
+        "tool_budget": 4,
+        "retry_budget": 1,
+        "review_policy": "NONE",
+        "risk_side_effect_class": "READ_ONLY",
+        "human_gate_policy": "NONE",
+    })
+    payload = dynamic_mission._generic_payload(
+        task=task,
+        human_goal="Analyze the current system.",
+        goal_id="goal-query-contract",
+        mission_id="mission-query-contract",
+        base_sha="a" * 40,
+        branch="work/gate6f-analytics-learning",
+        snapshot={},
+        parent_context={},
+    )
+    assert payload["query"] == (
+        "bounded repository architecture evidence retrieval"
+    )
+    assert payload["query"] == payload["gaps"][0]
+    assert "capability_id" not in payload["query"]
+
+
 def test_competence_confidence_adjustment_prefers_robust_history_over_one_of_one():
     record = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
