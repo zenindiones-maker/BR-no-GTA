@@ -1,0 +1,121 @@
+name: Codex Current Account CI Auth
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/codex-current-account-ci-auth.yml"
+      - ".run/codex-current-account-ci-auth.request.json"
+  workflow_dispatch:
+    inputs:
+      run_paid_auth_probe:
+        description: Explicitly run the API-billed Codex auth probe
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  OPENAI_WIF_ACCOUNT_ELIGIBILITY: "UNAVAILABLE_FOR_CURRENT_PLUS_ACCOUNT"
+  OPENAI_WIF_ADMIN_BOOTSTRAP: "NOT_APPLICABLE_CURRENT_ACCOUNT"
+  CODEX_PLUS_HEADLESS_AUTH: "UNSUPPORTED"
+  OFFICIAL_CI_AUTH_METHOD: "OPENAI_API_KEY_VIA_CODEX_ACTION"
+  REQUIRES_SEPARATE_API_BILLING: "YES"
+  REQUIRES_LONG_LIVED_SECRET: "YES"
+  AUTH_SECRET_NAME: "OPENAI_API_KEY"
+
+jobs:
+  readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      secret_available: ${{ steps.secret.outputs.available }}
+    steps:
+      - name: Report official current-account auth contract
+        run: |
+          set -euo pipefail
+          echo "OPENAI_WIF_ACCOUNT_ELIGIBILITY=$OPENAI_WIF_ACCOUNT_ELIGIBILITY"
+          echo "OPENAI_WIF_ADMIN_BOOTSTRAP=$OPENAI_WIF_ADMIN_BOOTSTRAP"
+          echo "CODEX_PLUS_HEADLESS_AUTH=$CODEX_PLUS_HEADLESS_AUTH"
+          echo "OFFICIAL_CI_AUTH_METHOD=$OFFICIAL_CI_AUTH_METHOD"
+          echo "REQUIRES_SEPARATE_API_BILLING=$REQUIRES_SEPARATE_API_BILLING"
+          echo "REQUIRES_LONG_LIVED_SECRET=$REQUIRES_LONG_LIVED_SECRET"
+          echo "SECRET_NAME=$AUTH_SECRET_NAME"
+          echo "TERMUX_CODEX_SESSION_REUSED=NO"
+          echo "AUTH_JSON_COPIED_TO_GITHUB=NO"
+          echo "DEVICE_AUTH_IN_CI=NO"
+          echo "HARNESS_FAILURE=NO"
+          echo "HERMES_FAILURE=NO"
+          echo "AGENT_OFFICE_FAILURE=NO"
+          echo "DELEGATION_PLANE_FAILURE=NO"
+
+      - name: Check secure API credential plumbing
+        id: secret
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OPENAI_API_KEY:-}" ]; then
+            echo "::add-mask::$OPENAI_API_KEY"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY_CONFIGURED=YES"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY_CONFIGURED=NO"
+            echo "CODEX_AUTH_AVAILABLE=BLOCKED_MISSING_GITHUB_SECRET"
+          fi
+          echo "AUTH_SECRET_LEAK=NO"
+          echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
+          echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
+          echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
+
+      - name: Keep paid execution gated
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_paid_auth_probe != true }}
+        run: |
+          set -euo pipefail
+          echo "PAID_CODEX_AUTH_PROBE=NOT_REQUESTED"
+          echo "HARNESS_HERMES_FULL_SYNERGY=NOT_RUN"
+
+  authenticated-probe:
+    needs: readiness
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_paid_auth_probe == true && needs.readiness.outputs.secret_available == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact repository revision without Git credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove official Codex API authentication without exposing the key
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          prompt: |
+            This is an authentication-only CI probe.
+            Do not modify files, do not use network tools, do not inspect environment
+            variables or credentials, and do not attempt git operations.
+            Read AGENTS.md if present and return exactly:
+            CODEX_AUTH_AVAILABLE=PASS
+            CODEX_AUTH_METHOD=OPENAI_API_KEY_VIA_CODEX_ACTION
+
+      - name: Record non-persistent auth proof
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo "CODEX_AUTH_AVAILABLE=PASS"
+          echo "CODEX_AUTH_METHOD=OPENAI_API_KEY_VIA_CODEX_ACTION"
+          echo "AUTH_SECRET_LEAK=NO"
+          echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
+          echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
+          echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
+          echo "CANONICAL_WORKTREE_MUTATION=NONE"
+          echo "HARNESS_HERMES_FULL_SYNERGY=NOT_RUN"
