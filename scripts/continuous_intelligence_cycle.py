@@ -295,7 +295,25 @@ def _run_intelligence_mission(
 
         claims = list(research["result"].get("candidate_claims") or ())
         if not claims:
-            raise RuntimeError("fact-check mission was selected but research produced no candidate claims")
+            research_status = str(research["result"].get("status") or "")
+            unchanged = (
+                research_status == "NO_MEANINGFUL_GTA6_DELTA"
+                and research["result"].get("SOURCE_UNCHANGED") == "YES"
+            )
+            if not unchanged:
+                raise RuntimeError(
+                    "fact-check mission was selected but changed research produced no candidate claims"
+                )
+            fact_run = _claim(board, task_mapping, profiles, "fact-check")
+            _complete(
+                board,
+                task_mapping,
+                "fact-check",
+                fact_run,
+                "FACT_CHECK=SKIPPED SOURCE_UNCHANGED=YES CANDIDATE_CLAIMS=0",
+            )
+            holder["fact_check_skipped_unchanged"] = True
+            return
         broker.submit_handoff(
             from_task_id="research",
             to_task_id="fact-check",
