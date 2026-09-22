@@ -85,18 +85,39 @@ def _gate(folder: Path, filename: str, label: str) -> dict[str, Any]:
     return result
 
 
-def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: str, run_id: str) -> dict[str, Any]:
+def deliver_render_review(
+    *,
+    artifact_root: Path,
+    token: str,
+    review_chat_id: str,
+    run_id: str,
+    explicit_human_request: bool = False,
+    human_request_ref: str = "",
+) -> dict[str, Any]:
+    source = _single_mp4(artifact_root)
+    folder = source.parent
+    if not explicit_human_request or not str(human_request_ref or "").strip():
+        result = {
+            "status": "BLOCKED",
+            "TELEGRAM_SEND": "NO",
+            "reason": "EXPLICIT_HUMAN_REQUEST_REQUIRED",
+            "human_request_ref": None,
+            "boundary": "NO_AUTONOMOUS_NON_SCRIPT_TELEGRAM_PUSH",
+        }
+        (folder / "telegram-review.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return result
+
     token = token.strip()
     review_chat_id = review_chat_id.strip()
     if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is required for render review")
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is required for explicitly requested render review")
     if not review_chat_id:
-        raise RuntimeError("TELEGRAM_REVIEW_CHAT_ID is required for render review")
+        raise RuntimeError("TELEGRAM_REVIEW_CHAT_ID is required for explicitly requested render review")
     if not run_id.strip():
         raise RuntimeError("GITHUB_RUN_ID is required for render review")
-
-    source = _single_mp4(artifact_root)
-    folder = source.parent
     job = _load_object(folder / "render-job.json")
     qa = _gate(folder, "render-qa.json", "AUDIOVISUAL_QA")
     branding = qa.get("branding")
@@ -148,35 +169,30 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         )
     duration = qa.get("duration_seconds")
     if is_professional:
-        review_label = f"VIDEO {product_label} — REVISÃO — NÃO PUBLICAR"
-        transport_label = "MASTER 1080P SEM RECOMPRESSÃO" if master_transport_available else "PREVIEW COMPRIMIDO — MASTER YOUTUBE PRESERVADO"
-        gate_lines = "\n".join(f"{name}=PASS" for name in (
-            "EDITORIAL_QA", "VOICE_QA", "EDIT_QA", "NO_PADDING_QA", "AUDIOVISUAL_QA", "INTRO_QA", "WATERMARK_QA"
-        ))
+        review_label = f"VIDEO {product_label} — PRONTO PARA REVISÃO — NÃO PUBLICAR"
+        transport_label = (
+            "MASTER 1080P SEM RECOMPRESSÃO"
+            if master_transport_available
+            else "PREVIEW COMPRIMIDO — MASTER PRESERVADO"
+        )
         caption = (
             f"{review_label}\n"
-            f"RenderJob={job.get('render_job_id')}\n"
-            f"video_id={job.get('video_id')}\n"
-            f"execution_id={job.get('execution_id')}\n"
-            f"run_id={run_id}\n"
-            f"duração={duration}s\n"
-            f"versão={product_version}\n"
-            f"transporte={transport_label}\n"
-            f"{gate_lines}\n"
-            "HUMAN_EDITORIAL_APPROVAL=PENDING\n"
-            f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
-            "PUBLICATION_AUTHORITY=NONE"
+            f"Duração: {duration}s\n"
+            f"Versão: {product_version}\n"
+            f"Arquivo: {transport_label}\n\n"
+            "Revise o vídeo e responda neste grupo com aprovação ou alterações."
         )
     else:
-        review_label = "BR NO GTA — REVISÃO DE RENDER — NÃO PUBLICAR"
-        transport_label = "MASTER SEM RECOMPRESSÃO" if master_transport_available else "PREVIEW COMPRIMIDO — MASTER PRESERVADO"
+        review_label = "BR NO GTA — VÍDEO PRONTO PARA REVISÃO — NÃO PUBLICAR"
+        transport_label = (
+            "MASTER SEM RECOMPRESSÃO"
+            if master_transport_available
+            else "PREVIEW COMPRIMIDO — MASTER PRESERVADO"
+        )
         caption = (
-            f"{review_label}\nvideo_id={job.get('video_id')}\nrender_job_id={job.get('render_job_id')}\n"
-            f"execution_id={job.get('execution_id')}\nasset_ids=1,2\nrun_id={run_id}\n"
-            f"intro={branding.get('intro_duration_seconds')}s\n"
-            f"transporte={transport_label}\n"
-            f"HUMAN_REVIEW_STATE={READY_FOR_HUMAN_REVIEW}\n"
-            "PUBLICATION_AUTHORITY=NONE"
+            f"{review_label}\n"
+            f"Arquivo: {transport_label}\n\n"
+            "Revise o vídeo e responda neste grupo com aprovação ou alterações."
         )
 
     if master_transport_available:
@@ -226,7 +242,9 @@ def deliver_render_review(*, artifact_root: Path, token: str, review_chat_id: st
         "master_delivered_byte_identical": master_transport_available,
         "master_transport_blocker": None if master_transport_available else "TELEGRAM_BOT_API_UPLOAD_LIMIT",
         "proxy": proxy_evidence,
-        "boundary": "REVIEW_ONLY_NO_PUBLICATION_AUTHORITY",
+        "human_request_ref": str(human_request_ref),
+        "OPERATIONAL_TELEMETRY_PRESENT": "NO",
+        "boundary": "EXPLICIT_HUMAN_REQUEST_REVIEW_ONLY_NO_PUBLICATION_AUTHORITY",
     }
     (folder / "telegram-review.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
@@ -241,7 +259,17 @@ def main() -> int:
         token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         review_chat_id=os.getenv("TELEGRAM_REVIEW_CHAT_ID", ""),
         run_id=os.getenv("GITHUB_RUN_ID", ""),
+        explicit_human_request=(
+            str(os.getenv("TELEGRAM_EXPLICIT_HUMAN_REQUEST") or "").strip().upper()
+            == "TRUE"
+        ),
+        human_request_ref=os.getenv("TELEGRAM_HUMAN_REQUEST_REF", ""),
     )
+    if result.get("status") == "BLOCKED":
+        print("TELEGRAM_RENDER_REVIEW=BLOCKED")
+        print("TELEGRAM_SEND=NO")
+        print("NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED")
+        return 0
     print("TELEGRAM_RENDER_REVIEW=PASS")
     print("TELEGRAM_REVIEW_DELIVERY=PASS")
     if result.get("product_label") in {"A", "B"}:
