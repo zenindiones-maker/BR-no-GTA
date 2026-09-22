@@ -2230,7 +2230,7 @@ def test_candidate_requirement_is_typed_and_preserved_through_task_envelope():
         "dependencies": ["diagnose"],
         "expected_output": "CandidateEvidence",
         "acceptance_criteria": ["measurable improvement", "bounded patch"],
-        "risk_side_effect_class": "BOUNDED_MUTATION",
+        "risk_side_effect_class": "MEDIUM",
         "action": "DEVELOPMENT",
     })
     requirements = adaptive.proposal_requirements(
