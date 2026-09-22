@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from app.database import continuous_operation_repository as continuous_repository
+from app.database import gta6_brain_repository as brain_repository
 from app.database import harness_learning_repository as learning_repository
 from app.database.schema import initialize_schema
 from app.services.continuous_operation_policy_service import load_continuous_operation_policy
@@ -1005,6 +1006,176 @@ def _is_due(cycle_kind: str, interval_seconds: int) -> bool:
     return age is None or age >= int(interval_seconds)
 
 
+def _bootstrap_brain_research_state(policy) -> dict[str, int]:
+    now = _now()
+    new_sources = 0
+    new_questions = 0
+    source_id_by_url: dict[str, str] = {}
+    for url in policy.gta6["official_sources"]:
+        source_id = "source-" + sha256(str(url).strip().encode("utf-8")).hexdigest()[:24]
+        source_id_by_url[str(url)] = source_id
+        if brain_repository.get_source(source_id) is not None:
+            continue
+        from urllib.parse import urlparse
+        domain = (urlparse(str(url)).hostname or "").casefold()
+        authority = (
+            "ROCKSTAR_OFFICIAL"
+            if "rockstargames.com" in domain
+            else "TAKE_TWO_OFFICIAL"
+            if "take2games.com" in domain
+            else "OTHER"
+        )
+        brain_repository.upsert_source({
+            "source_id": source_id,
+            "url": str(url),
+            "domain": domain,
+            "source_type": "PRIMARY_SOURCE",
+            "authority_class": authority,
+            "reliability_score": 1.0,
+            "reliability_history": [],
+            "discovered_at": now,
+            "refresh_priority": 100,
+            "refresh_interval_seconds": int(
+                policy.resource_governance["source_freshness_seconds"]
+            ),
+            "refresh_state": "NEW",
+            "active": True,
+            "provenance": {
+                "origin": "continuous_operation_policy",
+                "authority": "DEEPSEEK_HARNESS",
+            },
+            "metadata": {"bootstrap": True},
+        })
+        new_sources += 1
+
+    existing_questions = {
+        str(item["question_id"])
+        for item in brain_repository.list_frontier(
+            statuses=("OPEN", "INVESTIGATING", "RESOLVED", "STALE", "BLOCKED"),
+            limit=500,
+        )
+    }
+    for topic in policy.gta6["initial_topics"]:
+        question_id = "frontier-" + str(topic["topic_id"])
+        if question_id in existing_questions:
+            continue
+        source_id = source_id_by_url.get(str(topic["source_url"]))
+        brain_repository.upsert_frontier_question({
+            "question_id": question_id,
+            "question": str(topic["query"]),
+            "topic": str(topic["subject"]),
+            "entity_ids": [],
+            "priority": 90,
+            "current_confidence": 0.0,
+            "supporting_evidence": [],
+            "contradictory_evidence": [],
+            "missing_evidence": ["fresh official primary-source evidence"],
+            "next_research_strategy": "check watched official source for a meaningful delta",
+            "sources_to_watch": [source_id] if source_id else [],
+            "created_at": now,
+            "status": "OPEN",
+            "metadata": {
+                "topic_id": topic["topic_id"],
+                "source_url": topic["source_url"],
+            },
+        })
+        new_questions += 1
+    return {"new_sources": new_sources, "new_questions": new_questions}
+
+
+def _select_daily_gta6_topic(policy) -> dict[str, Any]:
+    _bootstrap_brain_research_state(policy)
+    due_sources = {
+        str(item["source_id"]): item
+        for item in brain_repository.list_due_sources(now_iso=_now(), limit=50)
+    }
+    frontier = brain_repository.list_frontier(
+        statuses=("OPEN", "INVESTIGATING", "STALE"),
+        limit=50,
+    )
+    for question in frontier:
+        for source_id in question.get("sources_to_watch") or ():
+            source = due_sources.get(str(source_id))
+            if source is None:
+                continue
+            return {
+                "topic_id": (question.get("metadata") or {}).get("topic_id")
+                or question["question_id"],
+                "question_id": question["question_id"],
+                "subject": question.get("topic") or "GTA VI",
+                "query": question["question"],
+                "source_url": source["url"],
+                "source_id": source["source_id"],
+                "frontier_priority": question.get("priority"),
+            }
+    initial = dict(policy.gta6["initial_topics"][0])
+    initial["question_id"] = "frontier-" + str(initial["topic_id"])
+    initial["source_id"] = (
+        "source-"
+        + sha256(str(initial["source_url"]).strip().encode("utf-8")).hexdigest()[:24]
+    )
+    return initial
+
+
+def _update_frontier_after_research(
+    *,
+    topic: dict[str, Any],
+    result: dict[str, Any],
+    promotions: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    question_id = str(topic.get("question_id") or "").strip()
+    if not question_id:
+        return None
+    current = next((
+        item for item in brain_repository.list_frontier(
+            statuses=("OPEN", "INVESTIGATING", "RESOLVED", "STALE", "BLOCKED"),
+            limit=500,
+        )
+        if str(item["question_id"]) == question_id
+    ), None)
+    if current is None:
+        return None
+    promoted = [
+        item for item in promotions if item.get("status") == "PROMOTED"
+    ]
+    evidence = list(dict.fromkeys([
+        *list(current.get("supporting_evidence") or ()),
+        *list(result.get("evidence_refs") or ()),
+    ]))
+    if promoted:
+        status = "RESOLVED"
+        confidence = max(
+            [
+                float(
+                    ((item.get("fact_check") or {}).get("confidence") or 0.0)
+                )
+                for item in promoted
+            ]
+            or [0.0]
+        )
+        missing = []
+        strategy = "watch source for later supersession or contradiction"
+    elif result.get("status") == "NO_MEANINGFUL_GTA6_DELTA":
+        status = "OPEN"
+        confidence = float(current.get("current_confidence") or 0.0)
+        missing = list(current.get("missing_evidence") or ())
+        strategy = "recheck only after freshness window or source change"
+    else:
+        status = "INVESTIGATING"
+        confidence = float(current.get("current_confidence") or 0.0)
+        missing = list(current.get("missing_evidence") or ())
+        strategy = "seek independent evidence before resolution"
+    return brain_repository.upsert_frontier_question({
+        **current,
+        "status": status,
+        "current_confidence": confidence,
+        "supporting_evidence": evidence,
+        "missing_evidence": missing,
+        "next_research_strategy": strategy,
+        "last_checked_at": _now(),
+    })
+
+
 def _topic_source_state(topic: dict[str, Any]) -> dict[str, Any] | None:
     key = "source-" + sha256(str(topic["source_url"]).strip().encode("utf-8")).hexdigest()[:24]
     return continuous_repository.get_source_state(key)
@@ -1113,7 +1284,8 @@ def _telegram_action_first_report(report: dict[str, Any]) -> str:
 def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigger_kind: str) -> dict[str, Any]:
     initialize_schema()
     policy = load_continuous_operation_policy()
-    topic = dict(policy.gta6["initial_topics"][0])
+    bootstrap = _bootstrap_brain_research_state(policy)
+    topic = _select_daily_gta6_topic(policy)
     started_at = _now()
     due = {
         "gta6": _is_due("GTA6_INTELLIGENCE", policy.cadence["gta6_delta_scan_seconds"]),
@@ -1143,6 +1315,11 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
         if result.get("status") == "PASS":
             promotions = _promote_first_mission_knowledge(gta)
             meaningful = any(item.get("status") == "PROMOTED" for item in promotions)
+        frontier_state = _update_frontier_after_research(
+            topic=topic,
+            result=result,
+            promotions=promotions,
+        )
         evidence_refs.extend([f"hermes:{gta['mission_id']}", *result.get("evidence_refs", [])])
         _record_cycle(
             cycle_id=_stable("cycle", {"run": os.getenv("GITHUB_RUN_ID"), "kind": "gta6"}),
@@ -1217,6 +1394,81 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
         ),
         "next": "Aguardar próximo evento ou janela configurada pela policy.",
     }
+    daily_run_id = (
+        "brain-daily-"
+        + str(os.getenv("GITHUB_RUN_ID") or _stable("local", {"at": started_at}))
+    )
+    result_for_metrics = (
+        ((gta or {}).get("research") or {}).get("result") or {}
+    )
+    resolved_questions = len(
+        brain_repository.list_frontier(statuses=("RESOLVED",), limit=500)
+    )
+    open_questions = len(
+        brain_repository.list_frontier(
+            statuses=("OPEN", "INVESTIGATING", "STALE", "BLOCKED"),
+            limit=500,
+        )
+    )
+    retrieval_context_bytes = len(
+        json.dumps(
+            result_for_metrics.get("bounded_knowledge_context") or {},
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+    )
+    daily_brain = brain_repository.upsert_daily_run({
+        "run_id": daily_run_id,
+        "started_at": started_at,
+        "finished_at": _now(),
+        "status": "PASS",
+        "sources_checked": int(result_for_metrics.get("source_fetch_count") or 0),
+        "sources_changed": int(
+            bool(
+                result_for_metrics
+                and result_for_metrics.get("SOURCE_UNCHANGED") != "YES"
+                and result_for_metrics.get("status") == "PASS"
+            )
+        ),
+        "new_sources": int(bootstrap.get("new_sources") or 0),
+        "new_claims": len(result_for_metrics.get("candidate_claims") or ()),
+        "verified_claims": sum(
+            1 for item in promotions if item.get("status") == "PROMOTED"
+        ),
+        "contradicted_claims": sum(
+            1
+            for item in promotions
+            if str((item.get("fact_check") or {}).get("verdict") or "")
+            in {"CONTRADICTED", "CONFLICTING_EVIDENCE"}
+        ),
+        "superseded_claims": sum(
+            1
+            for item in promotions
+            if (item.get("knowledge") or {}).get("lineage", {}).get(
+                "supersedes_claim_id"
+            )
+        ),
+        "duplicates_avoided": int(
+            bool(result_for_metrics.get("duplicate_research_avoided"))
+        ),
+        "open_questions": open_questions,
+        "resolved_questions": resolved_questions,
+        "obsidian_notes_updated": int((manifest or {}).get("file_count") or 0),
+        "retrieval_context_bytes": retrieval_context_bytes,
+        "evidence_refs": list(dict.fromkeys(evidence_refs)),
+        "metadata": {
+            "question_id": topic.get("question_id"),
+            "source_id": topic.get("source_id"),
+            "frontier_state": (
+                frontier_state.get("status")
+                if due["gta6"] and "frontier_state" in locals()
+                and frontier_state is not None
+                else None
+            ),
+            "human_surface": "telegram_group",
+        },
+    })
+
     report = {
         "schema": "br-continuous-operation-cycle/v1", "status": "PASS",
         "checks": {
@@ -1226,6 +1478,7 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
         "meaningful_change": meaningful, "gta6": gta, "knowledge_promotions": promotions,
         "improvement_candidate": improvement_candidate, "failure_prevention": failure,
         "scoreboard": continuous_repository.scoreboard(), "obsidian_manifest": manifest,
+        "brain_daily_run": daily_brain, "research_topic": topic,
         "evidence_refs": list(dict.fromkeys(evidence_refs)), "change_summary": change_summary,
         "CONTINUOUS_INTELLIGENCE_LOOP": "PASS", "CONTINUOUS_IMPROVEMENT_LOOP": "PASS",
         "TERMUX_HEAVY_PROCESSING": "NO", "NEW_VOICE_SYNTHESIS": "NO",
