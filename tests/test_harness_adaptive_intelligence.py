@@ -233,6 +233,60 @@ def test_semantic_schema_rejection_replans_once_with_exact_enum_feedback():
     assert evidence["validated_by"] == "DEEPSEEK_HARNESS"
 
 
+def test_semantic_overlong_goal_replans_with_explicit_wire_bounds():
+    context = {
+        "human_goal": "Analise o sistema e encontre uma melhoria mensurável segura.",
+        "project": "BR-no-GTA",
+        "goal_id": "goal-bounded-string-replan",
+        "subject": "system",
+        "conversation_state": {},
+        "bounded_memory_context": {},
+        "relevant_failure_memories": [],
+        "human_feedback_decisions": [],
+        "provider_health": {},
+        "registry_summary": [],
+        "competence_evidence": [],
+        "resource_bounds": {"max_tasks_per_mission": 8},
+        "known_bad_paths": [],
+    }
+    calls = []
+
+    def inference(prompt, _context):
+        calls.append(prompt)
+        proposal = _proposal(
+            candidate_id="agent-office.codex.readonly-analysis"
+        )
+        if len(calls) == 1:
+            proposal["interpreted_goal"] = "x" * 161
+            return proposal
+        assert (
+            "The previous proposal failed DeepSeek Harness schema validation."
+            in prompt
+        )
+        assert "interpreted_goal exceeds bounded length" in prompt
+        assert "g<=160" in prompt
+        assert "obj<=140" in prompt
+        assert "out<=96" in prompt
+        return proposal
+
+    result, evidence = propose_validated_semantic_plan(
+        context,
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert len(result.proposal.interpreted_goal) <= 160
+    assert len(calls) == 2
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert any(
+        "schema_validation:ValueError:interpreted_goal exceeds bounded length"
+        in reason
+        for batch in evidence["rejection_reasons"]
+        for reason in batch
+    )
+
+
 def test_competence_can_override_semantic_candidate_hint():
     requirement = {
         "task_id": "inspect",
