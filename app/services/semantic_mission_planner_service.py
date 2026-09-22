@@ -674,7 +674,10 @@ def build_semantic_planner_prompt(
         "Wire types are strict: u is exactly one JSON number in 0..1 (never "
         "array/object/string); ask is boolean; q is null|string; a,o,ctx,mem,"
         "reuse,avoid,caps,dep,ok are arrays of strings; t is an array of task "
-        "objects. Set need='' when caps is nonempty. Prefer 2-4 tasks when sufficient; "
+        "objects. Every task id must be lowercase and match "
+        "^[a-z0-9][a-z0-9._-]{0,79}$; ids must be unique and dep entries must "
+        "reference those exact ids. Set need='' when caps is nonempty. Prefer "
+        "2-4 tasks when sufficient; "
         "use <=%d tasks; clarify only if required for a safe feasible plan." % max_tasks
     )
     return "\n".join(
