@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, Callable
 
 from app.services.harness_authorization_service import validate_harness_authorization
@@ -56,6 +58,7 @@ def _editorial_lineage_contract(lineage: dict[str, Any] | None) -> dict[str, Any
     artifact_status = str(data.get("artifact_status") or "").strip().upper()
     artifact_origin = str(data.get("artifact_origin") or "").strip().upper()
     content_sha256 = str(data.get("content_sha256") or "").strip().lower()
+    artifact_file = str(data.get("artifact_file") or "").strip()
     artifact_real = data.get("artifact_real") is True
     explicitly_non_test = all(
         data.get(key) is not True
@@ -94,6 +97,7 @@ def _editorial_lineage_contract(lineage: dict[str, Any] | None) -> dict[str, Any
         "artifact_origin": artifact_origin or None,
         "artifact_real": artifact_real,
         "content_sha256_valid": hash_valid,
+        "artifact_file": artifact_file or None,
         "test_artifact": data.get("test_artifact") is True,
         "synthetic": data.get("synthetic") is True,
         "fixture": data.get("fixture") is True,
@@ -216,6 +220,43 @@ def _delivery_contract(
     }
 
 
+def _verify_real_editorial_artifact_file(
+    lineage: dict[str, Any] | None,
+    *,
+    expected_sha256: str,
+) -> dict[str, Any]:
+    data = dict(lineage or {})
+    raw_path = str(data.get("artifact_file") or "").strip()
+    if not raw_path:
+        return {
+            "valid": False,
+            "reason": "MISSING_REAL_EDITORIAL_ARTIFACT_FILE",
+        }
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(Path.cwd().resolve())
+    except (OSError, ValueError):
+        return {
+            "valid": False,
+            "reason": "EDITORIAL_ARTIFACT_FILE_OUTSIDE_WORKSPACE_OR_MISSING",
+        }
+    if not resolved.is_file():
+        return {
+            "valid": False,
+            "reason": "EDITORIAL_ARTIFACT_FILE_NOT_FILE",
+        }
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    return {
+        "valid": digest == expected_sha256,
+        "reason": None if digest == expected_sha256 else "EDITORIAL_ARTIFACT_HASH_MISMATCH",
+        "artifact_file": str(resolved),
+        "artifact_file_sha256": digest,
+    }
+
+
 def send_harness_message_to_human_group(
     *,
     authorization,
@@ -323,12 +364,40 @@ def deliver_script_human_review_ready(
     lineage: dict[str, Any] | None = None,
     transport: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    script_text = str(complete_script or "").strip()
+    lineage_contract = _editorial_lineage_contract(lineage)
+    script_sha256 = hashlib.sha256(script_text.encode("utf-8")).hexdigest()
+    if not lineage_contract["allowed"] or script_sha256 != str(
+        (lineage or {}).get("content_sha256") or ""
+    ).strip().lower():
+        return {
+            "status": "BLOCKED",
+            "TELEGRAM_SEND": "NO",
+            "category": SCRIPT_HUMAN_REVIEW_READY,
+            "reason": "INVALID_OR_NON_GENUINE_EDITORIAL_LINEAGE",
+            "editorial_lineage": lineage_contract,
+        }
+    if transport is None:
+        artifact_check = _verify_real_editorial_artifact_file(
+            lineage,
+            expected_sha256=script_sha256,
+        )
+        if not artifact_check["valid"]:
+            return {
+                "status": "BLOCKED",
+                "TELEGRAM_SEND": "NO",
+                "category": SCRIPT_HUMAN_REVIEW_READY,
+                "reason": artifact_check["reason"],
+                "editorial_lineage": lineage_contract,
+                "artifact_check": artifact_check,
+            }
+
     sections = [
         "RESUMO EDITORIAL\n\n" + str(editorial_summary or "").strip(),
         "EVIDENCE MAP\n\n" + str(evidence_map or "").strip(),
         "OUTLINE\n\n" + str(outline or "").strip(),
     ]
-    script_chunks = _script_chunks(complete_script)
+    script_chunks = _script_chunks(script_text)
     total = len(script_chunks)
     sections.extend(
         f"ROTEIRO {index}/{total}\n\n{chunk}"
