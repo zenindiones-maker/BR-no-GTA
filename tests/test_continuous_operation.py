@@ -215,6 +215,35 @@ def test_non_primary_claim_cannot_auto_promote_to_knowledge_brain():
     )
     assert result["status"] == "HUMAN_REVIEW"
     assert result["knowledge"] is None
+    assert result["canonical_materialized"] is False
+    assert result["brain_status"] == "UNVERIFIED"
+    assert result["source_policy"]["primary_evidence_policy"] is False
+    assert result["memory_gate"]["memory"]["status"] == "CANDIDATE"
+
+
+def test_rumor_claim_is_rejected_from_canonical_materialization():
+    episode = _observed_episode("episode-rumor-claim")
+    result = gate_verified_gta6_claim(
+        candidate_claim={
+            "subject": "Vice City",
+            "claim_text": "A rumor claims an unannounced GTA VI mechanic.",
+            "source_id": "rumor:example",
+            "source_url": "https://example.invalid/rumor",
+            "source_type": "RUMOR",
+            "published_at": None,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_ref": "rumor:example:1",
+            "evidence_class": "RUMOR",
+            "status": "UNVERIFIED",
+            "related_claims": [],
+        },
+        fact_check={"verdict": "SUPPORTED", "confidence": 1.0},
+        source_episode_id=episode["episode_id"],
+    )
+    assert result["status"] == "HUMAN_REVIEW"
+    assert result["knowledge"] is None
+    assert result["canonical_materialized"] is False
+    assert result["brain_status"] == "REJECTED"
     assert result["memory_gate"]["memory"]["status"] == "CANDIDATE"
 
 
