@@ -883,10 +883,15 @@ def test_bounded_codex_registry_allows_only_explicit_readonly_inspection_extensi
     assert record is not None
     assert "ls" in record.allowed_tools
     assert "sed" in record.allowed_tools
+    assert "head" in record.allowed_tools
     for forbidden in ("curl", "wget", "ssh", "scp", "rsync", "gh"):
         assert forbidden not in record.allowed_tools
 
     _validate_command("ls -la app/services/agent_office", record.allowed_tools)
+    _validate_command(
+        "head -n 40 app/services/agent_office/codex_bounded_worker.py",
+        record.allowed_tools,
+    )
     _validate_command(
         "sed -n '1,120p' app/services/agent_office/codex_bounded_worker.py",
         record.allowed_tools,
