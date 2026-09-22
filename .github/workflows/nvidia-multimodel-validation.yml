@@ -5,6 +5,9 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
+      - "app/database/harness_learning_repository.py"
+      - "app/services/harness_learning_service.py"
+      - "scripts/nvidia_multimodel_probe.py"
       - "app/services/nvidia_nim_provider.py"
       - "app/services/global_capability_registry_base.py"
       - "app/services/provider_health_service.py"
@@ -15,6 +18,7 @@ on:
       - "tests/test_nvidia_multi_model_provider.py"
       - "tests/test_harness_routing_policy_service.py"
       - "tests/test_harness_ai_provider_service.py"
+      - "tests/test_harness_learning_system.py"
       - ".github/workflows/nvidia-multimodel-validation.yml"
   workflow_dispatch:
 
@@ -41,7 +45,12 @@ jobs:
       - name: NVIDIA multi-model deterministic gates
         run: |
           set -euo pipefail
+          python -m pytest -q tests/test_harness_learning_system.py -k "harness_episode_error_json_serialization_round_trip_and_legacy_text"
+          echo "HARNESS_EPISODE_ERROR_JSON_SERIALIZATION=PASS"
+          python -m pytest -q tests/test_nvidia_multi_model_provider.py -k "nvidia_probe_persists_structured_error_through_learning_plane"
+          echo "NVIDIA_PROBE_PERSISTENCE=PASS"
           python -m pytest -q tests/test_nvidia_multi_model_provider.py tests/test_harness_ai_provider_service.py tests/test_harness_routing_policy_service.py tests/test_semantic_planner_provider_contract.py
+          echo "NVIDIA_MULTI_MODEL_DETERMINISTIC_GATES=PASS"
           echo "NVIDIA_GENERIC_ADAPTER=PASS"
           echo "NVIDIA_MULTI_MODEL_REGISTRY=PASS"
           echo "MODEL_SELECTION_NOT_HARDCODED=PASS"
@@ -51,5 +60,6 @@ jobs:
           echo "FAILURE_AWARE_SELECTION=PASS"
           echo "MODEL_LEVEL_CIRCUIT_BREAKER=PASS"
           echo "NO_SECRET_LEAK=PASS"
+          echo "PAID_API_FALLBACK=NO"
           echo "NO_SECOND_ROUTER=PASS"
           echo "HARNESS_FINAL_AUTHORITY=PASS"
