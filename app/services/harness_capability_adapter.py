@@ -9,7 +9,10 @@ from app.services.harness_authorization_service import (
     authorization_to_context,
     validate_harness_authorization,
 )
-from app.services.harness_capability_service import execute_capability
+from app.services.harness_capability_service import (
+    CapabilityEvidence,
+    execute_capability,
+)
 from app.services.harness_executor_contract_service import (
     AUTH_ROUTING_PAYLOAD,
     CAPABILITY_PAYLOAD,
@@ -44,6 +47,35 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_jsonable(item) for item in value]
     return value
+
+
+class CapabilityReturnedFailure(RuntimeError):
+    """Fail-closed executor result that completed transport but not capability work."""
+
+    def __init__(self, capability_id: str, status: str, safe_reason: str) -> None:
+        self.capability_id = str(capability_id)
+        self.status = str(status)
+        self.safe_reason = str(safe_reason)[:240]
+        super().__init__(
+            f"capability returned non-executed evidence: "
+            f"{self.capability_id} status={self.status} reason={self.safe_reason}"
+        )
+
+
+def _failed_capability_reason(value: CapabilityEvidence) -> str:
+    result = value.result
+    if isinstance(result, dict):
+        errors = result.get("errors")
+        if isinstance(errors, (list, tuple)):
+            for item in errors:
+                text = str(item or "").strip()
+                if text:
+                    return text
+        for key in ("error", "failure_mode", "status"):
+            text = str(result.get(key) or "").strip()
+            if text:
+                return text
+    return "executor reported failed/inactive CapabilityEvidence"
 
 
 @dataclass(frozen=True)
@@ -150,6 +182,14 @@ class CapabilityAdapter:
             authorization=auth,
             payload=body,
         )
+        if isinstance(result, CapabilityEvidence) and (
+            result.status != "EXECUTED" or result.active is not True
+        ):
+            raise CapabilityReturnedFailure(
+                record.capability_id,
+                result.status,
+                _failed_capability_reason(result),
+            )
         elapsed = time.perf_counter() - started
         return CapabilityExecutionResult(
             task_id=task.task_id,
