@@ -14,6 +14,7 @@ from app.services.agent_office.contracts import (
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
 from app.services.agent_office import munder_adapter
+from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
     _validate_command,
@@ -884,6 +885,7 @@ def test_bounded_codex_registry_allows_only_explicit_readonly_inspection_extensi
     assert "ls" in record.allowed_tools
     assert "sed" in record.allowed_tools
     assert "head" in record.allowed_tools
+    assert "wc" in record.allowed_tools
     for forbidden in ("curl", "wget", "ssh", "scp", "rsync", "gh"):
         assert forbidden not in record.allowed_tools
 
@@ -902,6 +904,140 @@ def test_bounded_codex_registry_allows_only_explicit_readonly_inspection_extensi
     )
     with pytest.raises(PermissionError, match="forbidden command"):
         _validate_command("curl https://example.invalid", record.allowed_tools)
+
+
+def _bounded_wc_fixture(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    workspace = tmp_path / "wc-worktree"
+    scoped = workspace / "app" / "services" / "agent_office"
+    scoped.mkdir(parents=True)
+    target = scoped / "sample.py"
+    target.write_text("one\ntwo\n", encoding="utf-8")
+    outside_scope = workspace / "README.md"
+    outside_scope.write_text("outside\n", encoding="utf-8")
+    external = tmp_path / "external.txt"
+    external.write_text("external\n", encoding="utf-8")
+    symlink = scoped / "escape.txt"
+    symlink.symlink_to(external)
+
+    lease = DelegatedTaskLease(
+        mission_id="wc-mission",
+        task_id="wc-task",
+        goal_id="wc-goal",
+        harness_decision_id="wc-decision",
+        authorization_id="wc-auth",
+        delegation_id="wc-delegation",
+        agent_id="codex-development",
+        capability_ids=("agent-office.codex.bounded-development",),
+        base_sha="a" * 40,
+        allowed_paths=("app/services/agent_office",),
+        allowed_tools=("wc", "git", "python"),
+        allowed_actions=("analyze", "inspect", "edit"),
+        forbidden_actions=("push",),
+        input_artifact_refs=(),
+        expected_outputs=("inspection",),
+        acceptance_criteria=("bounded read-only measurement",),
+        evidence_requirements=("command evidence",),
+        time_budget_seconds=60,
+        cost_budget=0.0,
+        tool_call_budget=6,
+        retry_budget=0,
+        max_parallelism=1,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat(),
+        escalation_conditions=("scope_change",),
+        owned_task_class="bounded-development",
+        role="SPECIALIST_TASK_OWNER",
+        read_set=("app/services/agent_office",),
+        write_set=("app/services/agent_office",),
+    )
+    return workspace, lease, target, outside_scope, symlink
+
+
+def test_bounded_wc_readonly_accepts_only_scoped_explicit_files(tmp_path):
+    workspace, lease, target, _outside, _symlink = _bounded_wc_fixture(
+        tmp_path
+    )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    rel = target.relative_to(workspace).as_posix()
+    for mode in ("-l", "-c", "-w"):
+        _validate_command(
+            f"wc {mode} {rel}",
+            record.allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        "wc -l README.md",
+        "wc -l ../external.txt",
+        "wc -l /etc/passwd",
+        "wc -l app/services/agent_office/escape.txt",
+        "wc -l -",
+        "wc --files0-from=list.txt app/services/agent_office/sample.py",
+        "wc -m app/services/agent_office/sample.py",
+        "wc -l app/services/agent_office/*.py",
+        "wc -l $HOME/.profile",
+        "wc -l app/services/agent_office/sample.py > counted.txt",
+    ),
+)
+def test_bounded_wc_blocks_scope_escape_and_arbitrary_arguments(
+    tmp_path,
+    command,
+):
+    workspace, lease, _target, _outside, _symlink = _bounded_wc_fixture(
+        tmp_path
+    )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    with pytest.raises(PermissionError):
+        _validate_command(
+            command,
+            record.allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
+
+
+def test_bounded_wc_requires_task_envelope_and_rejects_pipelines(tmp_path):
+    workspace, lease, target, _outside, _symlink = _bounded_wc_fixture(
+        tmp_path
+    )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    rel = target.relative_to(workspace).as_posix()
+
+    with pytest.raises(PermissionError, match="TaskEnvelope"):
+        _validate_command(
+            f"wc -l {rel}",
+            record.allowed_tools,
+        )
+    with pytest.raises(PermissionError, match="pipelines"):
+        _validate_command(
+            f"bash -lc 'wc -l {rel} | cat'",
+            (*record.allowed_tools, "bash"),
+            lease=lease,
+            workspace=workspace,
+        )
+    with pytest.raises(PermissionError):
+        _validate_command(
+            f"bash -lc 'wc -l $(printf %s {rel})'",
+            (*record.allowed_tools, "bash"),
+            lease=lease,
+            workspace=workspace,
+        )
 
 
 @pytest.mark.parametrize(

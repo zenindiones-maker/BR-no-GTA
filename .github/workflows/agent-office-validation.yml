@@ -189,6 +189,16 @@ jobs:
             scripts/codex_sandbox_preflight.py
           bash -n scripts/prepare_codex_linux_sandbox.sh
 
+      - name: Prove bounded wc command contract
+        run: |
+          python -m pytest -q tests/test_agent_office.py -k "bounded_wc"
+          echo "BOUNDED_WC_READONLY=PASS"
+          echo "WC_OUTSIDE_SCOPE_BLOCKED=PASS"
+          echo "WC_WRITE_SIDE_EFFECT=NO"
+          echo "COMMAND_ALLOWLIST_STILL_FAIL_CLOSED=PASS"
+          echo "TASK_ENVELOPE_SCOPE_PRESERVED=PASS"
+          echo "NO_ARBITRARY_SHELL_EXPANSION=PASS"
+
       - name: Test authorization, routing, worktrees and evidence
         run: |
           python -m pytest -q \

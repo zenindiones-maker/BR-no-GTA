@@ -405,6 +405,52 @@ _SAFE_SED_PRINT_SCRIPT_RE = re.compile(
 )
 
 
+_SAFE_WC_MODES = {"-l", "-c", "-w"}
+_SAFE_WC_PATH_RE = re.compile(r"^[A-Za-z0-9_.][A-Za-z0-9_./-]{0,1023}$")
+
+
+def _validate_readonly_wc(
+    parts: list[str],
+    *,
+    lease: DelegatedTaskLease | None,
+    workspace: Path | None,
+) -> None:
+    if lease is None or workspace is None:
+        raise PermissionError("wc requires delegated TaskEnvelope scope")
+    if len(parts) < 3 or parts[1] not in _SAFE_WC_MODES:
+        raise PermissionError(
+            "wc is limited to -l, -c, or -w with explicit scoped files"
+        )
+
+    root = workspace.resolve()
+    for raw_path in parts[2:]:
+        if (
+            not raw_path
+            or raw_path == "-"
+            or raw_path.startswith("-")
+            or raw_path.startswith("/")
+            or not _SAFE_WC_PATH_RE.fullmatch(raw_path)
+            or ".." in Path(raw_path).parts
+        ):
+            raise PermissionError("wc path is outside the bounded read contract")
+
+        target = (root / raw_path).resolve()
+        try:
+            relative = target.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise PermissionError(
+                "wc path escapes the delegated worktree"
+            ) from exc
+        if not lease.allows_path(relative, write=False):
+            raise PermissionError(
+                "wc path is outside delegated TaskEnvelope read scope"
+            )
+        if not target.is_file():
+            raise PermissionError(
+                "wc requires an existing regular file in delegated scope"
+            )
+
+
 def _validate_readonly_sed(parts: list[str]) -> None:
     args = parts[1:]
     if not args:
@@ -484,7 +530,13 @@ def _shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
     segments.append(tuple(current))
     return tuple(segments)
 
-def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
+def _validate_command(
+    command: str,
+    allowed_tools: tuple[str, ...],
+    *,
+    lease: DelegatedTaskLease | None = None,
+    workspace: Path | None = None,
+) -> None:
     try:
         parts = shlex.split(command)
     except ValueError as exc:
@@ -496,22 +548,51 @@ def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
     normalized = " ".join(parts)
     if tool in _FORBIDDEN_COMMANDS:
         raise PermissionError(f"Codex attempted forbidden command: {raw_tool}")
-    if re.search(r"(?<![A-Za-z0-9_-])(?:curl|wget|ssh|scp|rsync|gh|docker|podman)(?![A-Za-z0-9_-])", normalized):
+    if re.search(
+        r"(?<![A-Za-z0-9_-])(?:curl|wget|ssh|scp|rsync|gh|docker|podman)"
+        r"(?![A-Za-z0-9_-])",
+        normalized,
+    ):
         raise PermissionError("Codex attempted forbidden external/network command")
-    if re.search(r"(?<![A-Za-z0-9_-])git\s+(?:push|pull|fetch|merge|rebase|remote)(?![A-Za-z0-9_-])", normalized):
+    if re.search(
+        r"(?<![A-Za-z0-9_-])git\s+"
+        r"(?:push|pull|fetch|merge|rebase|remote)(?![A-Za-z0-9_-])",
+        normalized,
+    ):
         raise PermissionError("Codex attempted forbidden git side effect")
     if tool in _SHELL_WRAPPER_TOOLS:
         if len(parts) != 3 or parts[1] not in {"-lc", "-c"}:
             raise PermissionError(
                 "Codex shell wrapper is outside the bounded wrapper contract"
             )
-        for segment in _shell_segments(parts[2]):
-            _validate_command(shlex.join(segment), allowed_tools)
+        segments = _shell_segments(parts[2])
+        if re.search(r"(?<!\|)\|(?!\|)", parts[2]) and any(
+            segment
+            and canonical_command_tool(segment[0]) == "wc"
+            for segment in segments
+        ):
+            raise PermissionError("wc pipelines are outside the bounded contract")
+        for segment in segments:
+            _validate_command(
+                shlex.join(segment),
+                allowed_tools,
+                lease=lease,
+                workspace=workspace,
+            )
         return
     if tool not in allowed_tools:
-        raise PermissionError(f"Codex command is outside COMMAND_ALLOWLIST: {tool}")
+        raise PermissionError(
+            f"Codex command is outside COMMAND_ALLOWLIST: {tool}"
+        )
     if tool == "sed":
         _validate_readonly_sed(parts)
+        return
+    if tool == "wc":
+        _validate_readonly_wc(
+            parts,
+            lease=lease,
+            workspace=workspace,
+        )
         return
 
 
@@ -646,7 +727,12 @@ def codex_bounded_development_worker(
     if len(observed_commands) > lease.tool_call_budget:
         raise RuntimeError("Codex exceeded tool_call_budget")
     for observed in observed_commands:
-        _validate_command(observed, lease.allowed_tools)
+        _validate_command(
+            observed,
+            lease.allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
 
     changed = _changed_paths(workspace, lease.base_sha)
     candidate_repair_used = False
@@ -750,7 +836,12 @@ def codex_bounded_development_worker(
         if len(observed_commands) + len(candidate_repair_commands) > lease.tool_call_budget:
             raise RuntimeError("Codex exceeded tool_call_budget")
         for observed in candidate_repair_commands:
-            _validate_command(observed, lease.allowed_tools)
+            _validate_command(
+            observed,
+            lease.allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
         observed_commands = (*observed_commands, *candidate_repair_commands)
         changed = _changed_paths(workspace, lease.base_sha)
         if not changed:
@@ -822,7 +913,12 @@ def codex_bounded_development_worker(
         if len(observed_commands) + len(repair_commands) > lease.tool_call_budget:
             raise RuntimeError("Codex exceeded tool_call_budget")
         for observed in repair_commands:
-            _validate_command(observed, lease.allowed_tools)
+            _validate_command(
+            observed,
+            lease.allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
 
         changed_after_repair = _changed_paths(workspace, lease.base_sha)
         if changed_after_repair != changed:
