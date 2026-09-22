@@ -150,6 +150,146 @@ def execute_authorized_agent_office(
     )
 
 
+def build_agent_office_specialist_contract(
+    *,
+    record,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Project one Registry engineering capability into an Agent Office lease.
+
+    The projection is capability-first: no specialist capability id or agent
+    name is known by this function. New engineering executors can participate
+    by registering the canonical Agent Office specialist binding plus contracts.
+    """
+
+    if record is None or not record.execution_enabled:
+        raise PermissionError("Agent Office specialist capability is not executable")
+    if record.executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
+        raise PermissionError("Agent Office specialist Registry binding mismatch")
+    if str(record.domain or "") != "development":
+        raise PermissionError("Agent Office specialist must belong to development domain")
+    if "DEVELOPMENT" not in tuple(record.allowed_actions or ()):
+        raise PermissionError("Agent Office specialist must allow DEVELOPMENT")
+    agent_id = str(record.agent_id or "").strip()
+    if not agent_id:
+        raise PermissionError("Agent Office specialist requires Registry agent_id")
+
+    side_effect_class = str(
+        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+    ).upper()
+    mutation_capable = side_effect_class in {
+        "BOUNDED_MUTATION",
+        "MUTATING",
+    } or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+
+    registry_tools = tuple(getattr(record, "allowed_tools", ()) or ())
+    requested_tools = tuple(
+        str(item)
+        for item in (
+            payload.get("allowed_tools")
+            if payload.get("allowed_tools") is not None
+            else registry_tools
+        )
+        if str(item).strip()
+    )
+    if registry_tools and not set(requested_tools) <= set(registry_tools):
+        raise PermissionError("Agent Office task tools expand Registry contract")
+
+    read_set = list(payload.get("read_set") or [])
+    write_set = list(payload.get("write_set") or [])
+    allowed_paths = list(
+        payload.get("allowed_paths")
+        if payload.get("allowed_paths") is not None
+        else (
+            list(getattr(record, "default_write_scope", ()) or ())
+            if mutation_capable
+            else []
+        )
+    )
+    mission_read_scope = list(
+        payload.get("mission_read_scope")
+        if payload.get("mission_read_scope") is not None
+        else (
+            list(read_set)
+            or list(getattr(record, "default_read_scope", ()) or ())
+        )
+    )
+    mission_write_scope = list(
+        payload.get("mission_write_scope")
+        if payload.get("mission_write_scope") is not None
+        else (
+            list(write_set)
+            or list(getattr(record, "default_write_scope", ()) or ())
+        )
+    )
+    if mutation_capable:
+        if not allowed_paths or not write_set:
+            raise ValueError(
+                "mutating Agent Office capability requires allowed_paths and write_set"
+            )
+    elif write_set or mission_write_scope:
+        raise PermissionError(
+            "read-only Agent Office capability cannot receive write scope"
+        )
+
+    task_actions = ["analyze", "inspect"]
+    if {"python", "pytest"} & set(requested_tools):
+        task_actions.extend(["test", "benchmark"])
+    if mutation_capable:
+        task_actions.extend(["edit", "commit_candidate"])
+    requested_actions = list(payload.get("allowed_actions") or task_actions)
+    if not set(requested_actions) <= set(task_actions):
+        raise PermissionError(
+            "Agent Office task actions expand capability side-effect contract"
+        )
+
+    task_class = str(
+        payload.get("task_class") or "delegated-engineering"
+    ).strip()
+    objective = str(
+        payload.get("task") or payload.get("objective") or ""
+    ).strip()
+    if not objective:
+        raise ValueError("Agent Office specialist objective is required")
+
+    task = {
+        "task_id": str(payload.get("task_id") or "task").strip(),
+        "agent": agent_id,
+        "capability": str(record.capability_id),
+        "action": "edit" if mutation_capable else "analyze",
+        "objective": objective,
+        "role": str(payload.get("role") or "REGISTRY_ENGINEERING_TASK_OWNER"),
+        "owned_task_class": task_class,
+        "allowed_paths": allowed_paths,
+        "allowed_tools": list(requested_tools),
+        "allowed_actions": requested_actions,
+        "input_artifact_refs": list(payload.get("input_artifact_refs") or []),
+        "expected_outputs": list(
+            payload.get("expected_outputs") or [str(record.output_contract)]
+        ),
+        "acceptance_criteria": list(
+            payload.get("acceptance_criteria") or ["no authority expansion"]
+        ),
+        "evidence_requirements": list(
+            payload.get("evidence_requirements") or [str(record.evidence_contract)]
+        ),
+        "read_set": read_set,
+        "write_set": write_set,
+        "tool_call_budget": int(payload.get("tool_call_budget") or 32),
+        "retry_budget": int(payload.get("retry_budget") or 1),
+    }
+    return {
+        "task": task,
+        "agent_id": agent_id,
+        "mutation_capable": mutation_capable,
+        "side_effect_class": side_effect_class,
+        "mission_read_scope": mission_read_scope,
+        "mission_write_scope": mission_write_scope,
+        "allowed_paths": allowed_paths,
+        "task_type": task_class.upper().replace("-", "_"),
+    }
+
+
 def execute_authorized_agent_office_specialist(
     *,
     authorization: HarnessAuthorization | dict[str, Any] | str,
@@ -157,17 +297,9 @@ def execute_authorized_agent_office_specialist(
     payload: dict[str, Any],
     repository_root: Path | None = None,
 ) -> CapabilityEvidence:
-    """Run one Codex specialist through Agent Office under the existing Harness decision.
+    """Execute any Registry-declared Agent Office engineering specialist."""
 
-    This derives a child Agent Office authorization deterministically; it does not
-    ask the Harness for a second semantic decision and cannot expand the caller's scope.
-    """
     capability_id = str(routing_decision.selected_capability_id or "")
-    if capability_id not in {
-        CODEX_READONLY_CAPABILITY_ID,
-        CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID,
-    }:
-        raise PermissionError("unsupported Agent Office specialist capability")
     record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
     if record is None or record.executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
         raise PermissionError("Agent Office specialist Registry binding mismatch")
@@ -180,6 +312,8 @@ def execute_authorized_agent_office_specialist(
         raise PermissionError("Agent Office specialist routing action mismatch")
     if routing_decision.selected_executor_binding != AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING:
         raise PermissionError("Agent Office specialist routing executor mismatch")
+    if capability_id != record.capability_id:
+        raise PermissionError("Agent Office specialist capability drifted from Registry")
 
     goal_id = str(payload.get("goal_id") or auth.lineage.get("goal_id") or "").strip()
     if not goal_id:
@@ -188,6 +322,13 @@ def execute_authorized_agent_office_specialist(
     task_id = str(payload.get("task_id") or capability_id.rsplit(".", 1)[-1]).strip()
     if not mission_id or not task_id:
         raise ValueError("mission_id/task_id are required")
+
+    contract = build_agent_office_specialist_contract(
+        record=record,
+        payload={**payload, "task_id": task_id},
+    )
+    task = contract["task"]
+    agent_id = contract["agent_id"]
 
     office_routing = route_harness_request(
         HarnessRoutingRequest(
@@ -203,23 +344,6 @@ def execute_authorized_agent_office_specialist(
             learning_required=False,
         )
     )
-    write_capable = capability_id == CODEX_BOUNDED_DEVELOPMENT_CAPABILITY_ID
-    agent_id = "codex-development" if write_capable else "codex"
-    allowed_paths = list(payload.get("allowed_paths") or [])
-    read_set = list(payload.get("read_set") or [])
-    write_set = list(payload.get("write_set") or [])
-    mission_read_scope = list(
-        payload.get("mission_read_scope")
-        if payload.get("mission_read_scope") is not None
-        else allowed_paths
-    )
-    mission_write_scope = list(
-        payload.get("mission_write_scope")
-        if payload.get("mission_write_scope") is not None
-        else allowed_paths
-    )
-    if write_capable and (not allowed_paths or not write_set):
-        raise ValueError("bounded-development requires allowed_paths and write_set")
     child_auth = issue_harness_authorization(
         authorized_action="DEVELOPMENT",
         subject=f"capability:{AGENT_OFFICE_CAPABILITY_ID}",
@@ -232,70 +356,47 @@ def execute_authorized_agent_office_specialist(
             "selected_executor_binding": office_routing.selected_executor_binding,
             "goal_id": goal_id,
             "delegated_specialist_capability": capability_id,
-            "mission_read_scope": list(mission_read_scope),
-            "mission_write_scope": list(mission_write_scope),
+            "delegated_specialist_version": str(record.version or "1"),
+            "delegated_specialist_agent_id": agent_id,
+            "mission_read_scope": list(contract["mission_read_scope"]),
+            "mission_write_scope": list(contract["mission_write_scope"]),
+            "side_effect_class": contract["side_effect_class"],
             "scope_authority": "DEEPSEEK_HARNESS",
         },
     )
 
-    task = {
-        "task_id": task_id,
-        "agent": agent_id,
-        "capability": capability_id,
-        "action": "edit" if write_capable else "analyze",
-        "objective": str(payload.get("task") or payload.get("objective") or "").strip(),
-        "role": str(payload.get("role") or "CODEX_ENGINEERING_TASK_OWNER"),
-        "owned_task_class": str(payload.get("task_class") or (
-            "BOUNDED_DEVELOPMENT" if write_capable else "READONLY_ANALYSIS"
-        )),
-        "allowed_paths": allowed_paths,
-        "allowed_tools": list(payload.get("allowed_tools") or (
-            ["git", "python", "pytest", "codex", "rg", "cat"]
-            if write_capable
-            else ["git", "codex", "rg", "cat"]
-        )),
-        "allowed_actions": list(payload.get("allowed_actions") or (
-            ["analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"]
-            if write_capable
-            else ["analyze", "inspect"]
-        )),
-        "input_artifact_refs": list(payload.get("input_artifact_refs") or []),
-        "expected_outputs": list(payload.get("expected_outputs") or ["structured_result"]),
-        "acceptance_criteria": list(payload.get("acceptance_criteria") or ["no authority expansion"]),
-        "evidence_requirements": list(payload.get("evidence_requirements") or ["commands", "artifact_ref"]),
-        "read_set": read_set,
-        "write_set": write_set,
-        "tool_call_budget": int(payload.get("tool_call_budget") or 32),
-        "retry_budget": int(payload.get("retry_budget") or 1),
-    }
     try:
         office = execute_authorized_agent_office(
             authorization=child_auth,
             routing_decision=office_routing,
             payload={
                 "mission_id": mission_id,
-                "delegation_id": str(payload.get("delegation_id") or f"delegation:{mission_id}"),
+                "delegation_id": str(
+                    payload.get("delegation_id") or f"delegation:{mission_id}"
+                ),
                 "goal_id": goal_id,
-                "task_type": "BOUNDED_DEVELOPMENT" if write_capable else "READ_ONLY_CODE_ANALYSIS",
-                "repository": str(payload.get("repository") or "zenindiones-maker/BR-no-GTA"),
+                "task_type": contract["task_type"],
+                "repository": str(
+                    payload.get("repository") or "zenindiones-maker/BR-no-GTA"
+                ),
                 "branch": str(payload.get("branch") or ""),
                 "base_sha": str(payload.get("base_sha") or ""),
                 "allowed_agents": [agent_id],
                 "allowed_capabilities": [capability_id],
-                "allowed_paths": allowed_paths,
-                "mission_read_scope": mission_read_scope,
-                "mission_write_scope": mission_write_scope,
-                "allowed_tools": task["allowed_tools"],
-                "allowed_actions": task["allowed_actions"],
+                "allowed_paths": list(contract["allowed_paths"]),
+                "mission_read_scope": list(contract["mission_read_scope"]),
+                "mission_write_scope": list(contract["mission_write_scope"]),
+                "allowed_tools": list(task["allowed_tools"]),
+                "allowed_actions": list(task["allowed_actions"]),
                 "max_parallelism": 1,
                 "time_budget_seconds": int(payload.get("time_budget_seconds") or 600),
                 "cost_budget": float(payload.get("cost_budget") or 0),
                 "tool_call_budget": int(payload.get("tool_call_budget") or 32),
                 "retry_budget": int(payload.get("retry_budget") or 1),
-                "expected_outputs": task["expected_outputs"],
-                "evidence_requirements": task["evidence_requirements"],
-                "input_artifact_refs": task["input_artifact_refs"],
-                "acceptance_criteria": task["acceptance_criteria"],
+                "expected_outputs": list(task["expected_outputs"]),
+                "evidence_requirements": list(task["evidence_requirements"]),
+                "input_artifact_refs": list(task["input_artifact_refs"]),
+                "acceptance_criteria": list(task["acceptance_criteria"]),
                 "tasks": [task],
             },
             repository_root=repository_root,
