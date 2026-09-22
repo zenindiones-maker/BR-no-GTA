@@ -105,6 +105,7 @@ def _check_child(report: dict[str, Any]) -> None:
         "SELECTION_NOT_HARDCODED",
         "TEAM_NOT_HARDCODED",
         "MINIMUM_SUFFICIENT_TEAM",
+        "REAL_SPECIALIST_EXECUTION",
         "HERMES_SUBORDINATE",
         "HERMES_DELEGATION_ENVELOPE",
         "NO_DIRECT_EXECUTOR_BYPASS",
