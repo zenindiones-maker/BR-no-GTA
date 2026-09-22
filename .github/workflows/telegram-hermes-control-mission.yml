@@ -136,8 +136,6 @@ jobs:
           echo "TELEGRAM_HERMES_COMPILE=PASS"
 
       - name: Execute Harness-governed Hermes mission
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           set -euo pipefail
           args=(
@@ -192,6 +190,7 @@ jobs:
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
           print("YOUTUBE_PUBLICATION=NO")
+          print("HERMES_PROGRESS_TELEGRAM_EGRESS=0")
           PY
 
       - name: Upload durable mission state
