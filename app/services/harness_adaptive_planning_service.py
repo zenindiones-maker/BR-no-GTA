@@ -8,6 +8,9 @@ from typing import Any, Callable
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.capability_health_service import capability_health
+from app.services.harness_executor_contract_service import (
+    registry_executor_is_task_adapter_compatible,
+)
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     SemanticPlannerResult,
@@ -210,6 +213,9 @@ def _relevant_registry_summary(
             and record is not None
             and record.capability_type != "PROVIDER"
             and record.execution_enabled
+            and registry_executor_is_task_adapter_compatible(
+                record.executor_binding
+            )
         ):
             referenced.append(value)
 
@@ -232,6 +238,9 @@ def _relevant_registry_summary(
             record is None
             or record.capability_type == "PROVIDER"
             or not record.execution_enabled
+            or not registry_executor_is_task_adapter_compatible(
+                record.executor_binding
+            )
         ):
             continue
         metadata_tokens = _tokens(_registry_search_text(record))
@@ -597,6 +606,14 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             if not record.execution_enabled:
                 errors.append(
                     f"{task.task_id}: capability is not executable: {capability_id}"
+                )
+                continue
+            if not registry_executor_is_task_adapter_compatible(
+                record.executor_binding
+            ):
+                errors.append(
+                    f"{task.task_id}: capability executor is not TaskEnvelope-compatible: "
+                    f"{capability_id}"
                 )
                 continue
             if task.action not in record.allowed_actions:
@@ -966,6 +983,13 @@ def select_capability_for_requirement(
         if record is None or record.capability_type == "PROVIDER":
             continue
         if not record.execution_enabled or str(requirement["action"]) not in record.allowed_actions:
+            continue
+        if not registry_executor_is_task_adapter_compatible(
+            record.executor_binding
+        ):
+            avoided.append(
+                f"{capability_id}:task-adapter-incompatible"
+            )
             continue
         required_side_effect = str(
             requirement.get("risk_side_effect_class") or "READ_ONLY"
