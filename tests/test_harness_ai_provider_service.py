@@ -11,7 +11,12 @@ from app.services.global_capability_registry import (
     GlobalCapabilityRegistry,
 )
 from app.services.harness_ai_provider_service import execute_harness_ai_generation, select_harness_ai_provider
-from app.services.harness_routing_policy_service import HarnessRoutingDecision
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingDecision,
+    HarnessRoutingRequest,
+    route_harness_request,
+)
+from app.services import provider_health_service as provider_health_module
 from app.services.harness_authorization_service import issue_harness_authorization
 
 
@@ -166,7 +171,143 @@ def test_tuxevil_unregistered_concrete_model_is_rejected(monkeypatch):
         )
 
 
-def test_tuxevil_current_run_runtime_model_is_accepted_at_execution_boundary(
+def test_static_registry_provider_model_matches_end_to_end(monkeypatch):
+    registry = _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
+    import app.services.harness_ai_provider_service as service
+
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="static model contract",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("nvidia_nim",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        ),
+        registry=registry,
+    )
+    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.policy_metadata["provider_model_binding_source"] == "REGISTRY_STATIC"
+
+    calls = []
+    class RuntimeProvider:
+        pass
+
+    monkeypatch.setattr(
+        service,
+        "NvidiaNIMProvider",
+        lambda *, model=None: calls.append(model) or RuntimeProvider(),
+    )
+    provider_name, provider = service.select_harness_ai_provider(
+        provider_name="nvidia_nim",
+        authorization=auth("nvidia_nim"),
+        routing_decision=decision,
+    )
+    assert provider_name == "nvidia_nim"
+    assert isinstance(provider, RuntimeProvider)
+    assert calls == ["nvidia/nemotron-3-super-120b-a12b"]
+
+
+def test_correct_provider_with_divergent_model_is_blocked(monkeypatch):
+    registry = _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
+    import app.services.harness_ai_provider_service as service
+
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="static model contract",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("nvidia_nim",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        ),
+        registry=registry,
+    )
+    divergent = replace(decision, selected_model="other-model")
+    with pytest.raises(
+        PermissionError,
+        match="model does not match Registry metadata",
+    ):
+        service.select_harness_ai_provider(
+            provider_name="nvidia_nim",
+            authorization=auth("nvidia_nim"),
+            routing_decision=divergent,
+        )
+
+
+def test_runtime_overlay_cannot_invent_model_outside_static_registry_contract(
+    monkeypatch,
+):
+    registry = _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
+    run_id = "2000"
+    monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        json.dumps({
+            "nvidia_nim": {
+                "provider_id": "nvidia_nim",
+                "state": "AVAILABLE",
+                "scope": "CURRENT_GITHUB_RUN",
+                "github_run_id": run_id,
+                "model_id": "invented-runtime-model",
+                "zero_cost_eligible": True,
+                "proof": {
+                    "TUXEVIL_RESPONSES_API": "PASS",
+                    "ANTIGRAVITY_UPSTREAM_AUTH": "PASS",
+                    "TUXEVIL_LIVE_INFERENCE": "PASS",
+                    "TUXEVIL_TOOL_CALLING": "PASS",
+                    "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
+                },
+                "evidence_refs": [
+                    f"github:run:{run_id}:runtime-provider-proof"
+                ],
+            }
+        }),
+    )
+    record = next(
+        item
+        for item in registry.all()
+        if item.provider_id == "nvidia_nim"
+    )
+    binding = provider_health_module.authorized_provider_model_binding(record)
+    assert binding is not None
+    assert binding["source"] == "REGISTRY_STATIC"
+    assert binding["model_id"] == "nvidia/nemotron-3-super-120b-a12b"
+
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="static model contract resists overlay",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("nvidia_nim",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        ),
+        registry=registry,
+    )
+    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.policy_metadata["provider_model_binding_source"] == "REGISTRY_STATIC"
+
+
+def test_tuxevil_current_run_runtime_model_is_accepted_end_to_end(
     monkeypatch,
 ):
     import app.services.harness_ai_provider_service as service
@@ -195,32 +336,27 @@ def test_tuxevil_current_run_runtime_model_is_accepted_at_execution_boundary(
             }
         }),
     )
-    decision = HarnessRoutingDecision(
-        routing_id="routing-tuxevil-runtime-model",
-        intent="semantic mission planning proposal only",
-        authorized_action="EDITORIAL",
-        candidate_capability_ids=("ai.reasoning.text",),
-        selected_capability_id="ai.reasoning.text",
-        selected_provider="tuxevil",
-        selected_model="gemini-3-flash",
-        selected_executor_binding="harness_ai_provider_service",
-        selected_provider_executor_binding=(
-            "app.services.ai_provider_factory.create_ai_provider"
-        ),
-        primary_provider="tuxevil",
-        fallback_allowed=False,
-        fallback_candidates=(),
-        fallback_occurred=False,
-        evidence_expectations=("HarnessAIProviderEvidence",),
-        rationale=("current-run model binding",),
-        rejected_candidates=(),
-        policy_metadata={
-            "runtime_provider_binding_used": True,
-            "runtime_provider_evidence_refs": [evidence_ref],
-        },
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="semantic mission planning proposal only",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
     )
-    calls = []
+    assert decision.selected_provider == "tuxevil"
+    assert decision.selected_model == "gemini-3-flash"
+    assert decision.policy_metadata["provider_model_binding_source"] == (
+        "CURRENT_RUN_RUNTIME_PROOF"
+    )
+    assert decision.policy_metadata["runtime_provider_binding_used"] is True
+    assert evidence_ref in decision.policy_metadata["runtime_provider_evidence_refs"]
 
+    calls = []
     class RuntimeProvider:
         pass
 
