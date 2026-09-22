@@ -59,7 +59,11 @@ def send_harness_message_to_human_group(
     category: str,
     lineage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    auth = validate_harness_authorization(authorization)
+    auth = validate_harness_authorization(
+        authorization,
+        expected_action="EXECUTION",
+        expected_subject=f"human-surface:{HUMAN_SURFACE}",
+    )
     token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required for human escalation")
