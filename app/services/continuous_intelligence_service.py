@@ -626,6 +626,283 @@ def _canonical_claim_key(claim_text: str) -> str:
     ).canonical_key
 
 
+def _ensure_graph_entity(
+    *,
+    entity_id: str,
+    entity_type: str,
+    canonical_name: str,
+    observed_at: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = brain_repository.get_entity(entity_id)
+    return brain_repository.upsert_entity({
+        "entity_id": entity_id,
+        "entity_type": entity_type,
+        "canonical_name": canonical_name,
+        "aliases": list((existing or {}).get("aliases") or ()),
+        "status": str((existing or {}).get("status") or "ACTIVE"),
+        "first_seen_at": str((existing or {}).get("first_seen_at") or observed_at),
+        "last_seen_at": observed_at,
+        "metadata": {
+            **dict((existing or {}).get("metadata") or {}),
+            **dict(metadata or {}),
+        },
+    })
+
+
+def _record_claim_graph(
+    *,
+    claim_id: int,
+    candidate_claim: dict[str, Any],
+    subject_entity_id: str,
+    brain_status: str,
+    supersedes_claim_id: int | None = None,
+    contradicts_claim_ids: tuple[int, ...] = (),
+) -> list[str]:
+    observed_at = str(candidate_claim["observed_at"])
+    claim_entity_id = f"claim-{claim_id}"
+    evidence_identity = str(
+        candidate_claim.get("raw_evidence_id")
+        or candidate_claim.get("evidence_ref")
+        or f"claim:{claim_id}:evidence"
+    )
+    evidence_entity_id = (
+        evidence_identity
+        if evidence_identity.startswith("evidence-")
+        else "evidence-" + sha256(evidence_identity.encode("utf-8")).hexdigest()[:24]
+    )
+    source_entity_id = "source-entity-" + sha256(
+        str(candidate_claim["source_id"]).encode("utf-8")
+    ).hexdigest()[:24]
+
+    _ensure_graph_entity(
+        entity_id=claim_entity_id,
+        entity_type="CLAIM",
+        canonical_name=f"Claim {claim_id}",
+        observed_at=observed_at,
+        metadata={"claim_id": claim_id, "brain_status": brain_status},
+    )
+    _ensure_graph_entity(
+        entity_id=evidence_entity_id,
+        entity_type="EVIDENCE",
+        canonical_name=f"Evidence {evidence_identity}",
+        observed_at=observed_at,
+        metadata={
+            "evidence_ref": candidate_claim.get("evidence_ref"),
+            "raw_evidence_id": candidate_claim.get("raw_evidence_id"),
+        },
+    )
+    _ensure_graph_entity(
+        entity_id=source_entity_id,
+        entity_type="SOURCE",
+        canonical_name=str(candidate_claim["source_id"]),
+        observed_at=observed_at,
+        metadata={"source_url": candidate_claim.get("source_url")},
+    )
+
+    edges = [
+        (claim_entity_id, "about", subject_entity_id, claim_id, evidence_entity_id),
+        (claim_entity_id, "supported_by", evidence_entity_id, claim_id, evidence_entity_id),
+        (evidence_entity_id, "derived_from", source_entity_id, claim_id, evidence_entity_id),
+    ]
+    if supersedes_claim_id:
+        old_entity_id = f"claim-{int(supersedes_claim_id)}"
+        _ensure_graph_entity(
+            entity_id=old_entity_id,
+            entity_type="CLAIM",
+            canonical_name=f"Claim {int(supersedes_claim_id)}",
+            observed_at=observed_at,
+            metadata={"claim_id": int(supersedes_claim_id)},
+        )
+        edges.append((
+            claim_entity_id,
+            "supersedes",
+            old_entity_id,
+            claim_id,
+            evidence_entity_id,
+        ))
+    for other_claim_id in contradicts_claim_ids:
+        other_entity_id = f"claim-{int(other_claim_id)}"
+        _ensure_graph_entity(
+            entity_id=other_entity_id,
+            entity_type="CLAIM",
+            canonical_name=f"Claim {int(other_claim_id)}",
+            observed_at=observed_at,
+            metadata={"claim_id": int(other_claim_id)},
+        )
+        edges.append((
+            claim_entity_id,
+            "contradicts",
+            other_entity_id,
+            claim_id,
+            evidence_entity_id,
+        ))
+
+    relation_ids: list[str] = []
+    for subject_id, predicate, object_id, edge_claim_id, evidence_id in edges:
+        relation_id = "relation-" + sha256(
+            f"{subject_id}:{predicate}:{object_id}:{edge_claim_id}".encode("utf-8")
+        ).hexdigest()[:24]
+        brain_repository.upsert_relation({
+            "relation_id": relation_id,
+            "subject_id": subject_id,
+            "predicate": predicate,
+            "object_id": object_id,
+            "claim_id": edge_claim_id,
+            "evidence_id": (
+                candidate_claim.get("raw_evidence_id")
+                if brain_repository.get_evidence(
+                    str(candidate_claim.get("raw_evidence_id") or "")
+                ) is not None
+                else None
+            ),
+            "confidence": 1.0,
+            "status": "ACTIVE",
+            "observed_at": observed_at,
+            "provenance": {
+                "evidence_ref": candidate_claim.get("evidence_ref"),
+                "brain_status": brain_status,
+            },
+            "metadata": {},
+        })
+        relation_ids.append(relation_id)
+    return relation_ids
+
+
+def _materialize_nonactive_claim(
+    *,
+    candidate_claim: dict[str, Any],
+    fact_check: dict[str, Any],
+    brain_status: str,
+) -> dict[str, Any]:
+    claim_text = str(candidate_claim["claim_text"]).strip()
+    canonical_key = _canonical_claim_key(claim_text)
+    existing = find_memory_claim_by_canonical_key(canonical_key)
+    event = create_memory_event(
+        event_type="gta6_claim_review_evidence",
+        source_type=str(candidate_claim["source_type"]),
+        source_id=str(candidate_claim["source_id"]),
+        content=claim_text,
+        scope="gta6",
+        occurred_at=candidate_claim.get("published_at"),
+        observed_at=str(candidate_claim["observed_at"]),
+        provenance=str(candidate_claim["evidence_ref"]),
+        metadata={
+            "source_url": candidate_claim.get("source_url"),
+            "fact_check_verdict": fact_check.get("verdict"),
+            "brain_status": brain_status,
+        },
+    )
+    event_id = insert_memory_event(event)
+    if existing is None:
+        claim_id = insert_memory_claim(create_memory_claim(
+            claim=claim_text,
+            claim_type="fact",
+            confidence=min(
+                10.0,
+                max(0.0, float(fact_check.get("confidence") or 0.0) * 10.0),
+            ),
+            status="uncertain",
+            scope="gta6",
+            valid_at=candidate_claim.get("published_at"),
+            extraction_method="continuous_gta6_fact_check_review",
+        ))
+    else:
+        claim_id = int(existing["id"])
+        if str(existing.get("status") or "").casefold() != "superseded":
+            update_memory_claim_status(claim_id, "uncertain")
+
+    insert_memory_claim_evidence(create_memory_claim_evidence(
+        claim_id=claim_id,
+        event_id=event_id,
+        evidence_role=(
+            "contradicting"
+            if brain_status == "CONTRADICTED"
+            else "supporting"
+        ),
+        weight=min(
+            1.0,
+            max(0.0, float(fact_check.get("confidence") or 0.0)),
+        ),
+    ))
+    subject_name = str(candidate_claim.get("subject") or "GTA VI").strip()
+    subject_entity_id = _entity_id(_entity_type(subject_name), subject_name)
+    _ensure_graph_entity(
+        entity_id=subject_entity_id,
+        entity_type=_entity_type(subject_name),
+        canonical_name=subject_name,
+        observed_at=str(candidate_claim["observed_at"]),
+        metadata={},
+    )
+    related_claims = tuple(
+        int(item)
+        for item in candidate_claim.get("related_claims") or ()
+        if str(item).isdigit()
+    )
+    brain_metadata = brain_repository.upsert_claim_metadata({
+        "claim_id": claim_id,
+        "subject_entity_id": subject_entity_id,
+        "predicate": candidate_claim.get("predicate"),
+        "object_entity_id": candidate_claim.get("object_entity_id"),
+        "brain_status": brain_status,
+        "first_seen_at": str(
+            (existing or {}).get("created_at")
+            or candidate_claim["observed_at"]
+        ),
+        "last_verified_at": str(candidate_claim["observed_at"]),
+        "related_claims": list(related_claims),
+        "used_in_content": candidate_claim.get("used_in_content") or [],
+        "world_novelty": str(candidate_claim.get("world_novelty") or "UNKNOWN"),
+        "knowledge_novelty": "KNOWN" if existing is not None else "NEW",
+        "editorial_novelty": str(candidate_claim.get("editorial_novelty") or "UNUSED"),
+        "freshness_class": str(candidate_claim.get("freshness_class") or "HIGH"),
+        "consolidated_key": canonical_key,
+        "metadata": {
+            "verification_state": brain_status,
+            "fact_check_verdict": fact_check.get("verdict"),
+            "fact_check_confidence": fact_check.get("confidence"),
+            "raw_evidence_id": candidate_claim.get("raw_evidence_id"),
+        },
+    })
+    lineage = continuous_repository.upsert_claim_lineage({
+        "claim_id": claim_id,
+        "subject": subject_name,
+        "source_id": candidate_claim["source_id"],
+        "source_url": candidate_claim["source_url"],
+        "source_type": candidate_claim["source_type"],
+        "published_at": candidate_claim.get("published_at"),
+        "observed_at": candidate_claim["observed_at"],
+        "evidence_ref": candidate_claim["evidence_ref"],
+        "evidence_class": (
+            "CONTRADICTED" if brain_status == "CONTRADICTED" else "UNVERIFIED"
+        ),
+        "status_snapshot": brain_status,
+        "related_claims": list(related_claims),
+        "metadata": {
+            "fact_check_verdict": fact_check.get("verdict"),
+            "nonactive_history": True,
+        },
+    })
+    relations = _record_claim_graph(
+        claim_id=claim_id,
+        candidate_claim=candidate_claim,
+        subject_entity_id=subject_entity_id,
+        brain_status=brain_status,
+        contradicts_claim_ids=(
+            related_claims if brain_status == "CONTRADICTED" else ()
+        ),
+    )
+    return {
+        "claim_id": claim_id,
+        "event_id": event_id,
+        "lineage": lineage,
+        "brain_metadata": brain_metadata,
+        "subject_entity_id": subject_entity_id,
+        "relation_ids": relations,
+        "active": False,
+    }
+
+
 def _materialize_knowledge_brain(
     *,
     candidate_claim: dict[str, Any],
@@ -780,6 +1057,13 @@ def _materialize_knowledge_brain(
             "fact_check_verdict": fact_check.get("verdict"),
         },
     })
+    relation_ids = _record_claim_graph(
+        claim_id=claim_id,
+        candidate_claim=candidate_claim,
+        subject_entity_id=subject_entity_id,
+        brain_status="ACTIVE",
+        supersedes_claim_id=supersedes_claim_id,
+    )
     return {
         "claim_id": claim_id,
         "memory_record_id": memory_id,
@@ -787,6 +1071,7 @@ def _materialize_knowledge_brain(
         "lineage": lineage,
         "brain_metadata": brain_metadata,
         "subject_entity_id": subject_entity_id,
+        "relation_ids": relation_ids,
         "duplicate": existing is not None,
     }
 
@@ -883,16 +1168,27 @@ def gate_verified_gta6_claim(
         memory_id=candidate["memory_id"],
         decision="HUMAN_REVIEW",
         reason=(
-            "Non-official, contradicted or insufficient GTA6 claim cannot enter canonical Knowledge Brain automatically."
+            "Non-official, contradicted or insufficient GTA6 claim cannot enter active canonical knowledge automatically."
         ),
         evidence_refs=(evidence_ref,),
         authorization=evaluation_authorization,
+    )
+    review_status = (
+        "CONTRADICTED"
+        if verdict in {"CONTRADICTED", "CONFLICTING_EVIDENCE"}
+        else "UNVERIFIED"
+    )
+    historical = _materialize_nonactive_claim(
+        candidate_claim=candidate_claim,
+        fact_check=fact_check,
+        brain_status=review_status,
     )
     return {
         "status": "HUMAN_REVIEW",
         "candidate": candidate,
         "memory_gate": gate,
-        "knowledge": None,
+        "knowledge": historical,
+        "brain_status": review_status,
         "GTA6_KNOWLEDGE_PROMOTION_GATE": "PASS",
         "GTA6_CLAIM_PROVENANCE": "PASS",
     }
