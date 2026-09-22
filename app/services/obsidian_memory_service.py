@@ -661,6 +661,12 @@ def export_obsidian_memory_projection(
         ))
 
     files.extend(_knowledge_projection(root=root, now=now))
+    from app.services.gta6_obsidian_projection_service import (
+        export_gta6_second_brain_projection,
+    )
+    files.extend(
+        export_gta6_second_brain_projection(root=root, generated_at=now)
+    )
 
     for episode in episodes[:20]:
         files.append(_write_markdown(
@@ -695,7 +701,9 @@ def export_obsidian_memory_projection(
         "schema": "obsidian-memory-export/v1",
         "authority": "DEEPSEEK_HARNESS",
         "canonical_source": "BR SQLite Learning Plane",
-        "obsidian_role": "PROJECTION_ONLY",
+        "obsidian_role": "LONG_TERM_HUMAN_KNOWLEDGE_VIEW",
+        "graph_projection": True,
+        "human_review_workspace": True,
         "generated_at": now,
         "files": sorted(files),
         "file_count": len(files),
