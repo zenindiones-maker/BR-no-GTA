@@ -354,6 +354,7 @@ def _live_tuxevil_provider_overlay(
                 "ANTIGRAVITY_UPSTREAM_AUTH": "PASS",
                 "TUXEVIL_LIVE_INFERENCE": "PASS",
                 "TUXEVIL_TOOL_CALLING": tool_calling,
+                "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
             },
             "evidence_refs": [
                 f"github:run:{evidence_run_id}:tuxevil-live-proof"
