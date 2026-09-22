@@ -390,6 +390,16 @@ def _final_text(stdout: str) -> str:
 
 _SHELL_WRAPPER_TOOLS = {"bash", "sh"}
 _SHELL_OPERATORS = {"&&", "||", ";", "|"}
+_TOOL_ALIASES = {
+    "python3": "python",
+}
+
+
+def canonical_command_tool(value: str) -> str:
+    raw = Path(str(value or "")).name
+    return _TOOL_ALIASES.get(raw, raw)
+
+
 _SAFE_SED_PRINT_SCRIPT_RE = re.compile(
     r"^(?:(?:\d+|\$)(?:,(?:\d+|\$))?|/[^\n/]{1,240}/)p$"
 )
@@ -481,10 +491,11 @@ def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
         raise PermissionError("Codex emitted an unparsable command") from exc
     if not parts:
         return
-    tool = Path(parts[0]).name
+    raw_tool = Path(parts[0]).name
+    tool = canonical_command_tool(raw_tool)
     normalized = " ".join(parts)
     if tool in _FORBIDDEN_COMMANDS:
-        raise PermissionError(f"Codex attempted forbidden command: {tool}")
+        raise PermissionError(f"Codex attempted forbidden command: {raw_tool}")
     if re.search(r"(?<![A-Za-z0-9_-])(?:curl|wget|ssh|scp|rsync|gh|docker|podman)(?![A-Za-z0-9_-])", normalized):
         raise PermissionError("Codex attempted forbidden external/network command")
     if re.search(r"(?<![A-Za-z0-9_-])git\s+(?:push|pull|fetch|merge|rebase|remote)(?![A-Za-z0-9_-])", normalized):
