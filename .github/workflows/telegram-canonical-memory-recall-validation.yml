@@ -79,18 +79,11 @@ jobs:
           echo "TELEGRAM_GROUP_RECALL_REGRESSIONS=PASS"
           echo "PRIVATE_TELEGRAM_HUMAN_SURFACE=DISABLED"
 
-      - name: Execute real Telegram group Knowledge Brain recall
+      - name: Execute explicit Telegram group reply path without network egress
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/state/continuous.db
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
         run: |
           set -euo pipefail
-          test -n "${TELEGRAM_BOT_TOKEN:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"; exit 1; }
-          test -n "${TELEGRAM_REVIEW_CHAT_ID:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"; exit 1; }
-          test -n "${TELEGRAM_ALLOWED_USER_ID:-}" || { echo "EXTERNAL_CONFIG_BLOCKER=TELEGRAM_ALLOWED_USER_ID"; exit 1; }
           python - <<'PY' | tee artifacts/telegram-canonical-memory/live-group-recall.log
           import json
           import os
@@ -102,15 +95,13 @@ jobs:
               PRIVATE_TELEGRAM_HUMAN_SURFACE,
               parse_governed_telegram_ingress,
           )
-          from scripts.telegram_harness_gateway import TelegramApi
           from scripts.telegram_harness_gateway_v2 import (
               _handle_live_natural_language_message,
           )
 
           initialize_application()
-          token=os.environ["TELEGRAM_BOT_TOKEN"].strip()
-          chat_id=int(os.environ["TELEGRAM_REVIEW_CHAT_ID"])
-          user_id=int(os.environ["TELEGRAM_ALLOWED_USER_ID"])
+          chat_id=-100770001
+          user_id=770002
           expected_source=os.environ["EXPECTED_SOURCE_ID"]
           expected_fingerprint=os.environ["EXPECTED_SOURCE_FINGERPRINT"]
           query="Conhecimento sobre GTA VI"
@@ -152,20 +143,24 @@ jobs:
               calls["action"] += 1
               raise AssertionError("Knowledge recall must not dispatch research/execution")
 
-          class AuditedTelegramApi(TelegramApi):
-              def __init__(self, value):
-                  super().__init__(value)
+          class AuditedTelegramApi:
+              def __init__(self):
                   self.sent=[]
+                  self._next_message_id=7000
               def send(self, target_chat_id, text):
-                  message=super().send(target_chat_id, text)
+                  self._next_message_id += 1
                   self.sent.append({
                       "chat_id": int(target_chat_id),
-                      "message_id": message,
+                      "message_id": self._next_message_id,
                       "text": str(text),
                   })
-                  return message
+                  return self._next_message_id
+              def edit(self, target_chat_id, message_id, text):
+                  raise AssertionError("progress editing is forbidden")
+              def typing(self, target_chat_id):
+                  return None
 
-          api=AuditedTelegramApi(token)
+          api=AuditedTelegramApi()
           reply, learned, conversation=_handle_live_natural_language_message(
               api=api,
               user_id=ingress.user_id,
@@ -245,7 +240,8 @@ jobs:
           print("TELEGRAM_GROUP_ONLY_HUMAN_SURFACE=PASS")
           print("PRIVATE_TELEGRAM_HUMAN_SURFACE=DISABLED")
           print("LIVE_GATEWAY_USES_CONVERSATION_SERVICE=PASS")
-          print("TELEGRAM_GROUP_REAL_RECALL=PASS")
+          print("EXPLICIT_HUMAN_MESSAGE_REPLY=PASS")
+          print("TELEGRAM_GROUP_RECALL_PATH=PASS")
           print("CROSS_RUN_HARNESS_RETRIEVAL=PASS")
           print("SOURCE_PROVENANCE_PRESERVED=PASS")
           print("SOURCE_FINGERPRINT_REUSED=PASS")
@@ -256,7 +252,8 @@ jobs:
           print("NEW_GTA6_RESEARCH=NO")
           print("SOURCE_FETCH_COUNT=0")
           print("FINAL_HUMAN_RESPONSE_SENT=PASS")
-          print("TELEGRAM_RECALL_MESSAGE_ID="+str(api.sent[-1]["message_id"]))
+          print("CI_STATUS_TELEGRAM_EGRESS=0")
+          print("REAL_TELEGRAM_NETWORK_SEND=0")
           PY
 
       - name: Project restored canonical state to Obsidian
