@@ -1003,6 +1003,309 @@ def test_bounded_metric_repair_cannot_mutate_frozen_candidate(monkeypatch, tmp_p
         )
 
 
+def _real_bounded_candidate_fixture(tmp_path):
+    from app.services.agent_office.delegation import (
+        DelegatedTaskLease,
+        MANDATORY_FORBIDDEN_ACTIONS,
+    )
+    from datetime import datetime, timedelta, timezone
+
+    root, _ = _repo(tmp_path)
+    target = root / "app" / "services" / "agent_office" / "candidate_target.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("VALUE = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", str(target.relative_to(root))], cwd=root, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add bounded candidate target"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    base_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    workspace = tmp_path / "bounded-worktree"
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(workspace), base_sha],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    task = AgentOfficeTask(
+        task_id="bounded.real.candidate",
+        agent="codex-development",
+        capability="agent-office.codex.bounded-development",
+        action="development",
+        objective=(
+            "Reduce the deterministic VALUE metric from 2 to 1 in the bounded "
+            "candidate target and validate the change."
+        ),
+        allowed_paths=("app/services/agent_office",),
+        allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls"),
+        allowed_actions=(
+            "analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"
+        ),
+        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+        expected_outputs=("bounded candidate commit", "before/after metric"),
+        acceptance_criteria=(
+            "candidate changes only app/services/agent_office",
+            "VALUE metric improves from 2 to 1",
+        ),
+        evidence_requirements=("candidate commit", "path boundary", "metric"),
+        read_set=("app/services/agent_office",),
+        write_set=("app/services/agent_office",),
+        tool_call_budget=8,
+        retry_budget=0,
+        time_budget_seconds=120,
+        cost_budget=0.0,
+    )
+    lease = DelegatedTaskLease(
+        mission_id="bounded-real-candidate",
+        task_id=task.task_id,
+        goal_id="bounded-real-candidate-goal",
+        harness_decision_id="bounded-real-candidate-decision",
+        authorization_id="bounded-real-candidate-auth",
+        delegation_id="delegation:bounded-real-candidate",
+        agent_id=task.agent,
+        capability_ids=("agent-office.codex.bounded-development",),
+        base_sha=base_sha,
+        allowed_paths=task.allowed_paths,
+        allowed_tools=task.allowed_tools,
+        allowed_actions=task.allowed_actions,
+        forbidden_actions=task.forbidden_actions,
+        input_artifact_refs=(),
+        expected_outputs=task.expected_outputs,
+        acceptance_criteria=task.acceptance_criteria,
+        evidence_requirements=task.evidence_requirements,
+        time_budget_seconds=120,
+        cost_budget=0.0,
+        tool_call_budget=8,
+        retry_budget=0,
+        max_parallelism=1,
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        escalation_conditions=("scope_change", "non_recoverable_error"),
+        owned_task_class="bounded-development",
+        role="SPECIALIST_TASK_OWNER",
+        read_set=task.read_set,
+        write_set=task.write_set,
+    )
+    return root, workspace, base_sha, task, lease
+
+
+def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
+    monkeypatch,
+    tmp_path,
+):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+
+    root, workspace, base_sha, task, lease = _real_bounded_candidate_fixture(
+        tmp_path
+    )
+    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    original_run = worker_module._run
+    codex_calls = []
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command and command[0] == "codex":
+            codex_calls.append(list(command))
+            if len(codex_calls) == 1:
+                assert "MUTATION_REQUIRED=true" in command[-1]
+                stdout = json.dumps({
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": "analysis completed without mutation",
+                    },
+                })
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=stdout + "\n", stderr=""
+                )
+
+            assert "NO_CANDIDATE_PATCH_DETECTED" in command[-1]
+            assert "MUTATION_REQUIRED=true" in command[-1]
+            assert command[command.index("--sandbox") + 1] == "workspace-write"
+            target = (
+                Path(cwd)
+                / "app"
+                / "services"
+                / "agent_office"
+                / "candidate_target.py"
+            )
+            target.write_text("VALUE = 1\n", encoding="utf-8")
+            stdout = "\n".join([
+                json.dumps({
+                    "type": "item.completed",
+                    "item": {
+                        "type": "command_execution",
+                        "command": "python -c \"print(1)\"",
+                    },
+                }),
+                json.dumps({
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": (
+                            "candidate changed and validated\n"
+                            "BR_METRIC_JSON={\"metric_name\":\"value\","
+                            "\"baseline\":2,\"candidate\":1,\"unit\":\"count\","
+                            "\"direction\":\"LOWER_IS_BETTER\","
+                            "\"measurement_command\":\"python -c print(1)\"}"
+                        ),
+                    },
+                }),
+            ])
+            return subprocess.CompletedProcess(
+                command, 0, stdout=stdout + "\n", stderr=""
+            )
+        return original_run(
+            command,
+            cwd=Path(cwd),
+            timeout=timeout,
+            sanitized_env=sanitized_env,
+        )
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    try:
+        result = worker_module.codex_bounded_development_worker(
+            task,
+            workspace,
+            120.0,
+            lease,
+        )
+        candidate = result["candidate"]
+        candidate_sha = candidate["RESULT_COMMIT_SHA"]
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", f"{base_sha}..{candidate_sha}"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+
+        assert result["status"] == "SUCCEEDED"
+        assert result["candidate_repair_used"] is True
+        assert result["metric_repair_used"] is False
+        assert changed == ["app/services/agent_office/candidate_target.py"]
+        assert candidate["FILES_CHANGED"] == changed
+        assert candidate["CANDIDATE_READY_FOR_INTEGRATION"] is True
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD^"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == base_sha
+        assert subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == ""
+        assert (workspace / "README.md").read_text(encoding="utf-8") == "bounded\n"
+        assert len(codex_calls) == 2
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(workspace)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
+def test_bounded_worker_repair_blocks_outside_write_set_before_candidate_commit(
+    monkeypatch,
+    tmp_path,
+):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+
+    root, workspace, base_sha, task, lease = _real_bounded_candidate_fixture(
+        tmp_path
+    )
+    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    original_run = worker_module._run
+    codex_calls = []
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command and command[0] == "codex":
+            codex_calls.append(list(command))
+            if len(codex_calls) == 1:
+                stdout = json.dumps({
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "analysis only"},
+                })
+                return subprocess.CompletedProcess(
+                    command, 0, stdout=stdout + "\n", stderr=""
+                )
+            (Path(cwd) / "README.md").write_text(
+                "outside lease mutation\n",
+                encoding="utf-8",
+            )
+            stdout = json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "attempted mutation outside write set",
+                },
+            })
+            return subprocess.CompletedProcess(
+                command, 0, stdout=stdout + "\n", stderr=""
+            )
+        return original_run(
+            command,
+            cwd=Path(cwd),
+            timeout=timeout,
+            sanitized_env=sanitized_env,
+        )
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    try:
+        with pytest.raises(PermissionError, match="outside lease"):
+            worker_module.codex_bounded_development_worker(
+                task,
+                workspace,
+                120.0,
+                lease,
+            )
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == base_sha
+        assert len(codex_calls) == 2
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(workspace)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
 def test_codex_structured_metric_parser_requires_real_numeric_before_after():
     from app.services.agent_office.codex_bounded_worker import _structured_metric
 
