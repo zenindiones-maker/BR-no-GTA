@@ -314,7 +314,7 @@ AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
     side_effect_class="BOUNDED_MUTATION",
     default_read_scope=("app", "scripts", "tests", ".github/workflows", "config", "integrations"),
     default_write_scope=("app", "scripts", "tests"),
-    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls"),
     health_policy="CODEX_AUTH_REQUIRED",
 )
 
