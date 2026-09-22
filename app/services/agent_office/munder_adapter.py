@@ -84,16 +84,114 @@ def deterministic_read_only_worker(
 ) -> dict[str, Any]:
     if timeout_seconds <= 0:
         raise TimeoutError("Agent Office time budget exhausted")
-    files = _git(workspace, "ls-files").stdout.splitlines()
-    digest = sha256("\n".join(files).encode("utf-8")).hexdigest()
+    started = time.perf_counter()
+    tracked = _git(workspace, "ls-files").stdout.splitlines()
+    scopes = tuple(task.read_set or task.allowed_paths or (
+        "app", "scripts", "tests", ".github/workflows", "config", "integrations"
+    ))
+    scoped = [
+        path for path in tracked
+        if any(
+            path == scope.rstrip("/")
+            or path.startswith(scope.rstrip("/") + "/")
+            for scope in scopes
+            if scope.rstrip("/")
+        )
+    ]
+    if not scoped:
+        scoped = tracked
+
+    rows: list[dict[str, Any]] = []
+    total_bytes = 0
+    total_lines = 0
+    python_files = 0
+    workflow_files = 0
+    large_modules: list[dict[str, Any]] = []
+    for relative in scoped:
+        path = workspace / relative
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        size = len(raw)
+        lines = raw.count(b"\n") + (1 if raw else 0)
+        total_bytes += size
+        total_lines += lines
+        if relative.endswith(".py"):
+            python_files += 1
+        if relative.startswith(".github/workflows/") and relative.endswith((".yml", ".yaml")):
+            workflow_files += 1
+        row = {
+            "path": relative,
+            "bytes": size,
+            "lines": lines,
+        }
+        rows.append(row)
+        if lines >= 1000:
+            large_modules.append(row)
+
+    rows.sort(key=lambda item: (-int(item["lines"]), -int(item["bytes"]), item["path"]))
+    largest = rows[:12]
+    largest_lines = int(largest[0]["lines"]) if largest else 0
+    concentration = (
+        float(largest_lines) / float(total_lines)
+        if total_lines > 0 else 0.0
+    )
+    inventory_sha = sha256(
+        "\n".join(
+            f"{item['path']}:{item['bytes']}:{item['lines']}"
+            for item in sorted(rows, key=lambda item: item["path"])
+        ).encode("utf-8")
+    ).hexdigest()
+    observed_fragilities: list[dict[str, Any]] = []
+    if large_modules:
+        observed_fragilities.append({
+            "kind": "LARGE_MODULE_CONCENTRATION",
+            "metric": "files_over_1000_lines",
+            "value": len(large_modules),
+            "evidence": [item["path"] for item in large_modules[:8]],
+        })
+    if concentration >= 0.05:
+        observed_fragilities.append({
+            "kind": "SOURCE_CONCENTRATION",
+            "metric": "largest_file_share_of_scoped_lines",
+            "value": round(concentration, 6),
+            "evidence": [largest[0]["path"]] if largest else [],
+        })
+
+    elapsed_ms = round((time.perf_counter() - started) * 1000.0, 3)
     return {
         "status": "SUCCEEDED",
-        "summary": f"{task.task_id}: inspected {len(files)} tracked files",
+        "summary": (
+            f"{task.task_id}: profiled {len(rows)} repository files, "
+            f"{total_lines} lines and {total_bytes} bytes in {elapsed_ms} ms"
+        ),
         "commands": ["git ls-files"],
         "artifacts": [],
-        "tests": [],
-        "usage": {"cost": 0.0},
-        "analysis": {"tracked_file_count": len(files), "inventory_sha256": digest},
+        "tests": [
+            {"name": "repository-profile-non-empty", "status": "PASS" if rows else "FAIL"},
+            {"name": "write-scope-empty", "status": "PASS" if not task.write_set else "FAIL"},
+        ],
+        "usage": {"cost": 0.0, "tool_calls": 1},
+        "analysis": {
+            "metric_schema": "agent-office-repository-profile/v1",
+            "tracked_file_count": len(tracked),
+            "scoped_file_count": len(rows),
+            "total_bytes": total_bytes,
+            "total_lines": total_lines,
+            "python_file_count": python_files,
+            "workflow_file_count": workflow_files,
+            "files_over_1000_lines": len(large_modules),
+            "largest_file_lines": largest_lines,
+            "largest_file_share_of_scoped_lines": round(concentration, 6),
+            "largest_files": largest,
+            "observed_fragilities": observed_fragilities,
+            "inventory_sha256": inventory_sha,
+            "profile_latency_ms": elapsed_ms,
+            "read_scope": list(scopes),
+        },
     }
 
 
