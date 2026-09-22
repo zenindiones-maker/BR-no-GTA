@@ -608,6 +608,45 @@ def effective_required_side_effect_class(
     return normalized_declared
 
 
+_MISSION_CLASS_ALLOWED_TASK_ACTIONS = {
+    # Mission class is a Harness authority boundary, not a semantic-planner hint.
+    # System-improvement specialist work stays in the DEVELOPMENT action; final
+    # Harness decisions remain outside the delegated task DAG.
+    "SYSTEM_IMPROVEMENT": frozenset({"DEVELOPMENT"}),
+}
+
+
+def _mission_action_allowed(*, mission_class: Any, action: Any) -> bool:
+    normalized_class = str(mission_class or "").strip().upper()
+    allowed = _MISSION_CLASS_ALLOWED_TASK_ACTIONS.get(normalized_class)
+    if not allowed:
+        return True
+    return str(action or "").strip().upper() in allowed
+
+
+def _mission_action_policy_errors(
+    proposal: MissionPlanProposal,
+    *,
+    mission_class: Any,
+) -> tuple[str, ...]:
+    normalized_class = str(mission_class or "").strip().upper()
+    allowed = _MISSION_CLASS_ALLOWED_TASK_ACTIONS.get(normalized_class)
+    if not allowed:
+        return ()
+    rendered_allowed = ",".join(sorted(allowed))
+    return tuple(
+        (
+            f"{task.task_id}: action {task.action} incompatible with "
+            f"mission_class={normalized_class}; allowed_actions={rendered_allowed}"
+        )
+        for task in proposal.tasks
+        if not _mission_action_allowed(
+            mission_class=normalized_class,
+            action=task.action,
+        )
+    )
+
+
 def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     errors: list[str] = []
     for task in proposal.tasks:
@@ -834,7 +873,13 @@ def propose_validated_semantic_plan(
             evidence["replan_count"] += 1
             continue
 
-        errors = proposal_registry_errors(result.proposal)
+        errors = tuple([
+            *_mission_action_policy_errors(
+                result.proposal,
+                mission_class=context.get("mission_class"),
+            ),
+            *proposal_registry_errors(result.proposal),
+        ])
         if not errors:
             evidence["provider_evidence"] = dict(result.provider_evidence)
             evidence["prompt_sha256"] = result.prompt_sha256
@@ -846,7 +891,13 @@ def propose_validated_semantic_plan(
             sanitized, discarded = discard_incompatible_registered_candidate_hints(
                 result.proposal
             )
-            sanitized_errors = proposal_registry_errors(sanitized)
+            sanitized_errors = tuple([
+                *_mission_action_policy_errors(
+                    sanitized,
+                    mission_class=context.get("mission_class"),
+                ),
+                *proposal_registry_errors(sanitized),
+            ])
             if discarded and not sanitized_errors:
                 evidence["candidate_hints_discarded"] = list(discarded)
                 evidence["provider_evidence"] = dict(result.provider_evidence)
@@ -868,7 +919,10 @@ def propose_validated_semantic_plan(
                     "DeepSeek Harness performs final Registry selection. If a candidate "
                     "ID is supplied, the task action must be literally present in that "
                     "record's allowed actions and the requested side-effect class must "
-                    "fit the record. The goal says a code candidate is conditional; do "
+                    "fit the record. Mission class is also a hard authority constraint: "
+                    "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT, including measurement, "
+                    "verification, review and benchmark work; do not route those tasks through "
+                    "RESEARCH capabilities. The goal says a code candidate is conditional; do "
                     "not invent a mutation task when no healthy write executor exists."
                 ),
             ]
@@ -1056,6 +1110,20 @@ def select_capability_for_requirement(
     context: dict[str, Any],
     used: set[str],
 ) -> tuple[str, bool, tuple[str, ...], dict[str, Any]]:
+    mission_class = str(context.get("mission_class") or "").strip().upper()
+    if not _mission_action_allowed(
+        mission_class=mission_class,
+        action=requirement.get("action"),
+    ):
+        allowed = ",".join(sorted(
+            _MISSION_CLASS_ALLOWED_TASK_ACTIONS.get(mission_class) or ()
+        ))
+        raise PermissionError(
+            "MISSION_TASK_ACTION_POLICY_VIOLATION:"
+            f"mission_class={mission_class}:"
+            f"action={str(requirement.get('action') or '').strip().upper()}:"
+            f"allowed_actions={allowed}"
+        )
     discovered = GLOBAL_CAPABILITY_REGISTRY.discover(
         intent=str(requirement["query"]),
         authorized_action=str(requirement["action"]),

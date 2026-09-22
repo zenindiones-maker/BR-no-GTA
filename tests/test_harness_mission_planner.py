@@ -207,3 +207,85 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
     assert editorial_route.hermes_used is True
     assert editorial_route.task_count >= 2
     assert editorial_route.provider_required is False
+
+
+def test_system_improvement_rejects_research_fact_check_before_registry_execution():
+    _active_opencode_failure()
+    human_goal = (
+        "Analise o BR-no-GTA atual e encontre sozinho uma perda mensurável de desempenho, "
+        "redundância, trabalho desnecessário ou fragilidade arquitetural. Escolha a equipe "
+        "mínima adequada, investigue, proponha uma melhoria segura, implemente um candidate "
+        "isolado se for necessário, revise independentemente e compare antes/depois."
+    )
+    goal = build_goal_envelope(
+        human_goal=human_goal,
+        project="BR-no-GTA",
+        goal_id="goal-system-action-policy",
+        subject="melhoria arquitetural mensurável",
+    )
+    attempts = []
+
+    invalid = {
+        "interpreted_goal": "Verificar melhoria arquitetural mensurável com evidência.",
+        "assumptions": [],
+        "required_outcomes": ["verificação independente"],
+        "tasks": [
+            {
+                "task_id": "verify-improvement",
+                "objective": "Verificar a melhoria e ausência de regressão.",
+                "task_class": "candidate-validation",
+                "required_capability_description": "",
+                "candidate_capability_ids": ["gta6.fact-check"],
+                "dependencies": [],
+                "expected_output": "IndependentVerification",
+                "acceptance_criteria": ["evidência verificável sem regressão"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "RESEARCH",
+            }
+        ],
+        "rationale": "verificar antes de qualquer promoção",
+        "context_usage_notes": [],
+        "uncertainty": 0.2,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+    valid = {
+        **invalid,
+        "tasks": [
+            {
+                **invalid["tasks"][0],
+                "required_capability_description": (
+                    "independent read-only engineering verification with regression evidence"
+                ),
+                "candidate_capability_ids": [],
+                "action": "DEVELOPMENT",
+            }
+        ],
+    }
+
+    def semantic_inference(prompt, _context):
+        attempts.append(prompt)
+        return invalid if len(attempts) == 1 else valid
+
+    plan = plan_mission_from_human_goal(
+        goal,
+        semantic_inference=semantic_inference,
+    )
+
+    assert goal.mission_class == "SYSTEM_IMPROVEMENT"
+    assert len(attempts) == 2
+    assert len(plan.collaboration_plan.tasks) == 1
+    task = plan.collaboration_plan.tasks[0]
+    assert task.action == "DEVELOPMENT"
+    assert task.capability_id != "gta6.fact-check"
+    rejection_rows = plan.planning_evidence["rejection_reasons"]
+    assert any(
+        "mission_class=SYSTEM_IMPROVEMENT" in reason
+        for row in rejection_rows
+        for reason in row
+    )
+    assert "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT" in attempts[1]
+
