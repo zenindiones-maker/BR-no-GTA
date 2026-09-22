@@ -12,8 +12,10 @@ from typing import Any
 from app.database.schema import initialize_schema
 from app.services.harness_candidate_integration_service import (
     evaluate_engineering_candidate,
+    extract_performance_evidence,
     find_candidate_commit as _find_candidate_sha,
     harness_candidate_decision,
+    mission_requires_measured_improvement,
     select_independent_reviewer as _reviewer_for_candidate,
     task_is_mutating as _is_mutating,
 )
@@ -301,6 +303,7 @@ def run(
     holder: dict[str, Any] = {
         "broker": None,
         "candidate_by_task": {},
+        "execution_by_task": {},
         "reviewed_candidates": set(),
     }
 
@@ -349,6 +352,7 @@ def run(
                     capability_id=task.capability_id,
                     payload=payload,
                 )
+                holder["execution_by_task"][task_id] = executed
 
                 if _is_mutating(task):
                     candidate_sha = _find_candidate_sha(executed)
@@ -443,7 +447,11 @@ def run(
         consume_harness_authorization(authorization)
 
     gates: list[dict[str, Any]] = []
+    measured_required = mission_requires_measured_improvement(human_goal)
     for task_id, candidate_sha in holder["candidate_by_task"].items():
+        performance_evidence = extract_performance_evidence(
+            holder["execution_by_task"].get(task_id)
+        )
         gates.append(evaluate_engineering_candidate(
             repository_root=Path.cwd(),
             base_sha=base_sha,
@@ -451,6 +459,8 @@ def run(
             candidate_task_id=task_id,
             candidate_sha=candidate_sha,
             reviewed_candidate_ids=holder["reviewed_candidates"],
+            performance_evidence=performance_evidence,
+            performance_required=measured_required,
         ))
 
     candidate_required = bool(holder["candidate_by_task"])
@@ -479,6 +489,12 @@ def run(
         "selected_team_size": len(unique_owners),
         "candidate_shas": dict(holder["candidate_by_task"]),
         "integration_gates": gates,
+        "measured_improvement_required": measured_required,
+        "measured_candidate_evidence": {
+            task_id: extract_performance_evidence(execution)
+            for task_id, execution in holder["execution_by_task"].items()
+            if task_id in holder["candidate_by_task"]
+        },
         "promotion_decision": promotion_decision,
         "agent_direct_promotion": False,
         "handoffs": list(broker.handoff_snapshot()) if broker else [],
@@ -530,7 +546,22 @@ def run(
                 if candidate_required else "NOT_REQUIRED"
             ),
             "BASELINE_VS_CANDIDATE_COMPARED": (
-                bool(gates) if candidate_required else "NOT_REQUIRED"
+                (
+                    bool(gates)
+                    and all(
+                        bool(item.get("performance_evidence"))
+                        and item.get("gate", {}).get("performance_checks", {}).get(
+                            "structured_before_after_measurement"
+                        ) == "PASS"
+                        and item.get("gate", {}).get("performance_checks", {}).get(
+                            "candidate_metric_improved"
+                        ) == "PASS"
+                        for item in gates
+                    )
+                )
+                if candidate_required and measured_required
+                else bool(gates) if candidate_required
+                else "NOT_REQUIRED"
             ),
             "AGENT_SELF_PROMOTION": False,
             "HARNESS_FINAL_DECISION": promotion_decision in {
