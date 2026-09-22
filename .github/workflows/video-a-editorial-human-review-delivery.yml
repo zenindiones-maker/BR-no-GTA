@@ -5,8 +5,7 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
-      - "scripts/video_a_prepare_editorial_review.py"
-      - ".github/workflows/video-a-editorial-human-review-delivery.yml"
+      - ".run/video-a-editorial-human-review-ready.json"
   workflow_dispatch:
 
 permissions:
