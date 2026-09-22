@@ -1319,17 +1319,43 @@ def _telegram_action_first_report(report: dict[str, Any]) -> str:
     ])
 
 
-def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigger_kind: str) -> dict[str, Any]:
+def run_scheduled(
+    *,
+    artifact_dir: Path,
+    upstream_root: Path,
+    target_sha: str,
+    trigger_kind: str,
+    force_gta6_refresh: bool = False,
+    force_daily_projection: bool = False,
+) -> dict[str, Any]:
     initialize_schema()
     policy = load_continuous_operation_policy()
     bootstrap = _bootstrap_brain_research_state(policy)
     topic = _select_daily_gta6_topic(policy)
     started_at = _now()
     due = {
-        "gta6": _is_due("GTA6_INTELLIGENCE", policy.cadence["gta6_delta_scan_seconds"]),
-        "daily": _is_due("DAILY_CONSOLIDATION", policy.cadence["daily_consolidation_seconds"]),
-        "improvement": _is_due("SYSTEM_IMPROVEMENT", policy.cadence["system_improvement_seconds"]),
-        "weekly": _is_due("WEEKLY_AUDIT", policy.cadence["weekly_audit_seconds"]),
+        "gta6": (
+            bool(force_gta6_refresh)
+            or _is_due(
+                "GTA6_INTELLIGENCE",
+                policy.cadence["gta6_delta_scan_seconds"],
+            )
+        ),
+        "daily": (
+            bool(force_daily_projection)
+            or _is_due(
+                "DAILY_CONSOLIDATION",
+                policy.cadence["daily_consolidation_seconds"],
+            )
+        ),
+        "improvement": _is_due(
+            "SYSTEM_IMPROVEMENT",
+            policy.cadence["system_improvement_seconds"],
+        ),
+        "weekly": _is_due(
+            "WEEKLY_AUDIT",
+            policy.cadence["weekly_audit_seconds"],
+        ),
     }
     failure = _failure_prevention()
     evidence_refs: list[str] = []
@@ -1341,7 +1367,12 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
         state = _topic_source_state(topic)
         fresh = _source_state_fresh(state, policy.resource_governance["source_freshness_seconds"])
         has_knowledge = bool(query_gta6_knowledge(query=topic["query"], limit=1))
-        reuse_allowed = _active_delta_policy_memory() is not None and fresh and has_knowledge
+        reuse_allowed = (
+            not force_gta6_refresh
+            and _active_delta_policy_memory() is not None
+            and fresh
+            and has_knowledge
+        )
         gta = _run_intelligence_mission(
             mission_id=f"continuous-scheduled-{os.getenv('GITHUB_RUN_ID') or 'local'}",
             goal_id=VIDEO_A_GOAL_ID, query=topic["query"], subject=topic["subject"],
@@ -1372,7 +1403,12 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
             verified_claims=sum(1 for item in promotions if item.get("status") == "PROMOTED"),
             rejected_claims=sum(1 for item in promotions if item.get("status") != "PROMOTED"),
             superseded_claims=0, latency_seconds=float(gta.get("research_elapsed_seconds") or 0.0),
-            evidence_refs=evidence_refs, metadata={"research_status": result.get("status")},
+            evidence_refs=evidence_refs,
+            metadata={
+                "research_status": result.get("status"),
+                "forced_source_refresh": bool(force_gta6_refresh),
+                "conditional_refresh_preserved": True,
+            },
         )
 
     improvement_candidate = None
@@ -1513,6 +1549,8 @@ def run_scheduled(*, artifact_dir: Path, upstream_root: Path, target_sha: str, t
             "SCHEDULED_ENTRYPOINT_CONTRACT": True,
         },
         "trigger_kind": trigger_kind, "target_sha": target_sha, "due": due,
+        "force_gta6_refresh": bool(force_gta6_refresh),
+        "force_daily_projection": bool(force_daily_projection),
         "meaningful_change": meaningful, "gta6": gta, "knowledge_promotions": promotions,
         "improvement_candidate": improvement_candidate, "failure_prevention": failure,
         "scoreboard": continuous_repository.scoreboard(), "obsidian_manifest": manifest,
