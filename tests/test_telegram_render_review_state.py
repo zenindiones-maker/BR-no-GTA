@@ -69,7 +69,10 @@ def test_successful_delivery_persists_ready_for_human_review() -> None:
         assert result["telegram_review_delivery"] == "PASS"
         assert result["telegram_message_id"] == 77
         assert result["human_review_state"] == READY_FOR_HUMAN_REVIEW
-        assert result["boundary"] == "REVIEW_ONLY_NO_PUBLICATION_AUTHORITY"
+        assert (
+            result["boundary"]
+            == "EXPLICIT_HUMAN_REQUEST_REVIEW_ONLY_NO_PUBLICATION_AUTHORITY"
+        )
         persisted = json.loads((folder / "telegram-review.json").read_text(encoding="utf-8"))
         assert persisted["human_review_state"] == READY_FOR_HUMAN_REVIEW
         assert persisted["telegram_message_id"] == 77
