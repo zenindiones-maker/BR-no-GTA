@@ -78,6 +78,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
           python -m pytest -q \
             tests/test_harness_hermes_delegation_plane.py \
+            tests/test_harness_adaptive_intelligence.py \
             tests/test_agent_office.py \
             tests/test_delegated_agent_autonomy.py \
             tests/test_harness_candidate_integration_service.py \
