@@ -27,9 +27,11 @@ from app.services.harness_authorization_service import (
     issue_harness_authorization,
 )
 from app.services.hermes_multiagent.capability_broker import (
+    DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
 )
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from scripts.audit_harness_ecosystem import audit
 
 
@@ -534,3 +536,158 @@ def test_typed_handoff_has_bounded_cross_agent_lineage():
             producer_version="1",
             observed_at=datetime.now(timezone.utc).isoformat(),
         )
+
+
+def test_execution_idempotency_reuses_persisted_result_after_broker_restart(
+    monkeypatch,
+    tmp_path,
+):
+    _plan, parent_auth, envelope = _delegation_fixture()
+    board = _FakeHermesBoard()
+    calls = []
+
+    def fake_execute(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            result={"status": "PASS", "evidence": "captured"},
+            elapsed_seconds=0.01,
+        )
+
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=tmp_path,
+        )
+        monkeypatch.setattr(broker.adapter, "execute", fake_execute)
+        first = broker.execute_delegated_capability(
+            task_id="profile",
+            capability_id="agent-office.codex.readonly-analysis",
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert first["executed"] is True
+        assert first["reused"] is False
+        assert len(calls) == 1
+
+        same = broker.execute_delegated_capability(
+            task_id="profile",
+            capability_id="agent-office.codex.readonly-analysis",
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert same["executed"] is False
+        assert same["reused"] is True
+        assert same["DUPLICATE_AGENT_EXECUTION_AVOIDED"] == "PASS"
+        assert len(calls) == 1
+
+        resumed = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=tmp_path,
+        )
+        monkeypatch.setattr(resumed.adapter, "execute", fake_execute)
+        after_restart = resumed.execute_delegated_capability(
+            task_id="profile",
+            capability_id="agent-office.codex.readonly-analysis",
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert after_restart["reused"] is True
+        assert after_restart["DUPLICATE_AGENT_EXECUTION_AVOIDED"] == "PASS"
+        assert len(calls) == 1
+    finally:
+        consume_harness_authorization(parent_auth)
+
+
+def test_retry_stays_same_capability_and_exhaustion_requires_harness_replan(
+    monkeypatch,
+    tmp_path,
+):
+    _plan, parent_auth, envelope = _delegation_fixture()
+    board = _FakeHermesBoard()
+    attempts = {"count": 0}
+
+    def fail_then_pass(**_kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("captured transient failure")
+        return SimpleNamespace(
+            result={"status": "PASS"},
+            elapsed_seconds=0.01,
+        )
+
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=tmp_path,
+        )
+        monkeypatch.setattr(broker.adapter, "execute", fail_then_pass)
+        with pytest.raises(DelegatedCapabilityFailure) as raised:
+            broker.execute_delegated_capability(
+                task_id="profile",
+                capability_id="agent-office.codex.readonly-analysis",
+                payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+            )
+        failure = raised.value
+        assert failure.retry_allowed is True
+        assert failure.requires_harness_replan is False
+
+        retried = broker.retry_delegated_capability(
+            failure=failure,
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert retried["executed"] is True
+        assert attempts["count"] == 2
+
+        with pytest.raises(PermissionError, match="cannot reroute"):
+            broker.execute_delegated_capability(
+                task_id="profile",
+                capability_id="system.improvement.propose",
+                payload={},
+            )
+    finally:
+        consume_harness_authorization(parent_auth)
+
+    # Separate mission proves exhaustion becomes a structured replan request.
+    _plan2, parent_auth2, envelope2 = _delegation_fixture()
+    board2 = _FakeHermesBoard()
+
+    def always_fail(**_kwargs):
+        raise RuntimeError("persistent captured failure")
+
+    try:
+        broker2 = HermesHarnessCapabilityBroker(
+            spec=envelope2,
+            parent_authorization=parent_auth2,
+            board=board2,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=tmp_path / "exhausted",
+        )
+        monkeypatch.setattr(broker2.adapter, "execute", always_fail)
+        with pytest.raises(DelegatedCapabilityFailure) as first_error:
+            broker2.execute_delegated_capability(
+                task_id="profile",
+                capability_id="agent-office.codex.readonly-analysis",
+                payload={"goal_id": envelope2.goal_id, "task": "profile safely"},
+            )
+        with pytest.raises(DelegatedCapabilityFailure) as second_error:
+            broker2.retry_delegated_capability(
+                failure=first_error.value,
+                payload={"goal_id": envelope2.goal_id, "task": "profile safely"},
+            )
+        exhausted = second_error.value
+        assert exhausted.retry_allowed is False
+        assert exhausted.requires_harness_replan is True
+        assert broker2.audit_snapshot()[-1]["requires_harness_replan"] is True
+        with pytest.raises(PermissionError, match="requires DeepSeek Harness replan"):
+            broker2.retry_delegated_capability(
+                failure=exhausted,
+                payload={"goal_id": envelope2.goal_id, "task": "profile safely"},
+            )
+    finally:
+        consume_harness_authorization(parent_auth2)
