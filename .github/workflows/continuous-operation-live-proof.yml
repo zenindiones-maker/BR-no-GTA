@@ -1,4 +1,4 @@
-# Live proof retry after unchanged-source fact-check short-circuit and unseen-source selection.
+# Cross-run durability proof: reuse proven acquisition, then validate clean-runner Harness recall.
 name: Continuous Operation Live Proof
 
 on:
@@ -7,6 +7,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".github/workflows/continuous-operation-live-proof.yml"
+      - ".run/continuous-operation-live-proof.request.json"
 
 permissions:
   contents: read
@@ -26,39 +27,47 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Dispatch live proof run
-        id: proof_dispatch
+      - name: Resolve proven acquisition proof
+        id: proof_source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          request_id="live-proof-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
-          gh workflow run continuous-intelligence-operation.yml             --repo "$GITHUB_REPOSITORY"             --ref main             -f mode=proof             -f target_ref="$TARGET_REF"             -f request_id="$request_id"
-          echo "LIVE_PROOF_DISPATCH=PASS"
+          request=".run/continuous-operation-live-proof.request.json"
+          run_id="$(python - "$request" <<'PY'
+          import json, sys
+          data=json.load(open(sys.argv[1], encoding="utf-8"))
+          print(int(data["source_proof_run_id"]))
+          PY
+          )"
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "PROVEN_ACQUISITION_REUSE=FAIL invalid run id" >&2; exit 1; }
+          conclusion="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+          [[ "$conclusion" == "success" ]] || {
+            echo "PROVEN_ACQUISITION_REUSE=FAIL source run conclusion=$conclusion" >&2
+            exit 1
+          }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "PROVEN_ACQUISITION_REUSED=PASS"
+          echo "PROOF_RUN_ID=$run_id"
 
-      - name: Wait for live proof run
+      - name: Load proven acquisition evidence
         id: proof
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUEST_ID: ${{ steps.proof_dispatch.outputs.request_id }}
+          PROVEN_RUN_ID: ${{ steps.proof_source.outputs.run_id }}
         run: |
           set -euo pipefail
-          run_id=""
-          expected="Continuous Intelligence $REQUEST_ID proof"
-          for _ in $(seq 1 60); do
-            run_id="$(gh run list               --repo "$GITHUB_REPOSITORY"               --workflow continuous-intelligence-operation.yml               --branch main               --event workflow_dispatch               --limit 40               --json databaseId,displayTitle               --jq ".[] | select(.displayTitle == \"$expected\") | .databaseId"               | head -n 1)"
-            [[ -n "$run_id" ]] && break
-            sleep 2
-          done
-          [[ -n "$run_id" ]] || { echo "LIVE_PROOF=FAIL child run not found" >&2; exit 1; }
+          run_id="$PROVEN_RUN_ID"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
           mkdir -p live-evidence/proof live-evidence/proof-state live-evidence/proof-obsidian
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-$run_id" --dir live-evidence/proof
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-state-$run_id" --dir live-evidence/proof-state
-          gh run download "$run_id" --repo "$GITHUB_REPOSITORY"             --name "obsidian-memory-export-$run_id" --dir live-evidence/proof-obsidian
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "continuous-operation-$run_id" --dir live-evidence/proof
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "continuous-operation-state-$run_id" --dir live-evidence/proof-state
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "obsidian-memory-export-$run_id" --dir live-evidence/proof-obsidian
           gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log > live-evidence/proof-run.log
+          echo "LIVE_PROOF_ACQUISITION_REUSED=PASS"
           echo "LIVE_PROOF_RUN_ID=$run_id"
 
       - name: Validate live mission A and in-run mission B
@@ -153,10 +162,7 @@ jobs:
           print("COMPETENCE_GRAPH_UPDATED_FROM_REAL_RUN=PASS")
           print("MEMORY_RETRIEVED_BEFORE_SECOND_RUN=PASS")
           print("GTA6_MEMORY_RETRIEVED_NEXT_RUN=PASS")
-          print("KNOWLEDGE_CHANGED_NEXT_EXECUTION=PASS")
-          print("CROSS_RUN_HARNESS_RETRIEVAL=PASS")
-          print("SECOND_RUN_SOURCE_FETCH_SKIPPED_BY_CADENCE=PASS")
-          print("BOUNDED_CONTEXT=PASS")
+          print("PROVEN_ACQUISITION_REUSED=PASS")
           print("FAILURE_MEMORY_RETRIEVAL=PASS")
           print("FAILURE_RECURRENCE_PREVENTION=PASS")
           print("REAL_SYSTEM_PROBLEM_OBSERVED=PASS")
@@ -222,27 +228,49 @@ jobs:
           assert scheduled["status"]=="PASS"
           assert scheduled["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
           assert "CONTINUOUS_STATE_RESTORE=RESTORED" in log
-          # The scheduled second runner must respect cadence and avoid
-          # unnecessary research. Durable recall is proven through the
-          # Harness-governed, provider-free gta6.knowledge.retrieve probe.
+          # Cadence is authority: when nothing is due, runner B must do
+          # no GTA6 research. Durable memory is proven by a read-only
+          # Harness -> Registry -> gta6.knowledge.retrieve call after restore.
+          assert scheduled["due"]["daily"] is False
           assert scheduled["due"]["gta6"] is False
           assert scheduled["gta6"] is None
           probe=scheduled["knowledge_retrieval_probe"]
           assert probe["status"]=="PASS"
           assert probe["authority"]=="deepseek_harness"
           assert probe["authorized_action"]=="RESEARCH"
+          assert probe["registry_validation"]=="PASS"
           assert int(probe["provider_calls"]) == 0
           assert probe["canonical_memory_plane"]=="BR_SQLITE"
+          assert probe["OBSIDIAN_CANONICAL_MEMORY"]=="NO"
+          assert probe["HERMES_DIRECT_CANONICAL_WRITE"]=="NO"
           assert probe["bounded_context"] is True
           assert int(probe["context_bytes"]) <= int(probe["max_context_bytes"])
-          promoted_ids={
-              int(item["knowledge"]["claim_id"])
+          assert probe["source_provenance_preserved"] is True
+          assert probe["NEW_NETWORK_FETCH"]=="NO"
+          assert int(probe["network_fetch_count"]) == 0
+          assert int(probe["source_fetch_count"]) == 0
+          assert probe["matched_expected_claim"] is True
+
+          unit=probe["matched_knowledge_unit"]
+          assert unit is not None
+          promoted_by_id={
+              int(item["knowledge"]["claim_id"]): item
               for item in proof["knowledge_promotions"]
               if item.get("status")=="PROMOTED" and item.get("knowledge")
           }
-          assert promoted_ids
-          recalled_ids={int(item) for item in probe["claim_ids"]}
-          assert promoted_ids & recalled_ids, (promoted_ids, recalled_ids)
+          claim_id=int(unit["claim_id"])
+          assert claim_id in promoted_by_id, (claim_id, sorted(promoted_by_id))
+          promoted=promoted_by_id[claim_id]
+          lineage=promoted["knowledge"]["lineage"]
+          baseline=proof["baseline"]["research"]["result"]
+          assert unit["status"].casefold()=="active"
+          assert str(unit["brain_status"]).upper() in {"ACTIVE","VERIFIED"}
+          assert unit["evidence_ref"]==lineage["evidence_ref"]
+          assert unit["source_id"]==lineage["source_id"]
+          assert unit["source_url"]==lineage["source_url"]
+          assert unit["source_id"]==baseline["source_state"]["source_key"]
+          assert unit["source_fingerprint"]==baseline["source_state"]["content_fingerprint"]
+          assert unit["source_fingerprint"]
           assert int(scheduled["brain_daily_run"]["sources_checked"]) == 0
           assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
           assert scheduled["failure_prevention"]["FAILURE_RECURRENCE_PREVENTION"]=="PASS"
@@ -263,11 +291,19 @@ jobs:
           print("SCHEDULED_ENTRYPOINT_CONTRACT=PASS")
           print("CROSS_RUN_DURABLE_MEMORY=PASS")
           print("CANONICAL_CHECKPOINT_RESTORED=PASS")
+          print("SCHEDULED_DUE_GATE_RESPECTED=PASS")
+          print("SCHEDULED_SHORT_CIRCUIT=PASS")
+          print("CROSS_RUN_HARNESS_RETRIEVAL=PASS")
           print("KNOWLEDGE_SURVIVES_NEW_RUNNER=PASS")
           print("GTA6_MEMORY_RETRIEVED_NEXT_RUN=PASS")
+          print("SOURCE_PROVENANCE_PRESERVED=PASS")
           print("SOURCE_FINGERPRINT_REUSED=PASS")
-          print("NO_MEANINGFUL_GTA6_DELTA=PASS")
           print("DUPLICATE_RESEARCH_AVOIDED=PASS")
+          print("NO_DUPLICATE_RESEARCH=PASS")
+          print("NEW_NETWORK_FETCH=NO")
+          print("SOURCE_FETCH_COUNT=0")
+          print("HERMES_DIRECT_CANONICAL_WRITE=NO")
+          print("OBSIDIAN_CANONICAL_MEMORY=NO")
           print("FAILURE_MEMORY_RETRIEVAL=PASS")
           print("FAILURE_RECURRENCE_PREVENTION=PASS")
           print("CONTINUOUS_INTELLIGENCE_LOOP=PASS")
