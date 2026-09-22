@@ -15,6 +15,7 @@ from app.services.local_openweight_ai_provider import _semantic_context_window
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     build_semantic_planner_prompt,
+    expand_compact_mission_plan_mapping,
     mission_plan_json_schema,
     semantic_prompt_component_bytes,
 )
@@ -217,7 +218,11 @@ def _run_proposal(
         mapping = json.loads(text)
         strict_json_valid = isinstance(mapping, dict)
         if strict_json_valid:
-            proposal = MissionPlanProposal.from_mapping(mapping, max_tasks=8)
+            canonical_mapping = expand_compact_mission_plan_mapping(mapping)
+            proposal = MissionPlanProposal.from_mapping(
+                canonical_mapping,
+                max_tasks=8,
+            )
             schema_valid = True
             task_count = len(proposal.tasks)
             validation_errors = list(proposal_registry_errors(proposal))
