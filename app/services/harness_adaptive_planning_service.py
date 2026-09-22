@@ -608,6 +608,39 @@ def effective_required_side_effect_class(
     return normalized_declared
 
 
+_MUTATING_CANDIDATE_SIDE_EFFECT_CLASSES = frozenset({
+    "BOUNDED_MUTATION",
+    "MUTATING",
+    "MEDIUM",
+    "HIGH",
+})
+
+
+def _candidate_requirement_for_task(
+    *,
+    task_class: str | None,
+    declared: str | None,
+    dependencies: Any = (),
+) -> str:
+    effective_risk = effective_required_side_effect_class(
+        task_class=task_class,
+        declared=declared,
+    )
+    if effective_risk not in _MUTATING_CANDIDATE_SIDE_EFFECT_CLASSES:
+        return "NOT_APPLICABLE"
+    return "CONDITIONAL" if bool(tuple(dependencies or ())) else "REQUIRED"
+
+
+def _record_is_mutation_capable(record: Any) -> bool:
+    record_side_effect = str(
+        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+    ).upper()
+    return (
+        record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+        or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+    )
+
+
 _MISSION_CLASS_ALLOWED_TASK_ACTIONS = {
     # Mission class is a Harness authority boundary, not a semantic-planner hint.
     # System-improvement specialist work stays in the DEVELOPMENT action; final
@@ -654,6 +687,11 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             task_class=task.task_class,
             declared=task.risk_side_effect_class,
         )
+        candidate_requirement = _candidate_requirement_for_task(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+            dependencies=task.dependencies,
+        )
         for capability_id in task.candidate_capability_ids:
             record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
             if record is None:
@@ -687,10 +725,22 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             record_side_effect = str(
                 getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
             ).upper()
-            mutation_capable = (
-                record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
-                or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
-            )
+            mutation_capable = _record_is_mutation_capable(record)
+            if (
+                candidate_requirement in {"REQUIRED", "CONDITIONAL"}
+                and not mutation_capable
+            ):
+                errors.append(
+                    f"{task.task_id}: {capability_id} cannot satisfy candidate semantics "
+                    f"{candidate_requirement}; mutation capability is required"
+                )
+                continue
+            if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
+                errors.append(
+                    f"{task.task_id}: {capability_id} mutation capability conflicts "
+                    "with candidate semantics NOT_APPLICABLE"
+                )
+                continue
             if (
                 required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
                 and not mutation_capable
@@ -721,6 +771,11 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             task_class=task.task_class,
             declared=task.risk_side_effect_class,
         )
+        candidate_requirement = _candidate_requirement_for_task(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+            dependencies=task.dependencies,
+        )
         feasible = False
         for record in GLOBAL_CAPABILITY_REGISTRY.all():
             if (
@@ -736,10 +791,14 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             record_side_effect = str(
                 getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
             ).upper()
-            mutation_capable = (
-                record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
-                or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
-            )
+            mutation_capable = _record_is_mutation_capable(record)
+            if (
+                candidate_requirement in {"REQUIRED", "CONDITIONAL"}
+                and not mutation_capable
+            ):
+                continue
+            if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
+                continue
             if (
                 required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
                 and not mutation_capable
@@ -779,13 +838,19 @@ def _candidate_hint_is_hard_compatible(
         task_class=task.task_class,
         declared=task.risk_side_effect_class,
     )
-    record_side_effect = str(
-        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
-    ).upper()
-    mutation_capable = (
-        record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
-        or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+    candidate_requirement = _candidate_requirement_for_task(
+        task_class=task.task_class,
+        declared=task.risk_side_effect_class,
+        dependencies=task.dependencies,
     )
+    mutation_capable = _record_is_mutation_capable(record)
+    if (
+        candidate_requirement in {"REQUIRED", "CONDITIONAL"}
+        and not mutation_capable
+    ):
+        return False
+    if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
+        return False
     if (
         required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
         and not mutation_capable
@@ -938,15 +1003,10 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             task_class=task.task_class,
             declared=task.risk_side_effect_class,
         )
-        mutation_capable = effective_risk in {
-            "BOUNDED_MUTATION", "MUTATING", "MEDIUM", "HIGH"
-        }
-        candidate_requirement = (
-            "CONDITIONAL"
-            if mutation_capable and bool(task.dependencies)
-            else "REQUIRED"
-            if mutation_capable
-            else "NOT_APPLICABLE"
+        candidate_requirement = _candidate_requirement_for_task(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+            dependencies=task.dependencies,
         )
         requirements.append({
             "task_id": task.task_id,
@@ -1181,10 +1241,35 @@ def select_capability_for_requirement(
         record_side_effect = str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ).upper()
-        mutation_capable = (
-            record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
-            or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
-        )
+        mutation_capable = _record_is_mutation_capable(record)
+        candidate_requirement = str(
+            requirement.get("candidate_requirement")
+            or _candidate_requirement_for_task(
+                task_class=str(requirement.get("task_class") or ""),
+                declared=str(
+                    requirement.get("risk_side_effect_class") or "READ_ONLY"
+                ),
+                dependencies=requirement.get("dependencies") or (),
+            )
+        ).strip().upper()
+        if candidate_requirement not in {
+            "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
+        }:
+            raise ValueError("candidate_requirement is invalid")
+        if (
+            candidate_requirement in {"REQUIRED", "CONDITIONAL"}
+            and not mutation_capable
+        ):
+            avoided.append(
+                f"{capability_id}:candidate-semantics-insufficient:"
+                f"{candidate_requirement.casefold()}"
+            )
+            continue
+        if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
+            avoided.append(
+                f"{capability_id}:candidate-semantics-exceeds:not-applicable"
+            )
+            continue
         if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"} and not mutation_capable:
             avoided.append(
                 f"{capability_id}:side-effect-insufficient:{record_side_effect.casefold()}"
