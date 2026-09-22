@@ -1,0 +1,300 @@
+name: Agent Office Bounded Development Diagnostic
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/agent-office-bounded-development-diagnostic.request.json"
+
+permissions:
+  contents: read
+
+env:
+  TUXEVIL_ROTATOR_VERSION: "3.8.0"
+  TUXEVIL_ROTATOR_BIND_HOST: "127.0.0.1"
+  TUXEVIL_ROTATOR_TELEMETRY: "off"
+  TUXEVIL_ROTATOR_ADMIN_TOKEN: "ci-bounded-diagnostic-only"
+  TUXEVIL_LOOPBACK_CLIENT_KEY: "tuxevil"
+  TUXEVIL_LOOPBACK_URL: "http://127.0.0.1:51200"
+  BR_TUXEVIL_LOOPBACK_KEY: "tuxevil"
+  BR_CODEX_TUXEVIL_BASE_URL: "http://127.0.0.1:51200/v1"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact diagnostic base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare exact bounded worker runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+          bash scripts/agent-tooling/bootstrap.sh codex
+          tooling_root="${BR_AGENT_TOOLING_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/br-agent-tooling}"
+          export PATH="$tooling_root/bin:$PATH"
+          codex --version
+          codex_home="$RUNNER_TEMP/bounded-diagnostic-codex-$GITHUB_RUN_ID"
+          install -d -m 700 "$codex_home"
+          echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
+          bash scripts/prepare_codex_linux_sandbox.sh
+          npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
+
+      - name: Materialize existing Antigravity store
+        env:
+          TUXEVIL_ACCOUNTS_JSON_B64: ${{ secrets.TUXEVIL_ACCOUNTS_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          config_dir="$RUNNER_TEMP/bounded-diagnostic-tuxevil-$GITHUB_RUN_ID"
+          store="$config_dir/accounts.json"
+          mkdir -p "$config_dir"
+          umask 077
+          test -n "${TUXEVIL_ACCOUNTS_JSON_B64:-}"
+          printf '%s' "$TUXEVIL_ACCOUNTS_JSON_B64" | base64 --decode > "$store"
+          chmod 600 "$store"
+          python - "$store" <<'PY'
+          import json, pathlib, stat, sys
+          path=pathlib.Path(sys.argv[1])
+          assert path.is_file()
+          assert stat.S_IMODE(path.stat().st_mode) == 0o600
+          data=json.loads(path.read_text(encoding="utf-8"))
+          accounts=data.get("accounts") if isinstance(data,dict) else data
+          assert isinstance(accounts,list) and len(accounts) == 4
+          print("BOUNDED_DIAGNOSTIC_ACCOUNT_STORE=PASS")
+          PY
+          echo "TUXEVIL_DIAGNOSTIC_CONFIG_DIR=$config_dir" >> "$GITHUB_ENV"
+
+      - name: Start Tuxevil and prove live transport
+        id: provider
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/bounded-diagnostic
+          raw_log="$RUNNER_TEMP/bounded-diagnostic-tuxevil.raw.log"
+          redacted_log="artifacts/bounded-diagnostic/tuxevil-rotator.redacted.log"
+          nohup tuxevil-rotator start --config-dir "$TUXEVIL_DIAGNOSTIC_CONFIG_DIR" \
+            > "$raw_log" 2>&1 &
+          pid="$!"
+          echo "$pid" > "$RUNNER_TEMP/bounded-diagnostic-tuxevil.pid"
+          python scripts/tuxevil_runtime_readiness.py \
+            --pid "$pid" \
+            --config-dir "$TUXEVIL_DIAGNOSTIC_CONFIG_DIR" \
+            --raw-log "$raw_log" \
+            --redacted-log "$redacted_log" \
+            --output artifacts/bounded-diagnostic/tuxevil-readiness.json \
+            --base-url "$TUXEVIL_LOOPBACK_URL" \
+            --admin-token "$TUXEVIL_ROTATOR_ADMIN_TOKEN" \
+            --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY" \
+            --wait-seconds 20
+          python scripts/tuxevil_codex_compat_probe.py \
+            --output artifacts/bounded-diagnostic/tuxevil-responses-proof.json \
+            --base-url "$TUXEVIL_LOOPBACK_URL" \
+            --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY" \
+            --configured-model "gemini-3-flash" \
+            --ci-credential-path EXISTING_RUNTIME_MATERIALIZATION \
+            --project-antigravity-configured \
+            --codex-action-responses-endpoint-supported \
+            --tuxevil-responses-endpoint-supported \
+            --process-ready \
+            --status-ready \
+            --runtime-account-count 4 \
+            --antigravity-account-present
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/bounded-diagnostic/tuxevil-responses-proof.json").read_text())
+          for key in (
+              "TUXEVIL_RESPONSES_API",
+              "ANTIGRAVITY_UPSTREAM_AUTH",
+              "TUXEVIL_LIVE_INFERENCE",
+              "TUXEVIL_TOOL_CALLING",
+          ):
+              assert d[key] == "PASS", (key,d[key])
+          assert d["OPENAI_PLATFORM_API_KEY_REQUIRED"] == "NO"
+          print("model="+str(d["selected_model"]))
+          PY
+
+      - name: Reproduce grounded bounded-development worker once
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
+          BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import datetime, timedelta, timezone
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          from app.services.agent_office.contracts import AgentOfficeTask
+          from app.services.agent_office.delegation import DelegatedTaskLease
+          from app.services.agent_office.codex_bounded_worker import (
+              CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+              codex_bounded_development_worker,
+          )
+          from app.services.agent_office_harness_service import (
+              build_agent_office_specialist_contract,
+          )
+          from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+          from app.services.agent_office.munder_adapter import _safe_worker_exception_reason
+
+          root=Path.cwd()
+          base=os.environ["GITHUB_SHA"]
+          workspace=Path(os.environ["RUNNER_TEMP"]) / "bounded-worker-direct"
+          subprocess.run(
+              ["git","worktree","add","--detach",str(workspace),base],
+              cwd=root, check=True, capture_output=True, text=True,
+          )
+          record=GLOBAL_CAPABILITY_REGISTRY.get(CODEX_BOUNDED_DEVELOPMENT_CAPABILITY)
+          assert record is not None
+          allowed_paths=("app/services/agent_office","tests")
+          acceptance=(
+              "reduce duplicated Codex exec argv-prefix construction while preserving behavior",
+              "tests/test_agent_office.py passes",
+              "preserve DeepSeek Harness authority and all security boundaries",
+              "report a real before/after metric and leave a local candidate commit only",
+          )
+          contract=build_agent_office_specialist_contract(
+              record=record,
+              payload={
+                  "task_id":"bounded.worker.probe",
+                  "task_class":"bounded-development",
+                  "objective":(
+                      "Implement the smallest safe bounded refactor justified by the "
+                      "grounded evidence. Preserve behavior and all security boundaries."
+                  ),
+                  "gaps":[
+                      (
+                          "Observed measurable redundancy: "
+                          "app/services/agent_office/codex_bounded_worker.py "
+                          "constructs the same Codex exec argv prefix in initial, "
+                          "candidate-repair, and metric-repair paths."
+                      ),
+                      (
+                          "Baseline metric: duplicated Codex exec argv-prefix construction "
+                          "blocks=3. Candidate target: <=1 shared construction helper while "
+                          "preserving per-pass sandbox mode and prompt."
+                      ),
+                  ],
+                  "allowed_paths":list(allowed_paths),
+                  "mission_read_scope":list(allowed_paths),
+                  "mission_write_scope":list(allowed_paths),
+                  "read_set":list(allowed_paths),
+                  "write_set":list(allowed_paths),
+                  "allowed_tools":list(record.allowed_tools),
+                  "allowed_actions":[
+                      "analyze","inspect","test","benchmark","edit","commit_candidate"
+                  ],
+                  "expected_outputs":["bounded candidate commit","before/after metric"],
+                  "acceptance_criteria":list(acceptance),
+                  "evidence_requirements":["candidate commit","measured metric","path boundary"],
+                  "tool_call_budget":32,
+                  "retry_budget":0,
+              },
+          )
+          task=AgentOfficeTask.from_mapping(contract["task"])
+          assert "GROUNDED_EVIDENCE_CONTEXT:" in task.objective
+          assert "codex_bounded_worker.py" in task.objective
+          print("BOUNDED_DIAGNOSTIC_GROUNDED_CONTEXT=PASS")
+          lease=DelegatedTaskLease(
+              mission_id="bounded-diagnostic",
+              task_id=task.task_id,
+              goal_id="bounded-diagnostic",
+              harness_decision_id="diagnostic-harness-decision",
+              authorization_id="diagnostic-authorization",
+              delegation_id="delegation:bounded-diagnostic:bounded.worker.probe",
+              agent_id=task.agent,
+              capability_ids=(CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,),
+              base_sha=base,
+              allowed_paths=tuple(contract["allowed_paths"]),
+              allowed_tools=task.allowed_tools,
+              allowed_actions=task.allowed_actions,
+              forbidden_actions=task.forbidden_actions,
+              input_artifact_refs=(),
+              expected_outputs=task.expected_outputs,
+              acceptance_criteria=task.acceptance_criteria,
+              evidence_requirements=task.evidence_requirements,
+              time_budget_seconds=300,
+              cost_budget=0.0,
+              tool_call_budget=32,
+              retry_budget=0,
+              max_parallelism=1,
+              expires_at=(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),
+              escalation_conditions=("scope_change","non_recoverable_error"),
+              owned_task_class="bounded-development",
+              role="SPECIALIST_TASK_OWNER",
+              read_set=task.read_set,
+              write_set=task.write_set,
+          )
+          try:
+              result=codex_bounded_development_worker(task,workspace,300.0,lease)
+              candidate=result.get("candidate")
+              safe={
+                  "status":result.get("status"),
+                  "candidate_repair_used":result.get("candidate_repair_used"),
+                  "metric_repair_used":result.get("metric_repair_used"),
+                  "grounded_targets":result.get("candidate_repair_context_grounded_targets"),
+                  "candidate_ready":candidate.get("CANDIDATE_READY_FOR_INTEGRATION") if isinstance(candidate,dict) else None,
+                  "candidate_files":candidate.get("FILES_CHANGED") if isinstance(candidate,dict) else None,
+              }
+              print("BOUNDED_WORKER_RESULT="+json.dumps(safe,sort_keys=True))
+              assert result.get("status") == "SUCCEEDED"
+              assert isinstance(candidate,dict)
+              assert candidate.get("CANDIDATE_READY_FOR_INTEGRATION") is True
+              assert candidate.get("FILES_CHANGED")
+              assert all(
+                  path.startswith(("app/services/agent_office/","tests/"))
+                  for path in candidate["FILES_CHANGED"]
+              )
+              print("BOUNDED_WORKER_DIRECT_REPRO=PASS")
+              print("WRITE_BOUNDARY=PASS")
+              print("CANDIDATE_COMMIT_CONTRACT=PASS")
+          except Exception as exc:
+              print("BOUNDED_WORKER_EXCEPTION_CLASS="+type(exc).__name__)
+              print("BOUNDED_WORKER_SAFE_REASON="+_safe_worker_exception_reason(exc))
+              raise
+          finally:
+              subprocess.run(
+                  ["git","worktree","remove","--force",str(workspace)],
+                  cwd=root, check=False, capture_output=True, text=True,
+              )
+          PY
+
+      - name: Cleanup ephemeral auth material
+        if: always()
+        run: |
+          set -euo pipefail
+          pid_file="$RUNNER_TEMP/bounded-diagnostic-tuxevil.pid"
+          config_dir="${TUXEVIL_DIAGNOSTIC_CONFIG_DIR:-}"
+          if [ -f "$pid_file" ]; then
+            pid="$(cat "$pid_file")"
+            kill -TERM "$pid" 2>/dev/null || true
+            for _ in {1..30}; do
+              if ! kill -0 "$pid" 2>/dev/null; then break; fi
+              sleep 0.2
+            done
+            if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+            wait "$pid" 2>/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/bounded-diagnostic-tuxevil.raw.log"
+          if [ -n "$config_dir" ]; then
+            rm -rf "$config_dir"
+            test ! -e "$config_dir"
+          fi
+          rm -rf "${CODEX_HOME:-$RUNNER_TEMP/nonexistent-codex-home}" || true
+          echo "BOUNDED_DIAGNOSTIC_AUTH_CLEANUP=PASS"
