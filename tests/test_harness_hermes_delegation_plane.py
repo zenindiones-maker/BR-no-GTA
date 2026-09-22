@@ -604,6 +604,79 @@ def test_semantic_schema_replan_rejects_invalid_uncertainty_type_without_coercio
     assert "u must be exactly one JSON number in 0..1" in prompts[1]
 
 
+def test_semantic_schema_replan_rejects_invalid_task_id_without_normalizing(
+    monkeypatch,
+):
+    invalid = {
+        "interpreted_goal": "inspect repository safely",
+        "assumptions": [],
+        "required_outcomes": ["bounded observation"],
+        "tasks": [
+            {
+                "task_id": "T1_Observe_BR_no_GTA",
+                "objective": "Inspect current repository evidence",
+                "task_class": "readonly-analysis",
+                "required_capability_description": "bounded repository analysis",
+                "candidate_capability_ids": [],
+                "dependencies": [],
+                "expected_output": "analysis evidence",
+                "acceptance_criteria": ["stay read only"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "DEVELOPMENT",
+            }
+        ],
+        "rationale": "observe before mutation",
+        "context_usage_notes": [],
+        "uncertainty": 0.2,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+    valid = {
+        **invalid,
+        "tasks": [
+            {
+                **invalid["tasks"][0],
+                "task_id": "t1_observe_br_no_gta",
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        semantic_planner_module.MissionPlanProposal.from_mapping(
+            invalid,
+            max_tasks=4,
+        )
+
+    prompts = []
+    def inference(prompt, _context):
+        prompts.append(prompt)
+        return invalid if len(prompts) == 1 else valid
+
+    monkeypatch.setattr(
+        adaptive,
+        "proposal_registry_errors",
+        lambda _proposal: (),
+    )
+    result, evidence = adaptive.propose_validated_semantic_plan(
+        {
+            "human_goal": "Inspect repository and plan safely",
+            "resource_bounds": {"max_tasks_per_mission": 4},
+        },
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert result.proposal.tasks[0].task_id == "t1_observe_br_no_gta"
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert "^[a-z0-9][a-z0-9._-]{0,79}$" in prompts[0]
+    assert "invalid task_id" in prompts[1]
+    assert "task id must be lowercase" in prompts[1]
+
+
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
     monkeypatch.setenv(
         "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
