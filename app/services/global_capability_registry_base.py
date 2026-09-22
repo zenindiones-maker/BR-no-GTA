@@ -42,6 +42,7 @@ class CapabilityRecord:
     version: str
     provider_id: str | None = None
     model_id: str | None = None
+    model_binding_policy: str = "STATIC_REGISTRY"
     agent_id: str | None = None
     skill_id: str | None = None
     side_effects: tuple[str, ...] = ()
@@ -495,6 +496,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             executor_binding="app.services.ai_provider_factory.create_ai_provider",
             evidence_contract="app.services.ai_provider.AIResponse",
             provider_id="tuxevil",
+            model_binding_policy="CURRENT_RUN_RUNTIME_PROOF",
             cost_class="EXTERNAL_MODEL",
             quota_class="ROTATOR_MANAGED",
             latency_class="EXTERNAL",
