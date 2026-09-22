@@ -1,0 +1,14 @@
+{
+  "schema": "agent-office-bounded-development-diagnostic-request/v1",
+  "canonical_contract": "HARNESS–HERMES DELEGATION PLANE V1 items 1–42",
+  "purpose": "one-shot live verification after deterministic candidate repair green",
+  "source_blocker_run_id": 35727442544,
+  "expected_fixed_blocker": "Codex bounded-development produced no candidate patch",
+  "local_deterministic_candidate_path": "PASS",
+  "focused_tests": "PASS",
+  "write_boundary": "PASS",
+  "candidate_commit_contract": "PASS",
+  "live_run_budget": 1,
+  "telegram_egress": false,
+  "credential_values_in_request": false
+}
