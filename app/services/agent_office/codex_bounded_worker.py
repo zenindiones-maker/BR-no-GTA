@@ -579,6 +579,191 @@ def _persist_rejected_command_shape(
         return
 
 
+_TOOL_BUDGET_SCHEMA = "codex-tool-budget/v1"
+_READ_ONLY_TOOL_NAMES = {"rg", "cat", "ls", "head", "wc", "sed"}
+_READ_ONLY_GIT_SUBCOMMANDS = {
+    "status", "diff", "show", "log", "grep", "rev-parse", "ls-files",
+}
+_VALIDATION_PYTHON_RE = re.compile(
+    r"(?:^|\s)(?:-m\s+pytest|pytest|unittest|py_compile|compileall)(?:\s|$)"
+)
+
+
+def _sanitized_tool_name(command: str) -> str:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        return "UNPARSABLE"
+    if not parts:
+        return "EMPTY"
+    tool = canonical_command_tool(parts[0])
+    sanitized = _sanitize_command_token(tool)
+    if _SENSITIVE_KEY_RE.search(sanitized):
+        return "<redacted-sensitive-tool>"
+    if len(sanitized) > 128:
+        return "sha256:" + hashlib.sha256(
+            sanitized.encode("utf-8")
+        ).hexdigest()[:16]
+    return sanitized
+
+
+def _tool_call_category(command: str) -> str:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        return "WRITE_ATTEMPT"
+    if not parts:
+        return "READ_ONLY"
+
+    tool = canonical_command_tool(parts[0])
+    normalized = " ".join(parts)
+
+    if tool == "pytest":
+        return "VALIDATION"
+    if tool == "python" and _VALIDATION_PYTHON_RE.search(normalized):
+        return "VALIDATION"
+    if tool in _READ_ONLY_TOOL_NAMES:
+        return "READ_ONLY"
+    if tool == "git" and len(parts) >= 2 and parts[1] in _READ_ONLY_GIT_SUBCOMMANDS:
+        return "READ_ONLY"
+
+    if tool in _SHELL_WRAPPER_TOOLS and len(parts) == 3 and parts[1] in {"-c", "-lc"}:
+        try:
+            segments = _shell_segments(parts[2])
+        except PermissionError:
+            return "WRITE_ATTEMPT"
+        categories = tuple(
+            _tool_call_category(shlex.join(segment))
+            for segment in segments
+        )
+        if categories and all(item == "READ_ONLY" for item in categories):
+            return "READ_ONLY"
+        if categories and all(
+            item in {"READ_ONLY", "VALIDATION"} for item in categories
+        ) and "VALIDATION" in categories:
+            return "VALIDATION"
+    return "WRITE_ATTEMPT"
+
+
+def _tool_budget_evidence(
+    *,
+    task: AgentOfficeTask,
+    lease: DelegatedTaskLease,
+    failure_stage: str,
+    initial_commands: tuple[str, ...] = (),
+    candidate_repair_commands: tuple[str, ...] = (),
+    final_validation_commands: tuple[str, ...] = (),
+    retry_commands: tuple[str, ...] = (),
+    candidate_repair_used: bool = False,
+    budget_check_mode: str = "STRICT_OVERAGE",
+) -> dict[str, Any]:
+    stages = (
+        tuple(initial_commands),
+        tuple(candidate_repair_commands),
+        tuple(final_validation_commands),
+        tuple(retry_commands),
+    )
+    commands = tuple(command for stage in stages for command in stage)
+    total = len(commands)
+    budget = int(lease.tool_call_budget)
+
+    tool_counts: dict[str, int] = {}
+    category_counts = {
+        "READ_ONLY": 0,
+        "WRITE_ATTEMPT": 0,
+        "VALIDATION": 0,
+    }
+    command_hashes: list[str] = []
+    for command in commands:
+        tool = _sanitized_tool_name(command)
+        tool_counts[tool] = tool_counts.get(tool, 0) + 1
+        category = _tool_call_category(command)
+        category_counts[category] = category_counts.get(category, 0) + 1
+        command_hashes.append(
+            hashlib.sha256(str(command).encode("utf-8")).hexdigest()
+        )
+
+    unique_count = len(set(command_hashes))
+    return {
+        "TOOL_BUDGET_SCHEMA": _TOOL_BUDGET_SCHEMA,
+        "TASK_ID": (
+            str(task.task_id)
+            if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", str(task.task_id))
+            else "sha256:" + hashlib.sha256(
+                str(task.task_id).encode("utf-8")
+            ).hexdigest()[:16]
+        ),
+        "CAPABILITY": CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+        "TOOL_CALL_BUDGET_ASSIGNED": budget,
+        "TOOL_CALL_BUDGET": budget,
+        "TOOL_CALL_COUNT_OBSERVED": total,
+        "TOOL_CALL_OVERAGE": max(0, total - budget),
+        "FAILURE_STAGE": str(failure_stage),
+        "BUDGET_CHECK_MODE": str(budget_check_mode),
+        "INITIAL_PASS_TOOL_CALLS": len(initial_commands),
+        "CANDIDATE_REPAIR_TOOL_CALLS": len(candidate_repair_commands),
+        "FINAL_VALIDATION_TOOL_CALLS": len(final_validation_commands),
+        "RETRY_TOOL_CALLS": len(retry_commands),
+        "RETRY_BUDGET_ASSIGNED": int(lease.retry_budget),
+        "CANDIDATE_REPAIR_USED": "YES" if candidate_repair_used else "NO",
+        "TOOL_COUNTS_BY_CANONICAL_TOOL": dict(sorted(tool_counts.items())),
+        "UNIQUE_COMMAND_COUNT": unique_count,
+        "DUPLICATE_COMMAND_COUNT": total - unique_count,
+        "READ_ONLY_CALL_COUNT": category_counts["READ_ONLY"],
+        "WRITE_ATTEMPT_COUNT": category_counts["WRITE_ATTEMPT"],
+        "VALIDATION_CALL_COUNT": category_counts["VALIDATION"],
+        "TOOL_NAMES_SANITIZED": "YES",
+        "RAW_COMMANDS_PERSISTED": "NO",
+        "SECRET_LEAK": "NO",
+    }
+
+
+def _persist_tool_budget_failure(
+    *,
+    task: AgentOfficeTask,
+    lease: DelegatedTaskLease,
+    failure_stage: str,
+    initial_commands: tuple[str, ...] = (),
+    candidate_repair_commands: tuple[str, ...] = (),
+    final_validation_commands: tuple[str, ...] = (),
+    retry_commands: tuple[str, ...] = (),
+    candidate_repair_used: bool = False,
+    budget_check_mode: str = "STRICT_OVERAGE",
+) -> None:
+    raw_path = str(
+        os.environ.get("BR_TOOL_BUDGET_EVIDENCE_PATH") or ""
+    ).strip()
+    if not raw_path:
+        return
+
+    path = Path(raw_path)
+    try:
+        if path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = _tool_budget_evidence(
+            task=task,
+            lease=lease,
+            failure_stage=failure_stage,
+            initial_commands=initial_commands,
+            candidate_repair_commands=candidate_repair_commands,
+            final_validation_commands=final_validation_commands,
+            retry_commands=retry_commands,
+            candidate_repair_used=candidate_repair_used,
+            budget_check_mode=budget_check_mode,
+        )
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    except (OSError, RuntimeError, ValueError):
+        # Diagnostic persistence must never mask or replace the original
+        # fail-closed tool budget exception.
+        return
+
+
 def canonical_command_tool(value: str) -> str:
     raw = Path(str(value or "")).name
     return _TOOL_ALIASES.get(raw, raw)
@@ -932,6 +1117,14 @@ def codex_bounded_development_worker(
 
     observed_commands = _commands(completed.stdout)
     if len(observed_commands) > lease.tool_call_budget:
+        _persist_tool_budget_failure(
+            task=task,
+            lease=lease,
+            failure_stage="INITIAL_PASS",
+            initial_commands=observed_commands,
+            candidate_repair_used=False,
+            budget_check_mode="STRICT_OVERAGE",
+        )
         raise RuntimeError("Codex exceeded tool_call_budget")
     for observed in observed_commands:
         _validate_command(
@@ -961,6 +1154,14 @@ def codex_bounded_development_worker(
         if MAX_CANDIDATE_REPAIR_PASSES != 1:
             raise RuntimeError("candidate repair pass budget drifted from one")
         if len(observed_commands) >= lease.tool_call_budget:
+            _persist_tool_budget_failure(
+                task=task,
+                lease=lease,
+                failure_stage="CANDIDATE_REPAIR_PRECHECK",
+                initial_commands=observed_commands,
+                candidate_repair_used=False,
+                budget_check_mode="REQUIRE_REMAINING_SLOT",
+            )
             raise RuntimeError("Codex exceeded tool_call_budget")
         mutation_guidance = (
             "AUTHORIZED_MUTATION_MECHANISM=Use the Codex native workspace-write "
@@ -1041,6 +1242,15 @@ def codex_bounded_development_worker(
 
         candidate_repair_commands = _commands(candidate_repair.stdout)
         if len(observed_commands) + len(candidate_repair_commands) > lease.tool_call_budget:
+            _persist_tool_budget_failure(
+                task=task,
+                lease=lease,
+                failure_stage="CANDIDATE_REPAIR",
+                initial_commands=observed_commands,
+                candidate_repair_commands=candidate_repair_commands,
+                candidate_repair_used=True,
+                budget_check_mode="STRICT_OVERAGE",
+            )
             raise RuntimeError("Codex exceeded tool_call_budget")
         for observed in candidate_repair_commands:
             _validate_command(
@@ -1118,6 +1328,15 @@ def codex_bounded_development_worker(
 
         repair_commands = _commands(repair.stdout)
         if len(observed_commands) + len(repair_commands) > lease.tool_call_budget:
+            _persist_tool_budget_failure(
+                task=task,
+                lease=lease,
+                failure_stage="FINAL_VALIDATION",
+                initial_commands=observed_commands,
+                final_validation_commands=repair_commands,
+                candidate_repair_used=candidate_repair_used,
+                budget_check_mode="STRICT_OVERAGE",
+            )
             raise RuntimeError("Codex exceeded tool_call_budget")
         for observed in repair_commands:
             _validate_command(

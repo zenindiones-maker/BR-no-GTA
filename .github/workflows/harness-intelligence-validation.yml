@@ -14,6 +14,8 @@ on:
       - "app/services/harness_ai_provider_service.py"
       - "app/services/harness_routing_policy_service.py"
       - "app/services/global_capability_registry_base.py"
+      - "app/services/agent_office/codex_bounded_worker.py"
+      - "tests/test_agent_office.py"
       - "scripts/harness_intelligence_benchmark.py"
       - "scripts/semantic_planner_single_proposal_proof.py"
       - "scripts/semantic_planner_optimized_inference_profile.py"
@@ -73,6 +75,14 @@ jobs:
           echo "CANDIDATE_REQUIRED_SEMANTICS=PASS"
           echo "TASK_ENVELOPE_CONTEXT_PRESERVED=PASS"
           echo "HARNESS_AUTHORITY=PASS"
+      - name: Prove tool-budget observability preserves Harness contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_agent_office.py -k "tool_budget_evidence_counts or bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked or tool_budget_stage_accounting"
+          echo "TOOL_CALL_BUDGET_UNCHANGED=PASS"
+          echo "RETRY_BUDGET_UNCHANGED=PASS"
+          echo "TASK_ENVELOPE_UNCHANGED=PASS"
+          echo "HARNESS_TOOL_BUDGET_OBSERVABILITY=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

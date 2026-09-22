@@ -329,6 +329,7 @@ jobs:
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
           BR_REJECTED_COMMAND_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/first/rejected-command-shape.json
+          BR_TOOL_BUDGET_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/first/tool-budget.json
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/first
@@ -449,6 +450,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
+          BR_TOOL_BUDGET_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/second/tool-budget.json
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/second
@@ -606,6 +608,53 @@ jobs:
           print("SECRET_LEAK=NO")
           PY
 
+      - name: Print sanitized tool-budget evidence when captured
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="artifacts/delegation-plane-operational/$OP_PHASE/tool-budget.json"
+          if [ ! -s "$evidence" ]; then
+            echo "TOOL_BUDGET_DIAGNOSTIC=NOT_CAPTURED"
+            exit 0
+          fi
+          python - "$evidence" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          keys=(
+              "TOOL_BUDGET_SCHEMA",
+              "TASK_ID",
+              "CAPABILITY",
+              "TOOL_CALL_BUDGET_ASSIGNED",
+              "TOOL_CALL_BUDGET",
+              "TOOL_CALL_COUNT_OBSERVED",
+              "TOOL_CALL_OVERAGE",
+              "FAILURE_STAGE",
+              "BUDGET_CHECK_MODE",
+              "INITIAL_PASS_TOOL_CALLS",
+              "CANDIDATE_REPAIR_TOOL_CALLS",
+              "FINAL_VALIDATION_TOOL_CALLS",
+              "RETRY_TOOL_CALLS",
+              "RETRY_BUDGET_ASSIGNED",
+              "CANDIDATE_REPAIR_USED",
+              "TOOL_COUNTS_BY_CANONICAL_TOOL",
+              "UNIQUE_COMMAND_COUNT",
+              "DUPLICATE_COMMAND_COUNT",
+              "READ_ONLY_CALL_COUNT",
+              "WRITE_ATTEMPT_COUNT",
+              "VALIDATION_CALL_COUNT",
+              "TOOL_NAMES_SANITIZED",
+              "RAW_COMMANDS_PERSISTED",
+              "SECRET_LEAK",
+          )
+          for key in keys:
+              value=data[key]
+              if isinstance(value,(dict,list)):
+                  value=json.dumps(value,separators=(",",":"),sort_keys=True)
+              print(f"{key}={value}")
+          PY
+
       - name: Shutdown Tuxevil and destroy all ephemeral auth material
         if: always()
         run: |
@@ -647,6 +696,15 @@ jobs:
         with:
           name: delegation-plane-rejected-command-${{ github.run_id }}
           path: artifacts/delegation-plane-operational/first/rejected-command-shape.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload tool-budget diagnostic even on mission failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegation-plane-tool-budget-${{ github.run_id }}
+          path: artifacts/delegation-plane-operational/${{ env.OP_PHASE }}/tool-budget.json
           if-no-files-found: warn
           retention-days: 14
 

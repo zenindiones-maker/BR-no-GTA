@@ -18,6 +18,7 @@ from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
     _rejected_command_shape,
+    _tool_budget_evidence,
     _validate_command,
     codex_execution_failure,
     codex_tuxevil_provider_args,
@@ -913,6 +914,221 @@ def test_rejected_command_failure_persistence_keeps_fail_closed_behavior(
     assignment = json.loads(second.read_text(encoding="utf-8"))
     assert assignment["FIRST_TOKEN_KIND"] == "ASSIGNMENT_LIKE"
     assert assignment["RAW_FIRST_TOKEN"] == "tmp_env=<redacted>"
+
+
+def _tool_budget_test_task_and_lease(*, budget=3, retry_budget=1):
+    from datetime import datetime, timedelta, timezone
+    from app.services.agent_office.delegation import MANDATORY_FORBIDDEN_ACTIONS
+
+    task = AgentOfficeTask(
+        task_id="tool-budget-observability",
+        agent="codex-development",
+        capability="agent-office.codex.bounded-development",
+        action="development",
+        objective="Make one bounded local candidate change.",
+        allowed_paths=("app/services/agent_office",),
+        allowed_tools=("git", "python", "pytest", "rg", "cat", "ls", "head", "wc", "sed"),
+        allowed_actions=("analyze", "inspect", "test", "edit", "commit_candidate"),
+        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+        expected_outputs=("candidate",),
+        acceptance_criteria=("bounded change",),
+        evidence_requirements=("candidate evidence",),
+        read_set=("app/services/agent_office",),
+        write_set=("app/services/agent_office",),
+        tool_call_budget=budget,
+        retry_budget=retry_budget,
+        time_budget_seconds=120,
+        cost_budget=0.0,
+    )
+    lease = DelegatedTaskLease(
+        mission_id="tool-budget-mission",
+        task_id=task.task_id,
+        goal_id="tool-budget-goal",
+        harness_decision_id="tool-budget-decision",
+        authorization_id="tool-budget-auth",
+        delegation_id="delegation:tool-budget",
+        agent_id=task.agent,
+        capability_ids=(task.capability,),
+        base_sha="a" * 40,
+        allowed_paths=task.allowed_paths,
+        allowed_tools=task.allowed_tools,
+        allowed_actions=task.allowed_actions,
+        forbidden_actions=task.forbidden_actions,
+        input_artifact_refs=(),
+        expected_outputs=task.expected_outputs,
+        acceptance_criteria=task.acceptance_criteria,
+        evidence_requirements=task.evidence_requirements,
+        time_budget_seconds=task.time_budget_seconds or 120,
+        cost_budget=0.0,
+        tool_call_budget=budget,
+        retry_budget=retry_budget,
+        max_parallelism=1,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat(),
+        escalation_conditions=("scope_change",),
+        owned_task_class="bounded-development",
+        role="SPECIALIST_TASK_OWNER",
+        read_set=task.read_set,
+        write_set=task.write_set,
+    )
+    return task, lease
+
+
+def test_tool_budget_evidence_counts_stages_categories_and_duplicates_exactly():
+    task, lease = _tool_budget_test_task_and_lease(budget=6, retry_budget=2)
+    secret = "nvidia-secret-value-never-persist"
+    evidence = _tool_budget_evidence(
+        task=task,
+        lease=lease,
+        failure_stage="CANDIDATE_REPAIR",
+        initial_commands=(
+            "rg needle app/services/agent_office",
+            "rg needle app/services/agent_office",
+            "git status --short",
+            "python -m pytest -q tests/test_agent_office.py",
+        ),
+        candidate_repair_commands=(
+            f"NVIDIA_API_KEY={secret} python -c 'print(1)'",
+            "pytest -q tests/test_agent_office.py",
+        ),
+        final_validation_commands=(
+            "wc -l app/services/agent_office/codex_bounded_worker.py",
+        ),
+        retry_commands=(),
+        candidate_repair_used=True,
+    )
+
+    assert evidence["TOOL_BUDGET_SCHEMA"] == "codex-tool-budget/v1"
+    assert evidence["TOOL_CALL_BUDGET"] == 6
+    assert evidence["TOOL_CALL_COUNT_OBSERVED"] == 7
+    assert evidence["TOOL_CALL_OVERAGE"] == 1
+    assert evidence["INITIAL_PASS_TOOL_CALLS"] == 4
+    assert evidence["CANDIDATE_REPAIR_TOOL_CALLS"] == 2
+    assert evidence["FINAL_VALIDATION_TOOL_CALLS"] == 1
+    assert evidence["RETRY_TOOL_CALLS"] == 0
+    assert evidence["RETRY_BUDGET_ASSIGNED"] == 2
+    assert evidence["CANDIDATE_REPAIR_USED"] == "YES"
+    assert evidence["UNIQUE_COMMAND_COUNT"] == 6
+    assert evidence["DUPLICATE_COMMAND_COUNT"] == 1
+    assert evidence["READ_ONLY_CALL_COUNT"] == 4
+    assert evidence["VALIDATION_CALL_COUNT"] == 2
+    assert evidence["WRITE_ATTEMPT_COUNT"] == 1
+    assert sum(evidence["TOOL_COUNTS_BY_CANONICAL_TOOL"].values()) == 7
+    assert evidence["TOOL_NAMES_SANITIZED"] == "YES"
+    assert evidence["RAW_COMMANDS_PERSISTED"] == "NO"
+    assert secret not in json.dumps(evidence, sort_keys=True)
+    assert evidence["SECRET_LEAK"] == "NO"
+
+
+@pytest.mark.parametrize(
+    ("command_count", "expect_failure"),
+    ((3, False), (4, True)),
+)
+def test_bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked(
+    monkeypatch,
+    tmp_path,
+    command_count,
+    expect_failure,
+):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+
+    task, lease = _tool_budget_test_task_and_lease(budget=3, retry_budget=1)
+    evidence_path = tmp_path / "tool-budget.json"
+    monkeypatch.setenv("BR_TOOL_BUDGET_EVIDENCE_PATH", str(evidence_path))
+    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    stdout = "\n".join(
+        json.dumps({
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "git status --short",
+            },
+        })
+        for _ in range(command_count)
+    )
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command[:3] == ["git", "rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=lease.base_sha + "\n", stderr=""
+            )
+        if command and command[0] == "codex":
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+        if command[:3] == ["git", "diff", "--stat"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout="1 file changed", stderr=""
+            )
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    monkeypatch.setattr(
+        worker_module,
+        "_changed_paths",
+        lambda *_args: ("app/services/agent_office/codex_bounded_worker.py",),
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "_candidate_commit",
+        lambda **_kwargs: "b" * 40,
+    )
+
+    if expect_failure:
+        with pytest.raises(RuntimeError, match="exceeded tool_call_budget"):
+            worker_module.codex_bounded_development_worker(
+                task, tmp_path, 120.0, lease
+            )
+        persisted = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert persisted["FAILURE_STAGE"] == "INITIAL_PASS"
+        assert persisted["TOOL_CALL_BUDGET"] == 3
+        assert persisted["TOOL_CALL_COUNT_OBSERVED"] == 4
+        assert persisted["TOOL_CALL_OVERAGE"] == 1
+        assert persisted["INITIAL_PASS_TOOL_CALLS"] == 4
+        assert persisted["CANDIDATE_REPAIR_TOOL_CALLS"] == 0
+        assert persisted["FINAL_VALIDATION_TOOL_CALLS"] == 0
+        assert persisted["RETRY_TOOL_CALLS"] == 0
+        assert persisted["CANDIDATE_REPAIR_USED"] == "NO"
+        assert persisted["SECRET_LEAK"] == "NO"
+    else:
+        result = worker_module.codex_bounded_development_worker(
+            task, tmp_path, 120.0, lease
+        )
+        assert result["status"] == "SUCCEEDED"
+        assert result["usage"]["tool_calls"] == 3
+        assert not evidence_path.exists()
+
+
+def test_tool_budget_stage_accounting_does_not_double_count_or_conflate_retry():
+    task, lease = _tool_budget_test_task_and_lease(budget=4, retry_budget=2)
+    evidence = _tool_budget_evidence(
+        task=task,
+        lease=lease,
+        failure_stage="FINAL_VALIDATION",
+        initial_commands=("rg one app",),
+        candidate_repair_commands=("python -c 'print(1)'",),
+        final_validation_commands=("pytest -q tests/test_agent_office.py",),
+        retry_commands=(),
+        candidate_repair_used=True,
+    )
+    assert evidence["TOOL_CALL_COUNT_OBSERVED"] == 3
+    assert (
+        evidence["INITIAL_PASS_TOOL_CALLS"]
+        + evidence["CANDIDATE_REPAIR_TOOL_CALLS"]
+        + evidence["FINAL_VALIDATION_TOOL_CALLS"]
+        + evidence["RETRY_TOOL_CALLS"]
+        == evidence["TOOL_CALL_COUNT_OBSERVED"]
+    )
+    assert evidence["RETRY_TOOL_CALLS"] == 0
+    assert evidence["RETRY_BUDGET_ASSIGNED"] == 2
+    assert evidence["UNIQUE_COMMAND_COUNT"] == 3
+    assert evidence["DUPLICATE_COMMAND_COUNT"] == 0
 
 
 def test_codex_shell_wrapper_validates_inner_allowlisted_tools():

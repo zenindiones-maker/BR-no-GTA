@@ -212,6 +212,25 @@ jobs:
           echo "FAIL_CLOSED_UNCHANGED=PASS"
           echo "TASK_ENVELOPE_SCOPE_UNCHANGED=PASS"
 
+      - name: Prove tool-budget accounting and failure evidence
+        run: |
+          python -m pytest -q tests/test_agent_office.py -k "tool_budget_evidence_counts or bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked or tool_budget_stage_accounting"
+          echo "TOOL_BUDGET_COUNTING_EXACT=PASS"
+          echo "AT_LIMIT_ALLOWED=PASS"
+          echo "OVER_LIMIT_BLOCKED=PASS"
+          echo "INITIAL_PASS_COUNT_EXACT=PASS"
+          echo "CANDIDATE_REPAIR_COUNT_EXACT=PASS"
+          echo "RETRY_COUNT_SEMANTICS_EXACT=PASS"
+          echo "NO_DOUBLE_COUNT=PASS"
+          echo "TOOL_BUDGET_FAILURE_EVIDENCE_PERSISTED=PASS"
+          echo "TOOL_NAMES_SANITIZED=PASS"
+          echo "SECRET_LEAK=NO"
+          echo "TOOL_CALL_BUDGET_UNCHANGED=PASS"
+          echo "RETRY_BUDGET_UNCHANGED=PASS"
+          echo "COMMAND_ALLOWLIST_UNCHANGED=PASS"
+          echo "TASK_ENVELOPE_UNCHANGED=PASS"
+          echo "FAIL_CLOSED_UNCHANGED=PASS"
+
       - name: Test authorization, routing, worktrees and evidence
         run: |
           python -m pytest -q \
