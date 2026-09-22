@@ -15,6 +15,9 @@ from app.services.harness_collaboration_service import (
     TaskEnvelope,
     build_collaboration_plan,
 )
+from app.services.harness_mission_execution_router import (
+    select_mission_execution_route,
+)
 from scripts.audit_harness_ecosystem import audit
 
 
@@ -219,3 +222,95 @@ def test_ecosystem_has_no_second_capability_authority():
         row["AUTHORITY_LEVEL"] in {"INHERITED", "NONE", "DELEGATED_ONLY"}
         for row in result["capabilities"]
     )
+
+
+def _mission_plan_for_route(*tasks: TaskEnvelope, mission_class: str = "OPEN_SEMANTIC"):
+    collaboration = build_collaboration_plan(
+        mission_id="mission-route-test",
+        goal_id="goal-route-test",
+        tasks=list(tasks),
+    )
+    return {
+        "authority": "DEEPSEEK_HARNESS",
+        "goal": {
+            "goal_id": "goal-route-test",
+            "human_goal": "route this work",
+            "mission_class": mission_class,
+        },
+        "collaboration_plan": collaboration.to_dict(),
+    }
+
+
+def test_topology_simple_task_avoids_hermes():
+    plan = _mission_plan_for_route(TaskEnvelope(
+        task_id="retrieve",
+        capability_id="gta6.knowledge.retrieve",
+        action="RESEARCH",
+        objective="Retrieve bounded existing GTA6 knowledge",
+        task_class="readonly-retrieval",
+        expected_output="KnowledgeEvidence",
+        review_policy="NONE",
+    ))
+    route = select_mission_execution_route(plan)
+    assert route.runtime == "DIRECT_CAPABILITY"
+    assert route.hermes_used is False
+    assert route.coordination_benefit is False
+
+
+def test_topology_parallel_readonly_uses_light_hermes_coordination():
+    plan = _mission_plan_for_route(
+        TaskEnvelope(
+            task_id="retrieve-a",
+            capability_id="gta6.knowledge.retrieve",
+            action="RESEARCH",
+            objective="Retrieve knowledge A",
+            task_class="readonly-retrieval",
+            expected_output="KnowledgeEvidence",
+            review_policy="NONE",
+        ),
+        TaskEnvelope(
+            task_id="retrieve-b",
+            capability_id="gta6.knowledge.retrieve",
+            action="RESEARCH",
+            objective="Retrieve knowledge B",
+            task_class="readonly-retrieval",
+            expected_output="KnowledgeEvidence",
+            review_policy="NONE",
+        ),
+    )
+    route = select_mission_execution_route(plan)
+    assert route.runtime == "HERMES_COLLABORATION"
+    assert route.hermes_used is True
+    assert route.coordination_benefit is True
+    assert route.durable is False
+
+
+def test_topology_dependency_or_review_uses_durable_hermes_kanban():
+    plan = _mission_plan_for_route(
+        TaskEnvelope(
+            task_id="analyze",
+            capability_id="agent-office.codex.readonly-analysis",
+            action="DEVELOPMENT",
+            objective="Analyze a bounded system problem",
+            task_class="root-cause-analysis",
+            expected_output="AnalysisEvidence",
+            review_policy="NONE",
+        ),
+        TaskEnvelope(
+            task_id="change",
+            capability_id="agent-office.codex.bounded-development",
+            action="DEVELOPMENT",
+            objective="Create a bounded candidate",
+            task_class="bounded-development",
+            dependencies=("analyze",),
+            expected_output="CandidateEvidence",
+            write_scope=("app",),
+            review_policy="INDEPENDENT_REQUIRED",
+            risk_side_effect_class="BOUNDED_MUTATION",
+        ),
+    )
+    route = select_mission_execution_route(plan)
+    assert route.runtime == "HERMES_KANBAN"
+    assert route.hermes_used is True
+    assert route.durable is True
+    assert route.has_dependencies is True
