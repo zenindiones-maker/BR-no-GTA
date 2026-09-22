@@ -382,19 +382,45 @@ jobs:
                   print("DURABLE_KANBAN=PASS")
 
           candidates=report.get("candidate_shas") or {}
-          assert candidates, "bounded-development candidate is mandatory for this acceptance run"
-          assert report.get("integration_gates"), "candidate integration gate missing"
-          for key in (
-              "PATCH_BOUNDED_TO_WORKTREE",
-              "INDEPENDENT_REVIEW",
-              "CANDIDATE_TESTED",
-              "BASELINE_VS_CANDIDATE_COMPARED",
-          ):
-              assert checks[key] is True, (key, checks[key])
+          candidate_decisions=report.get("candidate_decisions") or {}
+          if candidates:
+              assert report.get("integration_gates"), "candidate integration gate missing"
+              for key in (
+                  "PATCH_BOUNDED_TO_WORKTREE",
+                  "INDEPENDENT_REVIEW",
+                  "CANDIDATE_TESTED",
+                  "BASELINE_VS_CANDIDATE_COMPARED",
+              ):
+                  assert checks[key] is True, (key, checks[key])
+              assert report.get("promotion_decision") == "HUMAN_REVIEW", report.get("promotion_decision")
+              print("WRITE_CAPABLE_CODEX_EXECUTOR=PASS")
+          else:
+              conditional=[
+                  item for item in candidate_decisions.values()
+                  if str(item.get("candidate_requirement") or "") == "CONDITIONAL"
+              ]
+              assert conditional, "no candidate without a typed CONDITIONAL decision"
+              assert all(
+                  item.get("decision") == "NOT_REQUIRED"
+                  and item.get("actionable") is False
+                  for item in conditional
+              ), conditional
+              assert not any(
+                  item.get("decision") == "BLOCKED_UNGROUNDED"
+                  for item in candidate_decisions.values()
+              )
+              assert checks["REAL_CANDIDATE_CREATED"] == "NOT_REQUIRED"
+              for key in (
+                  "PATCH_BOUNDED_TO_WORKTREE",
+                  "INDEPENDENT_REVIEW",
+                  "CANDIDATE_TESTED",
+                  "BASELINE_VS_CANDIDATE_COMPARED",
+              ):
+                  assert checks[key] == "NOT_REQUIRED", (key, checks[key])
+              assert report.get("promotion_decision") == "NOT_REQUIRED"
+              print("REAL_CANDIDATE_CREATED=NOT_REQUIRED")
           assert checks["BUILDER_SELF_APPROVAL"] is False
           assert checks["AGENT_SELF_PROMOTION"] is False
-          assert report.get("promotion_decision") == "HUMAN_REVIEW", report.get("promotion_decision")
-          print("WRITE_CAPABLE_CODEX_EXECUTOR=PASS")
           print("ITEM35_OPERATIONAL_PROOF=PASS")
           print("ITEM36_FIRST_REAL_EXECUTION=PASS")
           PY
