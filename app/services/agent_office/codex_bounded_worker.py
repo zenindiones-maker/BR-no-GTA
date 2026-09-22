@@ -728,6 +728,9 @@ def codex_bounded_development_worker(
         if not changed:
             raise RuntimeError(
                 "Codex bounded-development candidate repair produced no candidate patch"
+                f"; initial_commands={len(candidate_repair_context['initial_observed_commands'])}"
+                f"; repair_commands={len(candidate_repair_commands)}"
+                f"; grounded_targets={len(candidate_repair_context['grounded_writable_targets'])}"
             )
         candidate_repair_text = _final_text(candidate_repair.stdout)
         if candidate_repair_text:
