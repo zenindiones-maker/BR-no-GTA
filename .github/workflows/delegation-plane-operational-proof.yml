@@ -273,13 +273,41 @@ jobs:
                   "agent-office.codex.bounded-development",
               )
           }
+          provider_health={
+              "tuxevil":{
+                  "provider_id":"tuxevil",
+                  "state":"AVAILABLE",
+                  "scope":"CURRENT_GITHUB_RUN",
+                  "github_run_id":os.environ["GITHUB_RUN_ID"],
+                  "zero_cost_eligible":True,
+                  "proof":{
+                      key:proof[key]
+                      for key in (
+                          "TUXEVIL_RESPONSES_API",
+                          "ANTIGRAVITY_UPSTREAM_AUTH",
+                          "TUXEVIL_LIVE_INFERENCE",
+                          "TUXEVIL_TOOL_CALLING",
+                      )
+                  },
+                  "evidence_refs":[
+                      f"github:run:{os.environ['GITHUB_RUN_ID']}:tuxevil-live-proof",
+                      "github:run:35690620457:item19-auth-proof",
+                  ],
+              }
+          }
           with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as handle:
               handle.write(
                   "BR_RUNTIME_CAPABILITY_HEALTH_JSON="
                   + json.dumps(health,separators=(",",":"))
                   + "\n"
               )
+              handle.write(
+                  "BR_RUNTIME_PROVIDER_HEALTH_JSON="
+                  + json.dumps(provider_health,separators=(",",":"))
+                  + "\n"
+              )
           print("CODEX_RUNTIME_HEALTH_PREFLIGHT=PASS")
+          print("TUXEVIL_RUNTIME_PROVIDER_HEALTH=PASS")
           PY
 
       - name: Execute first real natural-goal mission
