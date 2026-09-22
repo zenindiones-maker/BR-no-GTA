@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,23 @@ import pytest
 import requests
 
 from scripts.telegram_render_review_worker import _send_video, deliver_render_review
+from scripts.telegram_video_review_worker import (
+    MAX_TELEGRAM_UPLOAD_BYTES,
+    _sha256,
+    _single_mp4,
+    build_review_proxy,
+)
+
+
+def test_review_media_compatibility_helpers_are_real(tmp_path: Path):
+    source = tmp_path / "master.mp4"
+    payload = b"real-review-media-compatibility"
+    source.write_bytes(payload)
+
+    assert MAX_TELEGRAM_UPLOAD_BYTES > len(payload)
+    assert _single_mp4(tmp_path) == source
+    assert _sha256(source) == hashlib.sha256(payload).hexdigest()
+    assert callable(build_review_proxy)
 
 
 def _write_render_evidence(root: Path) -> Path:
