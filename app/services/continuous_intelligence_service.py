@@ -37,6 +37,7 @@ from app.services.gta6_knowledge_query_service import (
     knowledge_context_to_dict,
     query_gta6_knowledge,
 )
+from app.services.gta6_source_registry_service import classify_gta6_source
 
 
 DELTA_RESEARCH_CAPABILITY_ID = "gta6.research.delta"
@@ -59,17 +60,6 @@ def _now() -> str:
 
 def _source_key(url: str) -> str:
     return "source-" + sha256(str(url).strip().encode("utf-8")).hexdigest()[:24]
-
-
-def _source_authority_class(url: str, source_type: str) -> str:
-    host = str(url or "").casefold()
-    if "rockstargames.com" in host:
-        return "ROCKSTAR_OFFICIAL"
-    if "take2games.com" in host or "take-two" in host:
-        return "TAKE_TWO_OFFICIAL"
-    if str(source_type or "").upper() == "PRIMARY_SOURCE":
-        return "OTHER"
-    return "OTHER"
 
 
 def _source_domain(url: str) -> str:
@@ -356,7 +346,10 @@ def execute_gta6_delta_research_capability(
             "source_type": str(registry_source.get("source_type") or "PRIMARY_SOURCE"),
             "authority_class": str(
                 registry_source.get("authority_class")
-                or _source_authority_class(source_url, "PRIMARY_SOURCE")
+                or classify_gta6_source(
+                    url=source_url,
+                    source_type="PRIMARY_SOURCE",
+                ).authority_class
             ),
             "discovered_at": str(
                 registry_source.get("discovered_at") or observed_at
@@ -455,10 +448,14 @@ def execute_gta6_delta_research_capability(
         "url": primary["url"],
         "domain": _source_domain(primary["url"]),
         "source_type": primary["source_type"],
-        "authority_class": _source_authority_class(
-            primary["url"], primary["source_type"]
-        ),
-        "reliability_score": 1.0,
+        "authority_class": classify_gta6_source(
+            url=primary["url"],
+            source_type=primary["source_type"],
+        ).authority_class,
+        "reliability_score": classify_gta6_source(
+            url=primary["url"],
+            source_type=primary["source_type"],
+        ).reliability_score,
         "reliability_history": [{
             "observed_at": observed_at,
             "result": "SUCCESS",
