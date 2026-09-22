@@ -287,6 +287,43 @@ def _final_text(stdout: str) -> str:
     return result[:12_000]
 
 
+_SHELL_WRAPPER_TOOLS = {"bash", "sh"}
+_SHELL_OPERATORS = {"&&", "||", ";", "|"}
+
+
+def _shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
+    if re.search(r"(?:\\$\\(|\\x60|<\\(|>\\()", script):
+        raise PermissionError(
+            "Codex shell wrapper attempted command/process substitution"
+        )
+    lexer = shlex.shlex(
+        script,
+        posix=True,
+        punctuation_chars=";&|",
+    )
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    tokens = list(lexer)
+    if not tokens:
+        return ()
+
+    segments: list[tuple[str, ...]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in _SHELL_OPERATORS:
+            if not current:
+                raise PermissionError("Codex shell wrapper contains empty command")
+            segments.append(tuple(current))
+            current = []
+            continue
+        if token == "&":
+            raise PermissionError("Codex shell wrapper attempted background execution")
+        current.append(token)
+    if not current:
+        raise PermissionError("Codex shell wrapper ends with an operator")
+    segments.append(tuple(current))
+    return tuple(segments)
+
 def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
     try:
         parts = shlex.split(command)
@@ -302,6 +339,14 @@ def _validate_command(command: str, allowed_tools: tuple[str, ...]) -> None:
         raise PermissionError("Codex attempted forbidden external/network command")
     if re.search(r"(?<![A-Za-z0-9_-])git\s+(?:push|pull|fetch|merge|rebase|remote)(?![A-Za-z0-9_-])", normalized):
         raise PermissionError("Codex attempted forbidden git side effect")
+    if tool in _SHELL_WRAPPER_TOOLS:
+        if len(parts) != 3 or parts[1] not in {"-lc", "-c"}:
+            raise PermissionError(
+                "Codex shell wrapper is outside the bounded wrapper contract"
+            )
+        for segment in _shell_segments(parts[2]):
+            _validate_command(shlex.join(segment), allowed_tools)
+        return
     if tool not in allowed_tools:
         raise PermissionError(f"Codex command is outside COMMAND_ALLOWLIST: {tool}")
 
