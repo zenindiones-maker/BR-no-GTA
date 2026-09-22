@@ -75,7 +75,7 @@ def _schema_support_probe() -> dict[str, Any]:
                 ],
                 "stream": False,
                 "format": schema,
-                "keep_alive": keep_alive,
+                "keep_alive": "10m",
                 "options": {
                     "temperature": 0.0,
                     "num_ctx": 2048,
@@ -146,7 +146,7 @@ def _run_proposal(
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
         "format": mission_plan_json_schema(max_tasks=8),
-        "keep_alive": "0",
+        "keep_alive": keep_alive,
         "options": {
             "temperature": 0.1,
             "num_ctx": num_ctx,
@@ -273,35 +273,60 @@ def _run_proposal(
     }
 
 
+def _attempt_valid(attempt: dict[str, Any]) -> bool:
+    return all((
+        attempt.get("return_code") == 0,
+        attempt.get("finish_reason") == "stop",
+        not attempt.get("output_truncated"),
+        attempt.get("strict_json_valid"),
+        attempt.get("mission_plan_schema_valid"),
+        attempt.get("full_registry_validation"),
+    ))
+
+
 def run(output: Path) -> dict[str, Any]:
     context = _semantic_context()
     prompt = build_semantic_planner_prompt(context)
-    num_ctx, prompt_estimate = _semantic_context_window(
+    _, prompt_estimate = _semantic_context_window(
         prompt,
-        num_predict=OUTPUT_TOKEN_BUDGET,
+        num_predict=OUTPUT_TOKEN_BUDGETS[0],
     )
     component_bytes = semantic_prompt_component_bytes(context)
     instruction_bytes = len(prompt.split("\n", 1)[0].encode("utf-8"))
+    prompt_bound = prompt_estimate <= 2000
     report: dict[str, Any] = {
-        "profile_kind": "COLD_SCHEMA_BOUNDED_MISSION_PLAN",
+        "profile_kind": "SCHEMA_BUDGET_SEARCH_THEN_COLD_PROOF",
         "status": "RUNNING",
         "provider": "ollama_local",
         "model": MODEL,
         "prompt_bytes": len(prompt.encode("utf-8")),
         "prompt_token_estimate": prompt_estimate,
+        "prompt_token_target_pass": prompt_bound,
         "prompt_component_bytes": {
             "instructions": instruction_bytes,
             **component_bytes,
         },
         "context_capabilities": len(context.get("registry_summary") or ()),
-        "output_token_budget": OUTPUT_TOKEN_BUDGET,
-        "num_ctx": num_ctx,
+        "budget_candidates": list(OUTPUT_TOKEN_BUDGETS),
         "schema_probe": {},
+        "budget_attempts": [],
         "runtime_restart": {},
         "cold_proposal": {},
+        "selected_num_predict": None,
+        "selected_num_ctx": None,
+        "selected_format_mode": None,
         "PROFILE_RESULT": "RUNNING",
     }
     _write_json(output, report)
+
+    if not prompt_bound:
+        report.update({
+            "status": "FAIL",
+            "failure_stage": "prompt_token_target",
+            "PROFILE_RESULT": "FAIL",
+        })
+        _write_json(output, report)
+        return report
 
     schema_probe = _schema_support_probe()
     report["schema_probe"] = schema_probe
@@ -315,6 +340,45 @@ def run(output: Path) -> dict[str, Any]:
         _write_json(output, report)
         return report
 
+    selected_budget = None
+    selected_ctx = None
+    for index, budget in enumerate(OUTPUT_TOKEN_BUDGETS):
+        num_ctx, _ = _semantic_context_window(prompt, num_predict=budget)
+        attempt = _run_proposal(
+            prompt,
+            num_predict=budget,
+            num_ctx=num_ctx,
+            keep_alive="10m",
+            cold_start=False,
+        )
+        attempt["attempt_index"] = index
+        attempt["prompt_cache_expected"] = index > 0
+        attempt["latency_role"] = (
+            "BUDGET_SELECTION_FIRST_REAL_PROMPT"
+            if index == 0
+            else "BUDGET_SELECTION_PROMPT_CACHE_ALLOWED"
+        )
+        report["budget_attempts"].append(attempt)
+        _write_json(output, report)
+        if _attempt_valid(attempt):
+            selected_budget = budget
+            selected_ctx = num_ctx
+            break
+
+    if selected_budget is None or selected_ctx is None:
+        report.update({
+            "status": "FAIL",
+            "failure_stage": "bounded_output_budget_search",
+            "PROFILE_RESULT": "FAIL",
+        })
+        _write_json(output, report)
+        return report
+
+    report["selected_num_predict"] = selected_budget
+    report["selected_num_ctx"] = selected_ctx
+    report["selected_format_mode"] = "json_schema"
+    _write_json(output, report)
+
     restart = _restart_runtime_cold()
     report["runtime_restart"] = restart
     _write_json(output, report)
@@ -327,50 +391,84 @@ def run(output: Path) -> dict[str, Any]:
         _write_json(output, report)
         return report
 
-    proposal = _run_cold_proposal(
+    cold = _run_proposal(
         prompt,
-        num_predict=OUTPUT_TOKEN_BUDGET,
-        num_ctx=num_ctx,
+        num_predict=selected_budget,
+        num_ctx=selected_ctx,
+        keep_alive="0",
+        cold_start=True,
     )
-    report["cold_proposal"] = proposal
-    prompt_bound = prompt_estimate <= 2000
-    pass_all = all((
-        prompt_bound,
-        proposal["return_code"] == 0,
-        proposal["finish_reason"] == "stop",
-        not proposal["output_truncated"],
-        proposal["strict_json_valid"],
-        proposal["mission_plan_schema_valid"],
-        proposal["full_registry_validation"],
-        float(proposal["inference_latency_seconds"]) < 180.0,
+    report["cold_proposal"] = cold
+    cold_pass = all((
+        _attempt_valid(cold),
+        float(cold.get("inference_latency_seconds") or 9999.0) < 180.0,
     ))
     report.update({
-        "status": "PASS" if pass_all else "FAIL",
-        "failure_stage": None if pass_all else "cold_single_proposal_gate",
-        "prompt_token_target_pass": prompt_bound,
-        "selected_num_predict": OUTPUT_TOKEN_BUDGET if pass_all else None,
-        "selected_format_mode": "json_schema" if pass_all else None,
-        "PROFILE_RESULT": "PASS" if pass_all else "FAIL",
+        "status": "PASS" if cold_pass else "FAIL",
+        "failure_stage": None if cold_pass else "cold_single_proposal_gate",
+        "PROFILE_RESULT": "PASS" if cold_pass else "FAIL",
     })
     _write_json(output, report)
 
-    print("NATIVE_JSON_SCHEMA_SUPPORTED=" + ("PASS" if schema_probe.get("supported") else "FAIL"))
-    print("COLD_START_PROPOSAL=YES")
+    print(
+        "NATIVE_JSON_SCHEMA_SUPPORTED="
+        + ("PASS" if schema_probe.get("supported") else "FAIL")
+    )
     print("PROMPT_BYTES=" + str(report["prompt_bytes"]))
     print("PROMPT_TOKEN_ESTIMATE=" + str(prompt_estimate))
-    print("PROMPT_COMPONENT_BYTES=" + json.dumps(report["prompt_component_bytes"], sort_keys=True))
-    print("OUTPUT_TOKEN_BUDGET=" + str(OUTPUT_TOKEN_BUDGET))
-    print("NUM_CTX=" + str(num_ctx))
-    print("GENERATED_TOKENS=" + str(proposal.get("eval_count")))
-    print("FINISH_REASON=" + str(proposal.get("finish_reason")))
-    print("OUTPUT_TRUNCATED=" + ("YES" if proposal.get("output_truncated") else "NO"))
-    print("STRICT_JSON_VALID=" + ("PASS" if proposal.get("strict_json_valid") else "FAIL"))
-    print("MISSION_PLAN_SCHEMA_VALID=" + ("PASS" if proposal.get("mission_plan_schema_valid") else "FAIL"))
-    print("FULL_REGISTRY_VALIDATION=" + ("PASS" if proposal.get("full_registry_validation") else "FAIL"))
-    print("INFERENCE_LATENCY_SECONDS=" + f"{float(proposal.get('inference_latency_seconds') or 0.0):.3f}")
-    print("PROMPT_EVAL_SECONDS=" + str(proposal.get("prompt_eval_duration_seconds")))
-    print("GENERATION_SECONDS=" + str(proposal.get("eval_duration_seconds")))
-    print("PEAK_RSS_MB=" + f"{float(proposal.get('peak_rss_mb') or 0.0):.3f}")
+    print(
+        "PROMPT_COMPONENT_BYTES="
+        + json.dumps(report["prompt_component_bytes"], sort_keys=True)
+    )
+    for attempt in report["budget_attempts"]:
+        prefix = "BUDGET_" + str(attempt["num_predict"])
+        print(prefix + "_GENERATED_TOKENS=" + str(attempt.get("eval_count")))
+        print(prefix + "_FINISH_REASON=" + str(attempt.get("finish_reason")))
+        print(
+            prefix + "_OUTPUT_TRUNCATED="
+            + ("YES" if attempt.get("output_truncated") else "NO")
+        )
+        print(
+            prefix + "_STRICT_JSON_VALID="
+            + ("PASS" if attempt.get("strict_json_valid") else "FAIL")
+        )
+        print(
+            prefix + "_MISSION_PLAN_SCHEMA_VALID="
+            + ("PASS" if attempt.get("mission_plan_schema_valid") else "FAIL")
+        )
+        print(
+            prefix + "_FULL_REGISTRY_VALIDATION="
+            + ("PASS" if attempt.get("full_registry_validation") else "FAIL")
+        )
+    print("SELECTED_NUM_PREDICT=" + str(selected_budget))
+    print("SELECTED_NUM_CTX=" + str(selected_ctx))
+    print("COLD_START_PROPOSAL=YES")
+    print("OUTPUT_TOKEN_BUDGET=" + str(selected_budget))
+    print("GENERATED_TOKENS=" + str(cold.get("eval_count")))
+    print("FINISH_REASON=" + str(cold.get("finish_reason")))
+    print(
+        "OUTPUT_TRUNCATED="
+        + ("YES" if cold.get("output_truncated") else "NO")
+    )
+    print(
+        "STRICT_JSON_VALID="
+        + ("PASS" if cold.get("strict_json_valid") else "FAIL")
+    )
+    print(
+        "MISSION_PLAN_SCHEMA_VALID="
+        + ("PASS" if cold.get("mission_plan_schema_valid") else "FAIL")
+    )
+    print(
+        "FULL_REGISTRY_VALIDATION="
+        + ("PASS" if cold.get("full_registry_validation") else "FAIL")
+    )
+    print(
+        "INFERENCE_LATENCY_SECONDS="
+        + f"{float(cold.get('inference_latency_seconds') or 0.0):.3f}"
+    )
+    print("PROMPT_EVAL_SECONDS=" + str(cold.get("prompt_eval_duration_seconds")))
+    print("GENERATION_SECONDS=" + str(cold.get("eval_duration_seconds")))
+    print("PEAK_RSS_MB=" + f"{float(cold.get('peak_rss_mb') or 0.0):.3f}")
     print("PROFILE_RESULT=" + report["PROFILE_RESULT"])
     return report
 
