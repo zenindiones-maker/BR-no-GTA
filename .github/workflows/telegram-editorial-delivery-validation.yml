@@ -6,7 +6,6 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".run/telegram-editorial-delivery.request.json"
-      - ".github/workflows/telegram-editorial-delivery-validation.yml"
 
 permissions:
   contents: read
