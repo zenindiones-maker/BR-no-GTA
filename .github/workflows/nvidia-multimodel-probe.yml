@@ -1,0 +1,65 @@
+name: NVIDIA Multi-Model Health Probe
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/nvidia-multimodel-probe.request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/nvidia-multimodel/learning.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Deterministic preflight before any live call
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
+          python -m pytest -q tests/test_nvidia_multi_model_provider.py tests/test_harness_ai_provider_service.py tests/test_harness_routing_policy_service.py tests/test_semantic_planner_provider_contract.py
+          echo "NVIDIA_LIVE_PREFLIGHT=PASS"
+      - name: Probe each registered NVIDIA Free Endpoint exactly once
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/nvidia-multimodel
+          if [ -z "${NVIDIA_API_KEY:-}" ]; then echo "NVIDIA_API_SECRET_BLOCKER=NVIDIA_API_KEY"; fi
+          python scripts/nvidia_multimodel_probe.py artifacts/nvidia-multimodel/probe.json
+      - name: Assert bounded probe and secret policy
+        if: always()
+        run: |
+          python - <<'PY'
+import json
+from pathlib import Path
+p=Path("artifacts/nvidia-multimodel/probe.json")
+if p.exists():
+    data=json.loads(p.read_text())
+    assert int(data.get("NVIDIA_MODELS_PROBED") or 0) <= int(data.get("NVIDIA_FREE_MODELS_DISCOVERED") or 0)
+    assert data.get("SECRET_LEAK") == "NO"
+    assert data.get("PAID_API_FALLBACK") == "NO"
+    for row in data.get("models") or []:
+        assert row.get("BILLING_CLASS") == "NVIDIA_FREE_ENDPOINT"
+        assert row.get("PAID_API_BILLING") == "NO"
+    print("NVIDIA_PROBE_BOUNDED=PASS")
+    print("NO_SECRET_LEAK=PASS")
+    print("PAID_API_FALLBACK=NO")
+PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvidia-multimodel-probe-${{ github.run_id }}
+          path: artifacts/nvidia-multimodel/
+          if-no-files-found: warn
+          retention-days: 14

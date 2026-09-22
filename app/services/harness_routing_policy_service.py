@@ -76,6 +76,10 @@ class HarnessRoutingRequest:
     failure_pattern: str | None = None
     learning_required: bool | None = None
     competence_records: tuple[dict[str, Any], ...] = ()
+    required_model_capabilities: tuple[str, ...] = ()
+    minimum_context_tokens: int | None = None
+    tool_use_required: bool = False
+    structured_output_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -265,10 +269,62 @@ def _capability_candidates(
     return candidates, rejected, tuple(discovered_ids)
 
 
+def _model_capabilities(record: CapabilityRecord) -> set[str]:
+    prefix = "model-capability:"
+    return {
+        str(tag)[len(prefix):].strip().lower()
+        for tag in record.policy_tags
+        if str(tag).startswith(prefix)
+    }
+
+
+def _model_context_window(record: CapabilityRecord) -> int | None:
+    prefix = "context-window:"
+    for requirement in record.requirements:
+        value = str(requirement)
+        if value.startswith(prefix):
+            try:
+                return int(value[len(prefix):])
+            except ValueError:
+                return None
+    return None
+
+
+def _provider_model_competence(
+    record: CapabilityRecord,
+    request: HarnessRoutingRequest,
+) -> dict[str, Any] | None:
+    matches = [
+        item
+        for item in request.competence_records
+        if item.get("capability_id") == record.capability_id
+        and item.get("evidence_sufficient") is True
+        and (
+            request.task_class is None
+            or item.get("task_class") == request.task_class
+        )
+    ]
+    if not matches:
+        return None
+    return sorted(
+        matches,
+        key=lambda item: (
+            -float(item.get("success_rate") or 0.0),
+            float(item.get("failure_rate") or 0.0),
+            float(item.get("retry_rate") or 0.0),
+            float(item.get("mean_latency_seconds") or 0.0),
+            -float(item.get("confidence") or 0.0),
+            -int(item.get("tested_cases") or 0),
+        ),
+    )[0]
+
+
 def _provider_records(
     request: HarnessRoutingRequest,
     registry: GlobalCapabilityRegistry,
 ) -> tuple[list[CapabilityRecord], list[RoutingRejection]]:
+    from app.services.provider_health_service import model_health, provider_health
+
     allowed = {
         normalize_provider_id(provider_id)
         for provider_id in request.allowed_providers
@@ -281,6 +337,11 @@ def _provider_records(
         normalize_provider_id(provider_id)
         for provider_id in request.exhausted_free_quota_provider_ids
     }
+    required_caps = {
+        str(item).strip().lower()
+        for item in request.required_model_capabilities
+        if str(item).strip()
+    }
 
     eligible: list[CapabilityRecord] = []
     rejected: list[RoutingRejection] = []
@@ -291,6 +352,9 @@ def _provider_records(
             continue
         provider_id = normalize_provider_id(record.provider_id)
         reasons: list[str] = []
+        binding = _authorized_provider_model_binding(record)
+        model_id = str((binding or {}).get("model_id") or "")
+        capabilities = _model_capabilities(record)
         if record.availability != AVAILABLE:
             reasons.append(f"availability={record.availability}")
         if request.authorized_action not in record.allowed_actions:
@@ -301,24 +365,56 @@ def _provider_records(
             reasons.append("provider_not_allowed_by_request")
         if provider_id in unavailable:
             reasons.append("provider_runtime_unavailable")
-        if request.preferred_models:
-            model_binding = _authorized_provider_model_binding(record)
-            authorized_model = str((model_binding or {}).get("model_id") or "")
-            if authorized_model not in request.preferred_models:
-                reasons.append("model_not_allowed_by_request")
+        if request.preferred_models and model_id not in request.preferred_models:
+            reasons.append("model_not_allowed_by_request")
+        if required_caps and not required_caps.issubset(capabilities):
+            reasons.append("required_model_capabilities_missing")
+        if request.tool_use_required and not (
+            {"tool_use", "agentic_tool_use"} & capabilities
+        ):
+            reasons.append("tool_use_required")
+        if (
+            request.structured_output_required
+            and "structured_output" not in capabilities
+        ):
+            reasons.append("structured_output_required")
+        context_window = _model_context_window(record)
+        if (
+            request.minimum_context_tokens is not None
+            and (
+                context_window is None
+                or context_window < int(request.minimum_context_tokens)
+            )
+        ):
+            reasons.append("context_requirement_not_met")
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
+
+        p_health = provider_health(provider_id)
+        if p_health.state in {"BLOCKED", "QUARANTINED", "UPSTREAM_DENIED"}:
+            reasons.append(f"provider_health={p_health.state}")
+        if model_id:
+            m_health = model_health(provider_id, model_id)
+            if m_health.circuit_breaker_state == "OPEN":
+                reasons.append("model_circuit_breaker_open")
+            if m_health.availability in {
+                "BLOCKED", "QUARANTINED", "UPSTREAM_DENIED"
+            }:
+                reasons.append(f"model_health={m_health.availability}")
+        elif required_caps or request.preferred_models:
+            reasons.append("missing_model_binding")
+
         if request.zero_cost_operation:
-            model_binding = _authorized_provider_model_binding(record)
             runtime_zero_cost = bool(
-                model_binding is not None
-                and model_binding.get("source")
-                == "CURRENT_RUN_RUNTIME_PROOF"
+                binding is not None
+                and binding.get("source") == "CURRENT_RUN_RUNTIME_PROOF"
             )
             if not runtime_zero_cost:
                 assessment = assess_zero_cost(
                     record.cost_class,
-                    quota_available=(provider_id not in exhausted_free_quota),
+                    quota_available=(
+                        provider_id not in exhausted_free_quota
+                    ),
                 )
                 if not assessment.eligible:
                     reasons.append(
@@ -326,28 +422,67 @@ def _provider_records(
                         if assessment.reason
                         else "ZERO_COST_POLICY_BLOCKED"
                     )
-
         if reasons:
             rejected.append(
                 RoutingRejection(record.capability_id, "provider", tuple(reasons))
             )
-            continue
-        eligible.append(record)
+        else:
+            eligible.append(record)
 
-    preference_order = {
+    preference = {
         normalize_provider_id(provider_id): index
         for index, provider_id in enumerate(request.preferred_providers)
     }
-    eligible.sort(
-        key=lambda record: (
-            preference_order.get(
-                normalize_provider_id(record.provider_id or ""),
-                len(preference_order) + 1,
+    model_preference = {
+        model_id: index
+        for index, model_id in enumerate(request.preferred_models)
+    }
+    health_rank = {
+        "AVAILABLE": 0,
+        "DEGRADED": 1,
+        "AUTH_REQUIRED": 2,
+        "UNKNOWN/UNPROVEN": 3,
+    }
+    cost_rank = {
+        "FREE_NO_BILLING": 0,
+        "FREE_ENDPOINT": 0,
+        "FREE_QUOTA_LIMITED": 1,
+    }
+
+    def rank(record: CapabilityRecord) -> tuple[Any, ...]:
+        provider_id = normalize_provider_id(record.provider_id or "")
+        binding = _authorized_provider_model_binding(record) or {}
+        model_id = str(binding.get("model_id") or "")
+        p_health = provider_health(provider_id)
+        m_health = model_health(provider_id, model_id) if model_id else None
+        competence = _provider_model_competence(record, request)
+        learned_latency = (competence or {}).get("mean_latency_seconds")
+        latency = (
+            float(learned_latency)
+            if isinstance(learned_latency, (int, float))
+            else float(m_health.latency_ms) / 1000.0
+            if m_health is not None and m_health.latency_ms is not None
+            else 1e9
+        )
+        return (
+            preference.get(provider_id, len(preference) + 1),
+            model_preference.get(model_id, len(model_preference) + 1),
+            health_rank.get(
+                m_health.availability if m_health else p_health.state, 9
             ),
+            1 if competence is None else 0,
+            -float((competence or {}).get("success_rate") or 0.0),
+            float((competence or {}).get("failure_rate") or 0.0),
+            float((competence or {}).get("retry_rate") or 0.0),
+            -float((competence or {}).get("confidence") or 0.0),
+            -int((competence or {}).get("tested_cases") or 0),
+            cost_rank.get(str(record.cost_class).upper(), 9),
+            latency,
             _MATURITY_RANK.get(record.maturity, 99),
             record.capability_id,
         )
-    )
+
+    eligible.sort(key=rank)
     return eligible, rejected
 
 
@@ -365,23 +500,42 @@ def _select_provider(
         return None, None, (), False, []
 
     eligible, rejected = _provider_records(request, registry)
-    preferred = tuple(normalize_provider_id(item) for item in request.preferred_providers)
-    primary_provider = preferred[0] if preferred else (
-        normalize_provider_id(eligible[0].provider_id or "") if eligible else None
+    preferred = tuple(
+        normalize_provider_id(item) for item in request.preferred_providers
     )
-
-    by_provider = {
-        normalize_provider_id(record.provider_id or ""): record
+    primary_provider = (
+        preferred[0]
+        if preferred
+        else normalize_provider_id(eligible[0].provider_id or "")
+        if eligible
+        else None
+    )
+    primary_candidates = [
+        record
         for record in eligible
-    }
-    primary = by_provider.get(primary_provider or "")
-    if primary is not None:
-        fallback_candidates = tuple(
-            normalize_provider_id(record.provider_id or "")
-            for record in eligible
-            if record is not primary and record.fallback_eligibility
-        ) if request.fallback_allowed else ()
-        return primary, primary_provider, fallback_candidates, False, rejected
+        if normalize_provider_id(record.provider_id or "")
+        == (primary_provider or "")
+    ]
+    if primary_candidates:
+        selected = primary_candidates[0]
+        fallback_candidates = ()
+        if request.fallback_allowed:
+            fallback_candidates = tuple(dict.fromkeys(
+                normalize_provider_id(record.provider_id or "")
+                for record in eligible
+                if (
+                    normalize_provider_id(record.provider_id or "")
+                    != primary_provider
+                    and record.fallback_eligibility
+                )
+            ))
+        return (
+            selected,
+            primary_provider,
+            fallback_candidates,
+            False,
+            rejected,
+        )
 
     if not request.fallback_allowed:
         raise RoutingPolicyError(
@@ -390,15 +544,20 @@ def _select_provider(
                 "primary_provider": primary_provider,
                 "fallback_allowed": False,
                 "zero_cost_operation": request.zero_cost_operation,
-                "rejected_candidates": [asdict(item) for item in rejected],
+                "rejected_candidates": [
+                    asdict(item) for item in rejected
+                ],
             },
         )
 
     fallbacks = [
         record
         for record in eligible
-        if record.fallback_eligibility
-        and normalize_provider_id(record.provider_id or "") != primary_provider
+        if (
+            record.fallback_eligibility
+            and normalize_provider_id(record.provider_id or "")
+            != primary_provider
+        )
     ]
     if not fallbacks:
         raise RoutingPolicyError(
@@ -407,15 +566,18 @@ def _select_provider(
                 "primary_provider": primary_provider,
                 "fallback_allowed": True,
                 "zero_cost_operation": request.zero_cost_operation,
-                "rejected_candidates": [asdict(item) for item in rejected],
+                "rejected_candidates": [
+                    asdict(item) for item in rejected
+                ],
             },
         )
-
     selected = fallbacks[0]
-    remaining = tuple(
+    chosen = normalize_provider_id(selected.provider_id or "")
+    remaining = tuple(dict.fromkeys(
         normalize_provider_id(record.provider_id or "")
         for record in fallbacks[1:]
-    )
+        if normalize_provider_id(record.provider_id or "") != chosen
+    ))
     return selected, primary_provider, remaining, True, rejected
 
 
@@ -519,10 +681,67 @@ def route_harness_request(
                         "error_type": type(exc).__name__,
                     },
                 ) from exc
+        model_competence: tuple[dict[str, Any], ...] = ()
+        if request.provider_required:
+            try:
+                from app.database import harness_learning_repository as learning_repository
+                profile_ids = {
+                    record.capability_id
+                    for record in registry.all()
+                    if record.capability_type == "PROVIDER" and record.model_id
+                }
+                rows = learning_repository.list_competence(
+                    domain=str(request.domain),
+                    task_class=str(request.task_class),
+                    capability_id=None,
+                    agent_id=None,
+                    limit=200,
+                )
+                enriched = []
+                for item in rows:
+                    if item.get("capability_id") not in profile_ids:
+                        continue
+                    tested = int(item.get("tested_cases") or 0)
+                    enriched.append({
+                        **item,
+                        "success_rate": (
+                            float(item.get("success_count") or 0) / tested
+                            if tested else None
+                        ),
+                        "failure_rate": (
+                            float(item.get("failure_count") or 0) / tested
+                            if tested else None
+                        ),
+                        "retry_rate": (
+                            float(item.get("retry_count") or 0) / tested
+                            if tested else None
+                        ),
+                        "mean_latency_seconds": (
+                            float(item.get("total_latency_seconds") or 0.0) / tested
+                            if tested else None
+                        ),
+                        "mean_cost": (
+                            float(item.get("total_cost") or 0.0) / tested
+                            if tested else None
+                        ),
+                        "evidence_sufficient": bool(
+                            item.get("status") == "ACTIVE" and tested > 0
+                        ),
+                    })
+                model_competence = tuple(enriched)
+            except Exception:
+                if learning_required:
+                    raise
+        learning_context["provider_model_competence_records"] = list(
+            model_competence
+        )
         if learning_required:
             request = replace(
                 request,
-                competence_records=tuple(learning_context.get("competence_records") or ()),
+                competence_records=tuple([
+                    *(learning_context.get("competence_records") or ()),
+                    *model_competence,
+                ]),
             )
 
     request = _apply_global_zero_cost_policy(
@@ -615,6 +834,12 @@ def route_harness_request(
     selected_model = (
         str((provider_model_binding or {}).get("model_id") or "") or None
     )
+    selected_model_health = None
+    if selected_provider and selected_model:
+        from app.services.provider_health_service import model_health
+        selected_model_health = model_health(
+            selected_provider, selected_model
+        ).to_dict()
     evidence_expectations = tuple(
         expectation
         for expectation in (
@@ -707,6 +932,15 @@ def route_harness_request(
             and item.get("evidence_sufficient") is True
         ],
         "selected_provider_cost_class": provider.cost_class if provider is not None else None,
+        "selected_model_capabilities": (
+            sorted(_model_capabilities(provider))
+            if provider is not None else []
+        ),
+        "selected_model_context_window_tokens": (
+            _model_context_window(provider)
+            if provider is not None else None
+        ),
+        "selected_model_health": selected_model_health,
         "provider_model_binding_source": (
             (provider_model_binding or {}).get("source")
         ),

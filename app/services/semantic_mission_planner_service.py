@@ -746,35 +746,37 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     if not providers:
         raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
 
-    routing = None
-    selected_provider = None
-    last_error: Exception | None = None
-    for provider_id in providers:
-        try:
-            decision = route_harness_request(
-                HarnessRoutingRequest(
-                    intent="semantic mission planning proposal only",
-                    authorized_action="DECISION",
-                    domain="ai",
-                    goal_id=str(context.get("goal_id") or "semantic-plan"),
-                    task_class="semantic-mission-planning",
-                    required_capability_id="ai.reasoning.text",
-                    provider_required=True,
-                    preferred_providers=(provider_id,),
-                    fallback_allowed=False,
-                    zero_cost_operation=True,
-                    learning_required=True,
-                )
+    try:
+        routing = route_harness_request(
+            HarnessRoutingRequest(
+                intent=(
+                    "semantic planning reasoning structured output "
+                    "for a bounded mission proposal"
+                ),
+                authorized_action="DECISION",
+                domain="ai",
+                goal_id=str(context.get("goal_id") or "semantic-plan"),
+                task_class="semantic-mission-planning",
+                required_capability_id="ai.reasoning.text",
+                provider_required=True,
+                allowed_providers=providers,
+                required_model_capabilities=(
+                    "semantic_planning",
+                    "reasoning",
+                    "structured_output",
+                ),
+                structured_output_required=True,
+                fallback_allowed=False,
+                zero_cost_operation=True,
+                learning_required=True,
             )
-            routing = decision
-            selected_provider = decision.selected_provider
-            if selected_provider:
-                break
-        except Exception as exc:
-            last_error = exc
-    if routing is None or not selected_provider:
-        if last_error is not None:
-            raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE") from last_error
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+        ) from exc
+    selected_provider = routing.selected_provider
+    if not selected_provider:
         raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
 
     prompt_sha = sha256(prompt.encode("utf-8")).hexdigest()

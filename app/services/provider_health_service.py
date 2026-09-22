@@ -43,6 +43,25 @@ class ProviderHealth:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ModelHealth:
+    provider_id: str
+    model_id: str
+    availability: str
+    last_success: str | None
+    last_failure: str | None
+    failure_class: str | None
+    latency_ms: float | None
+    confidence: float
+    sample_size: int
+    rate_limit_state: str
+    circuit_breaker_state: str
+    evidence_refs: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def _failure_rows() -> list[dict[str, Any]]:
     try:
         return learning_repository.list_memories(
@@ -272,6 +291,61 @@ def _runtime_provider_health_override(
         zero_cost_eligible=True,
     )
 
+def _runtime_model_health(provider_id: str, model_id: str) -> ModelHealth | None:
+    raw=str(os.getenv("BR_RUNTIME_MODEL_HEALTH_JSON") or "").strip()
+    if not raw: return None
+    try: payload=json.loads(raw)
+    except json.JSONDecodeError: return None
+    provider=str(provider_id or "").strip().lower().replace("-","_")
+    group=payload.get(provider) if isinstance(payload,dict) else None
+    item=group.get(model_id) if isinstance(group,dict) else None
+    if not isinstance(item,dict): return None
+    circuit=str(item.get("circuit_breaker_state") or "CLOSED").upper()
+    if circuit not in {"CLOSED","OPEN","HALF_OPEN"}: return None
+    return ModelHealth(
+        provider_id=provider,model_id=model_id,
+        availability=str(item.get("availability") or "AVAILABLE").upper(),
+        last_success=str(item.get("last_success") or "") or None,
+        last_failure=str(item.get("last_failure") or "") or None,
+        failure_class=str(item.get("failure_class") or "") or None,
+        latency_ms=float(item["latency_ms"]) if isinstance(item.get("latency_ms"),(int,float)) else None,
+        confidence=max(0.0,min(1.0,float(item.get("confidence") or 0.0))),
+        sample_size=max(0,int(item.get("sample_size") or 0)),
+        rate_limit_state=str(item.get("rate_limit_state") or "UNKNOWN").upper(),
+        circuit_breaker_state=circuit,
+        evidence_refs=tuple(str(x) for x in (item.get("evidence_refs") or ()) if str(x)))
+
+def model_health(provider_id: str, model_id: str) -> ModelHealth:
+    provider=str(provider_id or "").strip().lower().replace("-","_")
+    model=str(model_id or "").strip()
+    if not provider or not model: raise ValueError("provider_id and model_id are required")
+    runtime=_runtime_model_health(provider,model)
+    if runtime is not None: return runtime
+    records=[r for r in GLOBAL_CAPABILITY_REGISTRY.all()
+             if r.capability_type=="PROVIDER"
+             and str(r.provider_id or "").lower().replace("-","_")==provider
+             and str(r.model_id or "")==model]
+    if not records:
+        return ModelHealth(provider,model,"BLOCKED",None,None,"not_registered",None,1.0,0,"UNKNOWN","OPEN",())
+    record=records[0]
+    failures=[]
+    for item in _failure_rows():
+        metadata=dict(item.get("metadata") or {})
+        if item.get("capability_id")==record.capability_id or metadata.get("model_id")==model or model in str(item.get("claim") or ""):
+            failures.append(item)
+    latest=failures[0] if failures else None
+    failure_class=str((latest or {}).get("failure_pattern") or "") or None
+    refs=tuple(dict.fromkeys(str(ref) for item in failures[:5] for ref in (item.get("evidence_refs") or ()) if str(ref)))
+    return ModelHealth(
+        provider_id=provider,model_id=model,
+        availability="DEGRADED" if failures else "AVAILABLE",
+        last_success=None,last_failure=str((latest or {}).get("last_verified_at") or "") or None,
+        failure_class=failure_class,latency_ms=None,
+        confidence=float((latest or {}).get("confidence") or 0.0),
+        sample_size=int((latest or {}).get("support_count") or 0),
+        rate_limit_state="OBSERVED" if failure_class and "rate" in failure_class.casefold() else "UNKNOWN",
+        circuit_breaker_state="CLOSED",evidence_refs=refs)
+
 def provider_health(provider_id: str) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
     if not provider:
@@ -350,21 +424,18 @@ def provider_health(provider_id: str) -> ProviderHealth:
             retry_allowed=False,
             zero_cost_eligible=False,
         )
-    record = records[0]
-    assessment = assess_zero_cost(record.cost_class, quota_available=True)
-    if not record.available:
+    available_records=[record for record in records if record.available]
+    assessments=[assess_zero_cost(record.cost_class,quota_available=True) for record in records]
+    zero_cost_eligible=any(item.eligible for item in assessments)
+    if not available_records:
         return ProviderHealth(
-            provider_id=provider,
-            state="DEGRADED",
-            reason=f"Registry availability is {record.availability}.",
-            evidence_refs=(),
-            retry_allowed=False,
-            zero_cost_eligible=assessment.eligible,
-        )
+            provider_id=provider,state="DEGRADED",
+            reason="No registered model/profile for this provider is AVAILABLE.",
+            evidence_refs=(),retry_allowed=False,zero_cost_eligible=zero_cost_eligible)
 
-    runtime_override = _runtime_provider_health_override(record)
-    if runtime_override is not None:
-        return runtime_override
+    for record in available_records:
+        runtime_override=_runtime_provider_health_override(record)
+        if runtime_override is not None: return runtime_override
     external_auth_markers = (
         "API_KEY",
         "API KEY",
@@ -376,22 +447,21 @@ def provider_health(provider_id: str) -> ProviderHealth:
         "LOGIN_REQUIRED",
         "ACCOUNT_AUTH",
     )
-    auth_required = any(
+    auth_required=any(
         any(marker in str(requirement).upper() for marker in external_auth_markers)
-        for requirement in record.requirements
-    )
+        for record in available_records for requirement in record.requirements)
+    runtime_auth_available=bool(
+        provider=="nvidia_nim" and str(os.getenv("NVIDIA_API_KEY") or "").strip())
+    state="AVAILABLE" if (not auth_required or runtime_auth_available) else "AUTH_REQUIRED"
     return ProviderHealth(
-        provider_id=provider,
-        state="AUTH_REQUIRED" if auth_required else "AVAILABLE",
+        provider_id=provider,state=state,
         reason=(
+            "Provider runtime authentication is materialized inside the secret boundary."
+            if runtime_auth_available else
             "Provider requires runtime authentication evidence."
-            if auth_required
-            else "Provider is Registry-available and has no active failure quarantine."
-        ),
-        evidence_refs=(),
-        retry_allowed=True,
-        zero_cost_eligible=assessment.eligible,
-    )
+            if auth_required else
+            "Provider is Registry-available and has no active failure quarantine."),
+        evidence_refs=(),retry_allowed=True,zero_cost_eligible=zero_cost_eligible)
 
 
 def semantic_provider_health() -> dict[str, Any]:

@@ -8,6 +8,7 @@ ZERO_COST_OPERATION = True
 class CostClass(str, Enum):
     FREE_NO_BILLING = "FREE_NO_BILLING"
     FREE_QUOTA_LIMITED = "FREE_QUOTA_LIMITED"
+    FREE_ENDPOINT = "FREE_ENDPOINT"
     PAID = "PAID"
     UNKNOWN_COST = "UNKNOWN_COST"
 
@@ -41,7 +42,7 @@ def assess_zero_cost(cost_class: str | CostClass | None, *, quota_available: boo
     resolved = normalize_cost_class(cost_class)
     if resolved is CostClass.FREE_NO_BILLING:
         return ZeroCostAssessment(True, resolved, None, quota_available)
-    if resolved is CostClass.FREE_QUOTA_LIMITED:
+    if resolved in {CostClass.FREE_QUOTA_LIMITED, CostClass.FREE_ENDPOINT}:
         if quota_available is False:
             return ZeroCostAssessment(False, resolved, ZeroCostFailureReason.FREE_QUOTA_EXHAUSTED, quota_available)
         return ZeroCostAssessment(True, resolved, None, quota_available)

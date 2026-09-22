@@ -92,16 +92,32 @@ def _execution_evidence_refs(
     )
 
 
-def _provider_record(provider_id: str):
+def _provider_record(provider_id: str, model_id: str | None = None):
     normalized = normalize_provider_id(provider_id)
-    for record in GLOBAL_CAPABILITY_REGISTRY.all():
+    matches = [
+        record
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
         if (
             record.capability_type == "PROVIDER"
             and record.provider_id
             and normalize_provider_id(record.provider_id) == normalized
-        ):
-            return record
-    return None
+        )
+    ]
+    if model_id:
+        from app.services.provider_health_service import (
+            authorized_provider_model_binding,
+        )
+        exact = [
+            record
+            for record in matches
+            if str(
+                (authorized_provider_model_binding(record) or {}).get("model_id")
+                or ""
+            ) == model_id
+        ]
+        if exact:
+            return exact[0]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _resolve_routing(
@@ -143,7 +159,10 @@ def _resolve_routing(
     if provider_name and normalize_provider_id(provider_name) != normalized_provider:
         raise PermissionError("Requested provider does not match Harness routing decision")
 
-    record = _provider_record(normalized_provider)
+    record = _provider_record(
+        normalized_provider,
+        routing_decision.selected_model,
+    )
     if (
         record is None
         or record.availability != AVAILABLE

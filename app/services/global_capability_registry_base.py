@@ -493,7 +493,13 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
-            policy_tags=("ai", "provider", "tuxevil", "text"),
+            policy_tags=(
+                "ai", "provider", "tuxevil", "text",
+                "model-capability:reasoning",
+                "model-capability:semantic_planning",
+                "model-capability:structured_output",
+                "model-capability:tool_use",
+            ),
             security_boundary="Official BR AI provider factory boundary",
             executor_binding="app.services.ai_provider_factory.create_ai_provider",
             evidence_contract="app.services.ai_provider.AIResponse",
@@ -531,6 +537,9 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             policy_tags=(
                 "ai", "provider", "ollama", "local", "open-weight",
                 "qwen3", "zero-cost", "no-external-billing",
+                "model-capability:reasoning",
+                "model-capability:semantic_planning",
+                "model-capability:structured_output",
             ),
             security_boundary=(
                 "DeepSeek Harness exact provider/model authorization; local Ollama "
@@ -622,18 +631,41 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             version="3.8.50",
         ),
         _record(
-            capability_id="ai.provider.nvidia-nim",
+            capability_id="ai.provider.nvidia-nim.glm-5-3",
             capability_type="PROVIDER",
             domain="ai",
-            implementation="NvidiaNIMProvider under Harness AI provider service",
-            input_contract="prompt text",
+            implementation=(
+                "Generic NvidiaNimProviderAdapter; DeepSeek Harness supplies "
+                "the selected Registry model_id dynamically"
+            ),
+            input_contract="Harness-selected prompt + Registry-selected NVIDIA model_id",
             output_contract="HarnessAIProviderEvidence",
-            requirements=("NVIDIA_API_KEY", "NVIDIA NIM endpoint"),
-            maturity=PROVEN,
+            requirements=(
+                "NVIDIA_API_KEY",
+                "https://integrate.api.nvidia.com/v1",
+                "billing-mode:NVIDIA_FREE_ENDPOINT",
+                "paid-api-billing:NO",
+                "rate-limit-or-quota:POSSIBLE",
+                "unlimited:UNPROVEN",
+                "context-window:1048576",
+            ),
+            maturity=FUNCTIONAL,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
-            policy_tags=("ai", "provider", "nvidia", "nim", "reasoning", "text"),
-            security_boundary="HarnessAuthorization + provider subject binding",
+            policy_tags=(
+                "ai", "provider", "nvidia", "nim", "multi-model",
+                "model-capability:reasoning",
+                "model-capability:planning",
+                "model-capability:semantic_planning",
+                "model-capability:tool_use",
+                "model-capability:long_context",
+                "model-capability:structured_output",
+            ),
+            security_boundary=(
+                "DeepSeek Harness is sole routing/policy/authorization authority; "
+                "one generic NVIDIA adapter receives only the Harness-selected model; "
+                "no model self-selection, secret persistence, paid fallback or parallel router."
+            ),
             executor_binding=(
                 "app.services.harness_ai_provider_service.execute_harness_ai_generation"
             ),
@@ -641,11 +673,226 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
             ),
             provider_id="nvidia_nim",
-            model_id="nvidia/nemotron-3-super-120b-a12b",
-            cost_class="EXTERNAL_MODEL",
-            quota_class="NVIDIA_API",
-            latency_class="EXTERNAL",
-            quality_class="MODEL_DEFINED",
+            model_id="z-ai/glm-5.3",
+            cost_class="FREE_ENDPOINT",
+            quota_class="NVIDIA_FREE_ENDPOINT_RATE_LIMIT_OR_QUOTA_POSSIBLE",
+            latency_class="EXTERNAL_MODEL_DEPENDENT",
+            quality_class="FRONTIER_REASONING_AGENTIC",
+            fallback_eligibility=True,
+            supports_review=True,
+            health_policy="PROVIDER_AND_MODEL_RUNTIME_HEALTH",
+        ),
+        _record(
+            capability_id="ai.provider.nvidia-nim.kimi-k3",
+            capability_type="PROVIDER",
+            domain="ai",
+            implementation=(
+                "Generic NvidiaNimProviderAdapter; DeepSeek Harness supplies "
+                "the selected Registry model_id dynamically"
+            ),
+            input_contract="Harness-selected prompt + Registry-selected NVIDIA model_id",
+            output_contract="HarnessAIProviderEvidence",
+            requirements=(
+                "NVIDIA_API_KEY",
+                "https://integrate.api.nvidia.com/v1",
+                "billing-mode:NVIDIA_FREE_ENDPOINT",
+                "paid-api-billing:NO",
+                "rate-limit-or-quota:POSSIBLE",
+                "unlimited:UNPROVEN",
+                "context-window:1048576",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            policy_tags=(
+                "ai", "provider", "nvidia", "nim", "multi-model",
+                "model-capability:reasoning",
+                "model-capability:coding",
+                "model-capability:semantic_planning",
+                "model-capability:agentic_tool_use",
+                "model-capability:tool_use",
+                "model-capability:long_horizon",
+                "model-capability:multimodal",
+                "model-capability:long_context",
+                "model-capability:structured_output",
+            ),
+            security_boundary=(
+                "DeepSeek Harness is sole routing/policy/authorization authority; "
+                "one generic NVIDIA adapter receives only the Harness-selected model; "
+                "no model self-selection, secret persistence, paid fallback or parallel router."
+            ),
+            executor_binding=(
+                "app.services.harness_ai_provider_service.execute_harness_ai_generation"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
+            provider_id="nvidia_nim",
+            model_id="moonshotai/kimi-k3",
+            cost_class="FREE_ENDPOINT",
+            quota_class="NVIDIA_FREE_ENDPOINT_RATE_LIMIT_OR_QUOTA_POSSIBLE",
+            latency_class="EXTERNAL_MODEL_DEPENDENT",
+            quality_class="FRONTIER_MULTIMODAL_AGENTIC",
+            fallback_eligibility=True,
+            supports_review=True,
+            health_policy="PROVIDER_AND_MODEL_RUNTIME_HEALTH",
+        ),
+        _record(
+            capability_id="ai.provider.nvidia-nim.nemotron-3-ultra",
+            capability_type="PROVIDER",
+            domain="ai",
+            implementation=(
+                "Generic NvidiaNimProviderAdapter; DeepSeek Harness supplies "
+                "the selected Registry model_id dynamically"
+            ),
+            input_contract="Harness-selected prompt + Registry-selected NVIDIA model_id",
+            output_contract="HarnessAIProviderEvidence",
+            requirements=(
+                "NVIDIA_API_KEY",
+                "https://integrate.api.nvidia.com/v1",
+                "billing-mode:NVIDIA_FREE_ENDPOINT",
+                "paid-api-billing:NO",
+                "rate-limit-or-quota:POSSIBLE",
+                "unlimited:UNPROVEN",
+                "context-window:1048576",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            policy_tags=(
+                "ai", "provider", "nvidia", "nim", "multi-model",
+                "model-capability:reasoning",
+                "model-capability:coding",
+                "model-capability:planning",
+                "model-capability:semantic_planning",
+                "model-capability:tool_use",
+                "model-capability:long_context",
+                "model-capability:structured_output",
+            ),
+            security_boundary=(
+                "DeepSeek Harness is sole routing/policy/authorization authority; "
+                "one generic NVIDIA adapter receives only the Harness-selected model; "
+                "no model self-selection, secret persistence, paid fallback or parallel router."
+            ),
+            executor_binding=(
+                "app.services.harness_ai_provider_service.execute_harness_ai_generation"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
+            provider_id="nvidia_nim",
+            model_id="nvidia/nemotron-3-ultra-550b-a55b",
+            cost_class="FREE_ENDPOINT",
+            quota_class="NVIDIA_FREE_ENDPOINT_RATE_LIMIT_OR_QUOTA_POSSIBLE",
+            latency_class="EXTERNAL_MODEL_DEPENDENT",
+            quality_class="FRONTIER_REASONING_AGENTIC",
+            fallback_eligibility=True,
+            supports_review=True,
+            health_policy="PROVIDER_AND_MODEL_RUNTIME_HEALTH",
+        ),
+        _record(
+            capability_id="ai.provider.nvidia-nim.laguna-xs-2-1",
+            capability_type="PROVIDER",
+            domain="ai",
+            implementation=(
+                "Generic NvidiaNimProviderAdapter; DeepSeek Harness supplies "
+                "the selected Registry model_id dynamically"
+            ),
+            input_contract="Harness-selected prompt + Registry-selected NVIDIA model_id",
+            output_contract="HarnessAIProviderEvidence",
+            requirements=(
+                "NVIDIA_API_KEY",
+                "https://integrate.api.nvidia.com/v1",
+                "billing-mode:NVIDIA_FREE_ENDPOINT",
+                "paid-api-billing:NO",
+                "rate-limit-or-quota:POSSIBLE",
+                "unlimited:UNPROVEN",
+                "context-window:262144",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            policy_tags=(
+                "ai", "provider", "nvidia", "nim", "multi-model",
+                "model-capability:coding",
+                "model-capability:terminal",
+                "model-capability:agentic_coding",
+                "model-capability:agentic_tool_use",
+                "model-capability:tool_use",
+            ),
+            security_boundary=(
+                "DeepSeek Harness is sole routing/policy/authorization authority; "
+                "one generic NVIDIA adapter receives only the Harness-selected model; "
+                "no model self-selection, secret persistence, paid fallback or parallel router."
+            ),
+            executor_binding=(
+                "app.services.harness_ai_provider_service.execute_harness_ai_generation"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
+            provider_id="nvidia_nim",
+            model_id="poolside/laguna-xs-2.1",
+            cost_class="FREE_ENDPOINT",
+            quota_class="NVIDIA_FREE_ENDPOINT_RATE_LIMIT_OR_QUOTA_POSSIBLE",
+            latency_class="EXTERNAL_MODEL_DEPENDENT",
+            quality_class="AGENTIC_CODING_SPECIALIST",
+            fallback_eligibility=True,
+            supports_review=True,
+            health_policy="PROVIDER_AND_MODEL_RUNTIME_HEALTH",
+        ),
+        _record(
+            capability_id="ai.provider.nvidia-nim.nemotron-3-5-lightning",
+            capability_type="PROVIDER",
+            domain="ai",
+            implementation=(
+                "Generic NvidiaNimProviderAdapter; DeepSeek Harness supplies "
+                "the selected Registry model_id dynamically"
+            ),
+            input_contract="Harness-selected prompt + Registry-selected NVIDIA model_id",
+            output_contract="HarnessAIProviderEvidence",
+            requirements=(
+                "NVIDIA_API_KEY",
+                "https://integrate.api.nvidia.com/v1",
+                "billing-mode:NVIDIA_FREE_ENDPOINT",
+                "paid-api-billing:NO",
+                "rate-limit-or-quota:POSSIBLE",
+                "unlimited:UNPROVEN",
+                "context-window:1048576",
+            ),
+            maturity=FUNCTIONAL,
+            availability=AVAILABLE,
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            policy_tags=(
+                "ai", "provider", "nvidia", "nim", "multi-model",
+                "model-capability:fast_reasoning",
+                "model-capability:reasoning",
+                "model-capability:semantic_planning",
+                "model-capability:agentic_tasks",
+                "model-capability:tool_use",
+                "model-capability:long_context",
+                "model-capability:structured_output",
+            ),
+            security_boundary=(
+                "DeepSeek Harness is sole routing/policy/authorization authority; "
+                "one generic NVIDIA adapter receives only the Harness-selected model; "
+                "no model self-selection, secret persistence, paid fallback or parallel router."
+            ),
+            executor_binding=(
+                "app.services.harness_ai_provider_service.execute_harness_ai_generation"
+            ),
+            evidence_contract=(
+                "app.services.harness_ai_provider_service.HarnessAIProviderEvidence"
+            ),
+            provider_id="nvidia_nim",
+            model_id="nvidia/nemotron-3.5-lightning-30b-a3b",
+            cost_class="FREE_ENDPOINT",
+            quota_class="NVIDIA_FREE_ENDPOINT_RATE_LIMIT_OR_QUOTA_POSSIBLE",
+            latency_class="EXTERNAL_MODEL_DEPENDENT",
+            quality_class="FAST_AGENTIC_REASONING",
+            fallback_eligibility=True,
+            supports_review=True,
+            health_policy="PROVIDER_AND_MODEL_RUNTIME_HEALTH",
         ),
         _record(
             capability_id="ai.provider.gemini",
