@@ -91,9 +91,6 @@ jobs:
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
           BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
         run: |
           set -euo pipefail
           force_args=()
@@ -143,7 +140,9 @@ jobs:
           assert d["HERMES_DIRECT_CANONICAL_WRITE"]=="NO"
           assert d["AGENT_DIRECT_CANONICAL_WRITE"]=="NO"
           assert d["TERMUX_HEAVY_PROCESSING"]=="NO"
-          assert d["telegram_group_digest"]["status"]=="SENT"
+          assert d["telegram_group_digest"]["status"]=="DISABLED"
+          assert d["UNSOLICITED_TELEGRAM_EGRESS"]=="NO"
+          assert int(d["TELEGRAM_MESSAGES_SENT"]) == 0
           if d["cycle"]["trigger_kind"] != "schedule":
               assert d["FORCED_SOURCE_CHECK"]=="YES"
               assert d["cycle"]["force_gta6_refresh"] is True
@@ -154,6 +153,9 @@ jobs:
           print("HERMES_SUBORDINATE=PASS")
           print("TELEGRAM_GROUP_ONLY_HUMAN_SURFACE=PASS")
           print("PRIVATE_TELEGRAM_HUMAN_SURFACE=DISABLED")
+          print("DAILY_BRAIN_TELEGRAM_EGRESS=0")
+          print("UNSOLICITED_TELEGRAM_EGRESS=NO")
+          print("TELEGRAM_MESSAGES_SENT=0")
           print("OBSIDIAN_CANONICAL_MEMORY=NO")
           print("HERMES_DIRECT_CANONICAL_WRITE=NO")
           print("AGENT_DIRECT_CANONICAL_WRITE=NO")
