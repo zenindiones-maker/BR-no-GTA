@@ -483,7 +483,10 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             implementation="TuxevilAIProvider via official AI provider factory",
             input_contract="prompt text",
             output_contract="AIResponse",
-            requirements=("Tuxevil Rotator",),
+            requirements=(
+                "Tuxevil Rotator",
+                "Antigravity ACCOUNT_AUTH runtime evidence",
+            ),
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
