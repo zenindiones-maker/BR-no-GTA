@@ -545,171 +545,246 @@ def build_goal_envelope(
     )
 
 
-def _legacy_mission_requirements(goal: GoalEnvelope) -> list[dict[str, Any]]:
+def _deterministic_capability_requirements(
+    goal: GoalEnvelope,
+) -> list[dict[str, Any]]:
+    """Capability-first fallback requirements for narrow deterministic goals.
+
+    These are functional requirements, not agent/team assignments. Task ids are
+    opaque sequence identities; executors are discovered later from Registry.
+    """
     folded = goal.human_goal.casefold()
     if goal.mission_class == "SYSTEM_IMPROVEMENT":
-        tasks = [
+        functions: list[dict[str, Any]] = [
             {
-                "task_id": "measure",
-                "task_class": "system-performance-measure",
+                "function": "OBSERVE",
+                "task_class": "system-observation",
                 "action": "DEVELOPMENT",
-                "query": "system improvement performance observability evidence measure",
-                "dependencies": [],
+                "query": (
+                    "measure observable system performance latency redundancy "
+                    "work evidence without mutation"
+                ),
+                "required_capability_description": (
+                    "read-only system observation and measurable baseline evidence"
+                ),
                 "expected_output": "MeasuredProblemEvidence",
+                "acceptance_criteria": [
+                    "baseline is measurable",
+                    "evidence references are preserved",
+                    "no mutation is performed",
+                ],
+                "risk_side_effect_class": "READ_ONLY",
             },
             {
-                "task_id": "root-cause",
-                "task_class": "system-root-cause-analysis",
+                "function": "DIAGNOSE",
+                "task_class": "root-cause-analysis",
                 "action": "DEVELOPMENT",
-                "query": "agent-office codex readonly analysis debugging architecture reliability",
-                "dependencies": ["measure"],
+                "query": (
+                    "read-only root cause analysis source architecture performance "
+                    "reliability evidence"
+                ),
+                "required_capability_description": (
+                    "read-only root cause analysis over bounded repository scope"
+                ),
                 "expected_output": "RootCauseEvidence",
+                "acceptance_criteria": [
+                    "root cause is linked to baseline evidence",
+                    "recommended scope is bounded",
+                ],
+                "risk_side_effect_class": "READ_ONLY",
             },
         ]
-        if any(term in folded for term in ("corrig", "melhor", "otimiz")):
-            tasks.extend([
+        wants_change = any(
+            term in folded
+            for term in (
+                "corrig", "melhor", "otimiz", "implement", "reduz",
+                "elimin", "remove", "refator",
+            )
+        )
+        if wants_change:
+            functions.extend([
                 {
-                    "task_id": "candidate",
+                    "function": "IMPLEMENT",
                     "task_class": "bounded-development",
                     "action": "DEVELOPMENT",
-                    "query": "agent-office codex bounded development candidate worktree",
-                    "dependencies": ["root-cause"],
+                    "query": (
+                        "bounded isolated development worktree candidate code change tests"
+                    ),
+                    "required_capability_description": (
+                        "bounded isolated code mutation producing a local candidate only"
+                    ),
                     "expected_output": "BoundedCandidatePatch",
+                    "acceptance_criteria": [
+                        "candidate remains isolated",
+                        "change stays inside authorized scope",
+                        "focused regression evidence exists",
+                    ],
+                    "risk_side_effect_class": "BOUNDED_MUTATION",
                 },
                 {
-                    "task_id": "validate",
-                    "task_class": "candidate-validation",
+                    "function": "REVIEW",
+                    "task_class": "independent-review",
                     "action": "DEVELOPMENT",
-                    "query": "agent-office codex readonly analysis review quality test benchmark",
-                    "dependencies": ["candidate"],
+                    "query": (
+                        "independent read-only code review candidate diff acceptance "
+                        "criteria regression evidence"
+                    ),
+                    "required_capability_description": (
+                        "independent read-only review distinct from candidate builder"
+                    ),
+                    "expected_output": "IndependentReviewEvidence",
+                    "acceptance_criteria": [
+                        "builder and reviewer identities differ",
+                        "candidate is checked against acceptance criteria",
+                        "regressions are reported",
+                    ],
+                    "risk_side_effect_class": "READ_ONLY",
+                },
+                {
+                    "function": "BENCHMARK",
+                    "task_class": "baseline-candidate-comparison",
+                    "action": "DEVELOPMENT",
+                    "query": (
+                        "read-only benchmark baseline candidate performance latency "
+                        "quality regression comparison"
+                    ),
+                    "required_capability_description": (
+                        "deterministic or read-only baseline versus candidate comparison"
+                    ),
                     "expected_output": "BaselineCandidateComparison",
+                    "acceptance_criteria": [
+                        "baseline and candidate use comparable metrics",
+                        "improvement delta is explicit",
+                        "quality does not regress",
+                    ],
+                    "risk_side_effect_class": "READ_ONLY",
                 },
             ])
-        return tasks
-    if goal.mission_class == "GTA6_INTELLIGENCE":
-        tasks = [
-            {
-                "task_id": "research",
-                "task_class": "gta6-research",
-                "action": "RESEARCH",
-                "query": "gta6 research official source",
-                "dependencies": [],
-                "expected_output": "ResearchEvidence",
-            },
-            {
-                "task_id": "fact-check",
-                "task_class": "gta6-fact-check",
-                "action": "RESEARCH",
-                "query": "gta6 fact-check claims evidence",
-                "dependencies": ["research"],
-                "expected_output": "VerifiedClaims",
-            },
-        ]
-        if any(term in folded for term in ("video", "vídeo", "pauta", "roteiro", "rende")):
+        tasks: list[dict[str, Any]] = []
+        previous: str | None = None
+        for index, item in enumerate(functions, start=1):
+            task_id = f"task-{index:02d}"
+            dependencies = [previous] if previous else []
             tasks.append({
-                "task_id": "editorial",
-                "task_class": "youtube-content-strategy",
-                "action": "EDITORIAL",
-                "query": "youtube content strategy editorial opportunity",
-                "dependencies": ["fact-check"],
-                "expected_output": "EditorialOpportunity",
+                "task_id": task_id,
+                "functional_role": item["function"],
+                "task_class": item["task_class"],
+                "action": item["action"],
+                "query": item["query"],
+                "required_capability_description": item[
+                    "required_capability_description"
+                ],
+                "objective": (
+                    f"{item['function']}: {goal.human_goal}"
+                ),
+                "dependencies": dependencies,
+                "expected_output": item["expected_output"],
+                "acceptance_criteria": item["acceptance_criteria"],
+                "risk_side_effect_class": item["risk_side_effect_class"],
             })
+            previous = task_id
         return tasks
+
+    if goal.mission_class == "GTA6_INTELLIGENCE":
+        functions = [
+            (
+                "DISCOVER",
+                "gta6-research",
+                "RESEARCH",
+                "GTA6 official source research evidence delta",
+                "source-grounded GTA6 evidence discovery",
+                "ResearchEvidence",
+            ),
+            (
+                "VERIFY",
+                "gta6-fact-check",
+                "RESEARCH",
+                "GTA6 independent fact check claims evidence",
+                "independent GTA6 evidence verification",
+                "VerifiedClaims",
+            ),
+        ]
+        if any(
+            term in folded
+            for term in ("video", "vídeo", "pauta", "roteiro", "rende")
+        ):
+            functions.append((
+                "EDITORIALIZE",
+                "youtube-content-strategy",
+                "EDITORIAL",
+                "youtube content strategy editorial opportunity",
+                "editorial opportunity extraction from verified evidence",
+                "EditorialOpportunity",
+            ))
+        tasks = []
+        previous = None
+        for index, (
+            role,
+            task_class,
+            action,
+            query,
+            description,
+            output,
+        ) in enumerate(functions, start=1):
+            task_id = f"task-{index:02d}"
+            tasks.append({
+                "task_id": task_id,
+                "functional_role": role,
+                "task_class": task_class,
+                "action": action,
+                "query": query,
+                "required_capability_description": description,
+                "objective": f"{role}: {goal.human_goal}",
+                "dependencies": [previous] if previous else [],
+                "expected_output": output,
+                "acceptance_criteria": [
+                    "evidence lineage preserved",
+                    "authority not expanded",
+                ],
+                "risk_side_effect_class": "READ_ONLY",
+            })
+            previous = task_id
+        return tasks
+
     if goal.mission_class == "EDITORIAL":
         return [
             {
-                "task_id": "strategy",
+                "task_id": "task-01",
+                "functional_role": "DESIGN",
                 "task_class": "youtube-content-strategy",
                 "action": "EDITORIAL",
-                "query": "youtube content strategy editorial",
+                "query": "youtube content strategy editorial evidence",
+                "required_capability_description": (
+                    "evidence-grounded editorial strategy"
+                ),
+                "objective": f"DESIGN: {goal.human_goal}",
                 "dependencies": [],
                 "expected_output": "EditorialStrategy",
+                "acceptance_criteria": ["strategy is evidence-grounded"],
+                "risk_side_effect_class": "READ_ONLY",
             },
             {
-                "task_id": "review",
+                "task_id": "task-02",
+                "functional_role": "REVIEW",
                 "task_class": "youtube-script-review",
                 "action": "EDITORIAL",
-                "query": "youtube script review quality",
-                "dependencies": ["strategy"],
+                "query": "youtube script review quality evidence",
+                "required_capability_description": (
+                    "independent editorial quality review"
+                ),
+                "objective": f"REVIEW: {goal.human_goal}",
+                "dependencies": ["task-01"],
                 "expected_output": "ScriptReview",
+                "acceptance_criteria": ["review references strategy evidence"],
+                "risk_side_effect_class": "READ_ONLY",
             },
         ]
     return []
 
 
-def _blocked_by_known_failure(record, health: dict[str, Any]) -> bool:
-    opencode = dict(health.get("opencode") or {})
-    blocked = opencode.get("state") in {"UPSTREAM_DENIED", "BLOCKED", "QUARANTINED"}
-    if not blocked:
-        return False
-    return bool(
-        record.provider_id == "opencode"
-        or "semantic-skill" in record.policy_tags
-        or any("ai.reasoning.text" in str(item).casefold() for item in record.requirements)
-    )
-
-
-def _select_requirement(
-    requirement: dict[str, Any],
-    *,
-    health: dict[str, Any],
-    used: set[str],
-) -> tuple[str, bool, bool]:
-    discovered = GLOBAL_CAPABILITY_REGISTRY.discover(
-        intent=str(requirement["query"]),
-        authorized_action=str(requirement["action"]),
-        limit=30,
-    )
-    ranked: list[tuple[float, str, bool]] = []
-    bad_path_avoided = False
-    for item in discovered:
-        capability_id = str(item["capability_id"])
-        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
-        if record is None or not record.execution_enabled:
-            continue
-        if _blocked_by_known_failure(record, health):
-            bad_path_avoided = True
-            continue
-        competence = learning_repository.list_competence(
-            task_class=str(requirement["task_class"]),
-            capability_id=capability_id,
-            status="ACTIVE",
-            limit=10,
-        )
-        if not competence:
-            competence = learning_repository.list_competence(
-                capability_id=capability_id,
-                status="ACTIVE",
-                limit=10,
-            )
-        competence_score = 0.0
-        competence_used = False
-        for row in competence:
-            tested = max(1, int(row.get("tested_cases") or 0))
-            score = (
-                8.0 * float(row.get("success_count") or 0) / tested
-                - 6.0 * float(row.get("failure_count") or 0) / tested
-                - 2.0 * float(row.get("human_correction_count") or 0) / tested
-            )
-            competence_score = max(competence_score, score)
-            competence_used = True
-        duplicate_penalty = 1.5 if capability_id in used else 0.0
-        lexical_rank = max(0.0, 8.0 - float(len(ranked)) * 0.2)
-        ranked.append((
-            lexical_rank + competence_score - duplicate_penalty,
-            capability_id,
-            competence_used,
-        ))
-    if not ranked:
-        raise RuntimeError(
-            f"no healthy Registry capability for task_class={requirement['task_class']}"
-        )
-    ranked.sort(key=lambda row: (-row[0], row[1]))
-    _, capability_id, competence_used = ranked[0]
-    return capability_id, competence_used, bad_path_avoided
-
-
-def _deterministic_fast_path_requirements(goal: GoalEnvelope) -> list[dict[str, Any]]:
+def _deterministic_fast_path_requirements(
+    goal: GoalEnvelope,
+) -> list[dict[str, Any]]:
     """Keep only narrow, high-confidence cases off the semantic provider."""
     folded = re.sub(r"\s+", " ", goal.human_goal.strip().casefold())
     complex_terms = (
@@ -721,13 +796,24 @@ def _deterministic_fast_path_requirements(goal: GoalEnvelope) -> list[dict[str, 
     if any(term in folded for term in complex_terms):
         return []
     if goal.mission_class == "GTA6_INTELLIGENCE" and len(folded) <= 180:
-        return _legacy_mission_requirements(goal)
+        return _deterministic_capability_requirements(goal)
     if goal.mission_class == "EDITORIAL" and len(folded) <= 140:
-        if any(term in folded for term in ("revisa", "revise", "roteiro", "seo", "thumbnail")):
-            return _legacy_mission_requirements(goal)
-    if goal.mission_class == "SYSTEM_IMPROVEMENT" and len(folded) <= 90:
-        if any(term in folded for term in ("melhora o sistema", "melhore o sistema", "otimiza o pipeline", "otimize o pipeline")):
-            return _legacy_mission_requirements(goal)
+        if any(
+            term in folded
+            for term in ("revisa", "revise", "roteiro", "seo", "thumbnail")
+        ):
+            return _deterministic_capability_requirements(goal)
+    if goal.mission_class == "SYSTEM_IMPROVEMENT" and len(folded) <= 120:
+        if any(
+            term in folded
+            for term in (
+                "melhora o sistema",
+                "melhore o sistema",
+                "otimiza o pipeline",
+                "otimize o pipeline",
+            )
+        ):
+            return _deterministic_capability_requirements(goal)
     return []
 
 
@@ -773,6 +859,13 @@ def plan_mission_from_human_goal(
         intent=goal.human_goal,
         max_bytes=int(resources["bounded_memory_bytes"]),
     ).to_dict()
+    adaptive_context = build_semantic_planning_context(
+        goal=goal.to_dict(),
+        bounded_memory_context=memory,
+        resource_bounds=bounds,
+        provider_health=health,
+        artifact_ref=artifact_ref,
+    )
 
     requirements = _deterministic_fast_path_requirements(goal)
     planning_mode = "DETERMINISTIC_FAST_PATH" if requirements else "SEMANTIC_ADAPTIVE"
@@ -785,21 +878,13 @@ def plan_mission_from_human_goal(
         "planner_authority": "NONE",
         "selection": [],
     }
-    adaptive_context: dict[str, Any] | None = None
+    planning_evidence["context_retrieval"] = dict(
+        adaptive_context.get("context_retrieval_evidence") or {}
+    )
 
     if not requirements:
         if not health.get("semantic_reasoning_available") and semantic_inference is None:
             raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-        adaptive_context = build_semantic_planning_context(
-            goal=goal.to_dict(),
-            bounded_memory_context=memory,
-            resource_bounds=bounds,
-            provider_health=health,
-            artifact_ref=artifact_ref,
-        )
-        planning_evidence["context_retrieval"] = dict(
-            adaptive_context.get("context_retrieval_evidence") or {}
-        )
         semantic_result, semantic_evidence = propose_validated_semantic_plan(
             adaptive_context,
             inference=semantic_inference,
@@ -828,31 +913,20 @@ def plan_mission_from_human_goal(
     proposal_reuse_refs = list(proposal.reused_artifact_refs) if proposal else []
 
     for requirement in requirements:
-        if planning_mode == "SEMANTIC_ADAPTIVE":
-            assert adaptive_context is not None
-            capability_id, used_competence, avoided, selection = (
-                select_capability_for_requirement(
-                    requirement,
-                    context=adaptive_context,
-                    used=used,
-                )
-            )
-            planning_evidence["selection"].append(selection)
-            avoided_paths.extend(avoided)
-        else:
-            capability_id, used_competence, avoided = _select_requirement(
+        capability_id, used_competence, avoided, selection = (
+            select_capability_for_requirement(
                 requirement,
-                health=health,
+                context=adaptive_context,
                 used=used,
             )
-            if avoided:
-                avoided_paths.append("opencode_free_tier_403")
-            planning_evidence["selection"].append({
-                "task_id": requirement["task_id"],
-                "selected_capability_id": capability_id,
-                "competence_used": used_competence,
-                "selection_mode": "DETERMINISTIC_FAST_PATH",
-            })
+        )
+        selection = {
+            **selection,
+            "selection_mode": planning_mode,
+            "functional_role": requirement.get("functional_role"),
+        }
+        planning_evidence["selection"].append(selection)
+        avoided_paths.extend(avoided)
 
         competence_used = competence_used or used_competence
         used.add(capability_id)
