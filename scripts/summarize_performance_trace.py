@@ -201,7 +201,9 @@ def _step_category(name: str) -> str:
         return "MISSION_EXECUTION_TIME"
     if "build or validate versioned" in value:
         return "DEPENDENCY_INSTALL_TIME"
-    if "upload" in value and "artifact" in value:
+    if "upload" in value and any(
+        token in value for token in ("artifact", "evidence", "diagnostic")
+    ):
         return "ARTIFACT_UPLOAD_TIME"
     if "research" in value:
         return "EXTERNAL_RESEARCH_TIME"
