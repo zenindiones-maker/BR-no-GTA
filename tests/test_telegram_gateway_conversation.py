@@ -195,7 +195,10 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
     assert calls["kwargs"]["telegram_message_id"] == 88
     assert calls["kwargs"]["input_record"]["id"] == 901
     assert callable(calls["kwargs"]["progress_callback"])
-    assert len(api.sent) >= 2
+    assert api.sent == [
+        (7007, "Missão natural roteada pelo ConversationService.")
+    ]
+    assert result["final_human_response_sent"] is True
     assert not hasattr(gateway_v2, "chat_under_harness")
 
 
