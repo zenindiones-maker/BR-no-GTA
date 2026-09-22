@@ -71,6 +71,16 @@ AGENT_OFFICE_RECORD = CapabilityRecord(
     provider_id="munder-difflin-pinned",
     agent_id="agent-office-coordinator",
     side_effects=("ephemeral worktrees", "mission-local mailbox"),
+
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="BOUNDED_MUTATION",
+    default_read_scope=("app", "scripts", "tests", ".github/workflows", "config", "integrations"),
+    default_write_scope=("app", "scripts", "tests"),
+    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+    health_policy="EXECUTOR_RUNTIME_REQUIRED",
 )
 
 HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
@@ -128,6 +138,22 @@ HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
     provider_id="nousresearch-hermes-agent",
     agent_id="hermes-runtime",
     side_effects=("mission-local Kanban SQLite", "structured evidence artifacts"),
+
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="COORDINATION_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=(
+        "kanban_show", "kanban_complete", "kanban_request_review",
+        "kanban_request_changes", "kanban_block", "kanban_heartbeat",
+        "kanban_comment", "kanban_create", "kanban_link", "kanban_unblock",
+        "br_harness_status", "br_harness_capability_request",
+        "br_harness_submit_evidence",
+    ),
+    health_policy="PINNED_RUNTIME",
 )
 
 
@@ -166,6 +192,16 @@ AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
     provider_id="codex",
     agent_id="codex-readonly",
     side_effects=("ephemeral worktree", "structured runtime artifact"),
+
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=("app", "scripts", "tests", ".github/workflows", "config", "integrations"),
+    default_write_scope=(),
+    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+    health_policy="CODEX_AUTH_REQUIRED",
 )
 
 AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
@@ -210,6 +246,16 @@ AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
     provider_id="codex",
     agent_id="codex-development",
     side_effects=("ephemeral worktree mutation", "local candidate commit", "structured runtime artifact"),
+
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="BOUNDED_MUTATION",
+    default_read_scope=("app", "scripts", "tests", ".github/workflows", "config", "integrations"),
+    default_write_scope=("app", "scripts", "tests"),
+    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+    health_policy="CODEX_AUTH_REQUIRED",
 )
 
 PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control", implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP", input_contract="allowlisted phone operation + deterministic parameters", output_contract="sanitized phone control result + Harness evidence", requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE", quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability", version="1", provider_id="mobilerun-local", side_effects=("device UI state change",))
