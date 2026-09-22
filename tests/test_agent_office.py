@@ -702,14 +702,17 @@ def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
         "BR_CODEX_AUTH_MODE": CODEX_TUXEVIL_AUTH_MODE,
         "BR_CODEX_TUXEVIL_BASE_URL": "http://127.0.0.1:51200/v1",
         "BR_CODEX_TUXEVIL_MODEL": "gemini-3-flash",
+        "BR_TUXEVIL_LOOPBACK_KEY": "tuxevil",
     })
     joined = " ".join(args)
     assert 'model_provider="br_tuxevil"' in joined
     assert 'model="gemini-3-flash"' in joined
     assert 'model_providers.br_tuxevil.base_url="http://127.0.0.1:51200/v1"' in joined
+    assert 'model_providers.br_tuxevil.env_key="BR_TUXEVIL_LOOPBACK_KEY"' in joined
     assert 'model_providers.br_tuxevil.wire_api="responses"' in joined
     assert "model_providers.br_tuxevil.requires_openai_auth=false" in joined
     assert "OPENAI_API_KEY" not in joined
+    assert "tuxevil" not in joined
 
 
 def test_tuxevil_codex_provider_rejects_non_loopback_endpoint():
@@ -718,7 +721,26 @@ def test_tuxevil_codex_provider_rejects_non_loopback_endpoint():
             "BR_CODEX_AUTH_MODE": CODEX_TUXEVIL_AUTH_MODE,
             "BR_CODEX_TUXEVIL_BASE_URL": "https://example.invalid/v1",
             "BR_CODEX_TUXEVIL_MODEL": "gemini-3-flash",
+            "BR_TUXEVIL_LOOPBACK_KEY": "tuxevil",
         })
+
+
+def test_tuxevil_loopback_key_is_the_only_proxy_credential_passed_to_codex():
+    from app.services.agent_office.codex_bounded_worker import (
+        codex_sanitized_environment,
+    )
+
+    env=codex_sanitized_environment({
+        "PATH": "/usr/bin",
+        "BR_TUXEVIL_LOOPBACK_KEY": "loopback-only",
+        "TUXEVIL_ACCOUNTS_JSON_B64": "forbidden-upstream-store",
+        "OPENAI_API_KEY": "forbidden-platform-key",
+        "ANTIGRAVITY_REFRESH_TOKEN": "forbidden-refresh-token",
+    })
+    assert env["BR_TUXEVIL_LOOPBACK_KEY"] == "loopback-only"
+    assert "TUXEVIL_ACCOUNTS_JSON_B64" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "ANTIGRAVITY_REFRESH_TOKEN" not in env
 
 
 def test_agent_office_codex_workers_keep_tuxevil_transport_inside_existing_workers():
