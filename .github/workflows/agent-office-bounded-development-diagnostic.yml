@@ -19,7 +19,6 @@ env:
   TUXEVIL_LOOPBACK_URL: "http://127.0.0.1:51200"
   BR_TUXEVIL_LOOPBACK_KEY: "tuxevil"
   BR_CODEX_TUXEVIL_BASE_URL: "http://127.0.0.1:51200/v1"
-  BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/bounded-diagnostic/state/learning.db
   ZERO_COST_OPERATION: "TRUE"
   SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS: "0"
@@ -64,7 +63,7 @@ jobs:
             tests/test_delegated_agent_autonomy.py
           echo "BOUNDED_DIAGNOSTIC_FOCUSED_TESTS=PASS"
 
-      - name: Prepare exact Codex and Hermes runtime
+      - name: Prepare exact Codex runtime
         run: |
           set -euo pipefail
           bash scripts/agent-tooling/bootstrap.sh codex
@@ -76,11 +75,6 @@ jobs:
           install -d -m 700 "$codex_home"
           echo "CODEX_HOME=$codex_home" >> "$GITHUB_ENV"
           bash scripts/prepare_codex_linux_sandbox.sh
-          python scripts/bootstrap_hermes_agent.py \
-            --target "$BR_HERMES_UPSTREAM_ROOT" \
-            --output artifacts/bounded-diagnostic/hermes-upstream.json
-          test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
-          test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" status --porcelain)" = ""
           npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
 
       - name: Materialize existing Antigravity store
@@ -216,21 +210,149 @@ jobs:
           print("BOUNDED_DIAGNOSTIC_RUNTIME_HEALTH=PASS")
           PY
 
-      - name: Reproduce canonical first mission only
+      - name: Reproduce bounded-development worker directly
         env:
-          PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
+          PYTHONPATH: ${{ github.workspace }}
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
         run: |
           set -euo pipefail
-          mkdir -p artifacts/bounded-diagnostic/first
-          python scripts/delegation_plane_real_execution.py \
-            --goal-id "bounded-diagnostic-$GITHUB_RUN_ID" \
-            --execution-instance-id "diagnostic:$GITHUB_RUN_ID" \
-            --base-sha "$GITHUB_SHA" \
-            --branch "work/gate6f-analytics-learning" \
-            --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
-            --output-dir artifacts/bounded-diagnostic/first
+          python - <<'PY'
+          from datetime import datetime, timedelta, timezone
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          from app.services.agent_office.contracts import AgentOfficeTask
+          from app.services.agent_office.delegation import (
+              DelegatedTaskLease,
+              MANDATORY_FORBIDDEN_ACTIONS,
+          )
+          from app.services.agent_office.codex_bounded_worker import (
+              CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+              codex_bounded_development_worker,
+          )
+          from app.services.agent_office.munder_adapter import (
+              _safe_worker_exception_reason,
+          )
+
+          root=Path.cwd()
+          base=os.environ["GITHUB_SHA"]
+          workspace=Path(os.environ["RUNNER_TEMP"]) / "bounded-worker-direct"
+          subprocess.run(
+              ["git","worktree","add","--detach",str(workspace),base],
+              cwd=root,
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+
+          allowed_paths=("app/services/agent_office","tests")
+          allowed_tools=("git","python","pytest","codex","rg","cat")
+          acceptance=(
+              "implement one safe measurable improvement in the Agent Office bounded-development path",
+              "preserve DeepSeek Harness authority and all security boundaries",
+              "report a real before/after metric and leave a local candidate commit only",
+          )
+          task=AgentOfficeTask(
+              task_id="bounded.worker.probe",
+              agent="codex-development",
+              capability=CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+              action="development",
+              objective=(
+                  "Inspect the existing Agent Office bounded-development implementation, "
+                  "find one small measurable inefficiency or redundant operation, implement "
+                  "a safe bounded candidate inside the allowed paths, validate it locally, "
+                  "and report a real before/after metric. Do not alter authority, routing, "
+                  "publication, authentication, or secret handling."
+              ),
+              allowed_paths=allowed_paths,
+              allowed_tools=allowed_tools,
+              allowed_actions=("analyze","inspect","test","benchmark","edit","commit_candidate"),
+              forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
+              expected_outputs=("bounded candidate commit","before/after metric"),
+              acceptance_criteria=acceptance,
+              evidence_requirements=("candidate commit","measured metric","path boundary"),
+              read_set=allowed_paths,
+              write_set=allowed_paths,
+              tool_call_budget=32,
+              retry_budget=0,
+              time_budget_seconds=300,
+              cost_budget=0.0,
+          )
+          lease=DelegatedTaskLease(
+              mission_id="bounded-diagnostic",
+              task_id=task.task_id,
+              goal_id="bounded-diagnostic",
+              harness_decision_id="diagnostic-harness-decision",
+              authorization_id="diagnostic-authorization",
+              delegation_id="delegation:bounded-diagnostic:bounded.worker.probe",
+              agent_id=task.agent,
+              capability_ids=(CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,),
+              base_sha=base,
+              allowed_paths=allowed_paths,
+              allowed_tools=allowed_tools,
+              allowed_actions=task.allowed_actions,
+              forbidden_actions=task.forbidden_actions,
+              input_artifact_refs=(),
+              expected_outputs=task.expected_outputs,
+              acceptance_criteria=acceptance,
+              evidence_requirements=task.evidence_requirements,
+              time_budget_seconds=300,
+              cost_budget=0.0,
+              tool_call_budget=32,
+              retry_budget=0,
+              max_parallelism=1,
+              expires_at=(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),
+              escalation_conditions=(
+                  "scope_change","authority_required","budget_exhausted",
+                  "write_conflict","non_recoverable_error",
+              ),
+              owned_task_class="bounded-development",
+              role="SPECIALIST_TASK_OWNER",
+              read_set=allowed_paths,
+              write_set=allowed_paths,
+          )
+
+          try:
+              result=codex_bounded_development_worker(
+                  task,
+                  workspace,
+                  300.0,
+                  lease,
+              )
+              safe={
+                  key:result.get(key)
+                  for key in (
+                      "status","error","exit_code","failure_stage","stderr_class",
+                      "retryability","recoverable","measurement_required",
+                      "codex_auth_method","codex_responses_endpoint",
+                  )
+                  if result.get(key) is not None
+              }
+              candidate=result.get("candidate")
+              if isinstance(candidate,dict):
+                  safe["candidate_status"]=candidate.get("STATUS")
+                  safe["candidate_files"]=candidate.get("FILES_CHANGED")
+                  safe["candidate_ready"]=candidate.get("CANDIDATE_READY_FOR_INTEGRATION")
+              print("BOUNDED_WORKER_RESULT="+json.dumps(safe,sort_keys=True))
+              if result.get("status") != "SUCCEEDED":
+                  raise SystemExit(2)
+              print("BOUNDED_WORKER_DIRECT_REPRO=PASS")
+          except Exception as exc:
+              print("BOUNDED_WORKER_EXCEPTION_CLASS="+type(exc).__name__)
+              print("BOUNDED_WORKER_SAFE_REASON="+_safe_worker_exception_reason(exc))
+              raise
+          finally:
+              subprocess.run(
+                  ["git","worktree","remove","--force",str(workspace)],
+                  cwd=root,
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+          PY
 
       - name: Cleanup ephemeral auth material
         if: always()
