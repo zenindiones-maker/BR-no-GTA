@@ -428,6 +428,8 @@ _SAFE_WORKER_RUNTIME_ERROR_PREFIXES = (
     "measurable bounded-development task produced no structured before/after metric",
     "measurable bounded-development candidate did not improve the declared metric",
     "Codex bounded-development produced no candidate patch",
+    "Codex bounded-development no-op lacks grounded candidate repair context",
+    "Codex bounded-development candidate repair produced no candidate patch",
     "candidate git add failed",
     "candidate local commit failed",
     "candidate commit identity unavailable",
