@@ -1227,6 +1227,84 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
         )
 
 
+def test_bounded_worker_candidate_repair_is_single_pass_and_fails_closed(
+    monkeypatch,
+    tmp_path,
+):
+    import app.services.agent_office.codex_bounded_worker as worker_module
+
+    root, workspace, base_sha, task, lease = _real_bounded_candidate_fixture(
+        tmp_path
+    )
+    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_TUXEVIL_BASE_URL",
+        "http://127.0.0.1:51200/v1",
+    )
+    monkeypatch.setenv("BR_CODEX_TUXEVIL_MODEL", "gemini-3-flash")
+    monkeypatch.setenv("BR_TUXEVIL_LOOPBACK_KEY", "local-test-key")
+
+    original_run = worker_module._run
+    codex_calls = []
+
+    def fake_run(command, *, cwd, timeout, sanitized_env=False):
+        if command and command[0] == "codex":
+            codex_calls.append(list(command))
+            stdout = json.dumps({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "no safe mutation produced",
+                },
+            })
+            return subprocess.CompletedProcess(
+                command, 0, stdout=stdout + "\n", stderr=""
+            )
+        return original_run(
+            command,
+            cwd=Path(cwd),
+            timeout=timeout,
+            sanitized_env=sanitized_env,
+        )
+
+    monkeypatch.setattr(worker_module, "_run", fake_run)
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="Codex bounded-development produced no candidate patch",
+        ):
+            worker_module.codex_bounded_development_worker(
+                task,
+                workspace,
+                120.0,
+                lease,
+            )
+        assert len(codex_calls) == 2
+        assert "NO_CANDIDATE_PATCH_DETECTED" in codex_calls[1][-1]
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == base_sha
+        assert subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == ""
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(workspace)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
 def test_bounded_worker_repair_blocks_outside_write_set_before_candidate_commit(
     monkeypatch,
     tmp_path,
