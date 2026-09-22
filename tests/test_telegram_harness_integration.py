@@ -35,6 +35,19 @@ from scripts.telegram_harness_gateway import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _materialize_existing_nvidia_runtime_contract(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "fixture-key")
+    monkeypatch.setenv(
+        "BR_NVIDIA_HEALTH_MAX_AGE_SECONDS",
+        "315360000",
+    )
+    monkeypatch.delenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        raising=False,
+    )
+
+
 def _asset_payload(*, message_id: int = 10, file_id: str = "file-A", unique_id: str = "unique-A"):
     return {
         "asset_type": "watermark",

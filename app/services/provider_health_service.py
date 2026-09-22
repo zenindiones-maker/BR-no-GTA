@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import re
 from typing import Any
 from urllib import request
@@ -57,9 +59,257 @@ class ModelHealth:
     rate_limit_state: str
     circuit_breaker_state: str
     evidence_refs: tuple[str, ...]
+    live_status: str | None = None
+    http_status: int | None = None
+    quota_state: str = "UNKNOWN"
+    last_verified_at: str | None = None
+    source: str = "UNKNOWN"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+_NVIDIA_CANONICAL_HEALTH_PATH = (
+    Path(__file__).resolve().parents[2] / "config" / "nvidia_runtime_health.json"
+)
+_DEFAULT_NVIDIA_HEALTH_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
+
+def _health_evidence_is_stale(
+    last_verified_at: str | None,
+    *,
+    max_age_seconds: int | None = None,
+) -> bool:
+    value = str(last_verified_at or "").strip()
+    if not value:
+        return True
+    try:
+        observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    if max_age_seconds is None:
+        raw = str(os.getenv("BR_NVIDIA_HEALTH_MAX_AGE_SECONDS") or "").strip()
+        try:
+            max_age_seconds = (
+                int(raw)
+                if raw
+                else _DEFAULT_NVIDIA_HEALTH_MAX_AGE_SECONDS
+            )
+        except ValueError:
+            max_age_seconds = _DEFAULT_NVIDIA_HEALTH_MAX_AGE_SECONDS
+    if max_age_seconds <= 0:
+        return True
+    age = datetime.now(timezone.utc) - observed.astimezone(timezone.utc)
+    return age.total_seconds() > max_age_seconds
+
+
+def _canonical_nvidia_health_payload() -> dict[str, Any] | None:
+    try:
+        payload = json.loads(
+            _NVIDIA_CANONICAL_HEALTH_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if str(payload.get("provider_id") or "") != "nvidia_nim":
+        return None
+    if payload.get("free_endpoint_only") is not True:
+        return None
+    if str(payload.get("paid_api_billing") or "").upper() != "NO":
+        return None
+    if str(payload.get("paid_api_fallback") or "").upper() != "NO":
+        return None
+    if str(payload.get("unlimited") or "").upper() != "UNPROVEN":
+        return None
+    if not isinstance(payload.get("models"), dict):
+        return None
+    return payload
+
+
+def _canonical_nvidia_model_health(model_id: str) -> ModelHealth | None:
+    payload = _canonical_nvidia_health_payload()
+    if payload is None:
+        return None
+    item = payload["models"].get(model_id)
+    if not isinstance(item, dict):
+        return None
+    evidence_ref = str(item.get("evidence_ref") or "").strip()
+    run_id = str(payload.get("canonical_run_id") or "").strip()
+    if not run_id.isdigit() or not evidence_ref.startswith(
+        f"github:run:{run_id}:nvidia-model:"
+    ):
+        return None
+    last_verified_at = str(
+        item.get("last_verified_at")
+        or payload.get("last_verified_at")
+        or ""
+    ).strip() or None
+    max_age = payload.get("stale_after_seconds")
+    max_age_seconds = int(max_age) if isinstance(max_age, int) else None
+    stale = _health_evidence_is_stale(
+        last_verified_at,
+        max_age_seconds=max_age_seconds,
+    )
+    health = str(item.get("health") or "UNKNOWN/UNPROVEN").upper()
+    live_status = str(item.get("live_status") or "").upper() or None
+    failure_class = str(item.get("failure_class") or "").strip() or None
+    if stale:
+        health = "UNKNOWN/UNPROVEN"
+        live_status = "STALE"
+        failure_class = "stale_live_health_evidence"
+    latency = item.get("latency_ms")
+    http_status = item.get("http_status")
+    return ModelHealth(
+        provider_id="nvidia_nim",
+        model_id=model_id,
+        availability=health,
+        last_success=last_verified_at if health == "AVAILABLE" else None,
+        last_failure=last_verified_at if health != "AVAILABLE" else None,
+        failure_class=failure_class,
+        latency_ms=(
+            float(latency)
+            if isinstance(latency, (int, float))
+            else None
+        ),
+        confidence=1.0,
+        sample_size=1,
+        rate_limit_state=str(
+            item.get("rate_limit_state") or "UNKNOWN"
+        ).upper(),
+        circuit_breaker_state=str(
+            item.get("circuit_breaker_state") or "CLOSED"
+        ).upper(),
+        evidence_refs=(evidence_ref,),
+        live_status=live_status,
+        http_status=(
+            int(http_status)
+            if isinstance(http_status, int)
+            and not isinstance(http_status, bool)
+            else None
+        ),
+        quota_state=str(item.get("quota_state") or "UNKNOWN").upper(),
+        last_verified_at=last_verified_at,
+        source="CANONICAL_LIVE_EVIDENCE",
+    )
+
+
+def _learning_nvidia_model_health(
+    record: Any,
+    model_id: str,
+) -> ModelHealth | None:
+    try:
+        episodes = learning_repository.list_episodes(
+            domain="ai",
+            capability_id=str(record.capability_id),
+            limit=25,
+        )
+    except Exception:
+        return None
+    for episode in episodes:
+        if (
+            str(episode.get("provider") or "")
+            .strip()
+            .lower()
+            .replace("-", "_")
+            != "nvidia_nim"
+        ):
+            continue
+        run_ref = str(episode.get("run_ref") or "").strip()
+        if re.fullmatch(r"github:run:\d+", run_ref) is None:
+            continue
+        outcome = episode.get("actual_outcome")
+        if not isinstance(outcome, dict):
+            continue
+        if str(outcome.get("MODEL_ID") or "") != model_id:
+            continue
+        if (
+            str(outcome.get("BILLING_CLASS") or "").upper()
+            != "NVIDIA_FREE_ENDPOINT"
+        ):
+            continue
+        if str(outcome.get("PAID_API_BILLING") or "NO").upper() != "NO":
+            continue
+        last_verified_at = str(
+            episode.get("finished_at")
+            or episode.get("created_at")
+            or ""
+        ).strip() or None
+        refs = tuple(dict.fromkeys(
+            [
+                *[
+                    str(ref)
+                    for ref in (episode.get("evidence_refs") or ())
+                    if str(ref)
+                ],
+                str(outcome.get("EVIDENCE_REF") or ""),
+            ]
+        ))
+        refs = tuple(ref for ref in refs if ref)
+        run_id = run_ref.rsplit(":", 1)[-1]
+        if not refs or not any(
+            ref.startswith(f"github:run:{run_id}:nvidia-model:")
+            for ref in refs
+        ):
+            continue
+        stale = _health_evidence_is_stale(last_verified_at)
+        health = str(
+            outcome.get("HEALTH") or "UNKNOWN/UNPROVEN"
+        ).upper()
+        failure_class = (
+            str(outcome.get("FAILURE_CLASS") or "").strip() or None
+        )
+        live_status = (
+            "PASS"
+            if health == "AVAILABLE"
+            and outcome.get("RESPONSE_VALID") is True
+            else "FAIL"
+        )
+        if stale:
+            health = "UNKNOWN/UNPROVEN"
+            live_status = "STALE"
+            failure_class = "stale_live_health_evidence"
+        latency = outcome.get("LATENCY_MS")
+        http_status = outcome.get("HTTP_STATUS")
+        return ModelHealth(
+            provider_id="nvidia_nim",
+            model_id=model_id,
+            availability=health,
+            last_success=(
+                last_verified_at if health == "AVAILABLE" else None
+            ),
+            last_failure=(
+                last_verified_at if health != "AVAILABLE" else None
+            ),
+            failure_class=failure_class,
+            latency_ms=(
+                float(latency)
+                if isinstance(latency, (int, float))
+                else None
+            ),
+            confidence=1.0,
+            sample_size=1,
+            rate_limit_state=(
+                "OBSERVED"
+                if outcome.get("RATE_LIMIT_OBSERVED") is True
+                else "CLEAR"
+            ),
+            circuit_breaker_state="CLOSED",
+            evidence_refs=refs,
+            live_status=live_status,
+            http_status=(
+                int(http_status)
+                if isinstance(http_status, int)
+                and not isinstance(http_status, bool)
+                else None
+            ),
+            quota_state="AVAILABLE_UNMEASURED",
+            last_verified_at=last_verified_at,
+            source="LEARNING_PLANE_LIVE_EVIDENCE",
+        )
+    return None
 
 
 def _failure_rows() -> list[dict[str, Any]]:
@@ -291,56 +541,154 @@ def _runtime_provider_health_override(
         zero_cost_eligible=True,
     )
 
-def _runtime_model_health(provider_id: str, model_id: str) -> ModelHealth | None:
-    raw=str(os.getenv("BR_RUNTIME_MODEL_HEALTH_JSON") or "").strip()
-    if not raw: return None
-    try: payload=json.loads(raw)
-    except json.JSONDecodeError: return None
-    provider=str(provider_id or "").strip().lower().replace("-","_")
-    group=payload.get(provider) if isinstance(payload,dict) else None
-    item=group.get(model_id) if isinstance(group,dict) else None
-    if not isinstance(item,dict): return None
-    current_run_id=str(os.getenv("GITHUB_RUN_ID") or "").strip()
-    evidence_run_id=str(item.get("github_run_id") or "").strip()
-    refs=tuple(str(x) for x in (item.get("evidence_refs") or ()) if str(x))
+def _runtime_model_health(
+    provider_id: str,
+    model_id: str,
+) -> ModelHealth | None:
+    raw = str(os.getenv("BR_RUNTIME_MODEL_HEALTH_JSON") or "").strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    provider = str(provider_id or "").strip().lower().replace("-", "_")
+    group = payload.get(provider) if isinstance(payload, dict) else None
+    item = group.get(model_id) if isinstance(group, dict) else None
+    if not isinstance(item, dict):
+        return None
+    current_run_id = str(os.getenv("GITHUB_RUN_ID") or "").strip()
+    evidence_run_id = str(item.get("github_run_id") or "").strip()
+    refs = tuple(
+        str(value)
+        for value in (item.get("evidence_refs") or ())
+        if str(value)
+    )
     if current_run_id:
-        expected_prefix=f"github:run:{current_run_id}:"
+        expected_prefix = f"github:run:{current_run_id}:"
         if evidence_run_id != current_run_id:
             return None
-        if not refs or not any(ref.startswith(expected_prefix) for ref in refs):
+        if not refs or not any(
+            ref.startswith(expected_prefix) for ref in refs
+        ):
             return None
-    circuit=str(item.get("circuit_breaker_state") or "CLOSED").upper()
-    if circuit not in {"CLOSED","OPEN","HALF_OPEN"}: return None
+    circuit = str(
+        item.get("circuit_breaker_state") or "CLOSED"
+    ).upper()
+    if circuit not in {"CLOSED", "OPEN", "HALF_OPEN"}:
+        return None
+    availability = str(
+        item.get("availability") or "AVAILABLE"
+    ).upper()
+    last_verified_at = str(
+        item.get("last_verified_at")
+        or item.get("last_success")
+        or item.get("last_failure")
+        or ""
+    ).strip() or None
+    http_status = item.get("http_status")
     return ModelHealth(
-        provider_id=provider,model_id=model_id,
-        availability=str(item.get("availability") or "AVAILABLE").upper(),
+        provider_id=provider,
+        model_id=model_id,
+        availability=availability,
         last_success=str(item.get("last_success") or "") or None,
         last_failure=str(item.get("last_failure") or "") or None,
-        failure_class=str(item.get("failure_class") or "") or None,
-        latency_ms=float(item["latency_ms"]) if isinstance(item.get("latency_ms"),(int,float)) else None,
-        confidence=max(0.0,min(1.0,float(item.get("confidence") or 0.0))),
-        sample_size=max(0,int(item.get("sample_size") or 0)),
-        rate_limit_state=str(item.get("rate_limit_state") or "UNKNOWN").upper(),
+        failure_class=(
+            str(item.get("failure_class") or "").strip() or None
+        ),
+        latency_ms=(
+            float(item["latency_ms"])
+            if isinstance(item.get("latency_ms"), (int, float))
+            else None
+        ),
+        confidence=max(
+            0.0,
+            min(1.0, float(item.get("confidence") or 0.0)),
+        ),
+        sample_size=max(0, int(item.get("sample_size") or 0)),
+        rate_limit_state=str(
+            item.get("rate_limit_state") or "UNKNOWN"
+        ).upper(),
         circuit_breaker_state=circuit,
-        evidence_refs=refs)
+        evidence_refs=refs,
+        live_status=str(
+            item.get("live_status")
+            or ("PASS" if availability == "AVAILABLE" else "FAIL")
+        ).upper(),
+        http_status=(
+            int(http_status)
+            if isinstance(http_status, int)
+            and not isinstance(http_status, bool)
+            else None
+        ),
+        quota_state=str(
+            item.get("quota_state") or "UNKNOWN"
+        ).upper(),
+        last_verified_at=last_verified_at,
+        source="CURRENT_RUN_RUNTIME_PROOF",
+    )
 
-def model_health(provider_id: str, model_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGISTRY) -> ModelHealth:
-    provider=str(provider_id or "").strip().lower().replace("-","_")
-    model=str(model_id or "").strip()
-    if not provider or not model: raise ValueError("provider_id and model_id are required")
-    runtime=_runtime_model_health(provider,model)
-    if runtime is not None: return runtime
-    records=[r for r in registry.all()
-             if r.capability_type=="PROVIDER"
-             and str(r.provider_id or "").lower().replace("-","_")==provider
-             and (
-                 str(r.model_id or "")==model
-                 or str((authorized_provider_model_binding(r) or {}).get("model_id") or "")==model
-             )]
+
+def model_health(
+    provider_id: str,
+    model_id: str,
+    *,
+    registry: Any = GLOBAL_CAPABILITY_REGISTRY,
+) -> ModelHealth:
+    provider = str(provider_id or "").strip().lower().replace("-", "_")
+    model = str(model_id or "").strip()
+    if not provider or not model:
+        raise ValueError("provider_id and model_id are required")
+
+    runtime = _runtime_model_health(provider, model)
+    if runtime is not None:
+        return runtime
+
+    records = [
+        record
+        for record in registry.all()
+        if record.capability_type == "PROVIDER"
+        and str(record.provider_id or "").lower().replace("-", "_")
+        == provider
+        and (
+            str(record.model_id or "") == model
+            or str(
+                (
+                    authorized_provider_model_binding(record)
+                    or {}
+                ).get("model_id")
+                or ""
+            )
+            == model
+        )
+    ]
     if not records:
-        return ModelHealth(provider,model,"BLOCKED",None,None,"not_registered",None,1.0,0,"UNKNOWN","OPEN",())
-    record=records[0]
-    if str(getattr(record,"health_policy","") or "").upper() == "PROVIDER_AND_MODEL_RUNTIME_HEALTH":
+        return ModelHealth(
+            provider,
+            model,
+            "BLOCKED",
+            None,
+            None,
+            "not_registered",
+            None,
+            1.0,
+            0,
+            "UNKNOWN",
+            "OPEN",
+            (),
+        )
+
+    record = records[0]
+    if (
+        str(getattr(record, "health_policy", "") or "").upper()
+        == "PROVIDER_AND_MODEL_RUNTIME_HEALTH"
+    ):
+        if provider == "nvidia_nim":
+            persisted = _learning_nvidia_model_health(record, model)
+            if persisted is None:
+                persisted = _canonical_nvidia_model_health(model)
+            if persisted is not None:
+                return persisted
         return ModelHealth(
             provider_id=provider,
             model_id=model,
@@ -354,24 +702,56 @@ def model_health(provider_id: str, model_id: str, *, registry: Any = GLOBAL_CAPA
             rate_limit_state="UNKNOWN",
             circuit_breaker_state="CLOSED",
             evidence_refs=(),
+            live_status="UNPROVEN",
+            quota_state="UNKNOWN",
+            source="NO_LIVE_EVIDENCE",
         )
-    failures=[]
+
+    failures = []
     for item in _failure_rows():
-        metadata=dict(item.get("metadata") or {})
-        if item.get("capability_id")==record.capability_id or metadata.get("model_id")==model or model in str(item.get("claim") or ""):
+        metadata = dict(item.get("metadata") or {})
+        if (
+            item.get("capability_id") == record.capability_id
+            or metadata.get("model_id") == model
+            or model in str(item.get("claim") or "")
+        ):
             failures.append(item)
-    latest=failures[0] if failures else None
-    failure_class=str((latest or {}).get("failure_pattern") or "") or None
-    refs=tuple(dict.fromkeys(str(ref) for item in failures[:5] for ref in (item.get("evidence_refs") or ()) if str(ref)))
+    latest = failures[0] if failures else None
+    failure_class = (
+        str((latest or {}).get("failure_pattern") or "") or None
+    )
+    refs = tuple(dict.fromkeys(
+        str(ref)
+        for item in failures[:5]
+        for ref in (item.get("evidence_refs") or ())
+        if str(ref)
+    ))
     return ModelHealth(
-        provider_id=provider,model_id=model,
+        provider_id=provider,
+        model_id=model,
         availability="DEGRADED" if failures else "AVAILABLE",
-        last_success=None,last_failure=str((latest or {}).get("last_verified_at") or "") or None,
-        failure_class=failure_class,latency_ms=None,
+        last_success=None,
+        last_failure=(
+            str((latest or {}).get("last_verified_at") or "") or None
+        ),
+        failure_class=failure_class,
+        latency_ms=None,
         confidence=float((latest or {}).get("confidence") or 0.0),
         sample_size=int((latest or {}).get("support_count") or 0),
-        rate_limit_state="OBSERVED" if failure_class and "rate" in failure_class.casefold() else "UNKNOWN",
-        circuit_breaker_state="CLOSED",evidence_refs=refs)
+        rate_limit_state=(
+            "OBSERVED"
+            if failure_class and "rate" in failure_class.casefold()
+            else "UNKNOWN"
+        ),
+        circuit_breaker_state="CLOSED",
+        evidence_refs=refs,
+        last_verified_at=(
+            str((latest or {}).get("last_verified_at") or "") or None
+        ),
+        source=(
+            "FAILURE_MEMORY" if failures else "REGISTRY_DEFAULT"
+        ),
+    )
 
 def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGISTRY) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
@@ -461,37 +841,70 @@ def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGIS
             evidence_refs=(),retry_allowed=False,zero_cost_eligible=zero_cost_eligible)
 
     if provider == "nvidia_nim":
-        live_models = []
-        live_refs = []
+        live_models: list[str] = []
+        live_refs: list[str] = []
+        observed_models: list[ModelHealth] = []
         for record in available_records:
-            model_id = str(getattr(record,"model_id",None) or "").strip()
+            model_id = str(
+                getattr(record, "model_id", None) or ""
+            ).strip()
             if not model_id:
                 continue
-            observed = _runtime_model_health(provider, model_id)
-            if observed is not None and observed.availability == "AVAILABLE":
+            observed = model_health(
+                provider,
+                model_id,
+                registry=registry,
+            )
+            observed_models.append(observed)
+            live_refs.extend(observed.evidence_refs)
+            if observed.availability == "AVAILABLE":
                 live_models.append(model_id)
-                live_refs.extend(observed.evidence_refs)
-        if live_models:
+
+        runtime_auth_available = bool(
+            str(os.getenv("NVIDIA_API_KEY") or "").strip()
+        )
+        if live_models and not runtime_auth_available:
             return ProviderHealth(
                 provider_id=provider,
-                state="AVAILABLE",
+                state="AUTH_REQUIRED",
                 reason=(
-                    f"{len(live_models)} NVIDIA NIM model(s) passed live runtime "
-                    "health proof in the current GitHub execution."
+                    f"{len(live_models)} NVIDIA NIM model(s) have durable "
+                    "live health evidence, but NVIDIA_API_KEY is not "
+                    "materialized in this runtime."
                 ),
                 evidence_refs=tuple(dict.fromkeys(live_refs)),
                 retry_allowed=True,
                 zero_cost_eligible=zero_cost_eligible,
             )
-        if str(os.getenv("NVIDIA_API_KEY") or "").strip():
+        if live_models:
+            sources = sorted({
+                item.source
+                for item in observed_models
+                if item.availability == "AVAILABLE"
+            })
+            return ProviderHealth(
+                provider_id=provider,
+                state="AVAILABLE",
+                reason=(
+                    f"{len(live_models)} NVIDIA NIM model(s) have "
+                    "non-stale live health evidence and the existing "
+                    "NVIDIA_API_KEY is materialized; "
+                    f"sources={','.join(sources)}."
+                ),
+                evidence_refs=tuple(dict.fromkeys(live_refs)),
+                retry_allowed=True,
+                zero_cost_eligible=zero_cost_eligible,
+            )
+        if runtime_auth_available:
             return ProviderHealth(
                 provider_id=provider,
                 state="DEGRADED",
                 reason=(
-                    "NVIDIA_API_KEY is materialized, but no registered NVIDIA "
-                    "model has current-run live response evidence."
+                    "NVIDIA_API_KEY is materialized, but no registered "
+                    "NVIDIA model currently has non-stale AVAILABLE "
+                    "live evidence."
                 ),
-                evidence_refs=(),
+                evidence_refs=tuple(dict.fromkeys(live_refs)),
                 retry_allowed=True,
                 zero_cost_eligible=zero_cost_eligible,
             )

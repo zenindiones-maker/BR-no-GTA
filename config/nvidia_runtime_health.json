@@ -1,0 +1,77 @@
+{
+  "schema": "nvidia-runtime-health/v1",
+  "provider_id": "nvidia_nim",
+  "canonical_run_id": "35769753326",
+  "canonical_head": "cc88744a6dac634dcd7d8c28c8238a6773d41681",
+  "last_verified_at": "2026-09-22T18:52:59Z",
+  "stale_after_seconds": 2592000,
+  "endpoint": "https://integrate.api.nvidia.com/v1",
+  "free_endpoint_only": true,
+  "paid_api_billing": "NO",
+  "paid_api_fallback": "NO",
+  "unlimited": "UNPROVEN",
+  "quota_aware_routing": true,
+  "rate_limit_aware_routing": true,
+  "models": {
+    "z-ai/glm-5.3": {
+      "health": "AVAILABLE",
+      "live_status": "PASS",
+      "http_status": 200,
+      "latency_ms": 15374.36,
+      "failure_class": null,
+      "rate_limit_state": "CLEAR",
+      "quota_state": "AVAILABLE_UNMEASURED",
+      "circuit_breaker_state": "CLOSED",
+      "evidence_ref": "github:run:35769753326:nvidia-model:0691ed45b103d0df",
+      "last_verified_at": "2026-09-22T18:52:59Z"
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "health": "AVAILABLE",
+      "live_status": "PASS",
+      "http_status": 200,
+      "latency_ms": 1126.5,
+      "failure_class": null,
+      "rate_limit_state": "CLEAR",
+      "quota_state": "AVAILABLE_UNMEASURED",
+      "circuit_breaker_state": "CLOSED",
+      "evidence_ref": "github:run:35769753326:nvidia-model:ad7decc9ae94df12",
+      "last_verified_at": "2026-09-22T18:52:59Z"
+    },
+    "nvidia/nemotron-3.5-lightning-30b-a3b": {
+      "health": "AVAILABLE",
+      "live_status": "PASS",
+      "http_status": 200,
+      "latency_ms": 53873.96,
+      "failure_class": null,
+      "rate_limit_state": "CLEAR",
+      "quota_state": "AVAILABLE_UNMEASURED",
+      "circuit_breaker_state": "CLOSED",
+      "evidence_ref": "github:run:35769753326:nvidia-model:57b7e204b183bff6",
+      "last_verified_at": "2026-09-22T18:52:59Z"
+    },
+    "moonshotai/kimi-k3": {
+      "health": "DEGRADED",
+      "live_status": "FAIL",
+      "http_status": null,
+      "latency_ms": 90065.45,
+      "failure_class": "timeout",
+      "rate_limit_state": "CLEAR",
+      "quota_state": "AVAILABLE_UNMEASURED",
+      "circuit_breaker_state": "CLOSED",
+      "evidence_ref": "github:run:35769753326:nvidia-model:9e460c49820cbe4e",
+      "last_verified_at": "2026-09-22T18:52:59Z"
+    },
+    "poolside/laguna-xs-2.1": {
+      "health": "DEGRADED",
+      "live_status": "FAIL",
+      "http_status": 503,
+      "latency_ms": 68.54,
+      "failure_class": "upstream_error",
+      "rate_limit_state": "CLEAR",
+      "quota_state": "AVAILABLE_UNMEASURED",
+      "circuit_breaker_state": "CLOSED",
+      "evidence_ref": "github:run:35769753326:nvidia-model:a8dc8ca0e74cbff0",
+      "last_verified_at": "2026-09-22T18:52:59Z"
+    }
+  }
+}

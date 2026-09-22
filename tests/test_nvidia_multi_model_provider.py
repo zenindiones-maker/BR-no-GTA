@@ -59,27 +59,48 @@ def _runtime_health_payload(*, overrides=None):
     values = {
         model_id: {
             "availability": "AVAILABLE",
+            "live_status": "PASS",
+            "http_status": 200,
             "latency_ms": 1000,
             "confidence": 0.9,
             "sample_size": 1,
             "rate_limit_state": "CLEAR",
+            "quota_state": "AVAILABLE_UNMEASURED",
             "circuit_breaker_state": "CLOSED",
             "github_run_id": run_id,
-            "evidence_refs": [f"github:run:{run_id}:nvidia-model:fixture"],
+            "evidence_refs": [
+                f"github:run:{run_id}:nvidia-model:fixture"
+            ],
         }
         for model_id in REQUIRED_MODELS
     }
+    values["moonshotai/kimi-k3"].update({
+        "availability": "DEGRADED",
+        "live_status": "FAIL",
+        "http_status": None,
+        "failure_class": "timeout",
+    })
+    values["poolside/laguna-xs-2.1"].update({
+        "availability": "DEGRADED",
+        "live_status": "FAIL",
+        "http_status": 503,
+        "failure_class": "upstream_error",
+    })
     values.update(overrides or {})
     return {"nvidia_nim": values}
 
 
 @pytest.fixture(autouse=True)
-def _current_run_nvidia_health(monkeypatch):
+def _existing_nvidia_secret_and_durable_health(monkeypatch):
     monkeypatch.setenv("GITHUB_RUN_ID", "nvidia-test-runtime")
     monkeypatch.setenv("NVIDIA_API_KEY", "fixture-key")
     monkeypatch.setenv(
+        "BR_NVIDIA_HEALTH_MAX_AGE_SECONDS",
+        "315360000",
+    )
+    monkeypatch.delenv(
         "BR_RUNTIME_MODEL_HEALTH_JSON",
-        json.dumps(_runtime_health_payload()),
+        raising=False,
     )
 
 
@@ -159,15 +180,22 @@ def test_adapter_accepts_dynamic_model_and_never_exposes_secret():
 def test_capability_first_model_selection_is_not_task_hardcoded():
     decision = route_harness_request(
         _request(
-            intent="agentic coding terminal implementation",
+            intent="fast structured agentic reasoning with tools",
             required_model_capabilities=(
-                "coding", "terminal", "agentic_coding"
+                "fast_reasoning",
+                "structured_output",
+                "tool_use",
             ),
+            tool_use_required=True,
+            structured_output_required=True,
         )
     )
     assert decision.selected_provider == "nvidia_nim"
-    assert decision.selected_model == "poolside/laguna-xs-2.1"
-    assert "terminal" in decision.policy_metadata[
+    assert (
+        decision.selected_model
+        == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    )
+    assert "fast_reasoning" in decision.policy_metadata[
         "selected_model_capabilities"
     ]
 
@@ -257,10 +285,26 @@ def test_model_health_ranking_prefers_healthy_model(monkeypatch):
                 "confidence": 0.8,
                 "sample_size": 2,
                 "rate_limit_state": "CLEAR",
+                "quota_state": "AVAILABLE_UNMEASURED",
                 "circuit_breaker_state": "CLOSED",
                 "github_run_id": "nvidia-test-runtime",
                 "evidence_refs": [
                     "github:run:nvidia-test-runtime:nvidia-model:healthy"
+                ],
+            },
+            "nvidia/nemotron-3.5-lightning-30b-a3b": {
+                "availability": "DEGRADED",
+                "failure_class": "synthetic_test_degraded",
+                "latency_ms": 500,
+                "confidence": 0.8,
+                "sample_size": 1,
+                "rate_limit_state": "CLEAR",
+                "quota_state": "AVAILABLE_UNMEASURED",
+                "circuit_breaker_state": "CLOSED",
+                "github_run_id": "nvidia-test-runtime",
+                "evidence_refs": [
+                    "github:run:nvidia-test-runtime:nvidia-model:"
+                    "lightning-degraded"
                 ],
             },
         })),
@@ -332,25 +376,150 @@ def test_explicit_unhealthy_model_fails_closed_without_fallback(monkeypatch):
             )
         )
 
-def test_nvidia_models_require_current_run_live_health_before_routing(monkeypatch):
-    monkeypatch.delenv("BR_RUNTIME_MODEL_HEALTH_JSON", raising=False)
-    with pytest.raises(RoutingPolicyError) as raised:
-        route_harness_request(
+def test_nvidia_models_reuse_canonical_live_health_without_reprobe(
+    monkeypatch,
+):
+    monkeypatch.delenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        raising=False,
+    )
+
+    expected = {
+        "z-ai/glm-5.3": ("AVAILABLE", "PASS", 200),
+        "nvidia/nemotron-3-ultra-550b-a55b": (
+            "AVAILABLE",
+            "PASS",
+            200,
+        ),
+        "nvidia/nemotron-3.5-lightning-30b-a3b": (
+            "AVAILABLE",
+            "PASS",
+            200,
+        ),
+        "moonshotai/kimi-k3": ("DEGRADED", "FAIL", None),
+        "poolside/laguna-xs-2.1": ("DEGRADED", "FAIL", 503),
+    }
+    for model_id, (
+        availability,
+        live_status,
+        http_status,
+    ) in expected.items():
+        observed = model_health("nvidia_nim", model_id)
+        assert observed.availability == availability
+        assert observed.live_status == live_status
+        assert observed.http_status == http_status
+        assert observed.source == "CANONICAL_LIVE_EVIDENCE"
+        assert observed.last_verified_at
+        assert observed.evidence_refs
+        assert observed.quota_state == "AVAILABLE_UNMEASURED"
+
+    decision = route_harness_request(
+        _request(
+            allowed_providers=("nvidia_nim",),
+            required_model_capabilities=(
+                "semantic_planning",
+                "reasoning",
+                "structured_output",
+            ),
+        )
+    )
+    assert decision.selected_model in {
+        "z-ai/glm-5.3",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+    }
+
+
+def test_three_proven_nvidia_models_are_selected_by_capability_not_task_id():
+    classes = (
+        (
+            ("reasoning", "semantic_planning", "long_context"),
+            "z-ai/glm-5.3",
+        ),
+        (
+            ("fast_reasoning", "structured_output", "tool_use"),
+            "nvidia/nemotron-3.5-lightning-30b-a3b",
+        ),
+        (
+            ("complex_decision_support", "planning", "tool_use"),
+            "nvidia/nemotron-3-ultra-550b-a55b",
+        ),
+    )
+    selected = set()
+    for capabilities, expected_model in classes:
+        decision = route_harness_request(
             _request(
                 allowed_providers=("nvidia_nim",),
-                required_model_capabilities=("semantic_planning", "reasoning"),
+                required_model_capabilities=capabilities,
+                tool_use_required="tool_use" in capabilities,
+                structured_output_required=(
+                    "structured_output" in capabilities
+                ),
             )
         )
-    evidence = raised.value.evidence
-    rejected = evidence.get("rejected_candidates") or []
-    assert rejected
-    assert any(
-        any("model_live_runtime_proof_required" in reason for reason in item.get("reasons", ()))
-        for item in rejected
+        assert decision.selected_model == expected_model
+        selected.add(decision.selected_model)
+
+    assert len(selected) == 3
+    assert {
+        model_id
+        for model_id in REQUIRED_MODELS
+        if model_health(
+            "nvidia_nim",
+            model_id,
+        ).availability == "AVAILABLE"
+    } == selected
+
+
+def test_quota_aware_routing_excludes_exhausted_model(monkeypatch):
+    baseline = route_harness_request(
+        _request(
+            allowed_providers=("nvidia_nim",),
+            required_model_capabilities=(
+                "semantic_planning",
+                "reasoning",
+            ),
+        )
     )
-    assert model_health(
-        "nvidia_nim", "z-ai/glm-5.3"
-    ).availability == "UNKNOWN/UNPROVEN"
+    exhausted = baseline.selected_model
+    assert exhausted
+    payload = _runtime_health_payload(overrides={
+        exhausted: {
+            "availability": "AVAILABLE",
+            "live_status": "PASS",
+            "http_status": 200,
+            "latency_ms": 10,
+            "confidence": 1.0,
+            "sample_size": 1,
+            "rate_limit_state": "CLEAR",
+            "quota_state": "EXHAUSTED",
+            "circuit_breaker_state": "CLOSED",
+            "github_run_id": "nvidia-test-runtime",
+            "evidence_refs": [
+                "github:run:nvidia-test-runtime:nvidia-model:"
+                "quota-exhausted"
+            ],
+        }
+    })
+    monkeypatch.setenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        json.dumps(payload),
+    )
+    decision = route_harness_request(
+        _request(
+            allowed_providers=("nvidia_nim",),
+            required_model_capabilities=(
+                "semantic_planning",
+                "reasoning",
+            ),
+        )
+    )
+    assert decision.selected_model != exhausted
+    assert any(
+        "model_quota_state=EXHAUSTED"
+        in rejection.reasons
+        for rejection in decision.rejected_candidates
+    )
 
 def test_nvidia_probe_persists_structured_error_through_learning_plane(monkeypatch):
     initialize_schema()

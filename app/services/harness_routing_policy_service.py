@@ -393,6 +393,11 @@ def _provider_records(
         p_health = provider_health(provider_id, registry=registry)
         if p_health.state in {"BLOCKED", "QUARANTINED", "UPSTREAM_DENIED"}:
             reasons.append(f"provider_health={p_health.state}")
+        if (
+            provider_id == "nvidia_nim"
+            and p_health.state == "AUTH_REQUIRED"
+        ):
+            reasons.append("provider_health=AUTH_REQUIRED")
         if model_id:
             m_health = model_health(provider_id, model_id, registry=registry)
             if (
@@ -406,6 +411,20 @@ def _provider_records(
                 )
             if m_health.circuit_breaker_state == "OPEN":
                 reasons.append("model_circuit_breaker_open")
+            if m_health.rate_limit_state in {
+                "RATE_LIMITED",
+                "THROTTLED",
+                "EXHAUSTED",
+                "BLOCKED",
+            }:
+                reasons.append(
+                    "model_rate_limit_state="
+                    + m_health.rate_limit_state
+                )
+            if m_health.quota_state in {"EXHAUSTED", "BLOCKED"}:
+                reasons.append(
+                    "model_quota_state=" + m_health.quota_state
+                )
             if m_health.availability in {
                 "BLOCKED", "QUARANTINED", "UPSTREAM_DENIED"
             }:
@@ -457,6 +476,28 @@ def _provider_records(
         "FREE_ENDPOINT": 0,
         "FREE_QUOTA_LIMITED": 1,
     }
+    rate_limit_rank = {
+        "CLEAR": 0,
+        "UNKNOWN": 1,
+        "OBSERVED": 2,
+        "THROTTLED": 3,
+        "RATE_LIMITED": 4,
+        "EXHAUSTED": 5,
+        "BLOCKED": 6,
+    }
+    quota_rank = {
+        "AVAILABLE": 0,
+        "AVAILABLE_UNMEASURED": 1,
+        "UNKNOWN": 2,
+        "THROTTLED": 3,
+        "EXHAUSTED": 4,
+        "BLOCKED": 5,
+    }
+    requested_caps_for_rank = set(required_caps)
+    if request.tool_use_required:
+        requested_caps_for_rank.add("tool_use")
+    if request.structured_output_required:
+        requested_caps_for_rank.add("structured_output")
 
     def rank(record: CapabilityRecord) -> tuple[Any, ...]:
         provider_id = normalize_provider_id(record.provider_id or "")
@@ -465,6 +506,12 @@ def _provider_records(
         p_health = provider_health(provider_id, registry=registry)
         m_health = model_health(provider_id, model_id, registry=registry) if model_id else None
         competence = _provider_model_competence(record, request)
+        capabilities = _model_capabilities(record)
+        capability_surplus = (
+            len(capabilities - requested_caps_for_rank)
+            if requested_caps_for_rank
+            else 0
+        )
         learned_latency = (competence or {}).get("mean_latency_seconds")
         latency = (
             float(learned_latency)
@@ -479,6 +526,15 @@ def _provider_records(
             health_rank.get(
                 m_health.availability if m_health else p_health.state, 9
             ),
+            quota_rank.get(
+                m_health.quota_state if m_health else "UNKNOWN",
+                9,
+            ),
+            rate_limit_rank.get(
+                m_health.rate_limit_state if m_health else "UNKNOWN",
+                9,
+            ),
+            capability_surplus,
             1 if competence is None else 0,
             -float((competence or {}).get("success_rate") or 0.0),
             float((competence or {}).get("failure_rate") or 0.0),

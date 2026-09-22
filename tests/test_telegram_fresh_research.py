@@ -21,6 +21,19 @@ from app.services.telegram_fresh_research_service import (
 from app.services.telegram_harness_service import chat_under_harness
 
 
+@pytest.fixture(autouse=True)
+def _materialize_existing_nvidia_runtime_contract(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "fixture-key")
+    monkeypatch.setenv(
+        "BR_NVIDIA_HEALTH_MAX_AGE_SECONDS",
+        "315360000",
+    )
+    monkeypatch.delenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        raising=False,
+    )
+
+
 class FakeFreshTransport:
     def execute(
         self,

@@ -765,6 +765,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "model-capability:coding",
                 "model-capability:planning",
                 "model-capability:semantic_planning",
+                "model-capability:complex_decision_support",
                 "model-capability:tool_use",
                 "model-capability:long_context",
                 "model-capability:structured_output",
