@@ -28,6 +28,34 @@ def _install_free_test_provider(monkeypatch, provider_id, *, model_id=None):
     import app.services.harness_ai_provider_service as ai_service
     import app.services.harness_routing_policy_service as routing_service
 
+    if provider_id == "nvidia_nim":
+        runtime_model = (
+            model_id
+            or "nvidia/nemotron-3.5-lightning-30b-a3b"
+        )
+        run_id = "nvidia-ai-provider-test-runtime"
+        monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+        monkeypatch.setenv("NVIDIA_API_KEY", "fixture-key")
+        monkeypatch.setenv(
+            "BR_RUNTIME_MODEL_HEALTH_JSON",
+            json.dumps({
+                "nvidia_nim": {
+                    runtime_model: {
+                        "availability": "AVAILABLE",
+                        "latency_ms": 1000,
+                        "confidence": 0.95,
+                        "sample_size": 1,
+                        "rate_limit_state": "CLEAR",
+                        "circuit_breaker_state": "CLOSED",
+                        "github_run_id": run_id,
+                        "evidence_refs": [
+                            f"github:run:{run_id}:nvidia-model:fixture"
+                        ],
+                    }
+                }
+            }),
+        )
+
     records = []
     for record in GLOBAL_CAPABILITY_REGISTRY.all():
         if record.provider_id == provider_id:
@@ -257,6 +285,25 @@ def test_runtime_overlay_cannot_invent_model_outside_static_registry_contract(
     )
     run_id = "2000"
     monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+    monkeypatch.setenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        json.dumps({
+            "nvidia_nim": {
+                "nvidia/nemotron-3-super-120b-a12b": {
+                    "availability": "AVAILABLE",
+                    "latency_ms": 1000,
+                    "confidence": 0.95,
+                    "sample_size": 1,
+                    "rate_limit_state": "CLEAR",
+                    "circuit_breaker_state": "CLOSED",
+                    "github_run_id": run_id,
+                    "evidence_refs": [
+                        f"github:run:{run_id}:nvidia-model:static-contract"
+                    ],
+                }
+            }
+        }),
+    )
     monkeypatch.setenv(
         "BR_RUNTIME_PROVIDER_HEALTH_JSON",
         json.dumps({
