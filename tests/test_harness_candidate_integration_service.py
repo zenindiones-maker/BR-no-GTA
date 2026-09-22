@@ -6,6 +6,7 @@ from app.services.harness_candidate_integration_service import (
     select_independent_reviewer,
     task_is_mutating,
     evaluate_engineering_candidate,
+    mission_requires_measured_improvement,
 )
 from app.services.harness_collaboration_service import (
     TaskEnvelope,
@@ -107,3 +108,24 @@ def test_harness_candidate_decision_never_self_promotes():
     )
     assert accepted_for_human_gate["decision"] == "HUMAN_REVIEW"
     assert accepted_for_human_gate["agent_self_promotion"] is False
+
+
+def test_measured_goal_requires_structured_performance_gate():
+    plan = _plan()
+    assert mission_requires_measured_improvement(
+        "encontre uma perda mensurável e compare antes/depois"
+    ) is True
+    result = evaluate_engineering_candidate(
+        repository_root=".",
+        base_sha="a" * 40,
+        collaboration=plan,
+        candidate_task_id="builder",
+        candidate_sha="b" * 40,
+        reviewed_candidate_ids=("builder",),
+        performance_required=True,
+        performance_evidence=None,
+    )
+    # This candidate cannot reach integration because the fake SHAs are not
+    # valid repo commits; the important contract is that performance evidence
+    # is required before a real candidate can pass.
+    assert result["performance_required"] is True
