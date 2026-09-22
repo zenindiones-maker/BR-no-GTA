@@ -649,7 +649,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "unlimited:UNPROVEN",
                 "context-window:1048576",
             ),
-            maturity=FUNCTIONAL,
+            maturity=PROVEN,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=(
@@ -701,7 +701,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "unlimited:UNPROVEN",
                 "context-window:1048576",
             ),
-            maturity=FUNCTIONAL,
+            maturity=PROVEN,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=(
@@ -756,7 +756,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "unlimited:UNPROVEN",
                 "context-window:1048576",
             ),
-            maturity=FUNCTIONAL,
+            maturity=PROVEN,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=(
@@ -809,7 +809,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "unlimited:UNPROVEN",
                 "context-window:262144",
             ),
-            maturity=FUNCTIONAL,
+            maturity=PROVEN,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=(
@@ -860,7 +860,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
                 "unlimited:UNPROVEN",
                 "context-window:1048576",
             ),
-            maturity=FUNCTIONAL,
+            maturity=PROVEN,
             availability=AVAILABLE,
             allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
             policy_tags=(

@@ -5,17 +5,7 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
-      - '.github/workflows/addy-24-live-semantic-smoke.yml'
       - '.run001/addy-24-live-semantic.request.json'
-      - 'scripts/agent-tooling/live_semantic_smoke_addy_24.py'
-      - 'scripts/agent-tooling/certify_addy_24.py'
-      - 'app/services/addy_harness_service.py'
-      - 'app/services/global_capability_registry_base.py'
-      - 'app/services/harness_routing_policy_service.py'
-      - 'app/services/harness_ai_provider_service.py'
-      - 'app/services/addy_harness_service.py'
-      - 'scripts/agent-tooling/live_semantic_smoke_addy_24.py'
-      - 'scripts/agent-tooling/certify_addy_24.py'
   workflow_dispatch:
 
 permissions:

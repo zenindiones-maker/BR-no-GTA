@@ -257,6 +257,40 @@ def test_higgsfield_blocked_is_not_selected_as_ai_provider():
     assert decision.selected_provider != "higgsfield"
 
 
+def test_provider_optional_capability_ignores_unavailable_provider_candidates(monkeypatch):
+    import app.services.provider_health_service as health_service
+
+    def forbidden_health_lookup(*args, **kwargs):
+        raise AssertionError(
+            "provider health must not be evaluated when provider_required=False"
+        )
+
+    monkeypatch.setattr(
+        health_service,
+        "provider_health",
+        forbidden_health_lookup,
+    )
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute pinned Addy skill using-agent-skills",
+            authorized_action="DEVELOPMENT",
+            domain="development",
+            required_capability_id="addy:using-agent-skills",
+            provider_required=False,
+            preferred_providers=("opencode",),
+            unavailable_provider_ids=("opencode",),
+            fallback_allowed=False,
+            learning_required=False,
+        )
+    )
+    assert decision.selected_capability_id == "addy:using-agent-skills"
+    assert decision.selected_provider is None
+    assert decision.selected_model is None
+    assert decision.primary_provider is None
+    assert decision.fallback_candidates == ()
+    assert decision.fallback_occurred is False
+
+
 def test_addy_remains_bounded_to_selected_harness_semantic_executor():
     decision = route_harness_request(
         HarnessRoutingRequest(

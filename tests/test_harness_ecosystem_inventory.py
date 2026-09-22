@@ -7,6 +7,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from scripts.audit_harness_ecosystem import _worker_runner_identity
 
 
 def _resolve(binding: str):
@@ -62,3 +63,37 @@ def test_registry_ids_are_unique_and_specialists_share_the_global_view():
         "system.improvement.propose",
     ):
         assert GLOBAL_CAPABILITY_REGISTRY.get(capability_id) is not None
+
+
+def test_worker_engine_classification_counts_physical_engines_not_runner_aliases():
+    assert _worker_runner_identity("deterministic-analysis") == (
+        "WORKER_ENGINE",
+        "deterministic-analysis",
+    )
+    assert _worker_runner_identity("codex") == ("WORKER_ENGINE", "codex")
+    assert _worker_runner_identity("codex-development") == (
+        "WORKER_ENGINE",
+        "codex",
+    )
+    assert _worker_runner_identity("addy-specialist") == (
+        "AGENT",
+        "addy-agent-skills",
+    )
+    assert _worker_runner_identity("nvidia_nim") == (
+        "WORKER_ENGINE",
+        "nvidia_nim",
+    )
+    registered_runner_ids = {
+        "deterministic-analysis",
+        "codex",
+        "codex-development",
+        "addy-specialist",
+    }
+    physical_worker_ids = {
+        identity
+        for runner_id in registered_runner_ids
+        for kind, identity in [_worker_runner_identity(runner_id)]
+        if kind == "WORKER_ENGINE"
+    }
+    assert physical_worker_ids == {"codex", "deterministic-analysis"}
+    assert "nvidia_nim" not in registered_runner_ids

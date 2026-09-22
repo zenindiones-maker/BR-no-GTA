@@ -315,6 +315,16 @@ def _dsh_skills() -> list[dict[str, Any]]:
     return rows
 
 
+def _worker_runner_identity(worker_id: str) -> tuple[str, str]:
+    """Map runner keys to canonical execution identities for inventory only."""
+    normalized = str(worker_id or "").strip()
+    if normalized == "codex-development":
+        return "WORKER_ENGINE", "codex"
+    if normalized == "addy-specialist":
+        return "AGENT", "addy-agent-skills"
+    return "WORKER_ENGINE", normalized
+
+
 def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     identities: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -456,33 +466,59 @@ def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, An
         item["LEARNING_RETURN_PATHS"].append("DeepSeek Harness durable session + BR Harness evidence")
         item["TEST_COVERAGE"].append(".github/workflows/deepseek-harness.yml")
 
-    # Worker engines are concrete execution identities inside Agent Office.
+    # Worker runner keys include execution modes/adapters. Inventory counts
+    # physical execution identities, not aliases layered over those identities.
     workers = registered_worker_runners()
     for worker_id, runner in sorted(workers.items()):
-        item = ensure("WORKER_ENGINE", worker_id)
-        item["SOURCES"].append("app.services.agent_office.munder_adapter.registered_worker_runners")
-        item["EXECUTOR_BINDINGS"].append(f"{runner.__module__}.{runner.__name__}")
+        kind, identity = _worker_runner_identity(worker_id)
+        item = ensure(kind, identity)
+        item["SOURCES"].append(
+            "app.services.agent_office.munder_adapter.registered_worker_runners"
+        )
+        item["EXECUTOR_BINDINGS"].append(
+            f"{runner.__module__}.{runner.__name__}"
+        )
         item["DOMAINS"].append("development")
         item["ALLOWED_ACTIONS"].append("DEVELOPMENT")
         item["HARNESS_ROUTE_AVAILABLE"] = True
-        if worker_id == "codex":
+
+        if worker_id == "addy-specialist":
+            item["NOTES"].append(
+                "addy-specialist is a delegated task-owner adapter over the "
+                "existing addy-agent-skills identity; it is not a worker engine."
+            )
+            item["TEST_COVERAGE"].append(
+                "tests/test_addy_task_owner_worker.py"
+            )
+            continue
+
+        if identity == "codex":
             item["EXECUTABLE_NOW"] = False
             item["STATUS"] = "VALID_SUPPORT_COMPONENT"
-            item["NOTES"].append(
-                "Agent Office Codex worker is an optional read-only support engine and "
-                "requires runtime Codex authentication; canonical Addy capabilities never route through it."
-            )
+            if worker_id == "codex-development":
+                item["NOTES"].append(
+                    "codex-development is the bounded mutation mode of the "
+                    "same Codex worker engine, not an additional engine."
+                )
+            else:
+                item["NOTES"].append(
+                    "Agent Office Codex worker is an optional support engine "
+                    "requiring runtime Codex authentication."
+                )
         else:
             item["EXECUTABLE_NOW"] = True
             item["STATUS"] = "ACTIVE_EXECUTABLE"
             item["NOTES"].append(
-                "Internal deterministic Agent Office worker engine selected only through agent-office.execute"
+                "Internal deterministic Agent Office worker engine selected "
+                "only through agent-office.execute."
             )
         item["TEST_COVERAGE"].append("tests/test_agent_office_service.py")
         item["EVIDENCE_RETURN_PATHS"].append(
             "AgentOfficeExecutionResult.per_agent_results + sanitized evidence"
         )
-        item["LEARNING_RETURN_PATHS"].append("Agent Office result -> DeepSeek Harness")
+        item["LEARNING_RETURN_PATHS"].append(
+            "Agent Office result -> DeepSeek Harness"
+        )
 
     # Munder's upstream GOD/Michael role is deliberately reduced to a delegated coordinator.
     coordinator = ensure("AGENT", "agent-office-coordinator")

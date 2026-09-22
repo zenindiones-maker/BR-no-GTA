@@ -20,6 +20,31 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.provider_health_service import ProviderHealth
+
+
+def _install_healthy_opencode_contract_fixture(monkeypatch) -> None:
+    import app.services.provider_health_service as health_service
+
+    original = health_service.provider_health
+
+    def provider_health(provider_id: str, **kwargs):
+        if str(provider_id).strip().lower().replace("-", "_") == "opencode":
+            return ProviderHealth(
+                provider_id="opencode",
+                state="AVAILABLE",
+                reason="deterministic contract fixture",
+                evidence_refs=("test:addy-24:provider-health",),
+                retry_allowed=True,
+                zero_cost_eligible=True,
+            )
+        return original(provider_id, **kwargs)
+
+    monkeypatch.setattr(
+        health_service,
+        "provider_health",
+        provider_health,
+    )
 
 
 @pytest.mark.parametrize("skill_name", ADDY_SKILLS)
@@ -27,6 +52,7 @@ def test_each_addy_skill_has_governed_harness_execution_contract(
     skill_name: str,
     monkeypatch,
 ):
+    _install_healthy_opencode_contract_fixture(monkeypatch)
     capability_id = f"addy:{skill_name}"
     record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
     assert record is not None
