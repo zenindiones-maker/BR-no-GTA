@@ -24,6 +24,8 @@ on:
       - "scripts/codex_sandbox_preflight.py"
       - "scripts/prepare_codex_linux_sandbox.sh"
       - "tests/test_agent_office.py"
+      - "tests/test_harness_candidate_integration_service.py"
+      - "tests/test_harness_hermes_delegation_plane.py"
       - "tests/test_harness_capability_service.py"
       - ".github/workflows/agent-office-*.yml"
   pull_request:
@@ -179,7 +181,14 @@ jobs:
 
       - name: Test authorization, routing, worktrees and evidence
         run: |
-          python -m pytest -q tests/test_codex_auth_boundary.py tests/test_delegated_agent_autonomy.py tests/test_agent_office.py tests/test_harness_capability_service.py tests/test_harness_routing_policy_service.py
+          python -m pytest -q \
+            tests/test_agent_office.py \
+            tests/test_harness_hermes_delegation_plane.py \
+            tests/test_harness_candidate_integration_service.py \
+            tests/test_delegated_agent_autonomy.py \
+            tests/test_codex_auth_boundary.py \
+            tests/test_harness_capability_service.py \
+            tests/test_harness_routing_policy_service.py
           echo "CODEX_AUTH_BOUNDARY_TESTS=PASS"
           echo "DETERMINISTIC_DELEGATION_GATES=PASS"
 
