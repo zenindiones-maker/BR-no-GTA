@@ -51,6 +51,15 @@ class CapabilityRecord:
     routing_authority: str = "INHERITED"
     editorial_authority: str = "INHERITED"
     publication_authority: str = "INHERITED"
+    supports_parallelism: bool = True
+    supports_retry: bool = True
+    supports_resume: bool = False
+    supports_review: bool = False
+    side_effect_class: str = "READ_ONLY"
+    default_read_scope: tuple[str, ...] = ()
+    default_write_scope: tuple[str, ...] = ()
+    allowed_tools: tuple[str, ...] = ()
+    health_policy: str = "DEFAULT"
 
     @property
     def provider(self) -> str:
@@ -260,6 +269,15 @@ def _record(
     quality_class: str = "UNKNOWN",
     fallback_eligibility: bool = False,
     version: str = "1",
+    supports_parallelism: bool = True,
+    supports_retry: bool = True,
+    supports_resume: bool = False,
+    supports_review: bool = False,
+    side_effect_class: str = "READ_ONLY",
+    default_read_scope: tuple[str, ...] = (),
+    default_write_scope: tuple[str, ...] = (),
+    allowed_tools: tuple[str, ...] = (),
+    health_policy: str = "DEFAULT",
 ) -> CapabilityRecord:
     return CapabilityRecord(
         capability_id=capability_id,
@@ -288,6 +306,15 @@ def _record(
         skill_id=skill_id,
         side_effects=side_effects,
         instruction_path=instruction_path,
+        supports_parallelism=supports_parallelism,
+        supports_retry=supports_retry,
+        supports_resume=supports_resume,
+        supports_review=supports_review,
+        side_effect_class=side_effect_class,
+        default_read_scope=default_read_scope,
+        default_write_scope=default_write_scope,
+        allowed_tools=allowed_tools,
+        health_policy=health_policy,
     )
 
 
