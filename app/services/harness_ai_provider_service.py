@@ -157,7 +157,29 @@ def _resolve_routing(
             "AI provider is not authorized for action "
             f"{authorization.authorized_action!r}"
         )
-    if routing_decision.selected_model != record.model_id:
+    expected_model = record.model_id
+    if expected_model is None and normalized_provider == "tuxevil":
+        from app.services.provider_health_service import runtime_provider_binding
+
+        runtime_binding = runtime_provider_binding(normalized_provider)
+        metadata = dict(routing_decision.policy_metadata or {})
+        runtime_binding_used = metadata.get("runtime_provider_binding_used") is True
+        runtime_refs = tuple(
+            str(ref)
+            for ref in (metadata.get("runtime_provider_evidence_refs") or ())
+            if str(ref)
+        )
+        if (
+            runtime_binding is not None
+            and runtime_binding_used
+            and runtime_refs
+            and set(runtime_refs).issubset(
+                set(runtime_binding.get("evidence_refs") or ())
+            )
+        ):
+            expected_model = str(runtime_binding.get("model_id") or "") or None
+
+    if routing_decision.selected_model != expected_model:
         raise PermissionError("Routing decision model does not match Registry metadata")
     if routing_decision.selected_provider_executor_binding != record.executor_binding:
         raise PermissionError("Routing decision executor binding does not match Registry metadata")
