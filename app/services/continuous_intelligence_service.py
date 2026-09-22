@@ -1133,7 +1133,23 @@ def gate_verified_gta6_claim(
         )
         owned_authorization = True
 
-    if verdict == "SUPPORTED" and source_type == "PRIMARY_SOURCE" and evidence_class == "OFFICIAL":
+    source_policy = classify_gta6_source(
+        url=str(candidate_claim.get("source_url") or ""),
+        source_type=source_type,
+    )
+    official_authority = source_policy.authority_class in {
+        "ROCKSTAR_OFFICIAL",
+        "TAKE_TWO_OFFICIAL",
+        "OFFICIAL_VIDEO",
+        "OFFICIAL_SOCIAL",
+    }
+    primary_evidence_policy = (
+        source_type == "PRIMARY_SOURCE"
+        and evidence_class == "OFFICIAL"
+        and official_authority
+    )
+
+    if verdict == "SUPPORTED" and primary_evidence_policy:
         # The Knowledge Brain claim lineage has its own immutable claim-id
         # supersession chain. Harness memory promotion remains a normal PROMOTE
         # gate so the two identity namespaces are never conflated.
@@ -1157,6 +1173,39 @@ def gate_verified_gta6_claim(
             "candidate": candidate,
             "memory_gate": gate,
             "knowledge": knowledge,
+            "GTA6_KNOWLEDGE_PROMOTION_GATE": "PASS",
+            "GTA6_CLAIM_PROVENANCE": "PASS",
+        }
+
+    if not primary_evidence_policy:
+        gate = evaluate_memory_candidate(
+            memory_id=candidate["memory_id"],
+            decision="HUMAN_REVIEW",
+            reason=(
+                "Non-primary/community/rumor evidence is signal-only and cannot "
+                "materialize canonical GTA6 Knowledge without eligible primary evidence."
+            ),
+            evidence_refs=(evidence_ref,),
+            authorization=evaluation_authorization,
+        )
+        review_status = (
+            "REJECTED"
+            if source_type in {"RUMOR"}
+            or evidence_class in {"RUMOR"}
+            or source_policy.authority_class == "RUMOR"
+            else "UNVERIFIED"
+        )
+        return {
+            "status": "HUMAN_REVIEW",
+            "candidate": candidate,
+            "memory_gate": gate,
+            "knowledge": None,
+            "brain_status": review_status,
+            "source_policy": {
+                "authority_class": source_policy.authority_class,
+                "primary_evidence_policy": False,
+            },
+            "canonical_materialized": False,
             "GTA6_KNOWLEDGE_PROMOTION_GATE": "PASS",
             "GTA6_CLAIM_PROVENANCE": "PASS",
         }
