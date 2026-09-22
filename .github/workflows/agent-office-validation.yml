@@ -32,6 +32,8 @@ on:
       - "tests/test_harness_candidate_integration_service.py"
       - "tests/test_harness_hermes_delegation_plane.py"
       - "tests/test_harness_capability_service.py"
+      - "scripts/summarize_performance_trace.py"
+      - "tests/test_performance_trace_summary.py"
       - ".github/workflows/agent-office-*.yml"
   pull_request:
     paths:

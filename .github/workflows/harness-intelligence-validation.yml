@@ -17,6 +17,8 @@ on:
       - "app/services/agent_office/codex_bounded_worker.py"
       - "app/services/agent_office/munder_adapter.py"
       - "tests/test_agent_office.py"
+      - "scripts/summarize_performance_trace.py"
+      - "tests/test_performance_trace_summary.py"
       - "scripts/harness_intelligence_benchmark.py"
       - "scripts/semantic_planner_single_proposal_proof.py"
       - "scripts/semantic_planner_optimized_inference_profile.py"
