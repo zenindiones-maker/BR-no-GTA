@@ -10,5 +10,9 @@
   "candidate_commit_contract": "PASS",
   "live_run_budget": 1,
   "telegram_egress": false,
-  "credential_values_in_request": false
+  "credential_values_in_request": false,
+  "reason": "verify grounded evidence reaches bounded worker and produces candidate",
+  "previous_live_diagnostic_run_id": 35728830828,
+  "grounded_context_binding_fix_head": "c504a38c0df0da79c1f85d2e9923807425a848ee",
+  "workflow_grounded_probe_head": "fce7a10bc26b6d3a271a49216d31bd0c14ba81db"
 }
