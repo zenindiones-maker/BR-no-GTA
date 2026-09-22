@@ -37,6 +37,8 @@ from app.services.hermes_multiagent.runtime import (
     export_hermes_mission_checkpoint,
     restore_hermes_mission_checkpoint,
 )
+from app.services.agent_office.contracts import AgentOfficeTask
+from app.services.agent_office.munder_adapter import deterministic_read_only_worker
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from scripts.audit_harness_ecosystem import audit
@@ -283,6 +285,145 @@ def test_selector_reports_no_healthy_write_executor_when_only_write_candidate_is
             context={"competence_evidence": [], "relevant_failure_memories": []},
             used=set(),
         )
+
+
+def test_selector_excludes_execution_topology_from_task_capability(monkeypatch):
+    office = GLOBAL_CAPABILITY_REGISTRY.get("agent-office.execute")
+    hermes = GLOBAL_CAPABILITY_REGISTRY.get("collaboration.hermes.execute")
+    profiler = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    assert office is not None and hermes is not None and profiler is not None
+
+    class Registry:
+        def discover(self, **_kwargs):
+            return [
+                {"capability_id": office.capability_id},
+                {"capability_id": hermes.capability_id},
+                {"capability_id": profiler.capability_id},
+            ]
+
+        def get(self, capability_id):
+            return {
+                office.capability_id: office,
+                hermes.capability_id: hermes,
+                profiler.capability_id: profiler,
+            }.get(capability_id)
+
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", Registry())
+    monkeypatch.setattr(
+        adaptive,
+        "capability_health",
+        lambda capability_id: CapabilityHealth(
+            capability_id=capability_id,
+            state=HEALTHY,
+            reason="test",
+            retry_allowed=True,
+            confidence=1.0,
+            sample_size=20,
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=("test:health",),
+            source="TEST",
+        ),
+    )
+    selected, _, avoided, evidence = adaptive.select_capability_for_requirement(
+        {
+            "task_id": "profile",
+            "task_class": "system-observation",
+            "action": "DEVELOPMENT",
+            "query": "deterministic repository performance profiling observability",
+            "objective": "measure repository architecture without mutation",
+            "candidate_capability_ids": [
+                office.capability_id,
+                hermes.capability_id,
+                profiler.capability_id,
+            ],
+            "risk_side_effect_class": "READ_ONLY",
+        },
+        context={"competence_evidence": [], "relevant_failure_memories": []},
+        used=set(),
+    )
+    assert selected == profiler.capability_id
+    assert any(
+        "agent-office.execute:execution-topology-not-task-capability" == item
+        for item in avoided
+    )
+    assert any(
+        "collaboration.hermes.execute:execution-topology-not-task-capability" == item
+        for item in avoided
+    )
+    assert evidence["selected_capability_id"] == profiler.capability_id
+
+
+def test_addy_health_follows_opencode_circuit_breaker(monkeypatch):
+    addy = GLOBAL_CAPABILITY_REGISTRY.get("addy:performance-optimization")
+    assert addy is not None
+    assert addy.health_policy == "OPENCODE_REQUIRED"
+
+    class ProviderState:
+        state = "UPSTREAM_DENIED"
+        reason = "OpenCode free-tier admission blocked upstream"
+        retry_allowed = False
+        evidence_refs = ("github:run:blocked-opencode",)
+
+    monkeypatch.setattr(
+        capability_health_module,
+        "provider_health",
+        lambda provider_id: ProviderState(),
+    )
+    health = capability_health_module.capability_health(addy.capability_id)
+    assert health.state == BLOCKED
+    assert health.retry_allowed is False
+    assert health.source == "PROVIDER_HEALTH"
+    assert "OpenCode" in health.reason
+
+
+def test_deterministic_agent_office_profiler_emits_real_repository_metrics(tmp_path):
+    import subprocess
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "-C", str(root), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "test@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.name", "Test"],
+        check=True,
+    )
+    (root / "app").mkdir()
+    (root / "scripts").mkdir()
+    (root / "app" / "large.py").write_text(
+        "\n".join(f"line_{index} = {index}" for index in range(1100)) + "\n",
+        encoding="utf-8",
+    )
+    (root / "scripts" / "small.py").write_text("value = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "fixture"], check=True)
+
+    task = AgentOfficeTask.from_mapping({
+        "task_id": "profile-repo",
+        "agent": "deterministic-analysis",
+        "capability": "agent-office.deterministic.readonly-analysis",
+        "action": "analyze",
+        "objective": "profile repository concentration",
+        "allowed_tools": ["git"],
+        "allowed_actions": ["analyze", "inspect"],
+        "read_set": ["app", "scripts"],
+        "write_set": [],
+    })
+    result = deterministic_read_only_worker(task, root, 30.0)
+    assert result["status"] == "SUCCEEDED"
+    analysis = result["analysis"]
+    assert analysis["scoped_file_count"] == 2
+    assert analysis["total_lines"] >= 1101
+    assert analysis["files_over_1000_lines"] == 1
+    assert analysis["largest_files"][0]["path"] == "app/large.py"
+    assert analysis["observed_fragilities"][0]["kind"] == "LARGE_MODULE_CONCENTRATION"
+    assert analysis["profile_latency_ms"] >= 0
+    assert result["commands"] == ["git ls-files"]
 
 
 def test_registry_execution_contract_is_single_and_exposes_execution_metadata():
