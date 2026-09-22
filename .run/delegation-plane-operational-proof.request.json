@@ -16,7 +16,7 @@
   ],
   "telegram_egress": false,
   "credential_values_in_request": false,
-  "reason": "rerun canonical operational proof after Node 24 bootstrap compatibility fix",
+  "reason": "rerun canonical operational proof after same-step Codex PATH fix",
   "acceptance_requires_write_candidate": true,
   "item19_proof_run_id": 35690756218,
   "focused_gate_fixes": {
@@ -24,6 +24,6 @@
     "explicit_no_performance_negation": "PASS_EXPECTED"
   },
   "focused_gate_precondition": "must pass before first natural-goal mission",
-  "previous_failed_run_id": 35691454434,
+  "previous_failed_run_id": 35691579231,
   "focused_tests_last_observed": "82 passed"
 }
