@@ -97,18 +97,43 @@ def list_governed_brand_assets() -> dict[str, Any]:
     }
 
 
+def _telegram_semantic_routing_request(
+    *,
+    intent: str,
+    goal_id: str | None = None,
+    task_class: str | None = None,
+    learning_required: bool = False,
+) -> HarnessRoutingRequest:
+    """Build the generic Telegram semantic route without pinning a provider.
+
+    DeepSeek Harness owns provider/model selection from Registry, health,
+    failure and competence evidence. Fallback remains disabled on the primary
+    route; any reroute must be explicit and separately authorized.
+    """
+    return HarnessRoutingRequest(
+        intent=intent,
+        authorized_action="DECISION",
+        domain="ai",
+        task_class=task_class,
+        goal_id=goal_id,
+        required_capability_id="ai.reasoning.text",
+        provider_required=True,
+        provider_domain="ai",
+        fallback_allowed=False,
+        zero_cost_operation=True,
+        learning_required=learning_required,
+    )
+
+
 def build_harness_connection_proof() -> dict[str, Any]:
     """Create persisted route/auth evidence without executing a side effect."""
     routing = route_harness_request(
-        HarnessRoutingRequest(
-            intent="prove Telegram conversational ingress is bound to DeepSeek Harness AI reasoning",
-            authorized_action="DECISION",
-            domain="ai",
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            provider_domain="ai",
-            fallback_allowed=False,
-            zero_cost_operation=True,
+        _telegram_semantic_routing_request(
+            intent=(
+                "prove Telegram conversational ingress is bound to "
+                "DeepSeek Harness AI reasoning"
+            ),
+            learning_required=False,
         )
     )
     authorization = issue_harness_authorization(
@@ -517,17 +542,13 @@ def chat_under_harness(
             f"{input_record.get('telegram_message_id')}"
         )
     routing = route_harness_request(
-        HarnessRoutingRequest(
-            intent="answer one Telegram user message with governed grounded GTA6 reasoning",
-            authorized_action="DECISION",
-            domain="ai",
+        _telegram_semantic_routing_request(
+            intent=(
+                "answer one Telegram user message with governed grounded "
+                "GTA6 reasoning"
+            ),
             task_class=TELEGRAM_REASONING_TASK_CLASS,
             goal_id=telegram_goal,
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            provider_domain="ai",
-            fallback_allowed=False,
-            zero_cost_operation=True,
             learning_required=True,
         )
     )

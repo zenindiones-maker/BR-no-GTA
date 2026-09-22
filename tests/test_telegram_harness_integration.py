@@ -23,6 +23,7 @@ from app.services.harness_routing_policy_service import (
 from app.services.telegram_harness_service import (
     TELEGRAM_ASSET_CAPABILITY_ID,
     TELEGRAM_ASSET_EXECUTOR_BINDING,
+    _telegram_semantic_routing_request,
     build_harness_connection_proof,
     chat_under_harness,
     execute_telegram_asset_registration_capability,
@@ -178,8 +179,10 @@ def test_harness_connection_proof_contains_persisted_route_and_authority():
     assert proof["authority"] == "deepseek_harness"
     assert proof["authorization_status"] == "consumed"
     assert proof["selected_capability_id"] == "ai.reasoning.text"
-    assert proof["selected_provider"] == "opencode"
-    assert proof["selected_model"] == "oc/big-pickle"
+    assert proof["selected_provider"]
+    assert proof["selected_model"]
+    assert proof["provider_executor"]
+    assert proof["primary_provider"] == proof["selected_provider"]
     assert proof["fallback_occurred"] is False
     assert proof["zero_cost_operation"] is True
     assert proof["routing_id"]
@@ -187,17 +190,24 @@ def test_harness_connection_proof_contains_persisted_route_and_authority():
 
 
 def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monkeypatch):
+    captured = {}
+
     def fake_execute(*, prompt, authorization, routing_decision):
         assert "MENSAGEM_USUARIO=Qual é o estado do canal?" in prompt
-        assert routing_decision.selected_provider == "opencode"
+        captured["provider"] = routing_decision.selected_provider
+        captured["model"] = routing_decision.selected_model
+        captured["fallback_allowed"] = routing_decision.fallback_allowed
         return SimpleNamespace(
-            provider="opencode",
+            provider=routing_decision.selected_provider,
             status="EXECUTED",
             active=True,
             authority="deepseek_harness",
             authorized_action="DECISION",
             execution_id=authorization.execution_id,
-            result={"text": "Estado consultado sob autoridade do Harness.", "model": "oc/big-pickle"},
+            result={
+                "text": "Estado consultado sob autoridade do Harness.",
+                "model": routing_decision.selected_model,
+            },
         )
 
     monkeypatch.setattr(
@@ -211,9 +221,28 @@ def test_normal_chat_uses_harness_selected_provider_and_returns_provenance(monke
     assert result["authority"] == "deepseek_harness"
     assert result["authorized_action"] == "DECISION"
     assert result["capability_id"] == "ai.reasoning.text"
-    assert result["provider"] == "opencode"
-    assert result["model"] == "oc/big-pickle"
+    assert result["provider"] == captured["provider"]
+    assert result["model"] == captured["model"]
+    assert captured["provider"]
+    assert captured["model"]
+    assert captured["fallback_allowed"] is False
     assert result["fallback_occurred"] is False
     assert result["zero_cost_operation"] is True
     assert result["routing_id"]
     assert result["authorization_id"]
+
+
+def test_telegram_generic_semantic_routing_is_provider_agnostic_and_fail_closed():
+    request = _telegram_semantic_routing_request(
+        intent="answer generic Telegram message",
+        task_class="telegram-reasoning",
+        goal_id="telegram:test:provider-governance",
+        learning_required=True,
+    )
+    assert request.required_capability_id == "ai.reasoning.text"
+    assert request.provider_required is True
+    assert request.preferred_providers == ()
+    assert request.allowed_providers == ()
+    assert request.preferred_models == ()
+    assert request.fallback_allowed is False
+    assert request.zero_cost_operation is True

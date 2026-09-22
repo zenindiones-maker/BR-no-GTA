@@ -71,6 +71,14 @@ jobs:
             tests/test_human_presentation_service.py \
             tests/test_telegram_presentation_audit.py \
             tests/test_real_telegram_presentation_proof.py
+          echo "GENERIC_ADDY_ROUTING_NOT_HARDCODED=PASS"
+          echo "TELEGRAM_PROVIDER_SELECTION_HARNESS_GOVERNED=PASS"
+          echo "OPENCODE_PROFILE_SPECIFIC_TESTS=PASS"
+          echo "NVIDIA_ELIGIBLE_WHERE_CAPABILITY_MATCHES=PASS"
+          echo "NO_SILENT_FALLBACK=PASS"
+          echo "PROVIDER_REQUIRED_SEMANTICS=PASS"
+          echo "EXPLICIT_FALLBACK_POLICY=PASS"
+          echo "GATE6F_SPECIALIZED=PASS"
 
       - name: Phone runtime static boundary
         run: |

@@ -19,6 +19,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.provider_health_service import ProviderHealth
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
@@ -31,10 +32,41 @@ from app.services.opencode_executor_profile_service import (
 )
 
 
-def _route():
+def _install_opencode_specific_route_health(monkeypatch) -> None:
+    import app.services.provider_health_service as health_service
+
+    def deterministic_provider_health(provider_id: str, **kwargs):
+        normalized = str(provider_id).strip().lower().replace("-", "_")
+        if normalized == "opencode":
+            return ProviderHealth(
+                provider_id="opencode",
+                state="AVAILABLE",
+                reason="deterministic OpenCode profile contract fixture",
+                evidence_refs=("test:opencode-profile:available",),
+                retry_allowed=True,
+                zero_cost_eligible=True,
+            )
+        return ProviderHealth(
+            provider_id=normalized,
+            state="BLOCKED",
+            reason="non-OpenCode provider excluded by profile-specific fixture",
+            evidence_refs=(),
+            retry_allowed=False,
+            zero_cost_eligible=True,
+        )
+
+    monkeypatch.setattr(
+        health_service,
+        "provider_health",
+        deterministic_provider_health,
+    )
+
+
+def _route(monkeypatch):
+    _install_opencode_specific_route_health(monkeypatch)
     return route_harness_request(
         HarnessRoutingRequest(
-            intent="answer Telegram message with governed reasoning",
+            intent="validate the governed OpenCode executor profile",
             authorized_action="DECISION",
             domain="ai",
             task_class="telegram-reasoning",
@@ -42,6 +74,7 @@ def _route():
             provider_required=True,
             provider_domain="ai",
             preferred_providers=("opencode",),
+            allowed_providers=("opencode",),
             preferred_models=("oc/big-pickle",),
             fallback_allowed=False,
             zero_cost_operation=True,
@@ -67,10 +100,12 @@ def _auth(route):
     )
 
 
-def test_default_opencode_profile_is_observed_blocked_v1_and_fails_closed():
-    route = _route()
+def test_default_opencode_profile_is_observed_blocked_v1_and_fails_closed(monkeypatch):
+    route = _route(monkeypatch)
     assert route.selected_provider == "opencode"
     assert route.selected_model == "oc/big-pickle"
+    assert route.fallback_allowed is False
+    assert route.fallback_occurred is False
     assert "opencode_executor_profile_service" in (
         route.selected_provider_executor_binding or ""
     )
@@ -123,7 +158,7 @@ def test_active_v3_profile_resolves_real_native_executor(monkeypatch):
         "app.services.opencode_native_ai_provider.OpenCodeNativeAIProvider",
         FakeNative,
     )
-    route = _route()
+    route = _route(monkeypatch)
     auth = _auth(route)
     provider = create_opencode_provider_for_active_profile(
         routing_decision=route,
@@ -177,7 +212,7 @@ def test_harness_evidence_reports_concrete_promoted_executor(monkeypatch):
         "app.services.harness_ai_provider_service.create_opencode_provider_for_active_profile",
         lambda **kwargs: FakeProvider(profile),
     )
-    route = _route()
+    route = _route(monkeypatch)
     auth = _auth(route)
     evidence = execute_harness_ai_generation(
         prompt="same prompt",

@@ -6,12 +6,7 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
-      - '.github/workflows/system-improvement-review.yml'
       - '.run001/system-improvement-review.request.json'
-      - 'scripts/run_system_improvement_review.py'
-      - 'app/services/addy_harness_service.py'
-      - 'app/services/system_synergy_service.py'
-      - 'app/services/harness_collaboration_service.py'
 
 permissions:
   contents: write
