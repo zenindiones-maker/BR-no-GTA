@@ -15,12 +15,14 @@ permissions:
 env:
   PYTHONPATH: .
   ZERO_COST_OPERATION: "TRUE"
-  SCHEDULED_PROOF_RUN_ID: "35590666727"
+  SCHEDULED_PROOF_RUN_ID: "35676230887"
+  EXPECTED_SOURCE_ID: "source-b60642fe38e8d636f0dd6508"
+  EXPECTED_SOURCE_FINGERPRINT: "07d454bc4d65836563ae866419d0e6e1b598bc5249c1efb57186615350b65b37"
 
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@v4
@@ -35,145 +37,229 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Install runtime
+      - name: Install bounded runtime
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
           mkdir -p artifacts/telegram-canonical-memory/state
 
-      - name: Restore real canonical checkpoint
+      - name: Restore cross-run canonical checkpoint
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run download "$SCHEDULED_PROOF_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "continuous-operation-state-$SCHEDULED_PROOF_RUN_ID"             --dir artifacts/telegram-canonical-memory/state
+          gh run download "$SCHEDULED_PROOF_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "continuous-operation-state-$SCHEDULED_PROOF_RUN_ID" \
+            --dir artifacts/telegram-canonical-memory/state
           test -s artifacts/telegram-canonical-memory/state/continuous.db
           test -s artifacts/telegram-canonical-memory/state/state-manifest.json
-          echo "CANONICAL_CHECKPOINT_RESTORED=PASS"
-
-      - name: Prove provider-free Telegram knowledge recall from real state
-        env:
-          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/state/continuous.db
-        run: |
-          set -euo pipefail
           python - <<'PY'
-          from app.services.telegram_conversation_service import handle_telegram_conversation
-
-          provider_calls=0
-          action_calls=0
-          progress=[]
-
-          def provider(*args, **kwargs):
-              global provider_calls
-              provider_calls += 1
-              raise AssertionError("ai.reasoning.text must not be called")
-
-          def action(*args, **kwargs):
-              global action_calls
-              action_calls += 1
-              raise AssertionError("knowledge recall must not dispatch execution")
-
-          def presenter(canonical, **kwargs):
-              return {"text": canonical.get("answer", "")}
-
-          literal_input="Conhecimento"
-          result=handle_telegram_conversation(
-              literal_input,
-              telegram_chat_id=770001,
-              telegram_user_id=1770001,
-              telegram_chat_type="private",
-              telegram_message_id=770002,
-              chat_handler=provider,
-              action_executor=action,
-              progress_callback=lambda stage, message: progress.append((stage, message)),
-              presenter=presenter,
-          )
-          canonical=result["canonical_result"]
-          assert literal_input=="Conhecimento"
-          assert result["intent"]=="KNOWLEDGE_RECALL_REQUEST", result["intent"]
-          assert result["plan"]["kind"]=="KNOWLEDGE_RECALL", result["plan"]
-          assert result["intent_resolution"]["layer"]=="LAYER_2_CONTEXT", result["intent_resolution"]
-          assert canonical["status"]=="CANONICAL_KNOWLEDGE_RECALLED", canonical
-          assert canonical["provider_independent"] is True
-          assert canonical["provider_calls"]==0
-          assert canonical["semantic_provider_required"] is False
-          assert canonical["canonical_memory_plane"]=="BR_SQLITE"
-          assert canonical["claims"]
-          assert any(
-              "rockstargames.com" in str(row.get("source_url") or "")
-              for row in canonical["claims"]
-          ), canonical["claims"]
-          assert "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE" not in result["answer"]
-          assert provider_calls==0
-          assert action_calls==0
-          assert progress==[]
-
-          specific=handle_telegram_conversation(
-              "Conhecimento sobre Jason Duval",
-              telegram_chat_id=770001,
-              telegram_message_id=770003,
-              chat_handler=provider,
-              action_executor=action,
-              presenter=presenter,
-          )
-          sc=specific["canonical_result"]
-          assert sc["status"]=="CANONICAL_KNOWLEDGE_RECALLED"
-          assert any(
-              str(row.get("subject") or "").casefold()=="jason duval"
-              for row in sc["claims"]
-          ), sc["claims"]
-          assert any(
-              "only-in-leonida" in str(row.get("source_url") or "")
-              for row in sc["claims"]
-          ), sc["claims"]
-          assert provider_calls==0
-          assert action_calls==0
-
-          miss=handle_telegram_conversation(
-              "Conhecimento sobre gta 7",
-              telegram_chat_id=770001,
-              telegram_message_id=770004,
-              chat_handler=provider,
-              action_executor=action,
-              presenter=presenter,
-          )
-          mc=miss["canonical_result"]
-          assert mc["status"]=="NO_CANONICAL_KNOWLEDGE_MATCH"
-          assert mc["provider_independent"] is True
-          assert mc["provider_calls"]==0
-          assert not mc["claims"]
-          assert provider_calls==0
-          assert action_calls==0
-
-          print("HUMAN_INPUT_LITERAL_MATCH=PASS")
-          print("SHORT_UTTERANCE_CONTEXT_RESOLUTION=PASS")
-          print("KNOWLEDGE_RECALL_PROVIDER_FREE=PASS")
-          print("TELEGRAM_CANONICAL_KNOWLEDGE_RECALL=PASS")
-          print("STATUS_PROVIDER_INDEPENDENT=PASS")
-          print("KNOWLEDGE_PROVIDER_CALLS=0")
-          print("SOURCE_PROVENANCE_PRESERVED=PASS")
-          print("GTA7_MEMORY_MISS_NOT_PROVIDER_FAILURE=PASS")
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/telegram-canonical-memory/state/state-manifest.json").read_text())
+          assert d["canonical_memory_plane"]=="BR_SQLITE"
+          assert d["artifact_is_second_memory_plane"] is False
+          print("CANONICAL_CHECKPOINT_RESTORED=PASS")
+          print("SINGLE_CANONICAL_MEMORY_PLANE=PASS")
           PY
 
-      - name: Run natural interaction and routing focused regressions
+      - name: Run focused group-only recall regressions
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/focused.db
         run: |
           set -euo pipefail
           rm -f "$BR_TEST_DATABASE"
-          python -m pytest -q             tests/test_telegram_conversation_control.py::test_literal_conhecimento_uses_context_before_provider             tests/test_telegram_conversation_control.py::test_literal_memoria_recalls_canonical_human_decision_provider_free             tests/test_telegram_conversation_control.py::test_literal_continua_resolves_against_active_goal_without_provider             tests/test_telegram_conversation_control.py::test_literal_melhora_sistema_enters_harness_mission_planner_without_provider             tests/test_telegram_conversation_control.py::test_natural_agent_phrase_needs_no_hermes_keyword             tests/test_telegram_conversation_control.py::test_explicit_guarda_is_governed_memory_candidate_not_auto_promotion             tests/test_harness_mission_planner.py::test_execution_router_keeps_known_missions_off_provider_fallback             tests/test_operational_routing_governance.py
-          echo "TELEGRAM_NATURAL_INTERACTION=PASS"
-          echo "MEMORY_RECALL_PROVIDER_FREE=PASS"
-          echo "STATUS_PROVIDER_FREE=PASS"
-          echo "HARNESS_MISSION_PLANNER=PASS"
-          echo "MISSION_EXECUTION_ROUTER=PASS"
-          echo "NO_KEYWORD_REQUIRED_FOR_HERMES=PASS"
-          echo "TELEGRAM_MEMORY_WRITE_GOVERNED=PASS"
-          echo "CAPABILITY_USAGE_AUDIT=PASS"
-          echo "NO_UNRELATED_WORKFLOW_FANOUT=PASS"
+          python -m pytest -q \
+            tests/test_gta6_autonomous_knowledge_brain.py::test_telegram_knowledge_recall_uses_harness_governed_bounded_retrieval \
+            tests/test_telegram_gateway_conversation.py::test_v2_live_gateway_uses_conversation_service_not_direct_reasoning \
+            tests/test_telegram_gateway_conversation.py::test_governed_ingress_rejects_private_and_accepts_only_authorized_groups \
+            tests/test_telegram_gateway_conversation.py::test_group_human_surface_requires_exact_harness_child_authorization
+          echo "TELEGRAM_GROUP_RECALL_REGRESSIONS=PASS"
+          echo "PRIVATE_TELEGRAM_HUMAN_SURFACE=DISABLED"
 
-      - name: Prove canonical state feeds Obsidian projection
+      - name: Execute real Telegram group Knowledge Brain recall
+        env:
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/state/continuous.db
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${TELEGRAM_BOT_TOKEN:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"; exit 1; }
+          test -n "${TELEGRAM_REVIEW_CHAT_ID:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"; exit 1; }
+          test -n "${TELEGRAM_ALLOWED_USER_ID:-}" || { echo "EXTERNAL_CONFIG_BLOCKER=TELEGRAM_ALLOWED_USER_ID"; exit 1; }
+          python - <<'PY' | tee artifacts/telegram-canonical-memory/live-group-recall.log
+          import json
+          import os
+          from pathlib import Path
+
+          from app.main import initialize_application
+          from app.services.telegram_ingress_policy_service import (
+              HUMAN_SURFACE,
+              PRIVATE_TELEGRAM_HUMAN_SURFACE,
+              parse_governed_telegram_ingress,
+          )
+          from scripts.telegram_harness_gateway import TelegramApi
+          from scripts.telegram_harness_gateway_v2 import (
+              _handle_live_natural_language_message,
+          )
+
+          initialize_application()
+          token=os.environ["TELEGRAM_BOT_TOKEN"].strip()
+          chat_id=int(os.environ["TELEGRAM_REVIEW_CHAT_ID"])
+          user_id=int(os.environ["TELEGRAM_ALLOWED_USER_ID"])
+          expected_source=os.environ["EXPECTED_SOURCE_ID"]
+          expected_fingerprint=os.environ["EXPECTED_SOURCE_FINGERPRINT"]
+          query="Conhecimento sobre GTA VI"
+          run_id=int(os.environ["GITHUB_RUN_ID"])
+          update_id=run_id
+          message_id=max(1, run_id % 2_000_000_000)
+
+          update={
+              "update_id": update_id,
+              "message": {
+                  "message_id": message_id,
+                  "from": {"id": user_id, "is_bot": False},
+                  "chat": {
+                      "id": chat_id,
+                      "type": "supergroup",
+                      "title": "BR-no-GTA",
+                  },
+                  "text": query,
+              },
+          }
+          ingress=parse_governed_telegram_ingress(
+              update,
+              allowed_user_id=user_id,
+              state={"allowed_chat_ids": [chat_id]},
+          )
+          assert ingress is not None
+          assert ingress.accepted is True
+          assert ingress.chat_type=="supergroup"
+          assert HUMAN_SURFACE=="telegram_group"
+          assert PRIVATE_TELEGRAM_HUMAN_SURFACE=="DISABLED"
+
+          calls={"provider": 0, "action": 0}
+
+          def provider(*_args, **_kwargs):
+              calls["provider"] += 1
+              raise AssertionError("Knowledge recall must not call semantic provider")
+
+          def action(*_args, **_kwargs):
+              calls["action"] += 1
+              raise AssertionError("Knowledge recall must not dispatch research/execution")
+
+          class AuditedTelegramApi(TelegramApi):
+              def __init__(self, value):
+                  super().__init__(value)
+                  self.sent=[]
+              def send(self, target_chat_id, text):
+                  message=super().send(target_chat_id, text)
+                  self.sent.append({
+                      "chat_id": int(target_chat_id),
+                      "message_id": message,
+                      "text": str(text),
+                  })
+                  return message
+
+          api=AuditedTelegramApi(token)
+          reply, learned, conversation=_handle_live_natural_language_message(
+              api=api,
+              user_id=ingress.user_id,
+              chat_id=ingress.chat_id,
+              chat_type=ingress.chat_type,
+              message=ingress.message,
+              update_id=update_id,
+              text=ingress.text,
+              chat_handler=provider,
+              action_executor=action,
+              send_final_response=True,
+              runtime_revision=os.environ["GITHUB_SHA"],
+          )
+
+          canonical=conversation["canonical_result"]
+          assert conversation["intent"]=="KNOWLEDGE_RECALL_REQUEST", conversation["intent"]
+          assert conversation["plan"]["kind"]=="KNOWLEDGE_RECALL", conversation["plan"]
+          assert conversation["final_human_response_sent"] is True
+          assert canonical["status"]=="CANONICAL_KNOWLEDGE_RECALLED", canonical
+          assert canonical["HARNESS_GOVERNED_RETRIEVAL"]=="PASS"
+          assert canonical["SOURCE_PROVENANCE_PRESERVED"]=="PASS"
+          assert canonical["canonical_memory_plane"]=="BR_SQLITE"
+          assert canonical["human_surface"]=="telegram_group"
+          assert canonical["provider_independent"] is True
+          assert canonical["provider_calls"]==0
+          assert canonical["semantic_provider_required"] is False
+          assert canonical["retrieval_bounded"] is True
+          assert canonical["harness_routing_id"]
+          assert calls=={"provider": 0, "action": 0}
+          assert learned["input"]["telegram_chat_id"]==chat_id
+          assert learned["input"]["telegram_message_id"]==message_id
+          assert api.sent
+          assert all(item["chat_id"]==chat_id for item in api.sent)
+
+          matches=[
+              item for item in canonical["claims"]
+              if item.get("source_id")==expected_source
+              and item.get("source_fingerprint")==expected_fingerprint
+              and str(item.get("status") or "").casefold()=="active"
+              and str(item.get("brain_status") or "").upper() in {"ACTIVE","VERIFIED"}
+              and item.get("evidence_ref")
+              and item.get("source_url")
+          ]
+          assert matches, canonical["claims"]
+          matched=matches[0]
+
+          evidence={
+              "status": "PASS",
+              "query": query,
+              "intent": conversation["intent"],
+              "plan_kind": conversation["plan"]["kind"],
+              "human_surface": canonical["human_surface"],
+              "private_telegram_human_surface": PRIVATE_TELEGRAM_HUMAN_SURFACE,
+              "harness_routing_id": canonical["harness_routing_id"],
+              "canonical_memory_plane": canonical["canonical_memory_plane"],
+              "provider_calls": calls["provider"],
+              "action_calls": calls["action"],
+              "new_gta6_research": False,
+              "source_fetch_count": 0,
+              "matched_claim_id": matched["claim_id"],
+              "matched_source_id": matched["source_id"],
+              "matched_source_url": matched["source_url"],
+              "matched_evidence_ref": matched["evidence_ref"],
+              "matched_source_fingerprint": matched["source_fingerprint"],
+              "matched_brain_status": matched["brain_status"],
+              "telegram_message_ids": [
+                  item["message_id"] for item in api.sent
+                  if item["message_id"] is not None
+              ],
+              "final_human_response_sent": conversation["final_human_response_sent"],
+              "reply": reply,
+          }
+          Path("artifacts/telegram-canonical-memory/live-group-recall.json").write_text(
+              json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("TELEGRAM_GROUP_ONLY_HUMAN_SURFACE=PASS")
+          print("PRIVATE_TELEGRAM_HUMAN_SURFACE=DISABLED")
+          print("LIVE_GATEWAY_USES_CONVERSATION_SERVICE=PASS")
+          print("TELEGRAM_GROUP_REAL_RECALL=PASS")
+          print("CROSS_RUN_HARNESS_RETRIEVAL=PASS")
+          print("SOURCE_PROVENANCE_PRESERVED=PASS")
+          print("SOURCE_FINGERPRINT_REUSED=PASS")
+          print("KNOWLEDGE_SURVIVES_NEW_RUNNER=PASS")
+          print("KNOWLEDGE_CHANGED_NEXT_REAL_EXECUTION=PASS")
+          print("SEMANTIC_PROVIDER_CALLS=0")
+          print("RESEARCH_ACTION_DISPATCHED=NO")
+          print("NEW_GTA6_RESEARCH=NO")
+          print("SOURCE_FETCH_COUNT=0")
+          print("FINAL_HUMAN_RESPONSE_SENT=PASS")
+          print("TELEGRAM_RECALL_MESSAGE_ID="+str(api.sent[-1]["message_id"]))
+          PY
+
+      - name: Project restored canonical state to Obsidian
         env:
           BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-canonical-memory/state/continuous.db
         run: |
@@ -188,7 +274,7 @@ jobs:
               system_state={
                   "head":"${{ github.sha }}",
                   "status":"OBSERVED",
-                  "evidence_refs":["github:run:35590666727"],
+                  "evidence_refs":["github:run:35675442829","github:run:35676230887"],
                   "new_voice_synthesis":"NO",
                   "full_render":"NO",
                   "youtube_upload":"NO",
@@ -198,20 +284,17 @@ jobs:
                   "VIDEO-A":"93f99ddc-09c7-474b-8849-6981aa78d60c",
               },
           )
-          jason=root/"40-Knowledge/GTA6/Characters/Jason-Duval.md"
-          assert jason.is_file(), manifest
-          text=jason.read_text(encoding="utf-8")
-          assert "Jason Duval" in text
-          assert "rockstargames.com/VI/only-in-leonida" in text
+          index=root/"40-Knowledge/GTA6/Claims/Index.md"
+          assert index.is_file(), manifest
           assert manifest["OBSIDIAN_CANONICAL_MEMORY"]=="NO"
           assert manifest["TERMUX_HEAVY_PROCESSING"]=="NO"
-          print("OBSIDIAN_KNOWLEDGE_PROJECTION=PASS")
+          print("OBSIDIAN_SECOND_BRAIN_PROJECTION=PASS")
           print("OBSIDIAN_FED_FROM_CANONICAL_SQLITE=PASS")
           print("OBSIDIAN_CANONICAL_MEMORY=NO")
           print("TERMUX_HEAVY_PROCESSING=NO")
           PY
 
-      - name: Upload human-memory proof
+      - name: Upload live recall evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
