@@ -24,6 +24,8 @@ from app.services.telegram_conversation_service import (
     handle_telegram_conversation,
 )
 from app.services.telegram_ingress_policy_service import (
+    HUMAN_SURFACE,
+    PRIVATE_TELEGRAM_HUMAN_SURFACE,
     enroll_allowed_chat,
     parse_governed_telegram_ingress,
 )
@@ -59,7 +61,6 @@ from app.services.telegram_review_feedback_service import (
     record_render_review_feedback,
 )
 from scripts.telegram_harness_gateway import (
-    PAIR_TEXT,
     STATE_FILE,
     TelegramApi,
     TelegramApiError,
@@ -71,7 +72,6 @@ from scripts.telegram_harness_gateway import (
     _extract_attachment,
     _help_text,
     _load_state,
-    _pairing_private_message,
     _register_attachment,
     _render_result,
     _save_state,
@@ -821,10 +821,19 @@ def main() -> int:
     print("TELEGRAM_GTA6_LEARNING=ENABLED", flush=True)
     print("TELEGRAM_CHANNEL_BRANDING_STANDARD=ENABLED", flush=True)
     print("TELEGRAM_FRESH_GTA6_RESEARCH=ENABLED", flush=True)
+    print(f"HUMAN_SURFACE={HUMAN_SURFACE}", flush=True)
+    print(
+        f"PRIVATE_TELEGRAM_HUMAN_SURFACE={PRIVATE_TELEGRAM_HUMAN_SURFACE}",
+        flush=True,
+    )
     if allowed_user_id is None:
-        print(f"TELEGRAM_PAIRING=WAITING_TEXT:{PAIR_TEXT}", flush=True)
-    else:
-        print(f"TELEGRAM_ALLOWED_USER_ID={allowed_user_id}", flush=True)
+        print("TELEGRAM_GATEWAY=FAIL", flush=True)
+        print(
+            "TELEGRAM_GATEWAY_ERROR=TELEGRAM_ALLOWED_USER_ID_REQUIRED_FOR_GROUP_ONLY_SURFACE",
+            flush=True,
+        )
+        return 5
+    print(f"TELEGRAM_ALLOWED_USER_ID={allowed_user_id}", flush=True)
 
     while True:
         try:
@@ -847,32 +856,6 @@ def main() -> int:
                 if update_id >= offset:
                     offset = update_id + 1
                     state["offset"] = offset
-
-                if allowed_user_id is None:
-                    parsed = _pairing_private_message(update)
-                    if parsed is None:
-                        continue
-                    user_id, chat_id, message, text = parsed
-                    if text.casefold() != PAIR_TEXT:
-                        continue
-                    allowed_user_id = user_id
-                    state["allowed_user_id"] = user_id
-                    state["chat_id"] = chat_id
-                    state["allowed_chat_ids"] = sorted({
-                        *[int(item) for item in (state.get("allowed_chat_ids") or [])],
-                        int(chat_id),
-                    })
-                    _save_state(state)
-                    print(
-                        f"TELEGRAM_PAIRING=PASS USER_ID={user_id} CHAT_ID={chat_id}",
-                        flush=True,
-                    )
-                    api.send(
-                        chat_id,
-                        "BR-no-GTA conectado. Seu Telegram foi pareado como control surface do DeepSeek Harness.\n\n"
-                        + _execute_v2_command("/help"),
-                    )
-                    continue
 
                 ingress = parse_governed_telegram_ingress(
                     update,
