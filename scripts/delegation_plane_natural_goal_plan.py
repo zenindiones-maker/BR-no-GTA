@@ -94,7 +94,12 @@ def _selection_metrics(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run(*, goal_id: str, output: Path) -> dict[str, Any]:
+def run(
+    *,
+    goal_id: str,
+    output: Path,
+    learning_source_run_id: int = 0,
+) -> dict[str, Any]:
     initialize_schema()
     folded = NATURAL_GOAL.casefold()
     leaked = [
@@ -113,6 +118,11 @@ def run(*, goal_id: str, output: Path) -> dict[str, Any]:
         canonical_state={
             "authority": "DEEPSEEK_HARNESS",
             "zero_cost_operation": True,
+            "learning_source_run_id": (
+                int(learning_source_run_id)
+                if int(learning_source_run_id) > 0
+                else 0
+            ),
         },
     )
     started = time.perf_counter()
@@ -159,6 +169,7 @@ def run(*, goal_id: str, output: Path) -> dict[str, Any]:
         "route": route.to_dict(),
         "selection": selection,
         "competence_records_present": len(competence_rows),
+        "learning_source_run_id": int(learning_source_run_id),
         "NATURAL_GOAL_RECEIVED": "PASS",
         "HARNESS_MISSION_PLAN": "PASS",
         "MISSION_PLAN_AUTHORITY": payload.get("authority"),
@@ -221,8 +232,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--goal-id", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--learning-source-run-id", type=int, default=0)
     args = parser.parse_args()
-    report = run(goal_id=args.goal_id, output=Path(args.output))
+    report = run(
+        goal_id=args.goal_id,
+        output=Path(args.output),
+        learning_source_run_id=args.learning_source_run_id,
+    )
     required = (
         report["NATURAL_GOAL_RECEIVED"] == "PASS"
         and report["HARNESS_MISSION_PLAN"] == "PASS"
