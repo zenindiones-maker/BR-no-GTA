@@ -712,7 +712,12 @@ def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
     assert 'model_providers.br_tuxevil.wire_api="responses"' in joined
     assert "model_providers.br_tuxevil.requires_openai_auth=false" in joined
     assert "OPENAI_API_KEY" not in joined
-    assert "tuxevil" not in joined
+    assert 'env_key="BR_TUXEVIL_LOOPBACK_KEY"' in joined
+    assert "BR_TUXEVIL_LOOPBACK_KEY" in joined
+    assert "Authorization: Bearer" not in joined
+    assert "http://127.0.0.1:51200/v1" in joined
+    assert "wire_api=\"responses\"" in joined
+    assert "https://" not in joined
 
 
 def test_tuxevil_codex_provider_rejects_non_loopback_endpoint():
