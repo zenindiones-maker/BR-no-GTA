@@ -1,19 +1,20 @@
 {
   "schema": "br-tuxevil-codex-antigravity-proof-request/v1",
-  "reason": "final item19 proof after semantic cleanup regression guard fix",
+  "reason": "final item 19 proof after semantic cleanup regression guard fix",
   "requested_checks": [
-    "focused_auth_and_readiness_tests_first",
-    "existing_store_materialization_only_if_tests_green",
+    "focused_auth_and_readiness_tests_green_first",
+    "existing_store_materialization",
     "account_count_4",
     "google_antigravity_present",
     "process_liveness",
-    "port_51200",
+    "loopback_port_51200",
     "admin_status",
     "models_readiness",
     "responses_live_inference",
     "tool_calling",
     "codex_read_only_via_tuxevil",
-    "deterministic_shutdown_then_store_destroy"
+    "shutdown_before_store_destruction",
+    "account_store_destroyed_after_run"
   ],
   "credential_values_in_request": false
 }
