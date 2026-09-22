@@ -1,7 +1,8 @@
 {
-  "request": "HERMES_DURABLE_RESUME_CROSS_RUN_002",
-  "purpose": "prove clean-runner durable resume after unique runtime lane fix",
+  "request": "HERMES_DURABLE_RESUME_CROSS_RUN_003",
+  "purpose": "prove fail-closed partial mission checkpoint resumes on clean runner",
   "expected": {
+    "RUNNER_A_MISSION_STATUS": "INCOMPLETE",
     "DURABLE_MISSION_RESUME": "PASS",
     "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
     "CROSS_RUNNER_TYPED_HANDOFF": "PASS",
