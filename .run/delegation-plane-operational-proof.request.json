@@ -16,7 +16,7 @@
   ],
   "telegram_egress": false,
   "credential_values_in_request": false,
-  "reason": "rerun canonical proof after bounded semantic replan feedback focused GREEN",
+  "reason": "rerun canonical proof after semantic query handoff focused GREEN",
   "acceptance_requires_write_candidate": true,
   "item19_proof_run_id": 35690756218,
   "focused_gate_fixes": {
@@ -24,11 +24,11 @@
     "explicit_no_performance_negation": "PASS_EXPECTED"
   },
   "focused_gate_precondition": "must pass adaptive schema-replan regression before natural goal",
-  "previous_failed_run_id": 35717907753,
+  "previous_failed_run_id": 35718314468,
   "focused_tests_last_observed": "82 passed",
   "runtime_provider_overlay": "CURRENT_GITHUB_RUN_ONLY",
-  "focused_tests_run_id": 35718229958,
+  "focused_tests_run_id": 35718714294,
   "focused_tests_status": "PASS",
-  "ci_run_id": 35718230205,
+  "ci_run_id": 35718714727,
   "hermes_runtime_dependency_fix_head": "bd853477797d2691a8c3ffa0b78f615a865b4c4b"
 }
