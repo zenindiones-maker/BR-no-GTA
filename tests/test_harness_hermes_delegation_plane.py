@@ -18,6 +18,18 @@ from app.services.harness_collaboration_service import (
 from app.services.harness_mission_execution_router import (
     select_mission_execution_route,
 )
+from app.services.hermes_multiagent.contracts import (
+    DelegationEnvelope,
+    TypedHandoff,
+)
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.hermes_multiagent.capability_broker import (
+    HermesHarnessCapabilityBroker,
+)
+from datetime import datetime, timedelta, timezone
 from scripts.audit_harness_ecosystem import audit
 
 
@@ -314,3 +326,211 @@ def test_topology_dependency_or_review_uses_durable_hermes_kanban():
     assert route.hermes_used is True
     assert route.durable is True
     assert route.has_dependencies is True
+
+
+class _FakeHermesBoard:
+    def __init__(self):
+        self.created = []
+        self.comments = []
+
+    def create_task(self, **kwargs):
+        task_id = f"board-{len(self.created) + 1}"
+        self.created.append({"id": task_id, **kwargs})
+        return task_id
+
+    def comment(self, task_id, *, author, body):
+        self.comments.append({"task_id": task_id, "author": author, "body": body})
+        return len(self.comments)
+
+
+def _delegation_fixture():
+    plan = build_collaboration_plan(
+        mission_id="mission-delegation-envelope",
+        goal_id="goal-delegation-envelope",
+        tasks=[
+            TaskEnvelope(
+                task_id="profile",
+                capability_id="agent-office.codex.readonly-analysis",
+                action="DEVELOPMENT",
+                objective="profile application performance bottleneck",
+                task_class="performance-profiling",
+                expected_output="ProfileEvidence",
+                read_scope=("app", "scripts"),
+                write_scope=(),
+                allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+                allowed_side_effects=(
+                    "ephemeral worktree",
+                    "structured runtime artifact",
+                ),
+                time_budget_seconds=300,
+                context_budget_bytes=16384,
+                tool_budget=12,
+                retry_budget=1,
+                review_policy="NONE",
+            )
+        ],
+    )
+    parent = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="capability:collaboration.hermes.execute",
+        harness_decision_id="decision-delegation-envelope",
+        execution_id="execution-delegation-envelope",
+        lineage={"test": "delegation-envelope"},
+    )
+    envelope = DelegationEnvelope.from_plan(
+        collaboration_plan=plan,
+        harness_decision_id="decision-delegation-envelope",
+        authorization_id=parent.authorization_id,
+        base_sha="a" * 40,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=15)
+        ).isoformat(),
+        max_child_depth=2,
+        max_child_tasks=3,
+    )
+    return plan, parent, envelope
+
+
+def test_delegation_envelope_blocks_authority_scope_and_budget_expansion():
+    _plan, parent_auth, envelope = _delegation_fixture()
+    try:
+        allowed = envelope.validate_child_task(
+            parent_task_id="profile",
+            child={
+                "task_id": "profile-python",
+                "capability_id": "agent-office.codex.readonly-analysis",
+                "authorized_action": "DEVELOPMENT",
+                "objective": "profile python performance bottleneck",
+                "read_scope": ["app"],
+                "write_scope": [],
+                "allowed_side_effects": ["ephemeral worktree"],
+                "time_budget_seconds": 120,
+                "context_budget_bytes": 8192,
+                "tool_budget": 6,
+                "retry_budget": 1,
+            },
+            depth=1,
+            existing_child_count=0,
+        )
+        assert allowed.read_scope == ("app",)
+        assert allowed.write_scope == ()
+        assert allowed.action == "DEVELOPMENT"
+
+        for bad in (
+            {
+                "task_id": "bad-action",
+                "capability_id": "agent-office.codex.readonly-analysis",
+                "authorized_action": "PUBLICATION",
+                "objective": "profile python performance bottleneck",
+            },
+            {
+                "task_id": "bad-write",
+                "capability_id": "agent-office.codex.readonly-analysis",
+                "authorized_action": "DEVELOPMENT",
+                "objective": "profile python performance bottleneck",
+                "write_scope": ["app"],
+            },
+            {
+                "task_id": "bad-budget",
+                "capability_id": "agent-office.codex.readonly-analysis",
+                "authorized_action": "DEVELOPMENT",
+                "objective": "profile python performance bottleneck",
+                "time_budget_seconds": 301,
+            },
+        ):
+            with pytest.raises(PermissionError):
+                envelope.validate_child_task(
+                    parent_task_id="profile",
+                    child=bad,
+                    depth=1,
+                    existing_child_count=0,
+                )
+    finally:
+        consume_harness_authorization(parent_auth)
+
+
+def test_hermes_child_proposal_routes_through_harness_and_is_idempotent():
+    _plan, parent_auth, envelope = _delegation_fixture()
+    board = _FakeHermesBoard()
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir="/tmp/hermes-delegation-plane-test",
+        )
+        child = {
+            "task_id": "profile-python",
+            "capability_id": "agent-office.codex.readonly-analysis",
+            "authorized_action": "DEVELOPMENT",
+            "objective": "profile python performance bottleneck",
+            "read_scope": ["app"],
+            "write_scope": [],
+            "allowed_side_effects": ["ephemeral worktree"],
+            "time_budget_seconds": 120,
+            "context_budget_bytes": 8192,
+            "tool_budget": 6,
+            "retry_budget": 1,
+        }
+        first = broker.propose_child_task(
+            parent_task_id="profile",
+            child=child,
+        )
+        assert first["status"] == "AUTHORIZED"
+        assert first["HERMES_SUBDELEGATION_WITHIN_ENVELOPE"] == "PASS"
+        assert first["HERMES_AUTHORITY_EXPANSION"] == "NO"
+        routed = first["task"]
+        assert routed["routing_id"]
+        assert routed["selected_executor_binding"]
+        assert routed["idempotency_key"].startswith("child:")
+        assert len(board.created) == 1
+
+        second = broker.propose_child_task(
+            parent_task_id="profile",
+            child={**child, "idempotency_key": routed["idempotency_key"]},
+        )
+        assert second["status"] == "REUSED"
+        assert second["DUPLICATE_AGENT_EXECUTION_AVOIDED"] == "PASS"
+        assert len(board.created) == 1
+    finally:
+        consume_harness_authorization(parent_auth)
+
+
+def test_typed_handoff_has_bounded_cross_agent_lineage():
+    handoff = TypedHandoff(
+        from_task_id="analyze",
+        to_task_id="review",
+        evidence_refs=("artifact:analysis.json",),
+        result_ref="artifact:analysis.json",
+        output_contract="AnalysisEvidence",
+        summary="Root cause isolated with bounded evidence.",
+        acceptance_state="ACCEPTED_FOR_DEPENDENCY",
+        artifact_lineage={
+            "sha256": "b" * 64,
+            "authorization_id": "auth-1",
+            "routing_id": "route-1",
+        },
+        producer_capability_id="agent-office.codex.readonly-analysis",
+        producer_agent_id="codex-readonly",
+        producer_skill_id=None,
+        producer_version="1",
+        observed_at=datetime.now(timezone.utc).isoformat(),
+    )
+    assert handoff.to_dict()["evidence_refs"] == ("artifact:analysis.json",)
+    with pytest.raises(ValueError):
+        TypedHandoff(
+            from_task_id="a",
+            to_task_id="b",
+            evidence_refs=("artifact:x",),
+            result_ref="artifact:x",
+            output_contract="x",
+            summary="x" * 5000,
+            acceptance_state="ACCEPTED_FOR_DEPENDENCY",
+            artifact_lineage={},
+            producer_capability_id="x",
+            producer_agent_id=None,
+            producer_skill_id=None,
+            producer_version="1",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
