@@ -157,27 +157,37 @@ def _resolve_routing(
             "AI provider is not authorized for action "
             f"{authorization.authorized_action!r}"
         )
-    expected_model = record.model_id
-    if expected_model is None and normalized_provider == "tuxevil":
-        from app.services.provider_health_service import runtime_provider_binding
+    from app.services.provider_health_service import (
+        authorized_provider_model_binding,
+    )
 
-        runtime_binding = runtime_provider_binding(normalized_provider)
-        metadata = dict(routing_decision.policy_metadata or {})
-        runtime_binding_used = metadata.get("runtime_provider_binding_used") is True
+    model_binding = authorized_provider_model_binding(record)
+    expected_model = str((model_binding or {}).get("model_id") or "") or None
+    metadata = dict(routing_decision.policy_metadata or {})
+    binding_source = str((model_binding or {}).get("source") or "")
+    metadata_source = str(
+        metadata.get("provider_model_binding_source") or ""
+    )
+    if binding_source == "CURRENT_RUN_RUNTIME_PROOF":
         runtime_refs = tuple(
             str(ref)
             for ref in (metadata.get("runtime_provider_evidence_refs") or ())
             if str(ref)
         )
+        expected_refs = set((model_binding or {}).get("evidence_refs") or ())
         if (
-            runtime_binding is not None
-            and runtime_binding_used
-            and runtime_refs
-            and set(runtime_refs).issubset(
-                set(runtime_binding.get("evidence_refs") or ())
-            )
+            metadata.get("runtime_provider_binding_used") is not True
+            or metadata_source != binding_source
+            or not runtime_refs
+            or not set(runtime_refs).issubset(expected_refs)
         ):
-            expected_model = str(runtime_binding.get("model_id") or "") or None
+            raise PermissionError(
+                "Routing decision model binding does not match current runtime proof"
+            )
+    elif metadata_source and metadata_source != binding_source:
+        raise PermissionError(
+            "Routing decision model binding source does not match Registry contract"
+        )
 
     if routing_decision.selected_model != expected_model:
         raise PermissionError("Routing decision model does not match Registry metadata")
