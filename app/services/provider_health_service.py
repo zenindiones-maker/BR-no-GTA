@@ -123,13 +123,12 @@ _RUNTIME_PROVIDER_PROOF_GATES = (
     "TUXEVIL_LIVE_INFERENCE",
     "TUXEVIL_TOOL_CALLING",
 )
+_RUNTIME_MODEL_ID_RE = __import__("re").compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+)
 
 
-def _runtime_provider_health_override(
-    provider_id: str,
-    *,
-    zero_cost_eligible: bool,
-) -> ProviderHealth | None:
+def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
     raw = str(os.getenv("BR_RUNTIME_PROVIDER_HEALTH_JSON") or "").strip()
     current_run_id = str(os.getenv("GITHUB_RUN_ID") or "").strip()
     if not raw or not current_run_id:
@@ -140,11 +139,18 @@ def _runtime_provider_health_override(
         return None
     if not isinstance(payload, dict):
         return None
+
     normalized = str(provider_id or "").strip().lower().replace("-", "_")
     item = payload.get(normalized)
     if not isinstance(item, dict):
         return None
-    if str(item.get("provider_id") or normalized).strip().lower().replace("-", "_") != normalized:
+    if (
+        str(item.get("provider_id") or normalized)
+        .strip()
+        .lower()
+        .replace("-", "_")
+        != normalized
+    ):
         return None
     if str(item.get("scope") or "").strip().upper() != "CURRENT_GITHUB_RUN":
         return None
@@ -152,13 +158,20 @@ def _runtime_provider_health_override(
         return None
     if str(item.get("state") or "").strip().upper() != "AVAILABLE":
         return None
-    if not zero_cost_eligible or not bool(item.get("zero_cost_eligible", False)):
+    if not bool(item.get("zero_cost_eligible", False)):
+        return None
+
+    model_id = str(item.get("model_id") or "").strip()
+    if not _RUNTIME_MODEL_ID_RE.fullmatch(model_id):
         return None
 
     proof = item.get("proof")
     if not isinstance(proof, dict):
         return None
-    if any(str(proof.get(key) or "").strip().upper() != "PASS" for key in _RUNTIME_PROVIDER_PROOF_GATES):
+    if any(
+        str(proof.get(key) or "").strip().upper() != "PASS"
+        for key in _RUNTIME_PROVIDER_PROOF_GATES
+    ):
         return None
 
     refs = tuple(
@@ -170,18 +183,37 @@ def _runtime_provider_health_override(
     if not refs or not any(ref.startswith(expected_prefix) for ref in refs):
         return None
 
+    return {
+        "provider_id": normalized,
+        "model_id": model_id,
+        "github_run_id": current_run_id,
+        "scope": "CURRENT_GITHUB_RUN",
+        "zero_cost_eligible": True,
+        "proof": {
+            key: "PASS"
+            for key in _RUNTIME_PROVIDER_PROOF_GATES
+        },
+        "evidence_refs": refs,
+    }
+
+
+def _runtime_provider_health_override(
+    provider_id: str,
+) -> ProviderHealth | None:
+    binding = runtime_provider_binding(provider_id)
+    if binding is None:
+        return None
     return ProviderHealth(
-        provider_id=normalized,
+        provider_id=str(binding["provider_id"]),
         state="AVAILABLE",
         reason=(
             "Provider is Registry-available and live authenticated for the "
             "current GitHub execution only."
         ),
-        evidence_refs=refs,
+        evidence_refs=tuple(binding["evidence_refs"]),
         retry_allowed=True,
         zero_cost_eligible=True,
     )
-
 
 def provider_health(provider_id: str) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
@@ -273,10 +305,7 @@ def provider_health(provider_id: str) -> ProviderHealth:
             zero_cost_eligible=assessment.eligible,
         )
 
-    runtime_override = _runtime_provider_health_override(
-        provider,
-        zero_cost_eligible=assessment.eligible,
-    )
+    runtime_override = _runtime_provider_health_override(provider)
     if runtime_override is not None:
         return runtime_override
     external_auth_markers = (
