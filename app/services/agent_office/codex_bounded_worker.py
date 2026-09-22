@@ -702,6 +702,51 @@ def _tool_call_category(command: str) -> str:
     return "WRITE_ATTEMPT"
 
 
+def _sanitized_command_fingerprint(command: str) -> str:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        normalized = "<unparsable-command>"
+    else:
+        normalized = shlex.join(
+            [_sanitize_command_token(token) for token in parts]
+        )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _operation_class(command: str) -> str:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        return "other"
+    if not parts:
+        return "other"
+    tool = canonical_command_tool(parts[0])
+    normalized = " ".join(parts)
+    if tool in _SHELL_WRAPPER_TOOLS and len(parts) == 3 and parts[1] in {"-c", "-lc"}:
+        try:
+            segments = _shell_segments(parts[2])
+        except PermissionError:
+            return "other"
+        classes = {_operation_class(shlex.join(segment)) for segment in segments}
+        return next(iter(classes)) if len(classes) == 1 else "other"
+    if tool == "git":
+        return "git_read" if len(parts) >= 2 and parts[1] in _READ_ONLY_GIT_SUBCOMMANDS else "write"
+    if tool == "rg":
+        return "repo_search"
+    if tool in {"cat", "head", "sed", "ls"}:
+        return "file_read"
+    if tool == "wc":
+        return "measurement"
+    if tool == "pytest" or (
+        tool == "python" and _VALIDATION_PYTHON_RE.search(normalized)
+    ):
+        return "test"
+    if _tool_call_category(command) == "WRITE_ATTEMPT":
+        return "write"
+    return "other"
+
+
 def _tool_budget_evidence(
     *,
     task: AgentOfficeTask,
@@ -738,6 +783,19 @@ def _tool_budget_evidence(
         "VALIDATION": 0,
     }
     command_hashes: list[str] = []
+    duplicate_groups: dict[tuple[str, str, str], int] = {}
+    stage_commands = (
+        ("initial", tuple(initial_commands)),
+        ("candidate_repair", tuple(candidate_repair_commands)),
+        ("final_validation", tuple(final_validation_commands)),
+        ("retry", tuple(retry_commands)),
+    )
+    for stage_name, stage_items in stage_commands:
+        for command in stage_items:
+            fingerprint = _sanitized_command_fingerprint(command)
+            operation_class = _operation_class(command)
+            key = (stage_name, operation_class, fingerprint)
+            duplicate_groups[key] = duplicate_groups.get(key, 0) + 1
     for command in commands:
         tool = _sanitized_tool_name(command)
         tool_counts[tool] = tool_counts.get(tool, 0) + 1
@@ -779,6 +837,17 @@ def _tool_budget_evidence(
         "RETRY_BUDGET_ASSIGNED": int(lease.retry_budget),
         "CANDIDATE_REPAIR_USED": "YES" if candidate_repair_used else "NO",
         "TOOL_COUNTS_BY_CANONICAL_TOOL": dict(sorted(tool_counts.items())),
+        "COMMAND_GROUPS": [
+            {
+                "STAGE": stage,
+                "OPERATION_CLASS": operation_class,
+                "COMMAND_FINGERPRINT": fingerprint,
+                "COUNT": count,
+            }
+            for (stage, operation_class, fingerprint), count
+            in sorted(duplicate_groups.items())
+        ],
+        "DUPLICATE_GROUPING_SAFE": "PASS",
         "UNIQUE_COMMAND_COUNT": unique_count,
         "DUPLICATE_COMMAND_COUNT": total - unique_count,
         "READ_ONLY_CALL_COUNT": category_counts["READ_ONLY"],
@@ -1177,12 +1246,19 @@ def codex_bounded_development_worker(
         "-C", str(workspace),
         prompt,
     ]
-    completed = _run(
-        command,
-        cwd=workspace,
-        timeout=remaining(),
-        sanitized_env=True,
-    )
+    with PerformanceSpan(
+        stage="agent-office.bounded.initial-pass",
+        category="CODEX_INITIAL_PASS_TIME",
+        task_id=task.task_id,
+        agent_id=task.agent,
+        capability_id=task.capability,
+    ):
+        completed = _run(
+            command,
+            cwd=workspace,
+            timeout=remaining(),
+            sanitized_env=True,
+        )
     failure = codex_execution_failure(
         completed,
         failure_stage="bounded_development_exec",
@@ -1312,12 +1388,19 @@ def codex_bounded_development_worker(
             "-C", str(workspace),
             candidate_repair_prompt,
         ]
-        candidate_repair = _run(
-            candidate_repair_command,
-            cwd=workspace,
-            timeout=remaining(),
-            sanitized_env=True,
-        )
+        with PerformanceSpan(
+            stage="agent-office.bounded.candidate-repair",
+            category="CODEX_CANDIDATE_REPAIR_TIME",
+            task_id=task.task_id,
+            agent_id=task.agent,
+            capability_id=task.capability,
+        ):
+            candidate_repair = _run(
+                candidate_repair_command,
+                cwd=workspace,
+                timeout=remaining(),
+                sanitized_env=True,
+            )
         candidate_repair_failure = codex_execution_failure(
             candidate_repair,
             failure_stage="bounded_development_candidate_repair",
@@ -1400,12 +1483,19 @@ def codex_bounded_development_worker(
             "-C", str(workspace),
             repair_prompt,
         ]
-        repair = _run(
-            repair_command,
-            cwd=workspace,
-            timeout=remaining(),
-            sanitized_env=True,
-        )
+        with PerformanceSpan(
+            stage="agent-office.bounded.final-validation",
+            category="CODEX_FINAL_VALIDATION_TIME",
+            task_id=task.task_id,
+            agent_id=task.agent,
+            capability_id=task.capability,
+        ):
+            repair = _run(
+                repair_command,
+                cwd=workspace,
+                timeout=remaining(),
+                sanitized_env=True,
+            )
         repair_failure = codex_execution_failure(
             repair,
             failure_stage="bounded_development_metric_repair",

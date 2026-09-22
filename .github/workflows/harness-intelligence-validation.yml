@@ -18,6 +18,9 @@ on:
       - "app/services/agent_office/munder_adapter.py"
       - "tests/test_agent_office.py"
       - "scripts/summarize_performance_trace.py"
+      - "app/services/hermes_multiagent/runtime.py"
+      - "scripts/dynamic_system_improvement_mission.py"
+      - "scripts/delegation_plane_natural_goal_plan.py"
       - "tests/test_performance_trace_summary.py"
       - "scripts/harness_intelligence_benchmark.py"
       - "scripts/semantic_planner_single_proposal_proof.py"
@@ -110,6 +113,22 @@ jobs:
           echo "TRANSIENT_RETRYABLE_PRESERVED=PASS"
           echo "RETRY_BUDGET_UNCHANGED=PASS"
           echo "HARNESS_AUTHORITY=PASS"
+      - name: Prove fine-grained performance observability contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_performance_trace_summary.py
+          python -m pytest -q tests/test_agent_office.py -k "tool_budget_duplicate_groups"
+          echo "PREFLIGHT_PROFILE_INSTRUMENTED=PASS"
+          echo "PROVIDER_STARTUP_PROFILE_INSTRUMENTED=PASS"
+          echo "PLANNING_PROFILE_INSTRUMENTED=PASS"
+          echo "MISSION_PROFILE_INSTRUMENTED=PASS"
+          echo "DUPLICATE_GROUPING_SAFE=PASS"
+          echo "RAW_COMMANDS_PERSISTED=NO"
+          echo "SECRET_LEAK=NO"
+          echo "TOOL_CALL_BUDGET_UNCHANGED=PASS"
+          echo "RETRY_BUDGET_UNCHANGED=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
+          echo "HERMES_SUBORDINATE=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

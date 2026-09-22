@@ -80,7 +80,9 @@ def test_operational_step_categories_are_explicit():
     from scripts.summarize_performance_trace import _step_category
     assert _step_category("Checkout exact operational base without persisted Git credentials") == "GITHUB_SETUP_TIME"
     assert _step_category("Prepare canonical runtime and focused delegation gates") == "PREFLIGHT_TIME"
+    assert _step_category("Materialize existing Antigravity store only in ephemeral runner") == "ANTIGRAVITY_MATERIALIZATION_TIME"
     assert _step_category("Start Tuxevil and prove live Responses transport") == "PROVIDER_STARTUP_TIME"
+    assert _step_category("Publish runner-local Codex health from live Tuxevil proof") == "RUNTIME_HEALTH_PUBLICATION_TIME"
     assert _step_category("Execute first real natural-goal mission") == "MISSION_EXECUTION_TIME"
     assert _step_category("Upload tool-budget diagnostic even on mission failure") == "ARTIFACT_UPLOAD_TIME"
 
@@ -134,3 +136,26 @@ def test_mission_metrics_can_be_isolated_by_canonical_trace_id():
     real = [item for item in spans if item["trace_id"] == roots[0]["trace_id"]]
     assert sum(1 for item in real if (item.get("metadata") or {}).get("tool") == "codex") == 1
     assert sum(int(item.get("input_size") or 0) for item in real if item.get("provider") == "codex") == 123
+
+
+def test_fine_grained_helpers_count_metadata_and_union_without_double_count():
+    from scripts.summarize_performance_trace import _filtered_union_ms, _metadata_total
+    spans = [
+        {
+            "started_at": "2026-09-22T00:00:00+00:00",
+            "finished_at": "2026-09-22T00:00:00.100000+00:00",
+            "category": "PLANNING_REGISTRY_RETRIEVAL_TIME",
+            "metadata": {"registry_read_count": 1},
+        },
+        {
+            "started_at": "2026-09-22T00:00:00.050000+00:00",
+            "finished_at": "2026-09-22T00:00:00.150000+00:00",
+            "category": "PLANNING_REGISTRY_RETRIEVAL_TIME",
+            "metadata": {"registry_read_count": 1},
+        },
+    ]
+    assert _metadata_total(spans, "registry_read_count") == 2
+    assert _filtered_union_ms(
+        spans,
+        lambda item: item["category"] == "PLANNING_REGISTRY_RETRIEVAL_TIME",
+    ) == 150.0

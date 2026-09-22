@@ -180,6 +180,28 @@ def _span_metrics(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
     }
 
 
+def _filtered_union_ms(
+    spans: list[dict[str, Any]],
+    predicate,
+) -> float:
+    intervals: list[tuple[float, float]] = []
+    for item in spans:
+        if not predicate(item):
+            continue
+        start = _epoch_ms(item.get("started_at"))
+        end = _epoch_ms(item.get("finished_at"))
+        if start is not None and end is not None and end > start:
+            intervals.append((start, end))
+    return _union_ms(intervals)
+
+
+def _metadata_total(spans: list[dict[str, Any]], key: str) -> int:
+    return sum(
+        int((item.get("metadata") or {}).get(key) or 0)
+        for item in spans
+    )
+
+
 def _step_category(name: str) -> str:
     value = name.casefold()
     if any(token in value for token in (
@@ -189,12 +211,12 @@ def _step_category(name: str) -> str:
         return "GITHUB_SETUP_TIME"
     if "prepare canonical runtime and focused delegation gates" in value:
         return "PREFLIGHT_TIME"
-    if any(token in value for token in (
-        "materialize existing antigravity",
-        "start tuxevil",
-        "publish runner-local codex health",
-    )):
+    if "materialize existing antigravity" in value:
+        return "ANTIGRAVITY_MATERIALIZATION_TIME"
+    if "start tuxevil" in value:
         return "PROVIDER_STARTUP_TIME"
+    if "publish runner-local codex health" in value:
+        return "RUNTIME_HEALTH_PUBLICATION_TIME"
     if "execute first real natural-goal mission" in value or (
         "execute second similar mission" in value
     ):
@@ -426,6 +448,75 @@ def main() -> int:
         if str(item.get("work_class") or "").upper() == "REPEATED"
     )
 
+    category_cp = dict(trace_metrics["category_critical_path_ms"])
+    pip_install_ms = float(category_cp.get("PREFLIGHT_PIP_INSTALL_TIME", 0.0))
+    focused_tests_ms = float(category_cp.get("PREFLIGHT_FOCUSED_TESTS_TIME", 0.0))
+    codex_bootstrap_ms = float(category_cp.get("PREFLIGHT_CODEX_BOOTSTRAP_TIME", 0.0))
+    hermes_bootstrap_ms = float(category_cp.get("PREFLIGHT_HERMES_BOOTSTRAP_TIME", 0.0))
+    other_preflight_ms = float(category_cp.get("PREFLIGHT_OTHER_TIME", 0.0))
+    antigravity_materialization_ms = float(named_step_ms.get("ANTIGRAVITY_MATERIALIZATION_TIME", 0.0))
+    tuxevil_startup_ms = float(category_cp.get("TUXEVIL_STARTUP_TIME", 0.0))
+    tuxevil_live_proof_ms = float(category_cp.get("TUXEVIL_LIVE_PROOF_TIME", 0.0))
+    runtime_health_publication_ms = float(named_step_ms.get("RUNTIME_HEALTH_PUBLICATION_TIME", 0.0))
+    natural_goal_parse_ms = float(category_cp.get("PLANNING_NATURAL_GOAL_PARSE_TIME", 0.0))
+    semantic_planner_ms = float(category_cp.get("PLANNING_SEMANTIC_PLANNER_TIME", 0.0))
+    registry_retrieval_ms = float(category_cp.get("PLANNING_REGISTRY_RETRIEVAL_TIME", 0.0))
+    competence_lookup_ms = float(category_cp.get("PLANNING_COMPETENCE_LOOKUP_TIME", 0.0))
+    failure_memory_lookup_ms = float(category_cp.get("PLANNING_FAILURE_MEMORY_LOOKUP_TIME", 0.0))
+    health_lookup_ms = float(category_cp.get("PLANNING_HEALTH_LOOKUP_TIME", 0.0))
+    mission_plan_normalization_ms = float(category_cp.get("PLANNING_MISSION_PLAN_NORMALIZATION_TIME", 0.0))
+    task_envelope_build_ms = float(category_cp.get("PLANNING_TASK_ENVELOPE_BUILD_TIME", 0.0))
+    planner_model_calls = _metadata_total(spans, "planner_model_calls")
+    registry_read_count = _metadata_total(spans, "registry_read_count")
+    health_read_count = _metadata_total(spans, "health_read_count")
+    competence_read_count = _metadata_total(spans, "competence_read_count")
+    failure_memory_read_count = _metadata_total(spans, "failure_memory_read_count")
+    context_fingerprints = [
+        str((item.get("metadata") or {}).get("context_fingerprint"))
+        for item in spans
+        if (item.get("metadata") or {}).get("context_fingerprint")
+    ]
+    duplicate_context_build_count = max(0, len(context_fingerprints) - len(set(context_fingerprints)))
+    planning_context_bytes = max(
+        [int((item.get("metadata") or {}).get("planning_context_bytes") or 0) for item in spans] + [0]
+    )
+    mission_execution_ms = max(
+        [float(item.get("inclusive_ms") or 0.0) for item in mission_roots] + [0.0]
+    )
+    readonly_analysis_ms = _filtered_union_ms(
+        mission_spans,
+        lambda item: "readonly-analysis" in str(item.get("capability_id") or ""),
+    )
+    candidate_ms = _filtered_union_ms(
+        mission_spans,
+        lambda item: item.get("category") == "AGENT_ATTEMPT_TIME"
+        and str(item.get("capability_id") or "") == "agent-office.codex.bounded-development",
+    )
+    initial_pass_ms = float(category_cp.get("CODEX_INITIAL_PASS_TIME", 0.0))
+    candidate_repair_ms = float(category_cp.get("CODEX_CANDIDATE_REPAIR_TIME", 0.0))
+    final_validation_ms = float(category_cp.get("CODEX_FINAL_VALIDATION_TIME", 0.0))
+    kanban_op_count = _metadata_total(mission_spans, "kanban_op_count")
+    handoff_count = _metadata_total(mission_spans, "handoff_count")
+    context_package_count = _metadata_total(mission_spans, "context_package_count")
+    hermes_context_bytes = _metadata_total(mission_spans, "context_bytes")
+    wait_for_dependency_ms = float(category_cp.get("HERMES_DEPENDENCY_WAIT_TIME", 0.0))
+    specialist_spans = [
+        item for item in mission_spans
+        if item.get("category") == "HERMES_SPECIALIST_EXECUTION_TIME"
+    ]
+    specialist_wall_ms = _filtered_union_ms(specialist_spans, lambda _item: True)
+    specialist_cumulative_ms = sum(float(item.get("inclusive_ms") or 0.0) for item in specialist_spans)
+    parallel_execution_ms = max(0.0, specialist_cumulative_ms - specialist_wall_ms)
+    serial_execution_ms = specialist_wall_ms
+    mission_python_launches = sum(1 for item in mission_spans if (item.get("metadata") or {}).get("tool") == "python")
+    mission_pytest_launches = sum(1 for item in mission_spans if (item.get("metadata") or {}).get("tool") == "pytest")
+    mission_shell_launches = sum(1 for item in mission_spans if (item.get("metadata") or {}).get("tool") in {"bash", "sh"})
+    provider_startup_total_ms = (
+        antigravity_materialization_ms
+        + float(named_step_ms.get("PROVIDER_STARTUP_TIME", 0.0))
+        + runtime_health_publication_ms
+    )
+
     report = {
         "schema_version": 2,
         "status": "PASS",
@@ -458,10 +549,47 @@ def main() -> int:
         "RETRY_TIME_MS": round(retry_ms, 3),
         "BOOTSTRAP_MS": round(float(named_step_ms.get("GITHUB_SETUP_TIME", 0.0)), 3),
         "PREFLIGHT_MS": round(float(named_step_ms.get("PREFLIGHT_TIME", 0.0)), 3),
-        "PROVIDER_STARTUP_MS": round(float(named_step_ms.get("PROVIDER_STARTUP_TIME", 0.0)), 3),
+        "PROVIDER_STARTUP_MS": round(provider_startup_total_ms, 3),
         "PLANNING_MS": round(planning_ms, 3),
-        "HERMES_MS": round(max(0.0, agent_attempt_ms), 3),
+        "MISSION_EXECUTION_MS": round(mission_execution_ms, 3),
+        "HERMES_MS": round(float(category_cp.get("HERMES_RUNTIME_TIME", 0.0)), 3),
         "AGENT_ATTEMPT_MS": round(agent_attempt_ms, 3),
+        "READONLY_ANALYSIS_MS": round(readonly_analysis_ms, 3),
+        "CANDIDATE_MS": round(candidate_ms, 3),
+        "INITIAL_PASS_MS": round(initial_pass_ms, 3),
+        "CANDIDATE_REPAIR_MS": round(candidate_repair_ms, 3),
+        "FINAL_VALIDATION_MS": round(final_validation_ms, 3),
+        "PIP_INSTALL_MS": round(pip_install_ms, 3),
+        "FOCUSED_TESTS_MS": round(focused_tests_ms, 3),
+        "CODEX_BOOTSTRAP_MS": round(codex_bootstrap_ms, 3),
+        "HERMES_BOOTSTRAP_MS": round(hermes_bootstrap_ms, 3),
+        "OTHER_PREFLIGHT_MS": round(other_preflight_ms, 3),
+        "ANTIGRAVITY_MATERIALIZATION_MS": round(antigravity_materialization_ms, 3),
+        "TUXEVIL_STARTUP_MS": round(tuxevil_startup_ms, 3),
+        "TUXEVIL_LIVE_PROOF_MS": round(tuxevil_live_proof_ms, 3),
+        "RUNTIME_HEALTH_PUBLICATION_MS": round(runtime_health_publication_ms, 3),
+        "NATURAL_GOAL_PARSE_MS": round(natural_goal_parse_ms, 3),
+        "SEMANTIC_PLANNER_MS": round(semantic_planner_ms, 3),
+        "REGISTRY_RETRIEVAL_MS": round(registry_retrieval_ms, 3),
+        "COMPETENCE_LOOKUP_MS": round(competence_lookup_ms, 3),
+        "FAILURE_MEMORY_LOOKUP_MS": round(failure_memory_lookup_ms, 3),
+        "HEALTH_LOOKUP_MS": round(health_lookup_ms, 3),
+        "MISSION_PLAN_NORMALIZATION_MS": round(mission_plan_normalization_ms, 3),
+        "TASK_ENVELOPE_BUILD_MS": round(task_envelope_build_ms, 3),
+        "PLANNER_MODEL_CALLS": planner_model_calls,
+        "PLANNING_CONTEXT_BYTES": planning_context_bytes,
+        "REGISTRY_READ_COUNT": registry_read_count,
+        "HEALTH_READ_COUNT": health_read_count,
+        "COMPETENCE_READ_COUNT": competence_read_count,
+        "FAILURE_MEMORY_READ_COUNT": failure_memory_read_count,
+        "DUPLICATE_CONTEXT_BUILD_COUNT": duplicate_context_build_count,
+        "KANBAN_OP_COUNT": kanban_op_count,
+        "HANDOFF_COUNT": handoff_count,
+        "CONTEXT_PACKAGE_COUNT": context_package_count,
+        "HERMES_CONTEXT_BYTES": hermes_context_bytes,
+        "WAIT_FOR_DEPENDENCY_MS": round(wait_for_dependency_ms, 3),
+        "PARALLEL_EXECUTION_MS": round(parallel_execution_ms, 3),
+        "SERIAL_EXECUTION_MS": round(serial_execution_ms, 3),
         "RETRY_MS": round(redundant_attempt_ms, 3),
         "ARTIFACT_MS": round(float(named_step_ms.get("ARTIFACT_UPLOAD_TIME", 0.0)), 3),
         "TOTAL_WALL_CLOCK_MS": round(wall_clock_ms, 3),
@@ -483,6 +611,9 @@ def main() -> int:
         "MISSION_TRACE_ID": mission_trace_id or None,
         "MISSION_CODEX_PROCESS_LAUNCHES": mission_codex_launches,
         "MISSION_GIT_INVOCATIONS": mission_git_invocations,
+        "MISSION_PYTHON_PROCESS_LAUNCHES": mission_python_launches,
+        "MISSION_PYTEST_PROCESS_LAUNCHES": mission_pytest_launches,
+        "MISSION_SHELL_PROCESS_LAUNCHES": mission_shell_launches,
         "MISSION_CONTEXT_BYTES": mission_context_bytes,
         "MISSION_REPEATED_SPAN_COUNT": len(mission_repeated_spans),
         "MISSION_RETRY_MS": round(mission_retry_ms, 3),
@@ -509,6 +640,11 @@ def main() -> int:
             "parallelism_saved": "trace cumulative exclusive work minus union of trace intervals",
             "provider_critical_path": "union of provider span intervals; concurrent provider calls counted once on wall clock",
             "nested_spans": "parent_span_id removes direct-child interval union from parent exclusive time",
+            "registry_read_count": "logical canonical Registry get/discover operations instrumented in planning",
+            "health_read_count": "logical capability/provider health lookups instrumented in planning",
+            "parallel_execution_ms": "specialist cumulative execution minus union wall time; measures overlap saved",
+            "serial_execution_ms": "union wall time of specialist execution spans",
+            "kanban_op_count": "observed Hermes event plus comment operations in the final board snapshot",
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -526,6 +662,23 @@ def main() -> int:
         "PROVIDER_CUMULATIVE_WORK_MS",
         "GITHUB_QUEUE_TIME_MS",
         "RETRY_TIME_MS",
+        "PIP_INSTALL_MS",
+        "FOCUSED_TESTS_MS",
+        "CODEX_BOOTSTRAP_MS",
+        "HERMES_BOOTSTRAP_MS",
+        "OTHER_PREFLIGHT_MS",
+        "ANTIGRAVITY_MATERIALIZATION_MS",
+        "TUXEVIL_STARTUP_MS",
+        "TUXEVIL_LIVE_PROOF_MS",
+        "RUNTIME_HEALTH_PUBLICATION_MS",
+        "NATURAL_GOAL_PARSE_MS",
+        "SEMANTIC_PLANNER_MS",
+        "REGISTRY_RETRIEVAL_MS",
+        "COMPETENCE_LOOKUP_MS",
+        "FAILURE_MEMORY_LOOKUP_MS",
+        "HEALTH_LOOKUP_MS",
+        "MISSION_PLAN_NORMALIZATION_MS",
+        "TASK_ENVELOPE_BUILD_MS",
     ):
         print(f"{key}={float(report[key]):.3f}")
     if slowest:

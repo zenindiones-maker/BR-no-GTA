@@ -19,6 +19,7 @@ from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
     _rejected_command_shape,
     _tool_budget_evidence,
+    _sanitized_command_fingerprint,
     _validate_command,
     codex_bounded_development_worker,
     codex_execution_failure,
@@ -1233,6 +1234,36 @@ def test_bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked(
         assert persisted["RETRY_TOOL_CALLS"] == 0
         assert persisted["RAW_COMMANDS_PERSISTED"] == "NO"
         assert persisted["SECRET_LEAK"] == "NO"
+
+
+def test_tool_budget_duplicate_groups_are_content_addressed_and_value_redacted():
+    task, lease = _tool_budget_test_task_and_lease(budget=8, retry_budget=0)
+    marker_value = "private-marker-value"
+    repeated = "git status --short"
+    evidence = _tool_budget_evidence(
+        task=task,
+        lease=lease,
+        terminal_status="TOOL_BUDGET_EXCEEDED",
+        evidence_trigger="FAIL_CLOSED_BUDGET",
+        terminal_stage="FINAL_VALIDATION",
+        initial_commands=(repeated,),
+        final_validation_commands=(
+            repeated,
+            repeated,
+            f"TMP_MARKER={marker_value} python -c 'print(1)'",
+        ),
+    )
+    groups = evidence["COMMAND_GROUPS"]
+    status_groups = [item for item in groups if item["OPERATION_CLASS"] == "git_read"]
+    assert sum(item["COUNT"] for item in status_groups) == 3
+    assert {item["STAGE"] for item in status_groups} == {"initial", "final_validation"}
+    assert all(len(item["COMMAND_FINGERPRINT"]) == 64 for item in groups)
+    assert evidence["DUPLICATE_GROUPING_SAFE"] == "PASS"
+    assert evidence["RAW_COMMANDS_PERSISTED"] == "NO"
+    payload = json.dumps(evidence, sort_keys=True)
+    assert marker_value not in payload
+    assert repeated not in payload
+    assert _sanitized_command_fingerprint(repeated) in payload
 
 
 def test_tool_budget_stage_accounting_does_not_double_count_or_conflate_retry():
