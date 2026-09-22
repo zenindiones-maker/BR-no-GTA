@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import json
 
 import pytest
 
 from app.services import harness_adaptive_planning_service as adaptive
 from app.services import capability_health_service as capability_health_module
+from app.services import provider_health_service as provider_health_module
+from app.services import semantic_mission_planner_service as semantic_planner_module
 from app.services.capability_health_service import (
     CapabilityHealth,
     BLOCKED,
@@ -20,6 +23,10 @@ from app.services.harness_collaboration_service import (
 from app.services.harness_mission_execution_router import (
     execute_harness_mission_plan,
     select_mission_execution_route,
+)
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
 )
 from app.services.hermes_multiagent.contracts import (
     DelegationEnvelope,
@@ -325,6 +332,188 @@ def test_readonly_requirement_rejects_mutating_executor(monkeypatch):
         item == f"{mutator.capability_id}:side-effect-exceeds:read-only"
         for item in avoided
     )
+
+
+def _live_tuxevil_provider_overlay(
+    run_id: str,
+    *,
+    evidence_run_id: str | None = None,
+    tool_calling: str = "PASS",
+) -> str:
+    evidence_run_id = evidence_run_id or run_id
+    return json.dumps({
+        "tuxevil": {
+            "provider_id": "tuxevil",
+            "state": "AVAILABLE",
+            "scope": "CURRENT_GITHUB_RUN",
+            "github_run_id": run_id,
+            "model_id": "gemini-3-flash",
+            "zero_cost_eligible": True,
+            "proof": {
+                "TUXEVIL_RESPONSES_API": "PASS",
+                "ANTIGRAVITY_UPSTREAM_AUTH": "PASS",
+                "TUXEVIL_LIVE_INFERENCE": "PASS",
+                "TUXEVIL_TOOL_CALLING": tool_calling,
+            },
+            "evidence_refs": [
+                f"github:run:{evidence_run_id}:tuxevil-live-proof"
+            ],
+        }
+    })
+
+
+def test_tuxevil_static_health_remains_auth_required_without_runtime_proof(
+    monkeypatch,
+):
+    monkeypatch.delenv("BR_RUNTIME_PROVIDER_HEALTH_JSON", raising=False)
+    monkeypatch.setenv("GITHUB_RUN_ID", "1001")
+    health = provider_health_module.provider_health("tuxevil")
+    semantic = provider_health_module.semantic_provider_health()
+    assert health.state == "AUTH_REQUIRED"
+    assert health.zero_cost_eligible is False
+    assert "tuxevil" not in semantic["eligible_zero_cost_provider_ids"]
+    assert semantic["semantic_reasoning_available"] is False
+
+
+def test_tuxevil_current_run_live_proof_enables_semantic_reasoning(monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "1002")
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        _live_tuxevil_provider_overlay("1002"),
+    )
+    health = provider_health_module.provider_health("tuxevil")
+    semantic = provider_health_module.semantic_provider_health()
+    binding = provider_health_module.runtime_provider_binding("tuxevil")
+    assert health.state == "AVAILABLE"
+    assert health.zero_cost_eligible is True
+    assert binding is not None
+    assert binding["model_id"] == "gemini-3-flash"
+    assert semantic["semantic_reasoning_available"] is True
+    assert "tuxevil" in semantic["eligible_zero_cost_provider_ids"]
+
+
+@pytest.mark.parametrize(
+    ("overlay_run_id", "evidence_run_id", "tool_calling"),
+    (
+        ("9999", "9999", "PASS"),
+        ("1003", "9999", "PASS"),
+        ("1003", "1003", "FAIL"),
+    ),
+)
+def test_tuxevil_stale_or_fabricated_runtime_health_does_not_authorize(
+    monkeypatch,
+    overlay_run_id,
+    evidence_run_id,
+    tool_calling,
+):
+    monkeypatch.setenv("GITHUB_RUN_ID", "1003")
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        _live_tuxevil_provider_overlay(
+            overlay_run_id,
+            evidence_run_id=evidence_run_id,
+            tool_calling=tool_calling,
+        ),
+    )
+    assert provider_health_module.runtime_provider_binding("tuxevil") is None
+    health = provider_health_module.provider_health("tuxevil")
+    assert health.state == "AUTH_REQUIRED"
+    assert health.zero_cost_eligible is False
+
+
+def test_harness_routes_current_run_live_tuxevil_with_runtime_model(monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "1004")
+    monkeypatch.setenv(
+        "BR_RUNTIME_PROVIDER_HEALTH_JSON",
+        _live_tuxevil_provider_overlay("1004"),
+    )
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="semantic mission planning proposal only",
+            authorized_action="DECISION",
+            domain="ai",
+            goal_id="goal-live-tuxevil",
+            task_class="semantic-mission-planning",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("tuxevil",),
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    assert decision.selected_capability_id == "ai.reasoning.text"
+    assert decision.selected_provider == "tuxevil"
+    assert decision.selected_model == "gemini-3-flash"
+    assert decision.policy_metadata["runtime_provider_binding_used"] is True
+    assert decision.selected_provider_executor_binding == (
+        "app.services.ai_provider_factory.create_ai_provider"
+    )
+
+
+def test_semantic_live_inference_preserves_harness_authority(monkeypatch):
+    context = {
+        "goal_id": "goal-live-semantic",
+        "provider_health": {
+            "eligible_zero_cost_provider_ids": ["tuxevil"],
+        },
+    }
+    routing = SimpleNamespace(
+        routing_id="route-live-semantic",
+        selected_provider="tuxevil",
+    )
+    authorization = SimpleNamespace(
+        authorization_id="auth-live-semantic",
+        authority="DEEPSEEK_HARNESS",
+    )
+    evidence = SimpleNamespace(
+        status="EXECUTED",
+        active=True,
+        error={},
+        result={"text": '{"g":"ok"}', "usage": {}, "finish_reason": "stop"},
+        provider="tuxevil",
+        model="gemini-3-flash",
+        authorization_id="auth-live-semantic",
+        executor_binding="app.services.ai_provider_factory.create_ai_provider",
+        latency_seconds=0.1,
+        performance={},
+        evidence_refs=("github:run:1005:tuxevil-live-proof",),
+        authority="DEEPSEEK_HARNESS",
+    )
+
+    import app.services.harness_routing_policy_service as routing_module
+    import app.services.harness_authorization_service as authorization_module
+    import app.services.harness_ai_provider_service as provider_module
+
+    monkeypatch.setattr(
+        routing_module,
+        "route_harness_request",
+        lambda _request: routing,
+    )
+    monkeypatch.setattr(
+        authorization_module,
+        "issue_harness_authorization",
+        lambda **_kwargs: authorization,
+    )
+    monkeypatch.setattr(
+        authorization_module,
+        "consume_harness_authorization",
+        lambda _authorization: None,
+    )
+    monkeypatch.setattr(
+        provider_module,
+        "execute_harness_ai_generation",
+        lambda **_kwargs: evidence,
+    )
+
+    raw, provider_evidence = semantic_planner_module._live_inference(
+        "planner prompt",
+        context,
+    )
+    assert raw == '{"g":"ok"}'
+    assert provider_evidence["provider"] == "tuxevil"
+    assert provider_evidence["authority"] == "DEEPSEEK_HARNESS"
+    assert provider_evidence["planner_authority"] == "NONE"
 
 
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
