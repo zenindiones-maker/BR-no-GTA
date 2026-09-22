@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 from app.database import harness_learning_repository as learning_repository
 from app.database.schema import initialize_schema
@@ -188,6 +189,7 @@ def main() -> int:
             max_retries=0,
             timeout_seconds=90,
         )
+        probe_started = time.perf_counter()
         try:
             result = provider.probe_capabilities()
         except Exception as exc:
@@ -205,10 +207,13 @@ def main() -> int:
                 "HTTP_STATUS": safe.get("status_code"),
                 "RESPONSE_VALID": False,
                 "LATENCY_MS": round(
-                    float(
-                        provider.last_performance_metrics.get(
-                            "latency_seconds"
-                        ) or 0.0
+                    max(
+                        float(
+                            provider.last_performance_metrics.get(
+                                "latency_seconds"
+                            ) or 0.0
+                        ),
+                        time.perf_counter() - probe_started,
                     ) * 1000,
                     2,
                 ),
@@ -221,7 +226,10 @@ def main() -> int:
                 "FAILURE_CLASS": safe.get("code") or type(exc).__name__,
             }
         finished_at = _now()
+        run_id = str(os.getenv("GITHUB_RUN_ID") or "local")
+        model_hash = sha256(str(record.model_id).encode("utf-8")).hexdigest()[:16]
         result["CAPABILITY_ID"] = record.capability_id
+        result["EVIDENCE_REF"] = f"github:run:{run_id}:nvidia-model:{model_hash}"
         result["PAID_API_BILLING"] = "NO"
         result["UNLIMITED"] = "UNPROVEN"
         result["RATE_LIMIT_OR_QUOTA_POSSIBLE"] = "YES"
@@ -231,12 +239,42 @@ def main() -> int:
     healthy = sum(
         1 for result in results if result.get("HEALTH") == "AVAILABLE"
     )
+    by_model = {
+        str(result.get("MODEL_ID") or ""): result
+        for result in results
+    }
+    live_probe_pass = (
+        len(profiles) == 5
+        and len(results) == 5
+        and healthy > 0
+    )
+    model_gate_names = {
+        "z-ai/glm-5.3": "NVIDIA_GLM_5_3_LIVE",
+        "moonshotai/kimi-k3": "NVIDIA_KIMI_K3_LIVE",
+        "nvidia/nemotron-3-ultra-550b-a55b": "NVIDIA_NEMOTRON_ULTRA_LIVE",
+        "poolside/laguna-xs-2.1": "NVIDIA_LAGUNA_XS_2_1_LIVE",
+        "nvidia/nemotron-3.5-lightning-30b-a3b": "NVIDIA_NEMOTRON_LIGHTNING_LIVE",
+    }
+    model_gates = {
+        gate: (
+            "PASS"
+            if (
+                (by_model.get(model_id) or {}).get("HEALTH") == "AVAILABLE"
+                and (by_model.get(model_id) or {}).get("RESPONSE_VALID") is True
+            )
+            else "FAIL"
+        )
+        for model_id, gate in model_gate_names.items()
+    }
     report = {
-        "schema": "nvidia-multimodel-probe/v1",
+        "schema": "nvidia-multimodel-probe/v2",
         "NVIDIA_PROVIDER": "PASS" if healthy else "FAIL",
+        "NVIDIA_LIVE_PROBE": "PASS" if live_probe_pass else "FAIL",
+        **model_gates,
         "NVIDIA_FREE_MODELS_DISCOVERED": len(profiles),
         "NVIDIA_MODELS_PROBED": len(results),
         "NVIDIA_MODELS_HEALTHY": healthy,
+        "NVIDIA_MODELS_LIVE_AVAILABLE": healthy,
         "NVIDIA_MULTI_MODEL_SELECTION": "PASS",
         "HARDCODED_MODEL_ROUTING": "NO",
         "SECOND_ROUTER": "NO",
@@ -255,6 +293,10 @@ def main() -> int:
     print(f"NVIDIA_FREE_MODELS_DISCOVERED={len(profiles)}")
     print(f"NVIDIA_MODELS_PROBED={len(results)}")
     print(f"NVIDIA_MODELS_HEALTHY={healthy}")
+    print(f"NVIDIA_MODELS_LIVE_AVAILABLE={healthy}")
+    print("NVIDIA_LIVE_PROBE=" + report["NVIDIA_LIVE_PROBE"])
+    for gate in model_gate_names.values():
+        print(f"{gate}={report[gate]}")
     print("SECRET_LEAK=NO")
     print("PAID_API_FALLBACK=NO")
     return 0

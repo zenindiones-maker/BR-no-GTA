@@ -300,6 +300,15 @@ def _runtime_model_health(provider_id: str, model_id: str) -> ModelHealth | None
     group=payload.get(provider) if isinstance(payload,dict) else None
     item=group.get(model_id) if isinstance(group,dict) else None
     if not isinstance(item,dict): return None
+    current_run_id=str(os.getenv("GITHUB_RUN_ID") or "").strip()
+    evidence_run_id=str(item.get("github_run_id") or "").strip()
+    refs=tuple(str(x) for x in (item.get("evidence_refs") or ()) if str(x))
+    if current_run_id:
+        expected_prefix=f"github:run:{current_run_id}:"
+        if evidence_run_id != current_run_id:
+            return None
+        if not refs or not any(ref.startswith(expected_prefix) for ref in refs):
+            return None
     circuit=str(item.get("circuit_breaker_state") or "CLOSED").upper()
     if circuit not in {"CLOSED","OPEN","HALF_OPEN"}: return None
     return ModelHealth(
@@ -313,7 +322,7 @@ def _runtime_model_health(provider_id: str, model_id: str) -> ModelHealth | None
         sample_size=max(0,int(item.get("sample_size") or 0)),
         rate_limit_state=str(item.get("rate_limit_state") or "UNKNOWN").upper(),
         circuit_breaker_state=circuit,
-        evidence_refs=tuple(str(x) for x in (item.get("evidence_refs") or ()) if str(x)))
+        evidence_refs=refs)
 
 def model_health(provider_id: str, model_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGISTRY) -> ModelHealth:
     provider=str(provider_id or "").strip().lower().replace("-","_")
@@ -331,6 +340,21 @@ def model_health(provider_id: str, model_id: str, *, registry: Any = GLOBAL_CAPA
     if not records:
         return ModelHealth(provider,model,"BLOCKED",None,None,"not_registered",None,1.0,0,"UNKNOWN","OPEN",())
     record=records[0]
+    if str(getattr(record,"health_policy","") or "").upper() == "PROVIDER_AND_MODEL_RUNTIME_HEALTH":
+        return ModelHealth(
+            provider_id=provider,
+            model_id=model,
+            availability="UNKNOWN/UNPROVEN",
+            last_success=None,
+            last_failure=None,
+            failure_class="live_runtime_proof_required",
+            latency_ms=None,
+            confidence=0.0,
+            sample_size=0,
+            rate_limit_state="UNKNOWN",
+            circuit_breaker_state="CLOSED",
+            evidence_refs=(),
+        )
     failures=[]
     for item in _failure_rows():
         metadata=dict(item.get("metadata") or {})
@@ -435,6 +459,42 @@ def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGIS
             provider_id=provider,state="DEGRADED",
             reason="No registered model/profile for this provider is AVAILABLE.",
             evidence_refs=(),retry_allowed=False,zero_cost_eligible=zero_cost_eligible)
+
+    if provider == "nvidia_nim":
+        live_models = []
+        live_refs = []
+        for record in available_records:
+            model_id = str(getattr(record,"model_id",None) or "").strip()
+            if not model_id:
+                continue
+            observed = _runtime_model_health(provider, model_id)
+            if observed is not None and observed.availability == "AVAILABLE":
+                live_models.append(model_id)
+                live_refs.extend(observed.evidence_refs)
+        if live_models:
+            return ProviderHealth(
+                provider_id=provider,
+                state="AVAILABLE",
+                reason=(
+                    f"{len(live_models)} NVIDIA NIM model(s) passed live runtime "
+                    "health proof in the current GitHub execution."
+                ),
+                evidence_refs=tuple(dict.fromkeys(live_refs)),
+                retry_allowed=True,
+                zero_cost_eligible=zero_cost_eligible,
+            )
+        if str(os.getenv("NVIDIA_API_KEY") or "").strip():
+            return ProviderHealth(
+                provider_id=provider,
+                state="DEGRADED",
+                reason=(
+                    "NVIDIA_API_KEY is materialized, but no registered NVIDIA "
+                    "model has current-run live response evidence."
+                ),
+                evidence_refs=(),
+                retry_allowed=True,
+                zero_cost_eligible=zero_cost_eligible,
+            )
 
     for record in available_records:
         runtime_override=_runtime_provider_health_override(record)

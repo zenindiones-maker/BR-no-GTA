@@ -395,6 +395,15 @@ def _provider_records(
             reasons.append(f"provider_health={p_health.state}")
         if model_id:
             m_health = model_health(provider_id, model_id, registry=registry)
+            if (
+                str(getattr(record,"health_policy","") or "").upper()
+                == "PROVIDER_AND_MODEL_RUNTIME_HEALTH"
+                and m_health.availability != "AVAILABLE"
+            ):
+                reasons.append(
+                    "model_live_runtime_proof_required:"
+                    + str(m_health.availability)
+                )
             if m_health.circuit_breaker_state == "OPEN":
                 reasons.append("model_circuit_breaker_open")
             if m_health.availability in {
