@@ -950,6 +950,82 @@ def test_natural_goal_plan_uses_canonical_learning_competence_api():
     assert 'status="ACTIVE"' in source
 
 
+def test_bounded_development_normalizes_low_risk_to_bounded_mutation():
+    assert adaptive.effective_required_side_effect_class(
+        task_class="bounded-development",
+        declared="LOW",
+    ) == "BOUNDED_MUTATION"
+    assert adaptive.effective_required_side_effect_class(
+        task_class="readonly-analysis",
+        declared="READ_ONLY",
+    ) == "READ_ONLY"
+
+
+def test_bounded_development_rejects_readonly_candidate_before_handoff(
+    monkeypatch,
+):
+    profiler = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    bounded = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert profiler is not None and bounded is not None
+
+    class Registry:
+        def discover(self, **_kwargs):
+            return [
+                {"capability_id": profiler.capability_id},
+                {"capability_id": bounded.capability_id},
+            ]
+
+        def get(self, capability_id):
+            return {
+                profiler.capability_id: profiler,
+                bounded.capability_id: bounded,
+            }.get(capability_id)
+
+        def all(self):
+            return [profiler, bounded]
+
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", Registry())
+    monkeypatch.setattr(
+        adaptive,
+        "capability_health",
+        lambda capability_id: CapabilityHealth(
+            capability_id=capability_id,
+            state=HEALTHY,
+            reason="current-run test health",
+            retry_allowed=True,
+            confidence=1.0,
+            sample_size=1,
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=("test:bounded-development",),
+            source="TEST",
+        ),
+    )
+
+    selected, _, avoided, _ = adaptive.select_capability_for_requirement(
+        {
+            "task_id": "candidate",
+            "task_class": "bounded-development",
+            "action": "DEVELOPMENT",
+            "query": "implement bounded candidate in isolated worktree",
+            "objective": "implement candidate",
+            "candidate_capability_ids": [profiler.capability_id],
+            "risk_side_effect_class": "LOW",
+        },
+        context={"competence_evidence": [], "relevant_failure_memories": []},
+        used=set(),
+    )
+    assert selected == bounded.capability_id
+    assert (
+        f"{profiler.capability_id}:side-effect-insufficient:read_only"
+        in avoided
+    )
+
+
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
     monkeypatch.setenv(
         "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
