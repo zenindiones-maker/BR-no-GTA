@@ -211,61 +211,58 @@ jobs:
             cat "$redacted_log"
           fi
 
-      - name: Classify missing CI materialization without inventing credentials
-        if: steps.inventory.outputs.has_materialization != 'true'
+      - name: Classify non-live Tuxevil state without inventing credentials
+        if: >
+          steps.inventory.outputs.has_materialization != 'true' ||
+          steps.readiness.outputs.process_ready != 'pass' ||
+          steps.readiness.outputs.status_ready != 'pass' ||
+          steps.readiness.outputs.models_ready != 'pass' ||
+          steps.readiness.outputs.antigravity_present != 'yes'
+        env:
+          HAS_MATERIALIZATION: ${{ steps.inventory.outputs.has_materialization }}
+          PROCESS_READY: ${{ steps.readiness.outputs.process_ready }}
+          STATUS_READY: ${{ steps.readiness.outputs.status_ready }}
+          ACCOUNT_COUNT: ${{ steps.readiness.outputs.account_count }}
+          ANTIGRAVITY_PRESENT: ${{ steps.readiness.outputs.antigravity_present }}
         run: |
           set -euo pipefail
-          python scripts/tuxevil_codex_compat_probe.py             --output artifacts/tuxevil-codex-antigravity/proof.json             --base-url "$TUXEVIL_LOOPBACK_URL"             --configured-model "$BR_AI_MODEL"             --materialization-missing
+          ci_path="NONE"
+          if [ "${HAS_MATERIALIZATION:-false}" = "true" ]; then
+            ci_path="EXISTING_REPOSITORY_REFERENCE_NOT_RUNTIME_READY"
+          fi
+
+          extra=(
+            --project-antigravity-configured
+            --codex-action-responses-endpoint-supported
+            --tuxevil-responses-endpoint-supported
+          )
+          [ "${PROCESS_READY:-fail}" = "pass" ] && extra+=(--process-ready)
+          [ "${STATUS_READY:-fail}" = "pass" ] && extra+=(--status-ready)
+          [ "${ANTIGRAVITY_PRESENT:-no}" = "yes" ] && extra+=(--antigravity-account-present)
+
+          python scripts/tuxevil_codex_compat_probe.py             --output artifacts/tuxevil-codex-antigravity/proof.json             --base-url "$TUXEVIL_LOOPBACK_URL"             --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY"             --configured-model "$BR_AI_MODEL"             --ci-credential-path "$ci_path"             --runtime-account-count "${ACCOUNT_COUNT:-0}"             "${extra[@]}"
 
           python - <<'PY'
           import json
           from pathlib import Path
-
-          proof_path = Path("artifacts/tuxevil-codex-antigravity/proof.json")
-          runtime_path = Path(
-              "artifacts/tuxevil-codex-antigravity/runtime-readiness.json"
+          d=json.loads(
+              Path("artifacts/tuxevil-codex-antigravity/proof.json").read_text()
           )
-          proof = json.loads(proof_path.read_text())
-          runtime = json.loads(runtime_path.read_text())
-
-          for key in (
-              "TUXEVIL_PROCESS_READY",
-              "TUXEVIL_STATUS_ENDPOINT",
-              "TUXEVIL_RUNTIME_ACCOUNT_COUNT",
-              "ANTIGRAVITY_ACCOUNT_PRESENT",
-              "TUXEVIL_MODELS_READY",
-          ):
-              proof[key] = runtime[key]
-
-          proof["ANTIGRAVITY_UPSTREAM_AUTH"] = "NOT_ATTEMPTED"
-          proof["TUXEVIL_RESPONSES_API"] = "NOT_ATTEMPTED"
-          proof["ANTIGRAVITY_RUNTIME_AUTH"] = (
-              "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
-          )
-          proof["ANTIGRAVITY_CI_CREDENTIAL_PATH"] = "NONE"
-          proof["TUXEVIL_VIRTUAL_KEY_AVAILABLE"] = "NO"
-          proof["UPSTREAM_AUTH_REQUIRED"] = "YES"
-          proof["OPENAI_PLATFORM_API_KEY_REQUIRED"] = "NOT_EVALUATED"
-          proof["AUTH_SECRET_LEAK"] = "NO"
-          proof["AUTH_CREDENTIAL_IN_ARTIFACT"] = "NO"
-          proof["AUTH_CREDENTIAL_IN_TELEGRAM"] = "NO"
-          proof["AUTH_CREDENTIAL_IN_MEMORY"] = "NO"
-          proof["AUTH_CREDENTIAL_IN_OBSIDIAN"] = "NO"
-
-          proof_path.write_text(
-              json.dumps(proof, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-
-          print("TUXEVIL_CODEX_COMPATIBILITY=SUPPORTED")
-          print(
-              "ANTIGRAVITY_RUNTIME_AUTH="
-              "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
-          )
-          print("CODEX_AUTH_AVAILABLE=BLOCKED")
-          print("OPENAI_PLATFORM_API_KEY_REQUIRED=NOT_EVALUATED")
+          assert d["TUXEVIL_CODEX_COMPATIBILITY"] == "SUPPORTED"
+          assert d["AUTH_SECRET_LEAK"] == "NO"
+          if d["TUXEVIL_PROCESS_READY"] == "FAIL":
+              assert d["ANTIGRAVITY_RUNTIME_AUTH"] == (
+                  "NOT_ATTEMPTED_RUNTIME_UNAVAILABLE"
+              )
+              assert d["ANTIGRAVITY_UPSTREAM_AUTH"] == "NOT_ATTEMPTED"
+              assert d["TUXEVIL_RESPONSES_API"] == "NOT_ATTEMPTED"
+          elif d["ANTIGRAVITY_ACCOUNT_PRESENT"] == "NO":
+              assert d["ANTIGRAVITY_RUNTIME_AUTH"] == (
+                  "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+              )
+              assert d["ANTIGRAVITY_UPSTREAM_AUTH"] == "NOT_ATTEMPTED"
+              assert d["TUXEVIL_RESPONSES_API"] == "NOT_ATTEMPTED"
           PY
-
       - name: Probe live Responses API only after process, account and models are ready
         if: >
           steps.inventory.outputs.has_materialization == 'true' &&
@@ -275,8 +272,7 @@ jobs:
           steps.readiness.outputs.antigravity_present == 'yes'
         run: |
           set -euo pipefail
-          python scripts/tuxevil_codex_compat_probe.py             --output artifacts/tuxevil-codex-antigravity/proof.json             --base-url "$TUXEVIL_LOOPBACK_URL"             --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY"             --configured-model "$BR_AI_MODEL"             --ci-credential-path EXISTING_RUNTIME_MATERIALIZATION             --project-antigravity-configured             --codex-action-responses-endpoint-supported
-
+          python scripts/tuxevil_codex_compat_probe.py             --output artifacts/tuxevil-codex-antigravity/proof.json             --base-url "$TUXEVIL_LOOPBACK_URL"             --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY"             --configured-model "$BR_AI_MODEL"             --ci-credential-path EXISTING_RUNTIME_MATERIALIZATION             --project-antigravity-configured             --codex-action-responses-endpoint-supported             --tuxevil-responses-endpoint-supported             --process-ready             --status-ready             --runtime-account-count "${{ steps.readiness.outputs.account_count }}"             --antigravity-account-present
       - name: Classify final proof
         id: classify
         run: |
@@ -320,20 +316,37 @@ jobs:
             CODEX_RESPONSES_ENDPOINT=TUXEVIL_LOOPBACK
             OPENAI_PLATFORM_API_KEY_REQUIRED=NO
 
-      - name: Record safe blocked state when upstream identity is not in this runner
+      - name: Record safe non-live state from proof evidence
         if: steps.classify.outputs.live != 'true'
         run: |
           set -euo pipefail
-          echo "TUXEVIL_CODEX_COMPATIBILITY=SUPPORTED"
-          echo "ANTIGRAVITY_RUNTIME_AUTH=BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(
+              Path("artifacts/tuxevil-codex-antigravity/proof.json").read_text()
+          )
+          for key in (
+              "TUXEVIL_CODEX_COMPATIBILITY",
+              "TUXEVIL_PROCESS_READY",
+              "TUXEVIL_STATUS_ENDPOINT",
+              "TUXEVIL_RUNTIME_ACCOUNT_COUNT",
+              "ANTIGRAVITY_ACCOUNT_PRESENT",
+              "ANTIGRAVITY_RUNTIME_AUTH",
+              "ANTIGRAVITY_UPSTREAM_AUTH",
+              "TUXEVIL_MODELS_READY",
+              "TUXEVIL_RESPONSES_API",
+              "AUTH_SECRET_LEAK",
+          ):
+              print(f"{key}={d[key]}")
+          PY
           echo "CODEX_AUTH_AVAILABLE=BLOCKED"
-          echo "AUTH_SECRET_LEAK=NO"
+          echo "OPENAI_PLATFORM_API_KEY_REQUIRED=NOT_EVALUATED"
           echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
           echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
           echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
           echo "AUTH_CREDENTIAL_IN_OBSIDIAN=NO"
           echo "HARNESS_HERMES_FULL_SYNERGY=NOT_RUN"
-
       - name: Upload sanitized Tuxevil evidence
         if: always()
         uses: actions/upload-artifact@v4
