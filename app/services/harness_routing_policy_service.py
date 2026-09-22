@@ -122,6 +122,16 @@ def _runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
     return resolve_runtime_provider_binding(provider_id)
 
 
+def _authorized_provider_model_binding(
+    record: CapabilityRecord,
+) -> dict[str, Any] | None:
+    from app.services.provider_health_service import (
+        authorized_provider_model_binding,
+    )
+
+    return authorized_provider_model_binding(record)
+
+
 def _record_matches_security(
     record: CapabilityRecord,
     request: HarnessRoutingRequest,
@@ -291,8 +301,11 @@ def _provider_records(
             reasons.append("provider_not_allowed_by_request")
         if provider_id in unavailable:
             reasons.append("provider_runtime_unavailable")
-        if request.preferred_models and record.model_id not in request.preferred_models:
-            reasons.append("model_not_allowed_by_request")
+        if request.preferred_models:
+            model_binding = _authorized_provider_model_binding(record)
+            authorized_model = str((model_binding or {}).get("model_id") or "")
+            if authorized_model not in request.preferred_models:
+                reasons.append("model_not_allowed_by_request")
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
         if request.zero_cost_operation:
@@ -593,15 +606,13 @@ def route_harness_request(
         if provider is not None
         else None
     )
-    runtime_provider = (
-        _runtime_provider_binding(selected_provider)
-        if selected_provider
+    provider_model_binding = (
+        _authorized_provider_model_binding(provider)
+        if provider is not None
         else None
     )
     selected_model = (
-        provider.model_id
-        if provider is not None and provider.model_id
-        else str((runtime_provider or {}).get("model_id") or "") or None
+        str((provider_model_binding or {}).get("model_id") or "") or None
     )
     evidence_expectations = tuple(
         expectation
@@ -695,9 +706,15 @@ def route_harness_request(
             and item.get("evidence_sufficient") is True
         ],
         "selected_provider_cost_class": provider.cost_class if provider is not None else None,
-        "runtime_provider_binding_used": bool(runtime_provider),
+        "provider_model_binding_source": (
+            (provider_model_binding or {}).get("source")
+        ),
+        "runtime_provider_binding_used": (
+            (provider_model_binding or {}).get("source")
+            == "CURRENT_RUN_RUNTIME_PROOF"
+        ),
         "runtime_provider_evidence_refs": list(
-            (runtime_provider or {}).get("evidence_refs") or ()
+            (provider_model_binding or {}).get("evidence_refs") or ()
         ),
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "selected_implementation": {
