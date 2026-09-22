@@ -142,6 +142,8 @@ def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
         return None
 
     normalized = str(provider_id or "").strip().lower().replace("-", "_")
+    if normalized != "tuxevil":
+        return None
     item = payload.get(normalized)
     if not isinstance(item, dict):
         return None
@@ -174,6 +176,13 @@ def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
         for key in _RUNTIME_PROVIDER_PROOF_GATES
     ):
         return None
+    if (
+        str(proof.get("OPENAI_PLATFORM_API_KEY_REQUIRED") or "")
+        .strip()
+        .upper()
+        != "NO"
+    ):
+        return None
 
     refs = tuple(
         str(ref).strip()
@@ -191,8 +200,11 @@ def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
         "scope": "CURRENT_GITHUB_RUN",
         "zero_cost_eligible": True,
         "proof": {
-            key: "PASS"
-            for key in _RUNTIME_PROVIDER_PROOF_GATES
+            **{
+                key: "PASS"
+                for key in _RUNTIME_PROVIDER_PROOF_GATES
+            },
+            "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
         },
         "evidence_refs": refs,
     }
