@@ -2,8 +2,8 @@
   "schema": "delegation-plane-operational-proof-request/v1",
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
-  "deterministic_base_sha": "9507d68f9b31149bce9ea0b3fd19eb406509b544",
-  "trigger_reason": "grounded conditional candidate path deterministically green",
+  "deterministic_base_sha": "e3d25f0e8939fd173623db06dae26e77fb6687d7",
+  "trigger_reason": "mission-action authority contract fixed; Harness Intelligence 82 passed; BR-no-GTA CI green",
   "live_run_budget": 1,
   "no_diagnostic_before_canonical": true
 }
