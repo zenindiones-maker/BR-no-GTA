@@ -778,6 +778,12 @@ def _competence_score(
     return score, True, best
 
 
+_EXECUTION_TOPOLOGY_CAPABILITY_IDS = {
+    "agent-office.execute",
+    "collaboration.hermes.execute",
+}
+
+
 def select_capability_for_requirement(
     requirement: dict[str, Any],
     *,
@@ -815,6 +821,11 @@ def select_capability_for_requirement(
     proposal_bonus_ids = set(proposed)
 
     for ordinal, capability_id in enumerate(ordered_ids):
+        if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
+            avoided.append(
+                f"{capability_id}:execution-topology-not-task-capability"
+            )
+            continue
         record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
         if record is None or record.capability_type == "PROVIDER":
             continue
