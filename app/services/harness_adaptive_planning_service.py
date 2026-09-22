@@ -831,6 +831,26 @@ def select_capability_for_requirement(
             continue
         if not record.execution_enabled or str(requirement["action"]) not in record.allowed_actions:
             continue
+        required_side_effect = str(
+            requirement.get("risk_side_effect_class") or "READ_ONLY"
+        ).upper()
+        record_side_effect = str(
+            getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+        ).upper()
+        mutation_capable = (
+            record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+            or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+        )
+        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"} and not mutation_capable:
+            avoided.append(
+                f"{capability_id}:side-effect-insufficient:{record_side_effect.casefold()}"
+            )
+            continue
+        if required_side_effect == "READ_ONLY" and mutation_capable:
+            avoided.append(
+                f"{capability_id}:side-effect-exceeds:read-only"
+            )
+            continue
         failure = _capability_failure_memory(capability_id, context=context)
         if failure is not None:
             avoided.append(
