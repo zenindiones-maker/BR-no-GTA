@@ -68,14 +68,10 @@ def _persist(record, result, started_at: str, finished_at: str) -> None:
         "error": (
             None
             if success
-            else (
-                str(result.get("FAILURE_CLASS") or "probe_failure")
-                + (
-                    f":http={result.get('HTTP_STATUS')}"
-                    if result.get("HTTP_STATUS") is not None
-                    else ""
-                )
-            )
+            else {
+                "failure_class": result.get("FAILURE_CLASS") or "probe_failure",
+                "http_status": result.get("HTTP_STATUS"),
+            }
         ),
         "retry_count": 0,
         "human_intervention": False,

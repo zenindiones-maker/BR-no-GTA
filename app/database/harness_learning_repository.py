@@ -21,7 +21,7 @@ def _load(value: str | None, default: Any) -> Any:
 
 _EPISODE_JSON = {
     "input_refs", "output_refs", "evidence_refs", "tool_calls", "routing_decision",
-    "actual_outcome", "outcome_evidence", "qa_results", "artifact_refs", "source_versions", "lineage",
+    "actual_outcome", "outcome_evidence", "error", "qa_results", "artifact_refs", "source_versions", "lineage",
 }
 _MEMORY_JSON = {"source_episode_ids", "evidence_refs", "source_versions", "metadata"}
 _COMPETENCE_JSON = {"known_failure_modes", "evidence_refs"}
@@ -36,6 +36,17 @@ def _deserialize(row: Any, json_fields: set[str]) -> dict[str, Any]:
     item = dict(row)
     for field in json_fields:
         if field in item:
+            if field == "error":
+                raw = item[field]
+                if raw is None:
+                    item[field] = None
+                else:
+                    try:
+                        item[field] = json.loads(raw)
+                    except (TypeError, json.JSONDecodeError):
+                        # Backward compatibility for historical plain-text errors.
+                        item[field] = raw
+                continue
             item[field] = _load(item[field], [] if field.endswith("refs") or field in {"source_episode_ids", "tool_calls", "artifact_refs", "known_failure_modes", "evidence_refs", "trigger_refs"} else {})
     for field in ("human_intervention", "regression_pass", "adversarial_pass", "critical_regression"):
         if field in item:
@@ -59,7 +70,12 @@ def insert_episode(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         for key in columns:
             value = record.get(key)
             if key in _EPISODE_JSON:
-                value = _dump(value if value is not None else ([] if key.endswith("refs") or key in {"tool_calls", "artifact_refs"} else {}))
+                if key == "error":
+                    # SQLite stores TEXT; structured Harness errors are canonical JSON.
+                    # Preserve SQL NULL for error=None and JSON-encode strings/dicts.
+                    value = None if value is None else _dump(value)
+                else:
+                    value = _dump(value if value is not None else ([] if key.endswith("refs") or key in {"tool_calls", "artifact_refs"} else {}))
             if key == "human_intervention":
                 value = 1 if value else 0
             values.append(value)

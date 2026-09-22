@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
@@ -351,24 +352,8 @@ def test_nvidia_models_require_current_run_live_health_before_routing(monkeypatc
         "nvidia_nim", "z-ai/glm-5.3"
     ).availability == "UNKNOWN/UNPROVEN"
 
-def test_nvidia_probe_persists_scalar_error_and_checkpoints_before_learning(monkeypatch, tmp_path):
-    captured = {}
+def test_nvidia_probe_persists_structured_error_through_learning_plane(monkeypatch):
     monkeypatch.setenv("GITHUB_RUN_ID", "12345")
-    monkeypatch.setattr(
-        nvidia_probe.learning_repository,
-        "insert_episode",
-        lambda record: captured.setdefault("episode", record),
-    )
-    monkeypatch.setattr(
-        nvidia_probe.learning_repository,
-        "upsert_competence",
-        lambda record: captured.setdefault("competence", record),
-    )
-    monkeypatch.setattr(
-        nvidia_probe.learning_repository,
-        "insert_memory",
-        lambda record: captured.setdefault("memory", record),
-    )
     record = SimpleNamespace(
         model_id="z-ai/glm-5.3",
         capability_id="ai.provider.nvidia-nim.glm-5-3",
@@ -390,8 +375,15 @@ def test_nvidia_probe_persists_scalar_error_and_checkpoints_before_learning(monk
         "2026-09-22T00:00:00+00:00",
         "2026-09-22T00:00:01+00:00",
     )
-    assert isinstance(captured["episode"]["error"], str)
-    assert captured["episode"]["error"] == "rate_limited:http=429"
+    rows = learning_repository.list_episodes(
+        capability_id=record.capability_id,
+        limit=10,
+    )
+    assert len(rows) == 1
+    assert rows[0]["error"] == {
+        "failure_class": "rate_limited",
+        "http_status": 429,
+    }
 
 
 def test_resumed_probe_row_is_fail_closed_and_never_live_available():

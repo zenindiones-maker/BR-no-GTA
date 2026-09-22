@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -39,7 +40,7 @@ from app.services.harness_routing_policy_service import HarnessRoutingRequest, r
 def _episode(*, episode_id: str, execution_id: str, capability_id: str = "learning.candidate",
              agent_id: str = "learning-engineer", skill_version: str = "v2",
              status: str = "COMPLETED", retry_count: int = 0,
-             human_intervention: bool = False, error: str | None = None,
+             human_intervention: bool = False, error: dict | str | None = None,
              observed: bool = True) -> HarnessEpisode:
     return HarnessEpisode(
         episode_id=episode_id,
@@ -153,6 +154,54 @@ def test_episode_persistence_trace_and_observed_outcome():
     assert persisted["tool_calls"][0]["tool"] == "pytest"
     assert persisted["outcome_evidence"] == ["artifact:episode-1:sha256"]
     assert repository.get_episode("episode-1")["goal_id"] == "goal-learning"
+
+
+def test_harness_episode_error_json_serialization_round_trip_and_legacy_text():
+    structured_error = {
+        "failure_class": "rate_limited",
+        "http_status": 429,
+        "retryable": True,
+        "details": {"provider": "nvidia_nim"},
+    }
+    persisted = persist_episode(_episode(
+        episode_id="episode-structured-error",
+        execution_id="exec-structured-error",
+        status="FAILED",
+        observed=False,
+        error=structured_error,
+    ))
+    assert persisted["error"] == structured_error
+    assert repository.get_episode("episode-structured-error")["error"] == structured_error
+
+    connection = get_connection()
+    try:
+        raw = connection.execute(
+            "SELECT error FROM harness_episodes WHERE episode_id = ?",
+            ("episode-structured-error",),
+        ).fetchone()["error"]
+    finally:
+        connection.close()
+    assert json.loads(raw) == structured_error
+
+    none_error = persist_episode(_episode(
+        episode_id="episode-none-error",
+        execution_id="exec-none-error",
+    ))
+    assert none_error["error"] is None
+
+    connection = get_connection()
+    try:
+        connection.execute(
+            "UPDATE harness_episodes SET error = ? WHERE episode_id = ?",
+            ("legacy plain-text failure", "episode-structured-error"),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    assert (
+        repository.get_episode("episode-structured-error")["error"]
+        == "legacy plain-text failure"
+    )
 
 
 def test_agent_self_report_is_not_an_observed_outcome():

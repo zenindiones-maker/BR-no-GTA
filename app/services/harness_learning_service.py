@@ -125,7 +125,7 @@ class HarnessEpisode:
     evidence_refs: tuple[str, ...] = ()
     tool_calls: tuple[dict[str, Any], ...] = ()
     routing_decision: dict[str, Any] | None = None
-    error: str | None = None
+    error: dict[str, Any] | str | None = None
     retry_count: int = 0
     human_intervention: bool = False
     qa_results: dict[str, Any] | None = None
