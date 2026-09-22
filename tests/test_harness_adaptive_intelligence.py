@@ -536,3 +536,82 @@ def test_simple_high_confidence_system_goal_uses_zero_semantic_provider_calls():
     assert plan.planning_mode == "DETERMINISTIC_FAST_PATH"
     assert plan.planning_evidence["semantic_provider_call_count"] == 0
     assert plan.authority == "DEEPSEEK_HARNESS"
+
+
+def test_mission_plan_replans_incompatible_mutation_candidate_before_task_envelope():
+    goal = build_goal_envelope(
+        human_goal=(
+            "Descobre a causa do gargalo e, somente se houver evidência, "
+            "implemente uma correção limitada."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-task-envelope-candidate-normalization",
+        subject="system performance",
+    )
+    calls = []
+
+    def inference(prompt, _context):
+        calls.append(prompt)
+        candidate_risk = "LOW" if len(calls) == 1 else "MEDIUM"
+        if len(calls) == 2:
+            assert "rejected by DeepSeek Harness validation" in prompt
+            assert "candidate semantics" in prompt
+        return {
+            "interpreted_goal": (
+                "Diagnosticar o gargalo e implementar somente uma correção "
+                "bounded quando a evidência justificar."
+            ),
+            "assumptions": ["mutação depende de diagnóstico"],
+            "required_outcomes": ["causa comprovada", "candidate bounded se necessário"],
+            "tasks": [
+                {
+                    "task_id": "diagnose-system",
+                    "objective": "medir e localizar o gargalo sem modificar arquivos",
+                    "task_class": "system-root-cause-analysis",
+                    "required_capability_description": "",
+                    "candidate_capability_ids": [
+                        "agent-office.codex.readonly-analysis"
+                    ],
+                    "dependencies": [],
+                    "expected_output": "RootCauseEvidence",
+                    "acceptance_criteria": ["causa ligada a evidência"],
+                    "risk_side_effect_class": "READ_ONLY",
+                    "action": "DEVELOPMENT",
+                },
+                {
+                    "task_id": "apply-bounded-change",
+                    "objective": "produzir candidate local somente se a causa justificar",
+                    "task_class": "adaptive-code-change",
+                    "required_capability_description": "",
+                    "candidate_capability_ids": [
+                        "agent-office.codex.bounded-development"
+                    ],
+                    "dependencies": ["diagnose-system"],
+                    "expected_output": "BoundedCandidatePatch",
+                    "acceptance_criteria": [
+                        "mudança fica no escopo autorizado",
+                        "candidate depende da evidência do diagnóstico",
+                    ],
+                    "risk_side_effect_class": candidate_risk,
+                    "action": "DEVELOPMENT",
+                },
+            ],
+            "rationale": "observação precede qualquer mutação",
+            "uncertainty": 0.2,
+            "needs_human_clarification": False,
+            "clarification_question": None,
+            "memory_strategy_notes": [],
+            "reused_artifact_refs": [],
+            "avoided_bad_paths": [],
+        }
+
+    plan = plan_mission_from_human_goal(goal, semantic_inference=inference)
+    tasks = {task.task_id: task for task in plan.collaboration_plan.tasks}
+    candidate = tasks["apply-bounded-change"]
+
+    assert len(calls) == 2
+    assert candidate.capability_id == "agent-office.codex.bounded-development"
+    assert candidate.write_scope
+    assert candidate.risk_side_effect_class == "MEDIUM"
+    assert candidate.candidate_requirement == "CONDITIONAL"
+    assert plan.authority == "DEEPSEEK_HARNESS"

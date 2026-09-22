@@ -57,6 +57,22 @@ jobs:
           set -euo pipefail
           python -m py_compile             app/services/semantic_mission_planner_service.py             app/services/harness_adaptive_planning_service.py             app/services/harness_collaboration_service.py             app/services/telegram_conversation_service.py             app/services/local_openweight_ai_provider.py             app/services/provider_health_service.py             app/services/harness_ai_provider_service.py             scripts/harness_intelligence_benchmark.py
           echo "INTELLIGENCE_PLANNER_COMPILE=PASS"
+      - name: Prove TaskEnvelope mutation candidate semantics
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_harness_adaptive_intelligence.py -k "mission_plan_replans_incompatible_mutation_candidate_before_task_envelope"
+          python -m pytest -q tests/test_harness_hermes_delegation_plane.py -k "task_envelope_mutation_candidate_matrix or dynamic_mission_generic_payload_carries_semantic_query_without_capability_hardcode or bounded_development_prompt_requires_non_empty_candidate_patch or required_candidate_rejects_ungrounded_context_before_worker or candidate_requirement_is_typed_and_preserved_through_task_envelope or semantic_live_inference_preserves_harness_authority"
+          echo "TASK_ENVELOPE_MUTATION_CANDIDATE_CONSISTENCY=PASS"
+          echo "READONLY_NOT_APPLICABLE_VALID=PASS"
+          echo "MUTATING_NOT_APPLICABLE_REJECTED=PASS"
+          echo "MUTATING_CANDIDATE_REQUIREMENT_DERIVED=PASS"
+          echo "MISSION_PLAN_TASK_ENVELOPE_NORMALIZATION=PASS"
+          echo "NO_TASK_ID_HARDCODE=PASS"
+          echo "NO_FAKE_CANDIDATE=PASS"
+          echo "NO_UNGROUNDED_NOOP=PASS"
+          echo "CANDIDATE_REQUIRED_SEMANTICS=PASS"
+          echo "TASK_ENVELOPE_CONTEXT_PRESERVED=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

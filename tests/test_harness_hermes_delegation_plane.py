@@ -2556,3 +2556,57 @@ def test_broker_not_required_does_not_require_allocated_write_scope(
         )
     finally:
         consume_harness_authorization(parent)
+
+
+def test_task_envelope_mutation_candidate_matrix():
+    readonly = TaskEnvelope.from_mapping({
+        "task_id": "inspect-readonly",
+        "capability_id": "agent-office.codex.readonly-analysis",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Inspect without mutation.",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "read_scope": ["app"],
+        "write_scope": [],
+        "risk_side_effect_class": "READ_ONLY",
+    })
+    assert readonly.candidate_requirement == "NOT_APPLICABLE"
+    assert readonly.write_scope == ()
+
+    required = TaskEnvelope.from_mapping({
+        "task_id": "mutate-required",
+        "capability_id": "agent-office.codex.bounded-development",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Produce a bounded candidate.",
+        "candidate_requirement": "REQUIRED",
+        "read_scope": ["app", "tests"],
+        "write_scope": ["app/services"],
+        "risk_side_effect_class": "BOUNDED_MUTATION",
+    })
+    assert required.candidate_requirement == "REQUIRED"
+
+    conditional = TaskEnvelope.from_mapping({
+        "task_id": "mutate-conditional",
+        "capability_id": "agent-office.codex.bounded-development",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Produce a bounded candidate only when evidence justifies it.",
+        "candidate_requirement": "CONDITIONAL",
+        "read_scope": ["app", "tests"],
+        "write_scope": ["app/services"],
+        "risk_side_effect_class": "BOUNDED_MUTATION",
+    })
+    assert conditional.candidate_requirement == "CONDITIONAL"
+
+    with pytest.raises(
+        ValueError,
+        match="mutating TaskEnvelope cannot mark candidate NOT_APPLICABLE",
+    ):
+        TaskEnvelope.from_mapping({
+            "task_id": "mutate-invalid",
+            "capability_id": "agent-office.codex.bounded-development",
+            "authorized_action": "DEVELOPMENT",
+            "objective": "Invalid mutation semantics must fail closed.",
+            "candidate_requirement": "NOT_APPLICABLE",
+            "read_scope": ["app", "tests"],
+            "write_scope": ["app/services"],
+            "risk_side_effect_class": "BOUNDED_MUTATION",
+        })
