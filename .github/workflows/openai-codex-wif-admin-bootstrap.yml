@@ -51,7 +51,7 @@ jobs:
       - name: Validate bootstrap contract
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-input pytest
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
           python -m pytest -q tests/test_openai_codex_wif_admin_bootstrap.py
           echo "OPENAI_WIF_BOOTSTRAP_TESTS=PASS"
 
