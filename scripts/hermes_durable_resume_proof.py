@@ -231,13 +231,18 @@ def phase_a(
     finally:
         consume_harness_authorization(auth)
 
-    assert canonical["status"] == "INCOMPLETE", canonical
+    mission_result = dict(canonical.get("result") or {})
+    assert canonical["status"] == "FAILED", canonical
+    assert mission_result.get("status") == "INCOMPLETE", canonical
+    assert canonical.get("error", {}).get("code") == "hermes_mission_incomplete"
     assert holder["completed"] == ["retrieve-primary"], holder
     result = {
         "phase": "RUNNER_A",
         "mission_id": MISSION_ID,
         "status": "PASS",
         "canonical_status": canonical["status"],
+        "mission_status": mission_result.get("status"),
+        "partial_mission_fail_closed": True,
         "completed_before_restart": holder["completed"],
         "primary_evidence_ref": holder["primary"]["evidence_ref"],
         "checkpoint": manifest,
