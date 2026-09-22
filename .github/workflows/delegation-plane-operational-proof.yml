@@ -76,6 +76,9 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/state .runtime
           python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
+          python -m pip install --disable-pip-version-check --no-input \
+            psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 \
+            rich==14.3.3 pathspec==1.1.1
           python -m pytest -q \
             tests/test_harness_hermes_delegation_plane.py \
             tests/test_harness_adaptive_intelligence.py \
