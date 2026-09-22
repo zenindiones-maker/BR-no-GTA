@@ -10,7 +10,13 @@ import re
 from typing import Any
 
 from app.database.schema import initialize_schema
-from app.services.agent_office.integration_gate import run_integration_gate
+from app.services.harness_candidate_integration_service import (
+    evaluate_engineering_candidate,
+    find_candidate_commit as _find_candidate_sha,
+    harness_candidate_decision,
+    select_independent_reviewer as _reviewer_for_candidate,
+    task_is_mutating as _is_mutating,
+)
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -134,42 +140,6 @@ def _complete(board, mapping, task_id: str, run_id: int, summary: str) -> None:
         raise RuntimeError(f"Hermes completion failed: {task_id}")
 
 
-def _find_candidate_sha(value: Any) -> str | None:
-    if isinstance(value, dict):
-        direct = value.get("RESULT_COMMIT_SHA")
-        if isinstance(direct, str) and re.fullmatch(r"[0-9a-f]{40}", direct):
-            return direct
-        direct = value.get("candidate_commit_sha")
-        if isinstance(direct, str) and re.fullmatch(r"[0-9a-f]{40}", direct):
-            return direct
-        commits = value.get("commits")
-        if isinstance(commits, (list, tuple)):
-            for item in commits:
-                if isinstance(item, str) and re.fullmatch(r"[0-9a-f]{40}", item):
-                    return item
-        for nested in value.values():
-            found = _find_candidate_sha(nested)
-            if found:
-                return found
-    if isinstance(value, (list, tuple)):
-        for nested in value:
-            found = _find_candidate_sha(nested)
-            if found:
-                return found
-    return None
-
-
-def _is_mutating(task) -> bool:
-    return bool(task.write_scope) or str(
-        task.risk_side_effect_class or ""
-    ).upper() in {
-        "BOUNDED_MUTATION",
-        "MUTATING",
-        "MEDIUM",
-        "HIGH",
-    }
-
-
 def _candidate_from_parent_context(parent_context: dict[str, Any]) -> str | None:
     return _find_candidate_sha(parent_context)
 
@@ -260,52 +230,6 @@ def _generic_payload(
         "risk_side_effect_class": task.risk_side_effect_class,
         "human_gate_policy": task.human_gate_policy,
     }
-
-
-def _changed_test_commands(
-    *,
-    repository_root: Path,
-    base_sha: str,
-    candidate_sha: str,
-) -> tuple[tuple[str, ...], ...]:
-    import subprocess
-
-    listed = subprocess.check_output(
-        [
-            "git", "-C", str(repository_root),
-            "diff", "--name-only", base_sha, candidate_sha,
-        ],
-        text=True,
-    ).splitlines()
-    tests = sorted({
-        item for item in listed
-        if item.startswith("tests/test_") and item.endswith(".py")
-    })
-    if not tests:
-        tests = ["tests/test_harness_hermes_delegation_plane.py"]
-    return tuple(
-        ("python", "-m", "pytest", "-q", test_path)
-        for test_path in tests
-    )
-
-
-def _reviewer_for_candidate(collaboration, candidate_task_id: str):
-    candidate = next(
-        item for item in collaboration.tasks
-        if item.task_id == candidate_task_id
-    )
-    downstream = [
-        item for item in collaboration.tasks
-        if candidate_task_id in item.dependencies and not _is_mutating(item)
-    ]
-    for reviewer in downstream:
-        if (
-            reviewer.selected_agent_id != candidate.selected_agent_id
-            or reviewer.selected_skill_id != candidate.selected_skill_id
-            or reviewer.capability_id != candidate.capability_id
-        ):
-            return reviewer
-    return None
 
 
 def run(
@@ -520,78 +444,22 @@ def run(
 
     gates: list[dict[str, Any]] = []
     for task_id, candidate_sha in holder["candidate_by_task"].items():
-        task = spec.task(task_id)
-        if not task.write_scope:
-            raise RuntimeError("candidate task has no Harness-authorized write scope")
-        reviewer = _reviewer_for_candidate(collaboration, task_id)
-        builder_identity = (
-            task.selected_agent_id,
-            task.selected_skill_id,
-            task.capability_id,
-        )
-        reviewer_identity = (
-            (
-                reviewer.selected_agent_id,
-                reviewer.selected_skill_id,
-                reviewer.capability_id,
-            )
-            if reviewer is not None else None
-        )
-        independent = (
-            reviewer_identity is not None
-            and reviewer_identity != builder_identity
-            and task_id in holder["reviewed_candidates"]
-        )
-        gate = run_integration_gate(
+        gates.append(evaluate_engineering_candidate(
             repository_root=Path.cwd(),
             base_sha=base_sha,
-            candidate_commit_sha=candidate_sha,
-            allowed_paths=tuple(task.write_scope),
-            focused_test_commands=_changed_test_commands(
-                repository_root=Path.cwd(),
-                base_sha=base_sha,
-                candidate_sha=candidate_sha,
-            ),
-            contract_test_commands=(
-                (
-                    "python", "-m", "pytest", "-q",
-                    "tests/test_harness_hermes_delegation_plane.py",
-                ),
-            ),
-            quality_checks={
-                "harness_authority_preserved": True,
-                "agent_self_promotion": False,
-                "independent_review": independent,
-            },
-            performance_checks={
-                "candidate_has_measurable_acceptance_criteria": bool(
-                    task.acceptance_criteria
-                ),
-            },
-        ).to_dict()
-        gates.append({
-            "task_id": task_id,
-            "candidate_sha": candidate_sha,
-            "reviewer_task_id": reviewer.task_id if reviewer else None,
-            "builder_identity": builder_identity,
-            "reviewer_identity": reviewer_identity,
-            "builder_self_review": not independent,
-            "gate": gate,
-        })
+            collaboration=collaboration,
+            candidate_task_id=task_id,
+            candidate_sha=candidate_sha,
+            reviewed_candidate_ids=holder["reviewed_candidates"],
+        ))
 
     candidate_required = bool(holder["candidate_by_task"])
-    all_gates_pass = bool(gates) and all(
-        item["gate"].get("status") == "PASS"
-        and item["builder_self_review"] is False
-        for item in gates
+    candidate_decision = harness_candidate_decision(
+        gates,
+        candidate_required=candidate_required,
     )
-    promotion_decision = (
-        "HUMAN_REVIEW"
-        if candidate_required and all_gates_pass
-        else "REJECT"
-        if candidate_required
-        else "NOT_REQUIRED"
-    )
+    all_gates_pass = bool(candidate_decision["all_gates_pass"])
+    promotion_decision = str(candidate_decision["decision"])
     broker = holder.get("broker")
     unique_owners = {
         (
