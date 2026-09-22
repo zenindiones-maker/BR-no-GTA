@@ -73,6 +73,18 @@ class HermesBoardAdapter:
             finally:
                 conn.close()
 
+    def find_task_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            raise ValueError("idempotency_key is required")
+        with self.connection() as (kb, _kbd, conn):
+            tasks = kb.list_tasks(conn, include_archived=True, order_by="created")
+            for task in tasks:
+                row = dict(vars(task))
+                if str(row.get("idempotency_key") or "") == key:
+                    return row
+        return None
+
     def create_task(
         self,
         *,
