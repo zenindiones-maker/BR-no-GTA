@@ -1055,14 +1055,12 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
         "FULL_RENDER": "NO",
         "YOUTUBE_UPLOAD": "NO",
         "YOUTUBE_PUBLICATION": "NO",
+        "UNSOLICITED_TELEGRAM_EGRESS": "NO",
+        "TELEGRAM_MESSAGES_SENT": 0,
     }
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "continuous-operation-proof.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n",
-        encoding="utf-8",
-    )
-    (artifact_dir / "telegram-report.txt").write_text(
-        _telegram_action_first_report(report) + "\n",
         encoding="utf-8",
     )
     if report["status"] != "PASS":
@@ -1452,27 +1450,6 @@ def _export_current_projection(*, artifact_dir: Path, target_sha: str, evidence_
         },
         project_goals={"VIDEO-A": VIDEO_A_GOAL_ID},
     )
-
-
-def _telegram_action_first_report(report: dict[str, Any]) -> str:
-    change = report.get("change_summary") or {}
-    proof = report.get("evidence_refs") or []
-    return "\n".join([
-        "AÇÃO",
-        str(change.get("action") or "Ciclo contínuo governado executado."),
-        "",
-        "APRENDEU",
-        str(change.get("learned") or "Nenhuma mudança relevante de conhecimento."),
-        "",
-        "MUDOU",
-        str(change.get("changed") or "Nenhuma mudança canônica foi necessária."),
-        "",
-        "PROVA",
-        ", ".join(str(item) for item in proof[:8]) or "sem nova evidência",
-        "",
-        "PRÓXIMO",
-        str(change.get("next") or "Aguardar o próximo evento ou janela configurada."),
-    ])
 
 
 def run_scheduled(
