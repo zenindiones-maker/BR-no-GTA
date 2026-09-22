@@ -59,9 +59,8 @@ def test_generic_attachment_is_verified_without_downloading_bytes():
     assert api.calls == [("getFile", {"file_id": "file-id"}, 20)]
 
 
-def test_progress_reporter_sends_only_on_meaningful_stage_changes(monkeypatch):
+def test_progress_reporter_is_audit_only_for_all_stages(monkeypatch):
     api = FakeTelegramApi()
-    monkeypatch.setenv("TELEGRAM_PROGRESS_MIN_SECONDS", "999")
     update_conversation_state(
         7001,
         execution_status="COMPLETED",
@@ -70,26 +69,27 @@ def test_progress_reporter_sends_only_on_meaningful_stage_changes(monkeypatch):
     )
     before = get_or_create_conversation_state(7001)
     reporter = TelegramProgressReporter(api, 7001)
+    reporter.start()
     reporter("RESEARCH", "pesquisando Extended Look")
     reporter("RESEARCH", "18/31 achados analisados")
     reporter("VALIDATION", "validando evidências")
+    reporter.blocker("falha técnica interna")
+    reporter._heartbeat_loop()
+    reporter.stop()
     after = get_or_create_conversation_state(7001)
     telemetry = list_recent_telegram_progress_events(7001, limit=10)
 
-    assert len(api.sent) == 2
-    assert api.sent[0][1] == "pesquisando Extended Look"
-    assert api.sent[1][1] == "validando evidências"
-    assert "RESEARCH" not in api.sent[0][1]
-    assert "VALIDATION" not in api.sent[1][1]
+    assert api.sent == []
     assert after["execution_status"] == before["execution_status"] == "COMPLETED"
     assert after["active_stage"] == before["active_stage"] == "COMPLETE"
     assert after["active_blocker"] == before["active_blocker"]
-    assert {item["stage"] for item in telemetry} >= {"RESEARCH", "VALIDATION"}
+    assert {item["stage"] for item in telemetry} >= {"RESEARCH", "VALIDATION", "BLOCKED"}
     assert all(
         item["metadata"].get("canonical_execution_state_authority") is False
         for item in telemetry
-        if item["event_type"] == "PROGRESS"
     )
+    assert all(item["metadata"].get("telegram_egress") is False for item in telemetry)
+    assert all(item["metadata"].get("audit_only") is True for item in telemetry)
 
 
 def test_waiting_for_human_reply_is_explicit_but_still_natural():
@@ -636,18 +636,21 @@ def test_live_status_exact_human_path_sends_one_clean_final_message(monkeypatch)
     assert api.sent == [(12003, reply)]
 
 
-def test_progress_reporter_keeps_internal_control_stages_telemetry_only(monkeypatch):
+def test_progress_reporter_keeps_every_stage_telemetry_only(monkeypatch):
     api = FakeTelegramApi()
-    monkeypatch.setenv("TELEGRAM_PROGRESS_MIN_SECONDS", "5")
     reporter = TelegramProgressReporter(api, 13001)
 
     reporter("UNDERSTANDING", "resolvendo contexto")
     reporter("ROUTING", "roteando")
     reporter("REASONING", "raciocínio governado")
+    reporter("RESEARCH", "Equipe pesquisando fontes oficiais — 1/3.")
+    reporter("RESULT", "resultado interno pronto")
     assert api.sent == []
 
-    reporter("RESEARCH", "Equipe pesquisando fontes oficiais — 1/3.")
-    assert api.sent == [(13001, "Equipe pesquisando fontes oficiais — 1/3.")]
+    telemetry = list_recent_telegram_progress_events(13001, limit=10)
+    assert {item["stage"] for item in telemetry} >= {
+        "UNDERSTANDING", "ROUTING", "REASONING", "RESEARCH", "RESULT"
+    }
 
 
 
@@ -746,9 +749,18 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
     try:
         result = send_harness_message_to_human_group(
             authorization=authorization,
-            text="Mensagem humana legível.",
-            category="TEST",
+            text=(
+                "RESUMO EDITORIAL\n\nPauta pronta.\n\n"
+                "EVIDENCE MAP\n\nAchado → fonte → referência → uso editorial.\n\n"
+                "OUTLINE\n\nAbertura, desenvolvimento e fechamento.\n\n"
+                "ROTEIRO 1/1\n\nBooooa meu povo, roteiro completo para revisão."
+            ),
+            category="SCRIPT_HUMAN_REVIEW_READY",
             lineage={"test": True},
+            deliverable_type="SCRIPT",
+            deliverable_status="READY_FOR_HUMAN_REVIEW",
+            complete_script_present=True,
+            harness_authorized=True,
         )
     finally:
         consume_harness_authorization(authorization)
