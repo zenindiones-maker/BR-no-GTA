@@ -16,7 +16,7 @@
   ],
   "telegram_egress": false,
   "credential_values_in_request": false,
-  "reason": "continue canonical 35-42 after bounded semantic schema replan fix",
+  "reason": "rerun canonical operational proof after generic Registry provider-model contract fix",
   "acceptance_requires_write_candidate": true,
   "item19_proof_run_id": 35690756218,
   "focused_gate_fixes": {
@@ -24,7 +24,9 @@
     "explicit_no_performance_negation": "PASS_EXPECTED"
   },
   "focused_gate_precondition": "must pass adaptive schema-replan regression before natural goal",
-  "previous_failed_run_id": 35693215993,
+  "previous_failed_run_id": 35693005993,
   "focused_tests_last_observed": "82 passed",
-  "runtime_provider_overlay": "CURRENT_GITHUB_RUN_ONLY"
+  "runtime_provider_overlay": "CURRENT_GITHUB_RUN_ONLY",
+  "focused_tests_run_id": 35693495866,
+  "focused_tests_status": "PASS"
 }
