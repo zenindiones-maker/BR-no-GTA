@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from math import log1p, sqrt
 import re
@@ -720,6 +721,70 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     return tuple(errors)
 
 
+def _candidate_hint_is_hard_compatible(
+    task: Any,
+    capability_id: str,
+) -> bool:
+    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    if record is None:
+        return True
+    if (
+        not record.execution_enabled
+        or record.capability_type == "PROVIDER"
+        or capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS
+        or task.action not in record.allowed_actions
+        or not registry_executor_is_task_adapter_compatible(record.executor_binding)
+    ):
+        return False
+    required_side_effect = effective_required_side_effect_class(
+        task_class=task.task_class,
+        declared=task.risk_side_effect_class,
+    )
+    record_side_effect = str(
+        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+    ).upper()
+    mutation_capable = (
+        record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+        or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+    )
+    if (
+        required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+        and not mutation_capable
+    ):
+        return False
+    if required_side_effect == "READ_ONLY" and mutation_capable:
+        return False
+    return True
+
+
+def discard_incompatible_registered_candidate_hints(
+    proposal: MissionPlanProposal,
+) -> tuple[MissionPlanProposal, tuple[str, ...]]:
+    discarded: list[str] = []
+    tasks = []
+    for task in proposal.tasks:
+        kept = []
+        for capability_id in task.candidate_capability_ids:
+            if _candidate_hint_is_hard_compatible(task, capability_id):
+                kept.append(capability_id)
+            else:
+                discarded.append(f"{task.task_id}:{capability_id}")
+        if tuple(kept) == task.candidate_capability_ids:
+            tasks.append(task)
+            continue
+        need = str(task.required_capability_description or "").strip()
+        if not kept and not need:
+            need = str(task.objective or "").strip()[:120]
+        tasks.append(replace(
+            task,
+            candidate_capability_ids=tuple(kept),
+            required_capability_description=need,
+        ))
+    if not discarded:
+        return proposal, ()
+    return replace(proposal, tasks=tuple(tasks)), tuple(discarded)
+
+
 def propose_validated_semantic_plan(
     context: dict[str, Any],
     *,
@@ -778,6 +843,18 @@ def propose_validated_semantic_plan(
             return result, evidence
         evidence["rejection_reasons"].append(list(errors))
         if attempt >= max_replans:
+            sanitized, discarded = discard_incompatible_registered_candidate_hints(
+                result.proposal
+            )
+            sanitized_errors = proposal_registry_errors(sanitized)
+            if discarded and not sanitized_errors:
+                evidence["candidate_hints_discarded"] = list(discarded)
+                evidence["provider_evidence"] = dict(result.provider_evidence)
+                evidence["prompt_sha256"] = result.prompt_sha256
+                evidence["planner_authority"] = "NONE"
+                evidence["validated_by"] = "DEEPSEEK_HARNESS"
+                evidence["selection_authority"] = "DEEPSEEK_HARNESS"
+                return replace(result, proposal=sanitized), evidence
             raise RuntimeError(
                 "SEMANTIC_MISSION_PROPOSAL_REJECTED:" + " | ".join(errors)
             )
