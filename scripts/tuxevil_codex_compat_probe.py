@@ -359,6 +359,110 @@ def run(
     return report
 
 
+
+def write_missing_materialization_report(
+    *,
+    output: Path,
+    base_url: str,
+    configured_model: str,
+) -> dict[str, Any]:
+    report = {
+        "schema": "br-tuxevil-codex-antigravity-proof/v1",
+        "generated_at": _now(),
+        "authority": "DEEPSEEK_HARNESS",
+        "runtime_endpoint": base_url.rstrip("/"),
+        "loopback_only": base_url.startswith("http://127.0.0.1:"),
+        "selected_model": configured_model,
+        "discovered_models": [],
+        "inventory": {
+            "TUXEVIL_RUNTIME_PRESENT": "YES",
+            "TUXEVIL_RESPONSES_API_COMPATIBLE": "YES",
+            "ANTIGRAVITY_PROVIDER_CONFIGURED": "YES",
+            "ANTIGRAVITY_CI_CREDENTIAL_PATH": "NONE",
+            "TUXEVIL_VIRTUAL_KEY_AVAILABLE": "NO",
+            "UPSTREAM_AUTH_REQUIRED": "YES",
+        },
+        "models_probe": {
+            "reachable": False,
+            "status": None,
+            "body_sha256": None,
+            "safe_error": {
+                "type": "upstream_identity_not_materialized",
+                "code": "ci_account_store_absent",
+                "status": "BLOCKED",
+            },
+        },
+        "responses_probe": {
+            "reachable": False,
+            "status": None,
+            "body_sha256": None,
+            "safe_error": {
+                "type": "upstream_identity_not_materialized",
+                "code": "ci_account_store_absent",
+                "status": "BLOCKED",
+            },
+            "response_text_sha256": None,
+            "response_text_present": False,
+        },
+        "tool_probe": {
+            "attempted": False,
+            "status": None,
+            "body_sha256": None,
+            "function_call_observed": False,
+        },
+        "TUXEVIL_CODEX_COMPATIBILITY": "SUPPORTED",
+        "ANTIGRAVITY_RUNTIME_AUTH": (
+            "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+        ),
+        "TUXEVIL_RESPONSES_API": "BLOCKED",
+        "ANTIGRAVITY_UPSTREAM_AUTH": "BLOCKED",
+        "TUXEVIL_LIVE_INFERENCE": "BLOCKED",
+        "TUXEVIL_TOOL_CALLING": "BLOCKED",
+        "CODEX_ACTION_RESPONSES_ENDPOINT": "SUPPORTED",
+        "OPENAI_PLATFORM_API_KEY_REQUIRED": "NOT_EVALUATED",
+        "AUTH_SECRET_LEAK": "NO",
+        "AUTH_CREDENTIAL_IN_ARTIFACT": "NO",
+        "AUTH_CREDENTIAL_IN_TELEGRAM": "NO",
+        "AUTH_CREDENTIAL_IN_MEMORY": "NO",
+        "AUTH_CREDENTIAL_IN_OBSIDIAN": "NO",
+        "credential_material_persisted": False,
+        "compatibility_evidence": [
+            "upstream:tuxevil-rotator@3.8.0:/v1/responses",
+            "upstream:tuxevil-rotator@3.8.0:tool-function-calling",
+            "upstream:openai/codex-action@v1:responses-api-endpoint",
+            "repo:.dsh/cordis.patch.yml:tuxevil-loopback",
+            "repo:app/services/tuxevil_ai_provider.py",
+        ],
+        "live_probe_skipped_reason": (
+            "Tuxevil 3.8.0 requires at least one configured upstream account "
+            "before starting the proxy; the repository defines no CI credential "
+            "materialization binding for the existing Antigravity account."
+        ),
+    }
+    raw = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+    for forbidden in (
+        "Bearer ",
+        "refresh_token",
+        "access_token",
+        "client_secret",
+    ):
+        if forbidden.casefold() in raw.casefold():
+            raise PermissionError("blocked proof contains credential-shaped material")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(raw + "\n", encoding="utf-8")
+    for key, value in report["inventory"].items():
+        print(f"{key}={value}")
+    print("TUXEVIL_CODEX_COMPATIBILITY=SUPPORTED")
+    print(
+        "ANTIGRAVITY_RUNTIME_AUTH="
+        "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+    )
+    print("CODEX_AUTH_AVAILABLE=BLOCKED")
+    print("OPENAI_PLATFORM_API_KEY_REQUIRED=NOT_EVALUATED")
+    print("AUTH_SECRET_LEAK=NO")
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -372,7 +476,16 @@ def main() -> int:
         "--codex-action-responses-endpoint-supported",
         action="store_true",
     )
+    parser.add_argument("--materialization-missing", action="store_true")
     args = parser.parse_args()
+
+    if args.materialization_missing:
+        report = write_missing_materialization_report(
+            output=args.output,
+            base_url=args.base_url,
+            configured_model=args.configured_model,
+        )
+        return 0
 
     report = run(
         output=args.output,
