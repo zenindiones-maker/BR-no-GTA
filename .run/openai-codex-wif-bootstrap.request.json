@@ -1,5 +1,5 @@
 {
-  "request": "OPENAI_CODEX_WIF_ADMIN_BOOTSTRAP_001",
+  "request": "OPENAI_CODEX_WIF_ADMIN_BOOTSTRAP_002",
   "repository": "zenindiones-maker/BR-no-GTA",
   "ref": "refs/heads/work/gate6f-analytics-learning",
   "issuer": "https://token.actions.githubusercontent.com",
@@ -13,5 +13,6 @@
     "auth.json",
     "refresh_token",
     "credential_artifact"
-  ]
+  ],
+  "retry_reason": "bootstrap test runtime dependency fixed"
 }
