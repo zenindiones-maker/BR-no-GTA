@@ -2,9 +2,19 @@
   "schema": "delegation-plane-operational-proof-request/v1",
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
-  "deterministic_base_sha": "1538f44da6866bf8f266a15be0a56022a5541bf8",
-  "previous_failed_run_id": 35773828328,
-  "retry_reason": "candidate repair now action-first with explicit already-authorized bounded mutation mechanism; Agent Office Validation and BR-no-GTA CI green",
+  "previous_failed_run_id": 35774840939,
+  "previous_blocker": "agent-office.codex.bounded-development COMMAND_ALLOWLIST wc",
+  "deterministic_fix_sha": "038f86fa3703a6e2a560737835b57ca7406e497d",
+  "deterministic_gates": {
+    "bounded_wc_readonly": "PASS",
+    "wc_outside_scope_blocked": "PASS",
+    "wc_write_side_effect": "NO",
+    "command_allowlist_still_fail_closed": "PASS",
+    "task_envelope_scope_preserved": "PASS",
+    "no_arbitrary_shell_expansion": "PASS",
+    "agent_office_validation_run": 35776915536,
+    "br_no_gta_ci_run": 35776915875
+  },
   "live_run_budget": 1,
-  "no_diagnostic_before_canonical": true
+  "no_parallel_proof": true
 }
