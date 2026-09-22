@@ -5,7 +5,9 @@ import os
 from typing import Any, Mapping
 
 
-SUPPORTED_CHAT_TYPES = frozenset({"private", "group", "supergroup"})
+HUMAN_SURFACE = "telegram_group"
+PRIVATE_TELEGRAM_HUMAN_SURFACE = "DISABLED"
+SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup"})
 
 
 @dataclass(frozen=True)
@@ -47,9 +49,8 @@ def configured_allowed_chat_ids(state: Mapping[str, Any]) -> set[int]:
     review_chat = os.getenv("TELEGRAM_REVIEW_CHAT_ID", "").strip()
     if review_chat:
         allowed.update(_parse_ids(review_chat))
-    paired_private = state.get("chat_id")
-    if paired_private not in (None, ""):
-        allowed.update(_parse_ids([paired_private]))
+    # Legacy private pairing state is deliberately ignored. The only human
+    # surface is an explicitly allowed Telegram group/supergroup.
     return allowed
 
 
@@ -83,12 +84,9 @@ def parse_governed_telegram_ingress(
     authorized_sender = (
         allowed_user_id is not None and int(allowed_user_id) == user_id
     )
-    if chat_type == "private":
-        authorized_chat = authorized_sender
-    else:
-        authorized_chat = (
-            authorized_sender and chat_id in configured_allowed_chat_ids(state)
-        )
+    authorized_chat = (
+        authorized_sender and chat_id in configured_allowed_chat_ids(state)
+    )
     return TelegramIngress(
         user_id=user_id,
         chat_id=chat_id,
