@@ -121,6 +121,22 @@ def _platform(url: str) -> str:
     return "web"
 
 
+def _fetch_validators(url: str, *, timeout: int = 10) -> dict[str, str]:
+    try:
+        req = urllib.request.Request(
+            url,
+            method="HEAD",
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return {
+                "etag": str(response.headers.get("ETag") or ""),
+                "last_modified": str(response.headers.get("Last-Modified") or ""),
+            }
+    except Exception:
+        return {"etag": "", "last_modified": ""}
+
+
 def _fetch_text_conditional(
     url: str,
     *,
@@ -222,11 +238,25 @@ def _resolve_submitted_source(
 ) -> dict[str, Any]:
     try:
         safe_url = _public_https_url(source_url)
-        fetched = _fetch_text_conditional(
-            safe_url,
-            etag=etag,
-            last_modified=last_modified,
-        )
+        if str(etag or "").strip() or str(last_modified or "").strip():
+            fetched = _fetch_text_conditional(
+                safe_url,
+                etag=etag,
+                last_modified=last_modified,
+            )
+        else:
+            # Preserve the established first-fetch boundary for callers/tests,
+            # then collect validators best-effort for future conditional runs.
+            text, resolved = _fetch_text(safe_url)
+            validators = _fetch_validators(resolved)
+            fetched = {
+                "status": "CHANGED",
+                "url": safe_url,
+                "resolved_url": resolved,
+                "etag": validators["etag"],
+                "last_modified": validators["last_modified"],
+                "text": text,
+            }
         if fetched["status"] == "NOT_MODIFIED":
             return {
                 "resolution_status": "NOT_MODIFIED",
