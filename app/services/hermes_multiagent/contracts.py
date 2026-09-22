@@ -352,8 +352,14 @@ class HermesMissionExecutionSpec:
         child: Mapping[str, Any],
         depth: int,
         existing_child_count: int,
+        parent_envelope: Any | None = None,
     ) -> TaskEnvelope:
-        parent = self.task(parent_task_id)
+        parent = parent_envelope if parent_envelope is not None else self.task(parent_task_id)
+        if str(getattr(parent, "mission_id", self.mission_id)) not in {
+            "UNBOUND",
+            self.mission_id,
+        }:
+            raise PermissionError("Hermes child parent escaped mission identity")
         if depth < 1 or depth > self.max_child_depth:
             raise PermissionError("Hermes child task depth exceeds DelegationEnvelope")
         if existing_child_count >= self.max_child_tasks:
