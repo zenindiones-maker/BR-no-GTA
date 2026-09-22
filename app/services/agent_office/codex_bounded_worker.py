@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from app.services.agent_office.contracts import AgentOfficeTask
 from app.services.agent_office.delegation import DelegatedTaskLease
+from app.services.performance_telemetry_service import PerformanceSpan
 
 CODEX_BOUNDED_DEVELOPMENT_CAPABILITY = "agent-office.codex.bounded-development"
 MAX_CANDIDATE_REPAIR_PASSES = 1
@@ -173,18 +174,59 @@ def _run(
     timeout: float,
     sanitized_env: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    if timeout <= 0:
-        raise subprocess.TimeoutExpired(command, timeout)
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        timeout=timeout,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=codex_sanitized_environment() if sanitized_env else None,
+    tool = Path(str(command[0] if command else "unknown")).name or "unknown"
+    category = (
+        "AI_PROVIDER_TIME"
+        if tool == "codex"
+        else "REPOSITORY_IO_TIME"
+        if tool == "git"
+        else "SUBPROCESS_TIME"
     )
-
+    provider = "codex" if tool == "codex" else None
+    prompt_bytes = (
+        len(str(command[-1]).encode("utf-8"))
+        if tool == "codex" and command
+        else None
+    )
+    with PerformanceSpan(
+        stage=f"agent-office.bounded.subprocess.{tool}",
+        category=category,
+        provider=provider,
+        model=(
+            str(os.environ.get("BR_CODEX_TUXEVIL_MODEL") or "").strip() or None
+            if tool == "codex"
+            else None
+        ),
+        input_size=prompt_bytes,
+        metadata={
+            "tool": tool,
+            "sanitized_env": bool(sanitized_env),
+        },
+    ) as span:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            timeout=timeout,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=codex_sanitized_environment() if sanitized_env else None,
+        )
+        metadata = {
+            "tool": tool,
+            "returncode": int(completed.returncode),
+        }
+        parser = globals().get("_commands")
+        if tool == "codex" and callable(parser):
+            observed = tuple(parser(completed.stdout))
+            metadata["tool_call_count"] = len(observed)
+            metadata["unique_command_count"] = len(set(observed))
+            metadata["duplicate_command_count"] = len(observed) - len(set(observed))
+        span.set(
+            output_size=len((completed.stdout or "").encode("utf-8")),
+            metadata=metadata,
+        )
+        return completed
 
 def _changed_paths(workspace: Path, base_sha: str) -> tuple[str, ...]:
     tracked = _run(

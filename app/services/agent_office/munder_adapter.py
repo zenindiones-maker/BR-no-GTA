@@ -34,7 +34,10 @@ from app.services.agent_office.codex_bounded_worker import (
 from app.services.agent_office.addy_task_owner_worker import (
     addy_specialist_task_owner_worker,
 )
-from app.services.performance_telemetry_service import emit_performance_event
+from app.services.performance_telemetry_service import (
+    PerformanceSpan,
+    emit_performance_event,
+)
 
 
 WorkerRunner = Callable[..., dict[str, Any]]
@@ -595,10 +598,51 @@ class MunderAdapter:
             last_error = "worker execution failed"
             for attempt in range(1, lease.retry_budget + 2):
                 try:
-                    if len(inspect.signature(runner).parameters) >= 4:
-                        raw = runner(task, workspace, timeout_seconds, lease)
-                    else:
-                        raw = runner(task, workspace, timeout_seconds)
+                    with PerformanceSpan(
+                        stage=f"agent-office.task.{task.task_id}.attempt.{attempt}",
+                        category="AGENT_ATTEMPT_TIME",
+                        provider=(
+                            "codex"
+                            if task.agent in {"codex-readonly", "codex-development"}
+                            else None
+                        ),
+                        input_size=len(task.objective.encode("utf-8")),
+                        trace_id=spec.mission_id,
+                        goal_id=spec.goal_id,
+                        execution_id=spec.execution_id,
+                        agent_id=task.agent,
+                        capability_id=task.capability,
+                        mission_id=spec.mission_id,
+                        task_id=task.task_id,
+                        delegation_id=lease.delegation_id,
+                        authorization_id=lease.authorization_id,
+                        work_class="NECESSARY" if attempt == 1 else "REPEATED",
+                        attempt=attempt,
+                        metadata={
+                            "retry_budget": lease.retry_budget,
+                            "tool_call_budget": lease.tool_call_budget,
+                        },
+                    ) as attempt_span:
+                        if len(inspect.signature(runner).parameters) >= 4:
+                            raw = runner(task, workspace, timeout_seconds, lease)
+                        else:
+                            raw = runner(task, workspace, timeout_seconds)
+                        attempt_span.set(
+                            output_size=len(
+                                json.dumps(raw, default=str).encode("utf-8")
+                            )
+                            if isinstance(raw, dict)
+                            else None,
+                            metadata={
+                                "retry_budget": lease.retry_budget,
+                                "tool_call_budget": lease.tool_call_budget,
+                                "worker_status": (
+                                    raw.get("status")
+                                    if isinstance(raw, dict)
+                                    else None
+                                ),
+                            },
+                        )
                     if not isinstance(raw, dict):
                         raise TypeError("worker result must be an object")
                     result = sanitize_evidence(raw)

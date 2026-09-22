@@ -46,6 +46,8 @@ env:
   BR_CODEX_TUXEVIL_BASE_URL: "http://127.0.0.1:51200/v1"
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/delegation-plane-operational/state/learning.db
+  BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/artifacts/delegation-plane-operational/performance-trace.jsonl
+  BR_PERFORMANCE_TRACE_ID: delegation-plane:${{ github.run_id }}:${{ github.run_attempt }}
   ZERO_COST_OPERATION: "TRUE"
   SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS: "0"
   HARNESS_DELEGATION_TELEGRAM_EGRESS: "0"
@@ -678,6 +680,30 @@ jobs:
                   value=json.dumps(value,separators=(",",":"),sort_keys=True)
               print(f"{key}={value}")
           PY
+
+      - name: Summarize end-to-end performance trace
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/delegation-plane-operational
+          touch "$BR_PERFORMANCE_TRACE_FILE"
+          python scripts/summarize_performance_trace.py \
+            --trace "$BR_PERFORMANCE_TRACE_FILE" \
+            --output artifacts/delegation-plane-operational/performance-profile.json \
+            --run-id "$GITHUB_RUN_ID"
+
+      - name: Upload end-to-end performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegation-plane-performance-${{ github.run_id }}
+          path: |
+            artifacts/delegation-plane-operational/performance-trace.jsonl
+            artifacts/delegation-plane-operational/performance-profile.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Shutdown Tuxevil and destroy all ephemeral auth material
         if: always()

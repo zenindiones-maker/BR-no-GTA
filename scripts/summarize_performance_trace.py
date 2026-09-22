@@ -187,6 +187,18 @@ def _step_category(name: str) -> str:
         "restore versioned", "rehydrate previously promoted",
     )):
         return "GITHUB_SETUP_TIME"
+    if "prepare canonical runtime and focused delegation gates" in value:
+        return "PREFLIGHT_TIME"
+    if any(token in value for token in (
+        "materialize existing antigravity",
+        "start tuxevil",
+        "publish runner-local codex health",
+    )):
+        return "PROVIDER_STARTUP_TIME"
+    if "execute first real natural-goal mission" in value or (
+        "execute second similar mission" in value
+    ):
+        return "MISSION_EXECUTION_TIME"
     if "build or validate versioned" in value:
         return "DEPENDENCY_INSTALL_TIME"
     if "upload" in value and "artifact" in value:
@@ -322,6 +334,54 @@ def main() -> int:
     for category, value in step_category_exclusive.items():
         category_cumulative[category] = category_cumulative.get(category, 0.0) + value
 
+    codex_process_launches = sum(
+        1
+        for item in spans
+        if (item.get("metadata") or {}).get("tool") == "codex"
+        and item.get("category") == "AI_PROVIDER_TIME"
+    )
+    git_invocations = sum(
+        1
+        for item in spans
+        if (item.get("metadata") or {}).get("tool") == "git"
+    )
+    context_bytes = sum(
+        int(item.get("input_size") or 0)
+        for item in spans
+        if item.get("provider") == "codex"
+    )
+    cache_hits = sum(1 for item in spans if item.get("cache_hit") is True)
+    cache_misses = sum(1 for item in spans if item.get("cache_hit") is False)
+    repeated_spans = [
+        item for item in spans
+        if str(item.get("work_class") or "").upper()
+        in {"REDUNDANT", "REPEATED", "INVALIDATED"}
+    ]
+    retries_before = sum(
+        max(0, int(item.get("attempt_count") or 1) - 1)
+        for item in spans
+        if item.get("category") == "AGENT_EXECUTION_TIME"
+    )
+    named_step_ms: dict[str, float] = defaultdict(float)
+    for step in github.get("steps") or ():
+        named_step_ms[str(step.get("category") or "CONTROL_PLANE_TIME")] += float(
+            step.get("duration_ms") or 0.0
+        )
+    planning_ms = sum(
+        float(item.get("inclusive_ms") or 0.0)
+        for item in spans
+        if item.get("category") == "HARNESS_PLANNING_TIME"
+    )
+    agent_attempts = [
+        item for item in spans if item.get("category") == "AGENT_ATTEMPT_TIME"
+    ]
+    agent_attempt_ms = sum(float(item.get("inclusive_ms") or 0.0) for item in agent_attempts)
+    redundant_attempt_ms = sum(
+        float(item.get("inclusive_ms") or 0.0)
+        for item in agent_attempts
+        if str(item.get("work_class") or "").upper() == "REPEATED"
+    )
+
     report = {
         "schema_version": 2,
         "status": "PASS",
@@ -352,6 +412,30 @@ def main() -> int:
         "GITHUB_RUNNER_TIME_MS": round(float(github.get("runner_elapsed_ms") or 0.0), 3),
         "TRACE_ACTIVE_WALL_MS": round(float(trace_metrics["trace_active_wall_ms"]), 3),
         "RETRY_TIME_MS": round(retry_ms, 3),
+        "BOOTSTRAP_MS": round(float(named_step_ms.get("GITHUB_SETUP_TIME", 0.0)), 3),
+        "PREFLIGHT_MS": round(float(named_step_ms.get("PREFLIGHT_TIME", 0.0)), 3),
+        "PROVIDER_STARTUP_MS": round(float(named_step_ms.get("PROVIDER_STARTUP_TIME", 0.0)), 3),
+        "PLANNING_MS": round(planning_ms, 3),
+        "HERMES_MS": round(max(0.0, agent_attempt_ms), 3),
+        "AGENT_ATTEMPT_MS": round(agent_attempt_ms, 3),
+        "RETRY_MS": round(redundant_attempt_ms, 3),
+        "ARTIFACT_MS": round(float(named_step_ms.get("ARTIFACT_UPLOAD_TIME", 0.0)), 3),
+        "TOTAL_WALL_CLOCK_MS": round(wall_clock_ms, 3),
+        "CODEX_PROCESS_LAUNCHES": codex_process_launches,
+        "GIT_INVOCATIONS": git_invocations,
+        "CONTEXT_BYTES": context_bytes,
+        "CACHE_HITS": cache_hits,
+        "CACHE_MISSES": cache_misses,
+        "REUSED_EVIDENCE_COUNT": sum(
+            1 for item in spans
+            if bool((item.get("metadata") or {}).get("reused_evidence"))
+        ),
+        "AVOIDED_DUPLICATE_WORK_COUNT": sum(
+            int((item.get("metadata") or {}).get("avoided_duplicate_work") or 0)
+            for item in spans
+        ),
+        "REPEATED_SPAN_COUNT": len(repeated_spans),
+        "RETRIES_OBSERVED": retries_before,
         "category_critical_path_ms": trace_metrics["category_critical_path_ms"],
         "category_cumulative_work_ms": dict(sorted(category_cumulative.items())),
         "spans": spans,

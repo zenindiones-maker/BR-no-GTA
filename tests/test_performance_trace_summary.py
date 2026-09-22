@@ -74,3 +74,12 @@ def test_self_parent_is_not_counted_as_child_work():
     spans, metrics = _span_metrics(events)
     assert spans[0]["exclusive_ms"] == 1000
     assert metrics["trace_cumulative_work_ms"] == 1000
+
+
+def test_operational_step_categories_are_explicit():
+    from scripts.summarize_performance_trace import _step_category
+    assert _step_category("Checkout exact operational base without persisted Git credentials") == "GITHUB_SETUP_TIME"
+    assert _step_category("Prepare canonical runtime and focused delegation gates") == "PREFLIGHT_TIME"
+    assert _step_category("Start Tuxevil and prove live Responses transport") == "PROVIDER_STARTUP_TIME"
+    assert _step_category("Execute first real natural-goal mission") == "MISSION_EXECUTION_TIME"
+    assert _step_category("Upload tool-budget diagnostic even on mission failure") == "ARTIFACT_UPLOAD_TIME"
