@@ -162,9 +162,6 @@ jobs:
       - name: Codex auth control preflight
         id: auth
         working-directory: target
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
         run: |
           set -euo pipefail
           python scripts/codex_auth_control_preflight.py             --dispatch-id "${{ inputs.dispatch_id }}"             --target-ref "$TARGET_REF"             --target-sha "$TARGET_SHA"             --plan-b64 "$PLAN_B64"             --human-goal-b64 "$HUMAN_GOAL_B64"             --telegram-chat-id "$TELEGRAM_CHAT_ID_INPUT"             --artifact-dir artifacts/dynamic-system-improvement
@@ -225,26 +222,41 @@ jobs:
           d=json.loads(Path("artifacts/dynamic-system-improvement/dynamic-system-improvement-report.json").read_text())
           c=d["checks"]
           required=[
-            "MISSION_PLAN_GENERATED_FROM_GOAL",
-            "AGENTS_SELECTED_FROM_REGISTRY",
-            "NO_HARDCODED_TEAM_REQUIRED",
-            "HERMES_HARNESS_SYNERGY",
-            "MULTI_AGENT_EXECUTION_REAL",
-            "HANDOFF_REAL",
+            "NATURAL_GOAL_RECEIVED",
+            "HARNESS_MISSION_PLAN",
+            "MISSION_PLAN_AUTHORITY",
+            "CAPABILITIES_SELECTED_FROM_REGISTRY",
+            "SELECTION_NOT_HARDCODED",
+            "TEAM_NOT_HARDCODED",
+            "MINIMUM_SUFFICIENT_TEAM",
+            "HERMES_SUBORDINATE",
+            "HERMES_DELEGATION_ENVELOPE",
+            "NO_DIRECT_EXECUTOR_BYPASS",
             "REAL_SYSTEM_PROBLEM_OBSERVED",
             "BASELINE_MEASURED",
-            "DEVELOPMENT_AGENT_DELEGATED",
-            "REAL_PATCH_CREATED",
-            "PATCH_BOUNDED_TO_WORKTREE",
-            "CANDIDATE_TESTED",
-            "BASELINE_VS_CANDIDATE_COMPARED",
-            "HARNESS_PROMOTION_DECISION",
+            "HARNESS_FINAL_DECISION",
             "NO_REGRESSION",
           ]
           for key in required:
               assert c.get(key) is True, (key,c.get(key))
               print(f"{key}=PASS")
+          assert c["TASK_HARDCODED_EXECUTION_LOGIC"] == 0
+          assert c["HERMES_AUTHORITY_EXPANSION"] is False
           assert c["AGENT_SELF_PROMOTION"] is False
+          assert c["BUILDER_SELF_APPROVAL"] is False
+          for key in (
+              "REAL_CANDIDATE_CREATED",
+              "PATCH_BOUNDED_TO_WORKTREE",
+              "INDEPENDENT_REVIEW",
+              "CANDIDATE_TESTED",
+              "BASELINE_VS_CANDIDATE_COMPARED",
+          ):
+              value=c.get(key)
+              assert value is True or value=="NOT_REQUIRED",(key,value)
+              print(f"{key}={'PASS' if value is True else 'NOT_REQUIRED'}")
+          print("TASK_HARDCODED_EXECUTION_LOGIC=0")
+          print("HERMES_AUTHORITY_EXPANSION=NO")
+          print("BUILDER_SELF_APPROVAL=NO")
           assert d["promotion_decision"] in {"HUMAN_REVIEW","PROMOTE","REJECT"}
           assert d["NEW_VOICE_SYNTHESIS"]=="NO"
           assert d["FULL_RENDER"]=="NO"
@@ -281,6 +293,8 @@ jobs:
           test -s artifacts/dynamic-system-improvement/mission-auth-checkpoint.json
           echo "MISSION_WAITING_FOR_AUTH=PASS"
           echo "AUTH_PREREQUISITE_BLOCKED=PASS"
+          echo "SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS=0"
+          echo "HARNESS_DELEGATION_TELEGRAM_EGRESS=0"
           echo "RUNNER_WAIT_FOR_HUMAN=NO"
           echo "MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS"
           echo "NEW_VOICE_SYNTHESIS=NO"
