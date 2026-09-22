@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import os
 from pathlib import Path
 import subprocess
@@ -17,6 +18,7 @@ from app.services.agent_office.codex_bounded_worker import codex_execution_failu
 from app.services.agent_office.munder_adapter import CODEX_READONLY_CAPABILITY, MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.agent_office_harness_service import (
+    build_agent_office_specialist_contract,
     execute_authorized_agent_office,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -613,3 +615,79 @@ def test_delegated_task_cannot_expand_mission_scope(tmp_path):
     )
     with pytest.raises(PermissionError, match="REQUEST_SCOPE_EXPANSION"):
         AgentOfficeService._build_task_lease(spec, attempted_expansion)
+
+
+def test_registry_driven_specialist_contract_accepts_future_engineering_capability():
+    current = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert current is not None
+    future = replace(
+        current,
+        capability_id="agent-office.future.safe-engineer",
+        agent_id="future-safe-engineer",
+        provider_id="future-local",
+        version="7",
+    )
+    contract = build_agent_office_specialist_contract(
+        record=future,
+        payload={
+            "task_id": "future-change",
+            "task_class": "bounded-development",
+            "objective": "Create a bounded candidate in app only",
+            "allowed_paths": ["app"],
+            "mission_read_scope": ["app", "tests"],
+            "mission_write_scope": ["app"],
+            "read_set": ["app", "tests"],
+            "write_set": ["app"],
+            "allowed_tools": ["git", "python", "pytest"],
+            "acceptance_criteria": ["focused tests pass"],
+        },
+    )
+    assert contract["agent_id"] == "future-safe-engineer"
+    assert contract["mutation_capable"] is True
+    assert contract["task"]["capability"] == "agent-office.future.safe-engineer"
+    assert contract["task"]["agent"] == "future-safe-engineer"
+    assert contract["task"]["write_set"] == ["app"]
+    assert contract["task"]["allowed_actions"] == [
+        "analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"
+    ]
+
+
+def test_registry_driven_readonly_specialist_rejects_write_scope():
+    readonly = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.readonly-analysis"
+    )
+    assert readonly is not None
+    with pytest.raises(PermissionError, match="read-only"):
+        build_agent_office_specialist_contract(
+            record=readonly,
+            payload={
+                "task_id": "invalid-write",
+                "task_class": "readonly-analysis",
+                "objective": "Inspect architecture",
+                "read_set": ["app"],
+                "write_set": ["app"],
+                "mission_read_scope": ["app"],
+                "mission_write_scope": ["app"],
+            },
+        )
+
+
+def test_registry_driven_specialist_rejects_tool_expansion():
+    readonly = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.readonly-analysis"
+    )
+    assert readonly is not None
+    with pytest.raises(PermissionError, match="tools expand"):
+        build_agent_office_specialist_contract(
+            record=readonly,
+            payload={
+                "task_id": "invalid-tool",
+                "task_class": "readonly-analysis",
+                "objective": "Inspect architecture",
+                "read_set": ["app"],
+                "mission_read_scope": ["app"],
+                "allowed_tools": ["git", "curl"],
+            },
+        )
