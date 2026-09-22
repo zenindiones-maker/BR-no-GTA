@@ -306,7 +306,11 @@ def execute_gta6_knowledge_retrieval_capability(
     routing_decision: HarnessRoutingDecision,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    auth = validate_harness_authorization(authorization)
+    auth = validate_harness_authorization(
+        authorization,
+        expected_action=routing_decision.authorized_action,
+        expected_subject=f"capability:{KNOWLEDGE_RETRIEVE_CAPABILITY_ID}",
+    )
     if auth.authorized_action not in {"RESEARCH", "EDITORIAL", "DECISION"}:
         raise PermissionError("gta6.knowledge.retrieve requires read-oriented authorization")
     if routing_decision.selected_capability_id != KNOWLEDGE_RETRIEVE_CAPABILITY_ID:
