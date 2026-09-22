@@ -18,7 +18,6 @@ from app.services.zero_cost_policy_service import (
     ZERO_COST_OPERATION,
     assess_zero_cost,
 )
-from app.services.provider_health_service import runtime_provider_binding
 
 
 _MATURITY_RANK = {
@@ -113,6 +112,12 @@ class HarnessRoutingDecision:
 def normalize_provider_id(provider_id: str) -> str:
     normalized = provider_id.strip().lower().replace("-", "_")
     return _PROVIDER_ALIASES.get(normalized, normalized)
+
+
+def _runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
+    from app.services.provider_health_service import runtime_provider_binding
+
+    return _runtime_provider_binding(provider_id)
 
 
 def _record_matches_security(
@@ -289,7 +294,7 @@ def _provider_records(
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
         if request.zero_cost_operation:
-            runtime_binding = runtime_provider_binding(provider_id)
+            runtime_binding = _runtime_provider_binding(provider_id)
             runtime_zero_cost = bool(
                 runtime_binding is not None
                 and runtime_binding.get("zero_cost_eligible") is True
@@ -587,7 +592,7 @@ def route_harness_request(
         else None
     )
     runtime_provider = (
-        runtime_provider_binding(selected_provider)
+        _runtime_provider_binding(selected_provider)
         if selected_provider
         else None
     )
