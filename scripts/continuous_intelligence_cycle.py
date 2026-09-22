@@ -46,6 +46,9 @@ from app.services.hermes_multiagent.runtime import execute_hermes_mission_capabi
 from app.services.memory_plane_service import evaluate_memory_candidate
 from app.services.obsidian_memory_service import export_obsidian_memory_projection
 from app.services.gta6_knowledge_query_service import query_gta6_knowledge
+from app.services.gta6_knowledge_retrieval_service import (
+    KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+)
 
 
 HERMES_UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -132,16 +135,28 @@ def _fact_result_payload(result: dict[str, Any]) -> dict[str, Any]:
 def _build_plan(*, mission_id: str, goal_id: str, query: str, source_url: str, include_fact_check: bool):
     tasks: list[CollaborationTask] = [
         CollaborationTask(
+            task_id="knowledge-retrieve",
+            capability_id=KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            action="RESEARCH",
+            objective=(
+                "Retrieve only bounded canonical GTA6 knowledge relevant to the mission "
+                f"before new research: {query}"
+            ),
+            input_refs=(),
+            expected_output="bounded canonical knowledge units with source/evidence provenance",
+        ),
+        CollaborationTask(
             task_id="research",
             capability_id=DELTA_RESEARCH_CAPABILITY_ID,
             action="RESEARCH",
             objective=(
-                "Retrieve bounded GTA6 knowledge first, then collect only meaningful official-source delta "
+                "Use the bounded knowledge handoff, then collect only meaningful official-source delta "
                 f"for: {query}"
             ),
+            dependencies=("knowledge-retrieve",),
             input_refs=(source_url,),
             expected_output="delta result with provenance-complete candidate claims or NO_MEANINGFUL_GTA6_DELTA",
-        )
+        ),
     ]
     if include_fact_check:
         tasks.append(
@@ -205,7 +220,7 @@ def _run_intelligence_mission(
         ),
         input_refs=(source_url,),
     )
-    holder: dict[str, Any] = {"fact_checks": []}
+    holder: dict[str, Any] = {"fact_checks": [], "knowledge_retrieval": None}
 
     def runner(*, spec, board, task_mapping, profiles):
         broker = HermesHarnessCapabilityBroker(
@@ -216,6 +231,42 @@ def _run_intelligence_mission(
             artifact_dir=artifact_dir,
         )
         holder["broker"] = broker
+
+        retrieval_run = _claim(
+            board, task_mapping, profiles, "knowledge-retrieve"
+        )
+        retrieval = broker.execute_delegated_capability(
+            task_id="knowledge-retrieve",
+            capability_id=KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            payload={
+                "query": query,
+                "limit": 12,
+                "max_context_bytes": int(
+                    policy.resource_governance["bounded_memory_bytes"]
+                ),
+                "include_history": False,
+            },
+        )
+        holder["knowledge_retrieval"] = retrieval
+        _complete(
+            board,
+            task_mapping,
+            "knowledge-retrieve",
+            retrieval_run,
+            (
+                "KNOWLEDGE_RETRIEVAL=PASS "
+                f"CONTEXT_BYTES={retrieval['result']['result'].get('context_bytes')}"
+            ),
+        )
+        broker.submit_handoff(
+            from_task_id="knowledge-retrieve",
+            to_task_id="research",
+            evidence_refs=(retrieval["evidence_ref"],),
+            summary=(
+                "Bounded canonical GTA6 knowledge retrieved through Harness Broker; "
+                "research only the remaining official-source delta."
+            ),
+        )
 
         research_run = _claim(board, task_mapping, profiles, "research")
         research = broker.execute_delegated_capability(
@@ -326,6 +377,7 @@ def _run_intelligence_mission(
     return {
         "mission_id": mission_id,
         "canonical": canonical,
+        "knowledge_retrieval": holder["knowledge_retrieval"],
         "research": holder["research"],
         "fact_checks": holder["fact_checks"],
         "authorization_audit": list(broker.audit_snapshot()),
