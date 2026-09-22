@@ -271,6 +271,78 @@ def test_selector_excludes_blocked_health_and_records_health_evidence(monkeypatc
     assert evidence["top_candidates"][0]["health_state"] == HEALTHY
 
 
+def test_task_selection_skips_registry_executor_incompatible_with_capability_adapter(
+    monkeypatch,
+):
+    incompatible = GLOBAL_CAPABILITY_REGISTRY.get("executor.omniroute-gateway")
+    compatible = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic.readonly-analysis"
+    )
+    assert incompatible is not None and compatible is not None
+    assert incompatible.execution_enabled is True
+    assert adaptive.registry_executor_is_task_adapter_compatible(
+        incompatible.executor_binding
+    ) is False
+    assert adaptive.registry_executor_is_task_adapter_compatible(
+        compatible.executor_binding
+    ) is True
+
+    class Registry:
+        def discover(self, **_kwargs):
+            return [
+                {"capability_id": incompatible.capability_id},
+                {"capability_id": compatible.capability_id},
+            ]
+
+        def get(self, capability_id):
+            return {
+                incompatible.capability_id: incompatible,
+                compatible.capability_id: compatible,
+            }.get(capability_id)
+
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", Registry())
+    monkeypatch.setattr(
+        adaptive,
+        "capability_health",
+        lambda capability_id: CapabilityHealth(
+            capability_id=capability_id,
+            state=HEALTHY,
+            reason="healthy",
+            retry_allowed=True,
+            confidence=1.0,
+            sample_size=20,
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=("test:health",),
+            source="TEST",
+        ),
+    )
+
+    selected, _, avoided, evidence = adaptive.select_capability_for_requirement(
+        {
+            "task_id": "review-and-compare",
+            "task_class": "baseline-candidate-comparison",
+            "action": "DEVELOPMENT",
+            "query": "independent review compare baseline candidate evidence",
+            "objective": "review and compare evidence without mutation",
+            "candidate_capability_ids": [
+                incompatible.capability_id,
+                compatible.capability_id,
+            ],
+            "risk_side_effect_class": "READ_ONLY",
+        },
+        context={"competence_evidence": [], "relevant_failure_memories": []},
+        used=set(),
+    )
+
+    assert selected == compatible.capability_id
+    assert (
+        f"{incompatible.capability_id}:task-adapter-incompatible"
+        in avoided
+    )
+    assert evidence["selected_capability_id"] == compatible.capability_id
+
+
 def test_mutating_requirement_rejects_readonly_profiler(monkeypatch):
     profiler = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.deterministic.readonly-analysis"
