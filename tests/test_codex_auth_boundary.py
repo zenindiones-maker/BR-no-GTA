@@ -360,9 +360,15 @@ def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_reg
     assert 'chmod 600 "$store"' in tuxevil
     assert "TUXEVIL_MATERIALIZED_ACCOUNT_COUNT=4" in tuxevil
     assert "CREDENTIAL_VALUES_PRINTED=NO" in tuxevil
-    assert 'rm -rf "$RUNNER_TEMP/tuxevil-rotator"' in tuxevil
+    assert 'config_dir="$RUNNER_TEMP/tuxevil-rotator"' in tuxevil
+    assert 'kill -TERM "$pid"' in tuxevil
+    assert 'kill -KILL "$pid"' in tuxevil
+    assert 'wait "$pid"' in tuxevil
+    assert 'rm -rf "$config_dir"' in tuxevil
+    assert '[ -e "$config_dir/accounts.json" ]' in tuxevil
     assert "ACCOUNT_STORE_DESTROYED_AFTER_RUN=PASS" in tuxevil
     assert "cat \"$RUNNER_TEMP/tuxevil-rotator/accounts.json\"" not in tuxevil
+    assert tuxevil.index('kill -TERM "$pid"') < tuxevil.index('rm -rf "$config_dir"')
     assert '"NOT_ATTEMPTED_RUNTIME_UNAVAILABLE"' in tuxevil
     assert '"BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"' in tuxevil
     assert "persist-credentials: false" in tuxevil
