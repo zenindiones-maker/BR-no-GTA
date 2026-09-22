@@ -33,7 +33,7 @@ from app.services.hermes_multiagent.contracts import (
 from app.services.hermes_multiagent.runtime import (
     execute_hermes_mission_capability,
 )
-from scripts.run_system_improvement_review import SPECIALISTS, build_snapshot
+from scripts.run_system_improvement_review import build_snapshot
 
 
 UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -214,15 +214,8 @@ def _generic_payload(
     if _is_mutating(task):
         actions.extend(["edit", "commit_candidate"])
 
-    selected = int(snapshot.get("dynamic_selected_task_count") or 0)
-    legacy = len(SPECIALISTS)
     gaps = [
         str(task.required_capability_description or task.objective).strip(),
-        (
-            "Legacy reference team size="
-            f"{legacy}; Harness-selected task count={selected}. "
-            "Treat this only as baseline evidence, never as execution roster."
-        ),
     ]
     return {
         "mission_id": mission_id,
@@ -329,14 +322,21 @@ def run(
     collaboration = _rebuild_plan(mission_plan)
     snapshot = build_snapshot()
     snapshot["dynamic_selected_task_count"] = len(collaboration.tasks)
-    baseline = {
-        "legacy_fixed_specialists": len(SPECIALISTS),
-        "dynamic_selected_tasks": len(collaboration.tasks),
-        "legacy_avoidable_agent_calls": max(
-            0,
-            len(SPECIALISTS) - len(collaboration.tasks),
-        ),
-        "legacy_reference_only": True,
+    execution_reference = {
+        "selected_task_count": len(collaboration.tasks),
+        "selected_capability_count": len({
+            task.capability_id for task in collaboration.tasks
+        }),
+        "selected_owner_count": len({
+            (
+                task.selected_agent_id,
+                task.selected_skill_id,
+                task.capability_id,
+            )
+            for task in collaboration.tasks
+        }),
+        "source": "HARNESS_MISSION_PLAN",
+        "legacy_comparison": "SEPARATE_BENCHMARK",
     }
     routing, authorization = _auth(collaboration)
     resource_bounds = dict(mission_plan.get("resource_bounds") or {})
@@ -607,7 +607,7 @@ def run(
         "mission_plan": mission_plan,
         "delegation_envelope": spec.to_dict(),
         "hermes_canonical_result": canonical,
-        "baseline": baseline,
+        "execution_reference": execution_reference,
         "selected_team_size": len(unique_owners),
         "candidate_shas": dict(holder["candidate_by_task"]),
         "integration_gates": gates,
