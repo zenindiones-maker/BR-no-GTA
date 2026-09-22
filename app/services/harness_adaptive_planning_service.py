@@ -715,9 +715,12 @@ def propose_validated_semantic_plan(
                 "The previous proposal failed DeepSeek Harness schema validation.",
                 schema_error,
                 (
-                    "Replan with the exact wire contract only. Use risk enum "
-                    "RO|L|M|H|EXT and action enum R|E|D|X|C exactly; do not "
-                    "replace enum values with prose or explanations."
+                    "Replan with the exact wire contract only. Wire types are "
+                    "mandatory: u must be exactly one JSON number in 0..1, never "
+                    "an array/object/string; ask must be boolean; q must be "
+                    "null|string. Use risk enum RO|L|M|H|EXT and action enum "
+                    "R|E|D|X|C exactly; do not replace enum values with prose "
+                    "or explanations."
                 ),
             )
             evidence["replan_count"] += 1
