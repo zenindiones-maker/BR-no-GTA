@@ -18,8 +18,6 @@ on:
       - 'app/services/production_plan_refresh_service.py'
       - 'app/services/production_plan_service.py'
       - 'app/services/script_spec_service.py'
-      - 'app/services/harness_collaboration_service.py'
-      - 'app/services/harness_learning_service.py'
       - 'app/services/opencode_executor_profile_service.py'
       - 'app/services/opencode_native_ai_provider.py'
       - 'app/services/harness_ai_provider_service.py'
