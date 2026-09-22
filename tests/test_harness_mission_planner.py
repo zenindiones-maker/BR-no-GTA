@@ -288,4 +288,3 @@ def test_system_improvement_rejects_research_fact_check_before_registry_executio
         for reason in row
     )
     assert "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT" in attempts[1]
-

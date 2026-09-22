@@ -555,4 +555,3 @@ def test_nvidia_probe_persists_structured_error_through_learning_plane(monkeypat
         "failure_class": "rate_limited",
         "http_status": 429,
     }
-
