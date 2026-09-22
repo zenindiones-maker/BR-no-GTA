@@ -34,7 +34,6 @@ from app.services.hermes_multiagent.runtime import (
     execute_hermes_mission_capability,
 )
 from app.services.hermes_multiagent.telegram_progress import format_team_progress
-from scripts.telegram_harness_gateway import TelegramApi
 
 
 UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -45,16 +44,18 @@ def _now() -> str:
 
 
 def _emit_factory(chat_id: int) -> tuple[Callable[[str, str], None], list[str]]:
+    """Capture Hermes team progress for artifacts/logs only.
+
+    Telegram is a human command/final-delivery surface, not a progress feed.
+    The chat identity remains part of lineage, but no progress event performs
+    Telegram network egress.
+    """
     lines: list[str] = []
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    api = TelegramApi(token) if token and chat_id else None
 
     def emit(kind: str, message: str) -> None:
         text = format_team_progress(kind, message)
         lines.append(text)
         print(text, flush=True)
-        if api is not None:
-            api.send(chat_id, text)
 
     return emit, lines
 
