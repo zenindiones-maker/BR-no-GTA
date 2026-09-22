@@ -1,8 +1,8 @@
 {
-  "request": "HERMES_DURABLE_RESUME_CROSS_RUN_003",
-  "purpose": "prove fail-closed partial mission checkpoint resumes on clean runner",
+  "request": "HERMES_DURABLE_RESUME_CROSS_RUN_004",
   "expected": {
     "RUNNER_A_MISSION_STATUS": "INCOMPLETE",
+    "RUNNER_B_MISSION_STATUS": "COMPLETED",
     "DURABLE_MISSION_RESUME": "PASS",
     "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
     "CROSS_RUNNER_TYPED_HANDOFF": "PASS",
