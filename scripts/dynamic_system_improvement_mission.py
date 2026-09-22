@@ -207,12 +207,243 @@ def _grounded_profile_gaps(parent_context: dict[str, Any]) -> list[str]:
     return gaps[:8]
 
 
+_REPOSITORY_CONTEXT_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])"
+    r"((?:app|scripts|tests|config|integrations|\.github)"
+    r"(?:/[A-Za-z0-9_.-]+)+)"
+)
+
+
+def _path_within_write_scope(path: str, scopes: tuple[str, ...]) -> bool:
+    normalized = str(path or "").replace("\\", "/").strip("/")
+    if (
+        not normalized
+        or normalized.startswith("/")
+        or ".." in normalized.split("/")
+    ):
+        return False
+    return any(
+        normalized == scope.strip("/")
+        or normalized.startswith(scope.strip("/") + "/")
+        for scope in scopes
+        if scope.strip("/")
+    )
+
+
+def _grounded_parent_paths(
+    *,
+    task,
+    parent_context: dict[str, Any],
+    max_items: int = 12,
+) -> list[str]:
+    candidates: list[str] = []
+
+    def add(value: Any) -> None:
+        text = str(value or "").strip().replace("\\", "/")
+        if not text:
+            return
+        direct = text.strip(" .,:;()[]{}")
+        rows = [direct]
+        rows.extend(
+            match.group(1)
+            for match in _REPOSITORY_CONTEXT_PATH_RE.finditer(text)
+        )
+        for row in rows:
+            normalized = row.strip("/")
+            if (
+                normalized
+                and normalized not in candidates
+                and _path_within_write_scope(
+                    normalized,
+                    tuple(task.write_scope or ()),
+                )
+            ):
+                candidates.append(normalized)
+                if len(candidates) >= max_items:
+                    return
+
+    for profile in _repository_profiles(parent_context)[:3]:
+        for fragility in profile.get("observed_fragilities") or ():
+            if not isinstance(fragility, dict):
+                continue
+            for evidence in (fragility.get("evidence") or ())[:8]:
+                add(evidence)
+
+    path_keys = {
+        "inspected_paths",
+        "affected_paths",
+        "target_paths",
+        "files_changed",
+    }
+    text_keys = {
+        "grounded_context",
+        "observed_gaps",
+        "proposed_actions",
+    }
+    container_keys = {
+        "result",
+        "engine_result",
+        "analysis",
+        "per_agent_results",
+        "tasks",
+        "candidate",
+        "evidence",
+    }
+
+    def visit(value: Any, *, depth: int = 0) -> None:
+        if depth > 6 or len(candidates) >= max_items:
+            return
+        if isinstance(value, dict):
+            for key in path_keys:
+                rows = value.get(key)
+                if isinstance(rows, (list, tuple)):
+                    for row in rows[:12]:
+                        if isinstance(row, str):
+                            add(row)
+            for key in text_keys:
+                rows = value.get(key)
+                if isinstance(rows, (list, tuple)):
+                    for row in rows[:12]:
+                        if isinstance(row, str):
+                            add(row)
+            for key in container_keys:
+                child = value.get(key)
+                if isinstance(child, (dict, list, tuple)):
+                    visit(child, depth=depth + 1)
+        elif isinstance(value, (list, tuple)):
+            for item in value[:12]:
+                if isinstance(item, (dict, list, tuple)):
+                    visit(item, depth=depth + 1)
+
+    for handoff in list(parent_context.get("parent_handoffs") or ())[:8]:
+        if isinstance(handoff, dict):
+            visit(handoff.get("result"))
+    return candidates[:max_items]
+
+
+def _candidate_execution_decision(
+    *,
+    task,
+    parent_context: dict[str, Any],
+) -> dict[str, Any]:
+    if not _is_mutating(task):
+        return {
+            "decision": "NOT_APPLICABLE",
+            "candidate_requirement": "NOT_APPLICABLE",
+            "actionable": False,
+            "problem_observed": False,
+            "baseline_present": False,
+            "grounded_writable_targets": [],
+            "reason": "task is read-only",
+        }
+
+    requirement = str(
+        getattr(task, "candidate_requirement", "REQUIRED") or "REQUIRED"
+    ).strip().upper()
+    if requirement not in {"REQUIRED", "CONDITIONAL"}:
+        return {
+            "decision": "BLOCKED_UNGROUNDED",
+            "candidate_requirement": requirement,
+            "actionable": False,
+            "problem_observed": False,
+            "baseline_present": False,
+            "grounded_writable_targets": [],
+            "reason": "mutating task has invalid candidate requirement",
+        }
+
+    guidance = _bounded_parent_guidance(parent_context)
+    profile_gaps = _grounded_profile_gaps(parent_context)
+    evidence_lines = [*profile_gaps, *guidance]
+    problem_observed = any(
+        marker in line
+        for line in evidence_lines
+        for marker in (
+            "Observed measurable fragility:",
+            "Observed gap:",
+            "Measured parent evidence:",
+        )
+    )
+    baseline_present = any(
+        marker in line
+        for line in evidence_lines
+        for marker in (
+            "Measured repository baseline:",
+            "Measured parent evidence:",
+        )
+    )
+    targets = _grounded_parent_paths(
+        task=task,
+        parent_context=parent_context,
+    )
+    acceptance_present = bool(tuple(task.acceptance_criteria or ()))
+    actionable = bool(
+        problem_observed
+        and baseline_present
+        and targets
+        and acceptance_present
+    )
+    refs = [
+        str(ref)
+        for ref in (parent_context.get("evidence_refs") or ())
+        if str(ref).strip()
+    ][:16]
+
+    if actionable:
+        return {
+            "decision": "REQUIRED",
+            "candidate_requirement": requirement,
+            "actionable": True,
+            "problem_observed": True,
+            "baseline_present": True,
+            "grounded_writable_targets": targets,
+            "evidence_refs": refs,
+            "reason": (
+                "measured parent problem, baseline, writable target and "
+                "acceptance criteria are grounded"
+            ),
+        }
+    if requirement == "CONDITIONAL" and not problem_observed:
+        return {
+            "decision": "NOT_REQUIRED",
+            "candidate_requirement": requirement,
+            "actionable": False,
+            "problem_observed": False,
+            "baseline_present": baseline_present,
+            "grounded_writable_targets": targets,
+            "evidence_refs": refs,
+            "reason": (
+                "conditional candidate has no observed measurable problem "
+                "requiring a code mutation"
+            ),
+        }
+    missing = []
+    if not problem_observed:
+        missing.append("measurable_problem")
+    if not baseline_present:
+        missing.append("baseline")
+    if not targets:
+        missing.append("grounded_writable_target")
+    if not acceptance_present:
+        missing.append("acceptance_criteria")
+    return {
+        "decision": "BLOCKED_UNGROUNDED",
+        "candidate_requirement": requirement,
+        "actionable": False,
+        "problem_observed": problem_observed,
+        "baseline_present": baseline_present,
+        "grounded_writable_targets": targets,
+        "evidence_refs": refs,
+        "reason": "missing:" + ",".join(missing),
+    }
+
+
 _PARENT_GUIDANCE_MAX_ITEMS = 10
 _PARENT_GUIDANCE_MAX_ITEM_CHARS = 600
 _PARENT_GUIDANCE_MAX_TOTAL_CHARS = 2200
 _PARENT_GUIDANCE_CONTAINER_KEYS = (
     "result",
     "engine_result",
+    "analysis",
     "per_agent_results",
     "tasks",
     "candidate",
@@ -257,6 +488,16 @@ def _bounded_parent_guidance(parent_context: dict[str, Any]) -> list[str]:
         if depth > 5 or len(notes) >= _PARENT_GUIDANCE_MAX_ITEMS:
             return
         if isinstance(value, dict):
+            grounded_rows = value.get("grounded_context")
+            if isinstance(grounded_rows, (list, tuple)):
+                for row in grounded_rows[:8]:
+                    if isinstance(row, str):
+                        add("Inherited grounded evidence", row)
+            inspected = value.get("inspected_paths")
+            if isinstance(inspected, (list, tuple)):
+                for row in inspected[:8]:
+                    if isinstance(row, str):
+                        add("Observed inspected path", row)
             for key, prefix in (
                 ("summary", "Parent summary"),
                 ("final_summary", "Parent final summary"),
@@ -411,10 +652,12 @@ def _generic_payload(
         or task.objective
         or human_goal
     ).strip()
-    gaps = [
+    inherited_guidance = _bounded_parent_guidance(parent_context)
+    gaps = list(dict.fromkeys([
         query,
         *_grounded_profile_gaps(parent_context),
-    ]
+        *inherited_guidance,
+    ]))[:10]
     return {
         "mission_id": mission_id,
         "task_id": task.task_id,
@@ -530,6 +773,7 @@ def run(
     holder: dict[str, Any] = {
         "broker": None,
         "candidate_by_task": {},
+        "candidate_decisions": {},
         "execution_by_task": {},
         "reviewed_candidates": set(),
     }
@@ -564,6 +808,41 @@ def run(
                     )
                 run_id = _claim(board, task_mapping, profiles, task_id)
                 parent_context = broker.parent_context(task_id=task_id)
+                candidate_context = _candidate_execution_decision(
+                    task=task,
+                    parent_context=parent_context,
+                )
+                holder["candidate_decisions"][task_id] = candidate_context
+                if (
+                    _is_mutating(task)
+                    and candidate_context["decision"] == "NOT_REQUIRED"
+                ):
+                    executed = broker.record_candidate_not_required(
+                        task_id=task_id,
+                        reason=str(candidate_context["reason"]),
+                        evidence_refs=tuple(
+                            candidate_context.get("evidence_refs") or ()
+                        ),
+                    )
+                    holder["execution_by_task"][task_id] = executed
+                    _complete(
+                        board,
+                        task_mapping,
+                        task_id,
+                        run_id,
+                        "DeepSeek Harness determined the conditional candidate "
+                        "was not required by observed grounded evidence.",
+                    )
+                    continue
+                if (
+                    _is_mutating(task)
+                    and candidate_context["decision"] != "REQUIRED"
+                ):
+                    raise RuntimeError(
+                        "CANDIDATE_REQUIRED_CONTEXT_MISSING:"
+                        + str(candidate_context["reason"])
+                    )
+
                 payload = _generic_payload(
                     task=task,
                     human_goal=human_goal,
@@ -763,6 +1042,7 @@ def run(
         "observed_fragilities": observed_fragilities,
         "baseline_metrics": baseline_metrics,
         "candidate_shas": dict(holder["candidate_by_task"]),
+        "candidate_decisions": dict(holder["candidate_decisions"]),
         "integration_gates": gates,
         "measured_improvement_required": measured_required,
         "measured_candidate_evidence": {

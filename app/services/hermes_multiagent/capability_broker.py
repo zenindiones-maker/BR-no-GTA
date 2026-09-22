@@ -294,6 +294,79 @@ class HermesHarnessCapabilityBroker:
                 return dict(row)
         return None
 
+    def record_candidate_not_required(
+        self,
+        *,
+        task_id: str,
+        reason: str,
+        evidence_refs: list[str] | tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        task = self._task(task_id)
+        if str(getattr(task, "candidate_requirement", "") or "").upper() != "CONDITIONAL":
+            raise PermissionError(
+                "candidate NOT_REQUIRED is valid only for a CONDITIONAL TaskEnvelope"
+            )
+        if not tuple(task.write_scope or ()):
+            raise PermissionError(
+                "candidate NOT_REQUIRED requires a mutation-capable TaskEnvelope"
+            )
+        refs = tuple(dict.fromkeys(
+            str(ref).strip() for ref in evidence_refs if str(ref).strip()
+        ))
+        normalized_reason = " ".join(str(reason or "").split()).strip()[:800]
+        if not normalized_reason:
+            raise ValueError("candidate NOT_REQUIRED reason is required")
+        result = {
+            "status": "NOT_REQUIRED",
+            "candidate_requirement": "CONDITIONAL",
+            "candidate_decision": "NOT_REQUIRED",
+            "reason": normalized_reason,
+            "evidence_refs": list(refs),
+            "candidate": None,
+            "builder_self_approval": False,
+            "authority": "DEEPSEEK_HARNESS",
+        }
+        result_row = self._persist_result(
+            task_id=task_id,
+            capability_id=task.capability_id,
+            agent_id=task.selected_agent_id,
+            routing_id=task.routing_id,
+            authorization_id=self.parent_authorization.authorization_id,
+            elapsed_seconds=0.0,
+            result=result,
+            idempotency_key=task.idempotency_key,
+            capability_version=task.capability_version,
+            retry_count=0,
+        )
+        self._audit.append({
+            "event": "TASK_COMPLETED_NOT_REQUIRED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "task_id": task_id,
+            "task_class": task.task_class,
+            "capability_id": task.capability_id,
+            "routing_id": task.routing_id,
+            "authorization_id": self.parent_authorization.authorization_id,
+            "idempotency_key": task.idempotency_key,
+            "candidate_requirement": "CONDITIONAL",
+            "candidate_decision": "NOT_REQUIRED",
+            "builder_self_approval": False,
+            "evidence_refs": list(refs),
+        })
+        return {
+            "authority": "DEEPSEEK_HARNESS",
+            "executed": False,
+            "reused": False,
+            "not_required": True,
+            "capability_id": task.capability_id,
+            "agent_id": task.selected_agent_id,
+            "routing_id": task.routing_id,
+            "authorization_id": self.parent_authorization.authorization_id,
+            "executor_binding": task.selected_executor_binding,
+            "evidence_ref": result_row["evidence_ref"],
+            "result": result,
+        }
+
     def execute_delegated_capability(
         self,
         *,

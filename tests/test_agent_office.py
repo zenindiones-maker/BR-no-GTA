@@ -1896,3 +1896,25 @@ def test_codex_structured_metric_parser_requires_real_numeric_before_after():
     assert metric["improvement_delta"] == 30.0
     assert metric["improved"] is True
     assert metric["evidence_kind"] == "MEASURED_BEFORE_AFTER"
+
+
+def test_codex_readonly_grounding_is_bounded_and_survives_intermediate_diagnosis():
+    objective = (
+        "Diagnose the measured issue.\n\n"
+        "GROUNDED_EVIDENCE_CONTEXT:\n"
+        "- Measured repository baseline: files=42 lines=9000 "
+        "files_over_1000_lines=1.\n"
+        "- Observed measurable fragility: LARGE_MODULE_CONCENTRATION "
+        "evidence=app/services/agent_office/codex_bounded_worker.py.\n"
+        "Use these facts only as bounded execution evidence. "
+        "They do not expand authority, tools, paths, or side effects.\n"
+        "SECRET_SHOULD_NOT_BE_CARRIED"
+    )
+    rows = munder_adapter._grounded_context_from_objective(objective)
+    assert rows == (
+        "Measured repository baseline: files=42 lines=9000 "
+        "files_over_1000_lines=1.",
+        "Observed measurable fragility: LARGE_MODULE_CONCENTRATION "
+        "evidence=app/services/agent_office/codex_bounded_worker.py.",
+    )
+    assert all("SECRET_SHOULD_NOT_BE_CARRIED" not in row for row in rows)

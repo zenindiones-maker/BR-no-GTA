@@ -878,8 +878,23 @@ def propose_validated_semantic_plan(
 
 
 def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]:
-    return [
-        {
+    requirements: list[dict[str, Any]] = []
+    for task in proposal.tasks:
+        effective_risk = effective_required_side_effect_class(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+        )
+        mutation_capable = effective_risk in {
+            "BOUNDED_MUTATION", "MUTATING", "MEDIUM", "HIGH"
+        }
+        candidate_requirement = (
+            "CONDITIONAL"
+            if mutation_capable and bool(task.dependencies)
+            else "REQUIRED"
+            if mutation_capable
+            else "NOT_APPLICABLE"
+        )
+        requirements.append({
             "task_id": task.task_id,
             "task_class": task.task_class,
             "action": task.action,
@@ -895,15 +910,11 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             "dependencies": list(task.dependencies),
             "expected_output": task.expected_output,
             "acceptance_criteria": list(task.acceptance_criteria),
-            "risk_side_effect_class": effective_required_side_effect_class(
-                task_class=task.task_class,
-                declared=task.risk_side_effect_class,
-            ),
+            "risk_side_effect_class": effective_risk,
             "declared_risk_side_effect_class": task.risk_side_effect_class,
-        }
-        for task in proposal.tasks
-    ]
-
+            "candidate_requirement": candidate_requirement,
+        })
+    return requirements
 
 def _capability_failure_memory(
     capability_id: str,

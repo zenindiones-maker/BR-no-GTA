@@ -2218,3 +2218,276 @@ def test_single_engineering_task_never_executes_heavy_agent_office_on_control_su
     assert result["mission_execution_route"]["runtime"] == "AGENT_OFFICE"
     assert result["HERMES_USED"] == "NO"
     assert result["TERMUX_HEAVY_PROCESSING"] == "NO"
+
+
+def test_candidate_requirement_is_typed_and_preserved_through_task_envelope():
+    semantic_task = semantic_planner_module.MissionTaskProposal.from_mapping({
+        "task_id": "implement-candidate-fix",
+        "objective": "Implement only if diagnosis proves a safe change.",
+        "task_class": "bounded-development",
+        "required_capability_description": "bounded candidate implementation",
+        "candidate_capability_ids": [],
+        "dependencies": ["diagnose"],
+        "expected_output": "CandidateEvidence",
+        "acceptance_criteria": ["measurable improvement", "bounded patch"],
+        "risk_side_effect_class": "BOUNDED_MUTATION",
+        "action": "DEVELOPMENT",
+    })
+    requirements = adaptive.proposal_requirements(
+        SimpleNamespace(tasks=(semantic_task,))
+    )
+    assert requirements[0]["candidate_requirement"] == "CONDITIONAL"
+
+    task = TaskEnvelope.from_mapping({
+        "task_id": "implement-candidate-fix",
+        "capability_id": "agent-office.codex.bounded-development",
+        "authorized_action": "DEVELOPMENT",
+        "objective": "Implement only if diagnosis proves a safe change.",
+        "task_class": "bounded-development",
+        "dependencies": [],
+        "expected_output": "CandidateEvidence",
+        "acceptance_criteria": ["measurable improvement"],
+        "read_scope": ["app", "tests"],
+        "write_scope": ["app/services/agent_office"],
+        "allowed_tools": ["git", "python", "pytest", "codex", "rg", "cat"],
+        "candidate_requirement": "CONDITIONAL",
+        "risk_side_effect_class": "BOUNDED_MUTATION",
+    })
+    routed = build_collaboration_plan(
+        mission_id="mission-candidate-requirement",
+        goal_id="goal-candidate-requirement",
+        tasks=[task],
+    ).tasks[0]
+    assert task.candidate_requirement == "CONDITIONAL"
+    assert routed.candidate_requirement == "CONDITIONAL"
+    assert routed.to_dict()["candidate_requirement"] == "CONDITIONAL"
+
+
+def test_grounded_repair_context_propagates_across_readonly_parent_handoff():
+    target = "app/services/agent_office/codex_bounded_worker.py"
+    task = TaskEnvelope(
+        task_id="implement-candidate-fix",
+        capability_id="agent-office.codex.bounded-development",
+        action="DEVELOPMENT",
+        objective="Implement the smallest measured safe improvement.",
+        dependencies=("diagnose",),
+        expected_output="CandidateEvidence",
+        task_class="bounded-development",
+        acceptance_criteria=(
+            "reduce the measured duplication without regression",
+        ),
+        candidate_requirement="CONDITIONAL",
+        read_scope=("app", "tests"),
+        write_scope=("app/services/agent_office",),
+        allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+        risk_side_effect_class="BOUNDED_MUTATION",
+    )
+    parent_context = {
+        "parent_handoffs": [{
+            "task_id": "diagnose",
+            "result": {
+                "summary": "Diagnosis preserved the measured parent facts.",
+                "grounded_context": [
+                    "Measured repository baseline: files=42, lines=9000, "
+                    "bytes=320000, files_over_1000_lines=1, "
+                    "largest_file_lines=1420, profile_latency_ms=4.2.",
+                    "Observed measurable fragility: LARGE_MODULE_CONCENTRATION "
+                    "files_over_1000_lines=1 "
+                    f"evidence={target}.",
+                ],
+                "engine_result": {
+                    "inspected_paths": [target],
+                },
+            },
+        }],
+        "evidence_refs": ["artifact:diagnose.json"],
+    }
+    decision = dynamic_mission._candidate_execution_decision(
+        task=task,
+        parent_context=parent_context,
+    )
+    assert decision["decision"] == "REQUIRED"
+    assert decision["actionable"] is True
+    assert decision["baseline_present"] is True
+    assert decision["problem_observed"] is True
+    assert target in decision["grounded_writable_targets"]
+
+    payload = dynamic_mission._generic_payload(
+        task=task,
+        human_goal="Improve only when grounded evidence requires it.",
+        goal_id="goal-grounded-repair",
+        mission_id="mission-grounded-repair",
+        base_sha="a" * 40,
+        branch="work/gate6f-analytics-learning",
+        snapshot={},
+        parent_context=parent_context,
+    )
+    assert target in payload["objective"]
+    assert any(target in row for row in payload["gaps"])
+
+    from app.services.agent_office_harness_service import (
+        build_agent_office_specialist_contract,
+    )
+    record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability_id)
+    contract = build_agent_office_specialist_contract(
+        record=record,
+        payload=payload,
+    )
+    assert target in contract["task"]["objective"]
+    assert contract["task"]["write_set"] == [
+        "app/services/agent_office"
+    ]
+
+
+def test_conditional_candidate_has_legitimate_not_required_path():
+    task = TaskEnvelope(
+        task_id="conditional-candidate",
+        capability_id="agent-office.codex.bounded-development",
+        action="DEVELOPMENT",
+        objective="Change code only if a measurable problem is observed.",
+        expected_output="CandidateEvidence",
+        acceptance_criteria=("preserve quality",),
+        candidate_requirement="CONDITIONAL",
+        read_scope=("app",),
+        write_scope=("app/services",),
+        risk_side_effect_class="BOUNDED_MUTATION",
+    )
+    decision = dynamic_mission._candidate_execution_decision(
+        task=task,
+        parent_context={
+            "parent_handoffs": [{
+                "task_id": "diagnose",
+                "result": {
+                    "summary": (
+                        "No measurable repository fragility requiring "
+                        "a code mutation was observed."
+                    )
+                },
+            }],
+            "evidence_refs": ["artifact:diagnose-no-change.json"],
+        },
+    )
+    assert decision["decision"] == "NOT_REQUIRED"
+    assert decision["problem_observed"] is False
+    assert decision["actionable"] is False
+
+
+def test_required_candidate_rejects_ungrounded_context_before_worker():
+    task = TaskEnvelope(
+        task_id="required-candidate",
+        capability_id="agent-office.codex.bounded-development",
+        action="DEVELOPMENT",
+        objective="Implement the required bounded change.",
+        expected_output="CandidateEvidence",
+        acceptance_criteria=("produce a measured improvement",),
+        candidate_requirement="REQUIRED",
+        read_scope=("app",),
+        write_scope=("app/services",),
+        risk_side_effect_class="BOUNDED_MUTATION",
+    )
+    decision = dynamic_mission._candidate_execution_decision(
+        task=task,
+        parent_context={
+            "parent_handoffs": [{
+                "task_id": "diagnose",
+                "result": {
+                    "observed_gaps": ["A problem was described but not measured."]
+                },
+            }],
+        },
+    )
+    assert decision["decision"] == "BLOCKED_UNGROUNDED"
+    assert "baseline" in decision["reason"]
+    assert "grounded_writable_target" in decision["reason"]
+
+
+def test_broker_not_required_result_is_typed_and_preserves_handoff_lineage(
+    tmp_path,
+):
+    plan = build_collaboration_plan(
+        mission_id="mission-not-required-handoff",
+        goal_id="goal-not-required-handoff",
+        tasks=[
+            TaskEnvelope(
+                task_id="candidate",
+                capability_id="agent-office.codex.bounded-development",
+                action="DEVELOPMENT",
+                objective="Change code only if grounded evidence requires it.",
+                expected_output="CandidateEvidence",
+                acceptance_criteria=("bounded change only",),
+                candidate_requirement="CONDITIONAL",
+                read_scope=("app",),
+                write_scope=("app/services",),
+                allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+                risk_side_effect_class="BOUNDED_MUTATION",
+            ),
+            TaskEnvelope(
+                task_id="review",
+                capability_id="agent-office.codex.readonly-analysis",
+                action="DEVELOPMENT",
+                objective="Review the candidate decision evidence.",
+                dependencies=("candidate",),
+                expected_output="ReviewEvidence",
+                read_scope=("app",),
+                write_scope=(),
+                allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+                review_policy="NONE",
+            ),
+        ],
+    )
+    parent = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject="capability:collaboration.hermes.execute",
+        harness_decision_id="decision-not-required-handoff",
+        execution_id="execution-not-required-handoff",
+        lineage={"test": "not-required-handoff"},
+    )
+    envelope = DelegationEnvelope.from_plan(
+        collaboration_plan=plan,
+        harness_decision_id=parent.harness_decision_id,
+        authorization_id=parent.authorization_id,
+        base_sha="a" * 40,
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=10)
+        ).isoformat(),
+    )
+    board = _FakeHermesBoard()
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent,
+            board=board,
+            task_mapping={
+                "candidate": "board-candidate",
+                "review": "board-review",
+            },
+            artifact_dir=tmp_path,
+        )
+        result = broker.record_candidate_not_required(
+            task_id="candidate",
+            reason="No measurable problem requires mutation.",
+            evidence_refs=("artifact:diagnosis.json",),
+        )
+        assert result["executed"] is False
+        assert result["not_required"] is True
+        assert result["result"]["candidate_decision"] == "NOT_REQUIRED"
+        assert result["result"]["builder_self_approval"] is False
+
+        handoff = broker.submit_handoff(
+            from_task_id="candidate",
+            to_task_id="review",
+            evidence_refs=(result["evidence_ref"],),
+            summary="Typed candidate decision evidence.",
+        )
+        assert handoff["acceptance_state"] == "ACCEPTED_FOR_DEPENDENCY"
+        context = broker.parent_context(task_id="review")
+        assert context["parent_handoffs"][0]["result"][
+            "candidate_decision"
+        ] == "NOT_REQUIRED"
+        assert any(
+            row["event"] == "TASK_COMPLETED_NOT_REQUIRED"
+            and row["builder_self_approval"] is False
+            for row in broker.audit_snapshot()
+        )
+    finally:
+        consume_harness_authorization(parent)

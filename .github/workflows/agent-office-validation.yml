@@ -202,6 +202,14 @@ jobs:
             tests/test_semantic_planner_provider_contract.py
           echo "CODEX_AUTH_BOUNDARY_TESTS=PASS"
           echo "DETERMINISTIC_DELEGATION_GATES=PASS"
+          echo "GROUNDED_REPAIR_CONTEXT_PROPAGATED=PASS"
+          echo "NO_FAKE_CANDIDATE=PASS"
+          echo "NO_UNGROUNDED_NOOP=PASS"
+          echo "CANDIDATE_REQUIRED_SEMANTICS=PASS"
+          echo "NOT_REQUIRED_PATH_VALID=PASS"
+          echo "TASK_ENVELOPE_CONTEXT_PRESERVED=PASS"
+          echo "HERMES_HANDOFF_CONTEXT_PRESERVED=PASS"
+          echo "BUILDER_SELF_APPROVAL=NO"
 
       - name: Run bounded parallel-task canary
         run: |

@@ -270,6 +270,43 @@ def _codex_inspected_paths(
     )
 
 
+def _grounded_context_from_objective(
+    objective: str,
+    *,
+    max_items: int = 8,
+    max_item_chars: int = 420,
+    max_total_chars: int = 2200,
+) -> tuple[str, ...]:
+    marker = "GROUNDED_EVIDENCE_CONTEXT:"
+    text = str(objective or "")
+    if marker not in text:
+        return ()
+    tail = text.split(marker, 1)[1]
+    rows: list[str] = []
+    used = 0
+    for raw in tail.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(
+            "Use these facts only as bounded execution evidence."
+        ):
+            break
+        if line.startswith("-"):
+            line = line[1:].strip()
+        if not line:
+            continue
+        normalized = " ".join(line.split())[:max_item_chars]
+        projected = used + len(normalized)
+        if projected > max_total_chars:
+            break
+        rows.append(normalized)
+        used = projected
+        if len(rows) >= max_items:
+            break
+    return tuple(rows)
+
+
 def codex_readonly_worker(
     task: AgentOfficeTask,
     workspace: Path,
@@ -363,14 +400,17 @@ def codex_readonly_worker(
             "retryability": "DETERMINISTIC_NO_RETRY",
             "recoverable": False,
         }
+    inherited_grounding = _grounded_context_from_objective(task.objective)
     return {
         "status": "SUCCEEDED",
         "summary": output,
+        "grounded_context": list(inherited_grounding),
         "commands": ["codex exec --sandbox read-only"],
         "artifacts": [],
         "tests": [],
         "usage": {"cost": 0.0, "cost_available": False},
         "engine_result": {
+            "grounded_context": list(inherited_grounding),
             "output": output,
             "sandbox": "read-only",
             "sandbox_backend": "bubblewrap",

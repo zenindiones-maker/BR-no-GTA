@@ -50,6 +50,7 @@ class TaskEnvelope:
     task_class: str = "GENERAL"
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
+    candidate_requirement: str = "REQUIRED"
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -112,6 +113,29 @@ class TaskEnvelope:
         for name, paths in (("read_scope", read_scope), ("write_scope", write_scope)):
             if any(".." in path.split("/") for path in paths):
                 raise ValueError(f"{name} contains traversal")
+        risk_class = str(
+            value.get("risk_side_effect_class")
+            or ("BOUNDED_MUTATION" if write_scope else "READ_ONLY")
+        ).strip().upper()
+        default_candidate_requirement = (
+            "REQUIRED"
+            if write_scope or risk_class in {"BOUNDED_MUTATION", "MUTATING", "MEDIUM", "HIGH"}
+            else "NOT_APPLICABLE"
+        )
+        candidate_requirement = str(
+            value.get("candidate_requirement") or default_candidate_requirement
+        ).strip().upper()
+        if candidate_requirement not in {
+            "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
+        }:
+            raise ValueError("candidate_requirement is invalid")
+        if (
+            candidate_requirement == "NOT_APPLICABLE"
+            and (write_scope or risk_class in {"BOUNDED_MUTATION", "MUTATING", "MEDIUM", "HIGH"})
+        ):
+            raise ValueError(
+                "mutating TaskEnvelope cannot mark candidate NOT_APPLICABLE"
+            )
         time_budget = int(value.get("time_budget_seconds") or 300)
         context_budget = int(value.get("context_budget_bytes") or 32768)
         tool_budget = int(value.get("tool_budget") or 16)
@@ -137,6 +161,7 @@ class TaskEnvelope:
                 value.get("required_capability_description") or ""
             ).strip(),
             acceptance_criteria=acceptance,
+            candidate_requirement=candidate_requirement,
             read_scope=read_scope,
             write_scope=write_scope,
             allowed_tools=tuple(
@@ -164,10 +189,7 @@ class TaskEnvelope:
             review_policy=str(
                 value.get("review_policy") or "INDEPENDENT_IF_MUTATING"
             ).strip().upper(),
-            risk_side_effect_class=str(
-                value.get("risk_side_effect_class")
-                or ("BOUNDED_MUTATION" if write_scope else "READ_ONLY")
-            ).strip().upper(),
+            risk_side_effect_class=risk_class,
             idempotency_key=str(value.get("idempotency_key") or "").strip(),
             expires_at=str(value.get("expires_at") or "").strip(),
             human_gate_policy=str(
@@ -205,6 +227,7 @@ class RoutedCollaborationTask:
     task_class: str = "GENERAL"
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
+    candidate_requirement: str = "REQUIRED"
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -312,6 +335,7 @@ def _task_idempotency_key(
         "input_refs": list(task.input_refs),
         "read_scope": list(read_scope),
         "write_scope": list(write_scope),
+        "candidate_requirement": task.candidate_requirement,
         "objective": task.objective,
     }
     digest = sha256(
@@ -390,6 +414,7 @@ def build_collaboration_plan(
                 task_class=task.task_class,
                 required_capability_description=task.required_capability_description,
                 acceptance_criteria=task.acceptance_criteria,
+                candidate_requirement=task.candidate_requirement,
                 read_scope=read_scope,
                 write_scope=write_scope,
                 allowed_tools=allowed_tools,
@@ -957,6 +982,14 @@ def plan_mission_from_human_goal(
                 requirement.get("acceptance_criteria")
                 or [f"produce {requirement['expected_output']}"]
             ),
+            "candidate_requirement": str(
+                requirement.get("candidate_requirement")
+                or (
+                    "REQUIRED"
+                    if record.default_write_scope
+                    else "NOT_APPLICABLE"
+                )
+            ).upper(),
             "read_scope": list(record.default_read_scope),
             "write_scope": list(record.default_write_scope),
             "allowed_tools": list(record.allowed_tools),
