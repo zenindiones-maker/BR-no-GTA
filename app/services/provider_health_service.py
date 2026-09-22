@@ -142,8 +142,6 @@ def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
         return None
 
     normalized = str(provider_id or "").strip().lower().replace("-", "_")
-    if normalized != "tuxevil":
-        return None
     item = payload.get(normalized)
     if not isinstance(item, dict):
         return None
@@ -207,6 +205,49 @@ def runtime_provider_binding(provider_id: str) -> dict[str, Any] | None:
             "OPENAI_PLATFORM_API_KEY_REQUIRED": "NO",
         },
         "evidence_refs": refs,
+    }
+
+
+def authorized_provider_model_binding(
+    record: Any,
+) -> dict[str, Any] | None:
+    provider_id = str(getattr(record, "provider_id", None) or "").strip()
+    if not provider_id:
+        return None
+
+    policy = str(
+        getattr(record, "model_binding_policy", "STATIC_REGISTRY")
+        or "STATIC_REGISTRY"
+    ).strip().upper()
+    static_model = str(getattr(record, "model_id", None) or "").strip()
+
+    if policy == "STATIC_REGISTRY":
+        if not static_model:
+            return None
+        return {
+            "provider_id": provider_id.lower().replace("-", "_"),
+            "model_id": static_model,
+            "source": "REGISTRY_STATIC",
+            "evidence_refs": (),
+        }
+
+    if policy != "CURRENT_RUN_RUNTIME_PROOF":
+        return None
+
+    runtime = runtime_provider_binding(provider_id)
+    if runtime is None:
+        return None
+    runtime_model = str(runtime.get("model_id") or "").strip()
+    if not runtime_model:
+        return None
+    if static_model and runtime_model != static_model:
+        return None
+    return {
+        "provider_id": str(runtime["provider_id"]),
+        "model_id": runtime_model,
+        "source": "CURRENT_RUN_RUNTIME_PROOF",
+        "evidence_refs": tuple(runtime.get("evidence_refs") or ()),
+        "github_run_id": runtime.get("github_run_id"),
     }
 
 
