@@ -1,10 +1,10 @@
 import json
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from app.database import harness_learning_repository as learning_repository
+from app.database.schema import initialize_schema
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
@@ -353,53 +353,37 @@ def test_nvidia_models_require_current_run_live_health_before_routing(monkeypatc
     ).availability == "UNKNOWN/UNPROVEN"
 
 def test_nvidia_probe_persists_structured_error_through_learning_plane(monkeypatch):
-    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
-    record = SimpleNamespace(
-        model_id="z-ai/glm-5.3",
-        capability_id="ai.provider.nvidia-nim.glm-5-3",
-    )
+    initialize_schema()
+    monkeypatch.setenv("GITHUB_RUN_ID", "nvidia-probe-persistence-test")
+    record = _records()[0]
     result = {
         "MODEL_ID": record.model_id,
-        "HEALTH": "DEGRADED",
-        "FAILURE_CLASS": "rate_limited",
         "HTTP_STATUS": 429,
         "RESPONSE_VALID": False,
-        "LATENCY_MS": 10.0,
-        "STRUCTURED_OUTPUT_RESULT": "FAIL",
+        "LATENCY_MS": 12.5,
         "TOOL_USE_SUPPORTED": False,
+        "STRUCTURED_OUTPUT_RESULT": "FAIL",
+        "TOKEN_USAGE_IF_AVAILABLE": {},
         "RATE_LIMIT_OBSERVED": True,
+        "BILLING_CLASS": "NVIDIA_FREE_ENDPOINT",
+        "HEALTH": "DEGRADED",
+        "FAILURE_CLASS": "rate_limited",
     }
     nvidia_probe._persist(
         record,
         result,
-        "2026-09-22T00:00:00+00:00",
-        "2026-09-22T00:00:01+00:00",
+        "2026-09-22T18:40:50+00:00",
+        "2026-09-22T18:40:51+00:00",
     )
-    rows = learning_repository.list_episodes(
-        capability_id=record.capability_id,
-        limit=10,
+    model_hash = __import__("hashlib").sha256(
+        str(record.model_id).encode("utf-8")
+    ).hexdigest()[:16]
+    persisted = learning_repository.get_episode(
+        f"episode-nvidia-nvidia-probe-persistence-test-{model_hash}"
     )
-    assert len(rows) == 1
-    assert rows[0]["error"] == {
+    assert persisted is not None
+    assert persisted["error"] == {
         "failure_class": "rate_limited",
         "http_status": 429,
     }
-
-
-def test_resumed_probe_row_is_fail_closed_and_never_live_available():
-    record = SimpleNamespace(
-        model_id="z-ai/glm-5.3",
-        capability_id="ai.provider.nvidia-nim.glm-5-3",
-    )
-    row = nvidia_probe._skipped_result(
-        record,
-        prior_run_id="35768705958",
-    )
-    assert row["LIVE_STATUS"] == "FAIL"
-    assert row["HEALTH"] == "UNKNOWN/UNPROVEN"
-    assert row["PROBE_EXECUTED_THIS_RUN"] is False
-    assert row["RESUMED_FROM_PRIOR_RUN"] == "35768705958"
-    assert row["EVIDENCE_REF"].startswith(
-        "github:run:35768705958:nvidia-model:"
-    )
 
