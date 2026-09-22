@@ -364,6 +364,54 @@ NARRATION_GENERATE_PTBR_RECORD = CapabilityRecord(
     side_effects=("narration bundle artifact", "content-addressed segment cache", "voice speed evidence"),
 )
 
+GTA6_KNOWLEDGE_RETRIEVE_RECORD = CapabilityRecord(
+    capability_id="gta6.knowledge.retrieve",
+    capability_type="CAPABILITY",
+    domain="gta6-knowledge",
+    implementation=(
+        "Harness-governed bounded retrieval over canonical GTA6 claims, "
+        "entity graph, source quality, freshness and novelty"
+    ),
+    input_contract="natural GTA6 query + bounded top-k/context byte budget",
+    output_contract="bounded knowledge units + claim/evidence provenance + retrieval scoring evidence",
+    requirements=(
+        "persisted Harness RESEARCH, EDITORIAL or DECISION authorization",
+        "exact Global Capability Registry executor binding",
+        "canonical BR SQLite Knowledge Brain",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH", "EDITORIAL", "DECISION"),
+    policy_tags=(
+        "gta6", "knowledge", "retrieval", "bounded-context", "graph",
+        "source-quality", "freshness", "novelty", "zero-cost", "read-only",
+    ),
+    security_boundary=(
+        "Read-only canonical retrieval. DeepSeek Harness remains sole authority; "
+        "Hermes and agents may consume only the bounded result through Harness Broker. "
+        "No canonical write, policy mutation, Obsidian authority, publication or provider call."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_SQLITE_BOUNDED",
+    latency_class="LOCAL",
+    quality_class="PROVENANCE_PRESERVING_MULTI_SIGNAL_RANKING",
+    evidence_contract="bounded GTA6 knowledge units with claim/evidence/source lineage",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.gta6_knowledge_retrieval_service."
+        "execute_gta6_knowledge_retrieval_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="gta6-knowledge-retriever",
+    side_effects=(),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+)
+
 GTA6_DELTA_RESEARCH_RECORD = CapabilityRecord(
     capability_id="gta6.research.delta",
     capability_type="AGENT",
@@ -811,6 +859,7 @@ for _record in (
     PRODUCTION_BRAND_ASSET_BINDING_RECORD,
     PRODUCTION_RENDER_RECORD,
     NARRATION_GENERATE_PTBR_RECORD,
+    GTA6_KNOWLEDGE_RETRIEVE_RECORD,
     GTA6_DELTA_RESEARCH_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
     YOUTUBE_PACKAGE_PERSIST_RECORD,
