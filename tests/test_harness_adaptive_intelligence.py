@@ -56,7 +56,8 @@ def test_provider_health_does_not_confuse_harness_authorization_with_external_au
     assert opencode.reason == "opencode_console_free_tier_403_before_inference"
     assert "github:run:35546356452:opencode-semantic-v3-upstream-403" in opencode.evidence_refs
     assert nvidia.state == "AUTH_REQUIRED"
-    assert nvidia.zero_cost_eligible is False
+    assert nvidia.zero_cost_eligible is True
+    assert nvidia.reason == "Provider requires runtime authentication evidence."
 
 
 

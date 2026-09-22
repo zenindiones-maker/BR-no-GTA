@@ -34,6 +34,22 @@ class FakeResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
+def _enable_healthy_local_runtime(monkeypatch):
+    monkeypatch.setenv("BR_LOCAL_OPENWEIGHT_ENABLED", "1")
+    payload = {
+        "models": [
+            {
+                "name": LOCAL_OPENWEIGHT_MODEL_ID,
+                "digest": "sha256:" + LOCAL_OPENWEIGHT_MODEL_DIGEST,
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        "app.services.provider_health_service.request.urlopen",
+        lambda *args, **kwargs: FakeResponse(payload),
+    )
+
+
 def _auth():
     return issue_harness_authorization(
         authorized_action="DECISION",
@@ -173,7 +189,8 @@ def test_semantic_planner_schema_mode_is_explicitly_gated(monkeypatch):
     assert provider.last_performance_metrics["output_truncated"] is True
 
 
-def test_zero_cost_routing_can_select_only_registered_local_model():
+def test_zero_cost_routing_can_select_only_registered_local_model(monkeypatch):
+    _enable_healthy_local_runtime(monkeypatch)
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="semantic mission planning proposal only",
@@ -196,7 +213,8 @@ def test_zero_cost_routing_can_select_only_registered_local_model():
     assert decision.fallback_occurred is False
 
 
-def test_harness_constructs_local_provider_only_after_authorized_routing():
+def test_harness_constructs_local_provider_only_after_authorized_routing(monkeypatch):
+    _enable_healthy_local_runtime(monkeypatch)
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="semantic mission planning proposal only",

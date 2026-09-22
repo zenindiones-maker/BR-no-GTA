@@ -139,14 +139,17 @@ def test_every_executable_capability_has_evidence_contract():
 
 
 def test_provider_model_and_capability_are_distinct_metadata():
-    nvidia = GLOBAL_CAPABILITY_REGISTRY.get("ai.provider.nvidia-nim")
+    nvidia = [
+        record
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "nvidia_nim"
+    ]
 
-    assert nvidia is not None
-    assert nvidia.capability_id == "ai.provider.nvidia-nim"
-    assert nvidia.provider_id == "nvidia_nim"
-    assert nvidia.model_id == "nvidia/nemotron-3-super-120b-a12b"
-    assert nvidia.capability_id != nvidia.provider_id
-    assert nvidia.capability_id != nvidia.model_id
+    assert len(nvidia) >= 5
+    assert len({record.model_id for record in nvidia}) == len(nvidia)
+    assert len({record.executor_binding for record in nvidia}) == 1
+    assert all(record.capability_id != record.provider_id for record in nvidia)
+    assert all(record.capability_id != record.model_id for record in nvidia)
 
     generic = GLOBAL_CAPABILITY_REGISTRY.get("ai.reasoning.text")
     assert generic is not None
@@ -190,13 +193,24 @@ def test_addy_skills_remain_bounded_and_metadata_only():
 
 
 def test_nvidia_state_is_proven_and_harness_governed():
-    record = GLOBAL_CAPABILITY_REGISTRY.get("ai.provider.nvidia-nim")
+    records = [
+        record
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "nvidia_nim"
+    ]
 
-    assert record is not None
-    assert record.status == "PROVEN"
-    assert record.available is True
-    assert record.execution_enabled is True
-    assert "HarnessAuthorization" in record.security_boundary
+    assert len(records) >= 5
+    assert all(record.status == "PROVEN" for record in records)
+    assert all(record.available is True for record in records)
+    assert all(record.execution_enabled is True for record in records)
+    assert all(
+        "DeepSeek Harness" in record.security_boundary
+        for record in records
+    )
+    assert all(
+        record.fallback_eligibility is False
+        for record in records
+    )
 
 
 def test_registry_is_deterministic_for_same_query():
