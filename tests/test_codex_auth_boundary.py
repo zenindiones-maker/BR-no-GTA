@@ -355,6 +355,14 @@ def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_reg
     )
     assert 'openai-api-key: "tuxevil"' in tuxevil
     assert 'permission-profile: ":read-only"' in tuxevil
+    assert "${{ secrets.TUXEVIL_ACCOUNTS_JSON_B64 }}" in tuxevil
+    assert 'printf \'%s\' "$TUXEVIL_ACCOUNTS_JSON_B64" | base64 --decode' in tuxevil
+    assert 'chmod 600 "$store"' in tuxevil
+    assert "TUXEVIL_MATERIALIZED_ACCOUNT_COUNT=4" in tuxevil
+    assert "CREDENTIAL_VALUES_PRINTED=NO" in tuxevil
+    assert 'rm -rf "$RUNNER_TEMP/tuxevil-rotator"' in tuxevil
+    assert "ACCOUNT_STORE_DESTROYED_AFTER_RUN=PASS" in tuxevil
+    assert "cat \"$RUNNER_TEMP/tuxevil-rotator/accounts.json\"" not in tuxevil
     assert '"NOT_ATTEMPTED_RUNTIME_UNAVAILABLE"' in tuxevil
     assert '"BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"' in tuxevil
     assert "persist-credentials: false" in tuxevil
