@@ -98,7 +98,7 @@ def compact_competence(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_REGISTRY_CANDIDATE_LIMIT = 10
+_REGISTRY_CANDIDATE_LIMIT = 8
 _RELEVANT_MEMORY_LIMIT = 8
 _RELEVANT_HISTORY_LIMIT = 8
 _RELEVANT_DECISION_LIMIT = 6
@@ -172,7 +172,7 @@ def _relevant_registry_summary(
     referenced_capability_ids: tuple[str, ...] = (),
     limit: int = _REGISTRY_CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
-    limit = max(6, min(int(limit), 10))
+    limit = max(6, min(int(limit), 8))
     mission_class = str(goal.get("mission_class") or "OPEN_SEMANTIC").upper()
     direct_tokens = _tokens(
         goal.get("human_goal"),
