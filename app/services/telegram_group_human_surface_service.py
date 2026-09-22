@@ -6,7 +6,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 from app.services.harness_authorization_service import validate_harness_authorization
 
@@ -22,6 +22,123 @@ _TELEMETRY_PATTERN = re.compile(
     r"TELEGRAM_MESSAGES_SENT|CONTINUOUS_STATE_RESTORE)\b",
     re.IGNORECASE,
 )
+
+_GENUINE_ARTIFACT_ORIGIN = "EDITORIAL_PIPELINE"
+_FORBIDDEN_ARTIFACT_ORIGINS = {
+    "TEST",
+    "FIXTURE",
+    "SYNTHETIC",
+    "CANARY",
+    "PROOF",
+    "VALIDATION",
+    "CI",
+}
+_FORBIDDEN_ARTIFACT_REF_MARKERS = (
+    "test",
+    "fixture",
+    "synthetic",
+    "canary",
+    "proof",
+    "validation",
+    "human-interface-validation",
+)
+
+
+def _editorial_lineage_contract(lineage: dict[str, Any] | None) -> dict[str, Any]:
+    data = dict(lineage or {})
+    artifact_ref = str(data.get("artifact_ref") or "").strip()
+    artifact_id = str(
+        data.get("editorial_artifact_id")
+        or data.get("script_id")
+        or ""
+    ).strip()
+    artifact_kind = str(data.get("artifact_kind") or "").strip().upper()
+    artifact_status = str(data.get("artifact_status") or "").strip().upper()
+    artifact_origin = str(data.get("artifact_origin") or "").strip().upper()
+    content_sha256 = str(data.get("content_sha256") or "").strip().lower()
+    artifact_real = data.get("artifact_real") is True
+    explicitly_non_test = all(
+        data.get(key) is not True
+        for key in (
+            "test_artifact",
+            "synthetic",
+            "fixture",
+            "canary",
+            "proof",
+            "validation_artifact",
+        )
+    )
+    forbidden_ref = any(
+        marker in artifact_ref.casefold()
+        for marker in _FORBIDDEN_ARTIFACT_REF_MARKERS
+    )
+    hash_valid = bool(re.fullmatch(r"[0-9a-f]{64}", content_sha256))
+    allowed = (
+        bool(artifact_ref)
+        and bool(artifact_id)
+        and artifact_kind == "SCRIPT"
+        and artifact_status == _SCRIPT_STATUS_READY
+        and artifact_origin == _GENUINE_ARTIFACT_ORIGIN
+        and artifact_origin not in _FORBIDDEN_ARTIFACT_ORIGINS
+        and artifact_real
+        and explicitly_non_test
+        and not forbidden_ref
+        and hash_valid
+    )
+    return {
+        "allowed": allowed,
+        "artifact_ref": artifact_ref or None,
+        "editorial_artifact_id": artifact_id or None,
+        "artifact_kind": artifact_kind or None,
+        "artifact_status": artifact_status or None,
+        "artifact_origin": artifact_origin or None,
+        "artifact_real": artifact_real,
+        "content_sha256_valid": hash_valid,
+        "test_artifact": data.get("test_artifact") is True,
+        "synthetic": data.get("synthetic") is True,
+        "fixture": data.get("fixture") is True,
+        "canary": data.get("canary") is True,
+        "proof": data.get("proof") is True,
+        "validation_artifact": data.get("validation_artifact") is True,
+        "forbidden_artifact_ref": forbidden_ref,
+    }
+
+
+def _network_transport(*, token: str, chat_id: int, text: str) -> dict[str, Any]:
+    payload = urllib.parse.urlencode({
+        "chat_id": str(chat_id),
+        "text": text,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:600]
+        raise RuntimeError(
+            f"Telegram group editorial surface HTTP {exc.code}: {detail}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            f"Telegram group editorial surface unavailable: {exc.reason}"
+        ) from exc
+    if not body.get("ok"):
+        raise RuntimeError(
+            "Telegram group editorial surface rejected message: "
+            + str(body.get("description") or "unknown error")
+        )
+    result = body.get("result") if isinstance(body, dict) else {}
+    return {
+        "message_id": (
+            result.get("message_id") if isinstance(result, dict) else None
+        ),
+        "transport": "TELEGRAM_NETWORK",
+    }
 
 
 def _parse_ids(value: str) -> list[int]:
@@ -74,8 +191,10 @@ def _delivery_contract(
     complete_script_present: bool,
     harness_authorized: bool,
     text: str,
+    lineage: dict[str, Any] | None,
 ) -> dict[str, Any]:
     normalized_category = str(category or "").strip().upper()
+    lineage_contract = _editorial_lineage_contract(lineage)
     allowed = (
         normalized_category == _AUTONOMOUS_ALLOWED_CATEGORY
         and str(deliverable_type or "").strip().upper() == "SCRIPT"
@@ -83,6 +202,7 @@ def _delivery_contract(
         and bool(complete_script_present)
         and bool(harness_authorized)
         and not _operational_telemetry_present(text)
+        and lineage_contract["allowed"]
     )
     return {
         "allowed": allowed,
@@ -92,6 +212,7 @@ def _delivery_contract(
         "complete_script_present": bool(complete_script_present),
         "harness_authorized": bool(harness_authorized),
         "operational_telemetry_present": _operational_telemetry_present(text),
+        "editorial_lineage": lineage_contract,
     }
 
 
@@ -105,6 +226,7 @@ def send_harness_message_to_human_group(
     deliverable_status: str | None = None,
     complete_script_present: bool = False,
     harness_authorized: bool = False,
+    transport: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     auth = validate_harness_authorization(
         authorization,
@@ -119,6 +241,7 @@ def send_harness_message_to_human_group(
         complete_script_present=complete_script_present,
         harness_authorized=harness_authorized,
         text=raw_text,
+        lineage=lineage,
     )
     if not contract["allowed"]:
         return {
@@ -134,38 +257,26 @@ def send_harness_message_to_human_group(
         }
 
     rendered = _human_readable(raw_text)
-    token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is required for editorial delivery")
-    chat_id = configured_human_group_chat_id()
-    payload = urllib.parse.urlencode({
-        "chat_id": str(chat_id),
-        "text": rendered,
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=payload,
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    selected_transport = transport or _network_transport
+    if transport is None:
+        token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+        if not token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN is required for editorial delivery")
+        chat_id = configured_human_group_chat_id()
+    else:
+        token = ""
+        chat_id = int(os.getenv("TELEGRAM_CAPTURE_CHAT_ID", "-1000000000000"))
+    transport_result = selected_transport(
+        token=token,
+        chat_id=chat_id,
+        text=rendered,
     )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:600]
-        raise RuntimeError(
-            f"Telegram group editorial surface HTTP {exc.code}: {detail}"
-        ) from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(
-            f"Telegram group editorial surface unavailable: {exc.reason}"
-        ) from exc
-    if not body.get("ok"):
-        raise RuntimeError(
-            "Telegram group editorial surface rejected message: "
-            + str(body.get("description") or "unknown error")
-        )
-    result = body.get("result") if isinstance(body, dict) else {}
+    message_id = transport_result.get("message_id")
+    transport_mode = str(
+        transport_result.get("transport")
+        or ("CAPTURED" if transport is not None else "TELEGRAM_NETWORK")
+    )
+
     return {
         "status": "SENT",
         "TELEGRAM_SEND": "YES",
@@ -174,9 +285,8 @@ def send_harness_message_to_human_group(
         "private_telegram_human_surface": PRIVATE_TELEGRAM_HUMAN_SURFACE,
         "category": contract["category"],
         "telegram_chat_id": chat_id,
-        "telegram_message_id": (
-            result.get("message_id") if isinstance(result, dict) else None
-        ),
+        "telegram_message_id": message_id,
+        "transport_mode": transport_mode,
         "delivery_contract": contract,
         "lineage": dict(lineage or {}),
         "fallback_surface": None,
@@ -211,6 +321,7 @@ def deliver_script_human_review_ready(
     outline: str,
     complete_script: str,
     lineage: dict[str, Any] | None = None,
+    transport: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     sections = [
         "RESUMO EDITORIAL\n\n" + str(editorial_summary or "").strip(),
@@ -244,6 +355,7 @@ def deliver_script_human_review_ready(
             deliverable_status=_SCRIPT_STATUS_READY,
             complete_script_present=True,
             harness_authorized=True,
+            transport=transport,
         )
         if sent.get("status") != "SENT":
             return {
