@@ -309,3 +309,49 @@ def test_legacy_device_auth_refuses_review_group_fallback(tmp_path):
     assert state.method == "device_auth"
     assert state.user_action_required is True
     assert provider.commands == []
+
+
+def test_headless_synergy_never_falls_back_to_device_auth_or_telegram():
+    workflow = Path(".github/workflows/hermes-real-agent-synergy.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "--allow-device-auth" not in workflow
+    assert "TELEGRAM_BOT_TOKEN" not in workflow
+    assert "CODEX_DEVICE_AUTH_IN_HEADLESS_CI=DISABLED" in workflow
+    assert "AUTH_CREDENTIAL_IN_TELEGRAM=NO" in workflow
+
+
+def test_current_plus_ci_auth_contract_is_api_key_gated_without_wif_regression():
+    current = Path(
+        ".github/workflows/codex-current-account-ci-auth.yml"
+    ).read_text(encoding="utf-8")
+    wif = Path(
+        ".github/workflows/openai-codex-wif-admin-bootstrap.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "CODEX_PLUS_HEADLESS_AUTH: \"UNSUPPORTED\"" in current
+    assert (
+        "OFFICIAL_CI_AUTH_METHOD: \"OPENAI_API_KEY_VIA_CODEX_ACTION\""
+        in current
+    )
+    assert "REQUIRES_SEPARATE_API_BILLING: \"YES\"" in current
+    assert "REQUIRES_LONG_LIVED_SECRET: \"YES\"" in current
+    assert "AUTH_SECRET_NAME: \"OPENAI_API_KEY\"" in current
+    assert "uses: openai/codex-action@v1" in current
+    assert "openai-api-key: ${{ secrets.OPENAI_API_KEY }}" in current
+    assert "persist-credentials: false" in current
+    assert "DEVICE_AUTH_IN_CI=NO" in current
+    assert "AUTH_JSON_COPIED_TO_GITHUB=NO" in current
+
+    assert (
+        "OPENAI_WIF_ACCOUNT_ELIGIBILITY=UNAVAILABLE_FOR_CURRENT_PLUS_ACCOUNT"
+        in wif
+    )
+    assert (
+        "OPENAI_WIF_ADMIN_BOOTSTRAP=NOT_APPLICABLE_CURRENT_ACCOUNT"
+        in wif
+    )
+    assert "OPENAI_ADMIN_KEY: ${{ secrets.OPENAI_ADMIN_KEY }}" in wif
+    assert "id-token: write" in wif
+    assert "scripts/openai_codex_wif_admin_bootstrap.py" in wif
+    assert "codex-cloud-auth-continuity.yml" in wif
