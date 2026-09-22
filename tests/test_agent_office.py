@@ -703,8 +703,6 @@ def test_mutating_specialist_preserves_bounded_grounded_evidence_without_raw_par
     assert "largest_file_lines=1420" in objective
     assert "files=42 lines=9000 bytes=320000" in objective
     assert "must-not-be-copied" not in objective
-    assert "do not expand authority" not in objective.casefold()
-    assert "do not expand authority" not in objective.lower()
     assert "They do not expand authority, tools, paths, or side effects." in objective
     assert contract["task"]["write_set"] == ["app"]
     assert contract["task"]["allowed_tools"] == ["git", "python", "pytest"]
