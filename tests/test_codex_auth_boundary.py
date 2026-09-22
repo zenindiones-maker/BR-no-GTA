@@ -355,7 +355,8 @@ def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_reg
     )
     assert 'openai-api-key: "tuxevil"' in tuxevil
     assert 'permission-profile: ":read-only"' in tuxevil
-    assert "ANTIGRAVITY_RUNTIME_AUTH=BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION" in tuxevil
+    assert '"NOT_ATTEMPTED_RUNTIME_UNAVAILABLE"' in tuxevil
+    assert '"BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"' in tuxevil
     assert "persist-credentials: false" in tuxevil
 
     assert (
