@@ -1,0 +1,137 @@
+name: Telegram Editorial Delivery Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/telegram-editorial-delivery.request.json"
+      - ".github/workflows/telegram-editorial-delivery-validation.yml"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          mkdir -p artifacts/telegram-editorial-delivery
+
+      - name: Run egress policy regressions
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_telegram_human_egress_policy.py
+          echo "PROGRESS_HEARTBEAT_TELEGRAM_EGRESS=0"
+          echo "BLOCKER_TELEMETRY_TELEGRAM_EGRESS=0"
+          echo "LEARNING_PROMOTION_TELEGRAM_EGRESS=0"
+          echo "CI_STATUS_TELEGRAM_EGRESS=0"
+          echo "NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED"
+          echo "TECHNICAL_EVIDENCE_ON_EXPLICIT_REQUEST_ONLY=PASS"
+
+      - name: Deliver one real SCRIPT_HUMAN_REVIEW_READY
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${TELEGRAM_BOT_TOKEN:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_BOT_TOKEN"; exit 1; }
+          test -n "${TELEGRAM_REVIEW_CHAT_ID:-}" || { echo "EXTERNAL_SECRET_BLOCKER=TELEGRAM_REVIEW_CHAT_ID"; exit 1; }
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from app.services.harness_authorization_service import (
+              consume_harness_authorization,
+              issue_harness_authorization,
+          )
+          from app.services.telegram_group_human_surface_service import (
+              deliver_script_human_review_ready,
+          )
+
+          authorization=issue_harness_authorization(
+              authorized_action="EXECUTION",
+              subject="human-surface:telegram_group",
+              execution_id="editorial-human-review-delivery",
+              lineage={
+                  "authority":"DEEPSEEK_HARNESS",
+                  "purpose":"SCRIPT_HUMAN_REVIEW_READY",
+              },
+          )
+          try:
+              result=deliver_script_human_review_ready(
+                  authorization=authorization,
+                  editorial_summary=(
+                      "Entrega de validação da interface editorial. "
+                      "O conteúdo abaixo representa um roteiro completo pronto para revisão humana."
+                  ),
+                  evidence_map=(
+                      "Decisão editorial → contrato de interface humana → entrega somente de produto final.\n"
+                      "Conteúdo completo → revisão humana → nenhum dado operacional no texto."
+                  ),
+                  outline=(
+                      "1. Abertura canônica do canal.\n"
+                      "2. Explicação curta do tema de validação.\n"
+                      "3. Fechamento canônico."
+                  ),
+                  complete_script=(
+                      "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de uma validação da nossa "
+                      "entrega editorial! O objetivo aqui é simples: quando um roteiro estiver realmente "
+                      "pronto, você recebe o conteúdo para revisar, sem acompanhar o motor trabalhando por "
+                      "trás. Pesquisa, coordenação de agentes e aprendizado continuam acontecendo de forma "
+                      "silenciosa. O que chega aqui é o produto humano final, organizado para revisão. "
+                      "E BR não dorme em Vice City"
+                  ),
+                  lineage={"artifact_ref":"script:human-interface-validation"},
+              )
+          finally:
+              consume_harness_authorization(authorization)
+
+          assert result["status"]=="SENT", result
+          assert result["TELEGRAM_SEND"]=="YES", result
+          assert result["deliverable_type"]=="SCRIPT", result
+          assert result["deliverable_status"]=="READY_FOR_HUMAN_REVIEW", result
+          assert result["complete_script_present"] is True, result
+          assert result["harness_authorized"] is True, result
+          assert result["OPERATIONAL_TELEMETRY_PRESENT"]=="NO", result
+          assert int(result["messages_sent"]) >= 4, result
+          Path("artifacts/telegram-editorial-delivery/result.json").write_text(
+              json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("SCRIPT_HUMAN_REVIEW_READY_DELIVERY=PASS")
+          print("OPERATIONAL_TELEMETRY_PRESENT=NO")
+          print("UNSOLICITED_NON_SCRIPT_EGRESS=BLOCKED")
+          PY
+
+      - name: Upload delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-editorial-delivery-${{ github.run_id }}
+          path: artifacts/telegram-editorial-delivery/
+          if-no-files-found: warn
+          retention-days: 30
