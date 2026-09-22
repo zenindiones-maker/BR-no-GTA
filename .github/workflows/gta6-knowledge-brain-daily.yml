@@ -102,6 +102,26 @@ jobs:
             --target-sha "${{ steps.sha.outputs.sha }}" \
             --trigger-kind "$GITHUB_EVENT_NAME"
 
+      - name: Benchmark real Knowledge Brain retrieval
+        env:
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
+        run: |
+          set -euo pipefail
+          python scripts/gta6_retrieval_benchmark.py \
+            --output artifacts/gta6-knowledge-brain/retrieval-benchmark.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/gta6-knowledge-brain/retrieval-benchmark.json").read_text())
+          assert d["semantic_only"]["embedding_semantic_status"]=="NOT_PROMOTED"
+          assert d["duplicate_suppression"] is True
+          assert d["temporal_correctness"] is True
+          assert d["bounded_context_max_bytes"] <= 32768
+          print("HYBRID_RETRIEVAL="+d["HYBRID_RETRIEVAL"])
+          print("SEMANTIC_EMBEDDINGS=NOT_PROMOTED")
+          print("RETRIEVAL_BOUNDED_CONTEXT=PASS")
+          PY
+
       - name: Validate immutable authority and human-surface boundaries
         run: |
           set -euo pipefail
