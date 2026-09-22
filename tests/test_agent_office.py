@@ -1508,6 +1508,10 @@ def test_realistic_noop_candidate_repair_carries_context_and_commits(
             assert "INITIAL_PASS_SUMMARY=" in command[-1]
             assert "INITIAL_OBSERVED_COMMANDS=" in command[-1]
             assert "GROUNDED_WRITABLE_TARGETS=" in command[-1]
+            assert "AUTHORIZED_MUTATION_MECHANISM=" in command[-1]
+            assert "use one allowlisted python command" in command[-1]
+            assert "action-first" in command[-1]
+            assert "At most two read-only inspection commands" in command[-1]
             assert "MAX_CANDIDATE_REPAIR_PASSES" not in command[-1]
             applied = _realistic_candidate_repair_surrogate(
                 prompt=command[-1],

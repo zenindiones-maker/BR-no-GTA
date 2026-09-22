@@ -669,22 +669,39 @@ def codex_bounded_development_worker(
             raise RuntimeError("candidate repair pass budget drifted from one")
         if len(observed_commands) >= lease.tool_call_budget:
             raise RuntimeError("Codex exceeded tool_call_budget")
+        mutation_guidance = (
+            "AUTHORIZED_MUTATION_MECHANISM=Use the Codex native workspace-write "
+            "editing primitive. If that primitive is unavailable and python is in "
+            "ALLOWED_TOOLS, use one allowlisted python command to rewrite only a "
+            "path listed in GROUNDED_WRITABLE_TARGETS. Do not use sed -i, shell "
+            "redirection outside those targets, or any unallowlisted tool."
+            if "python" in lease.allowed_tools
+            else
+            "AUTHORIZED_MUTATION_MECHANISM=Use only the Codex native workspace-write "
+            "editing primitive on GROUNDED_WRITABLE_TARGETS; no shell mutation tool "
+            "is authorized by this lease."
+        )
         candidate_repair_prompt = (
             "NO_CANDIDATE_PATCH_DETECTED. The previous bounded-development pass "
             "returned without any working-tree change, so it did not satisfy the "
             "authorized mutation contract. This is the ONE allowed candidate-repair "
             "pass. Continue inside the SAME lease and SAME disposable worktree. "
             "Do not repeat discovery that is already present in INITIAL_PASS_SUMMARY "
-            "or INITIAL_OBSERVED_COMMANDS. Use that prior analysis as continuity, then "
-            "apply the smallest evidence-backed real change to one of "
-            "GROUNDED_WRITABLE_TARGETS. Before returning, run an allowlisted local "
-            "check that proves the working tree differs from BASE_SHA. Analysis-only "
-            "success is invalid. Do not commit; the deterministic Agent Office boundary "
-            "will create the candidate commit. Do not widen scope, change authority/"
-            "policy, access secrets, use network tools, publish, deploy, push, merge, "
-            "fetch, checkout, reset, or stash. If the grounded evidence is insufficient "
-            "or no safe change satisfies the objective, report a blocker rather than "
-            "claiming success.\n\n"
+            "or INITIAL_OBSERVED_COMMANDS. Use that prior analysis as continuity. "
+            "The repair pass is action-first: choose one evidence-backed target from "
+            "GROUNDED_WRITABLE_TARGETS and perform the smallest authorized mutation "
+            "before doing any additional broad inspection. At most two read-only "
+            "inspection commands may run before the first mutation attempt. Then run "
+            "the narrowest allowlisted local validation needed by the acceptance "
+            "criteria. Before returning, prove the working tree differs from BASE_SHA. "
+            "Analysis-only success is invalid. Do not commit; the deterministic Agent "
+            "Office boundary will create the candidate commit. Do not widen scope, "
+            "change authority/policy, access secrets, use network tools, publish, "
+            "deploy, push, merge, fetch, checkout, reset, or stash. If the grounded "
+            "evidence is insufficient or no safe change satisfies the objective, "
+            "report a blocker rather than claiming success.\n\n"
+            + mutation_guidance
+            + "\n"
             f"TASK_ID={lease.task_id}\n"
             f"DELEGATION_ID={lease.delegation_id}\n"
             f"BASE_SHA={lease.base_sha}\n"
