@@ -227,7 +227,12 @@ jobs:
           from app.services.agent_office.contracts import AgentOfficeTask
           from app.services.agent_office.delegation import (
               DelegatedTaskLease,
-              MANDATORY_FORBIDDEN_ACTIONS,
+          )
+          from app.services.agent_office_harness_service import (
+              build_agent_office_specialist_contract,
+          )
+          from app.services.global_capability_registry import (
+              GLOBAL_CAPABILITY_REGISTRY,
           )
           from app.services.agent_office.codex_bounded_worker import (
               CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
@@ -249,38 +254,62 @@ jobs:
           )
 
           allowed_paths=("app/services/agent_office","tests")
-          allowed_tools=("git","python","pytest","codex","rg","cat","ls")
           acceptance=(
-              "implement one safe measurable improvement in the Agent Office bounded-development path",
+              "reduce duplicated Codex exec argv-prefix construction while preserving behavior",
+              "tests/test_agent_office.py passes",
               "preserve DeepSeek Harness authority and all security boundaries",
               "report a real before/after metric and leave a local candidate commit only",
           )
-          task=AgentOfficeTask(
-              task_id="bounded.worker.probe",
-              agent="codex-development",
-              capability=CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
-              action="development",
-              objective=(
-                  "Inspect the existing Agent Office bounded-development implementation, "
-                  "find one small measurable inefficiency or redundant operation, implement "
-                  "a safe bounded candidate inside the allowed paths, validate it locally, "
-                  "and report a real before/after metric. Do not alter authority, routing, "
-                  "publication, authentication, or secret handling."
-              ),
-              allowed_paths=allowed_paths,
-              allowed_tools=allowed_tools,
-              allowed_actions=("analyze","inspect","test","benchmark","edit","commit_candidate"),
-              forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
-              expected_outputs=("bounded candidate commit","before/after metric"),
-              acceptance_criteria=acceptance,
-              evidence_requirements=("candidate commit","measured metric","path boundary"),
-              read_set=allowed_paths,
-              write_set=allowed_paths,
-              tool_call_budget=32,
-              retry_budget=0,
-              time_budget_seconds=300,
-              cost_budget=0.0,
+          record=GLOBAL_CAPABILITY_REGISTRY.get(
+              CODEX_BOUNDED_DEVELOPMENT_CAPABILITY
           )
+          assert record is not None
+          contract=build_agent_office_specialist_contract(
+              record=record,
+              payload={
+                  "task_id":"bounded.worker.probe",
+                  "task_class":"bounded-development",
+                  "objective":(
+                      "Implement the smallest safe bounded refactor justified by the "
+                      "grounded evidence. Do not alter authority, routing, publication, "
+                      "authentication, secret handling, or sandbox policy."
+                  ),
+                  "gaps":[
+                      (
+                          "Observed measurable redundancy: "
+                          "app/services/agent_office/codex_bounded_worker.py "
+                          "constructs the same Codex exec argv prefix in the initial, "
+                          "candidate-repair, and metric-repair paths."
+                      ),
+                      (
+                          "Baseline metric: duplicated Codex exec argv-prefix construction "
+                          "blocks=3. Candidate target: <=1 shared construction helper while "
+                          "preserving per-pass sandbox mode and prompt."
+                      ),
+                  ],
+                  "allowed_paths":list(allowed_paths),
+                  "mission_read_scope":list(allowed_paths),
+                  "mission_write_scope":list(allowed_paths),
+                  "read_set":list(allowed_paths),
+                  "write_set":list(allowed_paths),
+                  "allowed_tools":["git","python","pytest","codex","rg","cat","ls"],
+                  "allowed_actions":[
+                      "analyze","inspect","test","benchmark","edit","commit_candidate"
+                  ],
+                  "expected_outputs":["bounded candidate commit","before/after metric"],
+                  "acceptance_criteria":list(acceptance),
+                  "evidence_requirements":[
+                      "candidate commit","measured metric","path boundary"
+                  ],
+                  "tool_call_budget":32,
+                  "retry_budget":0,
+              },
+          )
+          task=AgentOfficeTask.from_mapping(contract["task"])
+          assert "GROUNDED_EVIDENCE_CONTEXT:" in task.objective
+          assert "duplicated Codex exec argv-prefix" in task.objective
+          print("BOUNDED_DIAGNOSTIC_GROUNDED_CONTEXT=PASS")
+          allowed_tools=task.allowed_tools
           lease=DelegatedTaskLease(
               mission_id="bounded-diagnostic",
               task_id=task.task_id,
