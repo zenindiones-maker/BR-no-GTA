@@ -51,7 +51,9 @@ jobs:
             echo "MISSING_AUTH_CONFIGURATION=$(IFS=,; echo "${missing[*]}")"
             exit 2
           fi
-          token_file="$RUNNER_TEMP/codex-identity.jwt"
+          token_dir="$RUNNER_TEMP/openai-wif"
+          install -d -m 700 "$token_dir"
+          token_file="$token_dir/identity-token.jwt"
           request_url="$(python - <<'PY'
           import os, urllib.parse
           base=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
@@ -60,15 +62,28 @@ jobs:
           PY
           )"
           python - "$request_url" "$token_file" <<'PY'
-          import json, os, pathlib, sys, urllib.request
-          req=urllib.request.Request(sys.argv[1],headers={"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+          import base64, json, os, pathlib, sys, urllib.request
+          req=urllib.request.Request(
+              sys.argv[1],
+              headers={"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
           with urllib.request.urlopen(req,timeout=30) as r:
               token=str(json.loads(r.read().decode())["value"])
-          p=pathlib.Path(sys.argv[2]); p.write_text(token); p.chmod(0o600)
+          p=pathlib.Path(sys.argv[2])
+          p.write_text(token, encoding="utf-8")
+          p.chmod(0o600)
+          payload=token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims=json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+          assert claims["iss"]=="https://token.actions.githubusercontent.com"
+          assert claims["aud"]==os.environ["AUDIENCE"]
+          assert claims["repository"]=="zenindiones-maker/BR-no-GTA"
+          assert claims["ref"]=="refs/heads/work/gate6f-analytics-learning"
+          print("GITHUB_OIDC_CLAIMS=PASS")
           PY
           echo "OPENAI_FEDERATION_RULE_ID=$RULE" >> "$GITHUB_ENV"
-          echo "OPENAI_FEDERATION_AUDIENCE=$AUDIENCE" >> "$GITHUB_ENV"
           echo "OPENAI_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+          echo "CODEX_AUTH_METHOD=WORKLOAD_IDENTITY_FEDERATION"
           echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
       - name: Verify runner A Codex auth
         env:
@@ -90,7 +105,9 @@ jobs:
           },indent=2)+"\n")
           if not state.auth_available:
               raise SystemExit("RUNNER_A_CODEX_AUTH_STATE="+state.state)
+          assert state.method=="workload_identity", state.to_dict()
           print("RUNNER_A_CODEX_AUTH_STATE=AVAILABLE")
+          print("CODEX_AUTH_METHOD=WORKLOAD_IDENTITY_FEDERATION")
           print("LOCAL_CODEX_AUTH_CONTEXT_EXPLICIT=PASS")
           print("CLOUD_CODEX_AUTH_CONTEXT_EXPLICIT=PASS")
           PY
@@ -142,7 +159,16 @@ jobs:
           AUDIENCE: ${{ vars.OPENAI_FEDERATION_AUDIENCE }}
         run: |
           set -euo pipefail
-          token_file="$RUNNER_TEMP/codex-identity.jwt"
+          missing=()
+          [ -z "${RULE:-}" ] && missing+=("OPENAI_FEDERATION_RULE_ID")
+          [ -z "${AUDIENCE:-}" ] && missing+=("OPENAI_FEDERATION_AUDIENCE")
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "MISSING_AUTH_CONFIGURATION=$(IFS=,; echo "${missing[*]}")"
+            exit 2
+          fi
+          token_dir="$RUNNER_TEMP/openai-wif"
+          install -d -m 700 "$token_dir"
+          token_file="$token_dir/identity-token.jwt"
           request_url="$(python - <<'PY'
           import os, urllib.parse
           base=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]; aud=os.environ["AUDIENCE"]
@@ -150,15 +176,28 @@ jobs:
           PY
           )"
           python - "$request_url" "$token_file" <<'PY'
-          import json, os, pathlib, sys, urllib.request
-          req=urllib.request.Request(sys.argv[1],headers={"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+          import base64, json, os, pathlib, sys, urllib.request
+          req=urllib.request.Request(
+              sys.argv[1],
+              headers={"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
           with urllib.request.urlopen(req,timeout=30) as r:
               token=str(json.loads(r.read().decode())["value"])
-          p=pathlib.Path(sys.argv[2]); p.write_text(token); p.chmod(0o600)
+          p=pathlib.Path(sys.argv[2])
+          p.write_text(token, encoding="utf-8")
+          p.chmod(0o600)
+          payload=token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims=json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+          assert claims["iss"]=="https://token.actions.githubusercontent.com"
+          assert claims["aud"]==os.environ["AUDIENCE"]
+          assert claims["repository"]=="zenindiones-maker/BR-no-GTA"
+          assert claims["ref"]=="refs/heads/work/gate6f-analytics-learning"
+          print("GITHUB_OIDC_CLAIMS=PASS")
           PY
           echo "OPENAI_FEDERATION_RULE_ID=$RULE" >> "$GITHUB_ENV"
-          echo "OPENAI_FEDERATION_AUDIENCE=$AUDIENCE" >> "$GITHUB_ENV"
           echo "OPENAI_IDENTITY_TOKEN_FILE=$token_file" >> "$GITHUB_ENV"
+          echo "CODEX_AUTH_METHOD=WORKLOAD_IDENTITY_FEDERATION"
       - name: Verify new runner Codex auth continuity
         env:
           BR_TEST_DATABASE: ${{ runner.temp }}/auth-b.db
@@ -174,7 +213,9 @@ jobs:
           assert state.auth_available and state.state=="AVAILABLE", state.to_dict()
           assert state.lease is not None
           assert state.lease.credential_material_persisted is False
+          assert state.method=="workload_identity", state.to_dict()
           print("NEW_RUNNER_CODEX_AUTH_STATE=AVAILABLE")
+          print("CODEX_AUTH_METHOD=WORKLOAD_IDENTITY_FEDERATION")
           print("CODEX_AUTH_CONTINUITY=PASS")
           print("EPHEMERAL_RUNNER_AUTH_LOOP=NO")
           print("AUTH_SECRET_LEAK=NO")
