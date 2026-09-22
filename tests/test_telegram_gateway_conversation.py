@@ -702,8 +702,6 @@ def test_generic_semantic_provider_boundary_leak_is_sanitized():
 
 
 def test_group_human_surface_requires_exact_harness_child_authorization(monkeypatch):
-    import json
-
     from app.services.harness_authorization_service import (
         consume_harness_authorization,
         issue_harness_authorization,
@@ -712,39 +710,21 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
         send_harness_message_to_human_group,
     )
 
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
-    monkeypatch.setenv("TELEGRAM_REVIEW_CHAT_ID", "-1003932610936")
-    monkeypatch.setenv("TELEGRAM_ALLOWED_CHAT_IDS", "-1003932610936")
+    outbox = []
 
-    class FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def read(self):
-            return json.dumps({
-                "ok": True,
-                "result": {"message_id": 4242},
-            }).encode("utf-8")
-
-    calls = []
-
-    def fake_urlopen(request, timeout=20):
-        calls.append((request, timeout))
-        return FakeResponse()
-
-    monkeypatch.setattr(
-        "app.services.telegram_group_human_surface_service.urllib.request.urlopen",
-        fake_urlopen,
-    )
+    def capture_transport(*, token, chat_id, text):
+        assert token == ""
+        outbox.append((chat_id, text))
+        return {
+            "message_id": 4242,
+            "transport": "CAPTURED_OUTBOX",
+        }
 
     authorization = issue_harness_authorization(
         authorized_action="EXECUTION",
         subject="human-surface:telegram_group",
         execution_id="test-human-surface-execution",
-        lineage={"test": "group-human-surface"},
+        lineage={"purpose": "captured-group-human-surface"},
     )
     try:
         result = send_harness_message_to_human_group(
@@ -775,6 +755,7 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
             deliverable_status="READY_FOR_HUMAN_REVIEW",
             complete_script_present=True,
             harness_authorized=True,
+            transport=capture_transport,
         )
     finally:
         consume_harness_authorization(authorization)
@@ -783,16 +764,16 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
     assert result["authority"] == "deepseek_harness"
     assert result["human_surface"] == "telegram_group"
     assert result["private_telegram_human_surface"] == "DISABLED"
-    assert result["telegram_chat_id"] == -1003932610936
     assert result["telegram_message_id"] == 4242
+    assert result["transport_mode"] == "CAPTURED_OUTBOX"
     assert result["fallback_surface"] is None
-    assert len(calls) == 1
+    assert len(outbox) == 1
 
     invalid = issue_harness_authorization(
         authorized_action="EXECUTION",
         subject="capability:hermes.multiagent.runtime",
         execution_id="test-invalid-human-surface-execution",
-        lineage={"test": "wrong-subject"},
+        lineage={"purpose": "wrong-subject"},
     )
     try:
         try:
@@ -800,6 +781,7 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
                 authorization=invalid,
                 text="Não deve sair.",
                 category="TEST",
+                transport=capture_transport,
             )
         except PermissionError:
             pass
@@ -810,4 +792,5 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
     finally:
         consume_harness_authorization(invalid)
 
-    assert len(calls) == 1
+    assert len(outbox) == 1
+
