@@ -42,6 +42,7 @@ from app.services.agent_office.munder_adapter import deterministic_read_only_wor
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from scripts.audit_harness_ecosystem import audit
+from scripts import dynamic_system_improvement_mission as dynamic_mission
 
 
 def _competence(
@@ -532,6 +533,42 @@ def test_deterministic_agent_office_profiler_emits_real_repository_metrics(tmp_p
     assert analysis["observed_fragilities"][0]["kind"] == "LARGE_MODULE_CONCENTRATION"
     assert analysis["profile_latency_ms"] >= 0
     assert result["commands"] == ["git ls-files"]
+
+
+def test_system_improvement_gates_require_measured_profiler_evidence():
+    profile = {
+        "metric_schema": "agent-office-repository-profile/v1",
+        "scoped_file_count": 42,
+        "total_lines": 12345,
+        "total_bytes": 987654,
+        "files_over_1000_lines": 2,
+        "largest_file_lines": 1900,
+        "largest_file_share_of_scoped_lines": 0.1539,
+        "profile_latency_ms": 12.5,
+        "inventory_sha256": "a" * 64,
+        "observed_fragilities": [{
+            "kind": "LARGE_MODULE_CONCENTRATION",
+            "metric": "files_over_1000_lines",
+            "value": 2,
+            "evidence": ["app/a.py", "scripts/b.py"],
+        }],
+    }
+    nested = {
+        "result": {
+            "per_agent_results": {
+                "deterministic-analysis": {"analysis": profile}
+            }
+        }
+    }
+    profiles = dynamic_mission._repository_profiles(nested)
+    assert profiles == [profile]
+    fragilities = dynamic_mission._observed_fragilities(profiles)
+    assert fragilities[0]["kind"] == "LARGE_MODULE_CONCENTRATION"
+    gaps = dynamic_mission._grounded_profile_gaps({
+        "parent_handoffs": [{"result": nested}]
+    })
+    assert any("Measured repository baseline" in item for item in gaps)
+    assert any("LARGE_MODULE_CONCENTRATION" in item for item in gaps)
 
 
 def test_registry_execution_contract_is_single_and_exposes_execution_metadata():
