@@ -811,7 +811,6 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
             item
             for item in topics
             if _topic_source_state(item) is None
-            and not query_gta6_knowledge(query=item["query"], limit=1)
         ),
         topics[0],
     )
