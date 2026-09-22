@@ -111,14 +111,14 @@ def send_harness_message_to_human_group(
         expected_action="EXECUTION",
         expected_subject=f"human-surface:{HUMAN_SURFACE}",
     )
-    rendered = _human_readable(text)
+    raw_text = str(text or "").strip()
     contract = _delivery_contract(
         category=category,
         deliverable_type=deliverable_type,
         deliverable_status=deliverable_status,
         complete_script_present=complete_script_present,
         harness_authorized=harness_authorized,
-        text=rendered,
+        text=raw_text,
     )
     if not contract["allowed"]:
         return {
@@ -133,6 +133,7 @@ def send_harness_message_to_human_group(
             "fallback_surface": None,
         }
 
+    rendered = _human_readable(raw_text)
     token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required for editorial delivery")
