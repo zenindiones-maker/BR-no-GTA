@@ -471,21 +471,38 @@ class HermesHarnessCapabilityBroker:
         board_task_id = self.task_mapping[task_id]
         if not self.board.block(board_task_id, reason=normalized, run_id=run_id, kind="needs_input"):
             raise RuntimeError("Hermes task could not enter human-input block")
-        dispatch = send_harness_message_to_human_group(
-            authorization=self.parent_authorization,
-            text=(
-                "🧠 BR-no-GTA precisa da sua decisão\n\n"
-                + normalized
-            ),
-            category="DECISION_REQUEST",
+        human_authorization = issue_harness_authorization(
+            authorized_action="EXECUTION",
+            subject=f"human-surface:{HUMAN_SURFACE}",
+            harness_decision_id=self.spec.harness_decision_id,
+            execution_id=self.parent_authorization.execution_id,
             lineage={
-                "mission_id": self.spec.mission_id,
-                "task_id": task_id,
-                "board_task_id": board_task_id,
+                "parent_authorization_id": self.parent_authorization.authorization_id,
+                "hermes_mission_id": self.spec.mission_id,
+                "hermes_task_id": task_id,
                 "goal_id": self.spec.goal_id,
+                "human_surface": HUMAN_SURFACE,
                 "runtime": "hermes",
             },
         )
+        try:
+            dispatch = send_harness_message_to_human_group(
+                authorization=human_authorization,
+                text=(
+                    "🧠 BR-no-GTA precisa da sua decisão\n\n"
+                    + normalized
+                ),
+                category="DECISION_REQUEST",
+                lineage={
+                    "mission_id": self.spec.mission_id,
+                    "task_id": task_id,
+                    "board_task_id": board_task_id,
+                    "goal_id": self.spec.goal_id,
+                    "runtime": "hermes",
+                },
+            )
+        finally:
+            consume_harness_authorization(human_authorization)
         item = {
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
