@@ -1,6 +1,8 @@
 {
-  "request": "GTA6_KNOWLEDGE_BRAIN_DAILY_PROOF_002",
+  "request": "GTA6_KNOWLEDGE_BRAIN_DAILY_PROOF_003",
   "source_blocker_validation_run": 35674653104,
+  "source_failed_daily_run": 35674735562,
+  "group_human_surface_auth_ci_run": 35674964153,
   "mode": "daily_autonomous",
   "human_surface": "telegram_group",
   "zero_cost_operation": true,
