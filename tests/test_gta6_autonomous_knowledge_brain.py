@@ -4,6 +4,9 @@ from app.database import continuous_operation_repository as continuous_repositor
 from app.database import gta6_brain_repository as brain_repository
 from app.database.memory_claim_repository import insert_memory_claim
 from app.services.gta6_knowledge_retrieval_service import retrieve_gta6_knowledge
+from app.services.continuous_intelligence_service import _materialize_nonactive_claim
+from app.services.telegram_knowledge_recall_service import recall_canonical_gta6_knowledge
+from scripts import gta6_fresh_research_worker as fresh_worker
 from app.services.memory_claim_service import create_memory_claim
 
 
@@ -230,3 +233,143 @@ def test_claim_metadata_preserves_supersession_history():
     old = brain_repository.get_claim_metadata(old_claim)
     assert old["brain_status"] == "SUPERSEDED"
     assert old["superseded_by_claim_id"] == new_claim
+
+
+def test_conditional_source_304_is_detected_without_content_extraction(monkeypatch):
+    monkeypatch.setattr(fresh_worker, "_public_https_url", lambda value: value)
+    monkeypatch.setattr(
+        fresh_worker,
+        "_fetch_text_conditional",
+        lambda url, **kwargs: {
+            "status": "NOT_MODIFIED",
+            "url": url,
+            "resolved_url": url,
+            "etag": '"etag-v1"',
+            "last_modified": "Mon, 21 Sep 2026 12:00:00 GMT",
+            "text": "",
+        },
+    )
+    result = fresh_worker._resolve_submitted_source(
+        "https://www.rockstargames.com/VI",
+        checked_at=NOW,
+        etag='"etag-v1"',
+        last_modified="Mon, 21 Sep 2026 12:00:00 GMT",
+    )
+    assert result["resolution_status"] == "NOT_MODIFIED"
+    assert result["http_not_modified"] is True
+    assert result["content_excerpt"] == ""
+
+
+def test_contradicted_claim_is_preserved_in_history_and_excluded_from_normal_retrieval():
+    old_claim = _claim(
+        "Lucia is shown in official material in Vice City.",
+        source_id="official-old",
+        url="https://www.rockstargames.com/VI",
+        source_type="PRIMARY_SOURCE",
+        subject="Lucia",
+    )
+    brain_repository.upsert_claim_metadata({
+        "claim_id": old_claim,
+        "brain_status": "ACTIVE",
+        "first_seen_at": NOW,
+        "last_verified_at": NOW,
+        "related_claims": [],
+        "used_in_content": [],
+        "world_novelty": "OLD",
+        "knowledge_novelty": "KNOWN",
+        "editorial_novelty": "UNUSED",
+        "freshness_class": "HIGH",
+    })
+    historical = _materialize_nonactive_claim(
+        candidate_claim={
+            "subject": "Lucia",
+            "claim_text": "Lucia is not shown in official material in Vice City.",
+            "source_id": "official-new",
+            "source_url": "https://www.rockstargames.com/VI",
+            "source_type": "PRIMARY_SOURCE",
+            "published_at": NOW,
+            "observed_at": NOW,
+            "evidence_ref": "url:rockstar#contradiction",
+            "evidence_class": "OFFICIAL",
+            "related_claims": [old_claim],
+        },
+        fact_check={"verdict": "CONTRADICTED", "confidence": 0.95},
+        brain_status="CONTRADICTED",
+    )
+    meta = brain_repository.get_claim_metadata(historical["claim_id"])
+    assert meta["brain_status"] == "CONTRADICTED"
+    relations = brain_repository.list_relations(
+        entity_id=f"claim-{historical['claim_id']}",
+        limit=20,
+    )
+    assert any(
+        item["predicate"] == "contradicts"
+        and item["object_id"] == f"claim-{old_claim}"
+        for item in relations
+    )
+    current = retrieve_gta6_knowledge(
+        query="Lucia Vice City",
+        limit=10,
+        max_context_bytes=8192,
+    )
+    assert historical["claim_id"] not in {
+        item["claim_id"] for item in current["knowledge_units"]
+    }
+    history = retrieve_gta6_knowledge(
+        query="Lucia Vice City",
+        limit=10,
+        max_context_bytes=8192,
+        include_history=True,
+    )
+    assert historical["claim_id"] in {
+        item["claim_id"] for item in history["knowledge_units"]
+    }
+
+
+def test_telegram_knowledge_recall_uses_harness_governed_bounded_retrieval():
+    source_id = "telegram-official"
+    url = "https://www.rockstargames.com/VI"
+    brain_repository.upsert_source({
+        "source_id": source_id,
+        "url": url,
+        "domain": "rockstargames.com",
+        "source_type": "PRIMARY_SOURCE",
+        "authority_class": "ROCKSTAR_OFFICIAL",
+        "reliability_score": 1.0,
+        "discovered_at": NOW,
+        "last_checked_at": NOW,
+        "refresh_priority": 100,
+        "refresh_interval_seconds": 21600,
+        "refresh_state": "CURRENT",
+        "active": True,
+    })
+    claim_id = _claim(
+        "Lucia has verified official evidence connected to Vice City.",
+        source_id=source_id,
+        url=url,
+        source_type="PRIMARY_SOURCE",
+        subject="Lucia",
+    )
+    brain_repository.upsert_claim_metadata({
+        "claim_id": claim_id,
+        "brain_status": "ACTIVE",
+        "first_seen_at": NOW,
+        "last_verified_at": NOW,
+        "related_claims": [],
+        "used_in_content": [],
+        "world_novelty": "HIGH",
+        "knowledge_novelty": "NEW",
+        "editorial_novelty": "UNUSED",
+        "freshness_class": "HIGH",
+    })
+    recalled = recall_canonical_gta6_knowledge(
+        "O que sabemos sobre Lucia em Vice City?",
+        project_context="BR-no-GTA",
+        subject_context="GTA VI",
+    )
+    assert recalled["status"] == "CANONICAL_KNOWLEDGE_RECALLED"
+    assert recalled["HARNESS_GOVERNED_RETRIEVAL"] == "PASS"
+    assert recalled["human_surface"] == "telegram_group"
+    assert recalled["provider_calls"] == 0
+    assert recalled["retrieval_bounded"] is True
+    assert recalled["SOURCE_PROVENANCE_PRESERVED"] == "PASS"
