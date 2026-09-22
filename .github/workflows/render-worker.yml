@@ -842,16 +842,12 @@ jobs:
       - name: Start Telegram delivery clock
         run: python scripts/render_pipeline_stage_clock.py start telegram_delivery --path runtime/render/pipeline-stage-clock.json
 
-      - name: Deliver full-duration branded review to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+      - name: Keep completed render silent until explicit human request
         run: |
           set -euo pipefail
-          test -n "$TELEGRAM_BOT_TOKEN"
-          test -n "$TELEGRAM_REVIEW_CHAT_ID"
-          python scripts/telegram_render_review_worker.py \
-            --artifact-root runtime/render/output
+          echo "RENDER_AUTONOMOUS_TELEGRAM_EGRESS=0"
+          echo "TELEGRAM_SEND=NO"
+          echo "NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED"
 
       - name: Finish Telegram delivery clock
         if: always()
