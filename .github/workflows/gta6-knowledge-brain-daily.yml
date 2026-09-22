@@ -32,7 +32,7 @@ jobs:
       - name: Checkout exact Knowledge Brain revision
         uses: actions/checkout@v4
         with:
-          ref: \${{ env.TARGET_REF }}
+          ref: ${{ env.TARGET_REF }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -65,8 +65,8 @@ jobs:
 
       - name: Restore canonical Knowledge Brain checkpoint
         env:
-          GH_TOKEN: \${{ github.token }}
-          BR_TEST_DATABASE: \${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
+          GH_TOKEN: ${{ github.token }}
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
         run: |
           set -euo pipefail
           python scripts/continuous_state_checkpoint.py restore \
@@ -77,7 +77,7 @@ jobs:
 
       - name: Focused Knowledge Brain regression gates
         env:
-          BR_TEST_DATABASE: \${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
         run: |
           set -euo pipefail
           python -m pytest -q \
@@ -89,17 +89,17 @@ jobs:
 
       - name: Execute autonomous daily Knowledge Brain
         env:
-          BR_TEST_DATABASE: \${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
-          BR_HERMES_UPSTREAM_ROOT: \${{ github.workspace }}/.runtime/hermes-agent
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_REVIEW_CHAT_ID: \${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
-          TELEGRAM_ALLOWED_CHAT_IDS: \${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
+          BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
         run: |
           set -euo pipefail
           python scripts/gta6_knowledge_brain_daily.py \
             --artifact-dir artifacts/gta6-knowledge-brain \
             --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
-            --target-sha "\${{ steps.sha.outputs.sha }}" \
+            --target-sha "${{ steps.sha.outputs.sha }}" \
             --trigger-kind "$GITHUB_EVENT_NAME"
 
       - name: Validate immutable authority and human-surface boundaries
@@ -131,19 +131,19 @@ jobs:
 
       - name: Save canonical Knowledge Brain checkpoint
         env:
-          BR_TEST_DATABASE: \${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
+          BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-knowledge-brain/brain.db
         run: |
           set -euo pipefail
           python scripts/continuous_state_checkpoint.py save \
             --database "$BR_TEST_DATABASE" \
             --output-dir artifacts/gta6-knowledge-brain/state \
-            --target-sha "\${{ steps.sha.outputs.sha }}" \
+            --target-sha "${{ steps.sha.outputs.sha }}" \
             --run-id "$GITHUB_RUN_ID"
 
       - name: Upload canonical checkpoint transport
         uses: actions/upload-artifact@v4
         with:
-          name: gta6-knowledge-brain-state-\${{ github.run_id }}
+          name: gta6-knowledge-brain-state-${{ github.run_id }}
           path: artifacts/gta6-knowledge-brain/state/
           if-no-files-found: error
           retention-days: 90
@@ -152,7 +152,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gta6-knowledge-brain-daily-\${{ github.run_id }}
+          name: gta6-knowledge-brain-daily-${{ github.run_id }}
           path: |
             artifacts/gta6-knowledge-brain/*.json
             artifacts/gta6-knowledge-brain/gta6-intelligence/
@@ -163,7 +163,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: gta6-obsidian-second-brain-\${{ github.run_id }}
+          name: gta6-obsidian-second-brain-${{ github.run_id }}
           path: artifacts/gta6-knowledge-brain/obsidian-memory-export/
           if-no-files-found: warn
           retention-days: 30
@@ -171,9 +171,9 @@ jobs:
       - name: Publish Knowledge Brain status
         if: always()
         env:
-          GH_TOKEN: \${{ github.token }}
-          TARGET_SHA: \${{ steps.sha.outputs.sha }}
-          STATE: \${{ job.status == 'success' && 'success' || job.status == 'failure' && 'failure' || 'error' }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.sha.outputs.sha }}
+          STATE: ${{ job.status == 'success' && 'success' || job.status == 'failure' && 'failure' || 'error' }}
         run: |
           set -euo pipefail
           python - <<'PY' >/tmp/status.json
