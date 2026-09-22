@@ -216,7 +216,7 @@ def _generic_payload(
         if task.expected_output else ["structured_result"],
         "acceptance_criteria": list(task.acceptance_criteria),
         "evidence_requirements": list(dict.fromkeys([
-            *list(task.evidence_expectations),
+            *list(getattr(task, "evidence_expectations", ()) or ()),
             *([task.evidence_contract] if task.evidence_contract else []),
         ])),
         "time_budget_seconds": int(task.time_budget_seconds),
