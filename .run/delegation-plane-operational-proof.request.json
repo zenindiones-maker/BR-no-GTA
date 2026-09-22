@@ -2,8 +2,9 @@
   "schema": "delegation-plane-operational-proof-request/v1",
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
-  "deterministic_base_sha": "1f986a429d4df72551ef409626e0f19ba8130433",
-  "trigger_reason": "bounded-development readonly head allowlist blocker fixed; Agent Office Validation and BR-no-GTA CI green",
+  "deterministic_base_sha": "1538f44da6866bf8f266a15be0a56022a5541bf8",
+  "previous_failed_run_id": 35773828328,
+  "retry_reason": "candidate repair now action-first with explicit already-authorized bounded mutation mechanism; Agent Office Validation and BR-no-GTA CI green",
   "live_run_budget": 1,
   "no_diagnostic_before_canonical": true
 }
