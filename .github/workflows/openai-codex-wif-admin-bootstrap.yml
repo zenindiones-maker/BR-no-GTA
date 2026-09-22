@@ -1,0 +1,167 @@
+name: OpenAI Codex WIF Admin Bootstrap
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/openai-codex-wif-bootstrap.request.json"
+  workflow_dispatch:
+    inputs:
+      workspace_id:
+        description: Managed ChatGPT workspace ID; needed only when creating a new rule
+        required: false
+        type: string
+      principal_id:
+        description: Existing active ChatGPT user/service-account principal ID; needed only when creating a new rule
+        required: false
+        type: string
+      audience:
+        description: Exact GitHub OIDC audience configured in OpenAI
+        required: false
+        default: "https://api.openai.com/codex/zenindiones-maker/BR-no-GTA"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+env:
+  PYTHONPATH: .
+  DEFAULT_WIF_AUDIENCE: "https://api.openai.com/codex/zenindiones-maker/BR-no-GTA"
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      federation_rule_id: ${{ steps.resolved.outputs.rule_id }}
+      federation_audience: ${{ steps.resolved.outputs.audience }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate bootstrap contract
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input pytest
+          python -m pytest -q tests/test_openai_codex_wif_admin_bootstrap.py
+          echo "OPENAI_WIF_BOOTSTRAP_TESTS=PASS"
+
+      - name: Inspect ephemeral GitHub OIDC claims
+        env:
+          REQUESTED_AUDIENCE: ${{ inputs.audience || env.DEFAULT_WIF_AUDIENCE }}
+        run: |
+          set -euo pipefail
+          token_dir="$RUNNER_TEMP/openai-wif-bootstrap"
+          install -d -m 700 "$token_dir"
+          token_file="$token_dir/github-oidc.jwt"
+          request_url="$(python - <<'PY'
+          import os, urllib.parse
+          base=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          audience=os.environ["REQUESTED_AUDIENCE"]
+          print(base+("&" if "?" in base else "?")+urllib.parse.urlencode({"audience":audience}))
+          PY
+          )"
+          python - "$request_url" "$token_file" <<'PY'
+          import base64, json, os, pathlib, sys, urllib.request
+          req=urllib.request.Request(
+              sys.argv[1],
+              headers={"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          with urllib.request.urlopen(req, timeout=30) as response:
+              token=str(json.loads(response.read().decode())["value"])
+          path=pathlib.Path(sys.argv[2])
+          path.write_text(token, encoding="utf-8")
+          path.chmod(0o600)
+          payload=token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims=json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+          assert claims["iss"]=="https://token.actions.githubusercontent.com"
+          assert claims["aud"]==os.environ["REQUESTED_AUDIENCE"]
+          assert claims["repository"]=="zenindiones-maker/BR-no-GTA"
+          assert claims["ref"]=="refs/heads/work/gate6f-analytics-learning"
+          safe={
+              "iss":claims["iss"],
+              "aud":claims["aud"],
+              "repository":claims["repository"],
+              "ref":claims["ref"],
+              "workflow_ref":claims.get("workflow_ref"),
+          }
+          pathlib.Path("oidc-claims.json").write_text(
+              json.dumps(safe, indent=2, sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("GITHUB_OIDC_EPHEMERAL_IDENTITY=PASS")
+          print("GITHUB_OIDC_REPOSITORY_SCOPE=PASS")
+          print("GITHUB_OIDC_BRANCH_SCOPE=PASS")
+          PY
+          rm -f "$token_file"
+          echo "OIDC_TOKEN_PERSISTED=NO"
+
+      - name: Reconcile OpenAI Codex WIF provider and federation rule
+        id: bootstrap
+        env:
+          OPENAI_ADMIN_KEY: ${{ secrets.OPENAI_ADMIN_KEY }}
+          OPENAI_WIF_WORKSPACE_ID: ${{ inputs.workspace_id }}
+          OPENAI_WIF_PRINCIPAL_ID: ${{ inputs.principal_id }}
+          OPENAI_FEDERATION_AUDIENCE: ${{ inputs.audience || env.DEFAULT_WIF_AUDIENCE }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/openai-codex-wif
+          set +e
+          python scripts/openai_codex_wif_admin_bootstrap.py             --output artifacts/openai-codex-wif/resolved.json             2>&1 | tee artifacts/openai-codex-wif/bootstrap.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 20 ]; then
+            grep '^OPENAI_WIF_ADMIN_BOOTSTRAP_REQUIRED=' artifacts/openai-codex-wif/bootstrap.log || true
+            exit 20
+          fi
+          test "$code" -eq 0
+          echo "OPENAI_WIF_WORKSPACE_STATUS=ENABLED_OR_EXISTING_RULE_REUSED"
+
+      - name: Expose non-secret WIF configuration
+        id: resolved
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          data=json.loads(Path("artifacts/openai-codex-wif/resolved.json").read_text())
+          rule=str(data["federation_rule_id"])
+          audience=str(data["audience"])
+          assert rule.startswith("idpm_")
+          print(f"rule_id={rule}")
+          print(f"audience={audience}")
+          PY
+          echo "OPENAI_FEDERATION_RULE_ID_SOURCE=OPENAI_ADMIN_API"
+          echo "OPENAI_FEDERATION_AUDIENCE_SOURCE=OPENAI_PROVIDER_CONFIGURATION"
+          echo "AUTH_SECRET_LEAK=NO"
+
+      - name: Dispatch two-runner Codex WIF continuity proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RULE_ID: ${{ steps.resolved.outputs.rule_id }}
+          AUDIENCE: ${{ steps.resolved.outputs.audience }}
+        run: |
+          set -euo pipefail
+          gh workflow run codex-cloud-auth-continuity.yml             --repo "$GITHUB_REPOSITORY"             --ref work/gate6f-analytics-learning             -f federation_rule_id="$RULE_ID"             -f federation_audience="$AUDIENCE"
+          echo "CODEX_WIF_CONTINUITY_DISPATCHED=PASS"
+
+      - name: Upload non-secret bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openai-codex-wif-bootstrap-${{ github.run_id }}
+          path: |
+            artifacts/openai-codex-wif/
+            oidc-claims.json
+          if-no-files-found: warn
+          retention-days: 7
