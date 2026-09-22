@@ -793,4 +793,3 @@ def test_group_human_surface_requires_exact_harness_child_authorization(monkeypa
         consume_harness_authorization(invalid)
 
     assert len(outbox) == 1
-
