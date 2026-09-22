@@ -1709,13 +1709,12 @@ def run_scheduled(
         "CONTINUOUS_INTELLIGENCE_LOOP": "PASS", "CONTINUOUS_IMPROVEMENT_LOOP": "PASS",
         "TERMUX_HEAVY_PROCESSING": "NO", "NEW_VOICE_SYNTHESIS": "NO",
         "FULL_RENDER": "NO", "YOUTUBE_UPLOAD": "NO", "YOUTUBE_PUBLICATION": "NO",
+        "UNSOLICITED_TELEGRAM_EGRESS": "NO", "TELEGRAM_MESSAGES_SENT": 0,
     }
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "continuous-cycle.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
     )
-    if meaningful:
-        (artifact_dir / "telegram-report.txt").write_text(_telegram_action_first_report(report) + "\n", encoding="utf-8")
     return report
 
 def main() -> int:
