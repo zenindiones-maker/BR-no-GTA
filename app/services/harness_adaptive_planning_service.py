@@ -629,6 +629,51 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                     f"{task.task_id}: capability health {health.state}: "
                     f"{capability_id}: {health.reason}"
                 )
+    # An empty candidate list means "Harness discover an implementation",
+    # not "skip feasibility". Fail closed when the task class/side-effect
+    # cannot be satisfied by any currently healthy canonical Registry record.
+    for task in proposal.tasks:
+        if task.candidate_capability_ids:
+            continue
+        required_side_effect = str(
+            task.risk_side_effect_class or "READ_ONLY"
+        ).upper()
+        feasible = False
+        for record in GLOBAL_CAPABILITY_REGISTRY.all():
+            if (
+                record.capability_type == "PROVIDER"
+                or not record.execution_enabled
+                or record.capability_id in {
+                    "agent-office.execute",
+                    "collaboration.hermes.execute",
+                }
+                or task.action not in record.allowed_actions
+            ):
+                continue
+            record_side_effect = str(
+                getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+            ).upper()
+            mutation_capable = (
+                record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+                or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+            )
+            if (
+                required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+                and not mutation_capable
+            ):
+                continue
+            if required_side_effect == "READ_ONLY" and mutation_capable:
+                continue
+            health = capability_health(record.capability_id)
+            if health.state in {"BLOCKED", "QUARANTINED"}:
+                continue
+            feasible = True
+            break
+        if not feasible:
+            errors.append(
+                f"{task.task_id}: no healthy Registry implementation can satisfy "
+                f"action={task.action} side_effect={required_side_effect}"
+            )
     return tuple(errors)
 
 
