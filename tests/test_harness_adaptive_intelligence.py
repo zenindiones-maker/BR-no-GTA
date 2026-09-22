@@ -177,6 +177,62 @@ def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_o
     assert evidence["validated_by"] == "DEEPSEEK_HARNESS"
 
 
+def test_semantic_schema_rejection_replans_once_with_exact_enum_feedback():
+    context = {
+        "human_goal": "Descobre sozinho uma melhoria mensurável e segura.",
+        "project": "BR-no-GTA",
+        "goal_id": "goal-schema-replan",
+        "subject": "system",
+        "conversation_state": {},
+        "bounded_memory_context": {},
+        "relevant_failure_memories": [],
+        "human_feedback_decisions": [],
+        "provider_health": {},
+        "registry_summary": [],
+        "competence_evidence": [],
+        "resource_bounds": {"max_tasks_per_mission": 8},
+        "known_bad_paths": [],
+    }
+    calls = []
+
+    def inference(prompt, _context):
+        calls.append(prompt)
+        proposal = _proposal(
+            candidate_id="agent-office.codex.readonly-analysis"
+        )
+        if len(calls) == 1:
+            proposal["tasks"][0]["risk_side_effect_class"] = (
+                "LOW RISK; STRICTLY READ-ONLY EXECUTION."
+            )
+            return proposal
+        assert (
+            "The previous proposal failed DeepSeek Harness schema validation."
+            in prompt
+        )
+        assert "unsupported risk_side_effect_class" in prompt
+        assert "RO|L|M|H|EXT" in prompt
+        return proposal
+
+    result, evidence = propose_validated_semantic_plan(
+        context,
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert result.proposal.tasks[0].risk_side_effect_class == "READ_ONLY"
+    assert len(calls) == 2
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert any(
+        "schema_validation:ValueError:unsupported risk_side_effect_class"
+        in reason
+        for batch in evidence["rejection_reasons"]
+        for reason in batch
+    )
+    assert evidence["planner_authority"] == "NONE"
+    assert evidence["validated_by"] == "DEEPSEEK_HARNESS"
+
+
 def test_competence_can_override_semantic_candidate_hint():
     requirement = {
         "task_id": "inspect",
