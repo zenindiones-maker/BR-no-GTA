@@ -21,6 +21,10 @@ from app.services.harness_authorization_service import (
 from app.services.harness_capability_service import CapabilityEvidence, execute_capability
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.bounded_memory_context_service import build_bounded_memory_context
+from app.services.telegram_group_human_surface_service import (
+    HUMAN_SURFACE,
+    send_harness_message_to_human_group,
+)
 
 from .contracts import HERMES_RUNTIME_CAPABILITY_ID, HermesMissionExecutionSpec
 from .registry_roster import project_plan_roster
@@ -467,12 +471,30 @@ class HermesHarnessCapabilityBroker:
         board_task_id = self.task_mapping[task_id]
         if not self.board.block(board_task_id, reason=normalized, run_id=run_id, kind="needs_input"):
             raise RuntimeError("Hermes task could not enter human-input block")
+        dispatch = send_harness_message_to_human_group(
+            authorization=self.parent_authorization,
+            text=(
+                "🧠 BR-no-GTA precisa da sua decisão\n\n"
+                + normalized
+            ),
+            category="DECISION_REQUEST",
+            lineage={
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "board_task_id": board_task_id,
+                "goal_id": self.spec.goal_id,
+                "runtime": "hermes",
+            },
+        )
         item = {
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
             "board_task_id": board_task_id,
             "question": normalized,
             "state": "WAITING_FOR_HUMAN",
+            "human_surface": HUMAN_SURFACE,
+            "telegram_dispatch": dispatch,
+            "fallback_surface": None,
         }
         self._human_requests.append(item)
         return item
@@ -495,6 +517,7 @@ class HermesHarnessCapabilityBroker:
             "task_id": task_id,
             "status": "RESUMED",
             "answer": normalized,
+            "human_surface": HUMAN_SURFACE,
         }
 
     def observe_task_state(self, *, task_id: str) -> dict[str, Any]:
