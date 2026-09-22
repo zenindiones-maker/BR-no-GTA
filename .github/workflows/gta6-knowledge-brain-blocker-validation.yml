@@ -1,0 +1,60 @@
+name: GTA6 Knowledge Brain Blocker Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/gta6-knowledge-brain-blockers.request.json"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/gta6-brain-blockers/focused.db
+
+jobs:
+  focused-blockers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install focused test runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/gta6-brain-blockers
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Run exactly the four failed Knowledge Brain blockers
+        run: |
+          set -euo pipefail
+          rm -f "$BR_TEST_DATABASE"
+          python -m pytest -q             tests/test_gta6_autonomous_knowledge_brain.py::test_telegram_knowledge_recall_uses_harness_governed_bounded_retrieval             tests/test_continuous_operation.py::test_real_delta_contract_reuses_promoted_canonical_knowledge             tests/test_continuous_operation.py::test_non_primary_claim_cannot_auto_promote_to_knowledge_brain             tests/test_telegram_gateway_conversation.py::test_v2_live_gateway_uses_conversation_service_not_direct_reasoning             --junitxml=artifacts/gta6-brain-blockers/pytest.xml
+          echo "KNOWLEDGE_RETRIEVAL_HARNESS_AUTH=PASS"
+          echo "CONDITIONAL_SOURCE_REFRESH=PASS"
+          echo "NON_PRIMARY_AUTO_PROMOTION=BLOCKED"
+          echo "TELEGRAM_GROUP_HUMAN_RESPONSE=PASS"
+
+      - name: Upload focused blocker proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gta6-knowledge-brain-blockers-${{ github.run_id }}
+          path: artifacts/gta6-brain-blockers/
+          if-no-files-found: warn
+          retention-days: 30
