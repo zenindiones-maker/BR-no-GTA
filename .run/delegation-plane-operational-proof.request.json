@@ -3,11 +3,13 @@
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
   "diagnostic_only": true,
-  "requested_base_sha": "d27fce527ea8d9cf05b53e016081777b5c886ba7",
-  "mode": "PERFORMANCE_INSTRUMENTED_BASELINE_ONLY",
-  "baseline_run_id": 35789429747,
-  "observability_head": "d27fce527ea8d9cf05b53e016081777b5c886ba7",
-  "objective": "Measure the real end-to-end critical path, worker attempts, Codex process launches, git invocations, context bytes, duplicate work and retries without applying a functional optimization.",
+  "requested_base_sha": "9999620492f535142d4b37e019d0fb8231e45801",
+  "mode": "CURRENT_HEAD_PERFORMANCE_BASELINE_ONLY",
+  "baseline_reference_runs": {
+    "historical_pathological": 35789429747,
+    "coarse_instrumented": 35792379736
+  },
+  "objective": "Measure the current mission-isolated operational profile after trace isolation, readonly provider instrumentation, and deterministic outer retry fix. Do not apply a functional optimization during this run.",
   "restrictions": {
     "functional_fix_during_run": false,
     "second_phase": false,
