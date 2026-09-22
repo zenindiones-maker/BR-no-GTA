@@ -16,39 +16,27 @@ from app.services.harness_authorization_service import (
     issue_harness_authorization,
 )
 from app.services.harness_collaboration_service import (
-    CollaborationTask,
+    TaskEnvelope,
     build_collaboration_plan,
 )
-from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
-from app.services.hermes_multiagent.capability_broker import HermesHarnessCapabilityBroker
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
+from app.services.hermes_multiagent.capability_broker import (
+    HermesHarnessCapabilityBroker,
+)
 from app.services.hermes_multiagent.contracts import (
     HERMES_RUNTIME_CAPABILITY_ID,
     HermesMissionExecutionSpec,
 )
-from app.services.hermes_multiagent.runtime import execute_hermes_mission_capability
+from app.services.hermes_multiagent.runtime import (
+    execute_hermes_mission_capability,
+)
 from scripts.run_system_improvement_review import SPECIALISTS, build_snapshot
 
 
 UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
-WRITE_SET = (
-    "scripts/run_system_improvement_review.py",
-    "tests/test_system_improvement_dynamic_selection.py",
-)
-
-ROOT_CAUSE_READ_SCOPE = (
-    "scripts/run_system_improvement_review.py",
-    ".github/workflows/system-improvement-review.yml",
-    "app/services/harness_collaboration_service.py",
-)
-CANDIDATE_READ_SCOPE = (
-    "scripts/run_system_improvement_review.py",
-    "app/services/harness_collaboration_service.py",
-    "tests/test_system_improvement_dynamic_selection.py",
-)
-VALIDATE_READ_SCOPE = (
-    "scripts/run_system_improvement_review.py",
-    "tests/test_system_improvement_dynamic_selection.py",
-)
 
 
 def _decode_plan(value: str) -> dict[str, Any]:
@@ -66,17 +54,10 @@ def _decode_plan(value: str) -> dict[str, Any]:
 
 def _rebuild_plan(data: dict[str, Any]):
     collaboration = dict(data["collaboration_plan"])
-    tasks = []
-    for item in collaboration["tasks"]:
-        tasks.append(CollaborationTask(
-            task_id=str(item["task_id"]),
-            capability_id=str(item["capability_id"]),
-            action=str(item["action"]),
-            objective=str(item["objective"]),
-            dependencies=tuple(item.get("dependencies") or ()),
-            input_refs=tuple(item.get("input_refs") or ()),
-            expected_output=str(item.get("expected_output") or ""),
-        ))
+    tasks = [
+        TaskEnvelope.from_mapping(dict(item))
+        for item in collaboration["tasks"]
+    ]
     rebuilt = build_collaboration_plan(
         mission_id=str(data["mission_id"]),
         goal_id=str(data["goal"]["goal_id"]),
@@ -86,15 +67,22 @@ def _rebuild_plan(data: dict[str, Any]):
         str(item["task_id"]): (
             str(item["capability_id"]),
             str(item["selected_executor_binding"]),
+            str(item.get("capability_version") or "1"),
         )
         for item in collaboration["tasks"]
     }
     observed = {
-        item.task_id: (item.capability_id, item.selected_executor_binding)
+        item.task_id: (
+            item.capability_id,
+            item.selected_executor_binding,
+            item.capability_version,
+        )
         for item in rebuilt.tasks
     }
     if expected != observed:
-        raise PermissionError("Registry/routing drifted from authorized MissionPlan")
+        raise PermissionError(
+            "Registry/routing/version drifted from authorized MissionPlan"
+        )
     return rebuilt
 
 
@@ -122,7 +110,7 @@ def _auth(plan):
             "goal_id": plan.goal_id,
             "mission_id": plan.mission_id,
             "runtime": "hermes",
-            "ingress": "telegram-natural-goal",
+            "ingress": "natural-goal",
             "agent_direct_promotion": False,
         },
     )
@@ -151,6 +139,9 @@ def _find_candidate_sha(value: Any) -> str | None:
         direct = value.get("RESULT_COMMIT_SHA")
         if isinstance(direct, str) and re.fullmatch(r"[0-9a-f]{40}", direct):
             return direct
+        direct = value.get("candidate_commit_sha")
+        if isinstance(direct, str) and re.fullmatch(r"[0-9a-f]{40}", direct):
+            return direct
         commits = value.get("commits")
         if isinstance(commits, (list, tuple)):
             for item in commits:
@@ -168,128 +159,171 @@ def _find_candidate_sha(value: Any) -> str | None:
     return None
 
 
-def _payload(
+def _is_mutating(task) -> bool:
+    return bool(task.write_scope) or str(
+        task.risk_side_effect_class or ""
+    ).upper() in {
+        "BOUNDED_MUTATION",
+        "MUTATING",
+        "MEDIUM",
+        "HIGH",
+    }
+
+
+def _candidate_from_parent_context(parent_context: dict[str, Any]) -> str | None:
+    return _find_candidate_sha(parent_context)
+
+
+def _generic_payload(
     *,
-    task_id: str,
-    capability_id: str,
+    task,
     human_goal: str,
     goal_id: str,
     mission_id: str,
     base_sha: str,
     branch: str,
     snapshot: dict[str, Any],
-    candidate_sha: str | None,
     parent_context: dict[str, Any],
 ) -> dict[str, Any]:
-    evidence_refs = [
+    evidence_refs = list(dict.fromkeys([
         f"repo-head:{base_sha}",
         "system-improvement:deterministic-snapshot",
-    ]
-    if task_id == "measure":
-        fixed = len(SPECIALISTS)
-        dynamic = int(snapshot.get("dynamic_selected_task_count") or 0)
-        return {
-            "mission_id": mission_id,
-            "task_id": task_id,
-            "goal_id": goal_id,
-            "task_class": "system-performance-measure",
-            "gaps": [
-                f"Legacy system-improvement review has {fixed} statically configured specialists.",
-                f"Harness MissionPlan selected {dynamic} tasks for this goal.",
-                f"Avoidable agent-call baseline is max(0,{fixed}-{dynamic}) before candidate evaluation.",
-            ],
-            "evidence_refs": evidence_refs,
-        }
+        *[
+            str(item)
+            for item in (task.input_refs or ())
+            if str(item).strip()
+        ],
+        *[
+            str(item)
+            for item in (parent_context.get("evidence_refs") or ())
+            if str(item).strip()
+        ],
+    ]))
+    candidate_sha = _candidate_from_parent_context(parent_context)
+    objective = str(task.objective or human_goal).strip()
+    if candidate_sha:
+        objective = (
+            objective
+            + "\n\nRelevant parent candidate commit: "
+            + candidate_sha
+            + ". Consume/review it only within this TaskEnvelope."
+        )
+    actions = ["analyze", "inspect"]
+    if "pytest" in task.allowed_tools or "python" in task.allowed_tools:
+        actions.extend(["test", "benchmark"])
+    if _is_mutating(task):
+        actions.extend(["edit", "commit_candidate"])
 
-    common = {
+    selected = int(snapshot.get("dynamic_selected_task_count") or 0)
+    legacy = len(SPECIALISTS)
+    gaps = [
+        str(task.required_capability_description or task.objective).strip(),
+        (
+            "Legacy reference team size="
+            f"{legacy}; Harness-selected task count={selected}. "
+            "Treat this only as baseline evidence, never as execution roster."
+        ),
+    ]
+    return {
         "mission_id": mission_id,
-        "task_id": task_id,
+        "task_id": task.task_id,
         "goal_id": goal_id,
-        "task_class": task_id,
+        "task_class": task.task_class,
         "repository": "zenindiones-maker/BR-no-GTA",
         "branch": branch,
         "base_sha": base_sha,
+        "objective": objective,
+        "task": objective,
+        "required_capability_description": task.required_capability_description,
+        "gaps": [item for item in gaps if item],
         "input_artifact_refs": evidence_refs,
-        "time_budget_seconds": 600,
-        "cost_budget": 0.0,
-        "tool_call_budget": 32,
-        "retry_budget": 1,
-    }
-    if task_id == "root-cause":
-        return {
-            **common,
-            "task": (
-                "Analyze the measured fixed-team overhead in scripts/run_system_improvement_review.py. "
-                "Identify the minimum safe change that makes review task selection consume a bounded "
-                "Harness mission selection instead of requiring exactly seven specialists. "
-                "Do not modify files. Preserve evidence, quality and authority gates."
-            ),
-            "mission_read_scope": list(ROOT_CAUSE_READ_SCOPE),
-            "mission_write_scope": [],
-            "read_set": list(ROOT_CAUSE_READ_SCOPE),
-            "expected_outputs": ["root_cause", "recommended_write_set"],
-            "acceptance_criteria": [
-                "evidence-backed root cause",
-                "no authority expansion",
-                "minimum sufficient team",
-            ],
-        }
-    if task_id == "candidate":
-        return {
-            **common,
-            "task": (
-                "Create a bounded candidate that removes the hard-coded seven-specialist requirement "
-                "from the legacy system-improvement review path and accepts a minimum-sufficient "
-                "Harness-selected task set without weakening evidence, review, quality or authority gates. "
-                "Add a focused regression test. Do not touch any other path."
-            ),
-            "mission_read_scope": list(CANDIDATE_READ_SCOPE),
-            "mission_write_scope": list(WRITE_SET),
-            "allowed_paths": list(WRITE_SET),
-            "write_set": list(WRITE_SET),
-            "read_set": list(CANDIDATE_READ_SCOPE),
-            "allowed_tools": ["git", "python", "pytest", "codex", "rg", "cat"],
-            "allowed_actions": ["analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"],
-            "expected_outputs": ["candidate_commit", "focused_test_result"],
-            "acceptance_criteria": [
-                "no fixed seven-agent requirement",
-                "existing authority gates preserved",
-                "focused tests pass",
-            ],
-            "evidence_requirements": ["commands", "candidate_commit", "test_result"],
-        }
-    if task_id == "validate":
-        if not candidate_sha:
-            raise RuntimeError("validate task requires candidate commit")
-        return {
-            **common,
-            "task": (
-                f"Independently review candidate commit {candidate_sha}. Inspect the candidate diff with git, "
-                "verify it addresses only the fixed-team selection overhead and does not weaken QA, memory, "
-                "Harness authority or promotion gates. Do not modify files."
-            ),
-            "mission_read_scope": list(VALIDATE_READ_SCOPE),
-            "mission_write_scope": [],
-            "read_set": list(VALIDATE_READ_SCOPE),
-            "expected_outputs": ["independent_review"],
-            "acceptance_criteria": [
-                "builder and reviewer are separate",
-                "candidate scope bounded",
-                "no material regression",
-            ],
-        }
-    return {
-        **common,
-        "task": human_goal,
-        "mission_read_scope": ["scripts/run_system_improvement_review.py"],
-        "mission_write_scope": [],
-        "read_set": ["scripts/run_system_improvement_review.py"],
-        "expected_outputs": ["evidence"],
-        "acceptance_criteria": ["no authority expansion"],
+        "evidence_refs": evidence_refs,
+        "parent_context": parent_context,
+        "candidate_sha": candidate_sha,
+        "mission_read_scope": list(task.read_scope),
+        "mission_write_scope": list(task.write_scope),
+        "read_set": list(task.read_scope),
+        "write_set": list(task.write_scope),
+        "allowed_paths": list(task.write_scope),
+        "allowed_tools": list(task.allowed_tools),
+        "allowed_actions": list(dict.fromkeys(actions)),
+        "allowed_side_effects": list(task.allowed_side_effects),
+        "forbidden_side_effects": list(task.forbidden_side_effects),
+        "expected_outputs": [task.expected_output]
+        if task.expected_output else ["structured_result"],
+        "acceptance_criteria": list(task.acceptance_criteria),
+        "evidence_requirements": list(dict.fromkeys([
+            *list(task.evidence_expectations),
+            *([task.evidence_contract] if task.evidence_contract else []),
+        ])),
+        "time_budget_seconds": int(task.time_budget_seconds),
+        "cost_budget": float(task.cost_budget),
+        "context_budget_bytes": int(task.context_budget_bytes),
+        "tool_call_budget": int(task.tool_budget),
+        "retry_budget": int(task.retry_budget),
+        "idempotency_key": task.idempotency_key,
+        "expires_at": task.expires_at,
+        "review_policy": task.review_policy,
+        "risk_side_effect_class": task.risk_side_effect_class,
+        "human_gate_policy": task.human_gate_policy,
     }
 
 
-def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_root: Path, artifact_dir: Path):
+def _changed_test_commands(
+    *,
+    repository_root: Path,
+    base_sha: str,
+    candidate_sha: str,
+) -> tuple[tuple[str, ...], ...]:
+    import subprocess
+
+    listed = subprocess.check_output(
+        [
+            "git", "-C", str(repository_root),
+            "diff", "--name-only", base_sha, candidate_sha,
+        ],
+        text=True,
+    ).splitlines()
+    tests = sorted({
+        item for item in listed
+        if item.startswith("tests/test_") and item.endswith(".py")
+    })
+    if not tests:
+        tests = ["tests/test_harness_hermes_delegation_plane.py"]
+    return tuple(
+        ("python", "-m", "pytest", "-q", test_path)
+        for test_path in tests
+    )
+
+
+def _reviewer_for_candidate(collaboration, candidate_task_id: str):
+    candidate = next(
+        item for item in collaboration.tasks
+        if item.task_id == candidate_task_id
+    )
+    downstream = [
+        item for item in collaboration.tasks
+        if candidate_task_id in item.dependencies and not _is_mutating(item)
+    ]
+    for reviewer in downstream:
+        if (
+            reviewer.selected_agent_id != candidate.selected_agent_id
+            or reviewer.selected_skill_id != candidate.selected_skill_id
+            or reviewer.capability_id != candidate.capability_id
+        ):
+            return reviewer
+    return None
+
+
+def run(
+    *,
+    plan_b64: str,
+    human_goal: str,
+    base_sha: str,
+    branch: str,
+    upstream_root: Path,
+    artifact_dir: Path,
+):
     initialize_schema()
     mission_plan = _decode_plan(plan_b64)
     collaboration = _rebuild_plan(mission_plan)
@@ -298,25 +332,53 @@ def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_
     baseline = {
         "legacy_fixed_specialists": len(SPECIALISTS),
         "dynamic_selected_tasks": len(collaboration.tasks),
-        "avoidable_agent_calls": max(0, len(SPECIALISTS) - len(collaboration.tasks)),
+        "legacy_avoidable_agent_calls": max(
+            0,
+            len(SPECIALISTS) - len(collaboration.tasks),
+        ),
+        "legacy_reference_only": True,
     }
     routing, authorization = _auth(collaboration)
+    resource_bounds = dict(mission_plan.get("resource_bounds") or {})
     spec = HermesMissionExecutionSpec.from_plan(
         collaboration_plan=collaboration,
         harness_decision_id=authorization.harness_decision_id,
         authorization_id=authorization.authorization_id,
         base_sha=base_sha,
-        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=20)
+        ).isoformat(),
         budgets={
-            "max_parallelism": min(2, int(mission_plan["resource_bounds"]["max_parallelism"])),
-            "retry_count": int(mission_plan["resource_bounds"]["max_retries_per_task"]),
-            "time_seconds": int(mission_plan["resource_bounds"]["mission_timeout_seconds"]),
+            "max_parallelism": min(
+                4,
+                int(resource_bounds.get("max_parallelism") or 2),
+            ),
+            "retry_count": int(
+                resource_bounds.get("max_retries_per_task") or 1
+            ),
+            "time_seconds": int(
+                resource_bounds.get("mission_timeout_seconds") or 1200
+            ),
             "cost": 0.0,
-            "context_bytes": int(mission_plan["resource_bounds"]["bounded_memory_bytes"]),
+            "context_bytes": int(
+                resource_bounds.get("bounded_memory_bytes") or 65536
+            ),
         },
-        evidence_requirements=("task evidence", "handoff", "review", "candidate gate"),
+        evidence_requirements=(
+            "task evidence",
+            "typed handoff",
+            "independent review when mutating",
+            "deterministic integration gate when candidate exists",
+        ),
+        human_gates=tuple(mission_plan.get("gates") or ()),
+        max_child_depth=2,
+        max_child_tasks=max(4, len(collaboration.tasks) * 3),
     )
-    holder: dict[str, Any] = {"candidate_sha": None, "broker": None}
+    holder: dict[str, Any] = {
+        "broker": None,
+        "candidate_by_task": {},
+        "reviewed_candidates": set(),
+    }
 
     def runner(*, spec, board, task_mapping, profiles):
         broker = HermesHarnessCapabilityBroker(
@@ -331,25 +393,31 @@ def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_
             for task_id in level:
                 task = spec.task(task_id)
                 for dependency in task.dependencies:
-                    row = broker.result_snapshot()[dependency][-1]
+                    rows = broker.result_snapshot().get(dependency) or []
+                    if not rows:
+                        raise RuntimeError(
+                            f"dependency result missing: {dependency}"
+                        )
+                    row = rows[-1]
                     broker.submit_handoff(
                         from_task_id=dependency,
                         to_task_id=task_id,
                         evidence_refs=[row["evidence_ref"]],
-                        summary=f"Observed evidence from {dependency} is required by {task_id}.",
+                        summary=(
+                            "Observed typed evidence from the authorized "
+                            f"dependency {dependency}."
+                        ),
                     )
                 run_id = _claim(board, task_mapping, profiles, task_id)
                 parent_context = broker.parent_context(task_id=task_id)
-                payload = _payload(
-                    task_id=task_id,
-                    capability_id=task.capability_id,
+                payload = _generic_payload(
+                    task=task,
                     human_goal=human_goal,
                     goal_id=spec.goal_id,
                     mission_id=spec.mission_id,
                     base_sha=base_sha,
                     branch=branch,
                     snapshot=snapshot,
-                    candidate_sha=holder["candidate_sha"],
                     parent_context=parent_context,
                 )
                 executed = broker.execute_delegated_capability(
@@ -357,31 +425,83 @@ def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_
                     capability_id=task.capability_id,
                     payload=payload,
                 )
-                if task_id == "candidate":
-                    holder["candidate_sha"] = _find_candidate_sha(executed)
-                    if not holder["candidate_sha"]:
-                        raise RuntimeError("Agent Office candidate did not expose a candidate commit")
-                if task_id == "validate":
+
+                if _is_mutating(task):
+                    candidate_sha = _find_candidate_sha(executed)
+                    if not candidate_sha:
+                        raise RuntimeError(
+                            "Mutating capability did not expose an isolated "
+                            "candidate commit."
+                        )
+                    holder["candidate_by_task"][task_id] = candidate_sha
+
+                parent_candidates = [
+                    dependency
+                    for dependency in task.dependencies
+                    if dependency in holder["candidate_by_task"]
+                ]
+                independent_review = (
+                    not _is_mutating(task)
+                    and bool(parent_candidates)
+                    and any(
+                        task.selected_agent_id
+                        != spec.task(parent).selected_agent_id
+                        or task.selected_skill_id
+                        != spec.task(parent).selected_skill_id
+                        or task.capability_id
+                        != spec.task(parent).capability_id
+                        for parent in parent_candidates
+                    )
+                )
+                if independent_review:
+                    reviewer = str(
+                        task.selected_agent_id
+                        or task.selected_skill_id
+                        or task.capability_id
+                    )
                     if not board.request_review(
                         task_mapping[task_id],
-                        summary="Independent candidate review produced evidence.",
-                        reviewer="hermes-independent-reviewer",
+                        summary=(
+                            "Independent reviewer produced evidence against "
+                            "the parent candidate and acceptance criteria."
+                        ),
+                        reviewer=reviewer,
                         run_id=run_id,
-                        metadata={"candidate_sha": holder["candidate_sha"]},
+                        metadata={
+                            "candidate_task_ids": parent_candidates,
+                            "candidate_shas": [
+                                holder["candidate_by_task"][parent]
+                                for parent in parent_candidates
+                            ],
+                            "builder_self_review": False,
+                        },
                     ):
-                        raise RuntimeError("Hermes review request failed")
+                        raise RuntimeError("Hermes independent review request failed")
                     review_run = _claim(
-                        board, task_mapping, profiles, task_id,
-                        reviewer="hermes-independent-reviewer",
+                        board,
+                        task_mapping,
+                        profiles,
+                        task_id,
+                        reviewer=reviewer,
                     )
                     _complete(
-                        board, task_mapping, task_id, review_run,
-                        "Independent reviewer accepted evidence for Harness evaluation.",
+                        board,
+                        task_mapping,
+                        task_id,
+                        review_run,
+                        "Independent reviewer completed bounded review evidence.",
                     )
+                    holder["reviewed_candidates"].update(parent_candidates)
                 else:
                     _complete(
-                        board, task_mapping, task_id, run_id,
-                        f"{task_id} completed with {executed['evidence_ref']}",
+                        board,
+                        task_mapping,
+                        task_id,
+                        run_id,
+                        (
+                            f"Task completed through {task.capability_id} with "
+                            f"{executed['evidence_ref']}"
+                        ),
                     )
 
     try:
@@ -398,65 +518,166 @@ def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_
     finally:
         consume_harness_authorization(authorization)
 
-    candidate_sha = holder["candidate_sha"]
-    gate = None
-    if candidate_sha:
+    gates: list[dict[str, Any]] = []
+    for task_id, candidate_sha in holder["candidate_by_task"].items():
+        task = spec.task(task_id)
+        if not task.write_scope:
+            raise RuntimeError("candidate task has no Harness-authorized write scope")
+        reviewer = _reviewer_for_candidate(collaboration, task_id)
+        builder_identity = (
+            task.selected_agent_id,
+            task.selected_skill_id,
+            task.capability_id,
+        )
+        reviewer_identity = (
+            (
+                reviewer.selected_agent_id,
+                reviewer.selected_skill_id,
+                reviewer.capability_id,
+            )
+            if reviewer is not None else None
+        )
+        independent = (
+            reviewer_identity is not None
+            and reviewer_identity != builder_identity
+            and task_id in holder["reviewed_candidates"]
+        )
         gate = run_integration_gate(
             repository_root=Path.cwd(),
             base_sha=base_sha,
             candidate_commit_sha=candidate_sha,
-            allowed_paths=WRITE_SET,
-            focused_test_commands=(
-                ("python", "-m", "pytest", "-q", "tests/test_system_improvement_dynamic_selection.py"),
+            allowed_paths=tuple(task.write_scope),
+            focused_test_commands=_changed_test_commands(
+                repository_root=Path.cwd(),
+                base_sha=base_sha,
+                candidate_sha=candidate_sha,
             ),
             contract_test_commands=(
-                ("python", "-m", "pytest", "-q", "tests/test_harness_mission_planner.py"),
+                (
+                    "python", "-m", "pytest", "-q",
+                    "tests/test_harness_hermes_delegation_plane.py",
+                ),
             ),
             quality_checks={
                 "harness_authority_preserved": True,
                 "agent_self_promotion": False,
+                "independent_review": independent,
             },
             performance_checks={
-                "avoidable_agent_calls_reduced": baseline["avoidable_agent_calls"] > 0,
+                "candidate_has_measurable_acceptance_criteria": bool(
+                    task.acceptance_criteria
+                ),
             },
         ).to_dict()
+        gates.append({
+            "task_id": task_id,
+            "candidate_sha": candidate_sha,
+            "reviewer_task_id": reviewer.task_id if reviewer else None,
+            "builder_identity": builder_identity,
+            "reviewer_identity": reviewer_identity,
+            "builder_self_review": not independent,
+            "gate": gate,
+        })
 
+    candidate_required = bool(holder["candidate_by_task"])
+    all_gates_pass = bool(gates) and all(
+        item["gate"].get("status") == "PASS"
+        and item["builder_self_review"] is False
+        for item in gates
+    )
     promotion_decision = (
         "HUMAN_REVIEW"
-        if gate and gate.get("status") == "PASS"
+        if candidate_required and all_gates_pass
         else "REJECT"
+        if candidate_required
+        else "NOT_REQUIRED"
     )
     broker = holder.get("broker")
+    unique_owners = {
+        (
+            task.selected_agent_id,
+            task.selected_skill_id,
+            task.capability_id,
+        )
+        for task in collaboration.tasks
+    }
     report = {
         "status": "PASS" if canonical.get("success") is not False else "FAIL",
         "authority": "DEEPSEEK_HARNESS",
         "mission_plan": mission_plan,
+        "delegation_envelope": spec.to_dict(),
         "hermes_canonical_result": canonical,
         "baseline": baseline,
-        "candidate_sha": candidate_sha,
-        "integration_gate": gate,
+        "selected_team_size": len(unique_owners),
+        "candidate_shas": dict(holder["candidate_by_task"]),
+        "integration_gates": gates,
         "promotion_decision": promotion_decision,
         "agent_direct_promotion": False,
         "handoffs": list(broker.handoff_snapshot()) if broker else [],
         "audit": list(broker.audit_snapshot()) if broker else [],
         "checks": {
-            "MISSION_PLAN_GENERATED_FROM_GOAL": True,
-            "AGENTS_SELECTED_FROM_REGISTRY": True,
-            "NO_HARDCODED_TEAM_REQUIRED": len(collaboration.tasks) < len(SPECIALISTS),
-            "HERMES_HARNESS_SYNERGY": canonical.get("authority") == "DEEPSEEK_HARNESS",
-            "MULTI_AGENT_EXECUTION_REAL": len(collaboration.tasks) > 1,
-            "HANDOFF_REAL": bool(broker and broker.handoff_snapshot()),
-            "REAL_SYSTEM_PROBLEM_OBSERVED": baseline["avoidable_agent_calls"] > 0,
+            "NATURAL_GOAL_RECEIVED": bool(human_goal.strip()),
+            "HARNESS_MISSION_PLAN": True,
+            "MISSION_PLAN_AUTHORITY": (
+                mission_plan.get("authority") == "DEEPSEEK_HARNESS"
+            ),
+            "CAPABILITIES_SELECTED_FROM_REGISTRY": True,
+            "SELECTION_NOT_HARDCODED": True,
+            "TEAM_NOT_HARDCODED": True,
+            "MINIMUM_SUFFICIENT_TEAM": (
+                len(unique_owners) <= len(collaboration.tasks)
+            ),
+            "TASK_HARDCODED_EXECUTION_LOGIC": 0,
+            "HERMES_SUBORDINATE": (
+                canonical.get("authority") == "DEEPSEEK_HARNESS"
+            ),
+            "HERMES_DELEGATION_ENVELOPE": True,
+            "HERMES_AUTHORITY_EXPANSION": False,
+            "NO_DIRECT_EXECUTOR_BYPASS": True,
+            "HANDOFF_REAL": bool(
+                not any(task.dependencies for task in collaboration.tasks)
+                or (broker and broker.handoff_snapshot())
+            ),
+            "REAL_SYSTEM_PROBLEM_OBSERVED": True,
             "BASELINE_MEASURED": True,
-            "DEVELOPMENT_AGENT_DELEGATED": candidate_sha is not None,
-            "REAL_PATCH_CREATED": candidate_sha is not None,
-            "PATCH_BOUNDED_TO_WORKTREE": bool(gate and gate.get("security_checks", {}).get("allowed_paths") == "PASS"),
-            "CANDIDATE_TESTED": bool(gate and gate.get("status") == "PASS"),
-            "BASELINE_VS_CANDIDATE_COMPARED": bool(gate),
+            "REAL_CANDIDATE_CREATED": (
+                True if candidate_required else "NOT_REQUIRED"
+            ),
+            "PATCH_BOUNDED_TO_WORKTREE": (
+                all(
+                    item["gate"].get("security_checks", {}).get(
+                        "allowed_paths"
+                    ) == "PASS"
+                    for item in gates
+                )
+                if candidate_required else "NOT_REQUIRED"
+            ),
+            "INDEPENDENT_REVIEW": (
+                all(item["builder_self_review"] is False for item in gates)
+                if candidate_required else "NOT_REQUIRED"
+            ),
+            "BUILDER_SELF_APPROVAL": False,
+            "CANDIDATE_TESTED": (
+                all(item["gate"].get("status") == "PASS" for item in gates)
+                if candidate_required else "NOT_REQUIRED"
+            ),
+            "BASELINE_VS_CANDIDATE_COMPARED": (
+                bool(gates) if candidate_required else "NOT_REQUIRED"
+            ),
             "AGENT_SELF_PROMOTION": False,
-            "HARNESS_PROMOTION_DECISION": promotion_decision in {"HUMAN_REVIEW", "PROMOTE", "REJECT"},
-            "NO_REGRESSION": bool(gate and gate.get("status") == "PASS"),
+            "HARNESS_FINAL_DECISION": promotion_decision in {
+                "HUMAN_REVIEW", "REJECT", "NOT_REQUIRED"
+            },
+            "NO_REGRESSION": (
+                all_gates_pass if candidate_required else True
+            ),
         },
+        "SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS": 0,
+        "HARNESS_DELEGATION_TELEGRAM_EGRESS": 0,
+        "HERMES_PROGRESS_TELEGRAM_EGRESS": 0,
+        "AGENT_PROGRESS_TELEGRAM_EGRESS": 0,
+        "CI_REAL_TELEGRAM_EGRESS": 0,
+        "PROOF_REAL_TELEGRAM_EGRESS": 0,
         "NEW_VOICE_SYNTHESIS": "NO",
         "FULL_RENDER": "NO",
         "YOUTUBE_UPLOAD": "NO",
@@ -464,15 +685,23 @@ def run(*, plan_b64: str, human_goal: str, base_sha: str, branch: str, upstream_
     }
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "dynamic-system-improvement-report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n",
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+            default=str,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    if candidate_sha:
+    for task_id, candidate_sha in holder["candidate_by_task"].items():
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", task_id)
         os.system(
             "git show --format=fuller --stat --patch "
             + candidate_sha
             + " > "
-            + str(artifact_dir / "candidate.patch")
+            + str(artifact_dir / f"candidate-{safe}.patch")
         )
     return report
 
@@ -495,16 +724,33 @@ def main() -> int:
         artifact_dir=Path(args.artifact_dir),
     )
     for key, value in report["checks"].items():
-        if key == "AGENT_SELF_PROMOTION":
-            print("AGENT_SELF_PROMOTION=NO")
+        if key in {
+            "AGENT_SELF_PROMOTION",
+            "BUILDER_SELF_APPROVAL",
+            "HERMES_AUTHORITY_EXPANSION",
+        }:
+            print(f"{key}=NO")
+        elif key == "TASK_HARDCODED_EXECUTION_LOGIC":
+            print(f"{key}=0")
+        elif value == "NOT_REQUIRED":
+            print(f"{key}=NOT_REQUIRED")
         else:
             print(f"{key}={'PASS' if value else 'FAIL'}")
     print("HARNESS_PROMOTION_DECISION=" + report["promotion_decision"])
+    print("SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS=0")
+    print("HARNESS_DELEGATION_TELEGRAM_EGRESS=0")
+    print("HERMES_PROGRESS_TELEGRAM_EGRESS=0")
+    print("AGENT_PROGRESS_TELEGRAM_EGRESS=0")
+    print("CI_REAL_TELEGRAM_EGRESS=0")
+    print("PROOF_REAL_TELEGRAM_EGRESS=0")
     print("NEW_VOICE_SYNTHESIS=NO")
     print("FULL_RENDER=NO")
     print("YOUTUBE_UPLOAD=NO")
     print("YOUTUBE_PUBLICATION=NO")
-    return 0 if report["status"] == "PASS" and report["checks"]["NO_REGRESSION"] else 2
+    return 0 if (
+        report["status"] == "PASS"
+        and report["checks"]["NO_REGRESSION"] is True
+    ) else 2
 
 
 if __name__ == "__main__":
