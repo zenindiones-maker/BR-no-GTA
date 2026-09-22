@@ -14,6 +14,62 @@ from app.services.agent_office.delegation import DelegatedTaskLease
 
 CODEX_BOUNDED_DEVELOPMENT_CAPABILITY = "agent-office.codex.bounded-development"
 
+CODEX_TUXEVIL_AUTH_MODE = "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
+_CODEX_TUXEVIL_DEFAULT_BASE_URL = "http://127.0.0.1:51200/v1"
+_CODEX_TUXEVIL_DEFAULT_MODEL = "gemini-3-flash"
+_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def codex_tuxevil_provider_args(
+    source: Mapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    source = os.environ if source is None else source
+    mode = str(source.get("BR_CODEX_AUTH_MODE") or "").strip()
+    if not mode:
+        return ()
+    if mode != CODEX_TUXEVIL_AUTH_MODE:
+        raise PermissionError("unsupported BR_CODEX_AUTH_MODE")
+
+    base_url = str(
+        source.get("BR_CODEX_TUXEVIL_BASE_URL")
+        or _CODEX_TUXEVIL_DEFAULT_BASE_URL
+    ).strip().rstrip("/")
+    if base_url != _CODEX_TUXEVIL_DEFAULT_BASE_URL:
+        raise PermissionError(
+            "Tuxevil Codex provider must remain on the canonical loopback endpoint"
+        )
+
+    model = str(
+        source.get("BR_CODEX_TUXEVIL_MODEL")
+        or _CODEX_TUXEVIL_DEFAULT_MODEL
+    ).strip()
+    if not _SAFE_MODEL_ID.fullmatch(model):
+        raise PermissionError("invalid Tuxevil Codex model id")
+
+    return (
+        "--config",
+        'model_provider="br_tuxevil"',
+        "--config",
+        f'model="{model}"',
+        "--config",
+        'model_providers.br_tuxevil.name="BR Tuxevil"',
+        "--config",
+        f'model_providers.br_tuxevil.base_url="{base_url}"',
+        "--config",
+        'model_providers.br_tuxevil.wire_api="responses"',
+        "--config",
+        "model_providers.br_tuxevil.requires_openai_auth=false",
+        "--config",
+        "model_providers.br_tuxevil.supports_websockets=false",
+    )
+
+
+def codex_uses_tuxevil_proxy(
+    source: Mapping[str, str] | None = None,
+) -> bool:
+    return bool(codex_tuxevil_provider_args(source))
+
+
 _FORBIDDEN_COMMANDS = {
     "curl", "wget", "ssh", "scp", "rsync", "gh", "docker", "podman",
 }
@@ -296,14 +352,16 @@ def codex_bounded_development_worker(
     if head.returncode != 0 or head.stdout.strip() != lease.base_sha:
         raise PermissionError("bounded Codex worktree base SHA mismatch")
 
-    auth = _run(
-        ["codex", "login", "status"],
-        cwd=workspace,
-        timeout=remaining(),
-        sanitized_env=True,
-    )
-    if auth.returncode != 0:
-        raise RuntimeError("Codex authentication prerequisite is unavailable")
+    provider_args = codex_tuxevil_provider_args()
+    if not provider_args:
+        auth = _run(
+            ["codex", "login", "status"],
+            cwd=workspace,
+            timeout=remaining(),
+            sanitized_env=True,
+        )
+        if auth.returncode != 0:
+            raise RuntimeError("Codex authentication prerequisite is unavailable")
 
     prompt = (
         "You are the bounded-development task owner under one existing DeepSeek Harness "
@@ -333,6 +391,7 @@ def codex_bounded_development_worker(
     )
     command = [
         "codex",
+        *provider_args,
         *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
         "exec",
         "--ephemeral",
@@ -429,4 +488,12 @@ def codex_bounded_development_worker(
         },
         "canonical_push_authority": "NONE",
         "worktree_isolation": "PASS",
+        "codex_auth_method": (
+            CODEX_TUXEVIL_AUTH_MODE
+            if provider_args
+            else "EXISTING_CODEX_LOGIN"
+        ),
+        "codex_responses_endpoint": (
+            "TUXEVIL_LOOPBACK" if provider_args else "DEFAULT"
+        ),
     }
