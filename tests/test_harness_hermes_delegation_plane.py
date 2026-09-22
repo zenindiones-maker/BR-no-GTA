@@ -1089,9 +1089,12 @@ def test_operational_proof_installs_pinned_hermes_runtime_dependencies():
     operational = Path(
         ".github/workflows/delegation-plane-operational-proof.yml"
     ).read_text(encoding="utf-8")
+    manifest_path = "config/delegation-plane-preflight-extra-requirements.txt"
+    manifest = Path(manifest_path).read_text(encoding="utf-8")
     proven = Path(
         ".github/workflows/hermes-real-agent-synergy.yml"
     ).read_text(encoding="utf-8")
+    assert f"-r {manifest_path}" in operational
     for requirement in (
         "psutil==7.2.2",
         "pyyaml==6.0.3",
@@ -1099,7 +1102,7 @@ def test_operational_proof_installs_pinned_hermes_runtime_dependencies():
         "rich==14.3.3",
         "pathspec==1.1.1",
     ):
-        assert requirement in operational
+        assert requirement in manifest
         assert requirement in proven
 
 
