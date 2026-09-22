@@ -376,6 +376,26 @@ def test_tuxevil_static_health_remains_auth_required_without_runtime_proof(
     assert semantic["semantic_reasoning_available"] is False
 
 
+def test_compact_provider_health_preserves_live_semantic_contract():
+    source = {
+        "semantic_reasoning_available": True,
+        "eligible_zero_cost_provider_ids": ["tuxevil"],
+        "providers": [
+            {
+                "provider_id": "tuxevil",
+                "state": "AVAILABLE",
+                "retry_allowed": True,
+                "zero_cost_eligible": True,
+            }
+        ],
+    }
+    compact = adaptive._compact_provider_health(source)
+    assert compact["semantic_reasoning_available"] is True
+    assert compact["eligible_zero_cost_provider_ids"] == ["tuxevil"]
+    assert compact["semantic_available"] is True
+    assert compact["eligible_zero_cost"] == ["tuxevil"]
+
+
 def test_tuxevil_current_run_live_proof_enables_semantic_reasoning(monkeypatch):
     monkeypatch.setenv("GITHUB_RUN_ID", "1002")
     monkeypatch.setenv(
