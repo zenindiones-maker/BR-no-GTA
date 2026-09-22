@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import re
@@ -32,7 +33,13 @@ def _text(value: Any, field: str) -> str:
 
 
 @dataclass(frozen=True)
-class CollaborationTask:
+class TaskEnvelope:
+    """Canonical Harness task contract.
+
+    Planning is capability-first. Agent/executor identities are added only after
+    Registry selection and Routing/Policy validation.
+    """
+
     task_id: str
     capability_id: str
     action: str
@@ -40,18 +47,144 @@ class CollaborationTask:
     dependencies: tuple[str, ...] = ()
     input_refs: tuple[str, ...] = ()
     expected_output: str = ""
+    task_class: str = "GENERAL"
+    required_capability_description: str = ""
+    acceptance_criteria: tuple[str, ...] = ()
+    read_scope: tuple[str, ...] = ()
+    write_scope: tuple[str, ...] = ()
+    allowed_tools: tuple[str, ...] = ()
+    allowed_side_effects: tuple[str, ...] = ()
+    forbidden_side_effects: tuple[str, ...] = (
+        "publication",
+        "policy_mutation",
+        "authority_mutation",
+        "canonical_memory_write",
+        "secret_access",
+    )
+    time_budget_seconds: int = 300
+    cost_budget: float = 0.0
+    context_budget_bytes: int = 32768
+    tool_budget: int = 16
+    retry_budget: int = 1
+    evidence_contract: str = ""
+    review_policy: str = "INDEPENDENT_IF_MUTATING"
+    risk_side_effect_class: str = "READ_ONLY"
+    idempotency_key: str = ""
+    expires_at: str = ""
+    human_gate_policy: str = "NONE"
+    mission_id: str = "UNBOUND"
+    goal_id: str = "UNBOUND"
+
+    @property
+    def authorized_action(self) -> str:
+        return self.action
 
     @classmethod
-    def from_mapping(cls, value: dict[str, Any]) -> "CollaborationTask":
+    def from_mapping(cls, value: dict[str, Any]) -> "TaskEnvelope":
+        dependencies = tuple(
+            str(item).strip()
+            for item in value.get("dependencies") or ()
+            if str(item).strip()
+        )
+        input_refs = tuple(
+            str(item).strip()
+            for item in value.get("input_refs") or ()
+            if str(item).strip()
+        )
+        acceptance = tuple(
+            str(item).strip()
+            for item in value.get("acceptance_criteria") or ()
+            if str(item).strip()
+        )
+        expected = str(value.get("expected_output") or "").strip()
+        if not acceptance and expected:
+            acceptance = (f"produce {expected}",)
+        write_scope = tuple(
+            str(item).strip().replace("\\", "/").strip("/")
+            for item in value.get("write_scope") or ()
+            if str(item).strip()
+        )
+        read_scope = tuple(
+            str(item).strip().replace("\\", "/").strip("/")
+            for item in value.get("read_scope") or ()
+            if str(item).strip()
+        )
+        for name, paths in (("read_scope", read_scope), ("write_scope", write_scope)):
+            if any(".." in path.split("/") for path in paths):
+                raise ValueError(f"{name} contains traversal")
+        time_budget = int(value.get("time_budget_seconds") or 300)
+        context_budget = int(value.get("context_budget_bytes") or 32768)
+        tool_budget = int(value.get("tool_budget") or 16)
+        retry_budget = int(value.get("retry_budget") if value.get("retry_budget") is not None else 1)
+        if not 1 <= time_budget <= 7200:
+            raise ValueError("time_budget_seconds must be in [1, 7200]")
+        if not 1024 <= context_budget <= 262144:
+            raise ValueError("context_budget_bytes must be in [1024, 262144]")
+        if not 0 <= tool_budget <= 1000:
+            raise ValueError("tool_budget must be in [0, 1000]")
+        if not 0 <= retry_budget <= 20:
+            raise ValueError("retry_budget must be in [0, 20]")
         return cls(
             task_id=_text(value.get("task_id"), "task_id"),
             capability_id=_text(value.get("capability_id"), "capability_id"),
-            action=_text(value.get("action"), "action").upper(),
+            action=_text(value.get("action") or value.get("authorized_action"), "action").upper(),
             objective=_text(value.get("objective"), "objective"),
-            dependencies=tuple(str(item).strip() for item in value.get("dependencies") or () if str(item).strip()),
-            input_refs=tuple(str(item).strip() for item in value.get("input_refs") or () if str(item).strip()),
-            expected_output=str(value.get("expected_output") or "").strip(),
+            dependencies=dependencies,
+            input_refs=input_refs,
+            expected_output=expected,
+            task_class=str(value.get("task_class") or value.get("task_id") or "GENERAL").strip(),
+            required_capability_description=str(
+                value.get("required_capability_description") or ""
+            ).strip(),
+            acceptance_criteria=acceptance,
+            read_scope=read_scope,
+            write_scope=write_scope,
+            allowed_tools=tuple(
+                str(item).strip()
+                for item in value.get("allowed_tools") or ()
+                if str(item).strip()
+            ),
+            allowed_side_effects=tuple(
+                str(item).strip()
+                for item in value.get("allowed_side_effects") or ()
+                if str(item).strip()
+            ),
+            forbidden_side_effects=tuple(
+                str(item).strip()
+                for item in value.get("forbidden_side_effects")
+                or cls.__dataclass_fields__["forbidden_side_effects"].default
+                if str(item).strip()
+            ),
+            time_budget_seconds=time_budget,
+            cost_budget=float(value.get("cost_budget") or 0.0),
+            context_budget_bytes=context_budget,
+            tool_budget=tool_budget,
+            retry_budget=retry_budget,
+            evidence_contract=str(value.get("evidence_contract") or "").strip(),
+            review_policy=str(
+                value.get("review_policy") or "INDEPENDENT_IF_MUTATING"
+            ).strip().upper(),
+            risk_side_effect_class=str(
+                value.get("risk_side_effect_class")
+                or ("BOUNDED_MUTATION" if write_scope else "READ_ONLY")
+            ).strip().upper(),
+            idempotency_key=str(value.get("idempotency_key") or "").strip(),
+            expires_at=str(value.get("expires_at") or "").strip(),
+            human_gate_policy=str(
+                value.get("human_gate_policy") or "NONE"
+            ).strip().upper(),
+            mission_id=str(value.get("mission_id") or "UNBOUND").strip(),
+            goal_id=str(value.get("goal_id") or "UNBOUND").strip(),
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["authorized_action"] = self.action
+        return data
+
+
+# Backward-compatible name; there is one canonical task contract.
+CollaborationTask = TaskEnvelope
 
 
 @dataclass(frozen=True)
@@ -69,9 +202,42 @@ class RoutedCollaborationTask:
     selected_agent_id: str | None
     selected_skill_id: str | None
     evidence_expectations: tuple[str, ...]
+    task_class: str = "GENERAL"
+    required_capability_description: str = ""
+    acceptance_criteria: tuple[str, ...] = ()
+    read_scope: tuple[str, ...] = ()
+    write_scope: tuple[str, ...] = ()
+    allowed_tools: tuple[str, ...] = ()
+    allowed_side_effects: tuple[str, ...] = ()
+    forbidden_side_effects: tuple[str, ...] = ()
+    time_budget_seconds: int = 300
+    cost_budget: float = 0.0
+    context_budget_bytes: int = 32768
+    tool_budget: int = 16
+    retry_budget: int = 1
+    evidence_contract: str = ""
+    review_policy: str = "INDEPENDENT_IF_MUTATING"
+    risk_side_effect_class: str = "READ_ONLY"
+    idempotency_key: str = ""
+    expires_at: str = ""
+    human_gate_policy: str = "NONE"
+    mission_id: str = "UNBOUND"
+    goal_id: str = "UNBOUND"
+    capability_version: str = "1"
+    supports_parallelism: bool = True
+    supports_retry: bool = True
+    supports_resume: bool = False
+    supports_review: bool = False
+    selection_evidence: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def authorized_action(self) -> str:
+        return self.action
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["authorized_action"] = self.action
+        return data
 
 
 @dataclass(frozen=True)
@@ -102,7 +268,7 @@ class CollaborationPlan:
         }
 
 
-def _levels(tasks: Iterable[CollaborationTask]) -> tuple[tuple[str, ...], ...]:
+def _levels(tasks: Iterable[TaskEnvelope]) -> tuple[tuple[str, ...], ...]:
     tasks = tuple(tasks)
     by_id = {task.task_id: task for task in tasks}
     if len(by_id) != len(tasks):
@@ -130,16 +296,45 @@ def _levels(tasks: Iterable[CollaborationTask]) -> tuple[tuple[str, ...], ...]:
     return tuple(levels)
 
 
+def _task_idempotency_key(
+    *,
+    mission_id: str,
+    task: TaskEnvelope,
+    capability_version: str,
+    read_scope: tuple[str, ...],
+    write_scope: tuple[str, ...],
+) -> str:
+    payload = {
+        "mission_id": mission_id,
+        "task_id": task.task_id,
+        "capability_id": task.capability_id,
+        "capability_version": capability_version,
+        "input_refs": list(task.input_refs),
+        "read_scope": list(read_scope),
+        "write_scope": list(write_scope),
+        "objective": task.objective,
+    }
+    digest = sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"task:{digest}"
+
+
 def build_collaboration_plan(
     *,
     mission_id: str,
     goal_id: str,
-    tasks: Iterable[dict[str, Any] | CollaborationTask],
+    tasks: Iterable[dict[str, Any] | TaskEnvelope],
 ) -> CollaborationPlan:
     mission_id = _text(mission_id, "mission_id")
     goal_id = _text(goal_id, "goal_id")
     normalized = tuple(
-        item if isinstance(item, CollaborationTask) else CollaborationTask.from_mapping(item)
+        item if isinstance(item, TaskEnvelope) else TaskEnvelope.from_mapping(item)
         for item in tasks
     )
     execution_levels = _levels(normalized)
@@ -157,11 +352,26 @@ def build_collaboration_plan(
                 required_capability_id=task.capability_id,
                 fallback_allowed=False,
                 provider_required=False,
-                task_class=f"mission:{task.task_id}",
+                task_class=task.task_class or f"mission:{task.task_id}",
                 learning_required=True,
             )
         )
         selected = dict(decision.policy_metadata.get("selected_implementation") or {})
+        read_scope = task.read_scope or tuple(record.default_read_scope)
+        write_scope = task.write_scope or tuple(record.default_write_scope)
+        allowed_tools = task.allowed_tools or tuple(record.allowed_tools)
+        allowed_side_effects = task.allowed_side_effects or tuple(record.side_effects)
+        expires_at = task.expires_at or (
+            datetime.now(timezone.utc)
+            + timedelta(seconds=task.time_budget_seconds)
+        ).isoformat()
+        idempotency_key = task.idempotency_key or _task_idempotency_key(
+            mission_id=mission_id,
+            task=task,
+            capability_version=str(record.version or "1"),
+            read_scope=read_scope,
+            write_scope=write_scope,
+        )
         routed.append(
             RoutedCollaborationTask(
                 task_id=task.task_id,
@@ -177,6 +387,42 @@ def build_collaboration_plan(
                 selected_agent_id=selected.get("agent_id"),
                 selected_skill_id=selected.get("skill_id"),
                 evidence_expectations=decision.evidence_expectations,
+                task_class=task.task_class,
+                required_capability_description=task.required_capability_description,
+                acceptance_criteria=task.acceptance_criteria,
+                read_scope=read_scope,
+                write_scope=write_scope,
+                allowed_tools=allowed_tools,
+                allowed_side_effects=allowed_side_effects,
+                forbidden_side_effects=task.forbidden_side_effects,
+                time_budget_seconds=task.time_budget_seconds,
+                cost_budget=task.cost_budget,
+                context_budget_bytes=task.context_budget_bytes,
+                tool_budget=task.tool_budget,
+                retry_budget=task.retry_budget,
+                evidence_contract=task.evidence_contract or str(record.evidence_contract or ""),
+                review_policy=task.review_policy,
+                risk_side_effect_class=(
+                    task.risk_side_effect_class
+                    if task.risk_side_effect_class != "READ_ONLY" or not write_scope
+                    else "BOUNDED_MUTATION"
+                ),
+                idempotency_key=idempotency_key,
+                expires_at=expires_at,
+                human_gate_policy=task.human_gate_policy,
+                mission_id=mission_id,
+                goal_id=goal_id,
+                capability_version=str(record.version or "1"),
+                supports_parallelism=bool(record.supports_parallelism),
+                supports_retry=bool(record.supports_retry),
+                supports_resume=bool(record.supports_resume),
+                supports_review=bool(record.supports_review),
+                selection_evidence={
+                    "routing_id": decision.routing_id,
+                    "candidate_capability_ids": list(decision.candidate_capability_ids),
+                    "selected_implementation": selected,
+                    "policy_metadata": dict(decision.policy_metadata),
+                },
             )
         )
     return CollaborationPlan(
@@ -186,7 +432,6 @@ def build_collaboration_plan(
         tasks=tuple(routed),
         execution_levels=execution_levels,
     )
-
 
 
 @dataclass(frozen=True)
@@ -615,6 +860,8 @@ def plan_mission_from_human_goal(
         for ref in ([artifact_ref] if artifact_ref else []) + proposal_reuse_refs:
             if ref and ref not in input_refs:
                 input_refs.append(ref)
+        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        assert record is not None
         selected_tasks.append({
             "task_id": requirement["task_id"],
             "capability_id": capability_id,
@@ -623,9 +870,57 @@ def plan_mission_from_human_goal(
                 requirement.get("objective")
                 or f"{goal.human_goal} :: {requirement['task_class']}"
             ),
+            "task_class": str(requirement.get("task_class") or "GENERAL"),
+            "required_capability_description": str(
+                requirement.get("required_capability_description")
+                or requirement.get("query")
+                or ""
+            )[:500],
             "dependencies": requirement["dependencies"],
             "input_refs": input_refs,
             "expected_output": requirement["expected_output"],
+            "acceptance_criteria": list(
+                requirement.get("acceptance_criteria")
+                or [f"produce {requirement['expected_output']}"]
+            ),
+            "read_scope": list(record.default_read_scope),
+            "write_scope": list(record.default_write_scope),
+            "allowed_tools": list(record.allowed_tools),
+            "allowed_side_effects": list(record.side_effects),
+            "forbidden_side_effects": [
+                "publication",
+                "policy_mutation",
+                "authority_mutation",
+                "canonical_memory_write",
+                "secret_access",
+            ],
+            "time_budget_seconds": min(
+                int(bounds["mission_timeout_seconds"]),
+                900,
+            ),
+            "cost_budget": 0.0,
+            "context_budget_bytes": int(bounds["bounded_memory_bytes"]),
+            "tool_budget": 32,
+            "retry_budget": (
+                min(int(bounds["max_retries_per_task"]), 2)
+                if record.supports_retry else 0
+            ),
+            "evidence_contract": str(record.evidence_contract or ""),
+            "review_policy": (
+                "INDEPENDENT_REQUIRED"
+                if record.supports_review and record.default_write_scope
+                else "NONE"
+            ),
+            "risk_side_effect_class": str(
+                requirement.get("risk_side_effect_class")
+                or record.side_effect_class
+                or "READ_ONLY"
+            ),
+            "human_gate_policy": (
+                "POLICY_DEFINED_PROMOTION"
+                if record.default_write_scope
+                else "NONE"
+            ),
         })
 
     opencode_state = str((health.get("opencode") or {}).get("state") or "")
@@ -673,7 +968,11 @@ def plan_mission_from_human_goal(
         )
     )
     gates: list[str] = []
-    if any(str(item.get("task_id") or "") == "candidate" for item in selected_tasks):
+    if any(
+        item.get("write_scope")
+        and str(item.get("review_policy") or "") == "INDEPENDENT_REQUIRED"
+        for item in selected_tasks
+    ):
         gates.append("promotion")
     if proposal and any(
         task.risk_side_effect_class in {"HIGH", "EXTERNAL_SIDE_EFFECT"}
