@@ -1,0 +1,17 @@
+{
+  "request": "OPENAI_CODEX_WIF_ADMIN_BOOTSTRAP_001",
+  "repository": "zenindiones-maker/BR-no-GTA",
+  "ref": "refs/heads/work/gate6f-analytics-learning",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "audience": "https://api.openai.com/codex/zenindiones-maker/BR-no-GTA",
+  "runtime_auth": [
+    "OPENAI_FEDERATION_RULE_ID",
+    "OPENAI_IDENTITY_TOKEN_FILE"
+  ],
+  "forbid": [
+    "OPENAI_API_KEY_RUNTIME",
+    "auth.json",
+    "refresh_token",
+    "credential_artifact"
+  ]
+}
