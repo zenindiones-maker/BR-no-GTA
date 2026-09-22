@@ -97,15 +97,13 @@ jobs:
           python scripts/codex_sandbox_preflight.py             --repository-root "$GITHUB_WORKSPACE"             --output artifacts/hermes-real-agent-synergy/codex-sandbox-preflight.json
           echo "AGENT_OFFICE_RUNTIME=PASS"
 
-      - name: Trusted Codex authentication bootstrap
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
-          TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID }}
+      - name: Trusted noninteractive Codex authentication preflight
         run: |
           set -euo pipefail
           codex --version
-          python scripts/codex_auth_bootstrap.py             --output artifacts/hermes-real-agent-synergy/codex-auth-status.json             --allow-device-auth             --timeout-seconds 2700
+          echo "CODEX_DEVICE_AUTH_IN_HEADLESS_CI=DISABLED"
+          echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
+          python scripts/codex_auth_bootstrap.py             --output artifacts/hermes-real-agent-synergy/codex-auth-status.json             --timeout-seconds 30
           echo "CODEX_AUTH_PREREQUISITE=PASS"
 
       - name: Execute real Registry agents through Hermes
