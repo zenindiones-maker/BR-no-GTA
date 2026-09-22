@@ -168,33 +168,75 @@ def run(
     virtual_key_available: bool,
     project_antigravity_configured: bool,
     codex_action_endpoint_supported: bool,
+    process_ready: bool = True,
+    status_ready: bool = True,
+    runtime_account_count: int = 0,
+    antigravity_account_present: bool = False,
+    tuxevil_responses_endpoint_supported: bool = True,
 ) -> dict[str, Any]:
     root = base_url.rstrip("/")
-    models_probe = _request_json(
-        f"{root}/v1/models",
-        api_key=client_key,
-        timeout=20,
-    )
+    if process_ready:
+        models_probe = _request_json(
+            f"{root}/v1/models",
+            api_key=client_key,
+            timeout=20,
+        )
+    else:
+        models_probe = {
+            "reachable": False,
+            "ok": False,
+            "status": None,
+            "json": None,
+            "body_sha256": None,
+            "safe_error": {
+                "type": "process_not_ready",
+                "code": "runtime_unavailable",
+                "status": "BLOCKED",
+            },
+        }
     discovered = _models(models_probe)
     selected_model = _antigravity_model(discovered, configured_model)
-
-    responses_probe = _request_json(
-        f"{root}/v1/responses",
-        api_key=client_key,
-        method="POST",
-        payload={
-            "model": selected_model,
-            "input": "Return exactly TUXEVIL_RESPONSES_OK and nothing else.",
-            "store": False,
-            "stream": False,
-        },
-        timeout=90,
+    responses_attempted = bool(
+        process_ready
+        and status_ready
+        and antigravity_account_present
+        and models_probe.get("ok")
     )
+    if responses_attempted:
+        responses_probe = _request_json(
+            f"{root}/v1/responses",
+            api_key=client_key,
+            method="POST",
+            payload={
+                "model": selected_model,
+                "input": "Return exactly TUXEVIL_RESPONSES_OK and nothing else.",
+                "store": False,
+                "stream": False,
+            },
+            timeout=90,
+        )
+    else:
+        responses_probe = {
+            "reachable": False,
+            "ok": False,
+            "status": None,
+            "json": None,
+            "body_sha256": None,
+            "safe_error": {
+                "type": "upstream_not_ready",
+                "code": (
+                    "ci_account_store_absent"
+                    if not antigravity_account_present
+                    else "models_not_ready"
+                ),
+                "status": "NOT_ATTEMPTED",
+            },
+        }
     response_text = _output_text(responses_probe.get("json"))
     live_inference = bool(responses_probe.get("ok") and response_text)
     responses_api_compatible = bool(
-        responses_probe.get("reachable")
-        and responses_probe.get("status") not in {404, 405, 501}
+        tuxevil_responses_endpoint_supported
+        and codex_action_endpoint_supported
     )
 
     tool_probe: dict[str, Any] = {
@@ -251,7 +293,7 @@ def run(
         "PASS"
         if antigravity_upstream_auth
         else "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
-        if ci_credential_path == "NONE"
+        if not antigravity_account_present and ci_credential_path == "NONE"
         else "BLOCKED_EXISTING_CREDENTIAL_PATH_NOT_AUTHENTICATED"
     )
     codex_compatibility = bool(
@@ -266,9 +308,18 @@ def run(
         "loopback_only": root.startswith("http://127.0.0.1:"),
         "selected_model": selected_model,
         "discovered_models": discovered,
+        "TUXEVIL_PROCESS_READY": "PASS" if process_ready else "FAIL",
+        "TUXEVIL_STATUS_ENDPOINT": "PASS" if status_ready else "FAIL",
+        "TUXEVIL_RUNTIME_ACCOUNT_COUNT": int(runtime_account_count),
+        "ANTIGRAVITY_ACCOUNT_PRESENT": (
+            "YES" if antigravity_account_present else "NO"
+        ),
+        "TUXEVIL_MODELS_READY": (
+            "PASS" if models_probe.get("ok") else "FAIL"
+        ),
         "inventory": {
             "TUXEVIL_RUNTIME_PRESENT": (
-                "YES" if models_probe.get("reachable") else "NO"
+                "YES" if process_ready else "NO"
             ),
             "TUXEVIL_RESPONSES_API_COMPATIBLE": (
                 "YES" if responses_api_compatible else "NO"
@@ -306,16 +357,24 @@ def run(
         ),
         "ANTIGRAVITY_RUNTIME_AUTH": runtime_auth,
         "TUXEVIL_RESPONSES_API": (
-            "PASS" if live_inference else "BLOCKED"
+            "PASS" if live_inference
+            else "FAIL" if responses_attempted
+            else "NOT_ATTEMPTED"
         ),
         "ANTIGRAVITY_UPSTREAM_AUTH": (
-            "PASS" if antigravity_upstream_auth else "BLOCKED"
+            "PASS" if antigravity_upstream_auth
+            else "FAIL" if responses_attempted
+            else "NOT_ATTEMPTED"
         ),
         "TUXEVIL_LIVE_INFERENCE": (
-            "PASS" if live_inference else "BLOCKED"
+            "PASS" if live_inference
+            else "FAIL" if responses_attempted
+            else "NOT_ATTEMPTED"
         ),
         "TUXEVIL_TOOL_CALLING": (
-            "PASS" if tool_calling else "BLOCKED" if not live_inference else "FAIL"
+            "PASS" if tool_calling
+            else "FAIL" if live_inference
+            else "NOT_ATTEMPTED"
         ),
         "CODEX_ACTION_RESPONSES_ENDPOINT": (
             "SUPPORTED" if codex_action_endpoint_supported else "NOT_PROVEN"
@@ -346,6 +405,11 @@ def run(
     for key, value in report["inventory"].items():
         print(f"{key}={value}")
     for key in (
+        "TUXEVIL_PROCESS_READY",
+        "TUXEVIL_STATUS_ENDPOINT",
+        "TUXEVIL_RUNTIME_ACCOUNT_COUNT",
+        "ANTIGRAVITY_ACCOUNT_PRESENT",
+        "TUXEVIL_MODELS_READY",
         "TUXEVIL_CODEX_COMPATIBILITY",
         "ANTIGRAVITY_RUNTIME_AUTH",
         "TUXEVIL_RESPONSES_API",
@@ -476,6 +540,14 @@ def main() -> int:
         "--codex-action-responses-endpoint-supported",
         action="store_true",
     )
+    parser.add_argument(
+        "--tuxevil-responses-endpoint-supported",
+        action="store_true",
+    )
+    parser.add_argument("--process-ready", action="store_true")
+    parser.add_argument("--status-ready", action="store_true")
+    parser.add_argument("--runtime-account-count", type=int, default=0)
+    parser.add_argument("--antigravity-account-present", action="store_true")
     parser.add_argument("--materialization-missing", action="store_true")
     args = parser.parse_args()
 
@@ -497,6 +569,13 @@ def main() -> int:
         project_antigravity_configured=args.project_antigravity_configured,
         codex_action_endpoint_supported=(
             args.codex_action_responses_endpoint_supported
+        ),
+        process_ready=args.process_ready,
+        status_ready=args.status_ready,
+        runtime_account_count=args.runtime_account_count,
+        antigravity_account_present=args.antigravity_account_present,
+        tuxevil_responses_endpoint_supported=(
+            args.tuxevil_responses_endpoint_supported
         ),
     )
     return 0 if report["TUXEVIL_CODEX_COMPATIBILITY"] == "SUPPORTED" else 2
