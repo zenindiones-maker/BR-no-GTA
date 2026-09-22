@@ -745,9 +745,13 @@ def propose_validated_semantic_plan(
                 "The previous proposal was rejected by DeepSeek Harness validation.",
                 *errors,
                 (
-                    "Replan using only exact executable, healthy, side-effect-compatible "
-                    "Registry capabilities. The goal says a code candidate is conditional; "
-                    "do not invent a mutation task when no healthy write executor exists."
+                    "Replan using the capability metadata as hard constraints. Prefer "
+                    "candidate_capability_ids=[] and describe the required capability so "
+                    "DeepSeek Harness performs final Registry selection. If a candidate "
+                    "ID is supplied, the task action must be literally present in that "
+                    "record's allowed actions and the requested side-effect class must "
+                    "fit the record. The goal says a code candidate is conditional; do "
+                    "not invent a mutation task when no healthy write executor exists."
                 ),
             ]
         )
