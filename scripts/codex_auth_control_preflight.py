@@ -5,9 +5,6 @@ import base64
 import json
 import os
 from pathlib import Path
-import urllib.error
-import urllib.parse
-import urllib.request
 
 from app.database.schema import initialize_schema
 from app.services.agent_office.codex_auth_control import (
@@ -29,37 +26,6 @@ def _decode_plan(plan_b64: str) -> dict:
     if not str(plan.get("mission_id") or "").strip():
         raise ValueError("mission plan has no mission_id")
     return plan
-
-
-def _send_paired_dm(*, text: str) -> int:
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    paired_user_id = os.getenv("TELEGRAM_ALLOWED_USER_ID", "").strip()
-    if not token or not paired_user_id:
-        raise RuntimeError("paired-user DM delivery is not configured")
-    request = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=urllib.parse.urlencode({
-            "chat_id": paired_user_id,
-            "text": text,
-            "disable_web_page_preview": "true",
-        }).encode("utf-8"),
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(
-            f"paired-user auth-gate delivery failed with HTTP {exc.code}"
-        ) from None
-    if not isinstance(payload, dict) or payload.get("ok") is not True:
-        raise RuntimeError("paired-user auth-gate delivery was rejected")
-    result = payload.get("result")
-    message_id = result.get("message_id") if isinstance(result, dict) else None
-    if not isinstance(message_id, int) or message_id <= 0:
-        raise RuntimeError("paired-user auth-gate delivery returned no message identity")
-    return message_id
 
 
 def main() -> int:
@@ -97,33 +63,11 @@ def main() -> int:
     write_checkpoint(checkpoint_path, checkpoint)
 
     delivery_message_id = None
-    delivery_status = "NOT_REQUIRED"
-    if preflight.state == AUTH_USER_ACTION_REQUIRED:
-        if preflight.delivery_surface != "PAIRED_USER_DM":
-            delivery_status = "BLOCKED"
-        else:
-            message = "\n".join([
-                "AÇÃO",
-                "Seu Codex local continua sendo um contexto separado; não estou pedindo para você ligar ou reconectar o Codex local.",
-                "",
-                "ESTADO",
-                "A missão foi checkpointada antes do bootstrap pesado. Nenhum agente está esperando em runner.",
-                "",
-                "AUTH",
-                "O executor cloud efêmero ainda não possui uma autorização Codex reutilizável.",
-                "Device auth não será mantido aberto em runner efêmero nem terá credencial persistida em artifact.",
-                "A missão retoma do mesmo checkpoint quando a autorização cloud reutilizável estiver disponível.",
-                "",
-                "PROVA",
-                f"Mission: {mission_id}",
-                f"Checkpoint: {checkpoint['checkpoint_id']}",
-                "AUTH_DELIVERY_SURFACE=PAIRED_USER_DM",
-                "",
-                "PRÓXIMO",
-                "Autorize/configure o método confiável e depois retome a mesma missão; research, plano e análise anterior não precisam ser refeitos.",
-            ])
-            delivery_message_id = _send_paired_dm(text=message)
-            delivery_status = "DELIVERED"
+    delivery_status = (
+        "SUPPRESSED_AUTONOMOUS_EGRESS"
+        if preflight.state == AUTH_USER_ACTION_REQUIRED
+        else "NOT_REQUIRED"
+    )
 
     report = {
         "schema": "codex-auth-control-preflight/v1",
@@ -132,7 +76,7 @@ def main() -> int:
         "preflight": preflight.to_dict(),
         "checkpoint_id": checkpoint["checkpoint_id"],
         "checkpoint_path": checkpoint_path.name,
-        "auth_delivery_surface": preflight.delivery_surface,
+        "auth_delivery_surface": "INTERNAL_CHECKPOINT_ONLY",
         "auth_delivery_status": delivery_status,
         "telegram_message_id": delivery_message_id,
         "runner_wait_for_human": False,
@@ -193,7 +137,7 @@ def main() -> int:
         "AUTH_USER_ACTION_REQUIRED_REPRESENTED_AS_HUMAN_GATE="
         + ("PASS" if preflight.state == AUTH_USER_ACTION_REQUIRED else "NOT_REQUIRED")
     )
-    print("AUTH_DELIVERY_SURFACE=" + preflight.delivery_surface)
+    print("AUTH_DELIVERY_SURFACE=INTERNAL_CHECKPOINT_ONLY")
     print("AUTH_DELIVERY_STATUS=" + delivery_status)
     print("RUNNER_WAIT_FOR_HUMAN=NO")
     print("MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS")
@@ -216,7 +160,8 @@ def main() -> int:
 
     if preflight.state == AUTH_AVAILABLE:
         return 0
-    if preflight.state == AUTH_USER_ACTION_REQUIRED and delivery_status == "DELIVERED":
+    if preflight.state == AUTH_USER_ACTION_REQUIRED:
+        print("SYSTEM_IMPROVEMENT_AUTONOMOUS_TELEGRAM_EGRESS=0")
         return 0
     if preflight.state == "BLOCKED" and preflight.missing_auth_configuration:
         return 0
