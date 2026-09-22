@@ -1308,6 +1308,55 @@ def _realistic_candidate_repair_surrogate(*, prompt, workspace):
     return True
 
 
+def test_realistic_candidate_surrogate_never_patches_without_grounded_continuity(
+    tmp_path,
+):
+    root, workspace, base_sha, _task, _lease = _real_bounded_candidate_fixture(
+        tmp_path
+    )
+    target = (
+        workspace
+        / "app"
+        / "services"
+        / "agent_office"
+        / "codex_bounded_worker.py"
+    )
+    before = target.read_text(encoding="utf-8")
+    try:
+        applied = _realistic_candidate_repair_surrogate(
+            prompt=(
+                "NO_CANDIDATE_PATCH_DETECTED\n"
+                "MUTATION_REQUIRED=true\n"
+                "GROUNDED_WRITABLE_TARGETS=[]"
+            ),
+            workspace=workspace,
+        )
+        assert applied is False
+        assert target.read_text(encoding="utf-8") == before
+        assert subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == base_sha
+        assert subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip() == ""
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(workspace)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
 def test_realistic_noop_candidate_repair_carries_context_and_commits(
     monkeypatch,
     tmp_path,
@@ -1336,14 +1385,20 @@ def test_realistic_noop_candidate_repair_carries_context_and_commits(
             codex_calls.append(list(command))
             if len(codex_calls) == 1:
                 assert "GROUNDED_EVIDENCE_CONTEXT:" in command[-1]
+                assert f"BASE_SHA={base_sha}" in command[-1]
+                assert f"WRITE_SET={json.dumps(lease.write_set)}" in command[-1]
+                assert (
+                    f"EVIDENCE_REQUIREMENTS={json.dumps(lease.evidence_requirements)}"
+                    in command[-1]
+                )
+                assert Path(command[command.index("-C") + 1]) == Path(cwd)
                 stdout = "\n".join([
                     json.dumps({
                         "type": "item.completed",
                         "item": {
                             "type": "command_execution",
                             "command": (
-                                "rg 'return \\\[\\\"codex\\\", "
-                                "\\\"exec\\\"' "
+                                "rg 'codex.*exec.*json' "
                                 "app/services/agent_office/"
                                 "codex_bounded_worker.py"
                             ),
@@ -1372,6 +1427,11 @@ def test_realistic_noop_candidate_repair_carries_context_and_commits(
                 )
 
             assert command[command.index("--sandbox") + 1] == "workspace-write"
+            assert Path(command[command.index("-C") + 1]) == Path(cwd)
+            assert "INITIAL_PASS_SUMMARY=" in command[-1]
+            assert "INITIAL_OBSERVED_COMMANDS=" in command[-1]
+            assert "GROUNDED_WRITABLE_TARGETS=" in command[-1]
+            assert "MAX_CANDIDATE_REPAIR_PASSES" not in command[-1]
             applied = _realistic_candidate_repair_surrogate(
                 prompt=command[-1],
                 workspace=cwd,
