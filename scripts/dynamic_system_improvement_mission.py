@@ -247,8 +247,13 @@ def _generic_payload(
     if _is_mutating(task):
         actions.extend(["edit", "commit_candidate"])
 
+    query = str(
+        task.required_capability_description
+        or task.objective
+        or human_goal
+    ).strip()
     gaps = [
-        str(task.required_capability_description or task.objective).strip(),
+        query,
         *_grounded_profile_gaps(parent_context),
     ]
     return {
@@ -261,6 +266,7 @@ def _generic_payload(
         "base_sha": base_sha,
         "objective": objective,
         "task": objective,
+        "query": query,
         "required_capability_description": task.required_capability_description,
         "gaps": [item for item in gaps if item],
         "input_artifact_refs": evidence_refs,
