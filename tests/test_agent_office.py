@@ -702,7 +702,7 @@ def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
         "BR_CODEX_AUTH_MODE": CODEX_TUXEVIL_AUTH_MODE,
         "BR_CODEX_TUXEVIL_BASE_URL": "http://127.0.0.1:51200/v1",
         "BR_CODEX_TUXEVIL_MODEL": "gemini-3-flash",
-        "BR_TUXEVIL_LOOPBACK_KEY": "tuxevil",
+        "BR_TUXEVIL_LOOPBACK_KEY": "loopback-bearer-secret-sentinel",
     })
     joined = " ".join(args)
     assert 'model_provider="br_tuxevil"' in joined
@@ -712,6 +712,7 @@ def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
     assert 'model_providers.br_tuxevil.wire_api="responses"' in joined
     assert "model_providers.br_tuxevil.requires_openai_auth=false" in joined
     assert "OPENAI_API_KEY" not in joined
+    assert "loopback-bearer-secret-sentinel" not in joined
     assert 'env_key="BR_TUXEVIL_LOOPBACK_KEY"' in joined
     assert "BR_TUXEVIL_LOOPBACK_KEY" in joined
     assert "tuxevil" not in args
