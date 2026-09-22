@@ -423,6 +423,36 @@ def _commands_within_lease(commands: list[str], lease: DelegatedTaskLease) -> No
             raise PermissionError("worker attempted a forbidden external tool")
 
 
+_SAFE_WORKER_RUNTIME_ERROR_PREFIXES = (
+    "Codex exceeded tool_call_budget",
+    "measurable bounded-development task produced no structured before/after metric",
+    "measurable bounded-development candidate did not improve the declared metric",
+    "Codex bounded-development produced no candidate patch",
+    "candidate git add failed",
+    "candidate local commit failed",
+    "candidate commit identity unavailable",
+    "Codex authentication prerequisite is unavailable",
+    "Codex emitted invalid BR_METRIC_JSON",
+    "BR_METRIC_JSON is missing required fields",
+    "BR_METRIC_JSON baseline must be numeric",
+    "BR_METRIC_JSON candidate must be numeric",
+    "BR_METRIC_JSON direction is invalid",
+)
+
+
+def _safe_worker_exception_reason(exc: Exception) -> str:
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return "worker execution timed out"
+    if isinstance(exc, RuntimeError):
+        text = str(exc).strip()
+        if any(
+            text.startswith(prefix)
+            for prefix in _SAFE_WORKER_RUNTIME_ERROR_PREFIXES
+        ):
+            return text[:500]
+    return "worker execution failed"
+
+
 def _lease_conflict(left: DelegatedTaskLease, right: DelegatedTaskLease) -> bool:
     for a in left.write_set:
         aa = a.rstrip("/")
@@ -570,7 +600,7 @@ class MunderAdapter:
                             "retry_count": attempt - 1,
                         }
                         break
-                    last_error = "worker execution failed"
+                    last_error = _safe_worker_exception_reason(exc)
                     if attempt > lease.retry_budget:
                         result = {
                             "status": "FAILED",
