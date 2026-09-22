@@ -7,6 +7,15 @@ on:
     paths:
       - ".run/codex-cloud-auth-continuity.request.json"
   workflow_dispatch:
+    inputs:
+      federation_rule_id:
+        description: Non-secret OpenAI Codex federation rule ID
+        required: false
+        type: string
+      federation_audience:
+        description: Exact GitHub OIDC audience configured in OpenAI
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -40,8 +49,8 @@ jobs:
           echo "CODEX_HOME=$RUNNER_TEMP/codex-home" >> "$GITHUB_ENV"
       - name: Mint ephemeral GitHub workload identity
         env:
-          RULE: ${{ vars.OPENAI_FEDERATION_RULE_ID }}
-          AUDIENCE: ${{ vars.OPENAI_FEDERATION_AUDIENCE }}
+          RULE: ${{ inputs.federation_rule_id || vars.OPENAI_FEDERATION_RULE_ID }}
+          AUDIENCE: ${{ inputs.federation_audience || vars.OPENAI_FEDERATION_AUDIENCE }}
         run: |
           set -euo pipefail
           missing=()
@@ -155,8 +164,8 @@ jobs:
           echo "CODEX_HOME=$RUNNER_TEMP/codex-home" >> "$GITHUB_ENV"
       - name: Mint independent ephemeral workload identity
         env:
-          RULE: ${{ vars.OPENAI_FEDERATION_RULE_ID }}
-          AUDIENCE: ${{ vars.OPENAI_FEDERATION_AUDIENCE }}
+          RULE: ${{ inputs.federation_rule_id || vars.OPENAI_FEDERATION_RULE_ID }}
+          AUDIENCE: ${{ inputs.federation_audience || vars.OPENAI_FEDERATION_AUDIENCE }}
         run: |
           set -euo pipefail
           missing=()
