@@ -282,13 +282,18 @@ jobs:
                   "model_id":str(proof["selected_model"]),
                   "zero_cost_eligible":True,
                   "proof":{
-                      key:proof[key]
-                      for key in (
-                          "TUXEVIL_RESPONSES_API",
-                          "ANTIGRAVITY_UPSTREAM_AUTH",
-                          "TUXEVIL_LIVE_INFERENCE",
-                          "TUXEVIL_TOOL_CALLING",
-                      )
+                      **{
+                          key:proof[key]
+                          for key in (
+                              "TUXEVIL_RESPONSES_API",
+                              "ANTIGRAVITY_UPSTREAM_AUTH",
+                              "TUXEVIL_LIVE_INFERENCE",
+                              "TUXEVIL_TOOL_CALLING",
+                          )
+                      },
+                      "OPENAI_PLATFORM_API_KEY_REQUIRED":proof[
+                          "OPENAI_PLATFORM_API_KEY_REQUIRED"
+                      ],
                   },
                   "evidence_refs":[
                       f"github:run:{os.environ['GITHUB_RUN_ID']}:tuxevil-live-proof",
