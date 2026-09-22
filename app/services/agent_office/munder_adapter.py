@@ -212,15 +212,41 @@ def _codex_process(
 ) -> subprocess.CompletedProcess[str]:
     if timeout_seconds <= 0:
         raise subprocess.TimeoutExpired(command, timeout_seconds)
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        timeout=timeout_seconds,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=codex_sanitized_environment(),
+    prompt_bytes = (
+        len(str(command[-1]).encode("utf-8"))
+        if command and command[0] == "codex" and "exec" in command
+        else None
     )
+    with PerformanceSpan(
+        stage="agent-office.readonly.subprocess.codex",
+        category="AI_PROVIDER_TIME",
+        provider="codex",
+        model=str(os.environ.get("BR_CODEX_TUXEVIL_MODEL") or "").strip() or None,
+        input_size=prompt_bytes,
+        metadata={"tool": "codex", "worker_mode": "read-only"},
+    ) as span:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            timeout=timeout_seconds,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=codex_sanitized_environment(),
+        )
+        observed = _codex_commands(completed.stdout) if "exec" in command else ()
+        span.set(
+            output_size=len((completed.stdout or "").encode("utf-8")),
+            metadata={
+                "tool": "codex",
+                "worker_mode": "read-only",
+                "returncode": int(completed.returncode),
+                "tool_call_count": len(observed),
+                "unique_command_count": len(set(observed)),
+                "duplicate_command_count": len(observed) - len(set(observed)),
+            },
+        )
+        return completed
 
 
 def _codex_agent_text(stdout: str) -> str:
@@ -621,6 +647,8 @@ class MunderAdapter:
                         metadata={
                             "retry_budget": lease.retry_budget,
                             "tool_call_budget": lease.tool_call_budget,
+                            "runner_module": getattr(runner, "__module__", ""),
+                            "runner_name": getattr(runner, "__name__", type(runner).__name__),
                         },
                     ) as attempt_span:
                         if len(inspect.signature(runner).parameters) >= 4:
@@ -636,6 +664,8 @@ class MunderAdapter:
                             metadata={
                                 "retry_budget": lease.retry_budget,
                                 "tool_call_budget": lease.tool_call_budget,
+                                "runner_module": getattr(runner, "__module__", ""),
+                                "runner_name": getattr(runner, "__name__", type(runner).__name__),
                                 "worker_status": (
                                     raw.get("status")
                                     if isinstance(raw, dict)

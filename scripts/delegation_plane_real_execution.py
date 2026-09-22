@@ -65,10 +65,13 @@ def main() -> int:
         ).encode("utf-8")
     ).decode("ascii")
 
+    canonical_mission_id = str(plan_report.get("mission_id") or "")
     with PerformanceSpan(
         stage="delegation-plane.mission",
         category="MISSION_EXECUTION_TIME",
         input_size=len(plan_b64.encode("ascii")),
+        trace_id=canonical_mission_id or None,
+        mission_id=canonical_mission_id or None,
         goal_id=args.goal_id,
         execution_id=args.execution_instance_id,
         work_class="NECESSARY",

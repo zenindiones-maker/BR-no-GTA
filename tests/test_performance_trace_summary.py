@@ -83,3 +83,54 @@ def test_operational_step_categories_are_explicit():
     assert _step_category("Start Tuxevil and prove live Responses transport") == "PROVIDER_STARTUP_TIME"
     assert _step_category("Execute first real natural-goal mission") == "MISSION_EXECUTION_TIME"
     assert _step_category("Upload tool-budget diagnostic even on mission failure") == "ARTIFACT_UPLOAD_TIME"
+
+
+def test_mission_metrics_can_be_isolated_by_canonical_trace_id():
+    from scripts.summarize_performance_trace import _span_metrics
+    events = [
+        {
+            "schema_version": 2,
+            "trace_id": "preflight-test",
+            "span_id": "pre",
+            "parent_span_id": "",
+            "stage": "agent-office.task.test",
+            "category": "AI_PROVIDER_TIME",
+            "started_at": "2026-09-22T00:00:00+00:00",
+            "finished_at": "2026-09-22T00:00:01+00:00",
+            "duration_ms": 1000,
+            "provider": "codex",
+            "metadata": {"tool": "codex"},
+        },
+        {
+            "schema_version": 2,
+            "trace_id": "mission-real",
+            "span_id": "root",
+            "parent_span_id": "",
+            "stage": "delegation-plane.mission",
+            "category": "MISSION_EXECUTION_TIME",
+            "started_at": "2026-09-22T00:00:02+00:00",
+            "finished_at": "2026-09-22T00:00:04+00:00",
+            "duration_ms": 2000,
+            "metadata": {},
+        },
+        {
+            "schema_version": 2,
+            "trace_id": "mission-real",
+            "span_id": "codex",
+            "parent_span_id": "root",
+            "stage": "agent-office.readonly.subprocess.codex",
+            "category": "AI_PROVIDER_TIME",
+            "started_at": "2026-09-22T00:00:02+00:00",
+            "finished_at": "2026-09-22T00:00:03+00:00",
+            "duration_ms": 1000,
+            "provider": "codex",
+            "input_size": 123,
+            "metadata": {"tool": "codex"},
+        },
+    ]
+    spans, _ = _span_metrics(events)
+    roots = [item for item in spans if item["stage"] == "delegation-plane.mission"]
+    assert roots[0]["trace_id"] == "mission-real"
+    real = [item for item in spans if item["trace_id"] == roots[0]["trace_id"]]
+    assert sum(1 for item in real if (item.get("metadata") or {}).get("tool") == "codex") == 1
+    assert sum(int(item.get("input_size") or 0) for item in real if item.get("provider") == "codex") == 123

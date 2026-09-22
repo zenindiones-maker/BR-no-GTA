@@ -336,6 +336,48 @@ def main() -> int:
     for category, value in step_category_exclusive.items():
         category_cumulative[category] = category_cumulative.get(category, 0.0) + value
 
+    mission_roots = [
+        item for item in spans
+        if item.get("stage") == "delegation-plane.mission"
+        and str(item.get("trace_id") or "").strip()
+    ]
+    mission_trace_id = (
+        str(mission_roots[-1].get("trace_id"))
+        if mission_roots else ""
+    )
+    mission_spans = [
+        item for item in spans
+        if mission_trace_id
+        and str(item.get("trace_id") or "") == mission_trace_id
+    ]
+    mission_codex_launches = sum(
+        1
+        for item in mission_spans
+        if (item.get("metadata") or {}).get("tool") == "codex"
+        and item.get("category") == "AI_PROVIDER_TIME"
+    )
+    mission_git_invocations = sum(
+        1
+        for item in mission_spans
+        if (item.get("metadata") or {}).get("tool") == "git"
+    )
+    mission_context_bytes = sum(
+        int(item.get("input_size") or 0)
+        for item in mission_spans
+        if item.get("category") == "AI_PROVIDER_TIME"
+        and item.get("provider") == "codex"
+    )
+    mission_repeated_spans = [
+        item for item in mission_spans
+        if str(item.get("work_class") or "").upper()
+        in {"REDUNDANT", "REPEATED", "INVALIDATED"}
+    ]
+    mission_retry_ms = sum(
+        float(item.get("inclusive_ms") or 0.0)
+        for item in mission_repeated_spans
+        if item.get("category") == "AGENT_ATTEMPT_TIME"
+    )
+
     codex_process_launches = sum(
         1
         for item in spans
@@ -438,6 +480,12 @@ def main() -> int:
         ),
         "REPEATED_SPAN_COUNT": len(repeated_spans),
         "RETRIES_OBSERVED": retries_before,
+        "MISSION_TRACE_ID": mission_trace_id or None,
+        "MISSION_CODEX_PROCESS_LAUNCHES": mission_codex_launches,
+        "MISSION_GIT_INVOCATIONS": mission_git_invocations,
+        "MISSION_CONTEXT_BYTES": mission_context_bytes,
+        "MISSION_REPEATED_SPAN_COUNT": len(mission_repeated_spans),
+        "MISSION_RETRY_MS": round(mission_retry_ms, 3),
         "category_critical_path_ms": trace_metrics["category_critical_path_ms"],
         "category_cumulative_work_ms": dict(sorted(category_cumulative.items())),
         "spans": spans,
