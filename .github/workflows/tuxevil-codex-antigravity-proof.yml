@@ -168,6 +168,85 @@ jobs:
           command -v tuxevil-rotator >/dev/null
           echo "TUXEVIL_RUNTIME_PRESENT=YES"
 
+      - name: Materialize existing Antigravity account store in ephemeral runner
+        id: materialize
+        env:
+          TUXEVIL_ACCOUNTS_JSON_B64: ${{ secrets.TUXEVIL_ACCOUNTS_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          config_dir="$RUNNER_TEMP/tuxevil-rotator"
+          store="$config_dir/accounts.json"
+          mkdir -p "$config_dir"
+          umask 077
+
+          if [ -z "${TUXEVIL_ACCOUNTS_JSON_B64:-}" ]; then
+            echo "ANTIGRAVITY_CI_CREDENTIAL_PATH=BLOCKED_MISSING_CONFIGURED_SECRET"
+            exit 2
+          fi
+
+          printf '%s' "$TUXEVIL_ACCOUNTS_JSON_B64" | base64 --decode > "$store"
+          chmod 600 "$store"
+
+          python - "$store" <<'PY'
+          import json
+          import os
+          import pathlib
+          import stat
+          import sys
+
+          path=pathlib.Path(sys.argv[1])
+          if not path.is_file():
+              raise SystemExit("account store was not materialized")
+          mode=stat.S_IMODE(path.stat().st_mode)
+          if mode != 0o600:
+              raise SystemExit("account store mode is not 0600")
+
+          data=json.loads(path.read_text(encoding="utf-8"))
+          accounts=(
+              data.get("accounts")
+              if isinstance(data,dict)
+              else data if isinstance(data,list) else None
+          )
+          if not isinstance(accounts,list):
+              raise SystemExit("account store shape does not contain account list")
+
+          providers=set()
+          safe_count=0
+          for account in accounts:
+              if not isinstance(account,dict):
+                  continue
+              safe_count += 1
+              provider=account.get("provider")
+              if isinstance(provider,str) and provider:
+                  providers.add(provider)
+              credentials=account.get("credentials")
+              if isinstance(credentials,list):
+                  for cred in credentials:
+                      if isinstance(cred,dict):
+                          value=cred.get("provider")
+                          if isinstance(value,str) and value:
+                              providers.add(value)
+              if not provider and not isinstance(credentials,list):
+                  providers.add("google-antigravity")
+
+          if safe_count != 4:
+              raise SystemExit(
+                  f"unexpected safe account count: {safe_count}; expected 4"
+              )
+          if "google-antigravity" not in providers:
+              raise SystemExit("google-antigravity provider is absent")
+
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
+              fh.write("store_ready=true\n")
+              fh.write(f"account_count={safe_count}\n")
+              fh.write("antigravity_present=true\n")
+          print("TUXEVIL_ACCOUNT_STORE_PRESENT=PASS")
+          print("TUXEVIL_ACCOUNT_STORE_MODE_600=PASS")
+          print("TUXEVIL_MATERIALIZED_ACCOUNT_COUNT=4")
+          print("TUXEVIL_MATERIALIZED_PROVIDER=google-antigravity")
+          print("CREDENTIAL_VALUES_PRINTED=NO")
+          PY
+
       - name: Start Tuxevil process and measure layered readiness
         id: readiness
         run: |
@@ -409,10 +488,22 @@ jobs:
           PY
           curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA"             -d @"$RUNNER_TEMP/status.json" >/dev/null
 
-      - name: Shutdown Tuxevil
+      - name: Shutdown Tuxevil and destroy ephemeral account store
         if: always()
         run: |
+          set -euo pipefail
           if [ -f "$RUNNER_TEMP/tuxevil-rotator.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/tuxevil-rotator.pid")" 2>/dev/null || true
           fi
           rm -f "$RUNNER_TEMP/tuxevil-rotator.raw.log"
+          rm -rf "$RUNNER_TEMP/tuxevil-rotator"
+          if [ -e "$RUNNER_TEMP/tuxevil-rotator/accounts.json" ] ||              [ -d "$RUNNER_TEMP/tuxevil-rotator" ]; then
+            echo "ACCOUNT_STORE_DESTROYED_AFTER_RUN=FAIL"
+            exit 1
+          fi
+          echo "ACCOUNT_STORE_DESTROYED_AFTER_RUN=PASS"
+          echo "AUTH_SECRET_LEAK=NO"
+          echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
+          echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
+          echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
+          echo "AUTH_CREDENTIAL_IN_OBSIDIAN=NO"
