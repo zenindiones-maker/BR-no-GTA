@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import shutil
 from pathlib import Path
 import time
 from typing import Any, Callable
@@ -92,12 +93,17 @@ def materialize_board_from_plan(
                 ensure_ascii=False,
                 sort_keys=True,
             )
+            idempotency_key = f"{spec.mission_id}:{plan_task_id}"
+            existing = board.find_task_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                board_ids[plan_task_id] = str(existing["id"])
+                continue
             board_ids[plan_task_id] = board.create_task(
                 title=f"[{plan_task_id}] {routed.objective}",
                 body=body,
                 assignee=profile.profile_name,
                 parents=parent_board_ids,
-                idempotency_key=f"{spec.mission_id}:{plan_task_id}",
+                idempotency_key=idempotency_key,
             )
     return board_ids, profiles
 
@@ -156,6 +162,150 @@ def build_timeout_diagnostics(
         "board_id": snapshot.get("board_id"),
         "tasks": diagnostics,
     }
+
+
+def export_hermes_mission_checkpoint(
+    *,
+    spec: HermesMissionExecutionSpec,
+    hermes_home: str | Path,
+    artifact_dir: str | Path,
+    checkpoint_dir: str | Path,
+) -> dict[str, Any]:
+    """Export only durable Hermes mission state; no new memory/control plane."""
+
+    source_home = Path(hermes_home).resolve()
+    source_artifacts = Path(artifact_dir).resolve()
+    target = Path(checkpoint_dir).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    board_id = f"br-{spec.mission_id.lower().replace('_','-')}"[:64]
+
+    target_home = target / "hermes-home"
+    target_results = target / "capability-results"
+    if target_home.exists():
+        shutil.rmtree(target_home)
+    if target_results.exists():
+        shutil.rmtree(target_results)
+    target_home.mkdir(parents=True, exist_ok=True)
+    target_results.mkdir(parents=True, exist_ok=True)
+
+    if source_home.exists():
+        for item in source_home.iterdir():
+            destination = target_home / item.name
+            if item.is_dir():
+                shutil.copytree(item, destination)
+            elif item.is_file():
+                shutil.copy2(item, destination)
+
+    source_results = source_artifacts / "capability-results"
+    if source_results.is_dir():
+        for item in source_results.iterdir():
+            if item.is_file() and item.suffix == ".json":
+                shutil.copy2(item, target_results / item.name)
+
+    result_files = []
+    for item in sorted(target_results.glob("*.json")):
+        raw = item.read_bytes()
+        result_files.append({
+            "name": item.name,
+            "sha256": __import__("hashlib").sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        })
+
+    manifest = {
+        "schema": "hermes-mission-checkpoint/v1",
+        "mission_id": spec.mission_id,
+        "goal_id": spec.goal_id,
+        "base_sha": spec.base_sha,
+        "board_id": board_id,
+        "task_ids": list(spec.allowed_task_ids),
+        "capability_ids": list(spec.allowed_capability_ids),
+        "result_files": result_files,
+        "authority": "DEEPSEEK_HARNESS",
+        "hermes_authority": "DELEGATED_ONLY",
+        "canonical_memory_plane": "UNCHANGED",
+    }
+    (target / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def restore_hermes_mission_checkpoint(
+    *,
+    spec: HermesMissionExecutionSpec,
+    checkpoint_dir: str | Path,
+    hermes_home: str | Path,
+    artifact_dir: str | Path,
+) -> dict[str, Any]:
+    """Restore a validated mission checkpoint into a clean runner workspace."""
+
+    source = Path(checkpoint_dir).resolve()
+    manifest_path = source / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError("Hermes checkpoint manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = {
+        "mission_id": spec.mission_id,
+        "goal_id": spec.goal_id,
+        "base_sha": spec.base_sha,
+        "task_ids": list(spec.allowed_task_ids),
+        "capability_ids": list(spec.allowed_capability_ids),
+        "authority": "DEEPSEEK_HARNESS",
+        "hermes_authority": "DELEGATED_ONLY",
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise PermissionError(f"Hermes checkpoint identity mismatch: {key}")
+
+    for row in manifest.get("result_files") or ():
+        path = source / "capability-results" / str(row["name"])
+        if not path.is_file():
+            raise ValueError("Hermes checkpoint result file is missing")
+        digest = __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+        if digest != row.get("sha256"):
+            raise PermissionError("Hermes checkpoint result hash mismatch")
+
+    target_home = Path(hermes_home).resolve()
+    target_artifacts = Path(artifact_dir).resolve()
+    if target_home.exists():
+        shutil.rmtree(target_home)
+    target_home.mkdir(parents=True, exist_ok=True)
+    source_home = source / "hermes-home"
+    if source_home.is_dir():
+        for item in source_home.iterdir():
+            destination = target_home / item.name
+            if item.is_dir():
+                shutil.copytree(item, destination)
+            else:
+                shutil.copy2(item, destination)
+
+    target_results = target_artifacts / "capability-results"
+    target_results.mkdir(parents=True, exist_ok=True)
+    for old in target_results.glob("*.json"):
+        old.unlink()
+    source_results = source / "capability-results"
+    if source_results.is_dir():
+        for item in source_results.glob("*.json"):
+            shutil.copy2(item, target_results / item.name)
+
+    return {
+        **manifest,
+        "CANONICAL_CHECKPOINT_RESTORED": "PASS",
+        "DURABLE_MISSION_IDENTITY_PRESERVED": "PASS",
+    }
+
+
+def completed_plan_task_ids(
+    *,
+    board: HermesBoardAdapter,
+    task_mapping: dict[str, str],
+) -> tuple[str, ...]:
+    return tuple(
+        plan_task_id
+        for plan_task_id, board_task_id in task_mapping.items()
+        if str(board.get_task(board_task_id).get("status") or "") in {"done", "archived"}
+    )
 
 
 def execute_hermes_mission_capability(
