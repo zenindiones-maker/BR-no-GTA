@@ -13,6 +13,7 @@ from app.services.agent_office.contracts import AgentOfficeTask
 from app.services.agent_office.delegation import DelegatedTaskLease
 
 CODEX_BOUNDED_DEVELOPMENT_CAPABILITY = "agent-office.codex.bounded-development"
+MAX_CANDIDATE_REPAIR_PASSES = 1
 
 CODEX_TUXEVIL_AUTH_MODE = "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
 _CODEX_TUXEVIL_DEFAULT_BASE_URL = "http://127.0.0.1:51200/v1"
@@ -291,6 +292,87 @@ def _agent_message_metric_stats(stdout: str) -> tuple[int, int]:
     return message_count, metric_marker_count
 
 
+def _bounded_repair_text(value: str, *, limit: int = 1800) -> str:
+    normalized = " ".join(str(value or "").split())
+    if not normalized:
+        return ""
+    return normalized[:limit]
+
+
+def _bounded_repair_commands(
+    commands: tuple[str, ...],
+    *,
+    max_items: int = 8,
+    max_chars: int = 240,
+) -> tuple[str, ...]:
+    return tuple(
+        _bounded_repair_text(command, limit=max_chars)
+        for command in commands[-max_items:]
+        if _bounded_repair_text(command, limit=max_chars)
+    )
+
+
+_REPOSITORY_PATH_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])"
+    r"((?:app|scripts|tests|config|integrations|\.github/workflows)"
+    r"/[A-Za-z0-9_./-]+)"
+)
+
+
+def _grounded_writable_targets(
+    *,
+    task: AgentOfficeTask,
+    lease: DelegatedTaskLease,
+    workspace: Path,
+    max_items: int = 8,
+) -> tuple[str, ...]:
+    source = "\n".join(
+        [
+            task.objective,
+            *lease.acceptance_criteria,
+            *lease.expected_outputs,
+            *lease.evidence_requirements,
+        ]
+    )
+    targets: list[str] = []
+    for match in _REPOSITORY_PATH_TOKEN_RE.finditer(source):
+        candidate = match.group(1).rstrip(".,:;)]}")
+        if candidate in targets:
+            continue
+        if not lease.allows_path(candidate, write=True):
+            continue
+        if not (workspace / candidate).exists():
+            continue
+        targets.append(candidate)
+        if len(targets) >= max_items:
+            break
+    return tuple(targets)
+
+
+def _candidate_repair_context(
+    *,
+    task: AgentOfficeTask,
+    lease: DelegatedTaskLease,
+    workspace: Path,
+    initial_final_text: str,
+    initial_commands: tuple[str, ...],
+) -> dict[str, Any]:
+    summary = _bounded_repair_text(initial_final_text)
+    commands = _bounded_repair_commands(initial_commands)
+    targets = _grounded_writable_targets(
+        task=task,
+        lease=lease,
+        workspace=workspace,
+    )
+    actionable = bool(targets and (summary or commands))
+    return {
+        "initial_pass_summary": summary,
+        "initial_observed_commands": commands,
+        "grounded_writable_targets": targets,
+        "actionable": actionable,
+    }
+
+
 def _final_text(stdout: str) -> str:
     result = ""
     for line in str(stdout or "").splitlines():
@@ -455,6 +537,7 @@ def codex_bounded_development_worker(
         f"ALLOWED_TOOLS={json.dumps(lease.allowed_tools)}\n"
         f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}\n"
         f"EXPECTED_OUTPUTS={json.dumps(lease.expected_outputs)}\n"
+        f"EVIDENCE_REQUIREMENTS={json.dumps(lease.evidence_requirements)}\n"
         f"OBJECTIVE={task.objective}\n"
         "MUTATION_REQUIRED=true\n"
         "A successful bounded-development task MUST leave at least one real working-tree "
@@ -504,22 +587,41 @@ def codex_bounded_development_worker(
 
     changed = _changed_paths(workspace, lease.base_sha)
     candidate_repair_used = False
+    candidate_repair_context: dict[str, Any] | None = None
     final_text = _final_text(completed.stdout)
     if not changed:
+        candidate_repair_context = _candidate_repair_context(
+            task=task,
+            lease=lease,
+            workspace=workspace,
+            initial_final_text=final_text,
+            initial_commands=observed_commands,
+        )
+        if not candidate_repair_context["actionable"]:
+            raise RuntimeError(
+                "Codex bounded-development no-op lacks grounded candidate repair context"
+            )
         candidate_repair_used = True
+        if MAX_CANDIDATE_REPAIR_PASSES != 1:
+            raise RuntimeError("candidate repair pass budget drifted from one")
         if len(observed_commands) >= lease.tool_call_budget:
             raise RuntimeError("Codex exceeded tool_call_budget")
         candidate_repair_prompt = (
             "NO_CANDIDATE_PATCH_DETECTED. The previous bounded-development pass "
             "returned without any working-tree change, so it did not satisfy the "
-            "authorized mutation contract. Continue inside the SAME lease and SAME "
-            "disposable worktree. Produce the smallest safe real candidate change "
-            "entirely inside WRITE_SET, validate it locally, and do not only analyze "
-            "or describe a possible change. Do not commit; the deterministic Agent "
-            "Office boundary will create the candidate commit. Do not widen scope, "
-            "change authority/policy, access secrets, use network tools, publish, "
-            "deploy, push, merge, fetch, checkout, reset, or stash. If no safe change "
-            "can satisfy the objective, report a blocker rather than claiming success.\n\n"
+            "authorized mutation contract. This is the ONE allowed candidate-repair "
+            "pass. Continue inside the SAME lease and SAME disposable worktree. "
+            "Do not repeat discovery that is already present in INITIAL_PASS_SUMMARY "
+            "or INITIAL_OBSERVED_COMMANDS. Use that prior analysis as continuity, then "
+            "apply the smallest evidence-backed real change to one of "
+            "GROUNDED_WRITABLE_TARGETS. Before returning, run an allowlisted local "
+            "check that proves the working tree differs from BASE_SHA. Analysis-only "
+            "success is invalid. Do not commit; the deterministic Agent Office boundary "
+            "will create the candidate commit. Do not widen scope, change authority/"
+            "policy, access secrets, use network tools, publish, deploy, push, merge, "
+            "fetch, checkout, reset, or stash. If the grounded evidence is insufficient "
+            "or no safe change satisfies the objective, report a blocker rather than "
+            "claiming success.\n\n"
             f"TASK_ID={lease.task_id}\n"
             f"DELEGATION_ID={lease.delegation_id}\n"
             f"BASE_SHA={lease.base_sha}\n"
@@ -528,8 +630,15 @@ def codex_bounded_development_worker(
             f"ALLOWED_TOOLS={json.dumps(lease.allowed_tools)}\n"
             f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}\n"
             f"EXPECTED_OUTPUTS={json.dumps(lease.expected_outputs)}\n"
+            f"EVIDENCE_REQUIREMENTS={json.dumps(lease.evidence_requirements)}\n"
             f"OBJECTIVE={task.objective}\n"
-            "MUTATION_REQUIRED=true"
+            "INITIAL_PASS_SUMMARY="
+            + json.dumps(candidate_repair_context["initial_pass_summary"])
+            + "\nINITIAL_OBSERVED_COMMANDS="
+            + json.dumps(candidate_repair_context["initial_observed_commands"])
+            + "\nGROUNDED_WRITABLE_TARGETS="
+            + json.dumps(candidate_repair_context["grounded_writable_targets"])
+            + "\nMUTATION_REQUIRED=true"
         )
         candidate_repair_command = [
             "codex",
@@ -565,7 +674,9 @@ def codex_bounded_development_worker(
         observed_commands = (*observed_commands, *candidate_repair_commands)
         changed = _changed_paths(workspace, lease.base_sha)
         if not changed:
-            raise RuntimeError("Codex bounded-development produced no candidate patch")
+            raise RuntimeError(
+                "Codex bounded-development candidate repair produced no candidate patch"
+            )
         candidate_repair_text = _final_text(candidate_repair.stdout)
         if candidate_repair_text:
             final_text = candidate_repair_text
@@ -681,6 +792,9 @@ def codex_bounded_development_worker(
         "performance_evidence": metric,
         "measurement_required": measurement_required,
         "candidate_repair_used": candidate_repair_used,
+        "candidate_repair_context_grounded_targets": list(
+            (candidate_repair_context or {}).get("grounded_writable_targets") or ()
+        ),
         "metric_repair_used": metric_repair_used,
         "commands": list(observed_commands),
         "artifacts": [f"candidate-commit:{candidate_sha}"],
