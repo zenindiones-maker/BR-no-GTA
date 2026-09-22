@@ -923,6 +923,75 @@ def test_semantic_registry_mismatch_replans_to_harness_selected_capability(
     assert "DeepSeek Harness performs final Registry selection" in prompts[1]
 
 
+def test_final_replan_discards_registered_incompatible_hint_and_preserves_harness_selection(
+    monkeypatch,
+):
+    invalid = {
+        "interpreted_goal": "inspect repository safely",
+        "assumptions": [],
+        "required_outcomes": ["bounded observation"],
+        "tasks": [
+            {
+                "task_id": "analyze-repo",
+                "objective": "Inspect current repository evidence",
+                "task_class": "readonly-analysis",
+                "required_capability_description": "",
+                "candidate_capability_ids": [
+                    "agent-office.deterministic.readonly-analysis"
+                ],
+                "dependencies": [],
+                "expected_output": "analysis evidence",
+                "acceptance_criteria": ["stay bounded"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "RESEARCH",
+            }
+        ],
+        "rationale": "observe before mutation",
+        "context_usage_notes": [],
+        "uncertainty": 0.2,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+    prompts = []
+
+    def inference(prompt, _context):
+        prompts.append(prompt)
+        return invalid
+
+    def registry_errors(proposal):
+        task = proposal.tasks[0]
+        if task.candidate_capability_ids:
+            return (
+                "analyze-repo: action RESEARCH not allowed by "
+                "agent-office.deterministic.readonly-analysis",
+            )
+        return ()
+
+    monkeypatch.setattr(adaptive, "proposal_registry_errors", registry_errors)
+    result, evidence = adaptive.propose_validated_semantic_plan(
+        {
+            "human_goal": "Inspect repository and plan safely",
+            "resource_bounds": {"max_tasks_per_mission": 4},
+        },
+        inference=inference,
+        max_replans=1,
+    )
+
+    task = result.proposal.tasks[0]
+    assert len(prompts) == 2
+    assert task.candidate_capability_ids == ()
+    assert task.required_capability_description == task.objective
+    assert evidence["candidate_hints_discarded"] == [
+        "analyze-repo:agent-office.deterministic.readonly-analysis"
+    ]
+    assert evidence["planner_authority"] == "NONE"
+    assert evidence["selection_authority"] == "DEEPSEEK_HARNESS"
+    assert evidence["validated_by"] == "DEEPSEEK_HARNESS"
+
+
 def test_operational_proof_installs_pinned_hermes_runtime_dependencies():
     operational = Path(
         ".github/workflows/delegation-plane-operational-proof.yml"
