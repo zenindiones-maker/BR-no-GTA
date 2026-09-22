@@ -867,11 +867,7 @@ def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGIS
             return ProviderHealth(
                 provider_id=provider,
                 state="AUTH_REQUIRED",
-                reason=(
-                    f"{len(live_models)} NVIDIA NIM model(s) have durable "
-                    "live health evidence, but NVIDIA_API_KEY is not "
-                    "materialized in this runtime."
-                ),
+                reason="Provider requires runtime authentication evidence.",
                 evidence_refs=tuple(dict.fromkeys(live_refs)),
                 retry_allowed=True,
                 zero_cost_eligible=zero_cost_eligible,
