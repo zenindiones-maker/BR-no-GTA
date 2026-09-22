@@ -1,0 +1,12 @@
+{
+  "mission": "gta6-knowledge-brain-blocker-validation",
+  "requested_at": "2026-09-22T01:03:00Z",
+  "source_run": 35673671487,
+  "expected_head": "d4d3bc4c93b676bbbb249066989d8462551cd27c",
+  "blockers": [
+    "knowledge_retrieval_harness_auth",
+    "conditional_source_refresh_contract",
+    "non_primary_auto_promotion",
+    "telegram_group_human_response"
+  ]
+}
