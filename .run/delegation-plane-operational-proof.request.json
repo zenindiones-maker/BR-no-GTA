@@ -3,25 +3,20 @@
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
   "diagnostic_only": true,
-  "requested_base_sha": "e73501dec35ed15541132fdf549554fd0d9aaf6d",
-  "mode": "DIAGNOSTIC_TOOL_BUDGET_TERMINAL_SNAPSHOT",
-  "previous_failed_run_id": 35783330461,
-  "previous_blocker": "Codex exceeded tool_call_budget",
-  "observability_sha": "e73501dec35ed15541132fdf549554fd0d9aaf6d",
-  "observability_gates": {
-    "tool_budget_success_evidence_persisted": "PASS",
-    "tool_budget_failure_evidence_persisted": "PASS",
-    "success_tool_count_exact": "PASS",
-    "failure_tool_count_exact": "PASS",
-    "no_double_count": "PASS",
-    "raw_commands_persisted": "NO",
-    "secret_leak": "NO",
-    "diagnostic_only_prevents_second_dispatch": "PASS",
-    "agent_office_validation_run": 35787355046,
-    "harness_intelligence_validation_run": 35787355095,
-    "br_no_gta_ci_run": 35787355211
+  "requested_base_sha": "26f3694922df58abe6ccc3654e321909a49412b1",
+  "mode": "DIAGNOSTIC_READONLY_WORKER_IDENTITY_THEN_TOOL_BUDGET",
+  "previous_failed_run_id": 35787664138,
+  "previous_blocker": "worker engine is not registered by the Harness",
+  "fixed_capability": "agent-office.codex.readonly-analysis",
+  "canonical_agent_id": "codex-readonly",
+  "worker_runner_key": "codex-readonly",
+  "fix_sha": "26f3694922df58abe6ccc3654e321909a49412b1",
+  "validation_runs": {
+    "agent_office": 35789188477,
+    "harness_intelligence": 35789188309,
+    "br_no_gta_ci": 35789189055
   },
-  "target": "Measure real bounded-development terminal tool consumption; classify root cause only after evidence; do not fix tool budget in this run",
+  "target": "Prove readonly worker identity registration is fixed; continue first real mission; if bounded-development executes, persist codex-tool-budget/v1; stop at first new blocker; never auto-dispatch second phase",
   "live_run_budget": 1,
   "no_parallel_proof": true
 }
