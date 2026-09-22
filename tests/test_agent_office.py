@@ -814,6 +814,11 @@ def test_python3_is_only_a_canonical_alias_for_allowlisted_python():
             "python3 -m pytest -q tests/test_agent_office.py",
             ("pytest",),
         )
+    with pytest.raises(PermissionError, match="COMMAND_ALLOWLIST"):
+        _validate_command(
+            "python2 -c 'print(1)'",
+            ("python",),
+        )
 
     record = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
