@@ -497,28 +497,97 @@ def codex_bounded_development_worker(
     for observed in observed_commands:
         _validate_command(observed, lease.allowed_tools)
 
-    final_text = _final_text(completed.stdout)
-    metric = _structured_metric(final_text)
-    measurement_required = _measurement_required(task, lease)
-    if measurement_required and metric is None:
-        message_count, metric_marker_count = _agent_message_metric_stats(
-            completed.stdout
-        )
-        raise RuntimeError(
-            "measurable bounded-development task produced no structured before/after metric"
-            f"; agent_messages={message_count}; metric_markers={metric_marker_count}"
-        )
-    if measurement_required and metric is not None and not metric["improved"]:
-        raise RuntimeError(
-            "measurable bounded-development candidate did not improve the declared metric"
-        )
-
     changed = _changed_paths(workspace, lease.base_sha)
     if not changed:
         raise RuntimeError("Codex bounded-development produced no candidate patch")
     outside = tuple(path for path in changed if not lease.allows_path(path, write=True))
     if outside:
         raise PermissionError(f"Codex changed paths outside lease: {outside}")
+
+    final_text = _final_text(completed.stdout)
+    metric = _structured_metric(final_text)
+    measurement_required = _measurement_required(task, lease)
+    metric_repair_used = False
+    if measurement_required and metric is None:
+        metric_repair_used = True
+        repair_prompt = (
+            "You are performing one bounded measurement-repair pass for an existing "
+            "candidate. The candidate patch is frozen: DO NOT edit, write, commit, "
+            "checkout, reset, stash, or otherwise mutate repository files. Use only "
+            "read-only inspection/benchmark commands from ALLOWED_TOOLS. Compare the "
+            "actual BASE_SHA state with the current candidate state and measure one "
+            "real metric that directly demonstrates whether the candidate improved "
+            "the objective. Do not invent values. If a real before/after measurement "
+            "cannot be produced, say so without fabricating evidence. Your FINAL "
+            "message must end with exactly one line BR_METRIC_JSON=<json> containing "
+            "metric_name, numeric baseline, numeric candidate, unit, direction "
+            "(LOWER_IS_BETTER or HIGHER_IS_BETTER), and measurement_command.\n\n"
+            f"BASE_SHA={lease.base_sha}\n"
+            f"CHANGED_PATHS={json.dumps(changed)}\n"
+            f"READ_SET={json.dumps(lease.read_set)}\n"
+            f"ALLOWED_TOOLS={json.dumps(lease.allowed_tools)}\n"
+            f"OBJECTIVE={task.objective}\n"
+            f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}"
+        )
+        repair_command = [
+            "codex",
+            *provider_args,
+            *CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--color", "never",
+            "--json",
+            "--sandbox", "read-only",
+            "-C", str(workspace),
+            repair_prompt,
+        ]
+        repair = _run(
+            repair_command,
+            cwd=workspace,
+            timeout=remaining(),
+            sanitized_env=True,
+        )
+        repair_failure = codex_execution_failure(
+            repair,
+            failure_stage="bounded_development_metric_repair",
+        )
+        if repair_failure is not None:
+            return repair_failure
+
+        repair_commands = _commands(repair.stdout)
+        if len(observed_commands) + len(repair_commands) > lease.tool_call_budget:
+            raise RuntimeError("Codex exceeded tool_call_budget")
+        for observed in repair_commands:
+            _validate_command(observed, lease.allowed_tools)
+
+        changed_after_repair = _changed_paths(workspace, lease.base_sha)
+        if changed_after_repair != changed:
+            raise PermissionError(
+                "bounded metric repair mutated the frozen candidate"
+            )
+        repair_text = _final_text(repair.stdout)
+        metric = _structured_metric(repair_text)
+        if metric is None:
+            initial_messages, initial_markers = _agent_message_metric_stats(
+                completed.stdout
+            )
+            repair_messages, repair_markers = _agent_message_metric_stats(
+                repair.stdout
+            )
+            raise RuntimeError(
+                "measurable bounded-development task produced no structured before/after metric"
+                f"; initial_agent_messages={initial_messages}; "
+                f"initial_metric_markers={initial_markers}; "
+                f"repair_agent_messages={repair_messages}; "
+                f"repair_metric_markers={repair_markers}"
+            )
+        observed_commands = (*observed_commands, *repair_commands)
+
+    if measurement_required and metric is not None and not metric["improved"]:
+        raise RuntimeError(
+            "measurable bounded-development candidate did not improve the declared metric"
+        )
 
     diff_stat = _run(
         ["git", "diff", "--stat", lease.base_sha, "--"],
@@ -542,6 +611,7 @@ def codex_bounded_development_worker(
         "summary": final_text or "Codex bounded candidate created",
         "performance_evidence": metric,
         "measurement_required": measurement_required,
+        "metric_repair_used": metric_repair_used,
         "commands": list(observed_commands),
         "artifacts": [f"candidate-commit:{candidate_sha}"],
         "tests": tests,
