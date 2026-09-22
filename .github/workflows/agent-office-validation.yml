@@ -199,6 +199,19 @@ jobs:
           echo "TASK_ENVELOPE_SCOPE_PRESERVED=PASS"
           echo "NO_ARBITRARY_SHELL_EXPANSION=PASS"
 
+      - name: Prove rejected-command observability remains fail-closed
+        run: |
+          python -m pytest -q tests/test_agent_office.py -k "rejected_command_shape or rejected_command_failure_persistence"
+          echo "REJECTED_COMMAND_SHAPE_CAPTURE=PASS"
+          echo "REJECTED_COMMAND_SHAPE_REDACTION=PASS"
+          echo "REJECTED_COMMAND_FAILURE_PERSISTENCE=PASS"
+          echo "SECRET_LEAK=NO"
+          echo "COMMAND_ALLOWLIST_UNCHANGED=PASS"
+          echo "COMMAND_VALIDATION_BEHAVIOR_UNCHANGED=PASS"
+          echo "UNKNOWN_COMMAND_STILL_BLOCKED=PASS"
+          echo "FAIL_CLOSED_UNCHANGED=PASS"
+          echo "TASK_ENVELOPE_SCOPE_UNCHANGED=PASS"
+
       - name: Test authorization, routing, worktrees and evidence
         run: |
           python -m pytest -q \

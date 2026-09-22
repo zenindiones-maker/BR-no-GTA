@@ -328,6 +328,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ env.BR_HERMES_UPSTREAM_ROOT }}
           BR_CODEX_AUTH_MODE: "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
           BR_CODEX_TUXEVIL_MODEL: ${{ steps.provider.outputs.model }}
+          BR_REJECTED_COMMAND_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/delegation-plane-operational/first/rejected-command-shape.json
         run: |
           set -euo pipefail
           mkdir -p artifacts/delegation-plane-operational/first
@@ -567,6 +568,44 @@ jobs:
           print("ITEM42_FINAL_RULE=PASS")
           PY
 
+      - name: Print sanitized rejected-command shape when captured
+        if: env.OP_PHASE == 'first' && always()
+        run: |
+          set -euo pipefail
+          evidence="artifacts/delegation-plane-operational/first/rejected-command-shape.json"
+          if [ ! -s "$evidence" ]; then
+            echo "REJECTED_COMMAND_DIAGNOSTIC=NOT_CAPTURED"
+            exit 0
+          fi
+          python - "$evidence" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          keys=(
+              "COMMAND_SHAPE_SCHEMA",
+              "CANONICAL_TOOL",
+              "RAW_FIRST_TOKEN",
+              "FIRST_TOKEN_KIND",
+              "FIRST_TOKEN_HAS_EQUALS",
+              "TOKEN_COUNT",
+              "SHELL_WRAPPER",
+              "HAS_COMMAND_SUBSTITUTION",
+              "HAS_PROCESS_SUBSTITUTION",
+              "HAS_PIPE",
+              "HAS_REDIRECTION",
+              "HAS_SHELL_OPERATOR",
+              "ASSIGNMENT_LIKE_TOKEN_COUNT",
+              "RESOLVES_ON_SANITIZED_PATH",
+              "WORKTREE_PATHS_REDACTED",
+              "SECRET_VALUES_REDACTED",
+              "COMMAND_SHA256",
+          )
+          for key in keys:
+              print(f"{key}={data[key]}")
+          print("SECRET_LEAK=NO")
+          PY
+
       - name: Shutdown Tuxevil and destroy all ephemeral auth material
         if: always()
         run: |
@@ -601,6 +640,15 @@ jobs:
           echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
           echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
           echo "AUTH_CREDENTIAL_IN_OBSIDIAN=NO"
+
+      - name: Upload rejected-command diagnostic even on mission failure
+        if: env.OP_PHASE == 'first' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegation-plane-rejected-command-${{ github.run_id }}
+          path: artifacts/delegation-plane-operational/first/rejected-command-shape.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload first real execution and Learning state
         if: env.OP_PHASE == 'first' && success()

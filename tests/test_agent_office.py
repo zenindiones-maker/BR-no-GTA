@@ -17,6 +17,7 @@ from app.services.agent_office import munder_adapter
 from app.services.agent_office.delegation import DelegatedTaskLease
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
+    _rejected_command_shape,
     _validate_command,
     codex_execution_failure,
     codex_tuxevil_provider_args,
@@ -791,6 +792,127 @@ def test_registry_driven_specialist_rejects_tool_expansion():
                 "allowed_tools": ["git", "curl"],
             },
         )
+
+
+def test_rejected_command_shape_distinguishes_synthetic_forms(tmp_path):
+    bare = _rejected_command_shape("tmp_env --version", workspace=tmp_path)
+    relative = _rejected_command_shape(
+        "./tools/tmp_env --version",
+        workspace=tmp_path,
+    )
+    absolute = _rejected_command_shape(
+        "/usr/local/bin/tmp_env --version",
+        workspace=tmp_path,
+    )
+    assignment = _rejected_command_shape(
+        "tmp_env=literal python -c 'print(1)'",
+        workspace=tmp_path,
+    )
+    wrapper = _rejected_command_shape(
+        "bash -lc 'tmp_env input | cat > output.txt'",
+        workspace=tmp_path,
+    )
+    command_substitution = _rejected_command_shape(
+        "bash -lc 'echo \$(id)'",
+        workspace=tmp_path,
+    )
+    process_substitution = _rejected_command_shape(
+        "bash -lc 'cat <(printf x)'",
+        workspace=tmp_path,
+    )
+
+    assert bare["COMMAND_SHAPE_SCHEMA"] == "codex-rejected-command/v1"
+    assert bare["CANONICAL_TOOL"] == "tmp_env"
+    assert bare["RAW_FIRST_TOKEN"] == "tmp_env"
+    assert bare["FIRST_TOKEN_KIND"] == "BARE"
+    assert bare["FIRST_TOKEN_HAS_EQUALS"] == "NO"
+    assert bare["TOKEN_COUNT"] == 2
+    assert bare["SHELL_WRAPPER"] == "NONE"
+
+    assert relative["FIRST_TOKEN_KIND"] == "RELATIVE_PATH"
+    assert absolute["FIRST_TOKEN_KIND"] == "ABSOLUTE_PATH"
+
+    assert assignment["FIRST_TOKEN_KIND"] == "ASSIGNMENT_LIKE"
+    assert assignment["FIRST_TOKEN_HAS_EQUALS"] == "YES"
+    assert assignment["RAW_FIRST_TOKEN"] == "tmp_env=<redacted>"
+    assert assignment["ASSIGNMENT_LIKE_TOKEN_COUNT"] == 1
+
+    assert wrapper["SHELL_WRAPPER"] == "bash-lc"
+    assert wrapper["HAS_PIPE"] == "YES"
+    assert wrapper["HAS_REDIRECTION"] == "YES"
+    assert wrapper["HAS_SHELL_OPERATOR"] == "YES"
+
+    assert command_substitution["HAS_COMMAND_SUBSTITUTION"] == "YES"
+    assert process_substitution["HAS_PROCESS_SUBSTITUTION"] == "YES"
+
+
+def test_rejected_command_shape_redacts_secrets_and_worktree_paths(tmp_path):
+    secret_value = "nvidia-super-secret-value-123456"
+    secret = _rejected_command_shape(
+        f"NVIDIA_API_KEY={secret_value} python -c 'print(1)'",
+        workspace=tmp_path,
+    )
+    secret_payload = json.dumps(secret, sort_keys=True)
+    assert secret_value not in secret_payload
+    assert secret["RAW_FIRST_TOKEN"] == "NVIDIA_API_KEY=<redacted>"
+    assert secret["SECRET_VALUES_REDACTED"] == "YES"
+
+    worktree_token = tmp_path / "private-runner-id" / "tmp_env"
+    worktree = _rejected_command_shape(
+        f"{worktree_token} --version",
+        workspace=tmp_path,
+    )
+    worktree_payload = json.dumps(worktree, sort_keys=True)
+    assert str(tmp_path) not in worktree_payload
+    assert worktree["RAW_FIRST_TOKEN"].startswith("<WORKTREE>/")
+    assert worktree["WORKTREE_PATHS_REDACTED"] == "YES"
+
+
+def test_rejected_command_failure_persistence_keeps_fail_closed_behavior(
+    tmp_path,
+    monkeypatch,
+):
+    evidence = tmp_path / "rejected-command-shape.json"
+    monkeypatch.setenv(
+        "BR_REJECTED_COMMAND_EVIDENCE_PATH",
+        str(evidence),
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match=r"COMMAND_ALLOWLIST: tmp_env$",
+    ):
+        _validate_command(
+            "bash -lc 'tmp_env --version'",
+            ("git", "python", "pytest", "rg", "cat"),
+            workspace=tmp_path,
+        )
+
+    captured = json.loads(evidence.read_text(encoding="utf-8"))
+    assert captured["CANONICAL_TOOL"] == "tmp_env"
+    assert captured["RAW_FIRST_TOKEN"] == "tmp_env"
+    assert captured["FIRST_TOKEN_KIND"] == "BARE"
+    assert captured["SHELL_WRAPPER"] == "NONE"
+    assert captured["SECRET_VALUES_REDACTED"] == "YES"
+
+    # Observability does not add assignment grammar or authorize a new tool.
+    second = tmp_path / "assignment-like.json"
+    monkeypatch.setenv(
+        "BR_REJECTED_COMMAND_EVIDENCE_PATH",
+        str(second),
+    )
+    with pytest.raises(
+        PermissionError,
+        match=r"COMMAND_ALLOWLIST: tmp_env=literal$",
+    ):
+        _validate_command(
+            "tmp_env=literal python -c 'print(1)'",
+            ("python",),
+            workspace=tmp_path,
+        )
+    assignment = json.loads(second.read_text(encoding="utf-8"))
+    assert assignment["FIRST_TOKEN_KIND"] == "ASSIGNMENT_LIKE"
+    assert assignment["RAW_FIRST_TOKEN"] == "tmp_env=<redacted>"
 
 
 def test_codex_shell_wrapper_validates_inner_allowlisted_tools():

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import time
 from typing import Any, Mapping
@@ -395,6 +397,188 @@ _TOOL_ALIASES = {
 }
 
 
+_REJECTED_COMMAND_SHAPE_SCHEMA = "codex-rejected-command/v1"
+_ASSIGNMENT_LIKE_TOKEN_RE = re.compile(
+    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$",
+    re.DOTALL,
+)
+_SENSITIVE_TOKEN_PREFIX_RE = re.compile(
+    r"^(?:gh[pousr]_|github_pat_|sk-|AIza)[A-Za-z0-9_.-]{8,}$",
+    re.I,
+)
+_SENSITIVE_KEY_RE = re.compile(
+    r"(?:authorization|cookie|token|secret|password|credential|api[_-]?key)",
+    re.I,
+)
+
+
+def _redact_path_prefix(value: str, root: str | Path | None, marker: str) -> str:
+    if not root:
+        return value
+    try:
+        root_text = str(Path(root).resolve())
+    except (OSError, RuntimeError):
+        root_text = str(root)
+    if not root_text:
+        return value
+    if value == root_text:
+        return marker
+    prefix = root_text.rstrip(os.sep) + os.sep
+    if value.startswith(prefix):
+        return marker + os.sep + value[len(prefix):]
+    return value
+
+
+def _sanitize_command_token(
+    token: str,
+    *,
+    workspace: Path | None = None,
+) -> str:
+    value = str(token or "")
+    assignment = _ASSIGNMENT_LIKE_TOKEN_RE.fullmatch(value)
+    if assignment:
+        return f"{assignment.group('name')}=<redacted>"
+
+    if ":" in value:
+        key, _separator, _rest = value.partition(":")
+        if _SENSITIVE_KEY_RE.search(key):
+            return f"{key}:<redacted>"
+    if _SENSITIVE_TOKEN_PREFIX_RE.fullmatch(value):
+        return "<redacted-sensitive-token>"
+
+    value = _redact_path_prefix(value, workspace, "<WORKTREE>")
+    value = _redact_path_prefix(
+        value,
+        os.environ.get("RUNNER_TEMP"),
+        "<RUNNER_TEMP>",
+    )
+    value = _redact_path_prefix(value, Path.home(), "<HOME>")
+    return value
+
+
+def _first_token_kind(token: str) -> str:
+    if not token:
+        return "OTHER"
+    if _ASSIGNMENT_LIKE_TOKEN_RE.fullmatch(token):
+        return "ASSIGNMENT_LIKE"
+    if Path(token).is_absolute():
+        return "ABSOLUTE_PATH"
+    if "/" in token or token.startswith("."):
+        return "RELATIVE_PATH"
+    if re.fullmatch(r"[A-Za-z0-9_.+-]+", token):
+        return "BARE"
+    return "OTHER"
+
+
+def _rejected_command_shape(
+    command: str,
+    *,
+    workspace: Path | None = None,
+) -> dict[str, Any]:
+    raw = str(command or "")
+    try:
+        parts = shlex.split(raw)
+    except ValueError:
+        parts = []
+
+    first_token = parts[0] if parts else (
+        raw.lstrip().split(maxsplit=1)[0] if raw.strip() else ""
+    )
+    first_kind = _first_token_kind(first_token)
+    canonical = canonical_command_tool(first_token) if first_token else ""
+
+    wrapper = "NONE"
+    if len(parts) >= 2:
+        wrapper_tool = canonical_command_tool(parts[0])
+        wrapper_mode = parts[1]
+        if wrapper_tool in _SHELL_WRAPPER_TOOLS and wrapper_mode in {"-c", "-lc"}:
+            wrapper = f"{wrapper_tool}-{'lc' if wrapper_mode == '-lc' else 'c'}"
+
+    resolves = "NOT_CHECKED"
+    if first_kind == "BARE" and first_token:
+        sanitized_path = codex_sanitized_environment().get("PATH") or ""
+        resolves = (
+            "YES"
+            if shutil.which(first_token, path=sanitized_path) is not None
+            else "NO"
+        )
+
+    return {
+        "COMMAND_SHAPE_SCHEMA": _REJECTED_COMMAND_SHAPE_SCHEMA,
+        "CANONICAL_TOOL": _sanitize_command_token(
+            canonical,
+            workspace=workspace,
+        ),
+        "RAW_FIRST_TOKEN": _sanitize_command_token(
+            first_token,
+            workspace=workspace,
+        ),
+        "FIRST_TOKEN_KIND": first_kind,
+        "FIRST_TOKEN_HAS_EQUALS": "YES" if "=" in first_token else "NO",
+        "TOKEN_COUNT": len(parts),
+        "SHELL_WRAPPER": wrapper,
+        "HAS_COMMAND_SUBSTITUTION": (
+            "YES" if "$(" in raw or "`" in raw else "NO"
+        ),
+        "HAS_PROCESS_SUBSTITUTION": (
+            "YES" if "<(" in raw or ">(" in raw else "NO"
+        ),
+        "HAS_PIPE": (
+            "YES" if re.search(r"(?<!\|)\|(?!\|)", raw) else "NO"
+        ),
+        "HAS_REDIRECTION": (
+            "YES"
+            if re.search(r"(?:^|[^<>])(?:>>?|<<)(?![<(])", raw)
+            else "NO"
+        ),
+        "HAS_SHELL_OPERATOR": (
+            "YES"
+            if any(marker in raw for marker in ("&&", "||", ";", "|", "&"))
+            else "NO"
+        ),
+        "ASSIGNMENT_LIKE_TOKEN_COUNT": sum(
+            1 for token in parts
+            if _ASSIGNMENT_LIKE_TOKEN_RE.fullmatch(token)
+        ),
+        "RESOLVES_ON_SANITIZED_PATH": resolves,
+        "WORKTREE_PATHS_REDACTED": "YES",
+        "SECRET_VALUES_REDACTED": "YES",
+        "COMMAND_SHA256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+    }
+
+
+def _persist_rejected_command_shape(
+    command: str,
+    *,
+    workspace: Path | None = None,
+) -> None:
+    raw_path = str(
+        os.environ.get("BR_REJECTED_COMMAND_EVIDENCE_PATH") or ""
+    ).strip()
+    if not raw_path:
+        return
+
+    path = Path(raw_path)
+    try:
+        # The first/deepest rejection is the causally useful command shape.
+        # Recursive shell-wrapper validation must not overwrite it with the
+        # outer wrapper after the inner command has already failed.
+        if path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = _rejected_command_shape(command, workspace=workspace)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    except (OSError, RuntimeError, ValueError):
+        # Observability must never authorize, mask, or replace the original
+        # command-validation failure.
+        return
+
+
 def canonical_command_tool(value: str) -> str:
     raw = Path(str(value or "")).name
     return _TOOL_ALIASES.get(raw, raw)
@@ -530,7 +714,7 @@ def _shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
     segments.append(tuple(current))
     return tuple(segments)
 
-def _validate_command(
+def _validate_command_impl(
     command: str,
     allowed_tools: tuple[str, ...],
     *,
@@ -594,6 +778,29 @@ def _validate_command(
             workspace=workspace,
         )
         return
+
+
+
+def _validate_command(
+    command: str,
+    allowed_tools: tuple[str, ...],
+    *,
+    lease: DelegatedTaskLease | None = None,
+    workspace: Path | None = None,
+) -> None:
+    try:
+        _validate_command_impl(
+            command,
+            allowed_tools,
+            lease=lease,
+            workspace=workspace,
+        )
+    except PermissionError:
+        _persist_rejected_command_shape(
+            command,
+            workspace=workspace,
+        )
+        raise
 
 
 def _candidate_commit(
