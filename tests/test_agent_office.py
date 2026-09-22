@@ -1069,17 +1069,42 @@ def test_bounded_metric_repair_cannot_mutate_frozen_candidate(monkeypatch, tmp_p
 def _real_bounded_candidate_fixture(tmp_path):
     from app.services.agent_office.delegation import (
         DelegatedTaskLease,
-        MANDATORY_FORBIDDEN_ACTIONS,
     )
     from datetime import datetime, timedelta, timezone
 
     root, _ = _repo(tmp_path)
-    target = root / "app" / "services" / "agent_office" / "candidate_target.py"
+    target = (
+        root
+        / "app"
+        / "services"
+        / "agent_office"
+        / "codex_bounded_worker.py"
+    )
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("VALUE = 2\n", encoding="utf-8")
-    subprocess.run(["git", "add", "--", str(target.relative_to(root))], cwd=root, check=True)
+    duplicate = 'return ["codex", "exec", "--json"]'
+    target.write_text(
+        "\n".join(
+            [
+                "def first():",
+                f"    {duplicate}",
+                "",
+                "def second():",
+                f"    {duplicate}",
+                "",
+                "def third():",
+                f"    {duplicate}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
     subprocess.run(
-        ["git", "commit", "-m", "add bounded candidate target"],
+        ["git", "add", "--", str(target.relative_to(root))],
+        cwd=root,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add realistic bounded candidate target"],
         cwd=root,
         check=True,
         capture_output=True,
@@ -1100,34 +1125,75 @@ def _real_bounded_candidate_fixture(tmp_path):
         text=True,
     )
 
-    task = AgentOfficeTask(
-        task_id="bounded.real.candidate",
-        agent="codex-development",
-        capability="agent-office.codex.bounded-development",
-        action="development",
-        objective=(
-            "Reduce the deterministic VALUE metric from 2 to 1 in the bounded "
-            "candidate target and validate the change."
-        ),
-        allowed_paths=("app/services/agent_office",),
-        allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls"),
-        allowed_actions=(
-            "analyze", "inspect", "test", "benchmark", "edit", "commit_candidate"
-        ),
-        forbidden_actions=tuple(sorted(MANDATORY_FORBIDDEN_ACTIONS)),
-        expected_outputs=("bounded candidate commit", "before/after metric"),
-        acceptance_criteria=(
-            "candidate changes only app/services/agent_office",
-            "VALUE metric improves from 2 to 1",
-        ),
-        evidence_requirements=("candidate commit", "path boundary", "metric"),
-        read_set=("app/services/agent_office",),
-        write_set=("app/services/agent_office",),
-        tool_call_budget=8,
-        retry_budget=0,
-        time_budget_seconds=120,
-        cost_budget=0.0,
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
     )
+    assert record is not None
+    acceptance = [
+        (
+            "reduce duplicated Codex exec argv-prefix construction while "
+            "preserving behavior"
+        ),
+        "tests/test_agent_office.py passes",
+        "preserve DeepSeek Harness authority and all security boundaries",
+        "report a real before/after metric and leave a local candidate commit only",
+    ]
+    contract = build_agent_office_specialist_contract(
+        record=record,
+        payload={
+            "task_id": "bounded.real.candidate",
+            "task_class": "bounded-development",
+            "objective": (
+                "Implement the smallest safe bounded refactor justified by the "
+                "grounded evidence. Do not alter authority, routing, publication, "
+                "authentication, secret handling, or sandbox policy."
+            ),
+            "gaps": [
+                (
+                    "Observed measurable redundancy: "
+                    "app/services/agent_office/codex_bounded_worker.py "
+                    "contains the same Codex exec argv-prefix construction in "
+                    "three local call sites."
+                ),
+                (
+                    "Baseline metric: duplicated Codex exec argv-prefix "
+                    "construction blocks=3. Candidate target: <=1 shared "
+                    "construction helper while preserving call behavior."
+                ),
+            ],
+            "allowed_paths": ["app/services/agent_office", "tests"],
+            "mission_read_scope": ["app/services/agent_office", "tests"],
+            "mission_write_scope": ["app/services/agent_office", "tests"],
+            "read_set": ["app/services/agent_office", "tests"],
+            "write_set": ["app/services/agent_office", "tests"],
+            "allowed_tools": [
+                "git", "python", "pytest", "codex", "rg", "cat", "ls"
+            ],
+            "allowed_actions": [
+                "analyze", "inspect", "test", "benchmark", "edit",
+                "commit_candidate",
+            ],
+            "expected_outputs": [
+                "bounded candidate commit",
+                "before/after metric",
+            ],
+            "acceptance_criteria": acceptance,
+            "evidence_requirements": [
+                "candidate commit",
+                "measured metric",
+                "path boundary",
+            ],
+            "tool_call_budget": 12,
+            "retry_budget": 0,
+        },
+    )
+    task = AgentOfficeTask.from_mapping(contract["task"])
+    assert "GROUNDED_EVIDENCE_CONTEXT:" in task.objective
+    assert (
+        "app/services/agent_office/codex_bounded_worker.py"
+        in task.objective
+    )
+
     lease = DelegatedTaskLease(
         mission_id="bounded-real-candidate",
         task_id=task.task_id,
@@ -1138,7 +1204,7 @@ def _real_bounded_candidate_fixture(tmp_path):
         agent_id=task.agent,
         capability_ids=("agent-office.codex.bounded-development",),
         base_sha=base_sha,
-        allowed_paths=task.allowed_paths,
+        allowed_paths=tuple(contract["allowed_paths"]),
         allowed_tools=task.allowed_tools,
         allowed_actions=task.allowed_actions,
         forbidden_actions=task.forbidden_actions,
@@ -1148,10 +1214,12 @@ def _real_bounded_candidate_fixture(tmp_path):
         evidence_requirements=task.evidence_requirements,
         time_budget_seconds=120,
         cost_budget=0.0,
-        tool_call_budget=8,
+        tool_call_budget=12,
         retry_budget=0,
         max_parallelism=1,
-        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat(),
         escalation_conditions=("scope_change", "non_recoverable_error"),
         owned_task_class="bounded-development",
         role="SPECIALIST_TASK_OWNER",
@@ -1161,7 +1229,39 @@ def _real_bounded_candidate_fixture(tmp_path):
     return root, workspace, base_sha, task, lease
 
 
-def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
+def _realistic_candidate_repair_surrogate(*, prompt, workspace):
+    target_rel = "app/services/agent_office/codex_bounded_worker.py"
+    required = (
+        "NO_CANDIDATE_PATCH_DETECTED",
+        "INITIAL_PASS_SUMMARY=",
+        "INITIAL_OBSERVED_COMMANDS=",
+        "GROUNDED_WRITABLE_TARGETS=",
+        target_rel,
+        "_codex_exec_prefix",
+        "MUTATION_REQUIRED=true",
+    )
+    if not all(marker in prompt for marker in required):
+        return False
+
+    target = Path(workspace) / target_rel
+    text = target.read_text(encoding="utf-8")
+    duplicate = 'return ["codex", "exec", "--json"]'
+    if text.count(duplicate) != 3:
+        return False
+
+    helper = (
+        "def _codex_exec_prefix():\n"
+        "    return [\"codex\", \"exec\", \"--json\"]\n\n"
+    )
+    transformed = helper + text.replace(
+        duplicate,
+        "return _codex_exec_prefix()",
+    )
+    target.write_text(transformed, encoding="utf-8")
+    return True
+
+
+def test_realistic_noop_candidate_repair_carries_context_and_commits(
     monkeypatch,
     tmp_path,
 ):
@@ -1170,7 +1270,10 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
     root, workspace, base_sha, task, lease = _real_bounded_candidate_fixture(
         tmp_path
     )
-    monkeypatch.setenv("BR_CODEX_AUTH_MODE", worker_module.CODEX_TUXEVIL_AUTH_MODE)
+    monkeypatch.setenv(
+        "BR_CODEX_AUTH_MODE",
+        worker_module.CODEX_TUXEVIL_AUTH_MODE,
+    )
     monkeypatch.setenv(
         "BR_CODEX_TUXEVIL_BASE_URL",
         "http://127.0.0.1:51200/v1",
@@ -1185,35 +1288,75 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
         if command and command[0] == "codex":
             codex_calls.append(list(command))
             if len(codex_calls) == 1:
-                assert "MUTATION_REQUIRED=true" in command[-1]
+                assert "GROUNDED_EVIDENCE_CONTEXT:" in command[-1]
+                stdout = "\n".join([
+                    json.dumps({
+                        "type": "item.completed",
+                        "item": {
+                            "type": "command_execution",
+                            "command": (
+                                "rg 'return \\\[\\\"codex\\\", "
+                                "\\\"exec\\\"' "
+                                "app/services/agent_office/"
+                                "codex_bounded_worker.py"
+                            ),
+                        },
+                    }),
+                    json.dumps({
+                        "type": "item.completed",
+                        "item": {
+                            "type": "agent_message",
+                            "text": (
+                                "Found three duplicated Codex exec prefix "
+                                "constructions in "
+                                "app/services/agent_office/"
+                                "codex_bounded_worker.py. The smallest safe "
+                                "candidate is to extract _codex_exec_prefix "
+                                "and reuse it in those three call sites."
+                            ),
+                        },
+                    }),
+                ])
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=stdout + "\n",
+                    stderr="",
+                )
+
+            assert command[command.index("--sandbox") + 1] == "workspace-write"
+            applied = _realistic_candidate_repair_surrogate(
+                prompt=command[-1],
+                workspace=cwd,
+            )
+            if not applied:
                 stdout = json.dumps({
                     "type": "item.completed",
                     "item": {
                         "type": "agent_message",
-                        "text": "analysis completed without mutation",
+                        "text": "repair context was insufficient; no mutation",
                     },
                 })
                 return subprocess.CompletedProcess(
-                    command, 0, stdout=stdout + "\n", stderr=""
+                    command,
+                    0,
+                    stdout=stdout + "\n",
+                    stderr="",
                 )
 
-            assert "NO_CANDIDATE_PATCH_DETECTED" in command[-1]
-            assert "MUTATION_REQUIRED=true" in command[-1]
-            assert command[command.index("--sandbox") + 1] == "workspace-write"
-            target = (
-                Path(cwd)
-                / "app"
-                / "services"
-                / "agent_office"
-                / "candidate_target.py"
-            )
-            target.write_text("VALUE = 1\n", encoding="utf-8")
             stdout = "\n".join([
                 json.dumps({
                     "type": "item.completed",
                     "item": {
                         "type": "command_execution",
-                        "command": "python -c \"print(1)\"",
+                        "command": (
+                            "python -c \"from pathlib import Path; "
+                            "p=Path('app/services/agent_office/"
+                            "codex_bounded_worker.py'); "
+                            "print(p.read_text().count("
+                            "'return [\\\"codex\\\", \\\"exec\\\", "
+                            "\\\"--json\\\"]'))\""
+                        ),
                     },
                 }),
                 json.dumps({
@@ -1221,17 +1364,24 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
                     "item": {
                         "type": "agent_message",
                         "text": (
-                            "candidate changed and validated\n"
-                            "BR_METRIC_JSON={\"metric_name\":\"value\","
-                            "\"baseline\":2,\"candidate\":1,\"unit\":\"count\","
+                            "Applied the grounded shared-prefix refactor and "
+                            "validated the target.\n"
+                            "BR_METRIC_JSON={\"metric_name\":"
+                            "\"duplicated_exec_prefix_blocks\","
+                            "\"baseline\":3,\"candidate\":1,"
+                            "\"unit\":\"blocks\","
                             "\"direction\":\"LOWER_IS_BETTER\","
-                            "\"measurement_command\":\"python -c print(1)\"}"
+                            "\"measurement_command\":"
+                            "\"python deterministic-prefix-count\"}"
                         ),
                     },
                 }),
             ])
             return subprocess.CompletedProcess(
-                command, 0, stdout=stdout + "\n", stderr=""
+                command,
+                0,
+                stdout=stdout + "\n",
+                stderr="",
             )
         return original_run(
             command,
@@ -1261,9 +1411,20 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
         assert result["status"] == "SUCCEEDED"
         assert result["candidate_repair_used"] is True
         assert result["metric_repair_used"] is False
-        assert changed == ["app/services/agent_office/candidate_target.py"]
+        assert result["candidate_repair_context_grounded_targets"] == [
+            "app/services/agent_office/codex_bounded_worker.py"
+        ]
+        assert changed == [
+            "app/services/agent_office/codex_bounded_worker.py"
+        ]
         assert candidate["FILES_CHANGED"] == changed
         assert candidate["CANDIDATE_READY_FOR_INTEGRATION"] is True
+        assert result["performance_evidence"]["baseline"] == 3.0
+        assert result["performance_evidence"]["candidate"] == 1.0
+        assert len(codex_calls) == 2
+        assert "INITIAL_PASS_SUMMARY=" in codex_calls[1][-1]
+        assert "INITIAL_OBSERVED_COMMANDS=" in codex_calls[1][-1]
+        assert "GROUNDED_WRITABLE_TARGETS=" in codex_calls[1][-1]
         assert subprocess.run(
             ["git", "rev-parse", "HEAD^"],
             cwd=workspace,
@@ -1278,8 +1439,6 @@ def test_bounded_worker_noop_repair_creates_real_bounded_candidate_commit(
             capture_output=True,
             text=True,
         ).stdout.strip() == ""
-        assert (workspace / "README.md").read_text(encoding="utf-8") == "bounded\n"
-        assert len(codex_calls) == 2
     finally:
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(workspace)],
@@ -1334,7 +1493,7 @@ def test_bounded_worker_candidate_repair_is_single_pass_and_fails_closed(
     try:
         with pytest.raises(
             RuntimeError,
-            match="Codex bounded-development produced no candidate patch",
+            match="candidate repair produced no candidate patch",
         ):
             worker_module.codex_bounded_development_worker(
                 task,
