@@ -22,6 +22,23 @@ def main() -> int:
     p.add_argument("--quality",type=Path)
     p.add_argument("--output",type=Path,required=True)
     a=p.parse_args()
+    explicit_request=(
+        str(os.getenv("TELEGRAM_EXPLICIT_HUMAN_REQUEST") or "").strip().upper()=="TRUE"
+        and bool(str(os.getenv("TELEGRAM_HUMAN_REQUEST_REF") or "").strip())
+    )
+    if not explicit_request:
+        result={
+            "status":"BLOCKED",
+            "TELEGRAM_SEND":"NO",
+            "reason":"EXPLICIT_HUMAN_REQUEST_REQUIRED",
+            "boundary":"NO_AUTONOMOUS_NON_SCRIPT_TELEGRAM_PUSH",
+        }
+        a.output.parent.mkdir(parents=True,exist_ok=True)
+        a.output.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
+        print("NARRATION_TELEGRAM_DELIVERY=BLOCKED")
+        print("TELEGRAM_SEND=NO")
+        print("NON_SCRIPT_AUTONOMOUS_PUSH=BLOCKED")
+        return 0
     token=str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     chat=str(os.getenv("TELEGRAM_REVIEW_CHAT_ID") or "").strip()
     if not token or not chat:
@@ -30,11 +47,10 @@ def main() -> int:
     quality=json.loads(a.quality.read_text(encoding="utf-8")) if a.quality and a.quality.is_file() else {}
     master=_single_master(a.narration_root)
     caption=(
-        f"BR no GTA — {state.get('BENCHMARK_LABEL')} — MASTER DE NARRAÇÃO\n"
-        f"Voice B · arquivo sem recompressão\n"
-        f"goal_id={state.get('GOAL_ID')}\nvideo_id={state.get('VIDEO_ID')} · render_job_id={state.get('RENDER_JOB_ID')}\n"
-        f"duração={quality.get('NARRATION_DURATION_SECONDS','pending')}s · WPM={quality.get('OBSERVED_WPM','pending')}\n"
-        "HUMAN_NARRATION_REVIEW=PENDING"
+        "BR no GTA — MASTER DE NARRAÇÃO PRONTO PARA REVISÃO\n"
+        "Voice B · arquivo sem recompressão\n"
+        f"Duração: {quality.get('NARRATION_DURATION_SECONDS','pendente')}s\n\n"
+        "Ouça e responda neste grupo com aprovação ou ajustes de voz."
     )
     url=f"https://api.telegram.org/bot{token}/sendDocument"
     with master.open("rb") as stream:
@@ -64,6 +80,8 @@ def main() -> int:
         "file_name":master.name,
         "bytes":master.stat().st_size,
         "human_review_status":"PENDING",
+        "human_request_ref":str(os.getenv("TELEGRAM_HUMAN_REQUEST_REF") or ""),
+        "OPERATIONAL_TELEMETRY_PRESENT":"NO",
     }
     a.output.parent.mkdir(parents=True,exist_ok=True)
     a.output.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
