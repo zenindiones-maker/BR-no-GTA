@@ -1,5 +1,5 @@
 {
-  "request": "GTA6_KNOWLEDGE_BRAIN_DAILY_PROOF_004",
+  "request": "GTA6_KNOWLEDGE_BRAIN_DAILY_PROOF_005",
   "source_blocker_validation_run": 35674653104,
   "source_failed_daily_run": 35674735562,
   "group_human_surface_auth_ci_run": 35674964153,
@@ -16,5 +16,8 @@
   ],
   "source_successful_daily_run": 35675032369,
   "force_conditional_source_refresh": true,
-  "purpose": "real_source_delta_and_next_execution_learning_proof"
+  "purpose": "real_source_delta_and_next_execution_learning_proof",
+  "source_failed_forced_daily_run": 35675273082,
+  "no_claims_on_unchanged_fix": "4bba603e6d194727cb6e22b3ef332f34b638be15",
+  "unseen_source_proof_fix": "f39f96781b7ce8f7a36dad8972bfa7db02ab0db1"
 }
