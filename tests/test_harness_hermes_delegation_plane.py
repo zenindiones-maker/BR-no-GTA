@@ -179,6 +179,94 @@ def test_dynamic_mission_generic_payload_carries_semantic_query_without_capabili
     assert "capability_id" not in payload["query"]
 
 
+def test_mutating_payload_consumes_only_allowlisted_parent_evidence():
+    task = TaskEnvelope(
+        task_id="implement-candidate",
+        capability_id="agent-office.codex.bounded-development",
+        action="DEVELOPMENT",
+        objective="Implement the safe bounded candidate selected by the Harness.",
+        dependencies=("inspect-system",),
+        expected_output="Candidate",
+        task_class="bounded-development",
+        acceptance_criteria=("address the observed parent evidence",),
+        read_scope=("app", "tests"),
+        write_scope=("app/services/agent_office", "tests"),
+        allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls"),
+        risk_side_effect_class="BOUNDED_MUTATION",
+    )
+    parent_context = {
+        "parent_handoffs": [
+            {
+                "task_id": "inspect-system",
+                "result": {
+                    "observed_gaps": [
+                        "repository scan repeats the same traversal four times"
+                    ],
+                    "proposed_actions": [
+                        "reuse one bounded traversal result for repeated local checks"
+                    ],
+                    "summary": "Measured duplicate local traversal in the inspected path.",
+                    "performance_evidence": {
+                        "metric_name": "traversals",
+                        "baseline": 4,
+                        "candidate": 1,
+                        "unit": "count",
+                        "direction": "LOWER_IS_BETTER",
+                        "measurement_command": "python scripts/local_probe.py",
+                        "raw_provider_payload": "MUST_NOT_LEAK",
+                    },
+                    "authority": "MUST_NOT_ENTER_WORKER_PROMPT",
+                    "credential": "MUST_NOT_ENTER_WORKER_PROMPT",
+                    "nested_arbitrary": {
+                        "secret": "MUST_NOT_ENTER_WORKER_PROMPT",
+                    },
+                },
+            }
+        ],
+        "evidence_refs": ["artifact:parent.json"],
+    }
+
+    payload = dynamic_mission._generic_payload(
+        task=task,
+        human_goal="Improve the system safely.",
+        goal_id="goal-parent-guidance",
+        mission_id="mission-parent-guidance",
+        base_sha="a" * 40,
+        branch="work/gate6f-analytics-learning",
+        snapshot={},
+        parent_context=parent_context,
+    )
+
+    objective = payload["objective"]
+    assert "AUTHORIZED_PARENT_EVIDENCE" in objective
+    assert "repository scan repeats the same traversal four times" in objective
+    assert "reuse one bounded traversal result" in objective
+    assert "Measured duplicate local traversal" in objective
+    assert '"metric_name":"traversals"' in objective
+    assert "MUST_NOT_LEAK" not in objective
+    assert "MUST_NOT_ENTER_WORKER_PROMPT" not in objective
+    assert len(objective) <= 3900
+
+    readonly = replace(
+        task,
+        task_id="inspect-only",
+        capability_id="agent-office.codex.readonly-analysis",
+        write_scope=(),
+        risk_side_effect_class="READ_ONLY",
+    )
+    readonly_payload = dynamic_mission._generic_payload(
+        task=readonly,
+        human_goal="Inspect only.",
+        goal_id="goal-readonly-parent-guidance",
+        mission_id="mission-readonly-parent-guidance",
+        base_sha="a" * 40,
+        branch="work/gate6f-analytics-learning",
+        snapshot={},
+        parent_context=parent_context,
+    )
+    assert "AUTHORIZED_PARENT_EVIDENCE" not in readonly_payload["objective"]
+
+
 def test_hermes_profiles_are_task_scoped_when_one_specialist_owns_multiple_tasks():
     tasks = [
         TaskEnvelope(
