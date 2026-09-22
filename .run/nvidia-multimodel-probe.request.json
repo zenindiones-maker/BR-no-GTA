@@ -1,7 +1,9 @@
 {
   "schema": "nvidia-multimodel-live-request/v1",
   "mission": "NVIDIA_NIM_OPERATIONAL_V1",
-  "base_sha": "b8c584e5e236e81ee9a5049e72f1e48f45404f66",
+  "base_sha": "e4b48c5a91e914cbf68455f230ed9c5d68ca35a4",
+  "previous_live_run_id": 35768705958,
+  "retry_reason": "HarnessEpisode.error JSON persistence blocker fixed and deterministically proven",
   "models_expected": 5,
   "probe_budget_per_model": 1,
   "harness_operational_generation_budget": 1,
