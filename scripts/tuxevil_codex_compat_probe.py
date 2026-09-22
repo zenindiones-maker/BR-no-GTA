@@ -480,10 +480,10 @@ def write_missing_materialization_report(
         "ANTIGRAVITY_RUNTIME_AUTH": (
             "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
         ),
-        "TUXEVIL_RESPONSES_API": "BLOCKED",
-        "ANTIGRAVITY_UPSTREAM_AUTH": "BLOCKED",
-        "TUXEVIL_LIVE_INFERENCE": "BLOCKED",
-        "TUXEVIL_TOOL_CALLING": "BLOCKED",
+        "TUXEVIL_RESPONSES_API": "NOT_ATTEMPTED",
+        "ANTIGRAVITY_UPSTREAM_AUTH": "NOT_ATTEMPTED",
+        "TUXEVIL_LIVE_INFERENCE": "NOT_ATTEMPTED",
+        "TUXEVIL_TOOL_CALLING": "NOT_ATTEMPTED",
         "CODEX_ACTION_RESPONSES_ENDPOINT": "SUPPORTED",
         "OPENAI_PLATFORM_API_KEY_REQUIRED": "NOT_EVALUATED",
         "AUTH_SECRET_LEAK": "NO",
@@ -500,9 +500,9 @@ def write_missing_materialization_report(
             "repo:app/services/tuxevil_ai_provider.py",
         ],
         "live_probe_skipped_reason": (
-            "Tuxevil 3.8.0 requires at least one configured upstream account "
-            "before starting the proxy; the repository defines no CI credential "
-            "materialization binding for the existing Antigravity account."
+            "The repository defines no CI credential materialization binding "
+            "for the existing Antigravity identity. Process readiness must be "
+            "measured independently before any upstream-auth conclusion."
         ),
     }
     raw = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
