@@ -153,9 +153,10 @@ jobs:
           print("COMPETENCE_GRAPH_UPDATED_FROM_REAL_RUN=PASS")
           print("MEMORY_RETRIEVED_BEFORE_SECOND_RUN=PASS")
           print("GTA6_MEMORY_RETRIEVED_NEXT_RUN=PASS")
-          print("SOURCE_FINGERPRINT_REUSED=PASS")
-          print("NO_MEANINGFUL_GTA6_DELTA=PASS")
-          print("DUPLICATE_RESEARCH_AVOIDED=PASS")
+          print("KNOWLEDGE_CHANGED_NEXT_EXECUTION=PASS")
+          print("CROSS_RUN_HARNESS_RETRIEVAL=PASS")
+          print("SECOND_RUN_SOURCE_FETCH_SKIPPED_BY_CADENCE=PASS")
+          print("BOUNDED_CONTEXT=PASS")
           print("FAILURE_MEMORY_RETRIEVAL=PASS")
           print("FAILURE_RECURRENCE_PREVENTION=PASS")
           print("REAL_SYSTEM_PROBLEM_OBSERVED=PASS")
@@ -221,16 +222,28 @@ jobs:
           assert scheduled["status"]=="PASS"
           assert scheduled["checks"]["SCHEDULED_ENTRYPOINT_CONTRACT"] is True
           assert "CONTINUOUS_STATE_RESTORE=RESTORED" in log
-          gta=scheduled["gta6"]
-          assert gta is not None
-          research=gta["research"]["result"]
-          assert research["status"]=="NO_MEANINGFUL_GTA6_DELTA"
-          assert int(research["source_fetch_count"]) == 0
-          assert int(research["memory_hit_count"]) > 0
-          assert research["duplicate_research_avoided"] is True
-          baseline=proof["baseline"]["research"]["result"]
-          assert baseline["source_state"]["content_fingerprint"] == research["source_state"]["content_fingerprint"]
-          assert research["known_state"]
+          # The scheduled second runner must respect cadence and avoid
+          # unnecessary research. Durable recall is proven through the
+          # Harness-governed, provider-free gta6.knowledge.retrieve probe.
+          assert scheduled["due"]["gta6"] is False
+          assert scheduled["gta6"] is None
+          probe=scheduled["knowledge_retrieval_probe"]
+          assert probe["status"]=="PASS"
+          assert probe["authority"]=="deepseek_harness"
+          assert probe["authorized_action"]=="RESEARCH"
+          assert int(probe["provider_calls"]) == 0
+          assert probe["canonical_memory_plane"]=="BR_SQLITE"
+          assert probe["bounded_context"] is True
+          assert int(probe["context_bytes"]) <= int(probe["max_context_bytes"])
+          promoted_ids={
+              int(item["knowledge"]["claim_id"])
+              for item in proof["knowledge_promotions"]
+              if item.get("status")=="PROMOTED" and item.get("knowledge")
+          }
+          assert promoted_ids
+          recalled_ids={int(item) for item in probe["claim_ids"]}
+          assert promoted_ids & recalled_ids, (promoted_ids, recalled_ids)
+          assert int(scheduled["brain_daily_run"]["sources_checked"]) == 0
           assert scheduled["failure_prevention"]["FAILURE_MEMORY_RETRIEVAL"]=="PASS"
           assert scheduled["failure_prevention"]["FAILURE_RECURRENCE_PREVENTION"]=="PASS"
           assert scheduled["CONTINUOUS_INTELLIGENCE_LOOP"]=="PASS"
