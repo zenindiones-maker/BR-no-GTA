@@ -48,6 +48,7 @@ from app.services.obsidian_memory_service import export_obsidian_memory_projecti
 from app.services.gta6_knowledge_query_service import query_gta6_knowledge
 from app.services.gta6_knowledge_retrieval_service import (
     KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+    execute_gta6_knowledge_retrieval_capability,
 )
 from app.services.gta6_source_registry_service import register_gta6_source
 
@@ -1240,6 +1241,77 @@ def _update_frontier_after_research(
     })
 
 
+def _run_harness_knowledge_probe(
+    *,
+    query: str,
+    goal_id: str,
+    target_sha: str,
+) -> dict[str, Any]:
+    route = route_harness_request(
+        HarnessRoutingRequest(
+            intent=f"cross-run GTA6 knowledge recall: {query}",
+            authorized_action="RESEARCH",
+            domain="gta6-knowledge",
+            task_class="cross-run-knowledge-recall",
+            goal_id=goal_id,
+            required_capability_id=KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            fallback_allowed=False,
+            provider_required=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject=f"capability:{KNOWLEDGE_RETRIEVE_CAPABILITY_ID}",
+        execution_id=(
+            f"knowledge-probe:{os.getenv('GITHUB_RUN_ID') or 'local'}:"
+            + sha256(query.encode("utf-8")).hexdigest()[:12]
+        ),
+        lineage={
+            "routing_id": route.routing_id,
+            "capability_id": KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            "selected_executor_binding": route.selected_executor_binding,
+            "goal_id": goal_id,
+            "target_sha": target_sha,
+            "purpose": "CROSS_RUN_DURABLE_KNOWLEDGE_PROBE",
+        },
+    )
+    try:
+        result = execute_gta6_knowledge_retrieval_capability(
+            authorization=authorization,
+            routing_decision=route,
+            payload={
+                "query": query,
+                "limit": 12,
+                "max_context_bytes": 32768,
+                "include_history": False,
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+    knowledge = dict(result.get("result") or {})
+    units = list(knowledge.get("knowledge_units") or ())
+    return {
+        "status": result.get("status"),
+        "authority": result.get("authority"),
+        "authorized_action": result.get("authorized_action"),
+        "provider_calls": result.get("provider_calls"),
+        "canonical_memory_plane": result.get("canonical_memory_plane"),
+        "bounded_context": knowledge.get("bounded_context"),
+        "context_bytes": knowledge.get("context_bytes"),
+        "max_context_bytes": knowledge.get("max_context_bytes"),
+        "claim_ids": [
+            int(item["claim_id"])
+            for item in units
+            if item.get("claim_id") is not None
+        ],
+        "knowledge_units": units,
+        "routing_id": route.routing_id,
+        "executor_binding": route.selected_executor_binding,
+    }
+
+
 def _topic_source_state(topic: dict[str, Any]) -> dict[str, Any] | None:
     key = "source-" + sha256(str(topic["source_url"]).strip().encode("utf-8")).hexdigest()[:24]
     return continuous_repository.get_source_state(key)
@@ -1359,6 +1431,11 @@ def run_scheduled(
     bootstrap = _bootstrap_brain_research_state(policy)
     topic = _select_daily_gta6_topic(policy)
     started_at = _now()
+    knowledge_probe = _run_harness_knowledge_probe(
+        query=topic["query"],
+        goal_id=VIDEO_A_GOAL_ID,
+        target_sha=target_sha,
+    )
     due = {
         "gta6": (
             bool(force_gta6_refresh)
@@ -1581,6 +1658,7 @@ def run_scheduled(
         "improvement_candidate": improvement_candidate, "failure_prevention": failure,
         "scoreboard": continuous_repository.scoreboard(), "obsidian_manifest": manifest,
         "brain_daily_run": daily_brain, "research_topic": topic,
+        "knowledge_retrieval_probe": knowledge_probe,
         "evidence_refs": list(dict.fromkeys(evidence_refs)), "change_summary": change_summary,
         "CONTINUOUS_INTELLIGENCE_LOOP": "PASS", "CONTINUOUS_IMPROVEMENT_LOOP": "PASS",
         "TERMUX_HEAVY_PROCESSING": "NO", "NEW_VOICE_SYNTHESIS": "NO",
