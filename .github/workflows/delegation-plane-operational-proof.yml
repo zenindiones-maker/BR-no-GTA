@@ -279,6 +279,7 @@ jobs:
                   "state":"AVAILABLE",
                   "scope":"CURRENT_GITHUB_RUN",
                   "github_run_id":os.environ["GITHUB_RUN_ID"],
+                  "model_id":str(proof["selected_model"]),
                   "zero_cost_eligible":True,
                   "proof":{
                       key:proof[key]
