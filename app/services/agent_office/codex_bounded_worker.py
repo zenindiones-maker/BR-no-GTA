@@ -151,6 +151,63 @@ def _commands(stdout: str) -> tuple[str, ...]:
     return tuple(commands)
 
 
+def _measurement_required(task: AgentOfficeTask, lease: DelegatedTaskLease) -> bool:
+    text = " ".join([
+        task.objective,
+        *lease.acceptance_criteria,
+        *lease.expected_outputs,
+    ]).casefold()
+    return any(marker in text for marker in (
+        "measur", "mensur", "benchmark", "latency", "latência",
+        "performance", "desempenho", "before/after", "antes/depois",
+        "baseline", "candidate metric", "improvement delta",
+        "redund", "throughput",
+    ))
+
+
+def _structured_metric(final_text: str) -> dict[str, Any] | None:
+    prefix = "BR_METRIC_JSON="
+    for line in reversed(str(final_text or "").splitlines()):
+        if not line.strip().startswith(prefix):
+            continue
+        raw = line.strip()[len(prefix):]
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Codex emitted invalid BR_METRIC_JSON") from exc
+        required = ("metric_name", "baseline", "candidate", "unit", "direction")
+        if not isinstance(value, dict) or any(key not in value for key in required):
+            raise RuntimeError("BR_METRIC_JSON is missing required fields")
+        baseline = value["baseline"]
+        candidate = value["candidate"]
+        if isinstance(baseline, bool) or not isinstance(baseline, (int, float)):
+            raise RuntimeError("BR_METRIC_JSON baseline must be numeric")
+        if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
+            raise RuntimeError("BR_METRIC_JSON candidate must be numeric")
+        direction = str(value["direction"]).strip().upper()
+        if direction not in {"LOWER_IS_BETTER", "HIGHER_IS_BETTER"}:
+            raise RuntimeError("BR_METRIC_JSON direction is invalid")
+        computed = (
+            float(baseline) - float(candidate)
+            if direction == "LOWER_IS_BETTER"
+            else float(candidate) - float(baseline)
+        )
+        return {
+            "metric_name": str(value["metric_name"]).strip(),
+            "baseline": float(baseline),
+            "candidate": float(candidate),
+            "unit": str(value["unit"]).strip(),
+            "direction": direction,
+            "improvement_delta": computed,
+            "improved": computed > 0,
+            "measurement_command": str(
+                value.get("measurement_command") or ""
+            ).strip(),
+            "evidence_kind": "MEASURED_BEFORE_AFTER",
+        }
+    return None
+
+
 def _final_text(stdout: str) -> str:
     result = ""
     for line in str(stdout or "").splitlines():
@@ -265,7 +322,14 @@ def codex_bounded_development_worker(
         f"ACCEPTANCE_CRITERIA={json.dumps(lease.acceptance_criteria)}\n"
         f"EXPECTED_OUTPUTS={json.dumps(lease.expected_outputs)}\n"
         f"OBJECTIVE={task.objective}\n"
-        "Return a concise engineering summary only after local validation."
+        "Return a concise engineering summary only after local validation. "
+        "When the objective or acceptance criteria require a measurable improvement, "
+        "measure the same metric before and after the candidate using local allowed tools. "
+        "Your FINAL message must end with exactly one line BR_METRIC_JSON=<json> containing "
+        "metric_name, numeric baseline, numeric candidate, unit, direction "
+        "(LOWER_IS_BETTER or HIGHER_IS_BETTER), and measurement_command. "
+        "Do not invent measurements; if measurement cannot be produced, state the blocker "
+        "instead of fabricating a metric."
     )
     command = [
         "codex",
@@ -298,6 +362,18 @@ def codex_bounded_development_worker(
     for observed in observed_commands:
         _validate_command(observed, lease.allowed_tools)
 
+    final_text = _final_text(completed.stdout)
+    metric = _structured_metric(final_text)
+    measurement_required = _measurement_required(task, lease)
+    if measurement_required and metric is None:
+        raise RuntimeError(
+            "measurable bounded-development task produced no structured before/after metric"
+        )
+    if measurement_required and metric is not None and not metric["improved"]:
+        raise RuntimeError(
+            "measurable bounded-development candidate did not improve the declared metric"
+        )
+
     changed = _changed_paths(workspace, lease.base_sha)
     if not changed:
         raise RuntimeError("Codex bounded-development produced no candidate patch")
@@ -324,7 +400,9 @@ def codex_bounded_development_worker(
     ]
     return {
         "status": "SUCCEEDED",
-        "summary": _final_text(completed.stdout) or "Codex bounded candidate created",
+        "summary": final_text or "Codex bounded candidate created",
+        "performance_evidence": metric,
+        "measurement_required": measurement_required,
         "commands": list(observed_commands),
         "artifacts": [f"candidate-commit:{candidate_sha}"],
         "tests": tests,
@@ -342,7 +420,7 @@ def codex_bounded_development_worker(
             "COMMANDS_EXECUTED": list(observed_commands),
             "TESTS_RUN": [item["name"] for item in tests],
             "TEST_RESULTS": tests,
-            "BENCHMARK_RESULTS": [],
+            "BENCHMARK_RESULTS": [metric] if metric is not None else [],
             "ARTIFACT_REFS": [f"candidate-commit:{candidate_sha}"],
             "EVIDENCE_REFS": [f"delegation:{lease.delegation_id}"],
             "WARNINGS": [],
