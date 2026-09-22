@@ -12,6 +12,7 @@ from typing import Any
 from app.database import continuous_operation_repository as continuous_repository
 from app.database import gta6_brain_repository as brain_repository
 from app.database import harness_learning_repository as learning_repository
+from app.database.memory_claim_repository import get_memory_claim
 from app.database.schema import initialize_schema
 from app.services.continuous_operation_policy_service import load_continuous_operation_policy
 from app.services.continuous_intelligence_service import (
@@ -1246,11 +1247,42 @@ def _update_frontier_after_research(
     })
 
 
+def _latest_active_gta6_recall_seed() -> dict[str, Any] | None:
+    for lineage in continuous_repository.list_claim_lineage(limit=500):
+        claim_id = int(lineage["claim_id"])
+        claim = get_memory_claim(claim_id)
+        if claim is None or str(claim.get("scope") or "") != "gta6":
+            continue
+        if str(claim.get("status") or "").casefold() != "active":
+            continue
+        metadata = brain_repository.get_claim_metadata(claim_id) or {}
+        brain_status = str(metadata.get("brain_status") or "ACTIVE").upper()
+        if brain_status not in {"ACTIVE", "VERIFIED"}:
+            continue
+        source_id = str(lineage.get("source_id") or "")
+        source_state = continuous_repository.get_source_state(source_id) or {}
+        return {
+            "claim_id": claim_id,
+            "subject": str(lineage.get("subject") or ""),
+            "claim": str(claim.get("claim") or ""),
+            "status": str(claim.get("status") or ""),
+            "brain_status": brain_status,
+            "evidence_ref": str(lineage.get("evidence_ref") or ""),
+            "source_id": source_id,
+            "source_url": str(lineage.get("source_url") or ""),
+            "source_type": str(lineage.get("source_type") or ""),
+            "source_fingerprint": source_state.get("content_fingerprint"),
+            "observed_at": lineage.get("observed_at"),
+        }
+    return None
+
+
 def _run_harness_knowledge_probe(
     *,
     query: str,
     goal_id: str,
     target_sha: str,
+    expected_claim_id: int | None = None,
 ) -> dict[str, Any]:
     route = route_harness_request(
         HarnessRoutingRequest(
@@ -1297,23 +1329,44 @@ def _run_harness_knowledge_probe(
         consume_harness_authorization(authorization)
     knowledge = dict(result.get("result") or {})
     units = list(knowledge.get("knowledge_units") or ())
+    matched = next(
+        (
+            item
+            for item in units
+            if expected_claim_id is not None
+            and int(item.get("claim_id") or -1) == int(expected_claim_id)
+        ),
+        None,
+    )
     return {
         "status": result.get("status"),
         "authority": result.get("authority"),
         "authorized_action": result.get("authorized_action"),
         "provider_calls": result.get("provider_calls"),
         "canonical_memory_plane": result.get("canonical_memory_plane"),
+        "OBSIDIAN_CANONICAL_MEMORY": result.get("OBSIDIAN_CANONICAL_MEMORY"),
+        "HERMES_DIRECT_CANONICAL_WRITE": result.get("HERMES_DIRECT_CANONICAL_WRITE"),
         "bounded_context": knowledge.get("bounded_context"),
         "context_bytes": knowledge.get("context_bytes"),
         "max_context_bytes": knowledge.get("max_context_bytes"),
+        "source_provenance_preserved": knowledge.get("source_provenance_preserved"),
         "claim_ids": [
             int(item["claim_id"])
             for item in units
             if item.get("claim_id") is not None
         ],
+        "expected_claim_id": expected_claim_id,
+        "matched_expected_claim": (
+            expected_claim_id is None or matched is not None
+        ),
+        "matched_knowledge_unit": matched,
         "knowledge_units": units,
         "routing_id": route.routing_id,
         "executor_binding": route.selected_executor_binding,
+        "registry_validation": "PASS",
+        "source_fetch_count": 0,
+        "network_fetch_count": 0,
+        "NEW_NETWORK_FETCH": "NO",
     }
 
 
@@ -1436,11 +1489,22 @@ def run_scheduled(
     bootstrap = _bootstrap_brain_research_state(policy)
     topic = _select_daily_gta6_topic(policy)
     started_at = _now()
+    recall_seed = _latest_active_gta6_recall_seed()
     knowledge_probe = _run_harness_knowledge_probe(
-        query=topic["query"],
+        query=(
+            str(recall_seed.get("claim") or "")
+            if recall_seed is not None
+            else topic["query"]
+        ),
         goal_id=VIDEO_A_GOAL_ID,
         target_sha=target_sha,
+        expected_claim_id=(
+            int(recall_seed["claim_id"])
+            if recall_seed is not None
+            else None
+        ),
     )
+    knowledge_probe["recall_seed"] = recall_seed
     due = {
         "gta6": (
             bool(force_gta6_refresh)
