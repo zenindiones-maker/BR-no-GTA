@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.services import harness_adaptive_planning_service as adaptive
+from app.services import capability_health_service as capability_health_module
 from app.services.capability_health_service import (
     CapabilityHealth,
     BLOCKED,
@@ -213,6 +214,75 @@ def test_selector_excludes_blocked_health_and_records_health_evidence(monkeypatc
     assert any(primary.capability_id in item for item in avoided)
     assert evidence["health_evidence"]["state"] == HEALTHY
     assert evidence["top_candidates"][0]["health_state"] == HEALTHY
+
+
+def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
+    monkeypatch.setenv(
+        "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
+        """{
+          "agent-office.codex.bounded-development": {
+            "state": "BLOCKED",
+            "reason": "OPENAI_FEDERATION_RULE_ID and OPENAI_FEDERATION_AUDIENCE missing",
+            "retry_allowed": false,
+            "confidence": 1.0,
+            "evidence_refs": ["github:run:35684698046"]
+          }
+        }""",
+    )
+    health = capability_health_module.capability_health(
+        "agent-office.codex.bounded-development"
+    )
+    assert health.state == BLOCKED
+    assert health.retry_allowed is False
+    assert health.confidence == 1.0
+    assert health.source == "RUNTIME_PREFLIGHT"
+    assert health.evidence_refs == ("github:run:35684698046",)
+    assert "OPENAI_FEDERATION_RULE_ID" in health.reason
+
+
+def test_selector_reports_no_healthy_write_executor_when_only_write_candidate_is_blocked(
+    monkeypatch,
+):
+    bounded = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert bounded is not None
+
+    class WriteOnlyRegistry:
+        def discover(self, **_kwargs):
+            return [{"capability_id": bounded.capability_id}]
+
+        def get(self, capability_id):
+            return bounded if capability_id == bounded.capability_id else None
+
+    monkeypatch.setenv(
+        "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
+        """{
+          "agent-office.codex.bounded-development": {
+            "state": "BLOCKED",
+            "reason": "current runner has no configured workload identity",
+            "retry_allowed": false,
+            "confidence": 1.0,
+            "evidence_refs": ["github:run:35684698046"]
+          }
+        }""",
+    )
+    monkeypatch.setattr(adaptive, "GLOBAL_CAPABILITY_REGISTRY", WriteOnlyRegistry())
+
+    with pytest.raises(RuntimeError, match="no healthy Registry capability"):
+        adaptive.select_capability_for_requirement(
+            {
+                "task_id": "bounded-change",
+                "task_class": "bounded-development",
+                "action": "DEVELOPMENT",
+                "query": "bounded code mutation candidate implementation",
+                "objective": "create a bounded code candidate",
+                "candidate_capability_ids": [bounded.capability_id],
+                "risk_side_effect_class": "BOUNDED_MUTATION",
+            },
+            context={"competence_evidence": [], "relevant_failure_memories": []},
+            used=set(),
+        )
 
 
 def test_registry_execution_contract_is_single_and_exposes_execution_metadata():
