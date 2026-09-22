@@ -677,6 +677,86 @@ def test_semantic_schema_replan_rejects_invalid_task_id_without_normalizing(
     assert "task id must be lowercase" in prompts[1]
 
 
+def test_semantic_registry_mismatch_replans_to_harness_selected_capability(
+    monkeypatch,
+):
+    invalid = {
+        "interpreted_goal": "inspect repository safely",
+        "assumptions": [],
+        "required_outcomes": ["bounded observation"],
+        "tasks": [
+            {
+                "task_id": "observe",
+                "objective": "Inspect current repository evidence",
+                "task_class": "readonly-analysis",
+                "required_capability_description": "",
+                "candidate_capability_ids": [
+                    "agent-office.deterministic.readonly-analysis"
+                ],
+                "dependencies": [],
+                "expected_output": "analysis evidence",
+                "acceptance_criteria": ["stay bounded"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "RESEARCH",
+            }
+        ],
+        "rationale": "observe before mutation",
+        "context_usage_notes": [],
+        "uncertainty": 0.2,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+    valid = {
+        **invalid,
+        "tasks": [
+            {
+                **invalid["tasks"][0],
+                "required_capability_description": (
+                    "bounded read-only repository analysis"
+                ),
+                "candidate_capability_ids": [],
+                "action": "DEVELOPMENT",
+            }
+        ],
+    }
+
+    prompts = []
+    def inference(prompt, _context):
+        prompts.append(prompt)
+        return invalid if len(prompts) == 1 else valid
+
+    def registry_errors(proposal):
+        task = proposal.tasks[0]
+        if task.candidate_capability_ids:
+            return (
+                "observe: action RESEARCH not allowed by "
+                "agent-office.deterministic.readonly-analysis",
+            )
+        return ()
+
+    monkeypatch.setattr(adaptive, "proposal_registry_errors", registry_errors)
+    result, evidence = adaptive.propose_validated_semantic_plan(
+        {
+            "human_goal": "Inspect repository and plan safely",
+            "resource_bounds": {"max_tasks_per_mission": 4},
+        },
+        inference=inference,
+        max_replans=1,
+    )
+
+    assert result.proposal.tasks[0].candidate_capability_ids == ()
+    assert result.proposal.tasks[0].action == "DEVELOPMENT"
+    assert evidence["proposal_attempts"] == 2
+    assert evidence["replan_count"] == 1
+    assert "Prefer caps=[]" in prompts[0]
+    assert "action RESEARCH not allowed" in prompts[1]
+    assert "candidate_capability_ids=[]" in prompts[1]
+    assert "DeepSeek Harness performs final Registry selection" in prompts[1]
+
+
 def test_runtime_health_preflight_blocks_unavailable_codex(monkeypatch):
     monkeypatch.setenv(
         "BR_RUNTIME_CAPABILITY_HEALTH_JSON",
