@@ -370,4 +370,3 @@ def test_current_plus_ci_auth_prioritizes_existing_tuxevil_route_without_wif_reg
     assert "id-token: write" in wif
     assert "scripts/openai_codex_wif_admin_bootstrap.py" in wif
     assert "codex-cloud-auth-continuity.yml" in wif
-
