@@ -16,7 +16,7 @@
   ],
   "telegram_egress": false,
   "credential_values_in_request": false,
-  "reason": "rerun canonical operational proof after strict semantic wire-type replan fix",
+  "reason": "rerun canonical operational proof after strict task-id semantic replan fix",
   "acceptance_requires_write_candidate": true,
   "item19_proof_run_id": 35690756218,
   "focused_gate_fixes": {
@@ -24,9 +24,9 @@
     "explicit_no_performance_negation": "PASS_EXPECTED"
   },
   "focused_gate_precondition": "must pass adaptive schema-replan regression before natural goal",
-  "previous_failed_run_id": 35693599122,
+  "previous_failed_run_id": 35693984865,
   "focused_tests_last_observed": "82 passed",
   "runtime_provider_overlay": "CURRENT_GITHUB_RUN_ONLY",
-  "focused_tests_run_id": 35693902296,
+  "focused_tests_run_id": 35694206386,
   "focused_tests_status": "PASS"
 }
