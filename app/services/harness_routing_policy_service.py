@@ -309,10 +309,11 @@ def _provider_records(
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
         if request.zero_cost_operation:
-            runtime_binding = _runtime_provider_binding(provider_id)
+            model_binding = _authorized_provider_model_binding(record)
             runtime_zero_cost = bool(
-                runtime_binding is not None
-                and runtime_binding.get("zero_cost_eligible") is True
+                model_binding is not None
+                and model_binding.get("source")
+                == "CURRENT_RUN_RUNTIME_PROOF"
             )
             if not runtime_zero_cost:
                 assessment = assess_zero_cost(
