@@ -16,7 +16,7 @@
   ],
   "telegram_egress": false,
   "credential_values_in_request": false,
-  "reason": "rerun canonical proof after failed-capability boundary and mandatory candidate-patch fix",
+  "reason": "rerun canonical proof after bounded shell-wrapper allowlist validation fix",
   "acceptance_requires_write_candidate": true,
   "item19_proof_run_id": 35690756218,
   "focused_gate_fixes": {
@@ -24,7 +24,7 @@
     "explicit_no_performance_negation": "PASS_EXPECTED"
   },
   "focused_gate_precondition": "must pass adaptive schema-replan regression before natural goal",
-  "previous_failed_run_id": 35722371151,
+  "previous_failed_run_id": 35723446813,
   "focused_tests_last_observed": "82 passed",
   "runtime_provider_overlay": "CURRENT_GITHUB_RUN_ONLY",
   "focused_tests_run_id": 35720512181,
@@ -32,6 +32,7 @@
   "ci_run_id": 35720512309,
   "hermes_runtime_dependency_fix_head": "bd853477797d2691a8c3ffa0b78f615a865b4c4b",
   "hermes_subordinate_lineage_fix_head": "f419a1379a83eba2f26af1384ac0eecb1c0354af",
-  "focused_gate_head": "a6bca17081effc5fb78866a385db0872ab4c497d",
-  "focused_gate_status": "PASS"
+  "focused_gate_head": "c9d211329f5e6c4c4d0417845552e932a62d1082",
+  "focused_gate_status": "PASS",
+  "agent_office_validation_run_id": 35724099545
 }
