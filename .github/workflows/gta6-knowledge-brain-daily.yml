@@ -96,11 +96,16 @@ jobs:
           TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
         run: |
           set -euo pipefail
+          force_args=()
+          if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then
+            force_args+=(--force-refresh)
+          fi
           python scripts/gta6_knowledge_brain_daily.py \
             --artifact-dir artifacts/gta6-knowledge-brain \
             --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
             --target-sha "${{ steps.sha.outputs.sha }}" \
-            --trigger-kind "$GITHUB_EVENT_NAME"
+            --trigger-kind "$GITHUB_EVENT_NAME" \
+            "${force_args[@]}"
 
       - name: Benchmark real Knowledge Brain retrieval
         env:
@@ -139,6 +144,12 @@ jobs:
           assert d["AGENT_DIRECT_CANONICAL_WRITE"]=="NO"
           assert d["TERMUX_HEAVY_PROCESSING"]=="NO"
           assert d["telegram_group_digest"]["status"]=="SENT"
+          if d["cycle"]["trigger_kind"] != "schedule":
+              assert d["FORCED_SOURCE_CHECK"]=="YES"
+              assert d["cycle"]["force_gta6_refresh"] is True
+          assert d["cycle"]["force_daily_projection"] is True
+          assert d["cycle"]["obsidian_manifest"] is not None
+          assert int(d["cycle"]["obsidian_manifest"]["file_count"]) > 0
           print("HARNESS_AUTHORITY=PASS")
           print("HERMES_SUBORDINATE=PASS")
           print("TELEGRAM_GROUP_ONLY_HUMAN_SURFACE=PASS")
