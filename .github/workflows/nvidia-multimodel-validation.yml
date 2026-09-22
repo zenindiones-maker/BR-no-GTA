@@ -14,6 +14,7 @@ on:
       - "app/services/zero_cost_policy_service.py"
       - "tests/test_nvidia_multi_model_provider.py"
       - "tests/test_harness_routing_policy_service.py"
+      - "tests/test_harness_ai_provider_service.py"
       - ".github/workflows/nvidia-multimodel-validation.yml"
   workflow_dispatch:
 
