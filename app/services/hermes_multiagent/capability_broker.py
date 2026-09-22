@@ -24,7 +24,12 @@ from app.services.telegram_group_human_surface_service import (
     send_harness_message_to_human_group,
 )
 
-from .contracts import HERMES_RUNTIME_CAPABILITY_ID, HermesMissionExecutionSpec
+from app.services.harness_collaboration_service import RoutedCollaborationTask
+from .contracts import (
+    HERMES_RUNTIME_CAPABILITY_ID,
+    HermesMissionExecutionSpec,
+    TypedHandoff,
+)
 from .registry_roster import project_plan_roster
 from .profile_factory import HermesProfileFactory
 
@@ -91,14 +96,22 @@ class HermesHarnessCapabilityBroker:
         self.roster = project_plan_roster(spec.collaboration_plan, registry=registry)
         self._roster_by_id = {entry.capability_id: entry for entry in self.roster}
         self._task_results: dict[str, list[dict[str, Any]]] = {}
+        self._child_tasks: dict[str, RoutedCollaborationTask] = {}
+        self._child_parent: dict[str, str] = {}
+        self._child_depth: dict[str, int] = {}
         self._handoffs: list[dict[str, Any]] = []
         self._human_requests: list[dict[str, Any]] = []
         self._audit: list[dict[str, Any]] = []
 
+    def _task(self, task_id: str):
+        if task_id in self._child_tasks:
+            return self._child_tasks[task_id]
+        return self._task(task_id)
+
     def list_allowed_capabilities(self, *, mission_id: str, task_id: str) -> tuple[dict[str, Any], ...]:
         if str(mission_id) != self.spec.mission_id:
             raise PermissionError("Hermes mission id mismatch")
-        task = self.spec.task(task_id)
+        task = self._task(task_id)
         entry = self._roster_by_id[task.capability_id]
         return (entry.to_dict(),)
 
@@ -208,7 +221,7 @@ class HermesHarnessCapabilityBroker:
         capability_id: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        task = self.spec.task(task_id)
+        task = self._task(task_id)
         if capability_id != task.capability_id:
             raise PermissionError("Hermes task may execute only its CollaborationPlan capability")
         if any(str(key).lower() in _FORBIDDEN_PAYLOAD_FIELDS for key in payload):
@@ -300,7 +313,7 @@ class HermesHarnessCapabilityBroker:
         }
 
     def parent_context(self, *, task_id: str) -> dict[str, Any]:
-        task = self.spec.task(task_id)
+        task = self._task(task_id)
         parents: list[dict[str, Any]] = []
         max_bytes = int(self.spec.budgets.get("context_bytes", 65536))
         used = 0
@@ -396,43 +409,233 @@ class HermesHarnessCapabilityBroker:
         evidence_refs: list[str] | tuple[str, ...],
         summary: str,
     ) -> dict[str, Any]:
-        source = self.spec.task(from_task_id)
-        target = self.spec.task(to_task_id)
-        if from_task_id not in target.dependencies:
-            raise PermissionError("Hermes handoff must follow CollaborationPlan dependency")
-        refs = tuple(dict.fromkeys(str(ref).strip() for ref in evidence_refs if str(ref).strip()))
-        known_refs = {
-            row["evidence_ref"]
-            for row in self._task_results.get(from_task_id, ())
-        }
+        source = self._task(from_task_id)
+        target = self._task(to_task_id)
+        target_parents = set(target.dependencies)
+        dynamic_parent = self._child_parent.get(to_task_id)
+        if from_task_id not in target_parents and dynamic_parent != from_task_id:
+            raise PermissionError(
+                "Hermes handoff must follow authorized dependency lineage"
+            )
+        refs = tuple(dict.fromkeys(
+            str(ref).strip()
+            for ref in evidence_refs
+            if str(ref).strip()
+        ))
+        rows = self._task_results.get(from_task_id, ())
+        known_refs = {row["evidence_ref"] for row in rows}
         if not refs or not set(refs).issubset(known_refs):
-            raise PermissionError("Hermes handoff may reference only observed source-task evidence")
+            raise PermissionError(
+                "Hermes handoff may reference only observed source-task evidence"
+            )
+        latest = rows[-1]
+        source_record = self.registry.get(source.capability_id)
+        if source_record is None:
+            raise PermissionError("Handoff producer capability disappeared from Registry")
+        typed = TypedHandoff(
+            from_task_id=from_task_id,
+            to_task_id=to_task_id,
+            evidence_refs=refs,
+            result_ref=str(latest["evidence_ref"]),
+            output_contract=str(source_record.output_contract or ""),
+            summary=str(summary).strip()[:1600],
+            acceptance_state="ACCEPTED_FOR_DEPENDENCY",
+            artifact_lineage={
+                "evidence_ref": latest["evidence_ref"],
+                "sha256": latest["sha256"],
+                "authorization_id": latest["authorization_id"],
+                "routing_id": latest["routing_id"],
+            },
+            producer_capability_id=source.capability_id,
+            producer_agent_id=source.selected_agent_id,
+            producer_skill_id=source.selected_skill_id,
+            producer_version=str(source_record.version or "1"),
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
         body = (
-            f"HANDOFF_FROM={from_task_id} HANDOFF_TO={to_task_id} "
-            f"CAPABILITY={source.capability_id} EVIDENCE_REFS={json.dumps(refs)} "
-            f"SUMMARY={str(summary).strip()[:1600]}"
+            f"TYPED_HANDOFF={json.dumps(typed.to_dict(), ensure_ascii=False, default=str)}"
         )
         comment_id = self.board.comment(
             self.task_mapping[to_task_id],
-            author=f"hermes:{source.selected_agent_id or source.selected_skill_id or from_task_id}",
+            author=(
+                "hermes:"
+                + str(
+                    source.selected_agent_id
+                    or source.selected_skill_id
+                    or from_task_id
+                )
+            ),
             body=body,
         )
         item = {
-            "from_task_id": from_task_id,
-            "to_task_id": to_task_id,
-            "from_capability_id": source.capability_id,
-            "to_capability_id": target.capability_id,
-            "from_agent_id": source.selected_agent_id,
-            "to_agent_id": target.selected_agent_id,
-            "evidence_refs": list(refs),
-            "summary": str(summary).strip(),
+            **typed.to_dict(),
             "comment_id": comment_id,
         }
         self._handoffs.append(item)
         return item
 
+    def propose_child_task(
+        self,
+        *,
+        parent_task_id: str,
+        child: dict[str, Any],
+        depth: int | None = None,
+    ) -> dict[str, Any]:
+        parent = self._task(parent_task_id)
+        parent_depth = self._child_depth.get(parent_task_id, 0)
+        proposed_depth = int(depth if depth is not None else parent_depth + 1)
+        validated = self.spec.validate_child_task(
+            parent_task_id=(
+                self._child_parent.get(parent_task_id)
+                if parent_task_id in self._child_tasks
+                else parent_task_id
+            ),
+            child=child,
+            depth=proposed_depth,
+            existing_child_count=len(self._child_tasks),
+        )
+        if validated.task_id in self.task_mapping or validated.task_id in self._child_tasks:
+            existing = self._child_tasks.get(validated.task_id)
+            if existing is not None and existing.idempotency_key == validated.idempotency_key:
+                return {
+                    "status": "REUSED",
+                    "task": existing.to_dict(),
+                    "board_task_id": self.task_mapping[validated.task_id],
+                    "DUPLICATE_AGENT_EXECUTION_AVOIDED": "PASS",
+                }
+            raise PermissionError("Hermes child task id collides with existing task")
+
+        record = self.registry.get(validated.capability_id)
+        if record is None or not record.execution_enabled:
+            raise PermissionError("Hermes child capability is not executable")
+        decision = route_harness_request(
+            HarnessRoutingRequest(
+                intent=(
+                    f"Hermes bounded child of {parent_task_id}: "
+                    f"{validated.objective}"
+                ),
+                authorized_action=validated.action,
+                domain=record.domain,
+                task_class=validated.task_class,
+                goal_id=self.spec.goal_id,
+                required_capability_id=validated.capability_id,
+                fallback_allowed=False,
+                provider_required=False,
+                learning_required=True,
+            )
+        )
+        if decision.selected_capability_id != validated.capability_id:
+            raise PermissionError(
+                "Child proposal requires Harness replan before capability substitution"
+            )
+        if decision.selected_executor_binding != record.executor_binding:
+            raise PermissionError("Child routing escaped Registry executor binding")
+        selected = dict(
+            decision.policy_metadata.get("selected_implementation") or {}
+        )
+        raw_key = json.dumps(
+            {
+                "mission_id": self.spec.mission_id,
+                "parent_task_id": parent_task_id,
+                "task_id": validated.task_id,
+                "capability_id": validated.capability_id,
+                "version": str(record.version or "1"),
+                "objective": validated.objective,
+                "input_refs": list(validated.input_refs),
+                "read_scope": list(validated.read_scope),
+                "write_scope": list(validated.write_scope),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        idempotency_key = (
+            validated.idempotency_key
+            or "child:" + sha256(raw_key.encode("utf-8")).hexdigest()
+        )
+        routed = RoutedCollaborationTask(
+            task_id=validated.task_id,
+            capability_id=validated.capability_id,
+            action=validated.action,
+            objective=validated.objective,
+            dependencies=(parent_task_id,),
+            input_refs=validated.input_refs,
+            expected_output=validated.expected_output,
+            routing_id=decision.routing_id,
+            candidate_capability_ids=decision.candidate_capability_ids,
+            selected_executor_binding=str(record.executor_binding),
+            selected_agent_id=selected.get("agent_id"),
+            selected_skill_id=selected.get("skill_id"),
+            evidence_expectations=decision.evidence_expectations,
+            task_class=validated.task_class,
+            required_capability_description=validated.required_capability_description,
+            acceptance_criteria=validated.acceptance_criteria,
+            read_scope=validated.read_scope,
+            write_scope=validated.write_scope,
+            allowed_tools=validated.allowed_tools,
+            allowed_side_effects=validated.allowed_side_effects,
+            forbidden_side_effects=validated.forbidden_side_effects,
+            time_budget_seconds=validated.time_budget_seconds,
+            cost_budget=validated.cost_budget,
+            context_budget_bytes=validated.context_budget_bytes,
+            tool_budget=validated.tool_budget,
+            retry_budget=validated.retry_budget,
+            evidence_contract=validated.evidence_contract,
+            review_policy=validated.review_policy,
+            risk_side_effect_class=validated.risk_side_effect_class,
+            idempotency_key=idempotency_key,
+            expires_at=validated.expires_at or self.spec.expires_at,
+            human_gate_policy=validated.human_gate_policy,
+            mission_id=self.spec.mission_id,
+            goal_id=self.spec.goal_id,
+            capability_version=str(record.version or "1"),
+            supports_parallelism=bool(record.supports_parallelism),
+            supports_retry=bool(record.supports_retry),
+            supports_resume=bool(record.supports_resume),
+            supports_review=bool(record.supports_review),
+            selection_evidence={
+                "routing_id": decision.routing_id,
+                "selected_implementation": selected,
+                "bounded_child_of": parent_task_id,
+            },
+        )
+        assignee = str(
+            routed.selected_agent_id
+            or routed.selected_skill_id
+            or routed.capability_id
+        )
+        board_task_id = self.board.create_task(
+            title=routed.objective[:160],
+            body=json.dumps(routed.to_dict(), ensure_ascii=False, default=str),
+            assignee=assignee,
+            parents=(self.task_mapping[parent_task_id],),
+            idempotency_key=idempotency_key,
+        )
+        self._child_tasks[routed.task_id] = routed
+        self._child_parent[routed.task_id] = parent_task_id
+        self._child_depth[routed.task_id] = proposed_depth
+        self.task_mapping[routed.task_id] = board_task_id
+        self._audit.append({
+            "event": "CHILD_TASK_PROPOSED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "parent_task_id": parent_task_id,
+            "task_id": routed.task_id,
+            "capability_id": routed.capability_id,
+            "routing_id": routed.routing_id,
+            "idempotency_key": routed.idempotency_key,
+            "depth": proposed_depth,
+            "HERMES_AUTHORITY_EXPANSION": "NO",
+        })
+        return {
+            "status": "AUTHORIZED",
+            "task": routed.to_dict(),
+            "board_task_id": board_task_id,
+            "HERMES_SUBDELEGATION_WITHIN_ENVELOPE": "PASS",
+            "HERMES_AUTHORITY_EXPANSION": "NO",
+        }
+
     def request_human_input(self, *, task_id: str, question: str, run_id: int) -> dict[str, Any]:
-        self.spec.task(task_id)
+        self._task(task_id)
         normalized = str(question or "").strip()
         if not normalized:
             raise ValueError("human question is required")
@@ -485,7 +688,7 @@ class HermesHarnessCapabilityBroker:
         return item
 
     def resume_after_human_input(self, *, task_id: str, answer: str) -> dict[str, Any]:
-        self.spec.task(task_id)
+        self._task(task_id)
         normalized = str(answer or "").strip()
         if not normalized:
             raise ValueError("human answer is required")
@@ -506,7 +709,7 @@ class HermesHarnessCapabilityBroker:
         }
 
     def observe_task_state(self, *, task_id: str) -> dict[str, Any]:
-        self.spec.task(task_id)
+        self._task(task_id)
         task = self.board.get_task(self.task_mapping[task_id])
         return {
             "mission_id": self.spec.mission_id,
@@ -515,7 +718,7 @@ class HermesHarnessCapabilityBroker:
             "status": task["status"],
             "assignee": task.get("assignee"),
             "current_run_id": task.get("current_run_id"),
-            "parents": list(self.spec.task(task_id).dependencies),
+            "parents": list(self._task(task_id).dependencies),
         }
 
     def audit_snapshot(self) -> tuple[dict[str, Any], ...]:
