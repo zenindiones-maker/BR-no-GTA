@@ -8,6 +8,32 @@ from typing import Any, Iterable, Sequence
 from app.services.agent_office.integration_gate import run_integration_gate
 
 
+def mission_requires_measured_improvement(human_goal: str) -> bool:
+    text = str(human_goal or "").casefold()
+    return any(marker in text for marker in (
+        "mensur", "measur", "antes/depois", "before/after",
+        "compare antes", "performance", "desempenho", "latency",
+        "latência", "redund", "benchmark",
+    ))
+
+
+def extract_performance_evidence(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        direct = value.get("performance_evidence")
+        if isinstance(direct, dict) and direct.get("evidence_kind") == "MEASURED_BEFORE_AFTER":
+            return dict(direct)
+        for nested in value.values():
+            found = extract_performance_evidence(nested)
+            if found is not None:
+                return found
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            found = extract_performance_evidence(nested)
+            if found is not None:
+                return found
+    return None
+
+
 def task_is_mutating(task) -> bool:
     return bool(task.write_scope) or str(
         task.risk_side_effect_class or ""
@@ -104,6 +130,8 @@ def evaluate_engineering_candidate(
     candidate_task_id: str,
     candidate_sha: str,
     reviewed_candidate_ids: Iterable[str],
+    performance_evidence: dict[str, Any] | None = None,
+    performance_required: bool = False,
     contract_test_commands: Iterable[Sequence[str]] = (
         (
             "python", "-m", "pytest", "-q",
@@ -173,6 +201,16 @@ def evaluate_engineering_candidate(
         "candidate_has_measurable_acceptance_criteria",
         bool(task.acceptance_criteria),
     )
+    if performance_required:
+        measured = dict(performance_evidence or {})
+        perf["structured_before_after_measurement"] = bool(measured)
+        perf["candidate_metric_improved"] = (
+            bool(measured.get("improved"))
+            and float(measured.get("improvement_delta") or 0.0) > 0.0
+        )
+        perf["measurement_command_recorded"] = bool(
+            str(measured.get("measurement_command") or "").strip()
+        )
     gate = run_integration_gate(
         repository_root=repository_root,
         base_sha=base_sha,
@@ -199,6 +237,8 @@ def evaluate_engineering_candidate(
         "reviewer_identity": reviewer_identity,
         "builder_self_review": not independent,
         "review_status": "APPROVED" if independent else "NOT_REQUIRED",
+        "performance_required": bool(performance_required),
+        "performance_evidence": dict(performance_evidence or {}),
         "gate": gate,
     }
 
