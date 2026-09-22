@@ -207,6 +207,140 @@ def _grounded_profile_gaps(parent_context: dict[str, Any]) -> list[str]:
     return gaps[:8]
 
 
+_PARENT_GUIDANCE_MAX_ITEMS = 10
+_PARENT_GUIDANCE_MAX_ITEM_CHARS = 600
+_PARENT_GUIDANCE_MAX_TOTAL_CHARS = 2200
+_PARENT_GUIDANCE_CONTAINER_KEYS = (
+    "result",
+    "engine_result",
+    "per_agent_results",
+    "tasks",
+    "candidate",
+    "evidence",
+)
+_PARENT_PERFORMANCE_KEYS = (
+    "metric_name",
+    "baseline",
+    "candidate",
+    "unit",
+    "direction",
+    "improvement_delta",
+    "measurement_command",
+)
+
+
+def _bounded_parent_guidance(parent_context: dict[str, Any]) -> list[str]:
+    notes: list[str] = []
+    seen: set[str] = set()
+    used_chars = 0
+
+    def add(prefix: str, value: Any) -> None:
+        nonlocal used_chars
+        text = str(value or "").strip()
+        if not text:
+            return
+        text = re.sub(r"\s+", " ", text)[:_PARENT_GUIDANCE_MAX_ITEM_CHARS]
+        rendered = f"{prefix}: {text}" if prefix else text
+        if rendered in seen:
+            return
+        remaining = _PARENT_GUIDANCE_MAX_TOTAL_CHARS - used_chars
+        if remaining <= 0 or len(notes) >= _PARENT_GUIDANCE_MAX_ITEMS:
+            return
+        rendered = rendered[:remaining]
+        if not rendered:
+            return
+        notes.append(rendered)
+        seen.add(rendered)
+        used_chars += len(rendered)
+
+    def visit(value: Any, *, depth: int = 0) -> None:
+        if depth > 5 or len(notes) >= _PARENT_GUIDANCE_MAX_ITEMS:
+            return
+        if isinstance(value, dict):
+            for key, prefix in (
+                ("summary", "Parent summary"),
+                ("final_summary", "Parent final summary"),
+            ):
+                if key in value:
+                    add(prefix, value.get(key))
+            for key, prefix in (
+                ("observed_gaps", "Observed gap"),
+                ("proposed_actions", "Proposed bounded action"),
+            ):
+                rows = value.get(key)
+                if isinstance(rows, (list, tuple)):
+                    for row in rows[:6]:
+                        if isinstance(row, str):
+                            add(prefix, row)
+            performance = value.get("performance_evidence")
+            if isinstance(performance, dict):
+                safe = {
+                    key: performance.get(key)
+                    for key in _PARENT_PERFORMANCE_KEYS
+                    if performance.get(key) not in (None, "")
+                }
+                if safe:
+                    add(
+                        "Measured parent evidence",
+                        json.dumps(
+                            safe,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    )
+            for key in _PARENT_GUIDANCE_CONTAINER_KEYS:
+                child = value.get(key)
+                if isinstance(child, (dict, list, tuple)):
+                    visit(child, depth=depth + 1)
+        elif isinstance(value, (list, tuple)):
+            for item in value[:8]:
+                if isinstance(item, (dict, list, tuple)):
+                    visit(item, depth=depth + 1)
+
+    for handoff in list(parent_context.get("parent_handoffs") or ())[:6]:
+        if not isinstance(handoff, dict):
+            continue
+        result = handoff.get("result")
+        if isinstance(result, (dict, list, tuple)):
+            visit(result)
+
+    for gap in _grounded_profile_gaps(parent_context):
+        add("Grounded repository evidence", gap)
+
+    return notes
+
+
+def _objective_with_parent_guidance(
+    *,
+    task,
+    objective: str,
+    parent_context: dict[str, Any],
+) -> str:
+    if not _is_mutating(task):
+        return objective
+    guidance = _bounded_parent_guidance(parent_context)
+    if not guidance:
+        return objective
+
+    header = "\n\nAUTHORIZED_PARENT_EVIDENCE:\n"
+    budget = max(0, 3900 - len(objective) - len(header))
+    if budget <= 0:
+        return objective[:3900]
+
+    lines: list[str] = []
+    used = 0
+    for note in guidance:
+        rendered = f"- {note}"
+        if used + len(rendered) + 1 > budget:
+            break
+        lines.append(rendered)
+        used += len(rendered) + 1
+    if not lines:
+        return objective
+    return objective + header + "\n".join(lines)
+
+
 def _hermes_subordinate_proven(
     canonical: dict[str, Any],
     *,
@@ -261,6 +395,11 @@ def _generic_payload(
             + candidate_sha
             + ". Consume/review it only within this TaskEnvelope."
         )
+    objective = _objective_with_parent_guidance(
+        task=task,
+        objective=objective,
+        parent_context=parent_context,
+    )
     actions = ["analyze", "inspect"]
     if "pytest" in task.allowed_tools or "python" in task.allowed_tools:
         actions.extend(["test", "benchmark"])
