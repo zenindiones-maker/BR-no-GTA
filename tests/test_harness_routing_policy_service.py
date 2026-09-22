@@ -445,6 +445,17 @@ def test_unknown_cost_fallback_is_forbidden_even_when_fallback_is_allowed():
 
 
 def test_youtube_semantic_reasoning_routes_without_publication_authority():
+    records = [
+        replace(
+            record,
+            availability=AVAILABLE,
+            cost_class="FREE_NO_BILLING",
+        )
+        if record.provider_id == "opencode"
+        else record
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+    ]
+    registry = GlobalCapabilityRegistry(records)
     decision = route_harness_request(
         HarnessRoutingRequest(
             intent="youtube seo semantic reasoning over verified evidence",
@@ -457,7 +468,8 @@ def test_youtube_semantic_reasoning_routes_without_publication_authority():
             allowed_providers=("opencode",),
             fallback_allowed=False,
             zero_cost_operation=True,
-        )
+        ),
+        registry=registry,
     )
     assert decision.selected_capability_id == "ai.reasoning.text"
     assert decision.selected_provider == "opencode"

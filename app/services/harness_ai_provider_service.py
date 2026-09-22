@@ -117,7 +117,7 @@ def _provider_record(provider_id: str, model_id: str | None = None):
         ]
         if exact:
             return exact[0]
-    return matches[0] if len(matches) == 1 else None
+    return matches[0] if matches else None
 
 
 def _resolve_routing(

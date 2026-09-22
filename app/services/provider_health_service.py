@@ -357,7 +357,7 @@ def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGIS
         return _local_openweight_health()
 
     failures = _failure_rows()
-    if provider == "opencode":
+    if provider == "opencode" and registry is GLOBAL_CAPABILITY_REGISTRY:
         matching = [
             item for item in failures
             if item.get("failure_pattern") == "opencode_free_tier_403"
