@@ -6,9 +6,17 @@ from typing import Any
 
 from app.database import continuous_operation_repository as continuous_repository
 from app.database.memory_claim_repository import get_memory_claim, list_memory_claims
-from app.services.gta6_knowledge_query_service import (
-    knowledge_context_to_dict,
-    query_gta6_knowledge,
+from app.services.gta6_knowledge_retrieval_service import (
+    KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+    execute_gta6_knowledge_retrieval_capability,
+)
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
 )
 
 
@@ -129,13 +137,6 @@ def _lineage_claims(
     return [row[2] for row in ranked[:limit]]
 
 
-def _semantic_hits(query: str, *, limit: int = 5) -> list[dict[str, Any]]:
-    return [
-        knowledge_context_to_dict(item)
-        for item in query_gta6_knowledge(query=query, limit=limit)
-    ]
-
-
 def _fallback_active_claims(*, limit: int = 8) -> list[dict[str, Any]]:
     rows = list_memory_claims(scope="gta6", status="active", limit=200)
     rows = list(reversed(rows))
@@ -212,6 +213,53 @@ def _human_answer(
     return "\n".join(lines)
 
 
+def _harness_retrieve(query: str, *, limit: int) -> dict[str, Any]:
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent="bounded canonical GTA6 knowledge recall for Telegram group",
+            authorized_action="RESEARCH",
+            domain="gta6-knowledge",
+            task_class="telegram-gta6-knowledge-recall",
+            goal_id="telegram-knowledge-recall",
+            required_capability_id=KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            provider_required=False,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject=f"capability:{KNOWLEDGE_RETRIEVE_CAPABILITY_ID}",
+        harness_decision_id=routing.routing_id,
+        execution_id=f"telegram-knowledge-recall:{routing.routing_id}",
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
+            "surface": "telegram_group",
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+    try:
+        result = execute_gta6_knowledge_retrieval_capability(
+            authorization=authorization,
+            routing_decision=routing,
+            payload={
+                "query": query,
+                "limit": limit,
+                "max_context_bytes": 24 * 1024,
+                "include_history": False,
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+    return {
+        "routing_id": routing.routing_id,
+        "authorization_id": authorization.authorization_id,
+        **result,
+    }
+
+
 def recall_canonical_gta6_knowledge(
     query: str,
     *,
@@ -227,17 +275,16 @@ def recall_canonical_gta6_knowledge(
             "status": "NO_CANONICAL_KNOWLEDGE_MATCH",
             "answer": (
                 "Não há conhecimento canônico suficiente desse assunto no escopo GTA 6. "
-                "Não vou preencher a lacuna com outro jogo nem chamar provider semântico só para fabricar resposta."
+                "Não vou preencher a lacuna com outro jogo nem fabricar resposta."
             ),
             "query": text,
             "claims": [],
-            "semantic_memory_hits": [],
             "provider_independent": True,
             "provider_calls": 0,
-            "semantic_provider_required": False,
             "canonical_memory_plane": "BR_SQLITE",
             "knowledge_authority": "KNOWLEDGE_BRAIN",
-            "obsidian_role": "PUBLISHED_MEMORY_VIEW",
+            "human_surface": "telegram_group",
+            "HARNESS_GOVERNED_RETRIEVAL": "PASS",
             "SOURCE_PROVENANCE_PRESERVED": "NO_MATCH",
         }
 
@@ -246,55 +293,23 @@ def recall_canonical_gta6_knowledge(
         project_context=project_context,
         subject_context=subject_context,
     )
-    semantic_hits = [] if broad_context else _semantic_hits(text, limit=min(limit, 5))
-    claims = _lineage_claims(
-        text,
-        limit=limit,
-        project_context=project_context,
-        subject_context=subject_context,
-    )
-
+    retrieval_query = text
+    if broad_context and not _tokens(text):
+        retrieval_query = "GTA VI canonical verified knowledge"
+    retrieved = _harness_retrieve(retrieval_query, limit=max(1, min(limit, 12)))
+    result = dict(retrieved.get("result") or {})
+    claims = list(result.get("knowledge_units") or ())
     if not claims and broad_context:
         claims = _fallback_active_claims(limit=limit)
 
-    if not claims and semantic_hits:
-        flattened: list[dict[str, Any]] = []
-        for memory in semantic_hits:
-            for claim in memory.get("claims") or ():
-                flattened.append({
-                    "claim_id": claim.get("claim_id"),
-                    "subject": None,
-                    "claim": claim.get("content"),
-                    "claim_type": claim.get("claim_type"),
-                    "confidence": claim.get("confidence"),
-                    "status": claim.get("status"),
-                    "source_id": (
-                        (claim.get("evidences") or [{}])[0].get("source_id")
-                        if claim.get("evidences") else None
-                    ),
-                    "source_url": None,
-                    "source_type": (
-                        (claim.get("evidences") or [{}])[0].get("source_type")
-                        if claim.get("evidences") else None
-                    ),
-                    "published_at": None,
-                    "observed_at": None,
-                    "evidence_ref": (
-                        (claim.get("evidences") or [{}])[0].get("provenance")
-                        if claim.get("evidences") else None
-                    ),
-                    "evidence_class": None,
-                    "supersedes_claim_id": None,
-                    "related_claims": [],
-                })
-        claims = flattened[:limit]
-
     return {
-        "status": "CANONICAL_KNOWLEDGE_RECALLED" if claims else "NO_CANONICAL_KNOWLEDGE_MATCH",
+        "status": (
+            "CANONICAL_KNOWLEDGE_RECALLED"
+            if claims else "NO_CANONICAL_KNOWLEDGE_MATCH"
+        ),
         "answer": _human_answer(text, claims, broad_context=broad_context),
         "query": text,
         "claims": claims,
-        "semantic_memory_hits": semantic_hits,
         "provider_independent": True,
         "provider_calls": 0,
         "semantic_provider_required": False,
@@ -303,10 +318,20 @@ def recall_canonical_gta6_knowledge(
         "subject_context": subject_context or None,
         "canonical_memory_plane": "BR_SQLITE",
         "knowledge_authority": "KNOWLEDGE_BRAIN",
-        "obsidian_role": "PUBLISHED_MEMORY_VIEW",
+        "obsidian_role": "LONG_TERM_HUMAN_KNOWLEDGE_VIEW",
+        "human_surface": "telegram_group",
+        "retrieval_mode": result.get("retrieval_mode"),
+        "retrieval_context_bytes": result.get("context_bytes"),
+        "retrieval_bounded": result.get("bounded_context"),
+        "harness_routing_id": retrieved.get("routing_id"),
+        "HARNESS_GOVERNED_RETRIEVAL": "PASS",
         "SOURCE_PROVENANCE_PRESERVED": (
             "PASS"
-            if any(item.get("source_url") or item.get("evidence_ref") for item in claims)
+            if claims and all(
+                item.get("source_url") or item.get("evidence_ref")
+                for item in claims
+            )
             else "NO_MATCH"
         ),
     }
+
