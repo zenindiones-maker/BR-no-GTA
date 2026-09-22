@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import re
 from typing import Mapping
 
@@ -15,6 +16,16 @@ _PROFILE_RE = re.compile(r"[^a-z0-9-]+")
 def _slug(value: str) -> str:
     value = _PROFILE_RE.sub("-", value.strip().lower().replace("_", "-")).strip("-")
     return value[:60] or "worker"
+
+
+def _task_scoped_profile_name(*, runtime_role: str, task_id: str) -> str:
+    role = _slug(runtime_role)
+    if role.startswith("hermes-"):
+        role = role.removeprefix("hermes-") or "worker"
+    task = _slug(task_id)
+    digest = sha256(task_id.encode("utf-8")).hexdigest()[:8]
+    scoped = _slug(f"{role[:30]}-{task[:16]}-{digest}")
+    return f"hermes-{scoped}"
 
 
 class HermesProfileFactory:
@@ -46,12 +57,19 @@ class HermesProfileFactory:
         if task.action not in record.allowed_actions:
             raise PermissionError("Hermes profile task action is not Registry-authorized")
 
-        role = _slug(runtime_role or task.selected_agent_id or f"{record.domain}-{task.task_id}")
-        profile_name = role if role.startswith("hermes-") else f"hermes-{role}"
+        role = _slug(
+            runtime_role
+            or task.selected_agent_id
+            or f"{record.domain}-worker"
+        )
+        profile_name = _task_scoped_profile_name(
+            runtime_role=role,
+            task_id=task.task_id,
+        )
         return HermesRuntimeProfile(
             profile_name=profile_name,
             task_id=task.task_id,
-            runtime_role=profile_name,
+            runtime_role=role,
             capability_id=task.capability_id,
             domain=record.domain,
             action=task.action,
