@@ -671,6 +671,71 @@ def test_registry_driven_specialist_contract_accepts_future_engineering_capabili
     ]
 
 
+def test_mutating_specialist_preserves_bounded_grounded_evidence_without_raw_parent_context():
+    current = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert current is not None
+    contract = build_agent_office_specialist_contract(
+        record=current,
+        payload={
+            "task_id": "grounded-change",
+            "task_class": "bounded-development",
+            "objective": "Implement the smallest safe fix.",
+            "allowed_paths": ["app"],
+            "mission_read_scope": ["app", "tests"],
+            "mission_write_scope": ["app"],
+            "read_set": ["app", "tests"],
+            "write_set": ["app"],
+            "allowed_tools": ["git", "python", "pytest"],
+            "gaps": [
+                "Observed measurable fragility: largest_file_lines=1420 evidence=app/services/example.py",
+                "Measured repository baseline: files=42 lines=9000 bytes=320000",
+            ],
+            "parent_context": {
+                "raw_internal_detail": "must-not-be-copied",
+                "arbitrary_nested": {"value": "must-not-be-copied"},
+            },
+        },
+    )
+    objective = contract["task"]["objective"]
+    assert "GROUNDED_EVIDENCE_CONTEXT:" in objective
+    assert "largest_file_lines=1420" in objective
+    assert "files=42 lines=9000 bytes=320000" in objective
+    assert "must-not-be-copied" not in objective
+    assert "do not expand authority" not in objective.casefold()
+    assert "do not expand authority" not in objective.lower()
+    assert "They do not expand authority, tools, paths, or side effects." in objective
+    assert contract["task"]["write_set"] == ["app"]
+    assert contract["task"]["allowed_tools"] == ["git", "python", "pytest"]
+
+
+def test_grounded_evidence_context_is_bounded_before_agent_office_task_parsing():
+    current = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert current is not None
+    contract = build_agent_office_specialist_contract(
+        record=current,
+        payload={
+            "task_id": "bounded-context",
+            "task_class": "bounded-development",
+            "objective": "Implement one safe bounded fix.",
+            "allowed_paths": ["app"],
+            "mission_read_scope": ["app"],
+            "mission_write_scope": ["app"],
+            "read_set": ["app"],
+            "write_set": ["app"],
+            "allowed_tools": ["git", "python", "pytest"],
+            "gaps": [f"gap-{index}-" + ("x" * 1000) for index in range(20)],
+        },
+    )
+    objective = contract["task"]["objective"]
+    assert len(objective) <= 4000
+    assert objective.count("\n- gap-") <= 6
+    AgentOfficeTask.from_mapping(contract["task"])
+
+
 def test_registry_driven_readonly_specialist_rejects_write_scope():
     readonly = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.readonly-analysis"
