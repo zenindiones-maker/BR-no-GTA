@@ -49,6 +49,7 @@ from app.services.gta6_knowledge_query_service import query_gta6_knowledge
 from app.services.gta6_knowledge_retrieval_service import (
     KNOWLEDGE_RETRIEVE_CAPABILITY_ID,
 )
+from app.services.gta6_source_registry_service import register_gta6_source
 
 
 HERMES_UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
@@ -1068,36 +1069,21 @@ def _bootstrap_brain_research_state(policy) -> dict[str, int]:
         source_id_by_url[str(url)] = source_id
         if brain_repository.get_source(source_id) is not None:
             continue
-        from urllib.parse import urlparse
-        domain = (urlparse(str(url)).hostname or "").casefold()
-        authority = (
-            "ROCKSTAR_OFFICIAL"
-            if "rockstargames.com" in domain
-            else "TAKE_TWO_OFFICIAL"
-            if "take2games.com" in domain
-            else "OTHER"
-        )
-        brain_repository.upsert_source({
-            "source_id": source_id,
-            "url": str(url),
-            "domain": domain,
-            "source_type": "PRIMARY_SOURCE",
-            "authority_class": authority,
-            "reliability_score": 1.0,
-            "reliability_history": [],
-            "discovered_at": now,
-            "refresh_priority": 100,
-            "refresh_interval_seconds": int(
-                policy.resource_governance["source_freshness_seconds"]
-            ),
-            "refresh_state": "NEW",
-            "active": True,
-            "provenance": {
+        register_gta6_source(
+            source_id=source_id,
+            url=str(url),
+            source_type="PRIMARY_SOURCE",
+            discovered_at=now,
+            provenance={
                 "origin": "continuous_operation_policy",
                 "authority": "DEEPSEEK_HARNESS",
             },
-            "metadata": {"bootstrap": True},
-        })
+            reliability_history=[],
+            refresh_interval_seconds=int(
+                policy.resource_governance["source_freshness_seconds"]
+            ),
+            metadata={"bootstrap": True},
+        )
         new_sources += 1
 
     existing_questions = {
