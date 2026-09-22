@@ -25,7 +25,7 @@ from scripts.semantic_planner_inference_profile import (
 
 
 MODEL = "qwen3:4b-instruct"
-OUTPUT_TOKEN_BUDGET = 512
+OUTPUT_TOKEN_BUDGETS = (256, 384, 512)
 ATTEMPT_TIMEOUT_SECONDS = 180
 SCHEMA_PROBE_TIMEOUT_SECONDS = 90
 
@@ -75,7 +75,7 @@ def _schema_support_probe() -> dict[str, Any]:
                 ],
                 "stream": False,
                 "format": schema,
-                "keep_alive": "0",
+                "keep_alive": keep_alive,
                 "options": {
                     "temperature": 0.0,
                     "num_ctx": 2048,
@@ -133,11 +133,13 @@ def _restart_runtime_cold() -> dict[str, Any]:
     return {"restarted": False, "pid": proc.pid}
 
 
-def _run_cold_proposal(
+def _run_proposal(
     prompt: str,
     *,
     num_predict: int,
     num_ctx: int,
+    keep_alive: str,
+    cold_start: bool,
 ) -> dict[str, Any]:
     payload = {
         "model": MODEL,
@@ -236,7 +238,7 @@ def _run_cold_proposal(
     prompt_eval_duration = final.get("prompt_eval_duration")
     eval_duration = final.get("eval_duration")
     return {
-        "cold_start_proposal": True,
+        "cold_start_proposal": cold_start,
         "num_predict": num_predict,
         "num_ctx": num_ctx,
         "return_code": return_code,
