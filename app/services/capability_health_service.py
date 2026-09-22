@@ -99,6 +99,39 @@ def capability_health(capability_id: str) -> CapabilityHealth:
             source="REGISTRY",
         )
 
+    if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
+        episodes = _episodes(record.capability_id)
+        failure_memories = _failure_memories(record.capability_id)
+        strongest_failure = max(
+            failure_memories,
+            key=lambda item: float(item.get("confidence") or 0.0),
+            default=None,
+        )
+        refs = tuple(dict.fromkeys(
+            str(ref)
+            for item in [*episodes[:10], *failure_memories[:5]]
+            for ref in (item.get("evidence_refs") or ())
+            if str(ref)
+        ))
+        return CapabilityHealth(
+            capability_id=record.capability_id,
+            state=UNKNOWN,
+            reason=(
+                "Current Codex authentication must be proven on the executing "
+                "runner immediately before this capability is treated as healthy."
+            ),
+            retry_allowed=False,
+            confidence=max(
+                0.5,
+                float((strongest_failure or {}).get("confidence") or 0.0),
+            ),
+            sample_size=len(episodes),
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=refs,
+            source="CODEX_AUTH_PREFLIGHT_REQUIRED",
+        )
+
     # Provider health is authoritative for externally backed executors when the
     # provider has a registered health boundary. Internal/native records are
     # assessed from execution evidence instead.
@@ -159,30 +192,6 @@ def capability_health(capability_id: str) -> CapabilityHealth:
         for ref in (item.get("evidence_refs") or ())
         if str(ref)
     ))
-
-    if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
-        # Historical login state is not treated as a current credential. The
-        # cloud execution boundary must run the real noninteractive auth
-        # preflight immediately before a write-capable execution.
-        return CapabilityHealth(
-            capability_id=record.capability_id,
-            state=UNKNOWN,
-            reason=(
-                "Current Codex authentication must be proven on the executing "
-                "runner before this capability can be treated as healthy."
-            ),
-            retry_allowed=False,
-            confidence=max(0.5, failure_confidence),
-            sample_size=len(episodes),
-            last_success_at=(
-                latest_success.isoformat() if latest_success else None
-            ),
-            last_failure_at=(
-                latest_failure.isoformat() if latest_failure else None
-            ),
-            evidence_refs=refs,
-            source="CODEX_AUTH_PREFLIGHT_REQUIRED",
-        )
 
     if (
         strongest_failure is not None
