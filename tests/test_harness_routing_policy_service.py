@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 
 import pytest
 
@@ -13,6 +14,38 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.zero_cost_policy_service import ZERO_COST_OPERATION
+
+
+@pytest.fixture(autouse=True)
+def _current_run_nvidia_model_health(monkeypatch):
+    run_id = "routing-policy-nvidia-live-fixture"
+    models = [
+        str(record.model_id)
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "nvidia_nim" and record.model_id
+    ]
+    monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+    monkeypatch.setenv("NVIDIA_API_KEY", "fixture-key")
+    monkeypatch.setenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        json.dumps({
+            "nvidia_nim": {
+                model_id: {
+                    "availability": "AVAILABLE",
+                    "latency_ms": 1000,
+                    "confidence": 0.9,
+                    "sample_size": 1,
+                    "rate_limit_state": "CLEAR",
+                    "circuit_breaker_state": "CLOSED",
+                    "github_run_id": run_id,
+                    "evidence_refs": [
+                        f"github:run:{run_id}:nvidia-model:fixture"
+                    ],
+                }
+                for model_id in models
+            }
+        }),
+    )
 
 
 def _request(**overrides):
