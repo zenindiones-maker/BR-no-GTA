@@ -16,6 +16,10 @@ class MissionExecutionRoute:
     selected_capability_ids: tuple[str, ...]
     provider_required: bool
     reason: str
+    hermes_used: bool = False
+    hermes_selection_reason: str = "NOT_REQUIRED"
+    coordination_benefit: bool = False
+    durable: bool = False
     authority: str = "DEEPSEEK_HARNESS"
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,94 +48,156 @@ def select_mission_execution_route(
     for capability_id in capability_ids:
         record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
         if record is None or not record.execution_enabled:
-            raise PermissionError(f"MissionPlan capability is not executable: {capability_id}")
+            raise PermissionError(
+                f"MissionPlan capability is not executable: {capability_id}"
+            )
         records.append(record)
 
-    has_dependencies = any(bool(item.get("dependencies")) for item in tasks)
     task_count = len(tasks)
+    has_dependencies = any(bool(item.get("dependencies")) for item in tasks)
+    has_review = any(
+        str(item.get("review_policy") or "").upper()
+        in {"INDEPENDENT_REQUIRED", "REQUIRED"}
+        or bool(getattr(record, "supports_review", False))
+        and bool(item.get("write_scope"))
+        for item, record in zip(tasks, records)
+    )
+    requires_resume = any(
+        bool(getattr(record, "supports_resume", False))
+        and (
+            bool(item.get("dependencies"))
+            or bool(item.get("write_scope"))
+            or int(item.get("retry_budget") or 0) > 0
+        )
+        for item, record in zip(tasks, records)
+    )
+    all_parallel_safe = all(
+        bool(getattr(record, "supports_parallelism", False))
+        and str(getattr(record, "side_effect_class", "READ_ONLY"))
+        in {"READ_ONLY", "COORDINATION_ONLY"}
+        for record in records
+    )
+    distinct_owners = {
+        (
+            str(item.get("selected_agent_id") or ""),
+            str(item.get("selected_skill_id") or ""),
+            item["capability_id"],
+        )
+        for item in tasks
+    }
+    coordination_benefit = (
+        task_count > 1
+        and (
+            has_dependencies
+            or len(distinct_owners) > 1
+            or all_parallel_safe
+            or has_review
+        )
+    )
 
-    if mission_class == "SYSTEM_IMPROVEMENT":
+    if task_count == 1:
+        record = records[0]
+        if (
+            record.capability_id.startswith("agent-office.")
+            or record.domain == "development"
+            and record.agent_id is not None
+        ):
+            return MissionExecutionRoute(
+                runtime="AGENT_OFFICE",
+                mission_class=mission_class,
+                task_count=1,
+                has_dependencies=False,
+                selected_capability_ids=capability_ids,
+                provider_required=False,
+                reason=(
+                    "single bounded engineering task is sufficiently owned by "
+                    "the Agent Office execution boundary"
+                ),
+                hermes_used=False,
+                hermes_selection_reason="single task; coordination overhead avoided",
+            )
+        if record.executor_binding and record.capability_type != "PROVIDER":
+            return MissionExecutionRoute(
+                runtime="DIRECT_CAPABILITY",
+                mission_class=mission_class,
+                task_count=1,
+                has_dependencies=False,
+                selected_capability_ids=capability_ids,
+                provider_required=False,
+                reason="single Registry executor is sufficient",
+                hermes_used=False,
+                hermes_selection_reason="single direct task; Hermes adds no coordination value",
+            )
+
+    if task_count > 1 and (has_dependencies or has_review or requires_resume):
         return MissionExecutionRoute(
-            runtime="SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE",
+            runtime="HERMES_KANBAN",
             mission_class=mission_class,
             task_count=task_count,
             has_dependencies=has_dependencies,
             selected_capability_ids=capability_ids,
             provider_required=False,
             reason=(
-                "development mission uses Harness-selected DAG -> Hermes collaboration -> "
-                "Agent Office candidate/review boundary"
+                "dependency/review/resume requirements need durable delegated "
+                "coordination and bounded task lifecycle"
             ),
+            hermes_used=True,
+            hermes_selection_reason=(
+                "dependency DAG, independent review or durable resume is required"
+            ),
+            coordination_benefit=True,
+            durable=True,
         )
 
-    if mission_class == "GTA6_INTELLIGENCE":
-        return MissionExecutionRoute(
-            runtime="GTA6_RESEARCH_PIPELINE",
-            mission_class=mission_class,
-            task_count=task_count,
-            has_dependencies=has_dependencies,
-            selected_capability_ids=capability_ids,
-            provider_required=False,
-            reason=(
-                "known GTA6 research/fact-check executors exist; semantic provider cannot replace them"
-            ),
-        )
-
-    if task_count > 1 or has_dependencies:
+    if task_count > 1 and coordination_benefit:
         return MissionExecutionRoute(
             runtime="HERMES_COLLABORATION",
             mission_class=mission_class,
             task_count=task_count,
-            has_dependencies=has_dependencies,
-            selected_capability_ids=capability_ids,
-            provider_required=False,
-            reason="multi-task/dependency DAG requires governed Hermes collaboration",
-        )
-
-    record = records[0]
-    if record.capability_id.startswith("agent-office."):
-        return MissionExecutionRoute(
-            runtime="AGENT_OFFICE",
-            mission_class=mission_class,
-            task_count=1,
             has_dependencies=False,
             selected_capability_ids=capability_ids,
             provider_required=False,
-            reason="single development capability is owned by Agent Office boundary",
+            reason=(
+                "multiple independent task owners benefit from bounded parallel "
+                "coordination and a deterministic join"
+            ),
+            hermes_used=True,
+            hermes_selection_reason=(
+                "multiple independent capabilities can coordinate without authority expansion"
+            ),
+            coordination_benefit=True,
+            durable=False,
         )
 
-    if record.executor_binding and record.capability_type != "PROVIDER":
-        return MissionExecutionRoute(
-            runtime="DIRECT_CAPABILITY",
-            mission_class=mission_class,
-            task_count=1,
-            has_dependencies=False,
-            selected_capability_ids=capability_ids,
-            provider_required=False,
-            reason="single deterministic/registered executor is sufficient",
-        )
-
+    # Semantic execution is a last resort only when the selected task does not
+    # have a deterministic Registry executor.
     health = semantic_provider_health()
     if health.get("semantic_reasoning_available"):
         return MissionExecutionRoute(
             runtime="SEMANTIC_PROVIDER",
             mission_class=mission_class,
-            task_count=1,
-            has_dependencies=False,
+            task_count=task_count,
+            has_dependencies=has_dependencies,
             selected_capability_ids=capability_ids,
             provider_required=True,
-            reason="no direct executable boundary exists and healthy semantic reasoning is required",
+            reason=(
+                "no deterministic executor is sufficient and healthy semantic "
+                "reasoning is required"
+            ),
+            hermes_used=False,
+            hermes_selection_reason="semantic reasoning does not require coordination",
         )
     return MissionExecutionRoute(
         runtime="SEMANTIC_PROVIDER_UNAVAILABLE",
         mission_class=mission_class,
-        task_count=1,
-        has_dependencies=False,
+        task_count=task_count,
+        has_dependencies=has_dependencies,
         selected_capability_ids=capability_ids,
         provider_required=True,
         reason="semantic-only task has no healthy provider",
+        hermes_used=False,
+        hermes_selection_reason="no executable coordination topology is available",
     )
-
 
 def execute_harness_mission_plan(
     *,
