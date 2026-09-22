@@ -334,4 +334,3 @@ def recall_canonical_gta6_knowledge(
             else "NO_MATCH"
         ),
     }
-
