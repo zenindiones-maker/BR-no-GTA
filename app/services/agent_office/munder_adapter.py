@@ -24,6 +24,7 @@ from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
     CODEX_TUXEVIL_AUTH_MODE,
+    canonical_command_tool,
     codex_bounded_development_worker,
     codex_execution_failure,
     codex_sanitized_environment,
@@ -403,7 +404,7 @@ def _tool_name(command: str) -> str:
         parts = shlex.split(str(command))
     except ValueError:
         return ""
-    return Path(parts[0]).name if parts else ""
+    return canonical_command_tool(parts[0]) if parts else ""
 
 
 def _commands_within_lease(commands: list[str], lease: DelegatedTaskLease) -> None:
