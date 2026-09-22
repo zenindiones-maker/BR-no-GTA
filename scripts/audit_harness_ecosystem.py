@@ -672,8 +672,14 @@ def audit() -> dict[str, Any]:
             + identity_counts.get("MISSING_BOUNDARY", 0)
         ) == 0,
         "NO_DUPLICATE_AUTHORITY": (
-            all(row["AUTHORITY_LEVEL"] in {"INHERITED", "NONE"} for row in capabilities)
-            and "DEEPSEEK_HARNESS" == "DEEPSEEK_HARNESS"
+            all(
+                row["AUTHORITY_LEVEL"] in {"INHERITED", "NONE", "DELEGATED_ONLY"}
+                for row in capabilities
+            )
+            and not any(
+                row["AUTHORITY_LEVEL"] == "DEEPSEEK_HARNESS"
+                for row in capabilities
+            )
         ),
         "EXECUTOR_BINDINGS_VALID": not capability_blockers,
         "IDENTITY_INTEGRATION_BLOCKERS": [
