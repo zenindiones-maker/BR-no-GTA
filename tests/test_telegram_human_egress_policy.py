@@ -28,6 +28,40 @@ def _human_surface_authorization(label: str):
     )
 
 
+def _genuine_editorial_lineage(content: str) -> dict[str, object]:
+    import hashlib
+
+    return {
+        "artifact_ref": "editorial-script:captured-policy-contract",
+        "editorial_artifact_id": "captured-policy-script-001",
+        "artifact_kind": "SCRIPT",
+        "artifact_status": "READY_FOR_HUMAN_REVIEW",
+        "artifact_origin": "EDITORIAL_PIPELINE",
+        "artifact_real": True,
+        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "test_artifact": False,
+        "synthetic": False,
+        "fixture": False,
+        "canary": False,
+        "proof": False,
+        "validation_artifact": False,
+    }
+
+
+def _capture_transport(outbox: list[dict[str, object]]):
+    def capture(*, token: str, chat_id: int, text: str):
+        outbox.append({
+            "token": token,
+            "chat_id": chat_id,
+            "text": text,
+        })
+        return {
+            "message_id": 7000 + len(outbox),
+            "transport": "CAPTURED_OUTBOX",
+        }
+    return capture
+
+
 def test_daily_brain_has_zero_unsolicited_telegram_egress(monkeypatch, tmp_path):
     fake_cycle = {
         "brain_daily_run": {
@@ -101,36 +135,13 @@ def test_non_script_learning_and_ci_autonomous_pushes_are_blocked(monkeypatch):
 
 
 def test_script_human_review_ready_delivery_is_complete_and_human_only(monkeypatch):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
-    monkeypatch.setenv("TELEGRAM_REVIEW_CHAT_ID", "-1003932610936")
-    calls = []
-
-    class FakeResponse:
-        def __init__(self, message_id: int):
-            self.message_id = message_id
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def read(self):
-            return json.dumps({
-                "ok": True,
-                "result": {"message_id": self.message_id},
-            }).encode("utf-8")
-
-    def fake_urlopen(request, timeout=20):
-        calls.append((request, timeout))
-        return FakeResponse(5000 + len(calls))
-
-    monkeypatch.setattr(
-        "app.services.telegram_group_human_surface_service.urllib.request.urlopen",
-        fake_urlopen,
+    outbox: list[dict[str, object]] = []
+    complete_script = (
+        "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de uma pauta já fechada "
+        "para revisão humana. Este é um roteiro completo de validação editorial, "
+        "sem qualquer telemetria operacional. E BR não dorme em Vice City."
     )
-
-    auth = _human_surface_authorization("script-ready")
+    auth = _human_surface_authorization("script-ready-captured")
     try:
         result = deliver_script_human_review_ready(
             authorization=auth,
@@ -143,12 +154,9 @@ def test_script_human_review_ready_delivery_is_complete_and_human_only(monkeypat
             outline=(
                 "Abertura: promessa. Desenvolvimento: evidência. Fechamento: síntese."
             ),
-            complete_script=(
-                "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de uma pauta já fechada "
-                "para revisão humana. Este é um roteiro completo de validação editorial, "
-                "sem qualquer telemetria operacional. E BR não dorme em Vice City."
-            ),
-            lineage={"artifact_ref": "script:test-human-review-ready"},
+            complete_script=complete_script,
+            lineage=_genuine_editorial_lineage(complete_script),
+            transport=_capture_transport(outbox),
         )
     finally:
         consume_harness_authorization(auth)
@@ -158,13 +166,14 @@ def test_script_human_review_ready_delivery_is_complete_and_human_only(monkeypat
     assert result["category"] == SCRIPT_HUMAN_REVIEW_READY
     assert result["OPERATIONAL_TELEMETRY_PRESENT"] == "NO"
     assert result["messages_sent"] >= 4
-    assert len(calls) == result["messages_sent"]
+    assert len(outbox) == result["messages_sent"]
+    assert all(item["token"] == "" for item in outbox)
+    assert all(
+        delivery["transport_mode"] == "CAPTURED_OUTBOX"
+        for delivery in result["deliveries"]
+    )
 
-    bodies = [
-        parse_qs(call[0].data.decode("utf-8"))["text"][0]
-        for call in calls
-    ]
-    joined = "\n".join(bodies)
+    joined = "\n".join(str(item["text"]) for item in outbox)
     assert "RESUMO EDITORIAL" in joined
     assert "EVIDENCE MAP" in joined
     assert "OUTLINE" in joined
@@ -179,6 +188,53 @@ def test_script_human_review_ready_delivery_is_complete_and_human_only(monkeypat
         "CHECKPOINT",
     ):
         assert forbidden not in joined
+
+
+def test_synthetic_and_test_artifacts_cannot_reach_real_human_egress(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "must-not-be-used")
+    monkeypatch.setenv("TELEGRAM_REVIEW_CHAT_ID", "-1003932610936")
+    network_calls = []
+
+    def forbidden_network(*args, **kwargs):
+        network_calls.append((args, kwargs))
+        raise AssertionError("test/synthetic artifact must never reach network")
+
+    monkeypatch.setattr(
+        "app.services.telegram_group_human_surface_service.urllib.request.urlopen",
+        forbidden_network,
+    )
+
+    complete_script = "Roteiro completo de teste que nunca deve chegar ao humano real."
+    base = _genuine_editorial_lineage(complete_script)
+    cases = (
+        {**base, "artifact_ref": "script:human-interface-validation"},
+        {**base, "test_artifact": True},
+        {**base, "synthetic": True},
+        {**base, "fixture": True},
+        {**base, "canary": True},
+        {**base, "proof": True},
+        {**base, "validation_artifact": True},
+        {**base, "artifact_origin": "TEST"},
+    )
+    for index, lineage in enumerate(cases):
+        auth = _human_surface_authorization(f"blocked-artifact-{index}")
+        try:
+            result = send_harness_message_to_human_group(
+                authorization=auth,
+                text="ROTEIRO 1/1\n\n" + complete_script,
+                category=SCRIPT_HUMAN_REVIEW_READY,
+                lineage=lineage,
+                deliverable_type="SCRIPT",
+                deliverable_status="READY_FOR_HUMAN_REVIEW",
+                complete_script_present=True,
+                harness_authorized=True,
+            )
+        finally:
+            consume_harness_authorization(auth)
+        assert result["status"] == "BLOCKED"
+        assert result["TELEGRAM_SEND"] == "NO"
+        assert result["delivery_contract"]["editorial_lineage"]["allowed"] is False
+    assert network_calls == []
 
 
 def test_script_delivery_blocks_incomplete_or_technical_payload(monkeypatch):
@@ -197,10 +253,12 @@ def test_script_delivery_blocks_incomplete_or_technical_payload(monkeypatch):
 
     auth = _human_surface_authorization("invalid-script")
     try:
+        valid_lineage = _genuine_editorial_lineage("Texto parcial.")
         incomplete = send_harness_message_to_human_group(
             authorization=auth,
             text="ROTEIRO 1/1\n\nTexto parcial.",
             category=SCRIPT_HUMAN_REVIEW_READY,
+            lineage=valid_lineage,
             deliverable_type="SCRIPT",
             deliverable_status="READY_FOR_HUMAN_REVIEW",
             complete_script_present=False,
@@ -210,6 +268,7 @@ def test_script_delivery_blocks_incomplete_or_technical_payload(monkeypatch):
             authorization=auth,
             text="ROTEIRO 1/1\n\nRUN_ID=123 conteúdo contaminado.",
             category=SCRIPT_HUMAN_REVIEW_READY,
+            lineage=valid_lineage,
             deliverable_type="SCRIPT",
             deliverable_status="READY_FOR_HUMAN_REVIEW",
             complete_script_present=True,
