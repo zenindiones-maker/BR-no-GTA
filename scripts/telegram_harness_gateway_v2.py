@@ -604,6 +604,8 @@ def _handle_live_natural_language_message(
     conversation_handler=None,
     action_executor=None,
     chat_handler=None,
+    send_final_response: bool = True,
+    runtime_revision: str = "",
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Execute the exact live v2 ingress through ConversationService.
 
@@ -673,6 +675,22 @@ def _handle_live_natural_language_message(
             f"AUTHORITY={presentation.get('authority')}",
             flush=True,
         )
+    final_sent = False
+    if (
+        send_final_response
+        and conversation.get("intent") not in {
+            "STATUS_REQUEST",
+            "MEMORY_RECALL_REQUEST",
+        }
+    ):
+        _send_final_human_response(
+            api=api,
+            chat_id=chat_id,
+            reply=reply,
+            runtime_revision=runtime_revision,
+        )
+        final_sent = True
+    conversation["final_human_response_sent"] = final_sent
     return reply, learned, conversation
 
 
@@ -983,6 +1001,7 @@ def main() -> int:
 
                 api.typing(chat_id)
                 learned: dict[str, Any] | None = None
+                final_response_sent = False
                 command_name = text.split()[0] if text.startswith("/") else "natural-language"
                 try:
                     if is_render_review_feedback_message(message, text):
@@ -1018,6 +1037,12 @@ def main() -> int:
                             update_id=update_id,
                             text=text,
                             chat_type=chat_type,
+                            runtime_revision=str(
+                                revision_proof.get("revision") or ""
+                            ),
+                        )
+                        final_response_sent = bool(
+                            conversation.get("final_human_response_sent")
                         )
                         print(
                             "TELEGRAM_CONVERSATION_SERVICE=PASS "
@@ -1118,12 +1143,15 @@ def main() -> int:
                         f"TELEGRAM_COMMAND_EXECUTION=PASS USER_ID={user_id} COMMAND={command_name}",
                         flush=True,
                     )
-                _send_final_human_response(
-                    api=api,
-                    chat_id=chat_id,
-                    reply=reply,
-                    runtime_revision=str(revision_proof.get("revision") or ""),
-                )
+                if not final_response_sent:
+                    _send_final_human_response(
+                        api=api,
+                        chat_id=chat_id,
+                        reply=reply,
+                        runtime_revision=str(
+                            revision_proof.get("revision") or ""
+                        ),
+                    )
 
             _save_state(state)
         except KeyboardInterrupt:
