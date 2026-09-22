@@ -14,7 +14,11 @@ from app.services.agent_office.contracts import (
 )
 from app.services.agent_office.evidence import evidence_digest, sanitize_evidence
 from app.services.agent_office import munder_adapter
-from app.services.agent_office.codex_bounded_worker import codex_execution_failure
+from app.services.agent_office.codex_bounded_worker import (
+    CODEX_TUXEVIL_AUTH_MODE,
+    codex_execution_failure,
+    codex_tuxevil_provider_args,
+)
 from app.services.agent_office.munder_adapter import CODEX_READONLY_CAPABILITY, MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.agent_office_harness_service import (
@@ -691,6 +695,45 @@ def test_registry_driven_specialist_rejects_tool_expansion():
                 "allowed_tools": ["git", "curl"],
             },
         )
+
+
+def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
+    args = codex_tuxevil_provider_args({
+        "BR_CODEX_AUTH_MODE": CODEX_TUXEVIL_AUTH_MODE,
+        "BR_CODEX_TUXEVIL_BASE_URL": "http://127.0.0.1:51200/v1",
+        "BR_CODEX_TUXEVIL_MODEL": "gemini-3-flash",
+    })
+    joined = " ".join(args)
+    assert 'model_provider="br_tuxevil"' in joined
+    assert 'model="gemini-3-flash"' in joined
+    assert 'model_providers.br_tuxevil.base_url="http://127.0.0.1:51200/v1"' in joined
+    assert 'model_providers.br_tuxevil.wire_api="responses"' in joined
+    assert "model_providers.br_tuxevil.requires_openai_auth=false" in joined
+    assert "OPENAI_API_KEY" not in joined
+
+
+def test_tuxevil_codex_provider_rejects_non_loopback_endpoint():
+    with pytest.raises(PermissionError, match="canonical loopback"):
+        codex_tuxevil_provider_args({
+            "BR_CODEX_AUTH_MODE": CODEX_TUXEVIL_AUTH_MODE,
+            "BR_CODEX_TUXEVIL_BASE_URL": "https://example.invalid/v1",
+            "BR_CODEX_TUXEVIL_MODEL": "gemini-3-flash",
+        })
+
+
+def test_agent_office_codex_workers_keep_tuxevil_transport_inside_existing_workers():
+    bounded = Path(
+        "app/services/agent_office/codex_bounded_worker.py"
+    ).read_text(encoding="utf-8")
+    readonly = Path(
+        "app/services/agent_office/munder_adapter.py"
+    ).read_text(encoding="utf-8")
+    assert "provider_args = codex_tuxevil_provider_args()" in bounded
+    assert "provider_args = codex_tuxevil_provider_args()" in readonly
+    assert '["codex", "login", "status"]' in bounded
+    assert '["codex", "login", "status"]' in readonly
+    assert "if not provider_args:" in bounded
+    assert "if not provider_args:" in readonly
 
 
 def test_codex_structured_metric_parser_requires_real_numeric_before_after():
