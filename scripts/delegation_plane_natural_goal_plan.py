@@ -132,7 +132,10 @@ def run(
     route = select_mission_execution_route(payload)
     tasks = list(payload["collaboration_plan"]["tasks"])
     selection = _selection_metrics(payload)
-    competence_rows = learning_repository.list_competence_profiles()
+    competence_rows = learning_repository.list_competence(
+        status="ACTIVE",
+        limit=160,
+    )
     unique_owners = {
         (
             item.get("selected_agent_id"),
