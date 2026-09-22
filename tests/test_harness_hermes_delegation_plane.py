@@ -1158,6 +1158,47 @@ def test_deterministic_agent_office_profiler_emits_real_repository_metrics(tmp_p
     assert result["commands"] == ["git ls-files"]
 
 
+def test_hermes_subordinate_check_requires_harness_authority_and_bounded_evidence():
+    spec = SimpleNamespace(authority="DELEGATED_ONLY")
+    canonical = {
+        "authority": "deepseek_harness",
+        "evidence": {
+            "hermes_authority": "DELEGATED_ONLY",
+            "global_registry_canonical": True,
+            "canonical_memory": False,
+            "publication_authority": "NONE",
+        },
+    }
+    assert dynamic_mission._hermes_subordinate_proven(
+        canonical,
+        spec=spec,
+    ) is True
+
+    expanded = {
+        **canonical,
+        "evidence": {
+            **canonical["evidence"],
+            "hermes_authority": "DEEPSEEK_HARNESS",
+        },
+    }
+    assert dynamic_mission._hermes_subordinate_proven(
+        expanded,
+        spec=spec,
+    ) is False
+
+    publisher = {
+        **canonical,
+        "evidence": {
+            **canonical["evidence"],
+            "publication_authority": "PUBLIC",
+        },
+    }
+    assert dynamic_mission._hermes_subordinate_proven(
+        publisher,
+        spec=spec,
+    ) is False
+
+
 def test_system_improvement_gates_require_measured_profiler_evidence():
     profile = {
         "metric_schema": "agent-office-repository-profile/v1",
