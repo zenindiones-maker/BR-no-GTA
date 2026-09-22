@@ -12,5 +12,8 @@
   "telegram_egress": false,
   "credential_values_in_request": false,
   "previous_diagnostic_run_id": 35725732177,
-  "planner_bypassed_for_worker_isolation": true
+  "planner_bypassed_for_worker_isolation": true,
+  "reason": "rerun direct bounded-worker diagnostic after explicit ls allowlist fix",
+  "previous_direct_diagnostic_run_id": 35726211114,
+  "expected_previous_blocker": "COMMAND_ALLOWLIST: ls"
 }
