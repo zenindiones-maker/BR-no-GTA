@@ -22,7 +22,7 @@ jobs:
       - name: Validate bootstrap script
         run: python -m py_compile scripts/telegram_bootstrap.py
 
-      - name: Probe Telegram and reply
+      - name: Probe Telegram group ingress without human egress
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python scripts/telegram_bootstrap.py
