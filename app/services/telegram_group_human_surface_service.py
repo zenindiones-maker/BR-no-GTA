@@ -300,6 +300,26 @@ def send_harness_message_to_human_group(
     rendered = _human_readable(raw_text)
     selected_transport = transport or _network_transport
     if transport is None:
+        expected_sha256 = str(
+            (lineage or {}).get("content_sha256") or ""
+        ).strip().lower()
+        artifact_check = _verify_real_editorial_artifact_file(
+            lineage,
+            expected_sha256=expected_sha256,
+        )
+        if not artifact_check["valid"]:
+            return {
+                "status": "BLOCKED",
+                "TELEGRAM_SEND": "NO",
+                "authority": auth.authority,
+                "human_surface": HUMAN_SURFACE,
+                "private_telegram_human_surface": PRIVATE_TELEGRAM_HUMAN_SURFACE,
+                "category": contract["category"],
+                "delivery_contract": contract,
+                "artifact_check": artifact_check,
+                "lineage": dict(lineage or {}),
+                "fallback_surface": None,
+            }
         token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
         if not token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN is required for editorial delivery")
