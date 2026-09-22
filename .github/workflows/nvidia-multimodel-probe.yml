@@ -30,6 +30,27 @@ jobs:
           python -m py_compile scripts/nvidia_multimodel_probe.py scripts/nvidia_harness_operational_proof.py app/services/provider_health_service.py app/services/harness_routing_policy_service.py
           python -m pytest -q tests/test_nvidia_multi_model_provider.py tests/test_harness_ai_provider_service.py tests/test_harness_routing_policy_service.py tests/test_semantic_planner_provider_contract.py
           echo "NVIDIA_LIVE_PREFLIGHT=PASS"
+      - name: Resolve bounded NVIDIA probe campaign resume
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+
+          p=Path(".run/nvidia-multimodel-probe.request.json")
+          data=json.loads(p.read_text()) if p.exists() else {}
+          skip=data.get("skip_models") or []
+          if not isinstance(skip,list):
+              raise SystemExit("skip_models must be a list")
+          skip=[str(item).strip() for item in skip if str(item).strip()]
+          prior=str(data.get("resume_from_run_id") or "").strip()
+          if skip and not prior.isdigit():
+              raise SystemExit("resume_from_run_id required for skip_models")
+          print("NVIDIA_PROBE_SKIP_MODELS="+",".join(skip))
+          print("NVIDIA_PROBE_PRIOR_RUN_ID="+prior)
+          print("NVIDIA_PROBE_CAMPAIGN_RESUME="+("YES" if skip else "NO"))
+          PY
+
       - name: Probe each registered NVIDIA Free Endpoint exactly once
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -58,6 +79,11 @@ jobs:
               assert data.get("SECRET_LEAK") == "NO"
               assert data.get("PAID_API_FALLBACK") == "NO"
               assert data.get("NVIDIA_LIVE_PROBE") in {"PASS","FAIL"}
+              assert int(data.get("PROBE_BUDGET_VIOLATIONS") or 0) == 0
+              assert len(data.get("models") or []) == 5
+              assert len({
+                  row.get("MODEL_ID") for row in data.get("models") or []
+              }) == 5
               for row in data.get("models") or []:
                   assert row.get("BILLING_CLASS") == "NVIDIA_FREE_ENDPOINT"
                   assert row.get("PAID_API_BILLING") == "NO"

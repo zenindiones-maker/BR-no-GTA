@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,7 @@ from app.services.nvidia_nim_provider import (
     NvidiaNimProviderAdapter,
 )
 from app.services.provider_health_service import model_health
+from scripts import nvidia_multimodel_probe as nvidia_probe
 
 
 REQUIRED_MODELS = {
@@ -348,4 +350,64 @@ def test_nvidia_models_require_current_run_live_health_before_routing(monkeypatc
     assert model_health(
         "nvidia_nim", "z-ai/glm-5.3"
     ).availability == "UNKNOWN/UNPROVEN"
+
+def test_nvidia_probe_persists_scalar_error_and_checkpoints_before_learning(monkeypatch, tmp_path):
+    captured = {}
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setattr(
+        nvidia_probe.learning_repository,
+        "insert_episode",
+        lambda record: captured.setdefault("episode", record),
+    )
+    monkeypatch.setattr(
+        nvidia_probe.learning_repository,
+        "upsert_competence",
+        lambda record: captured.setdefault("competence", record),
+    )
+    monkeypatch.setattr(
+        nvidia_probe.learning_repository,
+        "insert_memory",
+        lambda record: captured.setdefault("memory", record),
+    )
+    record = SimpleNamespace(
+        model_id="z-ai/glm-5.3",
+        capability_id="ai.provider.nvidia-nim.glm-5-3",
+    )
+    result = {
+        "MODEL_ID": record.model_id,
+        "HEALTH": "DEGRADED",
+        "FAILURE_CLASS": "rate_limited",
+        "HTTP_STATUS": 429,
+        "RESPONSE_VALID": False,
+        "LATENCY_MS": 10.0,
+        "STRUCTURED_OUTPUT_RESULT": "FAIL",
+        "TOOL_USE_SUPPORTED": False,
+        "RATE_LIMIT_OBSERVED": True,
+    }
+    nvidia_probe._persist(
+        record,
+        result,
+        "2026-09-22T00:00:00+00:00",
+        "2026-09-22T00:00:01+00:00",
+    )
+    assert isinstance(captured["episode"]["error"], str)
+    assert captured["episode"]["error"] == "rate_limited:http=429"
+
+
+def test_resumed_probe_row_is_fail_closed_and_never_live_available():
+    record = SimpleNamespace(
+        model_id="z-ai/glm-5.3",
+        capability_id="ai.provider.nvidia-nim.glm-5-3",
+    )
+    row = nvidia_probe._skipped_result(
+        record,
+        prior_run_id="35768705958",
+    )
+    assert row["LIVE_STATUS"] == "FAIL"
+    assert row["HEALTH"] == "UNKNOWN/UNPROVEN"
+    assert row["PROBE_EXECUTED_THIS_RUN"] is False
+    assert row["RESUMED_FROM_PRIOR_RUN"] == "35768705958"
+    assert row["EVIDENCE_REF"].startswith(
+        "github:run:35768705958:nvidia-model:"
+    )
 

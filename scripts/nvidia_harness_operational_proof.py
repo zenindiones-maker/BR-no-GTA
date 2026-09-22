@@ -46,10 +46,18 @@ def _runtime_health(probe: dict) -> dict:
             }
         )
         evidence_ref = str(item.get("EVIDENCE_REF") or "").strip()
-        if not evidence_ref.startswith(f"github:run:{run_id}:"):
-            raise RuntimeError(
-                f"NVIDIA probe evidence is not current-run scoped for {model_id}"
-            )
+        current_run_evidence = evidence_ref.startswith(
+            f"github:run:{run_id}:"
+        )
+        if not current_run_evidence:
+            if success:
+                raise RuntimeError(
+                    "stale NVIDIA success cannot become current-run health: "
+                    + model_id
+                )
+            # Prior-run indeterminate/failed rows remain visible in the campaign
+            # report but are not eligible runtime health in this execution.
+            continue
         rows[model_id] = {
             "availability": "AVAILABLE" if success else "DEGRADED",
             "last_success": "current-run" if success else None,
