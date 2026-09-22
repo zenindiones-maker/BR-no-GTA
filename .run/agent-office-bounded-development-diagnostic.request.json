@@ -13,7 +13,8 @@
   "credential_values_in_request": false,
   "previous_diagnostic_run_id": 35725732177,
   "planner_bypassed_for_worker_isolation": true,
-  "reason": "rerun direct bounded-worker diagnostic after explicit ls allowlist fix",
-  "previous_direct_diagnostic_run_id": 35726211114,
-  "expected_previous_blocker": "COMMAND_ALLOWLIST: ls"
+  "reason": "classify whether BR_METRIC_JSON was emitted anywhere in Codex JSONL",
+  "previous_direct_diagnostic_run_id": 35726532265,
+  "expected_previous_blocker": "COMMAND_ALLOWLIST: ls",
+  "metric_diagnostic": "agent_message_count_and_metric_marker_count_only"
 }
