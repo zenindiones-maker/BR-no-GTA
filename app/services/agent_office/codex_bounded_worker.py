@@ -649,13 +649,15 @@ def _tool_budget_evidence(
     *,
     task: AgentOfficeTask,
     lease: DelegatedTaskLease,
-    failure_stage: str,
+    terminal_status: str,
+    evidence_trigger: str,
+    terminal_stage: str,
     initial_commands: tuple[str, ...] = (),
     candidate_repair_commands: tuple[str, ...] = (),
     final_validation_commands: tuple[str, ...] = (),
     retry_commands: tuple[str, ...] = (),
     candidate_repair_used: bool = False,
-    budget_check_mode: str = "STRICT_OVERAGE",
+    budget_check_mode: str = "TERMINAL_SNAPSHOT",
 ) -> dict[str, Any]:
     stages = (
         tuple(initial_commands),
@@ -666,6 +668,11 @@ def _tool_budget_evidence(
     commands = tuple(command for stage in stages for command in stage)
     total = len(commands)
     budget = int(lease.tool_call_budget)
+
+    if terminal_status not in {"SUCCESS", "TOOL_BUDGET_EXCEEDED"}:
+        raise ValueError("unsupported tool-budget terminal status")
+    if evidence_trigger not in {"TERMINAL_SUCCESS", "FAIL_CLOSED_BUDGET"}:
+        raise ValueError("unsupported tool-budget evidence trigger")
 
     tool_counts: dict[str, int] = {}
     category_counts = {
@@ -694,11 +701,19 @@ def _tool_budget_evidence(
             ).hexdigest()[:16]
         ),
         "CAPABILITY": CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
+        "TERMINAL_STATUS": terminal_status,
+        "EVIDENCE_TRIGGER": evidence_trigger,
+        "TERMINAL_STAGE": terminal_stage,
+        # Retained for compatibility with the failure-only v1 observer.
+        "FAILURE_STAGE": (
+            terminal_stage
+            if terminal_status == "TOOL_BUDGET_EXCEEDED"
+            else "NOT_APPLICABLE"
+        ),
         "TOOL_CALL_BUDGET_ASSIGNED": budget,
         "TOOL_CALL_BUDGET": budget,
         "TOOL_CALL_COUNT_OBSERVED": total,
         "TOOL_CALL_OVERAGE": max(0, total - budget),
-        "FAILURE_STAGE": str(failure_stage),
         "BUDGET_CHECK_MODE": str(budget_check_mode),
         "INITIAL_PASS_TOOL_CALLS": len(initial_commands),
         "CANDIDATE_REPAIR_TOOL_CALLS": len(candidate_repair_commands),
@@ -718,17 +733,19 @@ def _tool_budget_evidence(
     }
 
 
-def _persist_tool_budget_failure(
+def _persist_tool_budget_evidence(
     *,
     task: AgentOfficeTask,
     lease: DelegatedTaskLease,
-    failure_stage: str,
+    terminal_status: str,
+    evidence_trigger: str,
+    terminal_stage: str,
     initial_commands: tuple[str, ...] = (),
     candidate_repair_commands: tuple[str, ...] = (),
     final_validation_commands: tuple[str, ...] = (),
     retry_commands: tuple[str, ...] = (),
     candidate_repair_used: bool = False,
-    budget_check_mode: str = "STRICT_OVERAGE",
+    budget_check_mode: str = "TERMINAL_SNAPSHOT",
 ) -> None:
     raw_path = str(
         os.environ.get("BR_TOOL_BUDGET_EVIDENCE_PATH") or ""
@@ -744,7 +761,9 @@ def _persist_tool_budget_failure(
         payload = _tool_budget_evidence(
             task=task,
             lease=lease,
-            failure_stage=failure_stage,
+            terminal_status=terminal_status,
+            evidence_trigger=evidence_trigger,
+            terminal_stage=terminal_stage,
             initial_commands=initial_commands,
             candidate_repair_commands=candidate_repair_commands,
             final_validation_commands=final_validation_commands,
@@ -759,8 +778,7 @@ def _persist_tool_budget_failure(
         )
         os.replace(temporary, path)
     except (OSError, RuntimeError, ValueError):
-        # Diagnostic persistence must never mask or replace the original
-        # fail-closed tool budget exception.
+        # Observability must never mask or replace worker behavior.
         return
 
 
@@ -1115,13 +1133,19 @@ def codex_bounded_development_worker(
     if failure is not None:
         return failure
 
-    observed_commands = _commands(completed.stdout)
+    initial_commands = _commands(completed.stdout)
+    observed_commands = initial_commands
+    candidate_repair_commands: tuple[str, ...] = ()
+    final_validation_commands: tuple[str, ...] = ()
+    retry_commands: tuple[str, ...] = ()
     if len(observed_commands) > lease.tool_call_budget:
-        _persist_tool_budget_failure(
+        _persist_tool_budget_evidence(
             task=task,
             lease=lease,
-            failure_stage="INITIAL_PASS",
-            initial_commands=observed_commands,
+            terminal_status="TOOL_BUDGET_EXCEEDED",
+            evidence_trigger="FAIL_CLOSED_BUDGET",
+            terminal_stage="INITIAL_PASS",
+            initial_commands=initial_commands,
             candidate_repair_used=False,
             budget_check_mode="STRICT_OVERAGE",
         )
@@ -1154,11 +1178,13 @@ def codex_bounded_development_worker(
         if MAX_CANDIDATE_REPAIR_PASSES != 1:
             raise RuntimeError("candidate repair pass budget drifted from one")
         if len(observed_commands) >= lease.tool_call_budget:
-            _persist_tool_budget_failure(
+            _persist_tool_budget_evidence(
                 task=task,
                 lease=lease,
-                failure_stage="CANDIDATE_REPAIR_PRECHECK",
-                initial_commands=observed_commands,
+                terminal_status="TOOL_BUDGET_EXCEEDED",
+                evidence_trigger="FAIL_CLOSED_BUDGET",
+                terminal_stage="CANDIDATE_REPAIR_PRECHECK",
+                initial_commands=initial_commands,
                 candidate_repair_used=False,
                 budget_check_mode="REQUIRE_REMAINING_SLOT",
             )
@@ -1242,11 +1268,13 @@ def codex_bounded_development_worker(
 
         candidate_repair_commands = _commands(candidate_repair.stdout)
         if len(observed_commands) + len(candidate_repair_commands) > lease.tool_call_budget:
-            _persist_tool_budget_failure(
+            _persist_tool_budget_evidence(
                 task=task,
                 lease=lease,
-                failure_stage="CANDIDATE_REPAIR",
-                initial_commands=observed_commands,
+                terminal_status="TOOL_BUDGET_EXCEEDED",
+                evidence_trigger="FAIL_CLOSED_BUDGET",
+                terminal_stage="CANDIDATE_REPAIR",
+                initial_commands=initial_commands,
                 candidate_repair_commands=candidate_repair_commands,
                 candidate_repair_used=True,
                 budget_check_mode="STRICT_OVERAGE",
@@ -1327,13 +1355,18 @@ def codex_bounded_development_worker(
             return repair_failure
 
         repair_commands = _commands(repair.stdout)
+        final_validation_commands = repair_commands
         if len(observed_commands) + len(repair_commands) > lease.tool_call_budget:
-            _persist_tool_budget_failure(
+            _persist_tool_budget_evidence(
                 task=task,
                 lease=lease,
-                failure_stage="FINAL_VALIDATION",
-                initial_commands=observed_commands,
-                final_validation_commands=repair_commands,
+                terminal_status="TOOL_BUDGET_EXCEEDED",
+                evidence_trigger="FAIL_CLOSED_BUDGET",
+                terminal_stage="FINAL_VALIDATION",
+                initial_commands=initial_commands,
+                candidate_repair_commands=candidate_repair_commands,
+                final_validation_commands=final_validation_commands,
+                retry_commands=retry_commands,
                 candidate_repair_used=candidate_repair_used,
                 budget_check_mode="STRICT_OVERAGE",
             )
@@ -1383,6 +1416,19 @@ def codex_bounded_development_worker(
         workspace=workspace,
         changed=changed,
         task_id=task.task_id,
+    )
+    _persist_tool_budget_evidence(
+        task=task,
+        lease=lease,
+        terminal_status="SUCCESS",
+        evidence_trigger="TERMINAL_SUCCESS",
+        terminal_stage="BOUNDED_DEVELOPMENT_COMPLETE",
+        initial_commands=initial_commands,
+        candidate_repair_commands=candidate_repair_commands,
+        final_validation_commands=final_validation_commands,
+        retry_commands=retry_commands,
+        candidate_repair_used=candidate_repair_used,
+        budget_check_mode="TERMINAL_SNAPSHOT",
     )
     tests = [
         {

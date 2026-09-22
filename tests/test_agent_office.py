@@ -981,7 +981,9 @@ def test_tool_budget_evidence_counts_stages_categories_and_duplicates_exactly():
     evidence = _tool_budget_evidence(
         task=task,
         lease=lease,
-        failure_stage="CANDIDATE_REPAIR",
+        terminal_status="TOOL_BUDGET_EXCEEDED",
+        evidence_trigger="FAIL_CLOSED_BUDGET",
+        terminal_stage="CANDIDATE_REPAIR",
         initial_commands=(
             "rg needle app/services/agent_office",
             "rg needle app/services/agent_office",
@@ -1086,6 +1088,9 @@ def test_bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked(
                 task, tmp_path, 120.0, lease
             )
         persisted = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert persisted["TERMINAL_STATUS"] == "TOOL_BUDGET_EXCEEDED"
+        assert persisted["EVIDENCE_TRIGGER"] == "FAIL_CLOSED_BUDGET"
+        assert persisted["TERMINAL_STAGE"] == "INITIAL_PASS"
         assert persisted["FAILURE_STAGE"] == "INITIAL_PASS"
         assert persisted["TOOL_CALL_BUDGET"] == 3
         assert persisted["TOOL_CALL_COUNT_OBSERVED"] == 4
@@ -1102,7 +1107,19 @@ def test_bounded_worker_tool_budget_at_limit_allowed_over_limit_blocked(
         )
         assert result["status"] == "SUCCEEDED"
         assert result["usage"]["tool_calls"] == 3
-        assert not evidence_path.exists()
+        persisted = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert persisted["TERMINAL_STATUS"] == "SUCCESS"
+        assert persisted["EVIDENCE_TRIGGER"] == "TERMINAL_SUCCESS"
+        assert persisted["TERMINAL_STAGE"] == "BOUNDED_DEVELOPMENT_COMPLETE"
+        assert persisted["TOOL_CALL_BUDGET"] == 3
+        assert persisted["TOOL_CALL_COUNT_OBSERVED"] == 3
+        assert persisted["TOOL_CALL_OVERAGE"] == 0
+        assert persisted["INITIAL_PASS_TOOL_CALLS"] == 3
+        assert persisted["CANDIDATE_REPAIR_TOOL_CALLS"] == 0
+        assert persisted["FINAL_VALIDATION_TOOL_CALLS"] == 0
+        assert persisted["RETRY_TOOL_CALLS"] == 0
+        assert persisted["RAW_COMMANDS_PERSISTED"] == "NO"
+        assert persisted["SECRET_LEAK"] == "NO"
 
 
 def test_tool_budget_stage_accounting_does_not_double_count_or_conflate_retry():
@@ -1110,7 +1127,9 @@ def test_tool_budget_stage_accounting_does_not_double_count_or_conflate_retry():
     evidence = _tool_budget_evidence(
         task=task,
         lease=lease,
-        failure_stage="FINAL_VALIDATION",
+        terminal_status="TOOL_BUDGET_EXCEEDED",
+        evidence_trigger="FAIL_CLOSED_BUDGET",
+        terminal_stage="FINAL_VALIDATION",
         initial_commands=("rg one app",),
         candidate_repair_commands=("python -c 'print(1)'",),
         final_validation_commands=("pytest -q tests/test_agent_office.py",),
@@ -1129,6 +1148,34 @@ def test_tool_budget_stage_accounting_does_not_double_count_or_conflate_retry():
     assert evidence["RETRY_BUDGET_ASSIGNED"] == 2
     assert evidence["UNIQUE_COMMAND_COUNT"] == 3
     assert evidence["DUPLICATE_COMMAND_COUNT"] == 0
+
+
+def test_operational_proof_diagnostic_only_preserves_default_chaining():
+    workflow = Path(
+        ".github/workflows/delegation-plane-operational-proof.yml"
+    ).read_text(encoding="utf-8")
+    assert "diagnostic_only:" in workflow
+    assert "default: false" in workflow
+    assert "type: boolean" in workflow
+    assert (
+        "if: env.OP_PHASE == 'first' && success() && "
+        "env.OP_DIAGNOSTIC_ONLY != 'true'"
+    ) in workflow
+    assert "DEFAULT_CHAINING_BEHAVIOR_UNCHANGED=PASS" in workflow
+
+
+def test_operational_proof_diagnostic_only_does_not_skip_or_fake_first_execution():
+    workflow = Path(
+        ".github/workflows/delegation-plane-operational-proof.yml"
+    ).read_text(encoding="utf-8")
+    first_marker = "- name: Execute first real natural-goal mission"
+    first_index = workflow.index(first_marker)
+    first_block = workflow[first_index:first_index + 900]
+    assert "if: env.OP_PHASE == 'first'" in first_block
+    assert "OP_DIAGNOSTIC_ONLY" not in first_block
+    assert "DIAGNOSTIC_ONLY_PREVENTS_SECOND_DISPATCH=PASS" in workflow
+    assert "DIAGNOSTIC_ONLY_DOES_NOT_FAKE_SUCCESS=PASS" in workflow
+    assert "DIAGNOSTIC_ONLY_DOES_NOT_SKIP_FIRST_EXECUTION=PASS" in workflow
 
 
 def test_codex_shell_wrapper_validates_inner_allowlisted_tools():

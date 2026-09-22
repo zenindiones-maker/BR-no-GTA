@@ -24,6 +24,11 @@ on:
         required: false
         default: ""
         type: string
+      diagnostic_only:
+        description: Run first phase only and never auto-dispatch second phase
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -50,6 +55,7 @@ env:
   PROOF_REAL_TELEGRAM_EGRESS: "0"
   OP_PHASE: ${{ github.event_name == 'push' && 'first' || inputs.phase }}
   OP_BASE_SHA: ${{ inputs.base_sha || github.sha }}
+  OP_DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only && 'true' || 'false' }}
 
 jobs:
   operational:
@@ -62,6 +68,21 @@ jobs:
           ref: ${{ env.OP_BASE_SHA }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Resolve push-request diagnostic control
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+          request_path=Path(".run/delegation-plane-operational-proof.request.json")
+          diagnostic=False
+          if request_path.is_file():
+              payload=json.loads(request_path.read_text(encoding="utf-8"))
+              diagnostic=payload.get("diagnostic_only") is True
+          print("OP_DIAGNOSTIC_ONLY=" + ("true" if diagnostic else "false"))
+          PY
 
       - uses: actions/setup-node@v4
         with:
@@ -626,6 +647,9 @@ jobs:
               "TOOL_BUDGET_SCHEMA",
               "TASK_ID",
               "CAPABILITY",
+              "TERMINAL_STATUS",
+              "EVIDENCE_TRIGGER",
+              "TERMINAL_STAGE",
               "TOOL_CALL_BUDGET_ASSIGNED",
               "TOOL_CALL_BUDGET",
               "TOOL_CALL_COUNT_OBSERVED",
@@ -720,7 +744,7 @@ jobs:
           retention-days: 7
 
       - name: Dispatch second real execution only after first is fully green
-        if: env.OP_PHASE == 'first' && success()
+        if: env.OP_PHASE == 'first' && success() && env.OP_DIAGNOSTIC_ONLY != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -745,6 +769,15 @@ jobs:
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/delegation-plane-operational-proof.yml/dispatches" \
             -d @"$RUNNER_TEMP/dispatch.json" >/dev/null
           echo "SECOND_REAL_EXECUTION_DISPATCHED=PASS"
+
+      - name: Stop after first phase when diagnostic-only is requested
+        if: env.OP_PHASE == 'first' && success() && env.OP_DIAGNOSTIC_ONLY == 'true'
+        run: |
+          set -euo pipefail
+          echo "DEFAULT_CHAINING_BEHAVIOR_UNCHANGED=PASS"
+          echo "DIAGNOSTIC_ONLY_PREVENTS_SECOND_DISPATCH=PASS"
+          echo "DIAGNOSTIC_ONLY_DOES_NOT_FAKE_SUCCESS=PASS"
+          echo "DIAGNOSTIC_ONLY_DOES_NOT_SKIP_FIRST_EXECUTION=PASS"
 
       - name: Upload final operational evidence
         if: env.OP_PHASE == 'second' && always()
