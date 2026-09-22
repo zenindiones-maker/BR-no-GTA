@@ -813,8 +813,13 @@ def run_proof(*, artifact_dir: Path, upstream_root: Path, target_sha: str, trigg
             for item in topics
             if _topic_source_state(item) is None
         ),
-        topics[0],
+        None,
     )
+    if topic is None:
+        raise RuntimeError(
+            "NO_UNSEEN_OFFICIAL_SOURCE_FOR_LEARNING_PROOF: "
+            "every configured proof topic already has persisted source state"
+        )
     started_at = _now()
     failure = _failure_prevention()
     if failure["FAILURE_MEMORY_RETRIEVAL"] != "PASS":
