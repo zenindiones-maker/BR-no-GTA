@@ -315,16 +315,19 @@ def _runtime_model_health(provider_id: str, model_id: str) -> ModelHealth | None
         circuit_breaker_state=circuit,
         evidence_refs=tuple(str(x) for x in (item.get("evidence_refs") or ()) if str(x)))
 
-def model_health(provider_id: str, model_id: str) -> ModelHealth:
+def model_health(provider_id: str, model_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGISTRY) -> ModelHealth:
     provider=str(provider_id or "").strip().lower().replace("-","_")
     model=str(model_id or "").strip()
     if not provider or not model: raise ValueError("provider_id and model_id are required")
     runtime=_runtime_model_health(provider,model)
     if runtime is not None: return runtime
-    records=[r for r in GLOBAL_CAPABILITY_REGISTRY.all()
+    records=[r for r in registry.all()
              if r.capability_type=="PROVIDER"
              and str(r.provider_id or "").lower().replace("-","_")==provider
-             and str(r.model_id or "")==model]
+             and (
+                 str(r.model_id or "")==model
+                 or str((authorized_provider_model_binding(r) or {}).get("model_id") or "")==model
+             )]
     if not records:
         return ModelHealth(provider,model,"BLOCKED",None,None,"not_registered",None,1.0,0,"UNKNOWN","OPEN",())
     record=records[0]
@@ -346,7 +349,7 @@ def model_health(provider_id: str, model_id: str) -> ModelHealth:
         rate_limit_state="OBSERVED" if failure_class and "rate" in failure_class.casefold() else "UNKNOWN",
         circuit_breaker_state="CLOSED",evidence_refs=refs)
 
-def provider_health(provider_id: str) -> ProviderHealth:
+def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGISTRY) -> ProviderHealth:
     provider = str(provider_id or "").strip().lower().replace("-", "_")
     if not provider:
         raise ValueError("provider_id is required")
@@ -411,7 +414,7 @@ def provider_health(provider_id: str) -> ProviderHealth:
 
     records = [
         record
-        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        for record in registry.all()
         if record.capability_type == "PROVIDER"
         and str(record.provider_id or "").lower().replace("-", "_") == provider
     ]

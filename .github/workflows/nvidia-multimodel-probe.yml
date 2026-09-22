@@ -41,21 +41,21 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-import json
-from pathlib import Path
-p=Path("artifacts/nvidia-multimodel/probe.json")
-if p.exists():
-    data=json.loads(p.read_text())
-    assert int(data.get("NVIDIA_MODELS_PROBED") or 0) <= int(data.get("NVIDIA_FREE_MODELS_DISCOVERED") or 0)
-    assert data.get("SECRET_LEAK") == "NO"
-    assert data.get("PAID_API_FALLBACK") == "NO"
-    for row in data.get("models") or []:
-        assert row.get("BILLING_CLASS") == "NVIDIA_FREE_ENDPOINT"
-        assert row.get("PAID_API_BILLING") == "NO"
-    print("NVIDIA_PROBE_BOUNDED=PASS")
-    print("NO_SECRET_LEAK=PASS")
-    print("PAID_API_FALLBACK=NO")
-PY
+          import json
+          from pathlib import Path
+          p=Path("artifacts/nvidia-multimodel/probe.json")
+          if p.exists():
+              data=json.loads(p.read_text())
+              assert int(data.get("NVIDIA_MODELS_PROBED") or 0) <= int(data.get("NVIDIA_FREE_MODELS_DISCOVERED") or 0)
+              assert data.get("SECRET_LEAK") == "NO"
+              assert data.get("PAID_API_FALLBACK") == "NO"
+              for row in data.get("models") or []:
+                  assert row.get("BILLING_CLASS") == "NVIDIA_FREE_ENDPOINT"
+                  assert row.get("PAID_API_BILLING") == "NO"
+              print("NVIDIA_PROBE_BOUNDED=PASS")
+              print("NO_SECRET_LEAK=PASS")
+              print("PAID_API_FALLBACK=NO")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

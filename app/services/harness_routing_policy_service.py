@@ -390,11 +390,11 @@ def _provider_records(
         if not _record_matches_security(record, request):
             reasons.append("security_boundary_mismatch")
 
-        p_health = provider_health(provider_id)
+        p_health = provider_health(provider_id, registry=registry)
         if p_health.state in {"BLOCKED", "QUARANTINED", "UPSTREAM_DENIED"}:
             reasons.append(f"provider_health={p_health.state}")
         if model_id:
-            m_health = model_health(provider_id, model_id)
+            m_health = model_health(provider_id, model_id, registry=registry)
             if m_health.circuit_breaker_state == "OPEN":
                 reasons.append("model_circuit_breaker_open")
             if m_health.availability in {
@@ -453,8 +453,8 @@ def _provider_records(
         provider_id = normalize_provider_id(record.provider_id or "")
         binding = _authorized_provider_model_binding(record) or {}
         model_id = str(binding.get("model_id") or "")
-        p_health = provider_health(provider_id)
-        m_health = model_health(provider_id, model_id) if model_id else None
+        p_health = provider_health(provider_id, registry=registry)
+        m_health = model_health(provider_id, model_id, registry=registry) if model_id else None
         competence = _provider_model_competence(record, request)
         learned_latency = (competence or {}).get("mean_latency_seconds")
         latency = (
@@ -838,7 +838,9 @@ def route_harness_request(
     if selected_provider and selected_model:
         from app.services.provider_health_service import model_health
         selected_model_health = model_health(
-            selected_provider, selected_model
+            selected_provider,
+            selected_model,
+            registry=registry,
         ).to_dict()
     evidence_expectations = tuple(
         expectation

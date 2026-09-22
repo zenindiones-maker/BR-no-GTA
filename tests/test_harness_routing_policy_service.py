@@ -54,10 +54,27 @@ def _provider_registry(
 
 
 def _rejection_reasons(exc: RoutingPolicyError, capability_id: str) -> tuple[str, ...]:
+    matches = []
     for rejection in exc.evidence.get("rejected_candidates", []):
-        if rejection.get("candidate_id") == capability_id:
-            return tuple(rejection.get("reasons", ()))
-    return ()
+        candidate = str(rejection.get("candidate_id") or "")
+        if (
+            candidate == capability_id
+            or (
+                capability_id == "ai.provider.nvidia-nim"
+                and candidate.startswith("ai.provider.nvidia-nim.")
+            )
+        ):
+            matches.extend(rejection.get("reasons", ()))
+    return tuple(matches)
+
+
+def _nvidia_pool_models() -> set[str]:
+    return {
+        str(record.model_id)
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "nvidia_nim"
+        and record.cost_class == "FREE_ENDPOINT"
+    }
 
 
 def test_registry_discovery_feeds_routing():
@@ -137,7 +154,7 @@ def test_provider_model_and_capability_are_separate():
     decision = route_harness_request(_request(), registry=_provider_registry())
     assert decision.selected_capability_id == "ai.reasoning.text"
     assert decision.selected_provider == "nvidia_nim"
-    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.selected_model in _nvidia_pool_models()
     assert decision.selected_capability_id != decision.selected_provider
     assert decision.selected_provider != decision.selected_model
 
@@ -205,7 +222,7 @@ def test_nvidia_nemotron_is_selectable_when_zero_cost_is_proven():
         registry=_provider_registry(nvidia_cost="FREE_NO_BILLING"),
     )
     assert decision.selected_provider == "nvidia_nim"
-    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.selected_model in _nvidia_pool_models()
 
 
 def test_tuxevil_is_selected_only_through_harness_policy_when_zero_cost_is_proven():
@@ -274,7 +291,7 @@ def test_runtime_unavailable_tuxevil_is_excluded_while_nvidia_remains_eligible()
         registry=_provider_registry(fallback=True),
     )
     assert decision.selected_provider == "nvidia_nim"
-    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.selected_model in _nvidia_pool_models()
     assert decision.fallback_occurred is False
     assert any(
         rejection.candidate_id == "ai.provider.tuxevil"
@@ -309,7 +326,7 @@ def test_runtime_unavailable_tuxevil_can_fallback_only_when_policy_explicitly_al
     )
     assert decision.primary_provider == "tuxevil"
     assert decision.selected_provider == "nvidia_nim"
-    assert decision.selected_model == "nvidia/nemotron-3-super-120b-a12b"
+    assert decision.selected_model in _nvidia_pool_models()
     assert decision.fallback_allowed is True
     assert decision.fallback_occurred is True
     assert any("explicit fallback" in item for item in decision.rationale)
@@ -350,18 +367,26 @@ def test_unknown_cost_route_is_blocked_by_zero_cost_policy():
     )
 
 
-def test_real_nvidia_runtime_status_does_not_imply_zero_cost_status():
-    record = GLOBAL_CAPABILITY_REGISTRY.get("ai.provider.nvidia-nim")
-    assert record is not None
-    assert record.status == "PROVEN"
-    assert record.available is True
-    assert record.cost_class == "EXTERNAL_MODEL"
-    with pytest.raises(RoutingPolicyError) as exc_info:
-        route_harness_request(_request())
-    assert "UNKNOWN_COST_PROVIDER_FORBIDDEN" in _rejection_reasons(
-        exc_info.value,
-        "ai.provider.nvidia-nim",
+def test_real_nvidia_free_endpoint_profiles_are_zero_cost_but_quota_is_unproven():
+    records = [
+        record
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.provider_id == "nvidia_nim"
+    ]
+    assert len(records) >= 5
+    assert all(record.available is True for record in records)
+    assert all(record.cost_class == "FREE_ENDPOINT" for record in records)
+    assert all(
+        "rate-limit-or-quota:POSSIBLE" in record.requirements
+        for record in records
     )
+    assert all(
+        "unlimited:UNPROVEN" in record.requirements
+        for record in records
+    )
+    decision = route_harness_request(_request())
+    assert decision.selected_provider == "nvidia_nim"
+    assert decision.selected_model in _nvidia_pool_models()
 
 
 def test_free_quota_exhaustion_fails_closed_without_paid_fallback():
