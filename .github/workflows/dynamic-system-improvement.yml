@@ -23,6 +23,10 @@ on:
         required: false
         default: "0"
         type: string
+      learning_from_run_id:
+        required: false
+        default: "0"
+        type: string
 
 permissions:
   contents: read
@@ -46,6 +50,7 @@ jobs:
       PLAN_B64: ${{ inputs.plan_b64 }}
       HUMAN_GOAL_B64: ${{ inputs.human_goal_b64 }}
       TELEGRAM_CHAT_ID_INPUT: ${{ inputs.telegram_chat_id }}
+      LEARNING_FROM_RUN_ID: ${{ inputs.learning_from_run_id }}
       BR_TEST_DATABASE: ${{ github.workspace }}/target/artifacts/dynamic-system-improvement/control.db
       BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/target/.runtime/hermes-agent
 
@@ -84,6 +89,28 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/dynamic-system-improvement .runtime
           echo "AUTH_PREFLIGHT_BEFORE_HEAVY_BOOTSTRAP=PASS"
+
+      - name: Restore prior canonical Learning Plane checkpoint when supplied
+        if: inputs.learning_from_run_id != '0'
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$LEARNING_FROM_RUN_ID" in
+            ''|*[!0-9]*) echo "LEARNING_FROM_RUN_ID=FAIL"; exit 2 ;;
+          esac
+          prior="$RUNNER_TEMP/prior-learning-$LEARNING_FROM_RUN_ID"
+          mkdir -p "$prior"
+          gh run download "$LEARNING_FROM_RUN_ID"             --repo "$GITHUB_REPOSITORY"             --name "dynamic-system-improvement-$LEARNING_FROM_RUN_ID"             --dir "$prior"
+          source_db="$(find "$prior" -type f -name control.db -print -quit)"
+          test -n "$source_db"
+          test -s "$source_db"
+          mkdir -p "$(dirname "$BR_TEST_DATABASE")"
+          cp "$source_db" "$BR_TEST_DATABASE"
+          echo "LEARNING_PLANE_CHECKPOINT_RESTORED=PASS"
+          echo "LEARNING_SOURCE_RUN_ID=$LEARNING_FROM_RUN_ID"
+          echo "SECOND_LEARNING_PLANE=NO"
 
       - name: Install minimal auth-control Python dependency
         working-directory: target
