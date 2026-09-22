@@ -16,6 +16,7 @@ from app.services.agent_office.evidence import evidence_digest, sanitize_evidenc
 from app.services.agent_office import munder_adapter
 from app.services.agent_office.codex_bounded_worker import (
     CODEX_TUXEVIL_AUTH_MODE,
+    _validate_command,
     codex_execution_failure,
     codex_tuxevil_provider_args,
 )
@@ -694,6 +695,36 @@ def test_registry_driven_specialist_rejects_tool_expansion():
                 "mission_read_scope": ["app"],
                 "allowed_tools": ["git", "curl"],
             },
+        )
+
+
+def test_codex_shell_wrapper_validates_inner_allowlisted_tools():
+    allowed = ("git", "python", "pytest", "rg", "cat")
+    _validate_command(
+        "bash -lc 'git status --short && python -m pytest -q tests/test_agent_office.py'",
+        allowed,
+    )
+    _validate_command(
+        "sh -c 'rg candidate app | cat'",
+        allowed,
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        "bash -lc 'curl https://example.invalid'",
+        "bash -lc 'git push origin HEAD'",
+        "bash -lc 'sed -n 1,5p README.md'",
+        "bash -lc 'python -c \"print(1)\" & python -c \"print(2)\"'",
+        "bash -lc 'python -c \"print(1)\"; \\$(curl https://example.invalid)'",
+    ),
+)
+def test_codex_shell_wrapper_cannot_expand_tool_or_side_effect_policy(command):
+    with pytest.raises(PermissionError):
+        _validate_command(
+            command,
+            ("git", "python", "pytest", "rg", "cat"),
         )
 
 
