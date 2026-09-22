@@ -156,6 +156,41 @@ def capability_health(capability_id: str) -> CapabilityHealth:
     if runtime_override is not None:
         return runtime_override
 
+    if str(record.health_policy or "") == "OPENCODE_REQUIRED":
+        ph = provider_health("opencode")
+        if ph.state in {
+            "BLOCKED", "UPSTREAM_DENIED", "QUARANTINED", "AUTH_REQUIRED",
+        }:
+            return CapabilityHealth(
+                capability_id=record.capability_id,
+                state=(
+                    QUARANTINED
+                    if ph.state == "QUARANTINED"
+                    else BLOCKED
+                ),
+                reason=ph.reason,
+                retry_allowed=bool(ph.retry_allowed),
+                confidence=0.98,
+                sample_size=0,
+                last_success_at=None,
+                last_failure_at=None,
+                evidence_refs=tuple(ph.evidence_refs),
+                source="PROVIDER_HEALTH",
+            )
+        if ph.state == "AVAILABLE":
+            return CapabilityHealth(
+                capability_id=record.capability_id,
+                state=HEALTHY,
+                reason=ph.reason,
+                retry_allowed=True,
+                confidence=0.9,
+                sample_size=0,
+                last_success_at=None,
+                last_failure_at=None,
+                evidence_refs=tuple(ph.evidence_refs),
+                source="PROVIDER_HEALTH",
+            )
+
     if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
         episodes = _episodes(record.capability_id)
         failure_memories = _failure_memories(record.capability_id)
