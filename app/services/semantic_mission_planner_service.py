@@ -162,38 +162,42 @@ class MissionTaskProposal:
             value.get("acceptance_criteria"),
             "acceptance_criteria",
             limit=2,
-            max_item_len=240,
+            max_item_len=140,
         )
         if not criteria:
             raise ValueError(f"task {task_id} requires acceptance_criteria")
+        candidates = _string_tuple(
+            value.get("candidate_capability_ids"),
+            "candidate_capability_ids",
+            limit=3,
+            max_item_len=160,
+        )
+        need = str(value.get("required_capability_description") or "").strip()
+        if len(need) > 120:
+            raise ValueError("required_capability_description exceeds bounded length")
+        if not need and not candidates:
+            raise ValueError(
+                "required_capability_description is required when candidates are empty"
+            )
         return cls(
             task_id=task_id,
             objective=_required_text(
                 value.get("objective"),
                 "objective",
-                max_len=220,
+                max_len=140,
             ),
             task_class=_required_text(
                 value.get("task_class"),
                 "task_class",
-                max_len=96,
+                max_len=64,
             ),
-            required_capability_description=_required_text(
-                value.get("required_capability_description"),
-                "required_capability_description",
-                max_len=180,
-            ),
-            candidate_capability_ids=_string_tuple(
-                value.get("candidate_capability_ids"),
-                "candidate_capability_ids",
-                limit=3,
-                max_item_len=160,
-            ),
+            required_capability_description=need,
+            candidate_capability_ids=candidates,
             dependencies=dependencies,
             expected_output=_required_text(
                 value.get("expected_output"),
                 "expected_output",
-                max_len=120,
+                max_len=96,
             ),
             acceptance_criteria=criteria,
             risk_side_effect_class=risk,
@@ -279,7 +283,7 @@ class MissionPlanProposal:
             value.get("required_outcomes"),
             "required_outcomes",
             limit=4,
-            max_item_len=240,
+            max_item_len=160,
         )
         if not required_outcomes:
             raise ValueError("semantic planner requires at least one required_outcome")
@@ -287,26 +291,26 @@ class MissionPlanProposal:
             interpreted_goal=_required_text(
                 value.get("interpreted_goal"),
                 "interpreted_goal",
-                max_len=240,
+                max_len=160,
             ),
             assumptions=_string_tuple(
                 value.get("assumptions"),
                 "assumptions",
                 limit=2,
-                max_item_len=240,
+                max_item_len=160,
             ),
             required_outcomes=required_outcomes,
             tasks=tasks,
             rationale=_required_text(
                 value.get("rationale"),
                 "rationale",
-                max_len=240,
+                max_len=160,
             ),
             context_usage_notes=_string_tuple(
                 value.get("context_usage_notes"),
                 "context_usage_notes",
                 limit=3,
-                max_item_len=240,
+                max_item_len=160,
             ),
             uncertainty=uncertainty,
             needs_human_clarification=needs_clarification,
@@ -315,19 +319,19 @@ class MissionPlanProposal:
                 value.get("memory_strategy_notes"),
                 "memory_strategy_notes",
                 limit=3,
-                max_item_len=240,
+                max_item_len=160,
             ),
             reused_artifact_refs=_string_tuple(
                 value.get("reused_artifact_refs"),
                 "reused_artifact_refs",
                 limit=3,
-                max_item_len=200,
+                max_item_len=160,
             ),
             avoided_bad_paths=_string_tuple(
                 value.get("avoided_bad_paths"),
                 "avoided_bad_paths",
                 limit=3,
-                max_item_len=200,
+                max_item_len=160,
             ),
         )
 
@@ -379,143 +383,143 @@ def _json_object(value: str) -> dict[str, Any]:
         parsed = json.loads(text[start : end + 1])
     if not isinstance(parsed, dict):
         raise ValueError("semantic planner JSON root must be an object")
-    return parsed
+    return expand_compact_mission_plan_mapping(parsed)
+
+
+_WIRE_ACTIONS = {
+    "R": "RESEARCH",
+    "E": "EDITORIAL",
+    "D": "DEVELOPMENT",
+    "X": "EXECUTION",
+    "C": "DECISION",
+}
+_WIRE_RISKS = {
+    "RO": "READ_ONLY",
+    "L": "LOW",
+    "M": "MEDIUM",
+    "H": "HIGH",
+    "EXT": "EXTERNAL_SIDE_EFFECT",
+}
+
+
+def expand_compact_mission_plan_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, dict) or "g" not in value or "t" not in value:
+        return value
+    tasks = []
+    for item in value.get("t") or ():
+        if not isinstance(item, dict):
+            tasks.append(item)
+            continue
+        tasks.append({
+            "task_id": item.get("id"),
+            "objective": item.get("obj"),
+            "task_class": item.get("cls"),
+            "required_capability_description": item.get("need") or "",
+            "candidate_capability_ids": item.get("caps") or [],
+            "dependencies": item.get("dep") or [],
+            "expected_output": item.get("out"),
+            "acceptance_criteria": item.get("ok") or [],
+            "risk_side_effect_class": _WIRE_RISKS.get(
+                str(item.get("risk") or ""),
+                item.get("risk"),
+            ),
+            "action": _WIRE_ACTIONS.get(
+                str(item.get("act") or ""),
+                item.get("act"),
+            ),
+        })
+    return {
+        "interpreted_goal": value.get("g"),
+        "assumptions": value.get("a") or [],
+        "required_outcomes": value.get("o") or [],
+        "tasks": tasks,
+        "rationale": value.get("why"),
+        "context_usage_notes": value.get("ctx") or [],
+        "uncertainty": value.get("u", 0.5),
+        "needs_human_clarification": bool(value.get("ask", False)),
+        "clarification_question": value.get("q"),
+        "memory_strategy_notes": value.get("mem") or [],
+        "reused_artifact_refs": value.get("reuse") or [],
+        "avoided_bad_paths": value.get("avoid") or [],
+    }
 
 
 def mission_plan_json_schema(*, max_tasks: int) -> dict[str, Any]:
     max_tasks = max(1, min(int(max_tasks), 12))
-    string_240 = {"type": "string", "minLength": 1, "maxLength": 240}
-    string_200 = {"type": "string", "minLength": 1, "maxLength": 200}
+    short = {"type": "string", "minLength": 1, "maxLength": 160}
     task_schema = {
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "task_id",
-            "objective",
-            "task_class",
-            "required_capability_description",
-            "candidate_capability_ids",
-            "dependencies",
-            "expected_output",
-            "acceptance_criteria",
-            "risk_side_effect_class",
-            "action",
+            "id", "obj", "cls", "need", "caps", "dep", "out", "ok",
+            "risk", "act",
         ],
         "properties": {
-            "task_id": {
+            "id": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$",
             },
-            "objective": {"type": "string", "minLength": 1, "maxLength": 220},
-            "task_class": {"type": "string", "minLength": 1, "maxLength": 96},
-            "required_capability_description": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 180,
-            },
-            "candidate_capability_ids": {
+            "obj": {"type": "string", "minLength": 1, "maxLength": 140},
+            "cls": {"type": "string", "minLength": 1, "maxLength": 64},
+            "need": {"type": "string", "maxLength": 120},
+            "caps": {
                 "type": "array",
                 "maxItems": 3,
                 "items": {"type": "string", "minLength": 1, "maxLength": 160},
             },
-            "dependencies": {
+            "dep": {
                 "type": "array",
                 "maxItems": 12,
                 "items": {"type": "string", "minLength": 1, "maxLength": 80},
             },
-            "expected_output": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 120,
-            },
-            "acceptance_criteria": {
+            "out": {"type": "string", "minLength": 1, "maxLength": 96},
+            "ok": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 2,
-                "items": string_240,
+                "items": {"type": "string", "minLength": 1, "maxLength": 140},
             },
-            "risk_side_effect_class": {
-                "type": "string",
-                "enum": sorted(_ALLOWED_RISK_CLASSES),
-            },
-            "action": {
-                "type": "string",
-                "enum": sorted(_ALLOWED_ACTIONS),
-            },
+            "risk": {"type": "string", "enum": sorted(_WIRE_RISKS)},
+            "act": {"type": "string", "enum": sorted(_WIRE_ACTIONS)},
         },
     }
     return {
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "interpreted_goal",
-            "assumptions",
-            "required_outcomes",
-            "tasks",
-            "rationale",
-            "context_usage_notes",
-            "uncertainty",
-            "needs_human_clarification",
-            "clarification_question",
-            "memory_strategy_notes",
-            "reused_artifact_refs",
-            "avoided_bad_paths",
+            "g", "a", "o", "t", "why", "ctx", "u", "ask", "q",
+            "mem", "reuse", "avoid",
         ],
         "properties": {
-            "interpreted_goal": string_240,
-            "assumptions": {
-                "type": "array",
-                "maxItems": 2,
-                "items": string_240,
-            },
-            "required_outcomes": {
+            "g": short,
+            "a": {"type": "array", "maxItems": 2, "items": short},
+            "o": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": 4,
-                "items": string_240,
+                "items": short,
             },
-            "tasks": {
+            "t": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": max_tasks,
                 "items": task_schema,
             },
-            "rationale": string_240,
-            "context_usage_notes": {
-                "type": "array",
-                "maxItems": 3,
-                "items": string_240,
-            },
-            "uncertainty": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-            },
-            "needs_human_clarification": {"type": "boolean"},
-            "clarification_question": {
+            "why": short,
+            "ctx": {"type": "array", "maxItems": 3, "items": short},
+            "u": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "ask": {"type": "boolean"},
+            "q": {
                 "anyOf": [
                     {"type": "null"},
-                    {"type": "string", "minLength": 1, "maxLength": 240},
+                    {"type": "string", "minLength": 1, "maxLength": 160},
                 ]
             },
-            "memory_strategy_notes": {
-                "type": "array",
-                "maxItems": 3,
-                "items": string_240,
-            },
-            "reused_artifact_refs": {
-                "type": "array",
-                "maxItems": 3,
-                "items": string_200,
-            },
-            "avoided_bad_paths": {
-                "type": "array",
-                "maxItems": 3,
-                "items": string_200,
-            },
+            "mem": {"type": "array", "maxItems": 3, "items": short},
+            "reuse": {"type": "array", "maxItems": 3, "items": short},
+            "avoid": {"type": "array", "maxItems": 3, "items": short},
         },
     }
-
 
 def _compact_prompt_memory(value: dict[str, Any]) -> dict[str, Any]:
     source = dict(value or {})
@@ -665,8 +669,10 @@ def build_semantic_planner_prompt(
         "Never authorize/publish/promote/change policy. Be terse: assumptions<=2, "
         "outcomes<=4, candidates<=3/task, criteria<=2/task, context/memory/"
         "bad-path notes<=3 each, rationale=one short sentence. Do not repeat goal "
-        "or explain capability IDs. Use <=%d tasks; clarify only if required for "
-        "a safe feasible plan." % max_tasks
+        "or explain capability IDs. Native wire keys are g,a,o,t,why,ctx,u,ask,q,"
+        "mem,reuse,avoid; task keys id,obj,cls,need,caps,dep,out,ok,risk,act. "
+        "Set need='' when caps is nonempty. Prefer 2-4 tasks when sufficient; "
+        "use <=%d tasks; clarify only if required for a safe feasible plan." % max_tasks
     )
     return "\n".join(
         [
