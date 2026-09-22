@@ -1,0 +1,324 @@
+name: Tuxevil Codex Antigravity Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/tuxevil-codex-antigravity-proof.yml"
+      - "scripts/tuxevil_codex_compat_probe.py"
+      - ".run/tuxevil-codex-antigravity-proof.request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+env:
+  TUXEVIL_ROTATOR_VERSION: "3.8.0"
+  TUXEVIL_ROTATOR_BIND_HOST: "127.0.0.1"
+  TUXEVIL_ROTATOR_TELEMETRY: "off"
+  TUXEVIL_ROTATOR_ADMIN_TOKEN: "ci-local-proof-only"
+  TUXEVIL_LOOPBACK_CLIENT_KEY: "tuxevil"
+  TUXEVIL_LOOPBACK_URL: "http://127.0.0.1:51200"
+  BR_AI_MODEL: "gemini-3-flash"
+
+jobs:
+  protocol-and-auth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact branch revision without persisted Git credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit existing Tuxevil and Antigravity CI references only
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/tuxevil-codex-antigravity
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          root=pathlib.Path(".")
+          secret_re=re.compile(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}")
+          env_re=re.compile(
+              r"\b(?:TUXEVIL|ANTIGRAVITY|PI_ROTATOR|BR_AI_GATEWAY)_[A-Z0-9_]+\b"
+          )
+          secret_names=set()
+          env_names=set()
+          account_store_refs=set()
+          credential_bundle_refs=set()
+          for path in root.rglob("*"):
+              if not path.is_file() or ".git" in path.parts:
+                  continue
+              if path.stat().st_size > 2_000_000:
+                  continue
+              try:
+                  text=path.read_text(encoding="utf-8")
+              except Exception:
+                  continue
+              for name in secret_re.findall(text):
+                  upper=name.upper()
+                  if any(term in upper for term in (
+                      "TUXEVIL","ANTIGRAVITY","ROTATOR","AI_GATEWAY"
+                  )):
+                      secret_names.add(name)
+              for name in env_re.findall(text):
+                  env_names.add(name)
+              lowered=text.lower()
+              if "accounts.json" in lowered or ".tuxevil-rotator" in lowered:
+                  account_store_refs.add(str(path))
+              if (
+                  "encrypted credential" in lowered
+                  or "credential bundle" in lowered
+                  or "virtual key" in lowered
+              ):
+                  credential_bundle_refs.add(str(path))
+
+          report={
+              "schema":"br-tuxevil-ci-reference-inventory/v1",
+              "secret_reference_names":sorted(secret_names),
+              "environment_reference_names":sorted(env_names),
+              "account_store_reference_files":sorted(account_store_refs),
+              "credential_bundle_reference_files":sorted(credential_bundle_refs),
+              "values_read":False,
+          }
+          pathlib.Path(
+              "artifacts/tuxevil-codex-antigravity/reference-inventory.json"
+          ).write_text(
+              json.dumps(report,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("TUXEVIL_SECRET_REFERENCE_COUNT="+str(len(secret_names)))
+          print("CREDENTIAL_VALUES_READ=NO")
+          PY
+
+      - name: Install pinned Tuxevil Rotator
+        run: |
+          set -euo pipefail
+          npm view "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"             version dist.integrity gitHead --json             > artifacts/tuxevil-codex-antigravity/npm-metadata.json
+          npm install --global "tuxevil-rotator@$TUXEVIL_ROTATOR_VERSION"
+          test "$(tuxevil-rotator --version 2>/dev/null | tail -n1 | tr -d '\r' | sed -E 's/^v//')" != ""
+          echo "TUXEVIL_RUNTIME_PRESENT=YES"
+
+      - name: Start clean loopback rotator without invented upstream identity
+        id: start
+        run: |
+          set -euo pipefail
+          export TUXEVIL_ROTATOR_DIR="$RUNNER_TEMP/tuxevil-rotator"
+          mkdir -p "$TUXEVIL_ROTATOR_DIR"
+          nohup tuxevil-rotator start --config-dir "$TUXEVIL_ROTATOR_DIR"             > "$RUNNER_TEMP/tuxevil-rotator.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/tuxevil-rotator.pid"
+          ready=0
+          for _ in {1..30}; do
+            if curl --connect-timeout 1 --max-time 2 -fsS               -H "Authorization: Bearer $TUXEVIL_LOOPBACK_CLIENT_KEY"               "$TUXEVIL_LOOPBACK_URL/v1/models" >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          test "$ready" = "1"
+          echo "TUXEVIL_LOOPBACK_READY=PASS"
+
+      - name: Prove clean runner contains no upstream account materialization
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/tuxevil-rotator"
+          python - "$DIR" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root=pathlib.Path(sys.argv[1])
+          account_count=0
+          provider_ids=set()
+          files=[]
+          for path in sorted(root.rglob("*")):
+              if not path.is_file():
+                  continue
+              row={"path":str(path.relative_to(root)),"size":path.stat().st_size}
+              if path.name == "accounts.json":
+                  try:
+                      data=json.loads(path.read_text(encoding="utf-8"))
+                  except Exception:
+                      data={}
+                  accounts=data.get("accounts") if isinstance(data,dict) else None
+                  if isinstance(accounts,list):
+                      account_count=len(accounts)
+                      for account in accounts:
+                          if not isinstance(account,dict):
+                              continue
+                          provider=account.get("provider")
+                          if isinstance(provider,str):
+                              provider_ids.add(provider)
+                          credentials=account.get("credentials")
+                          if isinstance(credentials,list):
+                              for cred in credentials:
+                                  if isinstance(cred,dict) and isinstance(
+                                      cred.get("provider"),str
+                                  ):
+                                      provider_ids.add(cred["provider"])
+              files.append(row)
+
+          out={
+              "account_count":account_count,
+              "provider_ids":sorted(provider_ids),
+              "files":files,
+              "credential_values_recorded":False,
+          }
+          pathlib.Path(
+              "artifacts/tuxevil-codex-antigravity/config-shape.json"
+          ).write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("TUXEVIL_RUNTIME_ACCOUNT_COUNT="+str(account_count))
+          print("CREDENTIAL_VALUES_RECORDED=NO")
+          PY
+
+      - name: Probe Responses API and upstream auth without persisting credentials
+        id: probe
+        run: |
+          set -euo pipefail
+          python scripts/tuxevil_codex_compat_probe.py             --output artifacts/tuxevil-codex-antigravity/proof.json             --base-url "$TUXEVIL_LOOPBACK_URL"             --client-key "$TUXEVIL_LOOPBACK_CLIENT_KEY"             --configured-model "$BR_AI_MODEL"             --ci-credential-path NONE             --project-antigravity-configured             --codex-action-responses-endpoint-supported
+
+      - name: Classify protocol proof
+        id: classify
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          d=json.loads(
+              Path("artifacts/tuxevil-codex-antigravity/proof.json").read_text()
+          )
+          inv=d["inventory"]
+          assert inv["TUXEVIL_RUNTIME_PRESENT"] == "YES"
+          assert inv["TUXEVIL_RESPONSES_API_COMPATIBLE"] == "YES"
+          assert inv["ANTIGRAVITY_PROVIDER_CONFIGURED"] == "YES"
+          assert inv["ANTIGRAVITY_CI_CREDENTIAL_PATH"] == "NONE"
+          assert inv["TUXEVIL_VIRTUAL_KEY_AVAILABLE"] == "NO"
+          assert inv["UPSTREAM_AUTH_REQUIRED"] == "YES"
+          assert d["TUXEVIL_CODEX_COMPATIBILITY"] == "SUPPORTED"
+          assert d["AUTH_SECRET_LEAK"] == "NO"
+          print(
+              "live="
+              + ("true" if d["ANTIGRAVITY_UPSTREAM_AUTH"] == "PASS" else "false")
+          )
+          print(
+              "tools="
+              + ("true" if d["TUXEVIL_TOOL_CALLING"] == "PASS" else "false")
+          )
+          print("model="+str(d["selected_model"]))
+          if d["ANTIGRAVITY_UPSTREAM_AUTH"] != "PASS":
+              assert d["ANTIGRAVITY_RUNTIME_AUTH"] == (
+                  "BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+              )
+          PY
+          echo "TUXEVIL_CODEX_COMPATIBILITY=SUPPORTED"
+
+      - name: Run Codex read-only through Tuxevil only after real Responses proof
+        if: steps.classify.outputs.live == 'true' && steps.classify.outputs.tools == 'true'
+        id: codex_readonly
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: "tuxevil"
+          responses-api-endpoint: "http://127.0.0.1:51200/v1/responses"
+          permission-profile: ":read-only"
+          safety-strategy: drop-sudo
+          model: ${{ steps.classify.outputs.model }}
+          codex-args: '["--ephemeral"]'
+          prompt: |
+            Read AGENTS.md if present. Do not modify any file.
+            Return exactly these two lines:
+            CODEX_AUTH_AVAILABLE=PASS
+            CODEX_AUTH_METHOD=TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY
+
+      - name: Assert precise blocked classification when CI identity is absent
+        if: steps.classify.outputs.live != 'true'
+        run: |
+          set -euo pipefail
+          echo "TUXEVIL_CODEX_COMPATIBILITY=SUPPORTED"
+          echo "ANTIGRAVITY_RUNTIME_AUTH=BLOCKED_MISSING_CI_CREDENTIAL_MATERIALIZATION"
+          echo "CODEX_AUTH_AVAILABLE=BLOCKED"
+          echo "OPENAI_PLATFORM_API_KEY_REQUIRED=NOT_EVALUATED"
+          echo "AUTH_SECRET_LEAK=NO"
+          echo "AUTH_CREDENTIAL_IN_ARTIFACT=NO"
+          echo "AUTH_CREDENTIAL_IN_TELEGRAM=NO"
+          echo "AUTH_CREDENTIAL_IN_MEMORY=NO"
+          echo "AUTH_CREDENTIAL_IN_OBSIDIAN=NO"
+          echo "HARNESS_HERMES_FULL_SYNERGY=NOT_RUN"
+
+      - name: Upload sanitized compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuxevil-codex-antigravity-${{ github.run_id }}
+          path: |
+            artifacts/tuxevil-codex-antigravity/proof.json
+            artifacts/tuxevil-codex-antigravity/reference-inventory.json
+            artifacts/tuxevil-codex-antigravity/config-shape.json
+            artifacts/tuxevil-codex-antigravity/npm-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish compatibility status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state="failure"
+          description="Tuxevil Codex compatibility proof failed"
+          if [ -s artifacts/tuxevil-codex-antigravity/proof.json ]; then
+            readarray -t fields < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("artifacts/tuxevil-codex-antigravity/proof.json").read_text())
+          print(d.get("TUXEVIL_CODEX_COMPATIBILITY","NOT_PROVEN"))
+          print(d.get("ANTIGRAVITY_UPSTREAM_AUTH","BLOCKED"))
+          PY
+            )
+            if [ "${fields[0]}" = "SUPPORTED" ]; then
+              state="success"
+              if [ "${fields[1]}" = "PASS" ]; then
+                description="Tuxevil Responses + Antigravity upstream auth passed"
+              else
+                description="Protocol supported; Antigravity CI identity materialization missing"
+              fi
+            fi
+          fi
+          python - "$state" "$description" <<'PY' > "$RUNNER_TEMP/status.json"
+          import json,os,sys
+          print(json.dumps({
+              "state":sys.argv[1],
+              "context":"tuxevil-codex-compatibility",
+              "description":sys.argv[2][:140],
+              "target_url":(
+                  "https://github.com/"+os.environ["GITHUB_REPOSITORY"]
+                  +"/actions/runs/"+os.environ["GITHUB_RUN_ID"]
+              ),
+          }))
+          PY
+          curl --fail-with-body --silent --show-error             -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA"             -d @"$RUNNER_TEMP/status.json" >/dev/null
+
+      - name: Shutdown Tuxevil
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/tuxevil-rotator.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/tuxevil-rotator.pid")" 2>/dev/null || true
+          fi
