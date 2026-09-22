@@ -1,0 +1,15 @@
+{
+  "schema": "agent-office-bounded-development-diagnostic-request/v1",
+  "canonical_contract": "HARNESS–HERMES DELEGATION PLANE V1 items 1–42",
+  "purpose": "one-shot live verification after deterministic sed and grounded candidate-repair green",
+  "source_blocker_run_id": 35729845558,
+  "local_deterministic_candidate_path": "PASS",
+  "focused_tests": "PASS",
+  "focused_test_count": 167,
+  "write_boundary": "PASS",
+  "candidate_commit_contract": "PASS",
+  "expected_grounded_target": "app/services/agent_office/codex_bounded_worker.py",
+  "live_run_budget": 1,
+  "telegram_egress": false,
+  "credential_values_in_request": false
+}
