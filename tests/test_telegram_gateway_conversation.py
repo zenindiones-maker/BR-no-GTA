@@ -191,7 +191,7 @@ def test_v2_live_gateway_uses_conversation_service_not_direct_reasoning(monkeypa
     assert result["intent"] == "EXECUTION_REQUEST"
     assert calls["kwargs"]["telegram_user_id"] == 77
     assert calls["kwargs"]["telegram_chat_id"] == 7007
-    assert calls["kwargs"]["telegram_chat_type"] == "private"
+    assert calls["kwargs"]["telegram_chat_type"] == "group"
     assert calls["kwargs"]["telegram_message_id"] == 88
     assert calls["kwargs"]["input_record"]["id"] == 901
     assert callable(calls["kwargs"]["progress_callback"])
@@ -284,7 +284,7 @@ def test_live_status_sends_no_visible_progress_before_final_answer(monkeypatch):
         api=api,
         user_id=9902,
         chat_id=9903,
-        chat_type="private",
+        chat_type="group",
         message={"message_id": 9904},
         update_id=9905,
         text="Onde estamos?",
@@ -355,7 +355,7 @@ def test_live_status_passes_no_progress_callback_to_conversation_service(monkeyp
         api=api,
         user_id=991,
         chat_id=992,
-        chat_type="private",
+        chat_type="group",
         message={"message_id": 993},
         update_id=994,
         text="Onde estamos?",
@@ -369,7 +369,7 @@ def test_live_status_passes_no_progress_callback_to_conversation_service(monkeyp
 
 
 
-def test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy():
+def test_governed_ingress_rejects_private_and_accepts_only_authorized_groups():
     state = {
         "chat_id": 11001,
         "allowed_chat_ids": [-22002, -10033003],
@@ -431,8 +431,7 @@ def test_governed_ingress_accepts_private_group_and_supergroup_only_under_policy
         state=state,
     )
 
-    assert private is not None and private.accepted is True
-    assert private.chat_type == "private"
+    assert private is None
     assert group is not None and group.accepted is True
     assert group.chat_type == "group"
     assert supergroup is not None and supergroup.accepted is True
@@ -610,7 +609,7 @@ def test_live_status_exact_human_path_sends_one_clean_final_message(monkeypatch)
         api=api,
         user_id=12002,
         chat_id=12003,
-        chat_type="private",
+        chat_type="group",
         message={"message_id": 12004},
         update_id=12005,
         text="Onde estamos?",
