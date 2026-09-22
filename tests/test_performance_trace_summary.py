@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from scripts.summarize_performance_trace import _span_metrics
 
 
@@ -159,3 +161,78 @@ def test_fine_grained_helpers_count_metadata_and_union_without_double_count():
         spans,
         lambda item: item["category"] == "PLANNING_REGISTRY_RETRIEVAL_TIME",
     ) == 150.0
+
+def test_dependency_cache_reuses_exact_canonical_environment_fail_closed():
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    operational = Path(
+        ".github/workflows/delegation-plane-operational-proof.yml"
+    ).read_text(encoding="utf-8")
+    contract = Path(
+        "config/canonical-test-environment-cache-contract.txt"
+    ).read_text(encoding="utf-8")
+    extras = Path(
+        "config/delegation-plane-preflight-extra-requirements.txt"
+    ).read_text(encoding="utf-8").splitlines()
+
+    key = (
+        "${{ runner.os }}-${{ runner.arch }}-py312-br-no-gta-venv-v2-"
+        "${{ hashFiles('requirements.txt', "
+        "'config/canonical-test-environment-cache-contract.txt') }}"
+    )
+    assert ci.count(key) == 2
+    assert operational.count(key) == 1
+    assert "schema=br-no-gta-canonical-test-environment-cache/v2" in contract
+    assert "python=3.12" in contract
+    assert "base_manifest=requirements.txt" in contract
+    assert "bootstrap=python -m venv .venv;" in contract
+
+    assert "uses: actions/cache@v4" in operational
+    assert "id: canonical-venv-cache" in operational
+    cache_block = operational[
+        operational.index("Restore content-addressed canonical test environment"):
+        operational.index("Prepare canonical runtime and focused delegation gates")
+    ]
+    assert "restore-keys:" not in cache_block
+    assert "if: steps.canonical-venv-cache.outputs.cache-hit != 'true'" in cache_block
+    assert "python -m venv .venv" in cache_block
+    assert ".venv/bin/python -m pip install --upgrade pip" in cache_block
+    assert (
+        ".venv/bin/python -m pip install --disable-pip-version-check "
+        "--no-input -r requirements.txt pytest"
+    ) in cache_block
+    assert ".venv/bin/python -m pip check" in cache_block
+    assert "BR_CANONICAL_VENV_CACHE_HIT" in operational
+    assert "cache_hit=cache_hit" in operational
+    assert "input_fingerprint=fingerprint" in operational
+
+    assert extras == [
+        "psutil==7.2.2",
+        "pyyaml==6.0.3",
+        "python-dotenv==1.2.2",
+        "rich==14.3.3",
+        "pathspec==1.1.1",
+    ]
+    assert "-r config/delegation-plane-preflight-extra-requirements.txt" in operational
+    assert "--trusted-host" not in cache_block
+    assert "--extra-index-url" not in cache_block
+    assert "--no-deps" not in cache_block
+
+
+def test_dependency_cache_contract_invalidates_on_manifest_or_bootstrap_change():
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    operational = Path(
+        ".github/workflows/delegation-plane-operational-proof.yml"
+    ).read_text(encoding="utf-8")
+    for text in (ci, operational):
+        assert "runner.os" in text
+        assert "runner.arch" in text
+        assert "py312-br-no-gta-venv-v2" in text
+        assert "hashFiles('requirements.txt'," in text
+        assert "config/canonical-test-environment-cache-contract.txt" in text
+
+    contract = Path(
+        "config/canonical-test-environment-cache-contract.txt"
+    ).read_text(encoding="utf-8")
+    assert "pip install -r requirements.txt pytest" in contract
+    assert "pip check" in contract
+

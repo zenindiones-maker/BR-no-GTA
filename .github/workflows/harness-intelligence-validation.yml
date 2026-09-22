@@ -129,6 +129,11 @@ jobs:
           echo "RETRY_BUDGET_UNCHANGED=PASS"
           echo "HARNESS_AUTHORITY=PASS"
           echo "HERMES_SUBORDINATE=PASS"
+          echo "DEPENDENCY_CACHE_CONTENT_ADDRESSED=PASS"
+          echo "CACHE_STALE_INVALIDATION=PASS"
+          echo "CLEAN_RUNNER_COMPATIBLE=PASS"
+          echo "DEPENDENCY_SET_UNCHANGED=PASS"
+          echo "NO_SUPPLY_CHAIN_REGRESSION=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

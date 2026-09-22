@@ -94,6 +94,39 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Begin canonical Python dependency preparation
+        run: |
+          set -euo pipefail
+          echo "BR_PIP_PREP_START_NS=$(date +%s%N)" >> "$GITHUB_ENV"
+
+      - name: Restore content-addressed canonical test environment
+        id: canonical-venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-${{ runner.arch }}-py312-br-no-gta-venv-v2-${{ hashFiles('requirements.txt', 'config/canonical-test-environment-cache-contract.txt') }}
+
+      - name: Build canonical test environment on cache miss
+        if: steps.canonical-venv-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
+
+      - name: Activate and verify canonical test environment
+        env:
+          CANONICAL_VENV_CACHE_HIT: ${{ steps.canonical-venv-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          test -x .venv/bin/python
+          .venv/bin/python --version
+          .venv/bin/python -m pip check
+          .venv/bin/python -c "import pytest; print('PYTEST_VERSION='+pytest.__version__)"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          echo "BR_CANONICAL_VENV_CACHE_HIT=${CANONICAL_VENV_CACHE_HIT:-false}" >> "$GITHUB_ENV"
+
       - name: Prepare canonical runtime and focused delegation gates
         run: |
           set -euo pipefail
@@ -123,12 +156,45 @@ jobs:
           other_start="$(date +%s%N)"
           mkdir -p artifacts/delegation-plane-operational/state .runtime
           perf_span "delegation-plane.preflight.other.setup" "PREFLIGHT_OTHER_TIME" "$other_start"
-          pip_start="$(date +%s%N)"
-          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest
           python -m pip install --disable-pip-version-check --no-input \
-            psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 \
-            rich==14.3.3 pathspec==1.1.1
-          perf_span "delegation-plane.preflight.pip-install" "PREFLIGHT_PIP_INSTALL_TIME" "$pip_start"
+            -r config/delegation-plane-preflight-extra-requirements.txt
+          python -m pip check
+          pip_end="$(date +%s%N)"
+          PERF_START_NS="$BR_PIP_PREP_START_NS" PERF_END_NS="$pip_end" \
+          PERF_CACHE_HIT="${BR_CANONICAL_VENV_CACHE_HIT:-false}" \
+            python - <<'PY'
+          import hashlib
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from app.services.performance_telemetry_service import emit_performance_event
+
+          start_ns=int(os.environ["PERF_START_NS"])
+          end_ns=int(os.environ["PERF_END_NS"])
+          cache_hit=os.environ.get("PERF_CACHE_HIT","false").lower()=="true"
+          fingerprint=hashlib.sha256(
+              Path("requirements.txt").read_bytes()
+              + b"\0"
+              + Path("config/canonical-test-environment-cache-contract.txt").read_bytes()
+          ).hexdigest()
+          def iso(ns):
+              return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat()
+          emit_performance_event(
+              stage="delegation-plane.preflight.pip-install",
+              category="PREFLIGHT_PIP_INSTALL_TIME",
+              started_at=iso(start_ns),
+              finished_at=iso(end_ns),
+              duration_ms=max(0.0,(end_ns-start_ns)/1_000_000.0),
+              cache_hit=cache_hit,
+              input_fingerprint=fingerprint,
+              metadata={
+                  "source":"github-actions-content-addressed-venv",
+                  "canonical_environment_reused":cache_hit,
+                  "cache_contract":"br-no-gta-canonical-test-environment-cache/v2",
+                  "extra_manifest":"config/delegation-plane-preflight-extra-requirements.txt",
+              },
+          )
+          PY
           focused_start="$(date +%s%N)"
           python -m pytest -q \
             tests/test_harness_hermes_delegation_plane.py \

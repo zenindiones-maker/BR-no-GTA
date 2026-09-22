@@ -248,7 +248,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: ${{ runner.os }}-py312-br-no-gta-venv-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-py312-br-no-gta-venv-v2-${{ hashFiles('requirements.txt', 'config/canonical-test-environment-cache-contract.txt') }}
 
       - name: Install dependencies on cache miss
         if: steps.venv-cache.outputs.cache-hit != 'true'
@@ -385,7 +385,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: ${{ runner.os }}-py312-br-no-gta-venv-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-py312-br-no-gta-venv-v2-${{ hashFiles('requirements.txt', 'config/canonical-test-environment-cache-contract.txt') }}
 
       - name: Install dependencies on cache miss
         if: steps.venv-cache.outputs.cache-hit != 'true'

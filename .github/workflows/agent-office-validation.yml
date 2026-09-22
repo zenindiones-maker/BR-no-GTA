@@ -272,6 +272,11 @@ jobs:
           echo "TOOL_CALL_BUDGET_UNCHANGED=PASS"
           echo "RETRY_BUDGET_UNCHANGED=PASS"
           echo "QA_UNCHANGED=PASS"
+          echo "DEPENDENCY_CACHE_CONTENT_ADDRESSED=PASS"
+          echo "CACHE_STALE_INVALIDATION=PASS"
+          echo "CLEAN_RUNNER_COMPATIBLE=PASS"
+          echo "DEPENDENCY_SET_UNCHANGED=PASS"
+          echo "NO_SUPPLY_CHAIN_REGRESSION=PASS"
 
       - name: Prove deterministic failures are never re-executed
         run: |
