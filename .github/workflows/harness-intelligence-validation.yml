@@ -20,6 +20,7 @@ on:
       - "tests/test_harness_adaptive_intelligence.py"
       - "tests/test_harness_mission_planner.py"
       - "tests/test_harness_collaboration_service.py"
+      - "tests/test_harness_hermes_delegation_plane.py"
       - "tests/test_local_openweight_provider.py"
       - ".github/workflows/harness-intelligence-validation.yml"
   workflow_dispatch:
@@ -59,7 +60,7 @@ jobs:
       - name: Focused intelligence tests
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_harness_adaptive_intelligence.py             tests/test_harness_mission_planner.py             tests/test_harness_collaboration_service.py             tests/test_local_openweight_provider.py
+          python -m pytest -q             tests/test_harness_adaptive_intelligence.py             tests/test_harness_mission_planner.py             tests/test_harness_collaboration_service.py             tests/test_harness_hermes_delegation_plane.py             tests/test_local_openweight_provider.py
           echo "INTELLIGENCE_FOCUSED_TESTS=PASS"
       - name: Publish intelligence status
         if: always()
