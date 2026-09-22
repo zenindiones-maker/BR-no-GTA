@@ -198,6 +198,9 @@ def retrieve_gta6_knowledge(
             source_url=str(lineage.get("source_url") or ""),
             source_type=str(lineage.get("source_type") or ""),
         )
+        source_id = str(lineage.get("source_id") or "")
+        source_state = continuous_repository.get_source_state(source_id) or {}
+        source_registry = brain_repository.get_source(source_id) or {}
         confidence = max(
             0.0, min(1.0, float(claim.get("confidence") or 0.0) / 10.0)
         )
@@ -230,6 +233,8 @@ def retrieve_gta6_knowledge(
             "source_url": lineage.get("source_url"),
             "source_type": lineage.get("source_type"),
             "authority_class": authority_class,
+            "source_fingerprint": source_state.get("content_fingerprint"),
+            "source_content_hash": source_registry.get("content_hash"),
             "published_at": lineage.get("published_at"),
             "observed_at": lineage.get("observed_at"),
             "evidence_ref": lineage.get("evidence_ref"),
