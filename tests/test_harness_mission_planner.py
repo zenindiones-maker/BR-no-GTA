@@ -179,8 +179,10 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
         subject="pipeline lento",
     ))
     improvement_route = select_mission_execution_route(improvement.to_dict())
-    assert improvement_route.runtime == "SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE"
+    assert improvement_route.runtime == "HERMES_KANBAN"
+    assert improvement_route.hermes_used is True
     assert improvement_route.provider_required is False
+    assert "SYSTEM_IMPROVEMENT" not in improvement_route.runtime
 
     gta6 = plan_mission_from_human_goal(build_goal_envelope(
         human_goal="O que sabemos sobre Jason no GTA 6?",
@@ -189,8 +191,10 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
         subject="Jason Duval",
     ))
     gta6_route = select_mission_execution_route(gta6.to_dict())
-    assert gta6_route.runtime == "GTA6_RESEARCH_PIPELINE"
+    assert gta6_route.runtime == "HERMES_KANBAN"
+    assert gta6_route.hermes_used is True
     assert gta6_route.provider_required is False
+    assert "GTA6" not in gta6_route.runtime
 
     editorial = plan_mission_from_human_goal(build_goal_envelope(
         human_goal="Revisa o roteiro e melhora a estratégia editorial.",
@@ -199,6 +203,7 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
         subject="script:8",
     ))
     editorial_route = select_mission_execution_route(editorial.to_dict())
-    assert editorial_route.runtime == "HERMES_COLLABORATION"
+    assert editorial_route.runtime == "HERMES_KANBAN"
+    assert editorial_route.hermes_used is True
     assert editorial_route.task_count >= 2
     assert editorial_route.provider_required is False
