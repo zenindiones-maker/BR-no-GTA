@@ -4,6 +4,11 @@ run-name: Continuous Intelligence ${{ inputs.request_id || github.run_id }} ${{ 
 on:
   schedule:
     - cron: "17 */6 * * *"
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/continuous-intelligence-silent.request.json"
   workflow_dispatch:
     inputs:
       mode:
