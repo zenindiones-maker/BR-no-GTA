@@ -124,6 +124,10 @@ def _spec(plan, auth, base_sha: str):
             "typed dependency handoff",
             "durable checkpoint lineage",
         ),
+        profile_roles={
+            "retrieve-primary": "durable-primary",
+            "retrieve-dependent": "durable-dependent",
+        },
         max_child_depth=1,
         max_child_tasks=2,
     )
