@@ -123,6 +123,10 @@ _MISSION_RETRIEVAL_TERMS = {
 
 
 def _compact_registry_record(record: Any) -> dict[str, Any]:
+    try:
+        health = capability_health(record.capability_id).to_dict()
+    except Exception:
+        health = {"state": "UNKNOWN", "reason": "health lookup unavailable"}
     return {
         "capability_id": record.capability_id,
         "type": record.capability_type,
@@ -130,7 +134,14 @@ def _compact_registry_record(record: Any) -> dict[str, Any]:
         "actions": list(record.allowed_actions),
         "tags": list(record.policy_tags)[:4],
         "output": str(record.output_contract or "")[:80],
-        "side_effect": "NONE" if not record.side_effects else "YES",
+        "side_effect_class": str(
+            getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+        ),
+        "has_write_scope": bool(
+            tuple(getattr(record, "default_write_scope", ()) or ())
+        ),
+        "health_state": str(health.get("state") or "UNKNOWN"),
+        "health_reason": str(health.get("reason") or "")[:120],
     }
 
 def _registry_retrieval_query(goal: dict[str, Any]) -> str:
@@ -566,6 +577,9 @@ def build_semantic_planning_context(
 def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     errors: list[str] = []
     for task in proposal.tasks:
+        required_side_effect = str(
+            task.risk_side_effect_class or "READ_ONLY"
+        ).upper()
         for capability_id in task.candidate_capability_ids:
             record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
             if record is None:
@@ -577,9 +591,43 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                 errors.append(
                     f"{task.task_id}: capability is not executable: {capability_id}"
                 )
+                continue
             if task.action not in record.allowed_actions:
                 errors.append(
                     f"{task.task_id}: action {task.action} not allowed by {capability_id}"
+                )
+                continue
+            if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
+                errors.append(
+                    f"{task.task_id}: {capability_id} is an execution topology runtime, not a task capability"
+                )
+                continue
+            record_side_effect = str(
+                getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+            ).upper()
+            mutation_capable = (
+                record_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+                or bool(tuple(getattr(record, "default_write_scope", ()) or ()))
+            )
+            if (
+                required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+                and not mutation_capable
+            ):
+                errors.append(
+                    f"{task.task_id}: {capability_id} cannot satisfy "
+                    f"{required_side_effect} side effects"
+                )
+                continue
+            if required_side_effect == "READ_ONLY" and mutation_capable:
+                errors.append(
+                    f"{task.task_id}: {capability_id} exceeds READ_ONLY side effects"
+                )
+                continue
+            health = capability_health(capability_id)
+            if health.state in {"BLOCKED", "QUARANTINED"}:
+                errors.append(
+                    f"{task.task_id}: capability health {health.state}: "
+                    f"{capability_id}: {health.reason}"
                 )
     return tuple(errors)
 
@@ -619,7 +667,11 @@ def propose_validated_semantic_plan(
             [
                 "The previous proposal was rejected by DeepSeek Harness validation.",
                 *errors,
-                "Replan using only exact executable Registry capabilities or leave candidate_capability_ids empty.",
+                (
+                    "Replan using only exact executable, healthy, side-effect-compatible "
+                    "Registry capabilities. The goal says a code candidate is conditional; "
+                    "do not invent a mutation task when no healthy write executor exists."
+                ),
             ]
         )
         evidence["replan_count"] += 1
