@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any
 
 from app.services.gta6_news_pipeline import run_gta6_news_pipeline
@@ -90,7 +92,7 @@ def run_gta6_research(
             url=url,
             source_type=source_type,
         )
-        source_id = "research-source-" + __import__("hashlib").sha256(
+        source_id = "research-source-" + sha256(
             url.encode("utf-8")
         ).hexdigest()[:24]
         try:
@@ -101,9 +103,7 @@ def run_gta6_research(
                 discovered_at=str(
                     item.get("published_at")
                     or item.get("observed_at")
-                    or __import__("datetime").datetime.now(
-                        __import__("datetime").timezone.utc
-                    ).isoformat()
+                    or datetime.now(timezone.utc).isoformat()
                 ),
                 provenance={
                     "origin": "gta6_research_pipeline",
