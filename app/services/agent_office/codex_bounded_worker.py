@@ -25,6 +25,21 @@ _CODEX_TUXEVIL_LOOPBACK_KEY_ENV = "BR_TUXEVIL_LOOPBACK_KEY"
 _SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
+class CodexBoundedWorkerFailure(RuntimeError):
+    """Typed bounded-worker failure with explicit retry semantics."""
+
+    retryability = "DETERMINISTIC_NO_RETRY"
+    recoverable = False
+
+
+class CodexDeterministicFailure(CodexBoundedWorkerFailure):
+    retryability = "DETERMINISTIC_NO_RETRY"
+
+
+class CodexReplanRequiredFailure(CodexBoundedWorkerFailure):
+    retryability = "REPLAN_REQUIRED"
+
+
 def codex_tuxevil_provider_args(
     source: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
@@ -1191,7 +1206,7 @@ def codex_bounded_development_worker(
             candidate_repair_used=False,
             budget_check_mode="STRICT_OVERAGE",
         )
-        raise RuntimeError("Codex exceeded tool_call_budget")
+        raise CodexDeterministicFailure("Codex exceeded tool_call_budget")
     for observed in observed_commands:
         _validate_command(
             observed,
@@ -1213,12 +1228,14 @@ def codex_bounded_development_worker(
             initial_commands=observed_commands,
         )
         if not candidate_repair_context["actionable"]:
-            raise RuntimeError(
+            raise CodexReplanRequiredFailure(
                 "Codex bounded-development no-op lacks grounded candidate repair context"
             )
         candidate_repair_used = True
         if MAX_CANDIDATE_REPAIR_PASSES != 1:
-            raise RuntimeError("candidate repair pass budget drifted from one")
+            raise CodexDeterministicFailure(
+                "candidate repair pass budget drifted from one"
+            )
         if len(observed_commands) >= lease.tool_call_budget:
             _persist_tool_budget_evidence(
                 task=task,
@@ -1230,7 +1247,7 @@ def codex_bounded_development_worker(
                 candidate_repair_used=False,
                 budget_check_mode="REQUIRE_REMAINING_SLOT",
             )
-            raise RuntimeError("Codex exceeded tool_call_budget")
+            raise CodexDeterministicFailure("Codex exceeded tool_call_budget")
         mutation_guidance = (
             "AUTHORIZED_MUTATION_MECHANISM=Use the Codex native workspace-write "
             "editing primitive. If that primitive is unavailable and python is in "
@@ -1321,7 +1338,7 @@ def codex_bounded_development_worker(
                 candidate_repair_used=True,
                 budget_check_mode="STRICT_OVERAGE",
             )
-            raise RuntimeError("Codex exceeded tool_call_budget")
+            raise CodexDeterministicFailure("Codex exceeded tool_call_budget")
         for observed in candidate_repair_commands:
             _validate_command(
             observed,
@@ -1332,7 +1349,7 @@ def codex_bounded_development_worker(
         observed_commands = (*observed_commands, *candidate_repair_commands)
         changed = _changed_paths(workspace, lease.base_sha)
         if not changed:
-            raise RuntimeError(
+            raise CodexReplanRequiredFailure(
                 "Codex bounded-development candidate repair produced no candidate patch"
                 f"; initial_commands={len(candidate_repair_context['initial_observed_commands'])}"
                 f"; repair_commands={len(candidate_repair_commands)}"
@@ -1412,7 +1429,7 @@ def codex_bounded_development_worker(
                 candidate_repair_used=candidate_repair_used,
                 budget_check_mode="STRICT_OVERAGE",
             )
-            raise RuntimeError("Codex exceeded tool_call_budget")
+            raise CodexDeterministicFailure("Codex exceeded tool_call_budget")
         for observed in repair_commands:
             _validate_command(
             observed,
@@ -1435,7 +1452,7 @@ def codex_bounded_development_worker(
             repair_messages, repair_markers = _agent_message_metric_stats(
                 repair.stdout
             )
-            raise RuntimeError(
+            raise CodexReplanRequiredFailure(
                 "measurable bounded-development task produced no structured before/after metric"
                 f"; initial_agent_messages={initial_messages}; "
                 f"initial_metric_markers={initial_markers}; "
@@ -1445,7 +1462,7 @@ def codex_bounded_development_worker(
         observed_commands = (*observed_commands, *repair_commands)
 
     if measurement_required and metric is not None and not metric["improved"]:
-        raise RuntimeError(
+        raise CodexReplanRequiredFailure(
             "measurable bounded-development candidate did not improve the declared metric"
         )
 

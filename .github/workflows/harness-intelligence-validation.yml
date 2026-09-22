@@ -102,6 +102,14 @@ jobs:
           echo "TASK_AGENT_TO_WORKER_RESOLUTION=PASS"
           echo "STALE_CODEX_WORKER_ALIAS_REMOVED=PASS"
           echo "HARNESS_AUTHORITY=PASS"
+      - name: Prove retry classification preserves Harness authority
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_delegated_agent_autonomy.py -k "typed_bounded_failure_does_not_consume_outer_retry or untyped_transient_worker_exception_still_consumes_retry"
+          echo "DETERMINISTIC_FAILURE_NOT_REEXECUTED=PASS"
+          echo "TRANSIENT_RETRYABLE_PRESERVED=PASS"
+          echo "RETRY_BUDGET_UNCHANGED=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
       - name: Focused intelligence tests
         run: |
           set -euo pipefail

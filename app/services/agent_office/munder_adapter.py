@@ -24,6 +24,7 @@ from app.services.agent_office.codex_bounded_worker import (
     CODEX_BOUNDED_DEVELOPMENT_CAPABILITY,
     CODEX_SHELL_ENVIRONMENT_POLICY_ARGS,
     CODEX_TUXEVIL_AUTH_MODE,
+    CodexBoundedWorkerFailure,
     canonical_command_tool,
     codex_bounded_development_worker,
     codex_execution_failure,
@@ -700,6 +701,18 @@ class MunderAdapter:
                     }
                     break
                 except Exception as exc:
+                    if isinstance(exc, CodexBoundedWorkerFailure):
+                        result = {
+                            "status": "FAILED",
+                            "error": _safe_worker_exception_reason(exc),
+                            "failure_stage": "worker_exception",
+                            "stderr_class": type(exc).__name__,
+                            "retryability": exc.retryability,
+                            "recoverable": bool(exc.recoverable),
+                            "attempt_count": attempt,
+                            "retry_count": attempt - 1,
+                        }
+                        break
                     if (
                         task.agent in {"codex-readonly", "codex-development"}
                         and is_codex_sandbox_host_policy_failure(str(exc))

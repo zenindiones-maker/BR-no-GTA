@@ -272,6 +272,15 @@ jobs:
           echo "RETRY_BUDGET_UNCHANGED=PASS"
           echo "QA_UNCHANGED=PASS"
 
+      - name: Prove deterministic failures are never re-executed
+        run: |
+          python -m pytest -q tests/test_delegated_agent_autonomy.py -k "typed_bounded_failure_does_not_consume_outer_retry or untyped_transient_worker_exception_still_consumes_retry or deterministic_codex_host_policy_failure_does_not_consume_retry"
+          echo "DETERMINISTIC_FAILURE_NOT_REEXECUTED=PASS"
+          echo "REPLAN_REQUIRED_NOT_REEXECUTED=PASS"
+          echo "TRANSIENT_RETRYABLE_PRESERVED=PASS"
+          echo "RETRY_BUDGET_UNCHANGED=PASS"
+          echo "HARNESS_AUTHORITY=PASS"
+
       - name: Test authorization, routing, worktrees and evidence
         run: |
           python -m pytest -q \

@@ -12,6 +12,10 @@ from app.database.schema import initialize_schema
 from app.services.agent_office.contracts import AgentOfficeExecutionSpec, AgentOfficeTask
 from app.services.agent_office.delegation import DelegatedTaskLease, write_conflicts
 from app.services.agent_office.integration_gate import detect_candidate_conflicts, run_integration_gate
+from app.services.agent_office.codex_bounded_worker import (
+    CodexDeterministicFailure,
+    CodexReplanRequiredFailure,
+)
 from app.services.agent_office.munder_adapter import MunderAdapter
 from app.services.agent_office.service import AgentOfficeService
 from app.services.harness_authorization_service import issue_harness_authorization
@@ -197,6 +201,86 @@ def test_agent_office_persists_leases_parallelizes_and_retries(tmp_path, monkeyp
     events = list_task_events(mission_id="delegated-canary-mission")
     event_types = {item["event_type"] for item in events}
     assert {"TASK_CREATED", "TASK_STARTED", "TASK_ARTIFACT_CREATED", "TASK_COMPLETED"} <= event_types
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_retryability"),
+    (
+        (
+            CodexDeterministicFailure("Codex exceeded tool_call_budget"),
+            "DETERMINISTIC_NO_RETRY",
+        ),
+        (
+            CodexReplanRequiredFailure(
+                "measurable bounded-development candidate did not improve the declared metric"
+            ),
+            "REPLAN_REQUIRED",
+        ),
+    ),
+)
+def test_typed_bounded_failure_does_not_consume_outer_retry(
+    tmp_path,
+    monkeypatch,
+    failure,
+    expected_retryability,
+):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "agent-office.db"))
+    initialize_schema()
+    root, sha = _repo(tmp_path)
+    _, base_spec = _authorized_spec(root, sha)
+    spec = AgentOfficeExecutionSpec.from_mapping({
+        **base_spec.to_dict(),
+        "allowed_agents": ["specialist", "codex-development"],
+    })
+    calls = 0
+
+    def runner(task, workspace, timeout_seconds, lease):
+        nonlocal calls
+        calls += 1
+        raise failure
+
+    task = _task("typed-no-retry")
+    task = type(task).from_mapping({
+        **task.to_dict(),
+        "agent": "codex-development",
+        "retry_budget": 1,
+    })
+    result = AgentOfficeService(
+        root,
+        adapter=MunderAdapter(worker_runners={"codex-development": runner}),
+    ).execute(spec, [task])
+    assert result.status == "FAILED"
+    assert calls == 1
+    item = result.per_agent_results[0]
+    assert item["attempt_count"] == 1
+    assert item["retry_count"] == 0
+    assert item["retryability"] == expected_retryability
+    assert item["recoverable"] is False
+
+
+def test_untyped_transient_worker_exception_still_consumes_retry(tmp_path, monkeypatch):
+    monkeypatch.setenv("BR_TEST_DATABASE", str(tmp_path / "agent-office.db"))
+    initialize_schema()
+    root, sha = _repo(tmp_path)
+    _, spec = _authorized_spec(root, sha)
+    calls = 0
+
+    def runner(task, workspace, timeout_seconds, lease):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient provider interruption")
+        return {"status": "SUCCEEDED", "summary": "recovered", "commands": ["git status"]}
+
+    result = AgentOfficeService(
+        root,
+        adapter=MunderAdapter(worker_runners={"specialist": runner}),
+    ).execute(spec, [_task("transient-retry")])
+    assert result.status == "SUCCEEDED"
+    assert calls == 2
+    item = result.per_agent_results[0]
+    assert item["attempt_count"] == 2
+    assert item["retry_count"] == 1
 
 
 def test_deterministic_codex_host_policy_failure_does_not_consume_retry(tmp_path, monkeypatch):
