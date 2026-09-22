@@ -9,6 +9,7 @@ import time
 from typing import Any, Mapping
 
 from app.database import continuous_operation_repository as continuous_repository
+from app.database import gta6_brain_repository as brain_repository
 from app.database.memory_claim_evidence_repository import insert_memory_claim_evidence
 from app.database.memory_claim_repository import (
     find_memory_claim_by_canonical_key,
@@ -58,6 +59,42 @@ def _now() -> str:
 
 def _source_key(url: str) -> str:
     return "source-" + sha256(str(url).strip().encode("utf-8")).hexdigest()[:24]
+
+
+def _source_authority_class(url: str, source_type: str) -> str:
+    host = str(url or "").casefold()
+    if "rockstargames.com" in host:
+        return "ROCKSTAR_OFFICIAL"
+    if "take2games.com" in host or "take-two" in host:
+        return "TAKE_TWO_OFFICIAL"
+    if str(source_type or "").upper() == "PRIMARY_SOURCE":
+        return "OTHER"
+    return "OTHER"
+
+
+def _source_domain(url: str) -> str:
+    from urllib.parse import urlparse
+    return (urlparse(str(url or "")).hostname or "").casefold()
+
+
+def _entity_type(subject: str) -> str:
+    folded = str(subject or "").casefold()
+    if any(name in folded for name in ("lucia", "jason")):
+        return "CHARACTER"
+    if any(name in folded for name in ("vice city", "leonida", "keys")):
+        return "LOCATION"
+    return "TOPIC"
+
+
+def _entity_id(entity_type: str, canonical_name: str) -> str:
+    identity = f"{entity_type}:{' '.join(str(canonical_name).casefold().split())}"
+    return "entity-" + sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def _raw_evidence_id(source_id: str, content_hash: str) -> str:
+    return "evidence-" + sha256(
+        f"{source_id}:{content_hash}".encode("utf-8")
+    ).hexdigest()[:24]
 
 
 def _tokens(value: str) -> set[str]:
@@ -271,6 +308,8 @@ def execute_gta6_delta_research_capability(
             "memory_hit_count": len(knowledge_hits),
             "memory_miss_count": 0,
             "duplicate_research_avoided": True,
+            "SOURCE_UNCHANGED": "YES",
+            "LLM_EXTRACTION_SKIPPED": "YES",
             "checked_at": _now(),
             "evidence_refs": [
                 str(known_source.get("evidence_ref") or ""),
@@ -325,6 +364,103 @@ def execute_gta6_delta_research_capability(
             "query": query,
         },
     })
+    source_registry = brain_repository.upsert_source({
+        "source_id": source_key,
+        "url": primary["url"],
+        "domain": _source_domain(primary["url"]),
+        "source_type": primary["source_type"],
+        "authority_class": _source_authority_class(
+            primary["url"], primary["source_type"]
+        ),
+        "reliability_score": 1.0,
+        "reliability_history": [{
+            "observed_at": observed_at,
+            "result": "SUCCESS",
+            "source_type": primary["source_type"],
+        }],
+        "discovered_at": (
+            str((known_source or {}).get("metadata", {}).get("discovered_at") or observed_at)
+        ),
+        "last_checked_at": observed_at,
+        "last_changed_at": (
+            observed_at
+            if changed or known_source is None
+            else str(known_source.get("changed_at") or observed_at)
+        ),
+        "last_success_at": observed_at,
+        "content_hash": (
+            str(primary.get("content_sha256") or "").strip() or fingerprint
+        ),
+        "refresh_priority": 100,
+        "refresh_interval_seconds": freshness,
+        "refresh_state": "CURRENT",
+        "active": True,
+        "provenance": {
+            "evidence_ref": evidence_ref,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+        "metadata": {
+            "source_name": primary.get("source_name"),
+            "goal_id": goal_id,
+            "query": query,
+        },
+    })
+    if known_source is not None and not changed:
+        return {
+            "status": "NO_MEANINGFUL_GTA6_DELTA",
+            "authority": auth.authority,
+            "goal_id": goal_id,
+            "query": query,
+            "subject": subject,
+            "source_url": source_url,
+            "source_state": state,
+            "source_registry": source_registry,
+            "known_state": knowledge_hits,
+            "bounded_knowledge_context": bounded,
+            "candidate_claims": [],
+            "delta": {
+                "NEW_FINDINGS": [],
+                "CHANGED_FINDINGS": [],
+                "SUPERSEDED_FINDINGS": [],
+                "CONTRADICTIONS": [],
+                "NO_CHANGE": [source_url],
+            },
+            "source_fetch_count": 1,
+            "memory_hit_count": len(knowledge_hits),
+            "memory_miss_count": int(not knowledge_hits),
+            "duplicate_research_avoided": True,
+            "SOURCE_UNCHANGED": "YES",
+            "LLM_EXTRACTION_SKIPPED": "YES",
+            "checked_at": str(packet.get("checked_at") or observed_at),
+            "latency_seconds": latency,
+            "evidence_refs": [evidence_ref],
+        }
+
+    content_hash = (
+        str(primary.get("content_sha256") or "").strip()
+        or sha256(primary["content_excerpt"].encode("utf-8")).hexdigest()
+    )
+    raw_evidence, evidence_duplicate = brain_repository.insert_evidence({
+        "evidence_id": _raw_evidence_id(source_key, content_hash),
+        "source_id": source_key,
+        "url": primary["url"],
+        "publication_date": primary.get("published_at"),
+        "observed_at": observed_at,
+        "excerpt": str(primary["content_excerpt"])[:16000],
+        "content_hash": content_hash,
+        "source_type": primary["source_type"],
+        "provenance": {
+            "evidence_ref": evidence_ref,
+            "authority_class": source_registry["authority_class"],
+            "collection": "gta6.research.delta",
+        },
+        "extraction_method": "direct_source_fetch",
+        "metadata": {
+            "goal_id": goal_id,
+            "query": query,
+            "subject": subject,
+        },
+    })
     claims = _relevant_claims(
         text=primary["content_excerpt"],
         query=query,
@@ -336,6 +472,9 @@ def execute_gta6_delta_research_capability(
         published_at=primary.get("published_at"),
         evidence_ref=evidence_ref,
     )
+    for claim in claims:
+        claim["raw_evidence_id"] = raw_evidence["evidence_id"]
+        claim["source_authority_class"] = source_registry["authority_class"]
     if not claims:
         raise RuntimeError("official delta research produced no query-relevant claim candidates")
     delta_key = "NEW_FINDINGS" if known_source is None else (
@@ -356,6 +495,9 @@ def execute_gta6_delta_research_capability(
         "subject": subject,
         "source_url": source_url,
         "source_state": state,
+        "source_registry": source_registry,
+        "raw_evidence": raw_evidence,
+        "raw_evidence_duplicate": evidence_duplicate,
         "known_state": knowledge_hits,
         "bounded_knowledge_context": bounded,
         "candidate_claims": claims,
@@ -364,6 +506,8 @@ def execute_gta6_delta_research_capability(
         "memory_hit_count": len(knowledge_hits),
         "memory_miss_count": int(not knowledge_hits),
         "duplicate_research_avoided": False,
+        "SOURCE_UNCHANGED": "NO",
+        "LLM_EXTRACTION_SKIPPED": "NO",
         "checked_at": str(packet.get("checked_at") or observed_at),
         "latency_seconds": latency,
         "evidence_refs": [evidence_ref],
@@ -469,6 +613,58 @@ def _materialize_knowledge_brain(
         for relation in list_memory_records_for_claim(int(supersedes_claim_id), limit=20):
             update_memory_status(int(relation["memory_record_id"]), "superseded")
 
+    subject_name = str(candidate_claim["subject"]).strip()
+    subject_type = str(candidate_claim.get("subject_entity_type") or _entity_type(subject_name))
+    subject_entity_id = _entity_id(subject_type, subject_name)
+    brain_repository.upsert_entity({
+        "entity_id": subject_entity_id,
+        "entity_type": subject_type,
+        "canonical_name": subject_name,
+        "aliases": list(candidate_claim.get("subject_aliases") or ()),
+        "status": "ACTIVE",
+        "first_seen_at": str(candidate_claim["observed_at"]),
+        "last_seen_at": str(candidate_claim["observed_at"]),
+        "metadata": {"source_claim_id": claim_id},
+    })
+    brain_metadata = brain_repository.upsert_claim_metadata({
+        "claim_id": claim_id,
+        "subject_entity_id": subject_entity_id,
+        "predicate": candidate_claim.get("predicate"),
+        "object_entity_id": candidate_claim.get("object_entity_id"),
+        "brain_status": "ACTIVE",
+        "first_seen_at": (
+            str(existing.get("created_at"))
+            if existing is not None and existing.get("created_at")
+            else str(candidate_claim["observed_at"])
+        ),
+        "last_verified_at": str(candidate_claim["observed_at"]),
+        "superseded_by_claim_id": None,
+        "related_claims": candidate_claim.get("related_claims") or [],
+        "used_in_content": candidate_claim.get("used_in_content") or [],
+        "world_novelty": str(candidate_claim.get("world_novelty") or "UNKNOWN"),
+        "knowledge_novelty": "KNOWN" if existing is not None else "NEW",
+        "editorial_novelty": str(candidate_claim.get("editorial_novelty") or "UNUSED"),
+        "freshness_class": str(candidate_claim.get("freshness_class") or "HIGH"),
+        "freshness_due_at": candidate_claim.get("freshness_due_at"),
+        "consolidated_key": canonical_key,
+        "metadata": {
+            "verification_state": "VERIFIED",
+            "fact_check_verdict": fact_check.get("verdict"),
+            "fact_check_confidence": fact_check.get("confidence"),
+            "raw_evidence_id": candidate_claim.get("raw_evidence_id"),
+            "source_authority_class": candidate_claim.get("source_authority_class"),
+        },
+    })
+    if supersedes_claim_id:
+        previous_meta = brain_repository.get_claim_metadata(int(supersedes_claim_id))
+        if previous_meta is not None:
+            brain_repository.upsert_claim_metadata({
+                **previous_meta,
+                "brain_status": "SUPERSEDED",
+                "superseded_by_claim_id": claim_id,
+                "last_verified_at": str(candidate_claim["observed_at"]),
+            })
+
     lineage = continuous_repository.upsert_claim_lineage({
         "claim_id": claim_id,
         "subject": candidate_claim["subject"],
@@ -493,6 +689,8 @@ def _materialize_knowledge_brain(
         "memory_record_id": memory_id,
         "event_id": event_id,
         "lineage": lineage,
+        "brain_metadata": brain_metadata,
+        "subject_entity_id": subject_entity_id,
         "duplicate": existing is not None,
     }
 
