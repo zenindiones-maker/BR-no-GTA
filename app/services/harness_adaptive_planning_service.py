@@ -590,12 +590,30 @@ def build_semantic_planning_context(
     }
 
 
+_BOUNDED_MUTATION_TASK_CLASSES = {
+    "bounded-development",
+}
+
+
+def effective_required_side_effect_class(
+    *,
+    task_class: str | None,
+    declared: str | None,
+) -> str:
+    normalized_task_class = str(task_class or "").strip().casefold()
+    normalized_declared = str(declared or "READ_ONLY").strip().upper()
+    if normalized_task_class in _BOUNDED_MUTATION_TASK_CLASSES:
+        return "BOUNDED_MUTATION"
+    return normalized_declared
+
+
 def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     errors: list[str] = []
     for task in proposal.tasks:
-        required_side_effect = str(
-            task.risk_side_effect_class or "READ_ONLY"
-        ).upper()
+        required_side_effect = effective_required_side_effect_class(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+        )
         for capability_id in task.candidate_capability_ids:
             record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
             if record is None:
@@ -659,9 +677,10 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     for task in proposal.tasks:
         if task.candidate_capability_ids:
             continue
-        required_side_effect = str(
-            task.risk_side_effect_class or "READ_ONLY"
-        ).upper()
+        required_side_effect = effective_required_side_effect_class(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+        )
         feasible = False
         for record in GLOBAL_CAPABILITY_REGISTRY.all():
             if (
@@ -799,7 +818,11 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             "dependencies": list(task.dependencies),
             "expected_output": task.expected_output,
             "acceptance_criteria": list(task.acceptance_criteria),
-            "risk_side_effect_class": task.risk_side_effect_class,
+            "risk_side_effect_class": effective_required_side_effect_class(
+                task_class=task.task_class,
+                declared=task.risk_side_effect_class,
+            ),
+            "declared_risk_side_effect_class": task.risk_side_effect_class,
         }
         for task in proposal.tasks
     ]
@@ -993,9 +1016,12 @@ def select_capability_for_requirement(
                 f"{capability_id}:task-adapter-incompatible"
             )
             continue
-        required_side_effect = str(
-            requirement.get("risk_side_effect_class") or "READ_ONLY"
-        ).upper()
+        required_side_effect = effective_required_side_effect_class(
+            task_class=str(requirement.get("task_class") or ""),
+            declared=str(
+                requirement.get("risk_side_effect_class") or "READ_ONLY"
+            ),
+        )
         record_side_effect = str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ).upper()
