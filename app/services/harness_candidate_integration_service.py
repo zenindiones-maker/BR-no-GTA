@@ -9,11 +9,36 @@ from app.services.agent_office.integration_gate import run_integration_gate
 
 
 def mission_requires_measured_improvement(human_goal: str) -> bool:
-    text = str(human_goal or "").casefold()
+    text = " ".join(str(human_goal or "").casefold().split())
+
+    strong_measurement_markers = (
+        "mensur",
+        "measur",
+        "antes/depois",
+        "before/after",
+        "compare antes",
+        "benchmark",
+        "latency",
+        "latência",
+    )
+    if any(marker in text for marker in strong_measurement_markers):
+        return True
+
+    explicitly_absent = (
+        r"\bsem\s+(?:qualquer\s+)?(?:requisito|necessidade|exig[eê]ncia)\s+de\s+"
+        r"(?:performance|desempenho|benchmark)\b",
+        r"\b(?:n[aã]o|nao)\s+(?:h[aá]|ha|requer|exige|precisa(?:mos)?\s+de)\s+"
+        r"(?:requisito\s+de\s+)?(?:performance|desempenho|benchmark)\b",
+        r"\bwithout\s+(?:a\s+)?(?:performance|benchmark|measurement)\s+requirement\b",
+        r"\bno\s+(?:performance|benchmark|measurement)\s+requirement\b",
+    )
+    if any(re.search(pattern, text) for pattern in explicitly_absent):
+        return False
+
     return any(marker in text for marker in (
-        "mensur", "measur", "antes/depois", "before/after",
-        "compare antes", "performance", "desempenho", "latency",
-        "latência", "redund", "benchmark",
+        "performance",
+        "desempenho",
+        "redund",
     ))
 
 
