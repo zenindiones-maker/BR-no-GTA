@@ -5,6 +5,16 @@ from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.provider_health_service import semantic_provider_health
+from app.services.harness_capability_adapter import CapabilityAdapter
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.harness_collaboration_service import TaskEnvelope
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 
 
 @dataclass(frozen=True)
@@ -199,6 +209,134 @@ def select_mission_execution_route(
         hermes_selection_reason="no executable coordination topology is available",
     )
 
+def _direct_task_payload(
+    *,
+    task: TaskEnvelope,
+    mission_plan: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    goal = dict(mission_plan.get("goal") or {})
+    objective = str(task.objective or message or goal.get("human_goal") or "").strip()
+    return {
+        "mission_id": str(mission_plan.get("mission_id") or ""),
+        "task_id": task.task_id,
+        "goal_id": str(goal.get("goal_id") or task.goal_id or ""),
+        "task_class": task.task_class,
+        "objective": objective,
+        "task": objective,
+        "query": str(message or goal.get("human_goal") or objective).strip(),
+        "gaps": [objective] if objective else [],
+        "input_refs": list(task.input_refs),
+        "read_scope": list(task.read_scope),
+        "write_scope": list(task.write_scope),
+        "allowed_tools": list(task.allowed_tools),
+        "allowed_side_effects": list(task.allowed_side_effects),
+        "forbidden_side_effects": list(task.forbidden_side_effects),
+        "acceptance_criteria": list(task.acceptance_criteria),
+        "expected_output": task.expected_output,
+        "evidence_contract": task.evidence_contract,
+        "time_budget_seconds": task.time_budget_seconds,
+        "cost_budget": task.cost_budget,
+        "context_budget_bytes": task.context_budget_bytes,
+        "tool_budget": task.tool_budget,
+        "retry_budget": task.retry_budget,
+        "idempotency_key": task.idempotency_key,
+        "limit": 10,
+        "max_context_bytes": min(task.context_budget_bytes, 32768),
+    }
+
+
+def _execute_direct_capability(
+    *,
+    mission_plan: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    collaboration = dict(mission_plan.get("collaboration_plan") or {})
+    task_rows = list(collaboration.get("tasks") or ())
+    if len(task_rows) != 1:
+        raise ValueError("direct capability route requires exactly one task")
+    task = TaskEnvelope.from_mapping(dict(task_rows[0]))
+    record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability_id)
+    if record is None or not record.execution_enabled:
+        raise PermissionError("direct task capability is not executable")
+
+    goal = dict(mission_plan.get("goal") or {})
+    decision = route_harness_request(HarnessRoutingRequest(
+        intent=f"direct TaskEnvelope {task.task_id}: {task.objective}",
+        authorized_action=task.action,
+        domain=record.domain,
+        task_class=task.task_class,
+        goal_id=str(goal.get("goal_id") or task.goal_id or ""),
+        required_capability_id=task.capability_id,
+        fallback_allowed=False,
+        provider_required=False,
+        learning_required=True,
+    ))
+    if decision.selected_capability_id != task.capability_id:
+        raise PermissionError("direct route capability substitution requires Harness replan")
+    if decision.selected_executor_binding != record.executor_binding:
+        raise PermissionError("direct route executor escaped Registry")
+
+    adapter = CapabilityAdapter()
+    executor = adapter.resolve_binding(str(record.executor_binding or ""))
+    authorization = issue_harness_authorization(
+        authorized_action=task.action,
+        subject=adapter.authorization_subject(executor, task),
+        execution_id=(
+            f"{mission_plan.get('mission_id')}:{task.task_id}:direct"
+        ),
+        lineage={
+            "mission_id": mission_plan.get("mission_id"),
+            "plan_id": mission_plan.get("plan_id"),
+            "task_id": task.task_id,
+            "task_class": task.task_class,
+            "goal_id": goal.get("goal_id"),
+            "capability_id": task.capability_id,
+            "capability_version": str(record.version or "1"),
+            "routing_id": decision.routing_id,
+            "selected_executor_binding": record.executor_binding,
+            "agent_id": record.agent_id,
+            "skill_id": record.skill_id,
+            "parent_authorization_id": None,
+            "idempotency_key": task.idempotency_key,
+            "read_scope": list(task.read_scope),
+            "write_scope": list(task.write_scope),
+            "time_budget_seconds": task.time_budget_seconds,
+            "cost_budget": task.cost_budget,
+            "context_budget_bytes": task.context_budget_bytes,
+            "tool_budget": task.tool_budget,
+            "retry_budget": task.retry_budget,
+            "expires_at": task.expires_at,
+            "topology": "DIRECT_CAPABILITY",
+        },
+    )
+    try:
+        adapted = adapter.execute(
+            authorization=authorization,
+            task_envelope=task,
+            routing_decision=decision,
+            payload=_direct_task_payload(
+                task=task,
+                mission_plan=mission_plan,
+                message=message,
+            ),
+        )
+    finally:
+        consume_harness_authorization(authorization)
+    return {
+        "status": "COMPLETED",
+        "authority": "DEEPSEEK_HARNESS",
+        "capability_id": task.capability_id,
+        "agent_id": record.agent_id,
+        "routing_id": decision.routing_id,
+        "authorization_id": authorization.authorization_id,
+        "executor_binding": record.executor_binding,
+        "result": adapted.to_dict(),
+        "HERMES_USED": "NO",
+        "HERMES_SELECTION_REASON": "single direct capability is sufficient",
+    }
+
+
 def execute_harness_mission_plan(
     *,
     plan: dict[str, Any],
@@ -221,17 +359,25 @@ def execute_harness_mission_plan(
             state=state,
             message=message,
         )
-    elif route.runtime in {"DIRECT_CAPABILITY", "AGENT_OFFICE"}:
+    elif route.runtime == "DIRECT_CAPABILITY":
+        result = _execute_direct_capability(
+            mission_plan=mission_plan,
+            message=message,
+        )
+    elif route.runtime == "AGENT_OFFICE":
         return {
-            "status": "WAITING_FOR_HUMAN",
+            "status": "CLOUD_EXECUTION_REQUIRED",
             "answer": (
-                "O Harness encontrou um executor direto, mas o plano ainda não contém um payload "
-                "operacional aprovado suficiente para executá-lo sem inventar parâmetros. "
-                "Mantive a missão no boundary correto em vez de cair para um modelo semântico."
+                "A tarefa exige o Agent Office engineering sandbox. "
+                "O Harness manteve a execução no boundary cloud; nenhuma carga "
+                "pesada foi iniciada neste control surface."
             ),
             "mission_execution_route": route_dict,
             "authority": "DEEPSEEK_HARNESS",
             "provider_required": False,
+            "HERMES_USED": "NO",
+            "HERMES_SELECTION_REASON": route.hermes_selection_reason,
+            "TERMUX_HEAVY_PROCESSING": "NO",
         }
     elif route.runtime == "SEMANTIC_PROVIDER_UNAVAILABLE":
         return {
