@@ -272,6 +272,25 @@ def _structured_metric(final_text: str) -> dict[str, Any] | None:
     return None
 
 
+def _agent_message_metric_stats(stdout: str) -> tuple[int, int]:
+    message_count = 0
+    metric_marker_count = 0
+    for line in str(stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "agent_message":
+            continue
+        text = item.get("text")
+        if not isinstance(text, str):
+            continue
+        message_count += 1
+        metric_marker_count += text.count("BR_METRIC_JSON=")
+    return message_count, metric_marker_count
+
+
 def _final_text(stdout: str) -> str:
     result = ""
     for line in str(stdout or "").splitlines():
@@ -482,8 +501,12 @@ def codex_bounded_development_worker(
     metric = _structured_metric(final_text)
     measurement_required = _measurement_required(task, lease)
     if measurement_required and metric is None:
+        message_count, metric_marker_count = _agent_message_metric_stats(
+            completed.stdout
+        )
         raise RuntimeError(
             "measurable bounded-development task produced no structured before/after metric"
+            f"; agent_messages={message_count}; metric_markers={metric_marker_count}"
         )
     if measurement_required and metric is not None and not metric["improved"]:
         raise RuntimeError(
