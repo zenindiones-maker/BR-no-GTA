@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +31,10 @@ from app.services.harness_authorization_service import (
 from app.services.hermes_multiagent.capability_broker import (
     DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
+)
+from app.services.hermes_multiagent.runtime import (
+    export_hermes_mission_checkpoint,
+    restore_hermes_mission_checkpoint,
 )
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -336,6 +341,12 @@ class _FakeHermesBoard:
         self.created = []
         self.comments = []
 
+    def find_task_by_idempotency_key(self, idempotency_key):
+        for item in self.created:
+            if item.get("idempotency_key") == idempotency_key:
+                return dict(item)
+        return None
+
     def create_task(self, **kwargs):
         task_id = f"board-{len(self.created) + 1}"
         self.created.append({"id": task_id, **kwargs})
@@ -598,6 +609,93 @@ def test_execution_idempotency_reuses_persisted_result_after_broker_restart(
         assert after_restart["reused"] is True
         assert after_restart["DUPLICATE_AGENT_EXECUTION_AVOIDED"] == "PASS"
         assert len(calls) == 1
+    finally:
+        consume_harness_authorization(parent_auth)
+
+
+def test_durable_checkpoint_restores_results_into_clean_runner(tmp_path, monkeypatch):
+    _plan, parent_auth, envelope = _delegation_fixture()
+    board = _FakeHermesBoard()
+    source_artifacts = tmp_path / "runner-a-artifacts"
+    source_home = tmp_path / "runner-a-hermes-home"
+    source_home.mkdir(parents=True)
+    (source_home / "kanban-marker.db").write_bytes(b"durable-kanban-state")
+    calls = []
+
+    def fake_execute(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            result={"status": "PASS", "measurement": 42},
+            elapsed_seconds=0.01,
+        )
+
+    try:
+        broker = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=source_artifacts,
+        )
+        monkeypatch.setattr(broker.adapter, "execute", fake_execute)
+        first = broker.execute_delegated_capability(
+            task_id="profile",
+            capability_id="agent-office.codex.readonly-analysis",
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert first["executed"] is True
+        assert len(calls) == 1
+
+        checkpoint = tmp_path / "checkpoint"
+        manifest = export_hermes_mission_checkpoint(
+            spec=envelope,
+            hermes_home=source_home,
+            artifact_dir=source_artifacts,
+            checkpoint_dir=checkpoint,
+        )
+        assert manifest["mission_id"] == envelope.mission_id
+        assert manifest["result_files"]
+        assert (checkpoint / "hermes-home" / "kanban-marker.db").is_file()
+
+        clean_home = tmp_path / "runner-b-hermes-home"
+        clean_artifacts = tmp_path / "runner-b-artifacts"
+        restored = restore_hermes_mission_checkpoint(
+            spec=envelope,
+            checkpoint_dir=checkpoint,
+            hermes_home=clean_home,
+            artifact_dir=clean_artifacts,
+        )
+        assert restored["CANONICAL_CHECKPOINT_RESTORED"] == "PASS"
+        assert restored["DURABLE_MISSION_IDENTITY_PRESERVED"] == "PASS"
+        assert (clean_home / "kanban-marker.db").read_bytes() == b"durable-kanban-state"
+
+        resumed = HermesHarnessCapabilityBroker(
+            spec=envelope,
+            parent_authorization=parent_auth,
+            board=board,
+            task_mapping={"profile": "board-parent"},
+            artifact_dir=clean_artifacts,
+        )
+        monkeypatch.setattr(resumed.adapter, "execute", fake_execute)
+        second = resumed.execute_delegated_capability(
+            task_id="profile",
+            capability_id="agent-office.codex.readonly-analysis",
+            payload={"goal_id": envelope.goal_id, "task": "profile safely"},
+        )
+        assert second["executed"] is False
+        assert second["reused"] is True
+        assert second["DUPLICATE_AGENT_EXECUTION_AVOIDED"] == "PASS"
+        assert len(calls) == 1
+
+        result_file = next((checkpoint / "capability-results").glob("*.json"))
+        result_file.write_text(result_file.read_text() + "tamper", encoding="utf-8")
+        with pytest.raises(PermissionError, match="hash mismatch"):
+            restore_hermes_mission_checkpoint(
+                spec=envelope,
+                checkpoint_dir=checkpoint,
+                hermes_home=tmp_path / "tampered-home",
+                artifact_dir=tmp_path / "tampered-artifacts",
+            )
     finally:
         consume_harness_authorization(parent_auth)
 
