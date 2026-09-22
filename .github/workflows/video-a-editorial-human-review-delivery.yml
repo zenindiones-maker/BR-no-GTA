@@ -54,110 +54,131 @@ jobs:
           print("VISUAL_COVERAGE_WORK=NO")
           PY
 
-      - name: Send human-readable editorial review to Telegram
+      - name: Deliver genuine SCRIPT_HUMAN_REVIEW_READY through Harness boundary
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_REVIEW_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          TELEGRAM_ALLOWED_CHAT_IDS: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID }}
+          BR_TEST_DATABASE: ${{ github.workspace }}/runtime/video-a-editorial-review/harness-delivery.db
         run: |
           set -euo pipefail
-          root="runtime/video-a-editorial-review"
-          checkpoint=".run/video-a-editorial-review-delivery-checkpoint.json"
-          test -n "$TELEGRAM_BOT_TOKEN"
-          test -n "$TELEGRAM_REVIEW_CHAT_ID"
-          test -f "$root/telegram-message-order.txt"
-
-          presentation_id="$(python - <<'PY'
-          import json
-          print(json.load(open("runtime/video-a-editorial-review/telegram-presentation-manifest.json",encoding="utf-8"))["presentation_id"])
-          PY
-          )"
-          : > "$root/telegram-editorial-message-ids.txt"
-
-          if test -f "$checkpoint"; then
-            PRESENTATION_ID="$presentation_id" CHECKPOINT="$checkpoint" python - <<'PY' > "$root/telegram-editorial-message-ids.txt"
-          import json,os
-          d=json.load(open(os.environ["CHECKPOINT"],encoding="utf-8"))
-          if d.get("presentation_id")==os.environ["PRESENTATION_ID"]:
-              for filename,message_id in (d.get("delivered") or {}).items():
-                  print(f"{filename}={message_id}")
-          PY
-          fi
-
-          while IFS= read -r filename; do
-            test -n "$filename" || continue
-            if awk -F= -v f="$filename" '$1==f {found=1} END {exit !found}' "$root/telegram-editorial-message-ids.txt"; then
-              echo "TELEGRAM_RESUME_SKIP=$filename"
-              continue
-            fi
-
-            path="$root/telegram-human-readable/$filename"
-            test -s "$path"
-            body="$root/telegram-response.json"
-            sent="NO"
-
-            for attempt in 1 2 3 4 5 6 7 8; do
-              http_code="$(curl --silent --show-error \
-                -o "$body" \
-                -w "%{http_code}" \
-                -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-                --data-urlencode "chat_id=$TELEGRAM_REVIEW_CHAT_ID" \
-                --data-urlencode "text@$path")"
-
-              if test "$http_code" = "200"; then
-                RESPONSE_FILE="$body" FILE="$filename" python - <<'PY' >> "$root/telegram-editorial-message-ids.txt"
-          import json,os
-          d=json.load(open(os.environ["RESPONSE_FILE"],encoding="utf-8"))
-          assert d.get("ok") is True,d
-          print(os.environ["FILE"]+"="+str(d["result"]["message_id"]))
-          PY
-                sent="YES"
-                break
-              fi
-
-              if test "$http_code" = "429"; then
-                retry_after="$(BODY="$body" python - <<'PY'
-          import json,os
-          try:
-              d=json.load(open(os.environ["BODY"],encoding="utf-8"))
-              print(int((d.get("parameters") or {}).get("retry_after") or 5))
-          except Exception:
-              print(5)
-          PY
-                )"
-                echo "TELEGRAM_RATE_LIMIT filename=$filename retry_after=$retry_after attempt=$attempt"
-                sleep "$((retry_after + 2))"
-                continue
-              fi
-
-              echo "TELEGRAM_SEND_FAIL filename=$filename http_code=$http_code"
-              cat "$body"
-              exit 1
-            done
-
-            test "$sent" = "YES"
-            # Group chats are rate-limited more strictly than the global bot limit.
-            sleep 4
-          done < "$root/telegram-message-order.txt"
-
+          test -n "${TELEGRAM_BOT_TOKEN:-}"
+          test -n "${TELEGRAM_REVIEW_CHAT_ID:-}"
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
+
+          from app.database.schema import initialize_schema
+          from app.services.harness_authorization_service import (
+              consume_harness_authorization,
+              issue_harness_authorization,
+          )
+          from app.services.telegram_group_human_surface_service import (
+              SCRIPT_HUMAN_REVIEW_READY,
+              send_harness_message_to_human_group,
+          )
+
           root=Path("runtime/video-a-editorial-review")
-          ids={}
-          for line in (root/"telegram-editorial-message-ids.txt").read_text().splitlines():
-              k,v=line.split("=",1); ids[k]=int(v)
-          metrics=json.loads((root/"review-metrics.json").read_text())
-          manifest=json.loads((root/"telegram-presentation-manifest.json").read_text())
-          assert len(ids)==manifest["message_count"],(ids,manifest)
-          assert list(ids)==manifest["order"],(ids,manifest)
+          checkpoint=Path(".run/video-a-editorial-review-delivery-checkpoint.json")
+          delivery=json.loads((root/"editorial-delivery-manifest.json").read_text(encoding="utf-8"))
+          presentation=json.loads((root/"telegram-presentation-manifest.json").read_text(encoding="utf-8"))
+          order=[
+              line.strip()
+              for line in (root/"telegram-message-order.txt").read_text(encoding="utf-8").splitlines()
+              if line.strip()
+          ]
+
+          assert delivery["deliverable_type"]=="SCRIPT",delivery
+          assert delivery["status"]=="READY_FOR_HUMAN_REVIEW",delivery
+          assert delivery["complete_script_present"] is True,delivery
+          assert delivery["artifact_origin"]=="EDITORIAL_PIPELINE",delivery
+          assert delivery["artifact_real"] is True,delivery
+          assert delivery["technical_qa_human_egress"]=="FORBIDDEN",delivery
+          assert presentation["TECHNICAL_QA_HUMAN_EGRESS"]=="FORBIDDEN",presentation
+          assert not any("-qa-" in name for name in order),order
+          assert any("-summary-" in name for name in order),order
+          assert any("-evidence-" in name for name in order),order
+          assert any("-outline-" in name for name in order),order
+          assert any("-script-" in name for name in order),order
+
+          artifact_file=Path(delivery["artifact_file"])
+          assert artifact_file.is_file(),artifact_file
+          digest=hashlib.sha256(artifact_file.read_bytes()).hexdigest()
+          # The artifact file is newline-terminated; the manifest hash is over
+          # the exact canonical script text without that transport newline.
+          canonical_script=artifact_file.read_text(encoding="utf-8").rstrip("\n")
+          canonical_digest=hashlib.sha256(canonical_script.encode("utf-8")).hexdigest()
+          assert canonical_digest==delivery["content_sha256"],(canonical_digest,delivery)
+          artifact_file.write_text(canonical_script,encoding="utf-8")
+          assert hashlib.sha256(artifact_file.read_bytes()).hexdigest()==delivery["content_sha256"]
+
+          lineage={
+              **delivery,
+              "artifact_file":str(artifact_file),
+          }
+
+          delivered={}
+          if checkpoint.is_file():
+              prior=json.loads(checkpoint.read_text(encoding="utf-8"))
+              if prior.get("presentation_id")==presentation["presentation_id"]:
+                  delivered={
+                      str(k):int(v)
+                      for k,v in (prior.get("delivered") or {}).items()
+                      if str(k) in order
+                  }
+
+          initialize_schema()
+          authorization=issue_harness_authorization(
+              authorized_action="EXECUTION",
+              subject="human-surface:telegram_group",
+              execution_id="video-a-editorial-human-review-delivery",
+              lineage={
+                  "authority":"DEEPSEEK_HARNESS",
+                  "purpose":"SCRIPT_HUMAN_REVIEW_READY",
+                  "editorial_artifact_id":delivery["editorial_artifact_id"],
+                  "artifact_ref":delivery["artifact_ref"],
+              },
+          )
+          try:
+              for filename in order:
+                  if filename in delivered:
+                      print("TELEGRAM_RESUME_SKIP="+filename)
+                      continue
+                  text=(root/"telegram-human-readable"/filename).read_text(encoding="utf-8").strip()
+                  result=send_harness_message_to_human_group(
+                      authorization=authorization,
+                      text=text,
+                      category=SCRIPT_HUMAN_REVIEW_READY,
+                      lineage=lineage,
+                      deliverable_type="SCRIPT",
+                      deliverable_status="READY_FOR_HUMAN_REVIEW",
+                      complete_script_present=True,
+                      harness_authorized=True,
+                  )
+                  assert result["status"]=="SENT",result
+                  assert result["TELEGRAM_SEND"]=="YES",result
+                  assert result["transport_mode"]=="TELEGRAM_NETWORK",result
+                  message_id=result["telegram_message_id"]
+                  assert isinstance(message_id,int),result
+                  delivered[filename]=message_id
+          finally:
+              consume_harness_authorization(authorization)
+
+          assert list(delivered)==order,(delivered,order)
+          (root/"telegram-editorial-message-ids.txt").write_text(
+              "\n".join(f"{name}={delivered[name]}" for name in order)+"\n",
+              encoding="utf-8",
+          )
+          metrics=json.loads((root/"review-metrics.json").read_text(encoding="utf-8"))
           state={
               **metrics,
-              "TELEGRAM_EDITORIAL_MESSAGE_IDS":ids,
-              "TELEGRAM_PRESENTATION_ID":manifest["presentation_id"],
+              "TELEGRAM_EDITORIAL_MESSAGE_IDS":delivered,
+              "TELEGRAM_PRESENTATION_ID":presentation["presentation_id"],
               "HUMAN_PRESENTATION":"TELEGRAM_TEXT",
               "TECHNICAL_ATTACHMENTS_TO_HUMAN":"NO",
               "SCRIPT_HUMAN_REVIEW":"PENDING",
-              "HUMAN_VOICE_REVIEW":"REJECTED",
+              "DELIVERABLE_STATUS":"READY_FOR_HUMAN_REVIEW",
               "PRODUCTION_READINESS":"FAIL",
               "FULL_RENDER_AUTHORIZED":"NO",
               "YOUTUBE_PUBLICATION":"NO",
@@ -165,14 +186,17 @@ jobs:
               "REVIEW_TARGET":"SCRIPT",
               "NEW_VOICE_SYNTHESIS":"NO",
               "VISUAL_COVERAGE_WORK":"NO",
+              "OPERATIONAL_TELEMETRY_PRESENT":"NO",
           }
-          (root/"waiting-for-human-review.json").write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding="utf-8")
-          print("TELEGRAM_EDITORIAL_MESSAGE_IDS="+json.dumps(ids,separators=(",",":")))
-          print("HUMAN_PRESENTATION=TELEGRAM_TEXT")
-          print("TECHNICAL_ATTACHMENTS_TO_HUMAN=NO")
-          print("SCRIPT_HUMAN_REVIEW=PENDING")
-          print("NEW_VOICE_SYNTHESIS=NO")
-          print("FULL_RENDER_AUTHORIZED=NO")
+          (root/"waiting-for-human-review.json").write_text(
+              json.dumps(state,ensure_ascii=False,indent=2)+"\n",
+              encoding="utf-8",
+          )
+          print("SCRIPT_HUMAN_REVIEW_READY_DELIVERY=PASS")
+          print("HARNESS_AUTHORIZATION_REQUIRED=PASS")
+          print("GENUINE_EDITORIAL_SCRIPT_REAL_DELIVERY=ALLOWED")
+          print("OPERATIONAL_TELEMETRY_PRESENT=NO")
+          print("TECHNICAL_QA_HUMAN_EGRESS=FORBIDDEN")
           PY
 
       - name: Upload delivery evidence
