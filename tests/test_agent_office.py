@@ -386,9 +386,21 @@ def test_codex_subprocess_receives_enforced_time_budget(tmp_path, monkeypatch):
         [_task(agent="codex", capability=CODEX_READONLY_CAPABILITY)],
     )
     assert result.status == "FAILED"
-    assert "worker execution failed" in result.errors
+    assert "worker execution timed out" in result.errors
     assert observed
     assert all(0 < value <= 1 for value in observed)
+
+
+def test_worker_failure_reason_preserves_only_allowlisted_internal_diagnostics():
+    safe = munder_adapter._safe_worker_exception_reason(
+        RuntimeError("Codex bounded-development produced no candidate patch")
+    )
+    assert safe == "Codex bounded-development produced no candidate patch"
+
+    hidden = munder_adapter._safe_worker_exception_reason(
+        RuntimeError("provider raw response contained arbitrary text")
+    )
+    assert hidden == "worker execution failed"
 
 
 def test_timeout_and_cost_budget_fail_closed(tmp_path):
