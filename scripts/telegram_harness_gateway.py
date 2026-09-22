@@ -68,46 +68,34 @@ def _split_telegram_text(text: str, *, limit: int = MAX_REPLY_CHARS) -> list[str
 
 
 class TelegramProgressReporter:
-    """Stage-aware Telegram progress plus low-noise heartbeat for long operations."""
+    """Audit-only progress recorder.
+
+    Progress, heartbeat, blocker and stage-transition events remain available
+    for canonical audit/observability, but they never emit Telegram messages.
+    Human-facing output is restricted to explicit replies and approved final
+    editorial deliverables.
+    """
+
+    AUDIT_ONLY = True
 
     def __init__(self, api: "TelegramApi", chat_id: int) -> None:
         self.api = api
         self.chat_id = int(chat_id)
-        self.heartbeat_seconds = max(
-            30.0,
-            float(os.getenv("TELEGRAM_HEARTBEAT_SECONDS", "75")),
-        )
-        self.progress_min_seconds = max(
-            5.0,
-            float(os.getenv("TELEGRAM_PROGRESS_MIN_SECONDS", "20")),
-        )
         self._stage = "STARTING"
         self._message = ""
-        self._last_sent = time.monotonic()
-        self._progress_message_id: int | None = None
         self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(
-            target=self._heartbeat_loop,
-            name=f"telegram-heartbeat-{self.chat_id}",
-            daemon=True,
-        )
-        self._thread.start()
+        # No background heartbeat thread: heartbeats are observability, not
+        # human product output.
+        return None
 
     def stop(self) -> None:
         self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
 
     def __call__(self, stage: str, message: str) -> None:
         normalized_stage = str(stage or "WORKING").strip().upper()
         rendered = str(message or "").strip()
-        now = time.monotonic()
-        stage_changed = normalized_stage != self._stage
         self._stage = normalized_stage
         self._message = rendered
         try:
@@ -119,27 +107,13 @@ class TelegramProgressReporter:
                 metadata={
                     "presentation_only": True,
                     "canonical_execution_state_authority": False,
+                    "telegram_egress": False,
+                    "audit_only": True,
                     "process_id": os.getpid(),
                 },
             )
         except Exception:
             pass
-        # Internal control-plane stages remain audit telemetry only. Human-facing
-        # Telegram must show useful work/result, never UNDERSTANDING/ROUTING/
-        # REASONING as if those were product output.
-        internal_only = normalized_stage in {
-            "STARTING",
-            "UNDERSTANDING",
-            "ROUTING",
-            "AUTHORIZATION",
-            "REASONING",
-        }
-        if internal_only:
-            return
-        if stage_changed or now - self._last_sent >= self.progress_min_seconds:
-            body = rendered or "Equipe trabalhando."
-            self._publish(body)
-            self._last_sent = now
 
     def blocker(self, message: str) -> None:
         detail = str(message or "").strip()[:1000]
@@ -154,36 +128,22 @@ class TelegramProgressReporter:
                 metadata={
                     "presentation_only": True,
                     "canonical_execution_state_authority": False,
+                    "telegram_egress": False,
+                    "audit_only": True,
                     "process_id": os.getpid(),
                 },
             )
         except Exception:
             pass
-        self._publish(f"BLOCKER: {detail}")
-        self._last_sent = time.monotonic()
 
     def _publish(self, text: str) -> None:
-        if self._progress_message_id is not None and hasattr(self.api, "edit"):
-            try:
-                self.api.edit(self.chat_id, self._progress_message_id, text)
-                return
-            except Exception:
-                self._progress_message_id = None
-        message_id = self.api.send(self.chat_id, text)
-        if isinstance(message_id, int):
-            self._progress_message_id = message_id
+        # Intentionally disabled. This method remains as a compatibility
+        # boundary so legacy callers cannot accidentally regain Telegram egress.
+        return None
 
     def _heartbeat_loop(self) -> None:
-        while not self._stop.wait(5.0):
-            now = time.monotonic()
-            if now - self._last_sent < self.heartbeat_seconds:
-                continue
-            stage = self._stage or "WORKING"
-            if stage in {"STARTING", "UNDERSTANDING", "ROUTING", "AUTHORIZATION", "REASONING"}:
-                self._publish("Equipe trabalhando no seu pedido. Nenhum blocker novo.")
-            else:
-                self._publish("Equipe trabalhando — " + (self._message or "progresso em andamento."))
-            self._last_sent = now
+        # Intentionally disabled. Audit-only reporter has no human heartbeat.
+        return None
 
 
 class TelegramApi:
