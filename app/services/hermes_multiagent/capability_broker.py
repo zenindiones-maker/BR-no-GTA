@@ -3,22 +3,20 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
-import importlib
 import inspect
 import json
 from pathlib import Path
-import time
 from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
-    authorization_to_context,
     consume_harness_authorization,
     issue_harness_authorization,
     validate_harness_authorization,
 )
-from app.services.harness_capability_service import CapabilityEvidence, execute_capability
+from app.services.harness_capability_service import CapabilityEvidence
+from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.bounded_memory_context_service import build_bounded_memory_context
 from app.services.telegram_group_human_surface_service import (
@@ -55,20 +53,6 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _binding_callable(binding: str):
-    module_name, sep, attr = str(binding or "").rpartition(".")
-    if not sep or not module_name or not attr:
-        raise PermissionError("Registry executor binding is invalid")
-    module = importlib.import_module(module_name)
-    executor = getattr(module, attr, None)
-    if not callable(executor):
-        raise PermissionError("Registry executor binding is not callable")
-    actual = f"{getattr(executor, '__module__', '')}.{getattr(executor, '__name__', '')}"
-    if actual != binding:
-        raise PermissionError("Resolved executor does not match exact Registry binding")
-    return executor
-
-
 class HermesHarnessCapabilityBroker:
     """Mission-scoped broker between Hermes coordination and Harness execution.
 
@@ -89,6 +73,7 @@ class HermesHarnessCapabilityBroker:
     ) -> None:
         self.spec = spec
         self.registry = registry
+        self.adapter = CapabilityAdapter(registry=registry)
         self.parent_authorization = validate_harness_authorization(
             parent_authorization,
             expected_action="EXECUTION",
@@ -146,17 +131,10 @@ class HermesHarnessCapabilityBroker:
             raise PermissionError("Harness reroute skill drifted from CollaborationPlan")
         return record, decision
 
-    @staticmethod
-    def _authorization_subject(executor, task) -> str:
-        params = inspect.signature(executor).parameters
-        if "execution_context" in params and "authorization" not in params:
-            return f"action:{task.action}"
-        return f"capability:{task.capability_id}"
-
     def _issue_child(self, *, task, record, decision, executor) -> HarnessAuthorization:
         return issue_harness_authorization(
             authorized_action=task.action,
-            subject=self._authorization_subject(executor, task),
+            subject=self.adapter.authorization_subject(executor, task),
             harness_decision_id=self.spec.harness_decision_id,
             execution_id=self.parent_authorization.execution_id,
             lineage={
@@ -166,34 +144,22 @@ class HermesHarnessCapabilityBroker:
                 "goal_id": self.spec.goal_id,
                 "routing_id": decision.routing_id,
                 "capability_id": task.capability_id,
+                "capability_version": task.capability_version,
                 "selected_executor_binding": record.executor_binding,
                 "agent_id": record.agent_id,
                 "skill_id": record.skill_id,
                 "runtime": "hermes",
                 "base_sha": self.spec.base_sha,
+                "idempotency_key": task.idempotency_key,
+                "read_scope": list(task.read_scope),
+                "write_scope": list(task.write_scope),
+                "time_budget_seconds": task.time_budget_seconds,
+                "cost_budget": task.cost_budget,
+                "context_budget_bytes": task.context_budget_bytes,
+                "tool_budget": task.tool_budget,
+                "retry_budget": task.retry_budget,
+                "expires_at": task.expires_at,
             },
-        )
-
-    def _invoke(self, *, executor, task, record, decision, authorization, payload):
-        params = inspect.signature(executor).parameters
-        if {"authorization", "routing_decision", "payload"}.issubset(params):
-            return executor(
-                authorization=authorization,
-                routing_decision=decision,
-                payload=payload,
-            )
-        if "capability" in params and "payload" in params:
-            return execute_capability(
-                capability_id=task.capability_id,
-                authorization=authorization,
-                payload=payload,
-                routing_decision=decision,
-                executor=executor,
-            )
-        if "execution_context" in params:
-            return executor(authorization_to_context(authorization))
-        raise PermissionError(
-            "Registry executor signature is not supported by the Hermes Harness broker"
         )
 
     def _persist_result(
@@ -250,26 +216,26 @@ class HermesHarnessCapabilityBroker:
         if capability_id not in self.spec.allowed_capability_ids:
             raise PermissionError("Hermes capability is outside mission lease")
         record, decision = self._route(task)
-        executor = _binding_callable(str(record.executor_binding or ""))
+        executor = self.adapter.resolve_binding(str(record.executor_binding or ""))
         child = self._issue_child(
             task=task,
             record=record,
             decision=decision,
             executor=executor,
         )
-        started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
         try:
-            result = self._invoke(
-                executor=executor,
-                task=task,
-                record=record,
-                decision=decision,
+            adapted = self.adapter.execute(
                 authorization=child,
+                task_envelope=task,
+                routing_decision=decision,
                 payload=dict(payload),
+                parent_context=self.parent_context(task_id=task_id)
+                if task.dependencies else None,
             )
+            result = adapted.result
+            elapsed = float(adapted.elapsed_seconds)
         finally:
-            elapsed = time.perf_counter() - started
             consume_harness_authorization(child)
         result_row = self._persist_result(
             task_id=task_id,
@@ -284,7 +250,7 @@ class HermesHarnessCapabilityBroker:
             "authority": "DEEPSEEK_HARNESS",
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
-            "task_class": f"hermes:{task_id}",
+            "task_class": task.task_class,
             "capability_id": capability_id,
             "agent_id": record.agent_id,
             "runtime": "hermes",
@@ -310,7 +276,9 @@ class HermesHarnessCapabilityBroker:
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "elapsed_seconds": round(elapsed, 6),
             "success": True,
-            "evidence_quality": "REGISTRY_BOUND_EXECUTION",
+            "evidence_quality": "REGISTRY_BOUND_CAPABILITY_ADAPTER",
+            "idempotency_key": task.idempotency_key,
+            "capability_version": task.capability_version,
             "human_correction": False,
             "review_rejection": False,
             "retry_count": 0,
