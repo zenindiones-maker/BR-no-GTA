@@ -164,11 +164,11 @@ def retrieve_gta6_knowledge(
         if claim is None or claim.get("scope") != "gta6":
             continue
         status = str(claim.get("status") or "").casefold()
-        if not include_history and status in {"superseded", "rejected"}:
+        if not include_history and status != "active":
             continue
         meta = metadata_by_claim.get(claim_id, {})
         brain_status = str(meta.get("brain_status") or "").upper()
-        if not include_history and brain_status in {"SUPERSEDED", "REJECTED"}:
+        if not include_history and brain_status not in {"", "ACTIVE", "VERIFIED"}:
             continue
 
         subject = str(lineage.get("subject") or "")
