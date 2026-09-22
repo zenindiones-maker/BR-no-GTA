@@ -722,6 +722,20 @@ def test_codex_shell_wrapper_validates_inner_allowlisted_tools():
     )
 
 
+def test_bounded_codex_registry_allows_only_explicit_readonly_ls_extension():
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.codex.bounded-development"
+    )
+    assert record is not None
+    assert "ls" in record.allowed_tools
+    for forbidden in ("curl", "wget", "ssh", "scp", "rsync", "gh"):
+        assert forbidden not in record.allowed_tools
+
+    _validate_command("ls -la app/services/agent_office", record.allowed_tools)
+    with pytest.raises(PermissionError, match="forbidden command"):
+        _validate_command("curl https://example.invalid", record.allowed_tools)
+
+
 @pytest.mark.parametrize(
     "command",
     (
