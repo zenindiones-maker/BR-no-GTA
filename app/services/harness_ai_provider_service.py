@@ -281,6 +281,7 @@ def execute_harness_ai_generation(
         prompt=prompt,
     )
     model = decision.selected_model
+    provider: AIProvider | None = None
 
     # Provider construction is part of provider execution.  Integrity/profile
     # failures must become observed Harness evidence instead of escaping the
@@ -341,7 +342,7 @@ def execute_harness_ai_generation(
             started_at=started_at,
             finished_at=finished_at,
             latency_seconds=latency,
-            retry_count=0,
+            retry_count=int(getattr(provider, "last_retry_count", 0) or 0),
             evidence_refs=refs,
             performance={},
         )
@@ -393,7 +394,7 @@ def execute_harness_ai_generation(
             started_at=started_at,
             finished_at=finished_at,
             latency_seconds=latency,
-            retry_count=0,
+            retry_count=int(getattr(provider, "last_retry_count", 0) or 0),
             evidence_refs=refs,
             provider_profile_skill_id=profile_skill_id,
             provider_profile_version=profile_version,
@@ -428,7 +429,7 @@ def execute_harness_ai_generation(
             started_at=started_at,
             finished_at=finished_at,
             latency_seconds=latency,
-            retry_count=0,
+            retry_count=int(getattr(provider, "last_retry_count", 0) or 0),
             evidence_refs=refs,
             provider_profile_skill_id=profile_skill_id,
             provider_profile_version=profile_version,
@@ -466,7 +467,7 @@ def execute_harness_ai_generation(
             started_at=started_at,
             finished_at=finished_at,
             latency_seconds=latency,
-            retry_count=0,
+            retry_count=int(getattr(provider, "last_retry_count", 0) or 0),
             evidence_refs=refs,
             provider_profile_skill_id=profile_skill_id,
             provider_profile_version=profile_version,
@@ -491,7 +492,7 @@ def execute_harness_ai_generation(
         started_at=started_at,
         finished_at=finished_at,
         latency_seconds=latency,
-        retry_count=0,
+        retry_count=int(getattr(provider, "last_retry_count", 0) or 0),
         evidence_refs=refs,
         provider_profile_skill_id=profile_skill_id,
         provider_profile_version=profile_version,

@@ -22,7 +22,28 @@ class SemanticPlannerProviderFailure(RuntimeError):
     def __init__(self, code: str, evidence: dict[str, Any]) -> None:
         self.code = str(code or "provider_failed")
         self.evidence = dict(evidence or {})
-        super().__init__(f"SEMANTIC_PLANNER_PROVIDER_FAILED:{self.code}")
+        error = dict(self.evidence.get("error") or {})
+        performance = dict(self.evidence.get("performance") or {})
+        self.diagnostics = {
+            "provider_id": self.evidence.get("provider"),
+            "model_id": self.evidence.get("model"),
+            "transport": error.get("transport") or performance.get("transport"),
+            "failure_stage": error.get("failure_stage"),
+            "exception_class": error.get("error_type"),
+            "http_status": error.get("status_code"),
+            "retry_count": int(self.evidence.get("retry_count") or 0),
+            "response_present": error.get("response_present"),
+            "structured_output_present": error.get("structured_output_present"),
+            "parse_stage": error.get("parse_stage"),
+            "sanitized_reason": error.get("sanitized_reason") or self.code,
+        }
+        safe = json.dumps(
+            self.diagnostics,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        super().__init__(f"SEMANTIC_PLANNER_PROVIDER_FAILED:{self.code}:{safe}")
 
 
 def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
@@ -48,6 +69,8 @@ def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
         "prompt_eval_tokens_per_second",
         "generation_tokens_per_second",
         "time_to_first_token_seconds",
+        "transport",
+        "retry_count",
     }
     safe_error_keys = {
         "code",
@@ -55,19 +78,29 @@ def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
         "retryable",
         "error_type",
         "failure_pattern",
+        "failure_stage",
+        "transport",
+        "response_present",
+        "structured_output_present",
+        "parse_stage",
+        "sanitized_reason",
     }
+    safe_error = {
+        key: error.get(key)
+        for key in sorted(safe_error_keys)
+        if error.get(key) is not None
+    }
+    if "sanitized_reason" not in safe_error and safe_error.get("code"):
+        safe_error["sanitized_reason"] = safe_error["code"]
     return {
         "provider": getattr(evidence, "provider", None),
         "model": getattr(evidence, "model", None),
         "status": getattr(evidence, "status", None),
         "active": bool(getattr(evidence, "active", False)),
         "latency_seconds": getattr(evidence, "latency_seconds", None),
+        "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
         "executor_binding": getattr(evidence, "executor_binding", None),
-        "error": {
-            key: error.get(key)
-            for key in sorted(safe_error_keys)
-            if error.get(key) is not None
-        },
+        "error": safe_error,
         "performance": {
             key: performance.get(key)
             for key in sorted(safe_performance_keys)
@@ -77,7 +110,6 @@ def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
         "authority": getattr(evidence, "authority", None),
         "planner_authority": "NONE",
     }
-
 
 
 def _required_text(value: Any, field: str, *, max_len: int = 2400) -> str:

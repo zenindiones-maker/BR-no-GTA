@@ -18,6 +18,11 @@ on:
       - "app/services/addy_harness_service.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
+      - "app/services/ai_provider.py"
+      - "app/services/tuxevil_ai_provider.py"
+      - "app/services/harness_ai_provider_service.py"
+      - "app/services/semantic_mission_planner_service.py"
+      - "tests/test_semantic_planner_provider_contract.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
@@ -38,6 +43,11 @@ on:
       - "app/services/addy_harness_service.py"
       - "app/services/harness_capability_service.py"
       - "app/services/harness_mcp_capability_execution.py"
+      - "app/services/ai_provider.py"
+      - "app/services/tuxevil_ai_provider.py"
+      - "app/services/harness_ai_provider_service.py"
+      - "app/services/semantic_mission_planner_service.py"
+      - "tests/test_semantic_planner_provider_contract.py"
       - "integrations/munder_difflin/**"
       - "scripts/agent_office_*.py"
       - "scripts/agent-tooling/**"
@@ -188,7 +198,8 @@ jobs:
             tests/test_delegated_agent_autonomy.py \
             tests/test_codex_auth_boundary.py \
             tests/test_harness_capability_service.py \
-            tests/test_harness_routing_policy_service.py
+            tests/test_harness_routing_policy_service.py \
+            tests/test_semantic_planner_provider_contract.py
           echo "CODEX_AUTH_BOUNDARY_TESTS=PASS"
           echo "DETERMINISTIC_DELEGATION_GATES=PASS"
 

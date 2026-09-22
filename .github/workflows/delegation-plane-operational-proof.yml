@@ -86,6 +86,7 @@ jobs:
             tests/test_delegated_agent_autonomy.py \
             tests/test_harness_candidate_integration_service.py \
             tests/test_harness_ai_provider_service.py \
+            tests/test_semantic_planner_provider_contract.py \
             tests/test_codex_auth_boundary.py
           bash scripts/agent-tooling/bootstrap.sh codex
           tooling_root="${BR_AGENT_TOOLING_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/br-agent-tooling}"
