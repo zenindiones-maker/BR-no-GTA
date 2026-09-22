@@ -822,6 +822,27 @@ def test_agent_office_codex_workers_keep_tuxevil_transport_inside_existing_worke
     assert "if not provider_args:" in readonly
 
 
+def test_bounded_metric_diagnostic_reports_counts_without_message_text():
+    from app.services.agent_office.codex_bounded_worker import (
+        _agent_message_metric_stats,
+    )
+
+    stdout = "\n".join([
+        json.dumps({
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "intermediate note"},
+        }),
+        json.dumps({
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": 'BR_METRIC_JSON={"metric_name":"x"}',
+            },
+        }),
+    ])
+    assert _agent_message_metric_stats(stdout) == (2, 1)
+
+
 def test_codex_structured_metric_parser_requires_real_numeric_before_after():
     from app.services.agent_office.codex_bounded_worker import _structured_metric
 
