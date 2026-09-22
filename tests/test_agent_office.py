@@ -714,6 +714,7 @@ def test_tuxevil_codex_provider_mode_is_loopback_responses_only():
     assert "OPENAI_API_KEY" not in joined
     assert 'env_key="BR_TUXEVIL_LOOPBACK_KEY"' in joined
     assert "BR_TUXEVIL_LOOPBACK_KEY" in joined
+    assert "tuxevil" not in args
     assert "Authorization: Bearer" not in joined
     assert "http://127.0.0.1:51200/v1" in joined
     assert "wire_api=\"responses\"" in joined
