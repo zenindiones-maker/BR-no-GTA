@@ -22,7 +22,8 @@
       "https://www.rockstargames.com/VI",
       "https://www.rockstargames.com/VI/only-in-leonida",
       "https://www.rockstargames.com/newswire",
-      "https://store.rockstargames.com/game/buy-gta-vi"
+      "https://store.rockstargames.com/game/buy-gta-vi",
+      "https://www.rockstargames.com/VI/music"
     ],
     "initial_topics": [
       {
@@ -36,6 +37,12 @@
         "subject": "GTA VI",
         "query": "What has Rockstar officially confirmed on the GTA VI official page about the game, its setting and protagonists?",
         "source_url": "https://www.rockstargames.com/VI"
+      },
+      {
+        "topic_id": "gta6-official-album",
+        "subject": "Grand Theft Auto VI: The Album",
+        "query": "What has Rockstar officially confirmed about Grand Theft Auto VI: The Album, including its release timing, track count and debut singles?",
+        "source_url": "https://www.rockstargames.com/VI/music"
       }
     ],
     "source_classes": [
