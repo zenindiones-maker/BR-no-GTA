@@ -292,7 +292,7 @@ _SHELL_OPERATORS = {"&&", "||", ";", "|"}
 
 
 def _shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
-    if re.search(r"(?:\\$\\(|\\x60|<\\(|>\\()", script):
+    if any(marker in script for marker in ("$(", chr(96), "<(", ">(")):
         raise PermissionError(
             "Codex shell wrapper attempted command/process substitution"
         )
