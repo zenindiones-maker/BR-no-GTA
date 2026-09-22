@@ -600,18 +600,22 @@ def _handle_live_natural_language_message(
     message: dict[str, Any],
     update_id: int,
     text: str,
-    chat_type: str = "private",
+    chat_type: str = "group",
     conversation_handler=None,
     action_executor=None,
     chat_handler=None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Execute the exact live v2 ingress through ConversationService.
 
-    This helper is intentionally testable without Telegram long-polling.  It
+    This helper is intentionally testable without Telegram long-polling. It
     preserves the real ingress/provenance record, then delegates intent/state
-    resolution to ConversationService.  It never calls ai.reasoning.text
+    resolution to ConversationService. It never calls ai.reasoning.text
     directly.
     """
+    if chat_type not in {"group", "supergroup"}:
+        raise PermissionError(
+            "private Telegram human surface is disabled; use authorized group"
+        )
 
     learned = _ingest(
         user_id=user_id,
