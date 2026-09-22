@@ -17,6 +17,7 @@ CODEX_BOUNDED_DEVELOPMENT_CAPABILITY = "agent-office.codex.bounded-development"
 CODEX_TUXEVIL_AUTH_MODE = "TUXEVIL_ANTIGRAVITY_RESPONSES_PROXY"
 _CODEX_TUXEVIL_DEFAULT_BASE_URL = "http://127.0.0.1:51200/v1"
 _CODEX_TUXEVIL_DEFAULT_MODEL = "gemini-3-flash"
+_CODEX_TUXEVIL_LOOPBACK_KEY_ENV = "BR_TUXEVIL_LOOPBACK_KEY"
 _SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
@@ -45,6 +46,8 @@ def codex_tuxevil_provider_args(
     ).strip()
     if not _SAFE_MODEL_ID.fullmatch(model):
         raise PermissionError("invalid Tuxevil Codex model id")
+    if not str(source.get(_CODEX_TUXEVIL_LOOPBACK_KEY_ENV) or "").strip():
+        raise PermissionError("Tuxevil loopback client credential is unavailable")
 
     return (
         "--config",
@@ -55,6 +58,8 @@ def codex_tuxevil_provider_args(
         'model_providers.br_tuxevil.name="BR Tuxevil"',
         "--config",
         f'model_providers.br_tuxevil.base_url="{base_url}"',
+        "--config",
+        'model_providers.br_tuxevil.env_key="BR_TUXEVIL_LOOPBACK_KEY"',
         "--config",
         'model_providers.br_tuxevil.wire_api="responses"',
         "--config",
@@ -84,6 +89,9 @@ _SAFE_ENV_KEYS = {
 _WIF_RUNTIME_KEYS = {
     "OPENAI_FEDERATION_RULE_ID",
     "OPENAI_IDENTITY_TOKEN_FILE",
+}
+_TUXEVIL_RUNTIME_KEYS = {
+    "BR_TUXEVIL_LOOPBACK_KEY",
 }
 CODEX_SHELL_ENVIRONMENT_POLICY_ARGS = (
     "--config",
@@ -144,7 +152,7 @@ def codex_sanitized_environment(
     result: dict[str, str] = {}
     source = os.environ if source is None else source
     for key, value in source.items():
-        if key in _WIF_RUNTIME_KEYS:
+        if key in _WIF_RUNTIME_KEYS or key in _TUXEVIL_RUNTIME_KEYS:
             result[key] = value
             continue
         if key not in _SAFE_ENV_KEYS:
