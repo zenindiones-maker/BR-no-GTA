@@ -1,0 +1,19 @@
+{
+  "schema": "harness-hermes-delegation-plane-operational-proof-request/v1",
+  "contract": "HARNESS–HERMES DELEGATION PLANE V1 items 0–42",
+  "phase": "first-real-execution",
+  "natural_goal": "Analise o BR-no-GTA atual e encontre sozinho uma perda mensurável de desempenho, redundância, trabalho desnecessário ou fragilidade arquitetural. Escolha a equipe mínima adequada, investigue, proponha uma melhoria segura, implemente um candidate isolado se for necessário, revise independentemente, compare antes/depois e use o resultado para melhorar a próxima execução semelhante.",
+  "preserve_existing_evidence_0_34": true,
+  "require_items": [
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42
+  ],
+  "telegram_egress": false,
+  "credential_values_in_request": false
+}
