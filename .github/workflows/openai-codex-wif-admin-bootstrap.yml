@@ -8,6 +8,11 @@ on:
       - ".run/openai-codex-wif-bootstrap.request.json"
   workflow_dispatch:
     inputs:
+      managed_workspace_enabled:
+        description: Run managed-workspace WIF admin reconciliation; false for the current personal ChatGPT Plus account
+        required: false
+        default: false
+        type: boolean
       workspace_id:
         description: Managed ChatGPT workspace ID; needed only when creating a new rule
         required: false
@@ -47,6 +52,57 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Classify current account eligibility
+        id: eligibility
+        env:
+          MANAGED_WORKSPACE_ENABLED: ${{ inputs.managed_workspace_enabled || 'false' }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/openai-codex-wif
+          if [ "$MANAGED_WORKSPACE_ENABLED" = "true" ]; then
+            echo "applicable=true" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_WIF_ACCOUNT_ELIGIBILITY=MANAGED_WORKSPACE_SELECTED"
+            echo "OPENAI_WIF_ADMIN_BOOTSTRAP=APPLICABLE_MANAGED_WORKSPACE"
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path("artifacts/openai-codex-wif/account-eligibility.json").write_text(
+              json.dumps({
+                  "account_class": "managed_workspace_selected",
+                  "OPENAI_WIF_ACCOUNT_ELIGIBILITY": "MANAGED_WORKSPACE_SELECTED",
+                  "OPENAI_WIF_ADMIN_BOOTSTRAP": "APPLICABLE_MANAGED_WORKSPACE",
+                  "credential_material_persisted": False,
+              }, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          else
+            echo "applicable=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_WIF_ACCOUNT_ELIGIBILITY=UNAVAILABLE_FOR_CURRENT_PLUS_ACCOUNT"
+            echo "OPENAI_WIF_ADMIN_BOOTSTRAP=NOT_APPLICABLE_CURRENT_ACCOUNT"
+            echo "HARNESS_FAILURE=NO"
+            echo "HERMES_FAILURE=NO"
+            echo "AGENT_OFFICE_FAILURE=NO"
+            echo "DELEGATION_PLANE_FAILURE=NO"
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path("artifacts/openai-codex-wif/account-eligibility.json").write_text(
+              json.dumps({
+                  "account_class": "chatgpt_plus_personal",
+                  "OPENAI_WIF_ACCOUNT_ELIGIBILITY": "UNAVAILABLE_FOR_CURRENT_PLUS_ACCOUNT",
+                  "OPENAI_WIF_ADMIN_BOOTSTRAP": "NOT_APPLICABLE_CURRENT_ACCOUNT",
+                  "HARNESS_FAILURE": False,
+                  "HERMES_FAILURE": False,
+                  "AGENT_OFFICE_FAILURE": False,
+                  "DELEGATION_PLANE_FAILURE": False,
+                  "credential_material_persisted": False,
+              }, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          fi
 
       - name: Validate bootstrap contract
         run: |
@@ -107,6 +163,7 @@ jobs:
           echo "OIDC_TOKEN_PERSISTED=NO"
 
       - name: Reconcile OpenAI Codex WIF provider and federation rule
+        if: steps.eligibility.outputs.applicable == 'true'
         id: bootstrap
         env:
           OPENAI_ADMIN_KEY: ${{ secrets.OPENAI_ADMIN_KEY }}
@@ -128,6 +185,7 @@ jobs:
           echo "OPENAI_WIF_WORKSPACE_STATUS=ENABLED_OR_EXISTING_RULE_REUSED"
 
       - name: Expose non-secret WIF configuration
+        if: steps.eligibility.outputs.applicable == 'true'
         id: resolved
         run: |
           set -euo pipefail
@@ -146,6 +204,7 @@ jobs:
           echo "AUTH_SECRET_LEAK=NO"
 
       - name: Dispatch two-runner Codex WIF continuity proof
+        if: steps.eligibility.outputs.applicable == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RULE_ID: ${{ steps.resolved.outputs.rule_id }}
