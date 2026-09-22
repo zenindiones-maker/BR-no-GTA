@@ -16,6 +16,7 @@ from app.services.harness_collaboration_service import (
     build_collaboration_plan,
 )
 from app.services.harness_mission_execution_router import (
+    execute_harness_mission_plan,
     select_mission_execution_route,
 )
 from app.services.hermes_multiagent.contracts import (
@@ -691,3 +692,86 @@ def test_retry_stays_same_capability_and_exhaustion_requires_harness_replan(
             )
     finally:
         consume_harness_authorization(parent_auth2)
+
+
+def test_simple_direct_task_executes_real_registry_capability_without_hermes():
+    collaboration = build_collaboration_plan(
+        mission_id="mission-direct-real",
+        goal_id="goal-direct-real",
+        tasks=[
+            TaskEnvelope(
+                task_id="task-01",
+                capability_id="gta6.knowledge.retrieve",
+                action="RESEARCH",
+                objective="Retrieve bounded canonical GTA6 knowledge about Lucia",
+                task_class="readonly-retrieval",
+                expected_output="KnowledgeEvidence",
+                context_budget_bytes=8192,
+                review_policy="NONE",
+            )
+        ],
+    )
+    mission_plan = {
+        "mission_id": "mission-direct-real",
+        "plan_id": "plan-direct-real",
+        "authority": "DEEPSEEK_HARNESS",
+        "goal": {
+            "goal_id": "goal-direct-real",
+            "human_goal": "O que sabemos sobre Lucia?",
+            "mission_class": "GTA6_INTELLIGENCE",
+        },
+        "collaboration_plan": collaboration.to_dict(),
+    }
+    result = execute_harness_mission_plan(
+        plan={"mission_plan": mission_plan},
+        state={},
+        message="O que sabemos sobre Lucia?",
+    )
+    assert result["status"] == "COMPLETED"
+    assert result["authority"] == "DEEPSEEK_HARNESS"
+    assert result["MISSION_EXECUTION_ROUTER"] == "PASS"
+    assert result["HERMES_USED"] == "NO"
+    assert result["mission_execution_route"]["runtime"] == "DIRECT_CAPABILITY"
+    assert result["result"]["adapter"] == "HARNESS_CAPABILITY_ADAPTER_V1"
+    assert result["result"]["capability_id"] == "gta6.knowledge.retrieve"
+
+
+def test_single_engineering_task_never_executes_heavy_agent_office_on_control_surface():
+    collaboration = build_collaboration_plan(
+        mission_id="mission-office-cloud-only",
+        goal_id="goal-office-cloud-only",
+        tasks=[
+            TaskEnvelope(
+                task_id="task-01",
+                capability_id="agent-office.codex.bounded-development",
+                action="DEVELOPMENT",
+                objective="Create one isolated bounded code candidate",
+                task_class="bounded-development",
+                expected_output="BoundedCandidatePatch",
+                read_scope=("app", "tests"),
+                write_scope=("app", "tests"),
+                review_policy="INDEPENDENT_REQUIRED",
+                risk_side_effect_class="BOUNDED_MUTATION",
+            )
+        ],
+    )
+    mission_plan = {
+        "mission_id": "mission-office-cloud-only",
+        "plan_id": "plan-office-cloud-only",
+        "authority": "DEEPSEEK_HARNESS",
+        "goal": {
+            "goal_id": "goal-office-cloud-only",
+            "human_goal": "Faça uma mudança limitada e segura.",
+            "mission_class": "SYSTEM_IMPROVEMENT",
+        },
+        "collaboration_plan": collaboration.to_dict(),
+    }
+    result = execute_harness_mission_plan(
+        plan={"mission_plan": mission_plan},
+        state={},
+        message="Faça uma mudança limitada e segura.",
+    )
+    assert result["status"] == "CLOUD_EXECUTION_REQUIRED"
+    assert result["mission_execution_route"]["runtime"] == "AGENT_OFFICE"
+    assert result["HERMES_USED"] == "NO"
+    assert result["TERMUX_HEAVY_PROCESSING"] == "NO"
