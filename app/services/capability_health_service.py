@@ -328,11 +328,23 @@ def capability_health(capability_id: str) -> CapabilityHealth:
             source="CODEX_AUTH_PREFLIGHT_REQUIRED",
         )
 
-    # Provider health is authoritative for externally backed executors when the
-    # provider has a registered health boundary. Internal/native records are
-    # assessed from execution evidence instead.
+    # Provider health is authoritative only when provider_id names a canonical
+    # PROVIDER record. Several capabilities use provider_id as implementation
+    # provenance (for example github-actions or a pinned upstream package);
+    # provenance must never become a fake runtime provider dependency.
     provider_id = str(record.provider_id or "").strip()
-    if provider_id and provider_id not in {"internal", "native"}:
+    normalized_provider_id = provider_id.lower().replace("-", "_")
+    provider_health_boundary_registered = bool(provider_id) and any(
+        candidate.capability_type == "PROVIDER"
+        and str(candidate.provider_id or "").strip().lower().replace("-", "_")
+        == normalized_provider_id
+        for candidate in GLOBAL_CAPABILITY_REGISTRY.all()
+    )
+    if (
+        provider_id
+        and provider_id not in {"internal", "native"}
+        and provider_health_boundary_registered
+    ):
         try:
             ph = provider_health(provider_id)
         except Exception:

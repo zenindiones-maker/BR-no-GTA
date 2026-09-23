@@ -11,6 +11,8 @@ on:
       - 'scripts/agent-tooling/**'
       - 'app/services/global_capability_registry.py'
       - 'app/services/global_capability_registry_base.py'
+      - 'app/services/capability_health_service.py'
+      - 'app/services/provider_health_service.py'
       - 'app/services/agent_office/**'
       - 'app/services/gta6_master_agent.py'
       - 'app/services/gta6_brain.py'
@@ -100,6 +102,17 @@ jobs:
           assert len(brain)==1
           assert brain[0]['STATUS']=='ACTIVE_EXECUTABLE'
           assert 'gta6.brain.decide' in brain[0]['CAPABILITY_IDS']
+          codex=[
+              x for x in d['capabilities']
+              if x['CAPABILITY_ID'].startswith('agent-office.codex.')
+          ]
+          assert len(codex)==2
+          assert all(x['STATUS']=='BLOCKED_EXTERNAL' for x in codex)
+          assert all(x['CURRENT_HEALTH']=='BLOCKED' for x in codex)
+          assert all(x['HEALTH_SOURCE']=='GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG' for x in codex)
+          assert all(x['DISCOVERABLE'] is True for x in codex)
+          assert all(x['ROUTABLE'] is True for x in codex)
+          assert all(x['EXECUTION_CONTRACT_VALID'] is True for x in codex)
           assert d['BROKEN_BINDINGS_FOUND'] == 0
           assert d['MISSING_BOUNDARIES_FOUND'] == 0
           print('AGENT_INVENTORY_COMPLETE=PASS')
@@ -114,6 +127,8 @@ jobs:
           print('NATIVE_HARNESS_SEMANTIC_TURN=PENDING')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')
           print('GTA6_BRAIN_BOUNDARY=PASS')
+          print('CODEX_CURRENT_HEALTH=BLOCKED_EXTERNAL')
+          print('CODEX_BLOCKER_EXPLICIT=PASS')
           print('BROKEN_ACTIVE_BINDINGS=0')
           PY
 

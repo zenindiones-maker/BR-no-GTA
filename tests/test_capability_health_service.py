@@ -100,3 +100,22 @@ def test_codex_health_remains_preflight_unknown_when_federation_is_configured(
 
     assert observed.state == UNKNOWN
     assert observed.source == "CODEX_AUTH_PREFLIGHT_REQUIRED"
+
+def test_provenance_provider_id_does_not_create_fake_external_blocker(monkeypatch):
+    def unexpected_provider_lookup(provider_id: str):
+        raise AssertionError(
+            f"provenance provider_id must not enter provider health: {provider_id}"
+        )
+
+    monkeypatch.setattr(
+        capability_health_service,
+        "provider_health",
+        unexpected_provider_lookup,
+    )
+
+    observed = capability_health("human.presentation.action-first")
+
+    assert observed.state == UNKNOWN
+    assert observed.source == "REGISTRY_PLUS_LEARNING"
+    assert "sufficient recent execution evidence" in observed.reason
+
