@@ -41,7 +41,7 @@ class NvidiaNimProviderAdapter:
     """Single generic adapter. DeepSeek Harness owns model selection."""
     def __init__(self, *, model: str | None = None, base_url: str | None = None,
                  api_key: str | None = None, timeout_seconds: float | None = None,
-                 max_retries: int = 1) -> None:
+                 max_retries: int = 1, max_tokens: int | None = None) -> None:
         self.model = model or os.getenv("NVIDIA_NIM_MODEL") or DEFAULT_NVIDIA_NIM_MODEL
         root = (base_url or os.getenv("NVIDIA_NIM_BASE_URL") or DEFAULT_NVIDIA_NIM_BASE_URL).rstrip("/")
         if root.endswith("/chat/completions"):
@@ -53,6 +53,14 @@ class NvidiaNimProviderAdapter:
         self._api_key = api_key if api_key is not None else os.getenv("NVIDIA_API_KEY")
         configured = os.getenv("NVIDIA_NIM_TIMEOUT_SECONDS")
         self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None else configured or DEFAULT_NVIDIA_NIM_TIMEOUT_SECONDS)
+        configured_max_tokens = str(os.getenv("NVIDIA_NIM_MAX_TOKENS") or "").strip()
+        self.max_tokens = int(
+            max_tokens
+            if max_tokens is not None
+            else configured_max_tokens
+        ) if (max_tokens is not None or configured_max_tokens) else None
+        if self.max_tokens is not None and not 1 <= self.max_tokens <= 65536:
+            raise ValueError("NVIDIA NIM max_tokens must be in [1, 65536]")
         self.max_retries = int(max_retries)
         if self.max_retries not in (0, 1):
             raise ValueError("NVIDIA NIM max_retries must be 0 or 1")
@@ -197,7 +205,10 @@ class NvidiaNimProviderAdapter:
                 failure_stage="request_validation",response_present=False,
                 structured_output_present=False,parse_stage="preflight",
                 exception_class="ValueError",sanitized_reason="invalid_prompt")
-        data=self._request_json({"model":self.model,"messages":[{"role":"user","content":prompt}]})
+        payload={"model":self.model,"messages":[{"role":"user","content":prompt}]}
+        if self.max_tokens is not None:
+            payload["max_tokens"]=self.max_tokens
+        data=self._request_json(payload)
         try:
             choice=data["choices"][0]; message=choice["message"]; text=message["content"]
         except (KeyError,IndexError,TypeError):
@@ -298,6 +309,7 @@ class NvidiaNimProviderAdapter:
         return {"provider":"nvidia_nim","base_url":self.base_url,
                 "endpoint_url":self.endpoint_url,"model":self.model,
                 "timeout_seconds":self.timeout_seconds,
+                "max_tokens":self.max_tokens,
                 "api_key_configured":bool(self._api_key)}
 
 # Compatibility alias; still one implementation.

@@ -386,6 +386,12 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
     )
 
     budget_before = nvidia_semantic_planner_latency_budget()
+    generation_options = dict(request_payload.get("generation_options") or {})
+    generation_max_tokens = generation_options.get("max_tokens")
+    if generation_max_tokens is not None:
+        generation_max_tokens = int(generation_max_tokens)
+        if not 1 <= generation_max_tokens <= 65536:
+            raise ValueError("generation max_tokens is outside bounded range")
     if bool(request_payload.get("preflight_only")):
         report = {
             "schema": "nvidia-semantic-planner-live-proof-preflight/v1",
@@ -417,6 +423,7 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             "LATENCY_BUDGET_BEFORE": budget_before,
             "MODELS_BEFORE": models_before,
             "PROVIDER_CALLS_EXECUTED": 0,
+            "GENERATION_MAX_TOKENS": generation_max_tokens,
         }
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
@@ -448,6 +455,10 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
     os.environ["NVIDIA_NIM_TIMEOUT_SECONDS"] = str(
         float(budget_before["MODEL_ATTEMPT_DEADLINE_MS"]) / 1000.0
     )
+    if generation_max_tokens is not None:
+        os.environ["NVIDIA_NIM_MAX_TOKENS"] = str(generation_max_tokens)
+    else:
+        os.environ.pop("NVIDIA_NIM_MAX_TOKENS", None)
     executable = [
         item for item in models_before
         if str((item.get("health") or {}).get("availability")) == "AVAILABLE"
@@ -588,7 +599,14 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
         _percentile(success_latencies, 0.95)
         if success_latencies else None
     )
-    budget_after = nvidia_semantic_planner_latency_budget()
+    try:
+        budget_after = nvidia_semantic_planner_latency_budget()
+        budget_after_source = "POST_PROOF_SUCCESS_EVIDENCE"
+    except RuntimeError as exc:
+        if str(exc) != "NVIDIA_SEMANTIC_LATENCY_EVIDENCE_UNAVAILABLE":
+            raise
+        budget_after = dict(budget_before)
+        budget_after_source = "PRE_PROOF_BUDGET_NO_SUCCESS_SAMPLE"
     timeout_memory = learning_repository.list_memories(
         status="ACTIVE",
         memory_type="FAILURE",
@@ -684,6 +702,8 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
         ),
         "LATENCY_BUDGET_BEFORE": budget_before,
         "LATENCY_BUDGET_AFTER": budget_after,
+        "LATENCY_BUDGET_AFTER_SOURCE": budget_after_source,
+        "GENERATION_MAX_TOKENS": generation_max_tokens,
         "RECENT_FAILURE_MODEL_HEALTH": recent_health,
         "RECENT_FAILURE_MEMORY_IDS": [
             item["memory_id"] for item in recent_memory

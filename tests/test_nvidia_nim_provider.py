@@ -132,3 +132,45 @@ def test_timeout_is_structured_and_does_not_repeat_full_deadline():
     assert provider.last_performance_metrics[
         "full_timeout_same_model_retry"
     ] is False
+
+
+def test_generate_honors_explicit_bounded_max_tokens():
+    payload = {
+        "model": "nvidia/test-model",
+        "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+        "usage": {},
+    }
+    provider = NvidiaNIMProvider(
+        model="nvidia/test-model",
+        api_key="secret-value",
+        max_tokens=2048,
+    )
+    with patch(
+        "app.services.nvidia_nim_provider.request.urlopen",
+        return_value=FakeResponse(payload),
+    ) as mocked:
+        provider.generate("bounded semantic proposal")
+    body = json.loads(mocked.call_args.args[0].data.decode())
+    assert body["model"] == "nvidia/test-model"
+    assert body["max_tokens"] == 2048
+    assert provider.safe_configuration()["max_tokens"] == 2048
+
+
+def test_generate_omits_max_tokens_when_not_configured(monkeypatch):
+    monkeypatch.delenv("NVIDIA_NIM_MAX_TOKENS", raising=False)
+    payload = {
+        "model": "nvidia/test-model",
+        "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+        "usage": {},
+    }
+    provider = NvidiaNIMProvider(
+        model="nvidia/test-model",
+        api_key="secret-value",
+    )
+    with patch(
+        "app.services.nvidia_nim_provider.request.urlopen",
+        return_value=FakeResponse(payload),
+    ) as mocked:
+        provider.generate("unchanged default")
+    body = json.loads(mocked.call_args.args[0].data.decode())
+    assert "max_tokens" not in body
