@@ -85,6 +85,7 @@ jobs:
           python -m pytest -q \
             tests/test_global_capability_registry.py \
             tests/test_harness_mission_planner.py \
+            tests/test_telegram_fresh_research.py \
             tests/test_youtube_department_learning_boundary.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
 
