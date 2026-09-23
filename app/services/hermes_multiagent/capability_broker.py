@@ -21,9 +21,14 @@ from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
+    CAN_SEMANTIC_REASONING,
     CAN_WRITE_REPOSITORY,
 )
 from app.services.semantic_tool_loop_service import (
+    AGENT_TURN_FINAL_OUTPUT,
+    AGENT_TURN_SCHEMA,
+    AGENT_TURN_TOOL_REQUEST,
+    AgentTurnContractError,
     AgentToolAuthorizationError,
     AgentToolBudgetExceeded,
     AgentToolRequestError,
@@ -35,6 +40,7 @@ from app.services.semantic_tool_loop_service import (
     TOOL_RESULT_SCHEMA,
     build_tool_result_envelope,
     extract_agent_output_text,
+    extract_agent_turn,
     extract_exact_json_output,
     extract_tool_request,
     extract_tool_request_candidate,
@@ -719,12 +725,21 @@ class HermesHarnessCapabilityBroker:
                     "authorization_context",
                 ],
             },
+            "agent_turn_contract": {
+                "schema": AGENT_TURN_SCHEMA,
+                "kinds": [
+                    AGENT_TURN_TOOL_REQUEST,
+                    AGENT_TURN_FINAL_OUTPUT,
+                ],
+                "exclusive": True,
+            },
             "rules": [
-                "Never claim that a tool executed unless a ToolResultEnvelope is present in context.",
-                "If more evidence is required, return ONLY one ToolRequestEnvelope JSON object.",
-                "If enough evidence is available, return ONLY one JSON object matching final_output_contract.",
-                "The final JSON MUST include the top-level field schema with the exact value in final_output_contract.schema.",
-                "Do not return preliminary prose as the final answer.",
+                "Return exactly one AgentTurnEnvelope/v1 JSON object and no surrounding prose.",
+                "A turn kind is TOOL_REQUEST or FINAL_OUTPUT, never both.",
+                "Never emit ToolResultEnvelope or <tool_result>; only the Harness executor may create tool results.",
+                "For TOOL_REQUEST, tool_request.reason is mandatory at the top level of ToolRequestEnvelope/v1.",
+                "For FINAL_OUTPUT, final_output must match final_output_contract including its exact schema field.",
+                "Never claim that a tool executed unless a real ToolResultEnvelope is present in context.",
                 "Do not change mission_id, task_id, agent_id or capability_id.",
             ],
         }
@@ -1168,6 +1183,12 @@ class HermesHarnessCapabilityBroker:
             task.functional_role
         )
         semantic_loop = bool(output_contract.get("required"))
+        agent_turn_protocol = bool(
+            semantic_loop
+            and CAN_SEMANTIC_REASONING in set(
+                tuple(getattr(record, "execution_operations", ()) or ())
+            )
+        )
         max_agent_turns = MAX_AGENT_TURNS if semantic_loop else 1
         max_tool_calls = min(
             MAX_TOOL_CALLS,
@@ -1237,6 +1258,8 @@ class HermesHarnessCapabilityBroker:
             turn_payload["agent_tool_capabilities"] = list(
                 allowed_tool_ids
             )
+            if agent_turn_protocol:
+                turn_payload["agent_turn_schema"] = AGENT_TURN_SCHEMA
             turn_payload["task"] = self._semantic_runtime_task_text(
                 task=task,
                 base_task_text=base_task_text,
@@ -1337,9 +1360,150 @@ class HermesHarnessCapabilityBroker:
                     requires_harness_replan=True,
                 )
 
+            validation_subject = result
+            if agent_turn_protocol:
+                try:
+                    parsed_turn = extract_agent_turn(
+                        result,
+                        mission_id=self.spec.mission_id,
+                        task_id=task.task_id,
+                        agent_id=str(record.agent_id or ""),
+                        capability_id=task.capability_id,
+                    )
+                except AgentToolAuthorizationError as exc:
+                    self._persist_loop_failure(
+                        task=task,
+                        record=record,
+                        decision=decision,
+                        authorization_id=last_authorization_id,
+                        elapsed=time.perf_counter() - task_started_perf,
+                        started_at=started_at,
+                        retry_attempt=retry_attempt,
+                        status="FAILED_TOOL",
+                        result={
+                            "provider_result": _jsonable(result),
+                            "agent_turn_error": {
+                                "error_type": type(exc).__name__,
+                                "error": str(exc)[:1200],
+                            },
+                        },
+                        failure_mode=type(exc).__name__,
+                    )
+                    raise DelegatedCapabilityFailure(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        failure_mode=type(exc).__name__,
+                        retry_attempt=retry_attempt,
+                        retry_allowed=False,
+                        requires_harness_replan=True,
+                    ) from exc
+                except (AgentToolRequestError, AgentTurnContractError) as exc:
+                    self._persist_loop_failure(
+                        task=task,
+                        record=record,
+                        decision=decision,
+                        authorization_id=last_authorization_id,
+                        elapsed=time.perf_counter() - task_started_perf,
+                        started_at=started_at,
+                        retry_attempt=retry_attempt,
+                        status="FAILED_CONTRACT",
+                        result={
+                            "provider_result": _jsonable(result),
+                            "agent_turn_error": {
+                                "error_type": type(exc).__name__,
+                                "error": str(exc)[:1200],
+                            },
+                            "FAKE_TOOL_RESULT_ACCEPTED": "NO",
+                        },
+                        failure_mode=type(exc).__name__,
+                    )
+                    raise DelegatedCapabilityFailure(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        failure_mode=type(exc).__name__,
+                        retry_attempt=retry_attempt,
+                        retry_allowed=False,
+                        requires_harness_replan=True,
+                    ) from exc
+
+                if parsed_turn.kind == AGENT_TURN_TOOL_REQUEST:
+                    validation_subject = {}
+                else:
+                    validation_subject = dict(
+                        parsed_turn.final_output or {}
+                    )
+                    if (
+                        str(task.functional_role or "").upper()
+                        == "ROOT_CAUSE"
+                        and tool_calls < 1
+                        and allowed_tool_ids
+                    ):
+                        output_validation_feedback = {
+                            "schema": "AgentTurnValidationFeedback/v1",
+                            "expected_schema": AGENT_TURN_SCHEMA,
+                            "errors": [
+                                "ROOT_CAUSE_REQUIRES_REAL_TOOL_EVIDENCE"
+                            ],
+                            "instruction": (
+                                "Return a TOOL_REQUEST AgentTurn using an "
+                                "allowlisted read-only evidence capability. "
+                                "Root cause must be grounded in at least one "
+                                "real Harness tool execution before FINAL_OUTPUT."
+                            ),
+                        }
+                        validation_row = self._persist_result(
+                            task_id=task_id,
+                            capability_id=capability_id,
+                            agent_id=record.agent_id,
+                            routing_id=decision.routing_id,
+                            authorization_id=last_authorization_id,
+                            elapsed_seconds=(
+                                time.perf_counter() - task_started_perf
+                            ),
+                            result={
+                                "provider_result": _jsonable(result),
+                                "output_validation_feedback": (
+                                    output_validation_feedback
+                                ),
+                                "agent_loop": {
+                                    "agent_turns": agent_turn,
+                                    "tool_calls": tool_calls,
+                                    "provider_calls": provider_calls,
+                                },
+                            },
+                            idempotency_key=task.idempotency_key,
+                            capability_version=task.capability_version,
+                            retry_count=retry_attempt,
+                            skill_id=record.skill_id,
+                            executor_binding=str(
+                                record.executor_binding or ""
+                            ),
+                            source_task_ids=tuple(task.dependencies),
+                            started_at=started_at,
+                            completed_at=datetime.now(
+                                timezone.utc
+                            ).isoformat(),
+                            status="OUTPUT_VALIDATION",
+                        )
+                        self._audit.append({
+                            "event": "TASK_OUTPUT_VALIDATION",
+                            "authority": "DEEPSEEK_HARNESS",
+                            "mission_id": self.spec.mission_id,
+                            "task_id": task_id,
+                            "functional_role": task.functional_role,
+                            "agent_turn": agent_turn,
+                            "status": "OUTPUT_VALIDATION",
+                            "failure_mode": (
+                                "ROOT_CAUSE_REQUIRES_REAL_TOOL_EVIDENCE"
+                            ),
+                            "evidence_ref": validation_row["evidence_ref"],
+                        })
+                        previous_output = extract_agent_output_text(result)
+                        continue
+
             output_validation = validate_task_output_contract(
                 functional_role=task.functional_role,
-                result=result,
+                result=validation_subject,
             )
             if (
                 not output_validation.required
@@ -1375,6 +1539,43 @@ class HermesHarnessCapabilityBroker:
                         "provider_result": normalized_result,
                         "agent_loop": loop_metrics,
                     }
+                inherited_evidence_refs = list(dict.fromkeys([
+                    *(
+                        str(ref).strip()
+                        for ref in tuple(task.input_refs or ())
+                        if str(ref).strip()
+                    ),
+                    *(
+                        str(ref).strip()
+                        for ref in (
+                            turn_context.get("evidence_refs") or ()
+                        )
+                        if str(ref).strip()
+                    ),
+                    *(
+                        str(ref).strip()
+                        for tool_result in tool_results
+                        for ref in (
+                            tool_result.get("output_refs") or ()
+                        )
+                        if str(ref).strip()
+                    ),
+                ]))
+                if isinstance(persisted_result, dict) and inherited_evidence_refs:
+                    existing_refs = persisted_result.get("evidence_refs")
+                    if isinstance(existing_refs, str):
+                        existing_refs = [existing_refs]
+                    elif not isinstance(existing_refs, (list, tuple)):
+                        existing_refs = []
+                    persisted_result["evidence_refs"] = list(dict.fromkeys([
+                        *(
+                            str(ref).strip()
+                            for ref in existing_refs
+                            if str(ref).strip()
+                        ),
+                        *inherited_evidence_refs,
+                    ]))
+
                 result_row = self._persist_result(
                     task_id=task_id,
                     capability_id=capability_id,

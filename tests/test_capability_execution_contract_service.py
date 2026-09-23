@@ -105,10 +105,11 @@ def test_legacy_selector_does_not_infer_execution_contract_implicitly():
     assert evidence.get("required_operations") in (None, [])
 
 
-def test_system_improvement_proposal_has_explicit_semantic_execution_contract():
+def test_system_improvement_proposal_has_deterministic_artifact_contract():
     record = GLOBAL_CAPABILITY_REGISTRY.get("system.improvement.propose")
     assert record is not None
-    assert CAN_SEMANTIC_REASONING in record.execution_operations
+    assert record.provider_id == "internal"
+    assert CAN_SEMANTIC_REASONING not in record.execution_operations
     assert CAN_CONSUME_ARTIFACT_REFS in record.execution_operations
     assert CAN_PRODUCE_ARTIFACT_REFS in record.execution_operations
 

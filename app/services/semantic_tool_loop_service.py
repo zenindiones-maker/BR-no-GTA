@@ -8,6 +8,9 @@ import re
 from typing import Any
 
 
+AGENT_TURN_SCHEMA = "AgentTurnEnvelope/v1"
+AGENT_TURN_TOOL_REQUEST = "TOOL_REQUEST"
+AGENT_TURN_FINAL_OUTPUT = "FINAL_OUTPUT"
 TOOL_REQUEST_SCHEMA = "ToolRequestEnvelope/v1"
 TOOL_RESULT_SCHEMA = "ToolResultEnvelope/v1"
 
@@ -41,6 +44,10 @@ class AgentToolAuthorizationError(RuntimeError):
 
 
 class AgentToolBudgetExceeded(RuntimeError):
+    pass
+
+
+class AgentTurnContractError(RuntimeError):
     pass
 
 
@@ -170,6 +177,26 @@ class ToolResultEnvelope:
         payload["input_refs"] = list(self.input_refs)
         payload["output_refs"] = list(self.output_refs)
         return payload
+
+
+@dataclass(frozen=True)
+class AgentTurnEnvelope:
+    schema: str
+    kind: str
+    tool_request: ToolRequestEnvelope | None
+    final_output: dict[str, Any] | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "kind": self.kind,
+            "tool_request": (
+                self.tool_request.to_dict()
+                if self.tool_request is not None
+                else None
+            ),
+            "final_output": _jsonable(self.final_output),
+        }
 
 
 def extract_tool_request(
@@ -333,6 +360,253 @@ def tool_request_json_schema(
         ],
         "additionalProperties": False,
     }
+
+
+
+_CANONICAL_TOOL_REQUEST_FIELDS = frozenset({
+    "schema",
+    "request_id",
+    "mission_id",
+    "task_id",
+    "agent_id",
+    "capability_id",
+    "tool_or_capability_id",
+    "operation",
+    "arguments",
+    "input_refs",
+    "reason",
+    "authorization_context",
+})
+
+
+def _strict_tool_request_from_mapping(
+    item: dict[str, Any],
+    *,
+    mission_id: str,
+    task_id: str,
+    agent_id: str,
+    capability_id: str,
+) -> ToolRequestEnvelope:
+    keys = {str(key) for key in item}
+    missing = sorted(_CANONICAL_TOOL_REQUEST_FIELDS - keys)
+    if "reason" in missing:
+        raise AgentToolRequestError("TOOL_REQUEST_REASON_REQUIRED")
+    if missing:
+        raise AgentToolRequestError(
+            "TOOL_REQUEST_MISSING_FIELDS:" + ",".join(missing)
+        )
+    extra = sorted(keys - _CANONICAL_TOOL_REQUEST_FIELDS)
+    if extra:
+        raise AgentToolRequestError(
+            "TOOL_REQUEST_UNKNOWN_FIELDS:" + ",".join(extra)
+        )
+    if str(item.get("schema") or "").strip() != TOOL_REQUEST_SCHEMA:
+        raise AgentToolRequestError("TOOL_REQUEST_SCHEMA_UNSUPPORTED")
+
+    required_identity = {
+        "mission_id": mission_id,
+        "task_id": task_id,
+        "agent_id": agent_id,
+        "capability_id": capability_id,
+    }
+    for key, expected in required_identity.items():
+        if str(item.get(key) or "").strip() != str(expected):
+            raise AgentToolAuthorizationError(
+                f"TOOL_REQUEST_IDENTITY_MISMATCH:{key}"
+            )
+
+    target = str(item.get("tool_or_capability_id") or "").strip()
+    operation = str(item.get("operation") or "").strip().upper()
+    reason = " ".join(str(item.get("reason") or "").split()).strip()
+    auth_context = item.get("authorization_context")
+    if not target:
+        raise AgentToolRequestError("TOOL_REQUEST_TARGET_REQUIRED")
+    if not operation:
+        raise AgentToolRequestError("TOOL_REQUEST_OPERATION_REQUIRED")
+    if not reason:
+        raise AgentToolRequestError("TOOL_REQUEST_REASON_REQUIRED")
+    if not isinstance(auth_context, dict) or not auth_context:
+        raise AgentToolRequestError(
+            "TOOL_REQUEST_AUTHORIZATION_CONTEXT_REQUIRED"
+        )
+    return ToolRequestEnvelope(
+        schema=TOOL_REQUEST_SCHEMA,
+        request_id=_validated_request_id(item.get("request_id")),
+        mission_id=mission_id,
+        task_id=task_id,
+        agent_id=agent_id,
+        capability_id=capability_id,
+        tool_or_capability_id=target,
+        operation=operation,
+        arguments=_validated_arguments(item.get("arguments")),
+        input_refs=_normalize_refs(item.get("input_refs")),
+        reason=reason[:1200],
+        authorization_context=_jsonable(auth_context),
+        source_format="CANONICAL_AGENT_TURN",
+    )
+
+
+def agent_turn_json_schema(
+    *,
+    functional_role: str,
+    mission_id: str,
+    task_id: str,
+    agent_id: str,
+    capability_id: str,
+    allowed_tool_capability_ids: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    from app.services.task_output_contract_service import task_output_json_schema
+
+    final_schema = task_output_json_schema(functional_role)
+    if final_schema is None:
+        raise ValueError(
+            "AgentTurnEnvelope requires a typed functional-role output schema"
+        )
+    tool_schema = tool_request_json_schema(
+        mission_id=mission_id,
+        task_id=task_id,
+        agent_id=agent_id,
+        capability_id=capability_id,
+        allowed_tool_capability_ids=allowed_tool_capability_ids,
+    )
+    return {
+        "type": "object",
+        "properties": {
+            "schema": {"type": "string", "const": AGENT_TURN_SCHEMA},
+            "kind": {
+                "type": "string",
+                "enum": [
+                    AGENT_TURN_TOOL_REQUEST,
+                    AGENT_TURN_FINAL_OUTPUT,
+                ],
+            },
+            "tool_request": {},
+            "final_output": {},
+        },
+        "required": [
+            "schema",
+            "kind",
+            "tool_request",
+            "final_output",
+        ],
+        "additionalProperties": False,
+        "oneOf": [
+            {
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "const": AGENT_TURN_TOOL_REQUEST,
+                    },
+                    "tool_request": tool_schema,
+                    "final_output": {"type": "null"},
+                },
+            },
+            {
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "const": AGENT_TURN_FINAL_OUTPUT,
+                    },
+                    "tool_request": {"type": "null"},
+                    "final_output": final_schema,
+                },
+            },
+        ],
+    }
+
+
+def extract_agent_turn(
+    provider_result: Any,
+    *,
+    mission_id: str,
+    task_id: str,
+    agent_id: str,
+    capability_id: str,
+) -> AgentTurnEnvelope:
+    text = extract_agent_output_text(
+        provider_result,
+        max_chars=max(MAX_AGENT_CONTEXT_CHARS, MAX_TOOL_RESULT_CHARS * 2),
+    )
+    if not text:
+        raise AgentTurnContractError("AGENT_TURN_OUTPUT_MISSING")
+    raw = text.strip()
+    lowered = raw.casefold()
+    if "<tool_result" in lowered or TOOL_RESULT_SCHEMA.casefold() in lowered:
+        raise AgentTurnContractError(
+            "AGENT_TURN_FAKE_TOOL_RESULT_FORBIDDEN"
+        )
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AgentTurnContractError(
+            "AGENT_TURN_EXACT_JSON_REQUIRED"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise AgentTurnContractError("AGENT_TURN_OBJECT_REQUIRED")
+
+    required_fields = {
+        "schema",
+        "kind",
+        "tool_request",
+        "final_output",
+    }
+    keys = {str(key) for key in payload}
+    missing = sorted(required_fields - keys)
+    extra = sorted(keys - required_fields)
+    if missing:
+        raise AgentTurnContractError(
+            "AGENT_TURN_MISSING_FIELDS:" + ",".join(missing)
+        )
+    if extra:
+        raise AgentTurnContractError(
+            "AGENT_TURN_UNKNOWN_FIELDS:" + ",".join(extra)
+        )
+    if str(payload.get("schema") or "").strip() != AGENT_TURN_SCHEMA:
+        raise AgentTurnContractError("AGENT_TURN_SCHEMA_INVALID")
+
+    kind = str(payload.get("kind") or "").strip().upper()
+    if kind == AGENT_TURN_TOOL_REQUEST:
+        if payload.get("final_output") is not None:
+            raise AgentTurnContractError(
+                "AGENT_TURN_MIXED_TOOL_AND_FINAL_OUTPUT"
+            )
+        tool_payload = payload.get("tool_request")
+        if not isinstance(tool_payload, dict):
+            raise AgentTurnContractError(
+                "AGENT_TURN_TOOL_REQUEST_OBJECT_REQUIRED"
+            )
+        request = _strict_tool_request_from_mapping(
+            tool_payload,
+            mission_id=mission_id,
+            task_id=task_id,
+            agent_id=agent_id,
+            capability_id=capability_id,
+        )
+        return AgentTurnEnvelope(
+            schema=AGENT_TURN_SCHEMA,
+            kind=AGENT_TURN_TOOL_REQUEST,
+            tool_request=request,
+            final_output=None,
+        )
+
+    if kind == AGENT_TURN_FINAL_OUTPUT:
+        if payload.get("tool_request") is not None:
+            raise AgentTurnContractError(
+                "AGENT_TURN_MIXED_TOOL_AND_FINAL_OUTPUT"
+            )
+        final_output = payload.get("final_output")
+        if not isinstance(final_output, dict):
+            raise AgentTurnContractError(
+                "AGENT_TURN_FINAL_OUTPUT_OBJECT_REQUIRED"
+            )
+        return AgentTurnEnvelope(
+            schema=AGENT_TURN_SCHEMA,
+            kind=AGENT_TURN_FINAL_OUTPUT,
+            tool_request=None,
+            final_output=dict(final_output),
+        )
+
+    raise AgentTurnContractError("AGENT_TURN_KIND_INVALID")
 
 
 def tool_request_fingerprint(request: ToolRequestEnvelope) -> str:

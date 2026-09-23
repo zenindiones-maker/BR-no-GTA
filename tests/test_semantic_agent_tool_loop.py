@@ -118,7 +118,7 @@ def _fixture(tmp_path: Path, *, tool_budget: int = 2):
     return parent, envelope, broker, context
 
 
-def _legacy_request(
+def _legacy_text_request(
     request_id: str,
     capability_id: str,
     *,
@@ -143,18 +143,62 @@ def _legacy_request(
     }
 
 
+def _legacy_request(
+    request_id: str,
+    capability_id: str,
+    *,
+    extra_args: dict | None = None,
+) -> dict:
+    return {
+        "output": json.dumps({
+            "schema": "AgentTurnEnvelope/v1",
+            "kind": "TOOL_REQUEST",
+            "tool_request": {
+                "schema": "ToolRequestEnvelope/v1",
+                "request_id": request_id,
+                "mission_id": "mission-semantic-tool-loop",
+                "task_id": "task-02",
+                "agent_id": "addy-agent-skills",
+                "capability_id": "addy:debugging-and-error-recovery",
+                "tool_or_capability_id": capability_id,
+                "operation": "EXECUTE_CAPABILITY",
+                "arguments": {
+                    "artifact_refs": [
+                        "artifact:incident-evidence-packet.json"
+                    ],
+                    **dict(extra_args or {}),
+                },
+                "input_refs": [
+                    "artifact:incident-evidence-packet.json"
+                ],
+                "reason": "Read observed evidence with the authorized tool.",
+                "authorization_context": {
+                    "authority": "DEEPSEEK_HARNESS"
+                },
+            },
+            "final_output": None,
+        }),
+        "provider_attempts": [{"status": "EXECUTED"}],
+    }
+
+
 def _near_final_diagnosis_without_schema() -> dict:
     return {
         "output": json.dumps({
-            "failure_class": "PLANNER_CONTRACT_REGISTRY_SELECTION_FAILURE",
-            "observed_evidence": [
-                "artifact:incident-evidence-packet.json"
-            ],
-            "localization": "Registry selection for production-planning",
-            "confidence": 0.96,
-            "evidence_refs": [
-                "artifact:incident-evidence-packet.json"
-            ],
+            "schema": "AgentTurnEnvelope/v1",
+            "kind": "FINAL_OUTPUT",
+            "tool_request": None,
+            "final_output": {
+                "failure_class": "PLANNER_CONTRACT_REGISTRY_SELECTION_FAILURE",
+                "observed_evidence": [
+                    "artifact:incident-evidence-packet.json"
+                ],
+                "localization": "Registry selection for production-planning",
+                "confidence": 0.96,
+                "evidence_refs": [
+                    "artifact:incident-evidence-packet.json"
+                ],
+            },
         }),
         "provider_attempts": [{"status": "EXECUTED"}],
     }
@@ -163,16 +207,21 @@ def _near_final_diagnosis_without_schema() -> dict:
 def _final_diagnosis() -> dict:
     return {
         "output": json.dumps({
-            "schema": "IncidentDiagnosisEvidence",
-            "failure_class": "PLANNER_CONTRACT_REGISTRY_SELECTION_FAILURE",
-            "observed_evidence": [
-                "artifact:incident-evidence-packet.json"
-            ],
-            "localization": "Registry selection for production-planning",
-            "confidence": 0.96,
-            "evidence_refs": [
-                "artifact:incident-evidence-packet.json"
-            ],
+            "schema": "AgentTurnEnvelope/v1",
+            "kind": "FINAL_OUTPUT",
+            "tool_request": None,
+            "final_output": {
+                "schema": "IncidentDiagnosisEvidence",
+                "failure_class": "PLANNER_CONTRACT_REGISTRY_SELECTION_FAILURE",
+                "observed_evidence": [
+                    "artifact:incident-evidence-packet.json"
+                ],
+                "localization": "Registry selection for production-planning",
+                "confidence": 0.96,
+                "evidence_refs": [
+                    "artifact:incident-evidence-packet.json"
+                ],
+            },
         }),
         "provider_attempts": [{"status": "EXECUTED"}],
     }
@@ -180,7 +229,7 @@ def _final_diagnosis() -> dict:
 
 def test_legacy_structured_request_is_normalized_but_free_text_is_not():
     request = extract_tool_request(
-        _legacy_request("diag-01", "artifact.evidence.reuse"),
+        _legacy_text_request("diag-01", "artifact.evidence.reuse"),
         mission_id="mission-a",
         task_id="task-02",
         agent_id="addy-agent-skills",
@@ -315,6 +364,12 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
         assert any(
             item["event"] == "TOOL_EXECUTED"
             for item in broker.audit_snapshot()
+        )
+        completed_task_result = json.loads(
+            (tmp_path / "task-results" / "task-02-3.json").read_text()
+        )
+        assert "artifact:incident-evidence-packet.json" in (
+            completed_task_result["evidence_refs"]
         )
     finally:
         consume_harness_authorization(parent)
@@ -453,7 +508,7 @@ def test_preliminary_prose_still_fails_contract_without_completion(
                 },
                 dependency_context=context,
             )
-        assert raised.value.failure_mode == "TaskOutputContractViolation"
+        assert raised.value.failure_mode == "AgentTurnContractError"
         statuses = [
             row["status"]
             for row in broker.result_snapshot()["task-02"]
@@ -558,154 +613,151 @@ def test_deterministic_system_improvement_proposal_does_not_claim_semantic_reaso
     )
 
 
-def test_malformed_canonical_tool_request_gets_typed_correction_before_execution(
+def test_agent_turn_rejects_nested_reason_without_tool_execution(
     monkeypatch,
     tmp_path,
 ):
     parent, envelope, broker, context = _fixture(tmp_path)
     calls = []
-    addy_turn = {"count": 0}
-
-    def malformed_request() -> dict:
-        return {
-            "output": (
-                json.dumps({
-                    "schema": "ToolRequestEnvelope/v1",
-                    "request_id": "root-cause-evidence-001",
-                    "mission_id": envelope.mission_id,
-                    "task_id": "task-02",
-                    "agent_id": "addy-agent-skills",
-                    "capability_id": "addy:debugging-and-error-recovery",
-                    "tool_or_capability_id": "artifact.evidence.reuse",
-                    "operation": "EXECUTE_CAPABILITY",
-                    "arguments": {
-                        "reason": "reason is wrongly nested",
-                        "artifact_refs": [
-                            "artifact:incident-evidence-packet.json"
-                        ],
-                    },
-                    "input_refs": [
-                        "artifact:incident-evidence-packet.json"
-                    ],
-                    "authorization_context": {
-                        "authority": "DEEPSEEK_HARNESS"
-                    },
-                })
-                + '\n\n<tool_result>{"invented":true}</tool_result>'
-            ),
-            "provider_attempts": [{"status": "EXECUTED"}],
-        }
-
-    def valid_request() -> dict:
-        return {
-            "output": json.dumps({
-                "schema": "ToolRequestEnvelope/v1",
-                "request_id": "root-cause-evidence-001-corrected",
-                "mission_id": envelope.mission_id,
-                "task_id": "task-02",
-                "agent_id": "addy-agent-skills",
-                "capability_id": "addy:debugging-and-error-recovery",
-                "tool_or_capability_id": "artifact.evidence.reuse",
-                "operation": "EXECUTE_CAPABILITY",
-                "arguments": {
-                    "artifact_refs": [
-                        "artifact:incident-evidence-packet.json"
-                    ]
-                },
-                "input_refs": [
-                    "artifact:incident-evidence-packet.json"
-                ],
-                "reason": "Read the observed incident evidence.",
-                "authorization_context": {
-                    "authority": "DEEPSEEK_HARNESS"
-                },
-            }),
-            "provider_attempts": [{"status": "EXECUTED"}],
-        }
 
     def fake_execute(**kwargs):
         task = kwargs["task_envelope"]
         calls.append(task.capability_id)
-        if task.capability_id == "artifact.evidence.reuse":
-            return SimpleNamespace(
-                result={
-                    "status": "REUSED",
-                    "artifact_refs": [
-                        "artifact:incident-evidence-packet.json"
-                    ],
-                    "evidence_summary": [{"observed": True}],
-                },
-                elapsed_seconds=0.001,
-            )
-        addy_turn["count"] += 1
-        if addy_turn["count"] == 1:
-            return SimpleNamespace(
-                result=malformed_request(),
-                elapsed_seconds=0.001,
-            )
-        if addy_turn["count"] == 2:
-            feedback = kwargs["payload"]["context"][
-                "output_validation_feedback"
-            ]
-            assert feedback["schema"] == (
-                "ToolRequestValidationFeedback/v1"
-            )
-            assert feedback["expected_schema"] == (
-                "ToolRequestEnvelope/v1"
-            )
-            assert feedback["errors"] == [
-                "TOOL_REQUEST_REASON_REQUIRED"
-            ]
-            assert kwargs["payload"]["context"][
-                "agent_tool_results"
-            ] == []
-            return SimpleNamespace(
-                result=valid_request(),
-                elapsed_seconds=0.001,
-            )
         return SimpleNamespace(
-            result=_final_diagnosis(),
+            result={
+                "output": json.dumps({
+                    "schema": "AgentTurnEnvelope/v1",
+                    "kind": "TOOL_REQUEST",
+                    "tool_request": {
+                        "schema": "ToolRequestEnvelope/v1",
+                        "request_id": "nested-reason",
+                        "mission_id": envelope.mission_id,
+                        "task_id": "task-02",
+                        "agent_id": "addy-agent-skills",
+                        "capability_id": "addy:debugging-and-error-recovery",
+                        "tool_or_capability_id": "artifact.evidence.reuse",
+                        "operation": "EXECUTE_CAPABILITY",
+                        "arguments": {
+                            "reason": "invalid nested reason",
+                            "artifact_refs": [
+                                "artifact:incident-evidence-packet.json"
+                            ],
+                        },
+                        "input_refs": [
+                            "artifact:incident-evidence-packet.json"
+                        ],
+                        "authorization_context": {
+                            "authority": "DEEPSEEK_HARNESS"
+                        },
+                    },
+                    "final_output": None,
+                }),
+                "provider_attempts": [{"status": "EXECUTED"}],
+            },
             elapsed_seconds=0.001,
         )
 
     monkeypatch.setattr(broker.adapter, "execute", fake_execute)
     try:
-        result = broker.execute_delegated_capability(
-            task_id="task-02",
-            capability_id="addy:debugging-and-error-recovery",
-            payload={
-                "mission_id": envelope.mission_id,
-                "task_id": "task-02",
-                "goal_id": envelope.goal_id,
-                "task": "Diagnose with a corrected tool request.",
-                "context": context,
-            },
-            dependency_context=context,
-        )
-        assert result["agent_loop"]["agent_turns"] == 3
-        assert result["agent_loop"]["tool_calls"] == 1
-        assert calls == [
-            "addy:debugging-and-error-recovery",
-            "addy:debugging-and-error-recovery",
-            "artifact.evidence.reuse",
-            "addy:debugging-and-error-recovery",
-        ]
+        with pytest.raises(DelegatedCapabilityFailure) as raised:
+            broker.execute_delegated_capability(
+                task_id="task-02",
+                capability_id="addy:debugging-and-error-recovery",
+                payload={
+                    "mission_id": envelope.mission_id,
+                    "task_id": "task-02",
+                    "goal_id": envelope.goal_id,
+                    "task": "Diagnose strictly.",
+                    "context": context,
+                },
+                dependency_context=context,
+            )
+        assert raised.value.failure_mode == "AgentToolRequestError"
+        assert calls == ["addy:debugging-and-error-recovery"]
         statuses = [
             row["status"]
             for row in broker.result_snapshot()["task-02"]
         ]
-        assert statuses == [
-            "OUTPUT_VALIDATION",
-            "WAITING_TOOL",
-            "COMPLETED",
-        ]
-        assert any(
-            row["event"] == "TASK_TOOL_REQUEST_VALIDATION"
-            for row in broker.audit_snapshot()
-        )
-        assert sum(
+        assert statuses == ["FAILED_CONTRACT"]
+        assert not any(
             row["event"] == "TOOL_EXECUTED"
             for row in broker.audit_snapshot()
-        ) == 1
+        )
+    finally:
+        consume_harness_authorization(parent)
+
+
+def test_agent_turn_rejects_fake_tool_result_mixed_response(
+    monkeypatch,
+    tmp_path,
+):
+    parent, envelope, broker, context = _fixture(tmp_path)
+    calls = []
+
+    valid_turn = json.dumps({
+        "schema": "AgentTurnEnvelope/v1",
+        "kind": "TOOL_REQUEST",
+        "tool_request": {
+            "schema": "ToolRequestEnvelope/v1",
+            "request_id": "fake-tool-result",
+            "mission_id": envelope.mission_id,
+            "task_id": "task-02",
+            "agent_id": "addy-agent-skills",
+            "capability_id": "addy:debugging-and-error-recovery",
+            "tool_or_capability_id": "artifact.evidence.reuse",
+            "operation": "EXECUTE_CAPABILITY",
+            "arguments": {
+                "artifact_refs": [
+                    "artifact:incident-evidence-packet.json"
+                ]
+            },
+            "input_refs": [
+                "artifact:incident-evidence-packet.json"
+            ],
+            "reason": "Read observed evidence.",
+            "authorization_context": {
+                "authority": "DEEPSEEK_HARNESS"
+            },
+        },
+        "final_output": None,
+    })
+
+    def fake_execute(**kwargs):
+        calls.append(kwargs["task_envelope"].capability_id)
+        return SimpleNamespace(
+            result={
+                "output": (
+                    valid_turn
+                    + '\n<tool_result>{"schema":"ToolResultEnvelope/v1"}</tool_result>'
+                ),
+                "provider_attempts": [{"status": "EXECUTED"}],
+            },
+            elapsed_seconds=0.001,
+        )
+
+    monkeypatch.setattr(broker.adapter, "execute", fake_execute)
+    try:
+        with pytest.raises(DelegatedCapabilityFailure) as raised:
+            broker.execute_delegated_capability(
+                task_id="task-02",
+                capability_id="addy:debugging-and-error-recovery",
+                payload={
+                    "mission_id": envelope.mission_id,
+                    "task_id": "task-02",
+                    "goal_id": envelope.goal_id,
+                    "task": "Diagnose strictly.",
+                    "context": context,
+                },
+                dependency_context=context,
+            )
+        assert raised.value.failure_mode == "AgentTurnContractError"
+        assert calls == ["addy:debugging-and-error-recovery"]
+        assert not any(
+            row["event"] == "TOOL_EXECUTED"
+            for row in broker.audit_snapshot()
+        )
+        failure = broker.result_snapshot()["task-02"][-1]
+        assert failure["status"] == "FAILED_CONTRACT"
+        assert failure["result"]["FAKE_TOOL_RESULT_ACCEPTED"] == "NO"
     finally:
         consume_harness_authorization(parent)

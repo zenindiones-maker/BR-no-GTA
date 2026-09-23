@@ -32,7 +32,9 @@ from app.services.provider_health_service import (
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 from app.services.task_output_contract_service import task_output_json_schema
 from app.services.semantic_tool_loop_service import (
+    AGENT_TURN_SCHEMA,
     TOOL_REQUEST_SCHEMA,
+    agent_turn_json_schema,
     tool_request_json_schema,
 )
 
@@ -208,7 +210,27 @@ def execute_authorized_addy_skill(
     )
     functional_role = str(payload.get("functional_role") or "").strip().upper()
     structured_output_schema = None
-    if isinstance(correction_feedback, dict):
+    agent_turn_schema = str(
+        payload.get("agent_turn_schema") or ""
+    ).strip()
+    if agent_turn_schema:
+        if agent_turn_schema != AGENT_TURN_SCHEMA:
+            raise PermissionError("unsupported semantic agent-turn schema")
+        structured_output_schema = agent_turn_json_schema(
+            functional_role=functional_role,
+            mission_id=mission_id,
+            task_id=task_id,
+            agent_id=str(record.agent_id or "addy-agent-skills"),
+            capability_id=capability_id,
+            allowed_tool_capability_ids=tuple(
+                str(item).strip()
+                for item in (
+                    payload.get("agent_tool_capabilities") or ()
+                )
+                if str(item).strip()
+            ),
+        )
+    elif isinstance(correction_feedback, dict):
         expected_schema = str(
             correction_feedback.get("expected_schema") or ""
         ).strip()

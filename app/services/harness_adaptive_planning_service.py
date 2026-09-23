@@ -1012,7 +1012,6 @@ def _candidate_hint_errors_are_safe_to_discard(
         "candidate semantics",
         "candidate_requirement",
         "mission_class",
-        "execution-contract-insufficient",
     )
     for error in errors:
         normalized = str(error or "").casefold()
