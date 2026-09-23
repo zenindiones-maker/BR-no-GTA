@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: real-agent-execution-proof-\${{ github.ref }}
+  group: real-agent-execution-proof-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -96,7 +96,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: real-agent-execution-proof-\${{ github.run_id }}
+          name: real-agent-execution-proof-${{ github.run_id }}
           path: runtime/real-agent-execution-proof/
           if-no-files-found: error
           retention-days: 30
