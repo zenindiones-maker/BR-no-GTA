@@ -8,6 +8,7 @@ on:
       - "scripts/real_agent_self_improvement_mission.py"
       - "scripts/dynamic_system_improvement_mission.py"
       - "app/services/execution_mission_envelope_service.py"
+      - "app/services/harness_adaptive_planning_service.py"
       - ".github/workflows/real-agent-self-improvement.yml"
       - ".run/real-agent-self-improvement.request.json"
   workflow_dispatch:
@@ -65,7 +66,7 @@ jobs:
       - name: Focused real-execution contracts
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py
+          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py
           python -m py_compile scripts/real_agent_self_improvement_mission.py
           echo "REAL_SELF_IMPROVEMENT_FOCUSED_CONTRACTS=PASS"
 
