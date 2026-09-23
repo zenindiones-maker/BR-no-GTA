@@ -1329,27 +1329,40 @@ def test_selector_excludes_execution_topology_from_task_capability(monkeypatch):
     assert evidence["selected_capability_id"] == profiler.capability_id
 
 
-def test_addy_health_follows_opencode_circuit_breaker(monkeypatch):
+def test_addy_health_follows_governed_semantic_provider_pool(monkeypatch):
     addy = GLOBAL_CAPABILITY_REGISTRY.get("addy:performance-optimization")
     assert addy is not None
-    assert addy.health_policy == "OPENCODE_REQUIRED"
-
-    class ProviderState:
-        state = "UPSTREAM_DENIED"
-        reason = "OpenCode free-tier admission blocked upstream"
-        retry_allowed = False
-        evidence_refs = ("github:run:blocked-opencode",)
+    assert addy.health_policy == "SEMANTIC_PROVIDER_REQUIRED"
 
     monkeypatch.setattr(
         capability_health_module,
-        "provider_health",
-        lambda provider_id: ProviderState(),
+        "semantic_provider_health",
+        lambda: {
+            "semantic_reasoning_available": True,
+            "eligible_zero_cost_provider_ids": ["nvidia_nim"],
+            "providers": [
+                {
+                    "provider_id": "opencode",
+                    "state": "UPSTREAM_DENIED",
+                    "reason": "OpenCode upstream unavailable",
+                    "retry_allowed": False,
+                    "evidence_refs": ["github:run:blocked-opencode"],
+                },
+                {
+                    "provider_id": "nvidia_nim",
+                    "state": "AVAILABLE",
+                    "reason": "NVIDIA semantic provider is live",
+                    "retry_allowed": True,
+                    "evidence_refs": ["github:run:nvidia-live"],
+                },
+            ],
+        },
     )
     health = capability_health_module.capability_health(addy.capability_id)
-    assert health.state == BLOCKED
-    assert health.retry_allowed is False
-    assert health.source == "PROVIDER_HEALTH"
-    assert "OpenCode" in health.reason
+    assert health.state == HEALTHY
+    assert health.retry_allowed is True
+    assert health.source == "SEMANTIC_PROVIDER_HEALTH"
+    assert "nvidia_nim" in health.reason
 
 
 def test_deterministic_agent_office_profiler_emits_real_repository_metrics(tmp_path):
