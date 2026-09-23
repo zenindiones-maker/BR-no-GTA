@@ -8,7 +8,10 @@ from typing import Any
 
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.provider_health_service import provider_health
+from app.services.provider_health_service import (
+    provider_health,
+    semantic_provider_health,
+)
 
 
 HEALTHY = "HEALTHY"
@@ -190,6 +193,81 @@ def capability_health(capability_id: str) -> CapabilityHealth:
                 evidence_refs=tuple(ph.evidence_refs),
                 source="PROVIDER_HEALTH",
             )
+
+    if str(record.health_policy or "") == "SEMANTIC_PROVIDER_REQUIRED":
+        semantic = semantic_provider_health()
+        eligible = tuple(
+            str(item)
+            for item in (
+                semantic.get("eligible_zero_cost_provider_ids") or ()
+            )
+            if str(item).strip()
+        )
+        provider_rows = [
+            dict(item)
+            for item in (semantic.get("providers") or ())
+            if isinstance(item, dict)
+        ]
+        eligible_rows = [
+            item
+            for item in provider_rows
+            if str(item.get("provider_id") or "") in eligible
+        ]
+        refs = tuple(dict.fromkeys(
+            str(ref)
+            for item in eligible_rows
+            for ref in (item.get("evidence_refs") or ())
+            if str(ref).strip()
+        ))
+        if bool(semantic.get("semantic_reasoning_available")) and eligible:
+            return CapabilityHealth(
+                capability_id=record.capability_id,
+                state=HEALTHY,
+                reason=(
+                    "Harness-governed zero-cost semantic provider pool is "
+                    "available: " + ",".join(sorted(eligible))
+                ),
+                retry_allowed=True,
+                confidence=0.95,
+                sample_size=len(eligible),
+                last_success_at=None,
+                last_failure_at=None,
+                evidence_refs=refs,
+                source="SEMANTIC_PROVIDER_HEALTH",
+            )
+        blocked_reasons = tuple(
+            str(item.get("reason") or "").strip()
+            for item in provider_rows
+            if str(item.get("reason") or "").strip()
+        )
+        return CapabilityHealth(
+            capability_id=record.capability_id,
+            state=BLOCKED,
+            reason=(
+                "No Harness-governed zero-cost semantic provider is "
+                "currently available."
+                + (
+                    " " + " | ".join(blocked_reasons[:3])
+                    if blocked_reasons
+                    else ""
+                )
+            )[:500],
+            retry_allowed=any(
+                bool(item.get("retry_allowed"))
+                for item in provider_rows
+            ),
+            confidence=0.95,
+            sample_size=len(provider_rows),
+            last_success_at=None,
+            last_failure_at=None,
+            evidence_refs=tuple(dict.fromkeys(
+                str(ref)
+                for item in provider_rows
+                for ref in (item.get("evidence_refs") or ())
+                if str(ref).strip()
+            )),
+            source="SEMANTIC_PROVIDER_HEALTH",
+        )
 
     if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
         episodes = _episodes(record.capability_id)

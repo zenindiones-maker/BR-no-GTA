@@ -362,7 +362,7 @@ def _addy_records() -> tuple[CapabilityRecord, ...]:
             quota_class="HARNESS_PROVIDER_POLICY",
             latency_class="EXTERNAL_EPHEMERAL",
             quality_class="SKILL_AND_PROVIDER_DEPENDENT",
-            health_policy="OPENCODE_REQUIRED",
+            health_policy="SEMANTIC_PROVIDER_REQUIRED",
         )
         for name in ADDY_SKILLS
     )
