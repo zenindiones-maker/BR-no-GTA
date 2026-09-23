@@ -16,6 +16,7 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 3,
-  "trigger_head": "838e42c24ce720b977890d5f96ec32dc52330db4"
+  "attempt": 4,
+  "trigger_head": "b049d78b2bc7ea660985b14509500bcf88c908bb",
+  "preflight_only": true
 }
