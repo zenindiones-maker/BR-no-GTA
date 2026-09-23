@@ -6,6 +6,7 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - "app/services/harness_executor_availability_service.py"
+      - "app/services/harness_adaptive_planning_service.py"
       - "app/services/global_capability_registry.py"
       - "app/services/capability_health_service.py"
       - "app/services/planner_replan_learning_service.py"
