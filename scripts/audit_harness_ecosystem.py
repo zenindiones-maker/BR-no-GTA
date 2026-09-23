@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.agent_office.munder_adapter import registered_worker_runners
+from app.services.capability_health_service import capability_health
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.global_capability_registry_base import ADDY_SKILLS
 from app.services.harness_routing_policy_service import (
@@ -21,6 +22,7 @@ from app.services.harness_routing_policy_service import (
 ROOT = Path(__file__).resolve().parents[1]
 STATUS_ORDER = (
     "ACTIVE_EXECUTABLE",
+    "BLOCKED_EXTERNAL",
     "REGISTERED_NOT_EXECUTABLE",
     "DUPLICATE",
     "ORPHAN",
@@ -101,9 +103,62 @@ def _routing(record) -> tuple[bool, str | None, str | None]:
     return True, decision.routing_id, None
 
 
-def _capability_status(record, binding_ok: bool, routing_ok: bool) -> str:
+def _is_external_blocker(record, health: dict[str, Any]) -> bool:
+    state = str(health.get("state") or "").upper()
+    source = str(health.get("source") or "").upper()
+    if str(record.availability or "").upper() == "BLOCKED":
+        return True
+    if state not in {"BLOCKED", "QUARANTINED"}:
+        return False
+    if str(record.health_policy or "").upper() in {
+        "CODEX_AUTH_REQUIRED",
+        "OPENCODE_REQUIRED",
+        "SEMANTIC_PROVIDER_REQUIRED",
+        "PROVIDER_AND_MODEL_RUNTIME_HEALTH",
+    }:
+        return True
+    return source in {
+        "GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG",
+        "PROVIDER_HEALTH",
+        "SEMANTIC_PROVIDER_HEALTH",
+    }
+
+
+def _execution_contract_validation(record) -> tuple[bool, str]:
+    operations = {
+        str(item).strip()
+        for item in (record.execution_operations or ())
+        if str(item).strip()
+    }
+    write_scope = tuple(record.default_write_scope or ())
+    side_effect_class = str(record.side_effect_class or "READ_ONLY").upper()
+    mutating_operations = {"CAN_WRITE_REPOSITORY", "CAN_MUTATE_CANDIDATE"}
+    if side_effect_class == "READ_ONLY" and (
+        write_scope or operations.intersection(mutating_operations)
+    ):
+        return False, "read-only contract exposes mutation"
+    if operations.intersection(mutating_operations) and not write_scope:
+        return False, "mutation operation lacks bounded write scope"
+    if record.execution_enabled and not (
+        record.input_contract
+        and record.output_contract
+        and record.executor_binding
+        and record.evidence_contract
+    ):
+        return False, "executable contract is structurally incomplete"
+    return True, "TYPED" if operations else "STRUCTURAL"
+
+
+def _capability_status(
+    record,
+    binding_ok: bool,
+    routing_ok: bool,
+    health: dict[str, Any],
+) -> str:
     if str(record.implementation or "").startswith("DEPRECATED SUPPORT PATH:"):
         return "DEPRECATED"
+    if _is_external_blocker(record, health):
+        return "BLOCKED_EXTERNAL"
     if not record.available or not record.execution_enabled:
         return "REGISTERED_NOT_EXECUTABLE"
     if record.capability_type == "PROVIDER":
@@ -116,6 +171,8 @@ def _capability_status(record, binding_ok: bool, routing_ok: bool) -> str:
         return "MISSING_BOUNDARY"
     if not record.evidence_contract:
         return "MISSING_EVIDENCE_PATH"
+    if str(health.get("state") or "").upper() in {"BLOCKED", "QUARANTINED"}:
+        return "REGISTERED_NOT_EXECUTABLE"
     return "ACTIVE_EXECUTABLE"
 
 
@@ -136,7 +193,26 @@ def _capability_rows() -> list[dict[str, Any]]:
     for record in GLOBAL_CAPABILITY_REGISTRY.all():
         binding_ok, binding_error = _resolve_binding(record.executor_binding)
         routing_ok, routing_id, routing_error = _routing(record)
-        status = _capability_status(record, binding_ok, routing_ok)
+        try:
+            health = capability_health(record.capability_id).to_dict()
+        except Exception as exc:
+            health = {
+                "state": "UNKNOWN",
+                "reason": f"health lookup failed: {type(exc).__name__}",
+                "source": "AUDIT_HEALTH_LOOKUP",
+                "retry_allowed": False,
+                "evidence_refs": [],
+            }
+        contract_valid, contract_mode = _execution_contract_validation(record)
+        status = _capability_status(record, binding_ok, routing_ok, health)
+        executable_now = bool(
+            record.available
+            and record.execution_enabled
+            and binding_ok
+            and routing_ok
+            and str(health.get("state") or "").upper()
+            not in {"BLOCKED", "QUARANTINED"}
+        )
         rows.append(
             {
                 "AGENT_OR_SKILL_ID": (
@@ -144,22 +220,40 @@ def _capability_rows() -> list[dict[str, Any]]:
                 ),
                 "DOMAIN": record.domain,
                 "ROLE": record.capability_type,
+                "CAPABILITY_TYPE": record.capability_type,
                 "AUTHORITY_LEVEL": record.authority,
+                "AUTHORITY_BOUNDARY": record.authority,
                 "SECURITY_BOUNDARY": record.security_boundary,
                 "CAPABILITY_ID": record.capability_id,
+                "EXECUTION_ENABLED": record.execution_enabled,
                 "EXECUTOR_BINDING": record.executor_binding,
+                "EXECUTION_OPERATIONS": list(record.execution_operations),
+                "SIDE_EFFECT_CLASS": record.side_effect_class,
+                "READ_SCOPE": list(record.default_read_scope),
+                "WRITE_SCOPE": list(record.default_write_scope),
+                "HEALTH_POLICY": record.health_policy,
+                "CURRENT_HEALTH": health.get("state"),
+                "HEALTH_REASON": health.get("reason"),
+                "HEALTH_SOURCE": health.get("source"),
                 "INPUT_CONTRACT": record.input_contract,
                 "OUTPUT_CONTRACT": record.output_contract,
                 "DEPENDENCIES": list(record.requirements),
                 "ALLOWED_ACTIONS": list(record.allowed_actions),
                 "HARNESS_ROUTE_AVAILABLE": routing_ok,
+                "DISCOVERABLE": GLOBAL_CAPABILITY_REGISTRY.get(record.capability_id) is not None,
+                "ROUTABLE": routing_ok,
                 "ROUTING_ID": routing_id,
-                "EXECUTABLE_NOW": bool(
-                    record.available
-                    and record.execution_enabled
-                    and binding_ok
-                    and routing_ok
+                "EXECUTABLE_NOW": executable_now,
+                "BLOCKER_IF_ANY": (
+                    health.get("reason")
+                    if status in {"BLOCKED_EXTERNAL", "REGISTERED_NOT_EXECUTABLE"}
+                    and str(health.get("state") or "").upper() in {"BLOCKED", "QUARANTINED"}
+                    else binding_error or routing_error
                 ),
+                "DUPLICATE_AUTHORITY": record.authority == "DEEPSEEK_HARNESS",
+                "ORPHANED": False,
+                "EXECUTION_CONTRACT_VALID": contract_valid,
+                "EXECUTION_CONTRACT_MODE": contract_mode,
                 "TEST_COVERAGE": _instruction_test_path(record),
                 "EVIDENCE_RETURN_PATH": record.evidence_contract,
                 "LEARNING_RETURN_PATH": (
