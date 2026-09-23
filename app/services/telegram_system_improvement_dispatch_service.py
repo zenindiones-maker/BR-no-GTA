@@ -212,7 +212,11 @@ def dispatch_telegram_system_improvement_mission(
     )
 
     dispatcher = GitHubActionsDispatcher(
-        _runner(repository=repository, expected_title=expected_title)
+        _runner(
+            repository=repository,
+            expected_title=expected_title,
+            branch=target_ref,
+        )
     )
     try:
         dispatched = dispatcher.dispatch(
