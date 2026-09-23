@@ -1,9 +1,9 @@
 {
-  "request": "resume-same-mission-after-human-prerequisites-confirmed",
-  "resume_from_parent_run": 35646646448,
-  "original_child_run": 35646777560,
-  "original_natural_goal": "Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade.",
-  "dispatcher_main_commit": "10337044f0bf58dac2883293d441d5f722a69b87",
+  "request": "resume-semantic-planner-self-improvement-after-addy-runtime-fix",
+  "resume_from_parent_run": 35813832706,
+  "original_child_run": 35814058395,
+  "original_natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
+  "dispatcher_main_commit": "d800cf67c1951abf154b199a20c9053af460f355",
   "preserve_auth_control_plane": true,
   "no_replanning": true,
   "preserve": {
@@ -13,7 +13,7 @@
     "YOUTUBE_PUBLICATION": "NO"
   },
   "human_prerequisites_confirmed": true,
-  "retry_reason": "Codex CLI authenticated and TELEGRAM_ALLOWED_USER_ID already confirmed by human; resume exact existing MissionPlan",
-  "resume_attempt": 1,
-  "requested_at": "2026-09-21T17:22:00-03:00"
+  "retry_reason": "Resume exact existing MissionPlan after fixing lazy pinned Addy source materialization selected by TaskEnvelope; no provider, Registry, payload, or semantic replanning change.",
+  "resume_attempt": 2,
+  "requested_at": "2026-09-23T00:28:00-03:00"
 }
