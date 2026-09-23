@@ -984,25 +984,6 @@ def _deterministic_incident_recovery_requirements(
     ).strip()
     functions = (
         {
-            "role": "EVIDENCE",
-            "task_class": "evidence-collection",
-            "query": (
-                "deterministic observed incident artifact ingestion immutable "
-                "hash lineage evidence packet without semantic interpretation"
-            ),
-            "description": (
-                "deterministic artifact evidence ingestion with immutable ref "
-                "hash and lineage preservation"
-            ),
-            "output": "IncidentEvidenceBundle",
-            "criteria": (
-                "observed incident artifact is resolved",
-                "content hash and lineage are preserved",
-                "no mutation or semantic reinterpretation occurs",
-            ),
-            "operations": (CAN_PRODUCE_ARTIFACT_REFS,),
-        },
-        {
             "role": "DIAGNOSIS",
             "task_class": "incident-diagnosis",
             "query": (
