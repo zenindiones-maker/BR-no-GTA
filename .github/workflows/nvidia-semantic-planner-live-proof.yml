@@ -44,7 +44,8 @@ jobs:
           python -m pytest -q \
             tests/test_nvidia_multi_model_provider.py \
             tests/test_nvidia_model_learning_service.py \
-            tests/test_semantic_planner_provider_contract.py
+            tests/test_semantic_planner_provider_contract.py \
+            tests/test_nvidia_semantic_planner_live_proof.py
           echo "NVIDIA_MULTI_MODEL_VALIDATION=PASS"
 
       - name: Run controlled real semantic planner proof

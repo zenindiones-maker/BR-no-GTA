@@ -100,43 +100,81 @@ def _semantic_models() -> list[dict[str, Any]]:
 def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
     strict_json = False
     proposal = None
-    error = None
+    parse_error = None
+    schema_error = None
+    harness_errors: list[str] = []
     selected: list[str] = []
+    mapping: dict[str, Any] | None = None
+
     try:
-        mapping = json.loads(text)
-        strict_json = isinstance(mapping, dict)
-        if not strict_json:
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
             raise ValueError("semantic response is not a JSON object")
-        max_tasks = int(
-            (context.get("resource_bounds") or {}).get("max_tasks_per_mission")
-            or 8
-        )
-        proposal = MissionPlanProposal.from_mapping(
-            mapping,
-            max_tasks=max_tasks,
-        )
-        requirements = proposal_requirements(proposal)
-        if not requirements:
-            raise ValueError("semantic proposal resolved no requirements")
-        used: set[str] = set()
-        for requirement in requirements:
-            capability_id, _competence, _avoided, _selection = (
-                select_capability_for_requirement(
-                    requirement,
-                    context=context,
-                    used=used,
-                )
-            )
-            used.add(capability_id)
-            selected.append(capability_id)
+        mapping = parsed
+        strict_json = True
     except Exception as exc:
-        error = f"{type(exc).__name__}:{str(exc)[:400]}"
+        parse_error = f"{type(exc).__name__}:{str(exc)[:400]}"
+
+    if mapping is not None:
+        try:
+            max_tasks = int(
+                (context.get("resource_bounds") or {}).get(
+                    "max_tasks_per_mission"
+                )
+                or 8
+            )
+            proposal = MissionPlanProposal.from_mapping(
+                mapping,
+                max_tasks=max_tasks,
+            )
+        except Exception as exc:
+            schema_error = f"{type(exc).__name__}:{str(exc)[:400]}"
+
+    if proposal is not None:
+        try:
+            requirements = proposal_requirements(proposal)
+            if not requirements:
+                raise ValueError("semantic proposal resolved no requirements")
+            used: set[str] = set()
+            for requirement in requirements:
+                capability_id, _competence, _avoided, _selection = (
+                    select_capability_for_requirement(
+                        requirement,
+                        context=context,
+                        used=used,
+                    )
+                )
+                used.add(capability_id)
+                selected.append(capability_id)
+        except Exception as exc:
+            harness_errors.append(
+                f"{type(exc).__name__}:{str(exc)[:400]}"
+            )
+
+    validation_error = parse_error or schema_error or (
+        harness_errors[0] if harness_errors else None
+    )
+    output_failure_class = None
+    if parse_error:
+        output_failure_class = "F_MALFORMED_SEMANTIC_JSON"
+    elif schema_error:
+        output_failure_class = "F_MISSION_PROPOSAL_SCHEMA_INVALID"
+    elif harness_errors:
+        output_failure_class = "F_HARNESS_VALIDATION_FAILED"
+
     return {
+        "PARSE_STARTED": True,
+        "PARSE_ERROR": parse_error,
         "STRUCTURED_OUTPUT_VALID": strict_json,
+        "SCHEMA_VALID": proposal is not None,
         "MISSION_PROPOSAL_SCHEMA_VALID": proposal is not None,
-        "HARNESS_VALIDATION_PASS": bool(proposal is not None and not error),
+        "HARNESS_VALIDATION_PASS": bool(
+            proposal is not None and not harness_errors
+        ),
+        "HARNESS_VALIDATION_ERRORS": harness_errors,
+        "OUTPUT_FAILURE_CLASS": output_failure_class,
         "SELECTED_CAPABILITIES": selected,
-        "VALIDATION_ERROR": error,
+        "VALIDATION_ERROR": validation_error,
     }
 
 
@@ -193,11 +231,16 @@ def _execute_model(
     result = dict(evidence.result or {})
     performance = dict(evidence.performance or {})
     error = dict(evidence.error or {})
+    usage = dict(result.get("usage") or {})
+    response_text = str(result.get("text") or "")
     return {
         "MODEL_ID": model_id,
+        "ROUTED_MODEL": routing.selected_model,
         "PROVIDER": evidence.provider,
         "ROUTING_ID": routing.routing_id,
         "AUTHORIZATION_ID": evidence.authorization_id,
+        "PROVIDER_CALL_STARTED": True,
+        "PROVIDER_CALL_COMPLETED": True,
         "STATUS": evidence.status,
         "ACTIVE": evidence.active,
         "TOTAL_LATENCY_MS": round(wall_ms, 3),
@@ -215,17 +258,27 @@ def _execute_model(
             else error.get("status_code")
         ),
         "RETRY_COUNT": int(evidence.retry_count or 0),
+        "PROVIDER_FAILURE_CLASS": (
+            performance.get("failure_class")
+            or error.get("code")
+        ),
         "FAILURE_CLASS": (
             performance.get("failure_class")
             or error.get("code")
         ),
+        "FAILURE_STAGE": error.get("failure_stage"),
         "FULL_TIMEOUT_SAME_MODEL_RETRY": performance.get(
             "full_timeout_same_model_retry"
         ),
-        "RESPONSE_TEXT": str(result.get("text") or ""),
-        "RESPONSE_BYTES": len(
-            str(result.get("text") or "").encode("utf-8")
-        ),
+        "RESPONSE_PRESENT": bool(response_text)
+        if error.get("response_present") is None
+        else bool(error.get("response_present")),
+        "RAW_RESPONSE_BYTES": performance.get("raw_response_bytes"),
+        "RESPONSE_TEXT": response_text,
+        "RESPONSE_BYTES": len(response_text.encode("utf-8")),
+        "FINISH_REASON": result.get("finish_reason"),
+        "OUTPUT_TOKENS": usage.get("completion_tokens"),
+        "PROMPT_TOKENS": usage.get("prompt_tokens"),
         "EVIDENCE_REFS": list(evidence.evidence_refs or ()),
         "STARTED_AT": evidence.started_at,
         "FINISHED_AT": evidence.finished_at,
@@ -466,6 +519,24 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
     if not executable:
         raise RuntimeError("NO_AVAILABLE_NVIDIA_SEMANTIC_MODEL")
 
+    eligible_models_before = [
+        str(item["model_id"]) for item in executable
+    ]
+    excluded_models = [
+        (
+            str(item["model_id"])
+            + ":"
+            + str(
+                (item.get("health") or {}).get("failure_class")
+                or (item.get("health") or {}).get("availability")
+                or "not_available"
+            )
+        )
+        for item in models_before
+        if str((item.get("health") or {}).get("availability"))
+        != "AVAILABLE"
+    ]
+
     attempts: list[dict[str, Any]] = []
     max_workers = min(3, len(executable))
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -485,6 +556,9 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             except Exception as exc:
                 attempt = {
                     "MODEL_ID": item["model_id"],
+                    "ROUTED_MODEL": item["model_id"],
+                    "PROVIDER_CALL_STARTED": False,
+                    "PROVIDER_CALL_COMPLETED": False,
                     "STATUS": "FAILED",
                     "ACTIVE": False,
                     "TOTAL_LATENCY_MS": None,
@@ -496,25 +570,47 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
                     ],
                     "HTTP_STATUS": None,
                     "RETRY_COUNT": 0,
+                    "PROVIDER_FAILURE_CLASS": type(exc).__name__,
                     "FAILURE_CLASS": type(exc).__name__,
+                    "FAILURE_STAGE": "proof_executor",
                     "FULL_TIMEOUT_SAME_MODEL_RETRY": None,
+                    "RESPONSE_PRESENT": False,
+                    "RAW_RESPONSE_BYTES": 0,
                     "RESPONSE_TEXT": "",
                     "RESPONSE_BYTES": 0,
+                    "FINISH_REASON": None,
+                    "OUTPUT_TOKENS": None,
+                    "PROMPT_TOKENS": None,
                     "EVIDENCE_REFS": [],
+                    "PARSE_STARTED": False,
+                    "PARSE_ERROR": None,
+                    "SCHEMA_VALID": False,
+                    "HARNESS_VALIDATION_ERRORS": [],
+                    "OUTPUT_FAILURE_CLASS": None,
                     "VALIDATION_ERROR": str(exc)[:400],
                 }
             validation = (
                 _validate_response(attempt.get("RESPONSE_TEXT") or "", context)
                 if attempt.get("ACTIVE")
                 else {
+                    "PARSE_STARTED": False,
+                    "PARSE_ERROR": None,
                     "STRUCTURED_OUTPUT_VALID": False,
+                    "SCHEMA_VALID": False,
                     "MISSION_PROPOSAL_SCHEMA_VALID": False,
                     "HARNESS_VALIDATION_PASS": False,
+                    "HARNESS_VALIDATION_ERRORS": [],
+                    "OUTPUT_FAILURE_CLASS": None,
                     "SELECTED_CAPABILITIES": [],
                     "VALIDATION_ERROR": attempt.get("VALIDATION_ERROR"),
                 }
             )
             attempt.update(validation)
+            if (
+                not attempt.get("PROVIDER_FAILURE_CLASS")
+                and attempt.get("OUTPUT_FAILURE_CLASS")
+            ):
+                attempt["FAILURE_CLASS"] = attempt["OUTPUT_FAILURE_CLASS"]
             attempts.append(attempt)
 
     run_id = str(os.getenv("GITHUB_RUN_ID") or "local")
@@ -578,6 +674,26 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             ),
         )
 
+    response_attempts = [
+        item for item in attempts
+        if item.get("RESPONSE_PRESENT") is True
+    ]
+    observed_attempt = (
+        fastest
+        or (
+            min(
+                response_attempts,
+                key=lambda item: float(
+                    item.get("TOTAL_ATTEMPT_LATENCY_MS")
+                    or item.get("TOTAL_LATENCY_MS")
+                    or 1e18
+                ),
+            )
+            if response_attempts
+            else (attempts[0] if attempts else None)
+        )
+    )
+
     success_latencies = [
         float(
             item.get("TOTAL_ATTEMPT_LATENCY_MS")
@@ -640,11 +756,25 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
         )
         else "YES",
         "LIVE_SEMANTIC_MODEL_PROOF": "PASS" if passes else "FAIL",
-        "LIVE_MODEL_ID": fastest.get("MODEL_ID") if fastest else None,
+        "LIVE_MODEL_ID": (
+            observed_attempt.get("MODEL_ID")
+            if observed_attempt else None
+        ),
         "LIVE_SEMANTIC_LATENCY_MS": (
-            fastest.get("TOTAL_ATTEMPT_LATENCY_MS")
-            or fastest.get("TOTAL_LATENCY_MS")
-            if fastest else None
+            observed_attempt.get("TOTAL_ATTEMPT_LATENCY_MS")
+            or observed_attempt.get("TOTAL_LATENCY_MS")
+            if observed_attempt else None
+        ),
+        "ELIGIBLE_MODELS_BEFORE": eligible_models_before,
+        "EXCLUDED_MODELS": excluded_models,
+        "ROUTED_MODELS": [
+            str(item.get("ROUTED_MODEL") or item.get("MODEL_ID") or "")
+            for item in attempts
+        ],
+        "PROVIDER_CALL_EXECUTED": (
+            "YES"
+            if any(item.get("PROVIDER_CALL_STARTED") for item in attempts)
+            else "NO"
         ),
         "STRUCTURED_OUTPUT_VALID": bool(
             fastest and fastest.get("STRUCTURED_OUTPUT_VALID")

@@ -59,6 +59,11 @@ def test_generate_normalizes_reasoning_usage_and_model():
     assert response.usage.prompt_tokens == 11
     assert response.usage.reasoning_tokens == 3
     assert response.finish_reason == "stop"
+    expected_raw = json.dumps(payload).encode("utf-8")
+    assert provider.last_performance_metrics["response_present"] is True
+    assert provider.last_performance_metrics["raw_response_bytes"] == len(
+        expected_raw
+    )
     req = mocked.call_args.args[0]
     body = json.loads(req.data.decode())
     assert body["model"] == "nvidia/nemotron-3-super-120b-a12b"

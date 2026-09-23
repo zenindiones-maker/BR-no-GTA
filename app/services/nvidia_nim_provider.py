@@ -102,6 +102,8 @@ class NvidiaNimProviderAdapter:
                 "subrequest_count":subrequest_count,
                 "http_status":self.last_http_status,
                 "failure_class":failure_class,
+                "response_present":bool(raw),
+                "raw_response_bytes":len(raw),
                 "full_timeout_same_model_retry":False
                 if failure_class in {
                     "D_READ_STALL",
