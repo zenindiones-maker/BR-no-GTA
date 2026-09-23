@@ -11,12 +11,26 @@ from app.services.capability_execution_contract_service import (
 )
 
 
-_CANDIDATE_REF_MARKERS = (
+_CANDIDATE_REF_PREFIXES = (
     "git-commit:",
-    "candidate",
-    "patch",
-    "diff",
+    "candidate-diff:",
+    "patch:",
+    "diff:",
 )
+
+
+def _is_candidate_artifact_ref(value: str) -> bool:
+    text = str(value or "").strip().casefold()
+    if not text:
+        return False
+    if text.startswith(_CANDIDATE_REF_PREFIXES):
+        return True
+    if not text.startswith("artifact:"):
+        return False
+    path = text.removeprefix("artifact:")
+    return path.endswith((".patch", ".diff")) or "/candidate-" in path and path.endswith(
+        (".patch", ".diff", ".json")
+    )
 
 
 @dataclass(frozen=True)
@@ -69,12 +83,11 @@ def _artifact_refs(row: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _candidate_refs(row: dict[str, Any]) -> tuple[str, ...]:
-    refs = []
-    for item in _artifact_refs(row):
-        lowered = item.casefold()
-        if any(marker in lowered for marker in _CANDIDATE_REF_MARKERS):
-            refs.append(item)
-    return tuple(refs)
+    return tuple(
+        item
+        for item in _artifact_refs(row)
+        if _is_candidate_artifact_ref(item)
+    )
 
 
 def _owner(task: Any) -> tuple[str, str, str]:

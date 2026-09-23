@@ -173,3 +173,43 @@ def test_missing_direct_dependency_fails_before_provider():
             task_lookup=tasks.__getitem__,
         )
     assert caught.value.details["provider_call_executed"] is False
+
+
+
+def test_semantic_output_ref_named_candidate_is_not_a_candidate_artifact():
+    candidate = _task(
+        "design-candidate",
+        (CAN_MUTATE_CANDIDATE,),
+        agent="builder",
+        capability="builder-cap",
+    )
+    review = _task(
+        "review",
+        (CAN_REVIEW,),
+        deps=("design-candidate",),
+        agent="reviewer",
+        capability="review-cap",
+    )
+    tasks = {"design-candidate": candidate, "review": review}
+    context = {
+        "dependency_results": [{
+            "task_id": "design-candidate",
+            "direct_dependency": True,
+            "task_result_ref": "artifact:task-results/design-candidate-1.json",
+            "content_sha256": "abc",
+            "result": {"output": "text recommendation only"},
+            "output_artifact_refs": [
+                "addy-output:mission:design-candidate",
+            ],
+        }]
+    }
+    with pytest.raises(
+        TaskDependencyPreconditionFailure,
+        match="REVIEW_BLOCKED_BY_MISSING_CANDIDATE",
+    ) as caught:
+        validate_task_dependency_preconditions(
+            task=review,
+            dependency_context=context,
+            task_lookup=tasks.__getitem__,
+        )
+    assert caught.value.details["provider_call_executed"] is False
