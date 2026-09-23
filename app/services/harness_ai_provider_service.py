@@ -228,6 +228,7 @@ def select_harness_ai_provider(
     authorization: HarnessAIProviderAuthorization,
     routing_decision: HarnessRoutingDecision | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> tuple[str, AIProvider]:
     """Construct exactly the AI provider selected by Harness routing/policy."""
     decision, resolved_authorization, normalized_provider = _resolve_routing(
@@ -244,6 +245,11 @@ def select_harness_ai_provider(
         provider_kwargs: dict[str, Any] = {
             "model": decision.selected_model,
         }
+        if request_timeout_seconds is not None:
+            timeout_value = float(request_timeout_seconds)
+            if timeout_value <= 0:
+                raise ValueError("request_timeout_seconds must be positive")
+            provider_kwargs["timeout_seconds"] = timeout_value
         if structured_output_schema is not None:
             if not bool(
                 (decision.policy_metadata or {}).get(
@@ -300,6 +306,7 @@ def execute_harness_ai_generation(
     provider_name: str | None = None,
     routing_decision: HarnessRoutingDecision | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    request_timeout_seconds: float | None = None,
     selector: Callable[..., tuple[str, AIProvider]] = select_harness_ai_provider,
 ) -> HarnessAIProviderEvidence:
     """Execute one routed provider and preserve structured observed evidence."""
@@ -342,6 +349,7 @@ def execute_harness_ai_generation(
                 authorization=resolved_authorization,
                 routing_decision=decision,
                 structured_output_schema=structured_output_schema,
+                request_timeout_seconds=request_timeout_seconds,
             )
         else:
             normalized_provider, provider = selector(

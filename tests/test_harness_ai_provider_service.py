@@ -131,6 +131,37 @@ def test_nvidia_selection_is_lazy_policy_owned_and_model_bound(monkeypatch):
     assert calls == [{"model": "nvidia/nemotron-3-super-120b-a12b"}]
 
 
+def test_nvidia_selection_accepts_per_call_bounded_timeout(monkeypatch):
+    _install_free_test_provider(
+        monkeypatch,
+        "nvidia_nim",
+        model_id="nvidia/nemotron-3-super-120b-a12b",
+    )
+    import app.services.harness_ai_provider_service as service
+
+    calls = []
+
+    class SelectedProvider:
+        pass
+
+    def construct(**kwargs):
+        calls.append(kwargs)
+        return SelectedProvider()
+
+    monkeypatch.setattr(service, "NvidiaNIMProvider", construct)
+    provider_name, provider = service.select_harness_ai_provider(
+        provider_name="nvidia_nim",
+        authorization=auth(),
+        request_timeout_seconds=17.5,
+    )
+    assert provider_name == "nvidia_nim"
+    assert isinstance(provider, SelectedProvider)
+    assert calls == [{
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "timeout_seconds": 17.5,
+    }]
+
+
 def test_tuxevil_selection_requires_governed_concrete_model(monkeypatch):
     _install_free_test_provider(monkeypatch, "tuxevil")
     import app.services.harness_ai_provider_service as service

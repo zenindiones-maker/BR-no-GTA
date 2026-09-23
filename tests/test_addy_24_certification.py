@@ -402,9 +402,27 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
     )
 
     calls = []
+    observed_timeouts = []
 
-    def fake_generate(*, routing_decision, authorization, **kwargs):
+    monkeypatch.setattr(
+        addy_harness_service,
+        "nvidia_semantic_planner_latency_budget",
+        lambda: {
+            "MODEL_ATTEMPT_DEADLINE_MS": 18000,
+            "MODEL_FAILOVER_BUDGET": 1,
+            "SEMANTIC_PLANNER_TOTAL_DEADLINE_MS": 36000,
+        },
+    )
+
+    def fake_generate(
+        *,
+        routing_decision,
+        authorization,
+        request_timeout_seconds=None,
+        **kwargs,
+    ):
         calls.append(routing_decision.selected_model)
+        observed_timeouts.append(request_timeout_seconds)
         if routing_decision.selected_model == "nvidia/model-a":
             return HarnessAIProviderEvidence(
                 provider="nvidia_nim",
@@ -481,3 +499,8 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
     assert len(evidence.result["provider_attempts"]) == 2
     assert evidence.result["provider_attempts"][0]["status"] == "FAILED"
     assert evidence.result["provider_attempts"][1]["status"] == "EXECUTED"
+    assert observed_timeouts == [18.0, 18.0]
+    assert [
+        item["attempt_deadline_ms"]
+        for item in evidence.result["provider_attempts"]
+    ] == [18000, 18000]

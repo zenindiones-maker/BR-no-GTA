@@ -25,7 +25,10 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
-from app.services.provider_health_service import semantic_provider_health
+from app.services.provider_health_service import (
+    nvidia_semantic_planner_latency_budget,
+    semantic_provider_health,
+)
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
 
@@ -202,6 +205,7 @@ def execute_authorized_addy_skill(
         raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
 
     provider_attempts: list[dict[str, Any]] = []
+    nvidia_latency_budget: dict[str, Any] | None = None
 
     def _route_provider(
         *,
@@ -235,11 +239,21 @@ def execute_authorized_addy_skill(
         )
 
     def _execute_provider(provider_routing):
+        nonlocal nvidia_latency_budget
         selected_provider = str(
             provider_routing.selected_provider or ""
         ).strip()
         if not selected_provider:
             raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
+        request_timeout_seconds = None
+        attempt_deadline_ms = None
+        if selected_provider == "nvidia_nim":
+            if nvidia_latency_budget is None:
+                nvidia_latency_budget = nvidia_semantic_planner_latency_budget()
+            attempt_deadline_ms = int(
+                nvidia_latency_budget["MODEL_ATTEMPT_DEADLINE_MS"]
+            )
+            request_timeout_seconds = attempt_deadline_ms / 1000.0
         provider_auth = issue_harness_authorization(
             authorized_action="DEVELOPMENT",
             subject=f"provider:{selected_provider}",
@@ -269,6 +283,7 @@ def execute_authorized_addy_skill(
                 prompt=prompt,
                 authorization=provider_auth,
                 routing_decision=provider_routing,
+                request_timeout_seconds=request_timeout_seconds,
             )
         finally:
             consume_harness_authorization(provider_auth)
@@ -282,6 +297,7 @@ def execute_authorized_addy_skill(
             "status": semantic_evidence.status,
             "retry_count": int(semantic_evidence.retry_count or 0),
             "latency_seconds": semantic_evidence.latency_seconds,
+            "attempt_deadline_ms": attempt_deadline_ms,
             "error": dict(semantic_evidence.error or {}),
         })
         return semantic_evidence
