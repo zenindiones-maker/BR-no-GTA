@@ -38,6 +38,7 @@ from app.services.semantic_tool_loop_service import (
     extract_exact_json_output,
     extract_tool_request,
     provider_call_count,
+    tool_request_fingerprint,
     utcnow,
 )
 from app.services.bounded_memory_context_service import build_bounded_memory_context
@@ -1177,6 +1178,7 @@ class HermesHarnessCapabilityBroker:
             else ()
         )
         tool_results: list[dict[str, Any]] = []
+        tool_result_by_fingerprint: dict[str, dict[str, Any]] = {}
         seen_request_ids: set[str] = set()
         previous_output = ""
         output_validation_feedback: dict[str, Any] | None = None
@@ -1346,6 +1348,7 @@ class HermesHarnessCapabilityBroker:
                 loop_metrics = {
                     "agent_turns": agent_turn,
                     "tool_calls": tool_calls,
+                    "tool_request_count": len(seen_request_ids),
                     "provider_calls": provider_calls,
                     "max_agent_turns": max_agent_turns,
                     "max_tool_calls": max_tool_calls,
@@ -1647,6 +1650,84 @@ class HermesHarnessCapabilityBroker:
                     retry_allowed=False,
                     requires_harness_replan=True,
                 ) from exc
+            request_fingerprint = tool_request_fingerprint(request)
+            if request_fingerprint in tool_result_by_fingerprint:
+                seen_request_ids.add(request.request_id)
+                previous_tool_result = tool_result_by_fingerprint[
+                    request_fingerprint
+                ]
+                reuse_started = utcnow()
+                reused_envelope = build_tool_result_envelope(
+                    request=request,
+                    tool_id=request.tool_or_capability_id,
+                    operation=request.operation,
+                    authorization_id=str(
+                        previous_tool_result.get("authorization_id") or ""
+                    ),
+                    output_refs=tuple(
+                        str(item)
+                        for item in (
+                            previous_tool_result.get("output_refs") or ()
+                        )
+                        if str(item).strip()
+                    ),
+                    result_payload={
+                        "reused_from_request_id": (
+                            previous_tool_result.get("request_id")
+                        ),
+                        "reused_content_sha256": (
+                            previous_tool_result.get("content_sha256")
+                        ),
+                        "reused_output_refs": list(
+                            previous_tool_result.get("output_refs") or ()
+                        ),
+                        "duplicate_tool_execution_avoided": True,
+                        "instruction": (
+                            "No new evidence was produced because this tool "
+                            "request is semantically identical to a prior "
+                            "request in the same task. Use the already observed "
+                            "bounded result and produce the final typed output "
+                            "or request a materially different tool/input."
+                        ),
+                    },
+                    status="REUSED",
+                    started_at=reuse_started,
+                    finished_at=utcnow(),
+                    error=None,
+                ).to_dict()
+                reuse_ref = self._persist_tool_result(
+                    task_id=task.task_id,
+                    request_id=request.request_id,
+                    payload=reused_envelope,
+                )
+                reused_envelope["output_refs"] = list(dict.fromkeys([
+                    *list(reused_envelope.get("output_refs") or ()),
+                    reuse_ref,
+                ]))
+                self._persist_tool_result(
+                    task_id=task.task_id,
+                    request_id=request.request_id,
+                    payload=reused_envelope,
+                )
+                tool_results.append(reused_envelope)
+                self._audit.append({
+                    "event": "TOOL_RESULT_REUSED",
+                    "authority": "DEEPSEEK_HARNESS",
+                    "mission_id": self.spec.mission_id,
+                    "task_id": task_id,
+                    "functional_role": task.functional_role,
+                    "agent_turn": agent_turn,
+                    "request_id": request.request_id,
+                    "tool_id": request.tool_or_capability_id,
+                    "operation": request.operation,
+                    "status": "REUSED",
+                    "tool_result_ref": reuse_ref,
+                    "DUPLICATE_TOOL_EXECUTION_AVOIDED": "PASS",
+                })
+                output_validation_feedback = None
+                previous_output = extract_agent_output_text(result)
+                continue
+
             if tool_calls >= max_tool_calls:
                 exc = AgentToolBudgetExceeded("MAX_TOOL_CALLS")
                 self._persist_loop_failure(
@@ -1769,6 +1850,7 @@ class HermesHarnessCapabilityBroker:
 
             tool_calls += 1
             tool_results.append(tool_result)
+            tool_result_by_fingerprint[request_fingerprint] = tool_result
             output_validation_feedback = None
             previous_output = extract_agent_output_text(result)
 

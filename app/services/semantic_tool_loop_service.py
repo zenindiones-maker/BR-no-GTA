@@ -258,6 +258,27 @@ def extract_tool_request(
     return None
 
 
+def tool_request_fingerprint(request: ToolRequestEnvelope) -> str:
+    payload = {
+        "mission_id": request.mission_id,
+        "task_id": request.task_id,
+        "agent_id": request.agent_id,
+        "capability_id": request.capability_id,
+        "tool_or_capability_id": request.tool_or_capability_id,
+        "operation": request.operation,
+        "arguments": request.arguments,
+        "input_refs": list(request.input_refs),
+    }
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
 def provider_call_count(provider_result: Any) -> int:
     observed = 0
     for item in _iter_dicts(provider_result):

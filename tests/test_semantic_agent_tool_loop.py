@@ -114,7 +114,12 @@ def _fixture(tmp_path: Path, *, tool_budget: int = 2):
     return parent, envelope, broker, context
 
 
-def _legacy_request(request_id: str, capability_id: str) -> dict:
+def _legacy_request(
+    request_id: str,
+    capability_id: str,
+    *,
+    extra_args: dict | None = None,
+) -> dict:
     return {
         "output": (
             "I need observed evidence before final diagnosis.\n"
@@ -124,7 +129,8 @@ def _legacy_request(request_id: str, capability_id: str) -> dict:
                 "args": {
                     "artifact_refs": [
                         "artifact:incident-evidence-packet.json"
-                    ]
+                    ],
+                    **dict(extra_args or {}),
                 },
                 "request_id": request_id,
             })
@@ -379,6 +385,7 @@ def test_tool_loop_exceeding_budget_fails_budget(
             result=_legacy_request(
                 f"diag-{addy_turn['count']}",
                 "artifact.evidence.reuse",
+                extra_args={"probe_variant": addy_turn["count"]},
             ),
             elapsed_seconds=0.001,
         )
@@ -452,5 +459,86 @@ def test_preliminary_prose_still_fails_contract_without_completion(
             row["event"] == "TASK_COMPLETED"
             for row in broker.audit_snapshot()
         )
+    finally:
+        consume_harness_authorization(parent)
+
+
+def test_semantically_duplicate_tool_request_reuses_prior_result_without_execution(
+    monkeypatch,
+    tmp_path,
+):
+    parent, envelope, broker, context = _fixture(tmp_path)
+    calls = []
+    addy_turn = {"count": 0}
+
+    def fake_execute(**kwargs):
+        task = kwargs["task_envelope"]
+        calls.append(task.capability_id)
+        if task.capability_id == "artifact.evidence.reuse":
+            return SimpleNamespace(
+                result={
+                    "status": "REUSED",
+                    "artifact_refs": [
+                        "artifact:incident-evidence-packet.json"
+                    ],
+                    "evidence_summary": [{"bounded": True}],
+                },
+                elapsed_seconds=0.001,
+            )
+        addy_turn["count"] += 1
+        if addy_turn["count"] == 1:
+            result = _legacy_request(
+                "diag-dup-1",
+                "artifact.evidence.reuse",
+            )
+        elif addy_turn["count"] == 2:
+            result = _legacy_request(
+                "diag-dup-2",
+                "artifact.evidence.reuse",
+            )
+        else:
+            result = _final_diagnosis()
+        return SimpleNamespace(result=result, elapsed_seconds=0.001)
+
+    monkeypatch.setattr(broker.adapter, "execute", fake_execute)
+    try:
+        result = broker.execute_delegated_capability(
+            task_id="task-02",
+            capability_id="addy:debugging-and-error-recovery",
+            payload={
+                "mission_id": envelope.mission_id,
+                "task_id": "task-02",
+                "goal_id": envelope.goal_id,
+                "task": "Diagnose with no duplicate tool execution.",
+                "context": context,
+            },
+            dependency_context=context,
+        )
+        assert result["executed"] is True
+        assert result["agent_loop"]["agent_turns"] == 3
+        assert result["agent_loop"]["tool_calls"] == 1
+        assert result["agent_loop"]["tool_request_count"] == 2
+        assert calls == [
+            "addy:debugging-and-error-recovery",
+            "artifact.evidence.reuse",
+            "addy:debugging-and-error-recovery",
+            "addy:debugging-and-error-recovery",
+        ]
+        assert any(
+            row["event"] == "TOOL_RESULT_REUSED"
+            and row["DUPLICATE_TOOL_EXECUTION_AVOIDED"] == "PASS"
+            for row in broker.audit_snapshot()
+        )
+        persisted = json.loads(
+            (
+                tmp_path
+                / "tool-results"
+                / "task-02-diag-dup-2.json"
+            ).read_text()
+        )
+        assert persisted["status"] == "REUSED"
+        assert persisted["result_payload"][
+            "duplicate_tool_execution_avoided"
+        ] is True
     finally:
         consume_harness_authorization(parent)
