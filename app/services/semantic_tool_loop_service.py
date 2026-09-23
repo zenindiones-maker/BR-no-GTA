@@ -279,6 +279,35 @@ def extract_agent_output_text(provider_result: Any, *, max_chars: int = 2400) ->
     return candidates[0][:max_chars]
 
 
+def extract_exact_json_output(provider_result: Any) -> dict[str, Any] | None:
+    normalized = _jsonable(provider_result)
+
+    def walk(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            output = value.get("output")
+            if isinstance(output, str):
+                text = output.strip()
+                if text.startswith("{") and text.endswith("}"):
+                    try:
+                        parsed = json.loads(text)
+                    except json.JSONDecodeError:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        return parsed
+            for child in value.values():
+                found = walk(child)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = walk(child)
+                if found is not None:
+                    return found
+        return None
+
+    return walk(normalized)
+
+
 def bounded_tool_result(value: Any) -> tuple[Any, str, bool]:
     normalized = _jsonable(value)
     raw = json.dumps(

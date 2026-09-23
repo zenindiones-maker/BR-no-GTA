@@ -35,6 +35,7 @@ from app.services.semantic_tool_loop_service import (
     TOOL_RESULT_SCHEMA,
     build_tool_result_envelope,
     extract_agent_output_text,
+    extract_exact_json_output,
     extract_tool_request,
     provider_call_count,
     utcnow,
@@ -616,6 +617,7 @@ class HermesHarnessCapabilityBroker:
         tool_results: list[dict[str, Any]],
         previous_output: str,
         agent_turn: int,
+        output_validation_feedback: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         context = _jsonable(base_context)
         if not isinstance(context, dict):
@@ -623,6 +625,10 @@ class HermesHarnessCapabilityBroker:
         context = dict(context)
         context["agent_turn"] = int(agent_turn)
         context["agent_tool_results"] = list(tool_results)
+        if output_validation_feedback:
+            context["output_validation_feedback"] = dict(
+                output_validation_feedback
+            )
         if previous_output:
             context["previous_agent_output"] = previous_output[:2400]
         if self._context_chars(context) <= MAX_AGENT_CONTEXT_CHARS:
@@ -659,6 +665,10 @@ class HermesHarnessCapabilityBroker:
         }
         minimal["agent_turn"] = int(agent_turn)
         minimal["agent_tool_results"] = list(tool_results)
+        if output_validation_feedback:
+            minimal["output_validation_feedback"] = dict(
+                output_validation_feedback
+            )
         if previous_output:
             minimal["previous_agent_output"] = previous_output[:1200]
         if self._context_chars(minimal) > MAX_AGENT_CONTEXT_CHARS:
@@ -1168,6 +1178,7 @@ class HermesHarnessCapabilityBroker:
         tool_results: list[dict[str, Any]] = []
         seen_request_ids: set[str] = set()
         previous_output = ""
+        output_validation_feedback: dict[str, Any] | None = None
         provider_calls = 0
         tool_calls = 0
         task_started_perf = time.perf_counter()
@@ -1214,6 +1225,7 @@ class HermesHarnessCapabilityBroker:
                 tool_results=tool_results,
                 previous_output=previous_output,
                 agent_turn=agent_turn,
+                output_validation_feedback=output_validation_feedback,
             )
             turn_payload["context"] = turn_context
             turn_payload["agent_turn"] = agent_turn
@@ -1473,6 +1485,77 @@ class HermesHarnessCapabilityBroker:
                 ) from exc
 
             if request is None:
+                correction_candidate = extract_exact_json_output(result)
+                if (
+                    correction_candidate is not None
+                    and agent_turn < max_agent_turns
+                ):
+                    output_validation_feedback = {
+                        "schema": "TaskOutputValidationFeedback/v1",
+                        "expected_schema": output_validation.expected_schema,
+                        "errors": list(output_validation.errors),
+                        "received_keys": sorted(
+                            str(key)
+                            for key in correction_candidate.keys()
+                        ),
+                        "instruction": (
+                            "Return ONLY a corrected final JSON object matching "
+                            "the required schema. Do not invent tool execution and "
+                            "do not omit required fields."
+                        ),
+                    }
+                    validation_row = self._persist_result(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        agent_id=record.agent_id,
+                        routing_id=decision.routing_id,
+                        authorization_id=last_authorization_id,
+                        elapsed_seconds=(
+                            time.perf_counter() - task_started_perf
+                        ),
+                        result={
+                            "provider_result": _jsonable(result),
+                            "output_contract_validation": (
+                                output_validation.to_dict()
+                            ),
+                            "output_validation_feedback": (
+                                output_validation_feedback
+                            ),
+                            "agent_loop": {
+                                "agent_turns": agent_turn,
+                                "tool_calls": tool_calls,
+                                "provider_calls": provider_calls,
+                            },
+                        },
+                        idempotency_key=task.idempotency_key,
+                        capability_version=task.capability_version,
+                        retry_count=retry_attempt,
+                        skill_id=record.skill_id,
+                        executor_binding=str(record.executor_binding or ""),
+                        source_task_ids=tuple(task.dependencies),
+                        started_at=started_at,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        status="OUTPUT_VALIDATION",
+                    )
+                    self._audit.append({
+                        "event": "TASK_OUTPUT_VALIDATION",
+                        "authority": "DEEPSEEK_HARNESS",
+                        "mission_id": self.spec.mission_id,
+                        "task_id": task_id,
+                        "task_class": task.task_class,
+                        "functional_role": task.functional_role,
+                        "capability_id": capability_id,
+                        "agent_id": record.agent_id,
+                        "agent_turn": agent_turn,
+                        "status": "OUTPUT_VALIDATION",
+                        "evidence_ref": validation_row["evidence_ref"],
+                        "output_contract_validation": (
+                            output_validation.to_dict()
+                        ),
+                    })
+                    previous_output = extract_agent_output_text(result)
+                    continue
+
                 invalid_result = {
                     "provider_result": _jsonable(result),
                     "output_contract_validation": (
@@ -1684,6 +1767,7 @@ class HermesHarnessCapabilityBroker:
 
             tool_calls += 1
             tool_results.append(tool_result)
+            output_validation_feedback = None
             previous_output = extract_agent_output_text(result)
 
         failure_result = {

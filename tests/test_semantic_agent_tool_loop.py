@@ -133,6 +133,23 @@ def _legacy_request(request_id: str, capability_id: str) -> dict:
     }
 
 
+def _near_final_diagnosis_without_schema() -> dict:
+    return {
+        "output": json.dumps({
+            "failure_class": "PLANNER_CONTRACT_REGISTRY_SELECTION_FAILURE",
+            "observed_evidence": [
+                "artifact:incident-evidence-packet.json"
+            ],
+            "localization": "Registry selection for production-planning",
+            "confidence": 0.96,
+            "evidence_refs": [
+                "artifact:incident-evidence-packet.json"
+            ],
+        }),
+        "provider_attempts": [{"status": "EXECUTED"}],
+    }
+
+
 def _final_diagnosis() -> dict:
     return {
         "output": json.dumps({
@@ -222,6 +239,16 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
         assert tool_results[0]["schema"] == "ToolResultEnvelope/v1"
         assert tool_results[0]["mission_id"] == envelope.mission_id
         assert tool_results[0]["task_id"] == "task-02"
+        if len(addy_calls) == 2:
+            return SimpleNamespace(
+                result=_near_final_diagnosis_without_schema(),
+                elapsed_seconds=0.001,
+            )
+        feedback = kwargs["payload"]["context"][
+            "output_validation_feedback"
+        ]
+        assert feedback["expected_schema"] == "IncidentDiagnosisEvidence"
+        assert feedback["errors"] == ["FINAL_STRUCTURED_OUTPUT_MISSING"]
         return SimpleNamespace(
             result=_final_diagnosis(),
             elapsed_seconds=0.001,
@@ -242,22 +269,29 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
             dependency_context=context,
         )
         assert result["executed"] is True
-        assert result["agent_loop"]["agent_turns"] == 2
+        assert result["agent_loop"]["agent_turns"] == 3
         assert result["agent_loop"]["tool_calls"] == 1
-        assert result["agent_loop"]["provider_calls"] == 2
+        assert result["agent_loop"]["provider_calls"] == 3
         assert result["agent_loop"]["final_output_valid"] is True
         assert [item["capability_id"] for item in calls] == [
             "addy:debugging-and-error-recovery",
             "artifact.evidence.reuse",
             "addy:debugging-and-error-recovery",
+            "addy:debugging-and-error-recovery",
         ]
-        assert calls[0]["task_id"] == calls[2]["task_id"] == "task-02"
+        assert (
+            calls[0]["task_id"]
+            == calls[2]["task_id"]
+            == calls[3]["task_id"]
+            == "task-02"
+        )
 
         statuses = [
             row["status"]
             for row in broker.result_snapshot()["task-02"]
         ]
         assert "WAITING_TOOL" in statuses
+        assert "OUTPUT_VALIDATION" in statuses
         assert statuses[-1] == "COMPLETED"
         tool_files = list((tmp_path / "tool-results").glob("*.json"))
         assert len(tool_files) == 1
