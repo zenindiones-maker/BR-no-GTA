@@ -978,6 +978,24 @@ def _candidate_hint_is_hard_compatible(
     return True
 
 
+def _candidate_hint_errors_are_safe_to_discard(
+    errors: tuple[str, ...],
+) -> bool:
+    semantic_markers = (
+        "action ",
+        "side effect",
+        "side-effect",
+        "candidate semantics",
+        "candidate_requirement",
+        "mission_class",
+    )
+    for error in errors:
+        normalized = str(error or "").casefold()
+        if any(marker in normalized for marker in semantic_markers):
+            return False
+    return True
+
+
 def _discarded_hints_require_semantic_replan(
     proposal: MissionPlanProposal,
     discarded: tuple[str, ...],
@@ -1105,7 +1123,13 @@ def propose_validated_semantic_plan(
             result.proposal,
             discarded,
         )
-        if discarded and not sanitized_errors and not semantic_replan_required:
+        safe_hint_discard = _candidate_hint_errors_are_safe_to_discard(errors)
+        if (
+            discarded
+            and not sanitized_errors
+            and not semantic_replan_required
+            and safe_hint_discard
+        ):
             evidence["candidate_hints_discarded"] = list(discarded)
             evidence["provider_evidence"] = dict(result.provider_evidence)
             evidence["prompt_sha256"] = result.prompt_sha256
@@ -1115,6 +1139,14 @@ def propose_validated_semantic_plan(
             evidence["candidate_hint_replan_avoided"] = True
             return replace(result, proposal=sanitized), evidence
         if attempt >= max_replans:
+            if discarded and not sanitized_errors:
+                evidence["candidate_hints_discarded"] = list(discarded)
+                evidence["provider_evidence"] = dict(result.provider_evidence)
+                evidence["prompt_sha256"] = result.prompt_sha256
+                evidence["planner_authority"] = "NONE"
+                evidence["validated_by"] = "DEEPSEEK_HARNESS"
+                evidence["selection_authority"] = "DEEPSEEK_HARNESS"
+                return replace(result, proposal=sanitized), evidence
             raise RuntimeError(
                 "SEMANTIC_MISSION_PROPOSAL_REJECTED:" + " | ".join(errors)
             )
