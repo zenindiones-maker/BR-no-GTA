@@ -132,6 +132,31 @@ def test_semantic_medium_risk_cannot_escalate_readonly_profile_to_mutation():
     assert effective_side_effect_class("MEDIUM", ops) == "READ_ONLY"
 
 
+def test_research_content_candidates_do_not_become_repository_mutation():
+    requirement = {
+        "task_id": "topic-discovery",
+        "task_class": "fresh-evidence-collection",
+        "action": "RESEARCH",
+        "objective": (
+            "Produce candidate topics from fresh GTA6 evidence and rank the "
+            "strongest current editorial opportunities"
+        ),
+        "query": "fresh GTA6 candidate topics current evidence",
+        "required_capability_description": "fresh evidence topic discovery",
+        "dependencies": [],
+        "expected_output": "candidate topic shortlist artifact",
+        "acceptance_criteria": [
+            "candidate topics are grounded in fresh evidence",
+        ],
+        "risk_side_effect_class": "MEDIUM",
+    }
+    ops = derive_required_operations(requirement)
+    assert CAN_WRITE_REPOSITORY not in ops
+    assert CAN_MUTATE_CANDIDATE not in ops
+    assert effective_candidate_requirement("REQUIRED", ops) == "NOT_APPLICABLE"
+    assert effective_side_effect_class("MEDIUM", ops) == "READ_ONLY"
+
+
 def test_hyphenated_candidate_output_requires_real_mutation_contract():
     requirement = _req(
         "create-candidate",

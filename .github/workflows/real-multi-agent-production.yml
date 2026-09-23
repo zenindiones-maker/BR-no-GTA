@@ -98,6 +98,7 @@ jobs:
             app/services/task_result_envelope_service.py
           python -m pytest -q \
             tests/test_global_capability_registry.py \
+            tests/test_capability_execution_contract_service.py \
             tests/test_harness_mission_planner.py \
             tests/test_telegram_fresh_research.py \
             tests/test_telegram_source_intelligence.py \

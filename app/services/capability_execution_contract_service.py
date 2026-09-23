@@ -62,6 +62,18 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
         "change",
         "fix",
     )
+    candidate_mutation_context_markers = (
+        "patch",
+        "diff",
+        "repository",
+        "source code",
+        "codebase",
+        "file change",
+        "commit",
+        "implementation",
+        "refactor",
+        "software",
+    )
     benchmark_markers = (
         "benchmark", "baseline_ms", "candidate_ms", "wall clock",
         "latency reduction", "comparison report", "compare baseline",
@@ -106,6 +118,10 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
             and any(
                 marker in normalized_text
                 for marker in candidate_action_markers
+            )
+            and any(
+                marker in normalized_text
+                for marker in candidate_mutation_context_markers
             )
         )
     )
