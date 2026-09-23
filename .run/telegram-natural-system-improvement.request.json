@@ -1,11 +1,13 @@
 {
-  "request": "semantic-planner-self-improvement-live",
+  "request": "semantic-planner-mission-plan-payload-baseline-rerun",
   "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "d908da57dce2f08bb466cf69563390ce1b203c48",
+  "source_head": "8accbffd64497030a7b6380ee291dec35a286426",
   "resume_context": {
-    "previous_parent_run": 35805745484,
+    "previous_parent_run": 35806537500,
     "observed_blocker": "MISSION_PLAN_PAYLOAD_BLOAT",
-    "blocker_fix": "observability only: persist canonical MissionPlan and exact payload profile before preserving the 96 KiB dispatch gate"
+    "measurement_only": true,
+    "blocker_fix": "profile canonical MissionPlan and preserve unchanged 96 KiB dispatch gate",
+    "model_failover_latency_status": "OPEN_SEPARATE"
   },
   "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
   "preserve": {
@@ -14,5 +16,5 @@
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
   },
-  "attempt": 3
+  "attempt": 4
 }
