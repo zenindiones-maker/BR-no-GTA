@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -16,6 +17,9 @@ from app.services.harness_authorization_service import (
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
+)
+from app.services.mission_plan_payload_service import (
+    persist_mission_plan_payload_evidence,
 )
 
 
@@ -129,6 +133,40 @@ def dispatch_telegram_system_improvement_mission(
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
+    test_database = Path(
+        os.getenv(
+            "BR_TEST_DATABASE",
+            "artifacts/telegram-natural-system-improvement/control.db",
+        )
+    )
+    payload_profile = persist_mission_plan_payload_evidence(
+        mission_plan,
+        artifact_dir=test_database.parent,
+    )
+    print(
+        "MISSION_PLAN_TOTAL_BYTES_BEFORE="
+        + str(payload_profile["MISSION_PLAN_TOTAL_BYTES"])
+    )
+    print(
+        "MISSION_PLAN_FIELD_BYTES="
+        + json.dumps(
+            payload_profile["MISSION_PLAN_FIELD_BYTES"],
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    print(
+        "PLANNING_EVIDENCE_FIELD_BYTES="
+        + json.dumps(
+            payload_profile["PLANNING_EVIDENCE_FIELD_BYTES"],
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    print(
+        "DUPLICATE_BYTES_ESTIMATE="
+        + str(payload_profile["DUPLICATE_BYTES_ESTIMATE"])
+    )
     if len(plan_raw) > 96 * 1024:
         consume_harness_authorization(authorization)
         raise ValueError("Harness MissionPlan exceeds bounded dispatch envelope")
