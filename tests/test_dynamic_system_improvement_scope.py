@@ -307,3 +307,13 @@ def test_artifact_metadata_overhead_is_counted_before_excerpt_budget(tmp_path):
     assert first["INPUT_ARTIFACT_READ_COUNT"] == 1
     assert second["INPUT_ARTIFACT_READ_COUNT"] == 0
     assert _context_char_size(parent_context) <= limit
+
+
+
+def test_artifact_telemetry_is_not_embedded_in_agent_context():
+    source = Path(
+        "scripts/dynamic_system_improvement_mission.py"
+    ).read_text(encoding="utf-8")
+    assert 'parent_context["input_artifact_metrics"]' not in source
+    assert '"input_artifact_metrics_by_task"' in source
+    assert "INPUT_ARTIFACT_CONTEXT_CHARS" in source

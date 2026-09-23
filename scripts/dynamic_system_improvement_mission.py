@@ -980,6 +980,7 @@ def run(
         "input_artifact_cache": {},
         "input_artifact_cache_hits": 0,
         "input_artifact_reads": 0,
+        "input_artifact_metrics_by_task": {},
     }
 
     def runner(*, spec, board, task_mapping, profiles):
@@ -1083,7 +1084,9 @@ def run(
                         ),
                         "DUPLICATE_INCIDENT_ARTIFACT_MATERIALIZATION": 0,
                     })
-                    parent_context["input_artifact_metrics"] = input_metrics
+                    holder["input_artifact_metrics_by_task"][task_id] = dict(
+                        input_metrics
+                    )
                     if final_context_chars > executor_context_limit_chars:
                         raise RuntimeError(
                             "EXECUTOR_CONTEXT_LIMIT_EXCEEDED_AFTER_BOUNDED_ARTIFACT:"
@@ -1123,7 +1126,12 @@ def run(
                             "context_package_count": 1,
                             "context_bytes": context_bytes,
                             **dict(parent_context.get("dependency_metrics") or {}),
-                            **dict(parent_context.get("input_artifact_metrics") or {}),
+                            **dict(
+                                holder["input_artifact_metrics_by_task"].get(
+                                    task_id
+                                )
+                                or {}
+                            ),
                         },
                     )
                 candidate_context = _candidate_execution_decision(
@@ -1172,7 +1180,17 @@ def run(
                     snapshot=snapshot,
                     parent_context=parent_context,
                 )
-                payload["orchestration_metrics"] = {"PROMPT_BUILD_MS": round((time.perf_counter() - prompt_build_started) * 1000.0, 3), **dict(parent_context.get("dependency_metrics") or {})}
+                payload["orchestration_metrics"] = {
+                    "PROMPT_BUILD_MS": round(
+                        (time.perf_counter() - prompt_build_started) * 1000.0,
+                        3,
+                    ),
+                    **dict(parent_context.get("dependency_metrics") or {}),
+                    **dict(
+                        holder["input_artifact_metrics_by_task"].get(task_id)
+                        or {}
+                    ),
+                }
                 with PerformanceSpan(
                     stage="hermes.specialist.execute",
                     category="HERMES_SPECIALIST_EXECUTION_TIME",
@@ -1188,7 +1206,20 @@ def run(
                         dependency_context=parent_context,
                     )
                 executed.setdefault("orchestration_metrics", {})
-                executed["orchestration_metrics"].update({"TASK_TOTAL_MS": round((time.perf_counter() - task_started) * 1000.0, 3), **dict(parent_context.get("dependency_metrics") or {}), "PROMPT_BUILD_MS": payload["orchestration_metrics"]["PROMPT_BUILD_MS"]})
+                executed["orchestration_metrics"].update({
+                    "TASK_TOTAL_MS": round(
+                        (time.perf_counter() - task_started) * 1000.0,
+                        3,
+                    ),
+                    **dict(parent_context.get("dependency_metrics") or {}),
+                    **dict(
+                        holder["input_artifact_metrics_by_task"].get(task_id)
+                        or {}
+                    ),
+                    "PROMPT_BUILD_MS": payload["orchestration_metrics"][
+                        "PROMPT_BUILD_MS"
+                    ],
+                })
                 holder["execution_by_task"][task_id] = executed
 
                 if _is_mutating(task):
