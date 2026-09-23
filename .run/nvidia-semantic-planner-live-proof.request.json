@@ -16,16 +16,19 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 7,
-  "trigger_head": "215f28c37e64c5e70e7c640c1b9f6d57b0211f6a",
+  "attempt": 8,
+  "trigger_head": "2cbd2ac1b8e4ea69f5f79ebf640c4ab5aa788de0",
   "preflight_only": false,
   "generation_options": {
-    "max_tokens": 2048,
+    "max_tokens": 4096,
     "derivation": {
-      "observed_valid_completion_tokens": 1689,
-      "rule": "next_power_of_two_above_observed_valid_completion",
-      "headroom_tokens": 359
+      "previous_max_tokens": 2048,
+      "evidence_run": 35810445500,
+      "observed_finish_reason": "length",
+      "observed_completion_tokens": 2048,
+      "rule": "next_power_of_two_above_observed_truncated_ceiling",
+      "deadline_unchanged_ms": 54000
     }
   },
-  "measurement_goal": "prove compact semantic wire output validates through production-equivalent expansion"
+  "measurement_goal": "prove bounded semantic generation after observed 2048-token truncation"
 }
