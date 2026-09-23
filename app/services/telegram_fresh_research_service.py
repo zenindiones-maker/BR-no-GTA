@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
@@ -50,7 +50,15 @@ class FreshResearchEvidence:
     secondary_source_count: int
     packet: dict[str, Any]
     execution_ref: str
-    artifact_ref: str
+
+    @property
+    def artifact_ref(self) -> str:
+        return self.execution_ref
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["artifact_ref"] = self.artifact_ref
+        return value
 
 
 class FreshResearchTransport(Protocol):
@@ -294,7 +302,6 @@ def execute_fresh_gta6_research_capability(
         secondary_source_count=int(packet.get("secondary_source_count") or 0),
         packet=packet,
         execution_ref=execution_ref,
-        artifact_ref=execution_ref,
     )
 
 

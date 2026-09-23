@@ -100,6 +100,7 @@ jobs:
             tests/test_global_capability_registry.py \
             tests/test_harness_mission_planner.py \
             tests/test_telegram_fresh_research.py \
+            tests/test_telegram_source_intelligence.py \
             tests/test_youtube_department_learning_boundary.py \
             tests/test_production_mission_execution_contracts.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
