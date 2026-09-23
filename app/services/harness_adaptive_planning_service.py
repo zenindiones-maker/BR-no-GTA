@@ -1475,9 +1475,10 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
                 "render",
                 "narration",
                 "delivery",
-                "execution",
-                "media-",
-                "qa-",
+                "upload",
+                "runtime-execution",
+                "media-execution",
+                "qa-execution",
             )
         )
         or any(marker in text for marker in execution_markers)
@@ -1505,7 +1506,12 @@ def _record_domain_compatible(
     family = _task_semantic_family(requirement)
     domain = str(getattr(record, "domain", "") or "").strip().casefold()
 
-    if family != "DEVELOPMENT" and (
+    if family in {
+        "RESEARCH",
+        "EDITORIAL",
+        "PRODUCTION",
+        "EXECUTION",
+    } and (
         domain == "development" or domain.startswith("development/")
     ):
         return False
