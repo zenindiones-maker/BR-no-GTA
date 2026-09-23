@@ -90,16 +90,34 @@ def test_checkpoint_resolves_no_complete_codex_alternative_without_provider(monk
 
     assert result["ALTERNATIVE_EXECUTOR_RESOLUTION_DETERMINISTIC"] == "PASS"
     assert result["ALTERNATIVE_EXECUTOR_AVAILABLE"] == "NO"
+    assert result["MISSION_LEVEL_COMPLETE_ALTERNATIVE_AVAILABLE"] == "NO"
     assert result["NO_ALTERNATIVE_EXECUTOR_REPLAN"] == "NO"
     assert result["PROVIDER_CALL_EXECUTED"] == "NO"
     assert result["SEMANTIC_REPLAN_PERFORMED"] == "NO"
     assert result["MISSION_STATE"] == "WAITING_FOR_EXTERNAL_AUTH"
 
     by_task = {item["task_id"]: item for item in result["blocked_tasks"]}
+    assert by_task["instrument-planner"]["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "YES"
     assert any(
         item["capability_id"] == "agent-office.deterministic.readonly-analysis"
         for item in by_task["instrument-planner"]["alternatives"]
     )
+    readonly_diag = next(
+        item
+        for item in by_task["instrument-planner"]["candidate_diagnostics"]
+        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+    )
+    assert readonly_diag["EXECUTION_ENABLED"] is True
+    assert readonly_diag["ALLOWED_ACTIONS"] == ["DEVELOPMENT"]
+    assert readonly_diag["EXECUTOR_ADAPTER_COMPATIBLE"] is True
+    assert readonly_diag["EXECUTION_CONTRACT_REJECTION"] is None
+    assert readonly_diag["SIDE_EFFECT_CLASS"] == "READ_ONLY"
+    assert readonly_diag["REQUIRED_SIDE_EFFECT_CLASS"] == "READ_ONLY"
+    assert readonly_diag["SIDE_EFFECT_COMPATIBLE"] is True
+    assert readonly_diag["AUTHORITY_COMPATIBLE"] is True
+    assert readonly_diag["CANDIDATE_REQUIREMENT"] == "NOT_APPLICABLE"
+    assert readonly_diag["CANDIDATE_ARTIFACT_CAPABLE"] is True
+    assert readonly_diag["FINAL_REJECTION_REASON"] == "ACCEPTED"
     assert "CAN_MUTATE_CANDIDATE" in by_task["create-candidate"][
         "required_operations"
     ]
@@ -109,7 +127,19 @@ def test_checkpoint_resolves_no_complete_codex_alternative_without_provider(monk
     assert "CAN_RUN_TESTS" in by_task["create-candidate"][
         "required_operations"
     ]
+    assert by_task["create-candidate"]["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "NO"
     assert by_task["create-candidate"]["alternatives"] == []
+    mutating_diag = next(
+        item
+        for item in by_task["create-candidate"]["candidate_diagnostics"]
+        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+    )
+    assert mutating_diag["FINAL_REJECTION_REASON"].startswith(
+        "execution-contract-insufficient:missing="
+    )
+    assert "CAN_MUTATE_CANDIDATE" in mutating_diag["FINAL_REJECTION_REASON"]
+    assert "CAN_WRITE_REPOSITORY" in mutating_diag["FINAL_REJECTION_REASON"]
+    assert "CAN_RUN_TESTS" in mutating_diag["FINAL_REJECTION_REASON"]
 
 
 def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatch):
@@ -145,7 +175,9 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
     )
 
     assert result["ALTERNATIVE_EXECUTOR_AVAILABLE"] == "YES"
+    assert result["MISSION_LEVEL_COMPLETE_ALTERNATIVE_AVAILABLE"] == "YES"
     assert result["MISSION_STATE"] == "ALTERNATIVE_EXECUTOR_DISCOVERED"
+    assert result["blocked_tasks"][0]["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "YES"
     alternatives = result["blocked_tasks"][0]["alternatives"]
     assert any(
         item["capability_id"] == "agent-office.deterministic.readonly-analysis"
@@ -159,3 +191,14 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
     assert selected["execution_contract_compatible"] is True
     assert selected["authority_compatible"] is True
     assert selected["side_effect_class_compatible"] is True
+    diagnostic = next(
+        item
+        for item in result["blocked_tasks"][0]["candidate_diagnostics"]
+        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+    )
+    assert diagnostic["REQUIRED_OPERATIONS"] == [
+        "CAN_PRODUCE_ARTIFACT_REFS",
+        "CAN_READ_REPOSITORY",
+    ]
+    assert diagnostic["EXECUTION_CONTRACT_REJECTION"] is None
+    assert diagnostic["FINAL_REJECTION_REASON"] == "ACCEPTED"

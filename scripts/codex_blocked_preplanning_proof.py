@@ -69,6 +69,34 @@ def main() -> int:
 
     assert resolution["ALTERNATIVE_EXECUTOR_RESOLUTION_DETERMINISTIC"] == "PASS"
     assert resolution["ALTERNATIVE_EXECUTOR_AVAILABLE"] == "NO", resolution
+    assert resolution["MISSION_LEVEL_COMPLETE_ALTERNATIVE_AVAILABLE"] == "NO"
+    by_task = {
+        item["task_id"]: item
+        for item in resolution["blocked_tasks"]
+    }
+    readonly = by_task["instrument-planner"]
+    mutating = by_task["create-candidate"]
+    assert readonly["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "YES", readonly
+    assert mutating["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "NO", mutating
+    readonly_alternative = next(
+        item
+        for item in readonly["alternatives"]
+        if item["capability_id"] == "agent-office.deterministic.readonly-analysis"
+    )
+    readonly_diagnostic = next(
+        item
+        for item in readonly["candidate_diagnostics"]
+        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+    )
+    mutating_diagnostic = next(
+        item
+        for item in mutating["candidate_diagnostics"]
+        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+    )
+    assert readonly_diagnostic["FINAL_REJECTION_REASON"] == "ACCEPTED"
+    assert mutating_diagnostic["FINAL_REJECTION_REASON"].startswith(
+        "execution-contract-insufficient:missing="
+    )
     assert resolution["NO_ALTERNATIVE_EXECUTOR_REPLAN"] == "NO"
     assert resolution["PROVIDER_CALL_EXECUTED"] == "NO"
     assert resolution["SEMANTIC_REPLAN_PERFORMED"] == "NO"
@@ -105,10 +133,44 @@ def main() -> int:
 
     print("CODEX_BLOCKED_BEFORE_PLANNING=PASS")
     print("ALTERNATIVE_EXECUTOR_RESOLUTION_DETERMINISTIC=PASS")
+    print("READ_ONLY_TASK_ALTERNATIVE_AVAILABLE=PASS")
+    print("READ_ONLY_ALTERNATIVE=" + readonly_alternative["capability_id"])
+    print("MUTATING_TASK_ALTERNATIVE_AVAILABLE=NO")
+    print("MISSION_LEVEL_COMPLETE_ALTERNATIVE_AVAILABLE=NO")
     print("ALTERNATIVE_EXECUTOR_AVAILABLE=NO")
     print("NO_ALTERNATIVE_EXECUTOR_REPLAN=NO")
     print("PROVIDER_CALL_EXECUTED=NO")
+    print("SEMANTIC_REPLAN_PERFORMED=NO")
     print("CANONICAL_CHECKPOINT_PRESERVED=PASS")
+    for key in (
+        "CAPABILITY_ID",
+        "EXECUTION_ENABLED",
+        "ALLOWED_ACTIONS",
+        "EXECUTOR_BINDING",
+        "EXECUTOR_ADAPTER_COMPATIBLE",
+        "EXECUTION_OPERATIONS",
+        "REQUIRED_OPERATIONS",
+        "EXECUTION_CONTRACT_REJECTION",
+        "SIDE_EFFECT_CLASS",
+        "REQUIRED_SIDE_EFFECT_CLASS",
+        "SIDE_EFFECT_COMPATIBLE",
+        "DEFAULT_WRITE_SCOPE",
+        "SECURITY_BOUNDARY",
+        "AUTHORITY_COMPATIBLE",
+        "HEALTH_STATE",
+        "HEALTH_SOURCE",
+        "CANDIDATE_REQUIREMENT",
+        "CANDIDATE_ARTIFACT_CAPABLE",
+        "FINAL_REJECTION_REASON",
+    ):
+        value = readonly_diagnostic[key]
+        if isinstance(value, list):
+            value = ",".join(str(item) for item in value)
+        print(f"{key}={value}")
+    print(
+        "MUTATING_FINAL_REJECTION_REASON="
+        + mutating_diagnostic["FINAL_REJECTION_REASON"]
+    )
     print("MISSION_STATE=WAITING_FOR_EXTERNAL_AUTH")
     print("FAILURE_DOMAIN=PLANNER_PROVIDER_TRANSPORT")
     print("FAILURE_REASON=NVIDIA_TIMEOUT")

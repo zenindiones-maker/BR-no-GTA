@@ -4,6 +4,8 @@ from typing import Any, Iterable
 
 from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
     derive_required_operations,
     effective_candidate_requirement,
@@ -56,78 +58,177 @@ def _effective_task_contract(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _candidate_artifact_capable(
+    record: Any,
+    *,
+    candidate_requirement: str,
+    required_operations: tuple[str, ...],
+) -> bool:
+    supported_operations = {
+        str(item).strip()
+        for item in (record.execution_operations or ())
+        if str(item).strip()
+    }
+    if CAN_PRODUCE_ARTIFACT_REFS not in supported_operations:
+        return False
+    if candidate_requirement not in {"REQUIRED", "CONDITIONAL"}:
+        return True
+    if (
+        CAN_MUTATE_CANDIDATE in required_operations
+        or CAN_WRITE_REPOSITORY in required_operations
+    ):
+        return (
+            CAN_MUTATE_CANDIDATE in supported_operations
+            and CAN_WRITE_REPOSITORY in supported_operations
+        )
+    return True
+
+
+def _evaluate_candidate(
+    record: Any,
+    *,
+    action: str,
+    blocked_capability_ids: set[str],
+    required_operations: tuple[str, ...],
+    required_side_effect: str,
+    candidate_requirement: str,
+) -> dict[str, Any]:
+    capability_id = str(record.capability_id)
+    allowed_actions = tuple(record.allowed_actions or ())
+    executor_binding = str(record.executor_binding or "")
+    adapter_compatible = registry_executor_is_task_adapter_compatible(
+        record.executor_binding
+    )
+    contract_rejection = capability_execution_contract_rejection(
+        record,
+        required_operations,
+    )
+    side_effect_class = str(
+        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+    ).strip().upper()
+    mutation_capable = _mutation_capable(record)
+    side_effect_compatible = (
+        mutation_capable
+        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
+        else not mutation_capable
+    )
+    security_boundary = str(record.security_boundary or "")
+    authority_compatible = bool(
+        record.execution_enabled
+        and record.capability_type != "PROVIDER"
+        and capability_id not in _EXECUTION_TOPOLOGY_CAPABILITY_IDS
+        and action in allowed_actions
+        and adapter_compatible
+        and "harness" in security_boundary.casefold()
+    )
+    candidate_artifact_capable = _candidate_artifact_capable(
+        record,
+        candidate_requirement=candidate_requirement,
+        required_operations=required_operations,
+    )
+
+    health_state = "NOT_EVALUATED"
+    health_source = "NOT_EVALUATED"
+    final_rejection_reason = "ACCEPTED"
+
+    if capability_id in blocked_capability_ids:
+        final_rejection_reason = "blocked-capability-id"
+    elif capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
+        final_rejection_reason = "execution-topology-not-task-capability"
+    elif record.capability_type == "PROVIDER":
+        final_rejection_reason = "provider-not-task-executor"
+    elif not record.execution_enabled:
+        final_rejection_reason = "execution-disabled"
+    elif action not in allowed_actions:
+        final_rejection_reason = "allowed-action-incompatible"
+    elif not adapter_compatible:
+        final_rejection_reason = "executor-adapter-incompatible"
+    elif contract_rejection:
+        final_rejection_reason = contract_rejection
+    elif not side_effect_compatible:
+        final_rejection_reason = "side-effect-class-incompatible"
+    elif not candidate_artifact_capable:
+        final_rejection_reason = "candidate-artifact-capability-insufficient"
+    elif "harness" not in security_boundary.casefold():
+        final_rejection_reason = "harness-authority-boundary-missing"
+    else:
+        health = capability_health(capability_id)
+        health_state = str(health.state).upper()
+        health_source = str(getattr(health, "source", "UNKNOWN") or "UNKNOWN")
+        if health_state in _BLOCKING_HEALTH_STATES:
+            final_rejection_reason = "health:" + health_state.casefold()
+
+    supported_operations = sorted({
+        str(item).strip()
+        for item in (record.execution_operations or ())
+        if str(item).strip()
+    })
+    diagnostic = {
+        "CAPABILITY_ID": capability_id,
+        "EXECUTION_ENABLED": bool(record.execution_enabled),
+        "ALLOWED_ACTIONS": list(allowed_actions),
+        "EXECUTOR_BINDING": executor_binding,
+        "EXECUTOR_ADAPTER_COMPATIBLE": bool(adapter_compatible),
+        "EXECUTION_OPERATIONS": supported_operations,
+        "REQUIRED_OPERATIONS": list(required_operations),
+        "EXECUTION_CONTRACT_REJECTION": contract_rejection,
+        "SIDE_EFFECT_CLASS": side_effect_class,
+        "REQUIRED_SIDE_EFFECT_CLASS": required_side_effect,
+        "SIDE_EFFECT_COMPATIBLE": bool(side_effect_compatible),
+        "DEFAULT_WRITE_SCOPE": list(record.default_write_scope or ()),
+        "SECURITY_BOUNDARY": security_boundary,
+        "AUTHORITY_COMPATIBLE": bool(authority_compatible),
+        "HEALTH_STATE": health_state,
+        "HEALTH_SOURCE": health_source,
+        "CANDIDATE_REQUIREMENT": candidate_requirement,
+        "CANDIDATE_ARTIFACT_CAPABLE": bool(candidate_artifact_capable),
+        "FINAL_REJECTION_REASON": final_rejection_reason,
+    }
+    return diagnostic
+
+
 def _compatible_candidates(
     task: dict[str, Any],
     *,
     blocked_capability_ids: set[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     contract = _effective_task_contract(task)
     required_operations = contract["required_operations"]
     required_side_effect = contract["required_side_effect_class"]
     candidate_requirement = contract["candidate_requirement"]
     action = str(task.get("action") or task.get("authorized_action") or "").strip()
     candidates: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, Any]] = []
 
     for record in sorted(
         GLOBAL_CAPABILITY_REGISTRY.all(),
         key=lambda item: item.capability_id,
     ):
-        capability_id = str(record.capability_id)
-        if capability_id in blocked_capability_ids:
-            continue
-        if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
-            continue
-        if record.capability_type == "PROVIDER" or not record.execution_enabled:
-            continue
-        if action not in tuple(record.allowed_actions or ()):
-            continue
-        if not registry_executor_is_task_adapter_compatible(record.executor_binding):
-            continue
-        if capability_execution_contract_rejection(record, required_operations):
-            continue
-
-        mutation_capable = _mutation_capable(record)
-        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}:
-            if not mutation_capable:
-                continue
-        elif required_side_effect == "READ_ONLY" and mutation_capable:
-            continue
-
-        supported_operations = {
-            str(item).strip()
-            for item in (record.execution_operations or ())
-            if str(item).strip()
-        }
-        if (
-            candidate_requirement in {"REQUIRED", "CONDITIONAL"}
-            and CAN_MUTATE_CANDIDATE not in supported_operations
-        ):
-            continue
-
-        security_boundary = str(record.security_boundary or "")
-        if "harness" not in security_boundary.casefold():
-            continue
-
-        health = capability_health(capability_id)
-        if str(health.state).upper() in _BLOCKING_HEALTH_STATES:
+        diagnostic = _evaluate_candidate(
+            record,
+            action=action,
+            blocked_capability_ids=blocked_capability_ids,
+            required_operations=required_operations,
+            required_side_effect=required_side_effect,
+            candidate_requirement=candidate_requirement,
+        )
+        diagnostics.append(diagnostic)
+        if diagnostic["FINAL_REJECTION_REASON"] != "ACCEPTED":
             continue
 
         candidates.append({
-            "capability_id": capability_id,
-            "health_state": str(health.state),
+            "capability_id": str(record.capability_id),
+            "health_state": diagnostic["HEALTH_STATE"],
+            "health_source": diagnostic["HEALTH_SOURCE"],
             "required_operations": list(required_operations),
             "execution_contract_compatible": True,
             "authority_compatible": True,
             "side_effect_class_compatible": True,
-            "candidate_artifact_capable": (
-                CAN_MUTATE_CANDIDATE in supported_operations
-                if candidate_requirement in {"REQUIRED", "CONDITIONAL"}
-                else True
-            ),
+            "candidate_artifact_capable": True,
             "provider_id": str(record.provider_id or ""),
             "agent_id": str(record.agent_id or ""),
         })
-    return candidates
+    return candidates, diagnostics
 
 
 def resolve_blocked_executor_alternatives(
@@ -158,7 +259,7 @@ def resolve_blocked_executor_alternatives(
     task_resolutions: list[dict[str, Any]] = []
     for task in blocked_tasks:
         contract = _effective_task_contract(task)
-        alternatives = _compatible_candidates(
+        alternatives, candidate_diagnostics = _compatible_candidates(
             task,
             blocked_capability_ids=blocked,
         )
@@ -171,6 +272,11 @@ def resolve_blocked_executor_alternatives(
                 "required_side_effect_class"
             ],
             "alternatives": alternatives,
+            "candidate_diagnostics": candidate_diagnostics,
+            "task_level_alternative_available": bool(alternatives),
+            "TASK_LEVEL_ALTERNATIVE_AVAILABLE": (
+                "YES" if alternatives else "NO"
+            ),
         })
 
     complete_alternative = bool(task_resolutions) and all(
@@ -190,6 +296,10 @@ def resolve_blocked_executor_alternatives(
         "blocked_capability_ids": sorted(blocked),
         "blocked_tasks": task_resolutions,
         "ALTERNATIVE_EXECUTOR_RESOLUTION_DETERMINISTIC": "PASS",
+        "mission_level_complete_alternative_available": bool(complete_alternative),
+        "MISSION_LEVEL_COMPLETE_ALTERNATIVE_AVAILABLE": (
+            "YES" if complete_alternative else "NO"
+        ),
         "ALTERNATIVE_EXECUTOR_AVAILABLE": (
             "YES" if complete_alternative else "NO"
         ),
