@@ -543,3 +543,32 @@ def test_production_plan_consumes_direct_artifact_and_produces_persisted_ref(mon
         in envelope.evidence_refs
     )
     assert envelope.source_task_ids == ("editorial-script",)
+
+
+
+def test_semantic_incident_tasks_require_semantic_reasoning_but_collection_does_not():
+    collection = derive_required_operations({
+        "task_id": "collect-evidence",
+        "task_class": "evidence-collection",
+        "objective": "extrair e normalizar evidências brutas já materializadas",
+        "required_capability_description": "artifact evidence collection",
+        "expected_output": "incident evidence packet",
+        "acceptance_criteria": ["preserve lineage"],
+        "dependencies": [],
+    })
+    assert set(collection) == {CAN_PRODUCE_ARTIFACT_REFS}
+
+    diagnosis = derive_required_operations({
+        "task_id": "agent-diagnosis",
+        "task_class": "semantic",
+        "objective": "Diagnosticar a causa raiz do incidente observado",
+        "required_capability_description": "diagnóstico semântico de runtime",
+        "expected_output": "DIAGNOSIS_ARTIFACT",
+        "acceptance_criteria": ["causa raiz sustentada por evidência"],
+        "dependencies": ["collect-evidence"],
+    })
+    assert {
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }.issubset(set(diagnosis))

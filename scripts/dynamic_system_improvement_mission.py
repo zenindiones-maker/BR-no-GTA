@@ -655,6 +655,19 @@ def _executor_context_char_limit(*, task, broker) -> int:
     return min(limits) if limits else 32768
 
 
+def _executor_requires_input_artifact_content(*, task, broker) -> bool:
+    record = broker.registry.get(task.capability_id)
+    if record is None or not record.executor_binding:
+        return True
+    try:
+        executor = broker.adapter.resolve_binding(str(record.executor_binding))
+    except Exception:
+        return True
+    module = inspect.getmodule(executor)
+    declared = getattr(module, "REQUIRES_INPUT_ARTIFACT_CONTENT", None)
+    return True if declared is None else bool(declared)
+
+
 def _artifact_content_budget_chars(
     *,
     parent_context: dict[str, Any],
@@ -1016,7 +1029,14 @@ def run(
                 )
                 input_artifacts = metadata_artifacts
                 input_metrics = metadata_metrics
-                if metadata_artifacts and not bool(task.dependencies):
+                if (
+                    metadata_artifacts
+                    and not bool(task.dependencies)
+                    and _executor_requires_input_artifact_content(
+                        task=task,
+                        broker=broker,
+                    )
+                ):
                     metadata_context = dict(parent_context)
                     metadata_context["input_artifacts"] = metadata_artifacts
                     metadata_context["evidence_refs"] = list(dict.fromkeys([

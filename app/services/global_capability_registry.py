@@ -169,6 +169,69 @@ HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
 
 
 
+ARTIFACT_EVIDENCE_REUSE_RECORD = CapabilityRecord(
+    capability_id="artifact.evidence.reuse",
+    capability_type="CAPABILITY",
+    domain="development",
+    implementation=(
+        "Harness-governed deterministic reuse of an already materialized "
+        "artifact by immutable ref + sha256 lineage"
+    ),
+    input_contract=(
+        "pre-materialized mission artifact refs + sha256/size metadata"
+    ),
+    output_contract=(
+        "validated artifact manifest preserving the same refs/hashes without "
+        "semantic interpretation or provider execution"
+    ),
+    requirements=(
+        "persisted Harness DEVELOPMENT authorization",
+        "exact Global Capability Registry executor binding",
+        "pre-materialized artifact under the mission artifact root",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "artifact", "evidence", "reuse", "pre-materialized", "lineage",
+        "normalize", "normalizar", "extract", "extrair", "incident",
+        "incidente", "evidencia", "evidências", "zero-cost",
+    ),
+    security_boundary=(
+        "DeepSeek Harness exact authorization/routing; immutable artifact refs "
+        "and sha256 metadata only; no LLM/provider call, repository mutation, "
+        "publication, memory promotion or policy authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="HASH_VERIFIED_ARTIFACT_LINEAGE_REUSE",
+    evidence_contract="CapabilityEvidence + TaskResultEnvelope artifact lineage",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.artifact_evidence_reuse_service."
+        "execute_pre_materialized_artifact_reuse"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="artifact-lineage-worker",
+    side_effects=(),
+    supports_parallelism=True,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="DEFAULT",
+    execution_operations=(
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+)
+
+
 AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD = CapabilityRecord(
     capability_id="agent-office.deterministic-analysis",
     capability_type="AGENT",
@@ -1107,6 +1170,7 @@ _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 for _record in (
     AGENT_OFFICE_RECORD,
     HERMES_MULTIAGENT_RUNTIME_RECORD,
+    ARTIFACT_EVIDENCE_REUSE_RECORD,
     AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD,
     AGENT_OFFICE_CODEX_READONLY_RECORD,
     AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD,

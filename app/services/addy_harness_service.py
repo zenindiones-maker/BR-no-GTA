@@ -288,6 +288,7 @@ def execute_authorized_addy_skill(
         finally:
             consume_harness_authorization(provider_auth)
         provider_attempts.append({
+            "attempt": len(provider_attempts) + 1,
             "routing_id": provider_routing.routing_id,
             "provider": semantic_evidence.provider,
             "model": (
@@ -299,6 +300,7 @@ def execute_authorized_addy_skill(
             "latency_seconds": semantic_evidence.latency_seconds,
             "attempt_deadline_ms": attempt_deadline_ms,
             "error": dict(semantic_evidence.error or {}),
+            "performance": dict(semantic_evidence.performance or {}),
         })
         return semantic_evidence
 
@@ -308,28 +310,10 @@ def execute_authorized_addy_skill(
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
         error = semantic.error if isinstance(semantic.error, dict) else {}
-        failed_model = str(
-            semantic.model or provider_routing.selected_model or ""
-        ).strip()
-        failed_provider = str(
-            semantic.provider or provider_routing.selected_provider or ""
-        ).strip()
-        if bool(error.get("retryable")) and failed_model and failed_provider:
-            try:
-                rerouted = _route_provider(
-                    preferred_provider=failed_provider,
-                    unavailable_models=(failed_model,),
-                    failure_pattern=str(
-                        error.get("failure_pattern")
-                        or error.get("code")
-                        or "provider_retryable_failure"
-                    ),
-                )
-            except Exception:
-                rerouted = None
-            if rerouted is not None:
-                provider_routing = rerouted
-                semantic = _execute_provider(provider_routing)
+        if bool(error.get("retryable")):
+            # One bounded retry of the exact same Harness routing decision.
+            # Do not semantic-replan or swap provider/model inside the executor.
+            semantic = _execute_provider(provider_routing)
 
     finished_at = datetime.now(timezone.utc).isoformat()
 

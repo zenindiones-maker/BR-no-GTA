@@ -87,8 +87,12 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
         "context sizes", "duplicate-call map", "repository inspection",
     )
     reasoning_markers = (
-        "root cause", "analyze", "analysis", "diagnose", "reasoning",
-        "causal", "propose", "synthesize", "synthesis", "interpret",
+        "root cause", "root-cause", "analyze", "analysis", "diagnose",
+        "diagnosis", "reasoning", "causal", "propose", "proposal",
+        "synthesize", "synthesis", "interpret",
+        "causa raiz", "causa-raiz", "analisar", "análise", "analise",
+        "diagnosticar", "diagnóstico", "diagnostico", "propor", "proposta",
+        "sintetizar", "síntese", "sintese", "interpretar",
     )
     deterministic_evidence_classes = {
         "evidence-collection",
@@ -170,7 +174,12 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
             CAN_READ_REPOSITORY,
             CAN_PRODUCE_ARTIFACT_REFS,
         })
-    if any(marker in text for marker in reasoning_markers):
+    semantic_task = (
+        task_class == "semantic"
+        or task_class.startswith("semantic-")
+        or task_class.endswith("-semantic")
+    )
+    if semantic_task or any(marker in text for marker in reasoning_markers):
         operations.add(CAN_SEMANTIC_REASONING)
 
     deterministic_evidence_task = (

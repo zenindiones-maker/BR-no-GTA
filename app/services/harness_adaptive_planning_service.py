@@ -11,6 +11,7 @@ from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.capability_health_service import capability_health
 from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
+    CAN_SEMANTIC_REASONING,
     capability_execution_contract_rejection,
     derive_required_operations,
     effective_candidate_requirement as execution_candidate_requirement,
@@ -1736,6 +1737,16 @@ def select_capability_for_requirement(
         )
         if contract_rejection:
             avoided.append(f"{capability_id}:{contract_rejection}")
+            continue
+        if (
+            required_operations
+            and CAN_SEMANTIC_REASONING not in required_operations
+            and str(getattr(record, "health_policy", "") or "")
+            == "SEMANTIC_PROVIDER_REQUIRED"
+        ):
+            avoided.append(
+                f"{capability_id}:semantic-provider-unnecessary-for-contract"
+            )
             continue
         declared_side_effect = effective_required_side_effect_class(
             task_class=str(requirement.get("task_class") or ""),

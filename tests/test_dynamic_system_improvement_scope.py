@@ -408,3 +408,81 @@ def test_independent_review_detector_uses_contract_not_english_wording():
         ],
     }
     assert _is_independent_review_task(task) is True
+
+
+
+def test_artifact_reuse_capability_is_deterministic_and_provider_free():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("artifact.evidence.reuse")
+    assert record is not None
+    assert record.provider_id == "internal"
+    assert record.health_policy == "DEFAULT"
+    assert "CAN_SEMANTIC_REASONING" not in set(record.execution_operations)
+    assert {
+        "CAN_CONSUME_ARTIFACT_REFS",
+        "CAN_PRODUCE_ARTIFACT_REFS",
+    }.issubset(set(record.execution_operations))
+
+
+def test_nonsemantic_artifact_task_rejects_provider_backed_addy(monkeypatch):
+    requirement = {
+        "task_id": "generic-artifact-reuse",
+        "task_class": "system-improvement",
+        "action": "DEVELOPMENT",
+        "declared_action": "DEVELOPMENT",
+        "query": (
+            "extrair normalizar evidências incidente artifact pre-materialized"
+        ),
+        "objective": "normalizar evidências já materializadas sem interpretação",
+        "required_capability_description": (
+            "reuse pre-materialized incident evidence artifact"
+        ),
+        "candidate_capability_ids": ["addy:context-engineering"],
+        "dependencies": [],
+        "expected_output": "evidence artifact manifest",
+        "acceptance_criteria": ["preserve sha256 lineage"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "required_operations": ["CAN_PRODUCE_ARTIFACT_REFS"],
+    }
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_registry_discover",
+        lambda **_: [
+            {"capability_id": "artifact.evidence.reuse"},
+            {"capability_id": "addy:context-engineering"},
+        ],
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_capability_health",
+        lambda capability_id: type("Health", (), {
+            "to_dict": lambda self: {
+                "capability_id": capability_id,
+                "state": "HEALTHY",
+                "reason": "focused contract",
+            }
+        })(),
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_capability_failure_memory",
+        lambda capability_id, context: None,
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_competence_score",
+        lambda record, requirement, context: (0.0, False, None),
+    )
+    selected, _, avoided, evidence = (
+        adaptive_planning.select_capability_for_requirement(
+            requirement,
+            context={"mission_class": "SYSTEM_IMPROVEMENT"},
+            used=set(),
+        )
+    )
+    assert selected == "artifact.evidence.reuse"
+    assert (
+        "addy:context-engineering:"
+        "semantic-provider-unnecessary-for-contract"
+    ) in avoided
+    assert evidence["selected_capability_id"] == selected
