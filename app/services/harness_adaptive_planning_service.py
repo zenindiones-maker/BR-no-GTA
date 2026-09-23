@@ -1439,6 +1439,34 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
     ):
         return "DEVELOPMENT"
 
+    incident_markers = (
+        "incident",
+        "failure",
+        "falha",
+        "provider",
+        "runtime",
+        "routing",
+        "authorization",
+        "adapter",
+        "transport",
+        "executor binding",
+    )
+    diagnostic_markers = (
+        "diagnos",
+        "classif",
+        "root cause",
+        "causal",
+        "recovery",
+        "recover",
+        "error",
+        "erro",
+    )
+    if (
+        any(marker in text for marker in incident_markers)
+        and any(marker in text for marker in diagnostic_markers)
+    ):
+        return "DEVELOPMENT"
+
     engineering_markers = (
         "repository",
         "code",
@@ -1552,6 +1580,48 @@ _EXECUTION_TOPOLOGY_CAPABILITY_IDS = {
 }
 
 
+def _incident_subject_capability(context: dict[str, Any]) -> str:
+    canonical = dict(context.get("canonical_state") or {})
+    incident = dict(canonical.get("incident") or {})
+    return str(incident.get("capability_id") or "").strip()
+
+
+def _incident_diagnostic_requirement(requirement: dict[str, Any]) -> bool:
+    text = _task_semantic_text(requirement)
+    return (
+        any(
+            marker in text
+            for marker in (
+                "incident", "failure", "falha", "provider", "runtime",
+                "routing", "authorization", "adapter", "transport",
+                "executor binding",
+            )
+        )
+        and any(
+            marker in text
+            for marker in (
+                "diagnos", "classif", "root cause", "causal",
+                "recovery", "recover", "review", "error", "erro",
+            )
+        )
+    )
+
+
+def _incident_reproduction_requested(requirement: dict[str, Any]) -> bool:
+    text = _task_semantic_text(requirement)
+    return any(
+        marker in text
+        for marker in (
+            "reproduce the failure",
+            "reproduce failure",
+            "reproduction probe",
+            "probe failing capability",
+            "retry failing capability",
+            "execute failing capability",
+        )
+    )
+
+
 def select_capability_for_requirement(
     requirement: dict[str, Any],
     *,
@@ -1629,6 +1699,17 @@ def select_capability_for_requirement(
             continue
         record = _profiled_registry_get(capability_id)
         if record is None or record.capability_type == "PROVIDER":
+            continue
+        incident_subject = _incident_subject_capability(context)
+        if (
+            incident_subject
+            and capability_id == incident_subject
+            and _incident_diagnostic_requirement(requirement)
+            and not _incident_reproduction_requested(requirement)
+        ):
+            avoided.append(
+                f"{capability_id}:incident-subject-cannot-self-diagnose"
+            )
             continue
         if not _record_domain_compatible(record, requirement):
             avoided.append(

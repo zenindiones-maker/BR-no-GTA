@@ -1,7 +1,7 @@
 {
   "schema": "real-agent-self-improvement-request/v2",
   "mode": "REAL_INCIDENT_RECOVERY",
-  "human_goal": "Use o incidente REAL da produção 35880674047 como evidência observada e diagnostique somente o trecho afetado. A task fact_verification, capability gta6.research.semantic-synthesis, chegou a selecionar uma rota/provider e depois falhou com 'semantic research provider did not execute'. O trace observou PROVIDER_CRITICAL_PATH_MS=0 e PROVIDER_CUMULATIVE_WORK_MS=0. Determine com evidência se houve provider call e transport reais; classifique routing, authorization, health policy, model/provider availability, transport, timeout, invalid response, structured output, executor binding ou adapter failure. Produza diagnóstico, root cause, menor recovery proposal e revisão independente. O output dos agentes deve incluir, quando observável: PROVIDER_CALL_ATTEMPTED=YES|NO|UNKNOWN, SELECTED_PROVIDER=..., SELECTED_MODEL=..., PROVIDER_FAILURE_CLASS=..., ROOT_CAUSE_CLASS=..., RECOVERY_STRATEGY=.... Não mude provider/fallback às cegas, preserve fallback_allowed=False, preserve zero-cost e fail-closed. O incidente anterior Addy/editorial está GREEN e fora de escopo; não o reabra. Não use Codex nem Natural Swarm. Não faça mutation de repositório nesta missão; a correção só poderá ocorrer depois de diagnóstico, proposta, review e decisão Harness.",
+  "human_goal": "Use o incidente REAL da produção 35880674047 como evidência observada e diagnostique somente o trecho afetado. A task fact_verification, capability gta6.research.semantic-synthesis, chegou a selecionar uma rota/provider e depois falhou com 'semantic research provider did not execute'. O trace observou PROVIDER_CRITICAL_PATH_MS=0 e PROVIDER_CUMULATIVE_WORK_MS=0. Determine com evidência se houve provider call e transport reais; classifique routing, authorization, health policy, model/provider availability, transport, timeout, invalid response, structured output, executor binding ou adapter failure. Produza diagnóstico, root cause, menor recovery proposal e revisão independente. O output dos agentes deve incluir, quando observável: PROVIDER_CALL_ATTEMPTED=YES|NO|UNKNOWN, SELECTED_PROVIDER=..., SELECTED_MODEL=..., PROVIDER_FAILURE_CLASS=..., ROOT_CAUSE_CLASS=..., RECOVERY_STRATEGY=.... Não mude provider/fallback às cegas, preserve fallback_allowed=False, preserve zero-cost e fail-closed. O incidente anterior Addy/editorial está GREEN e fora de escopo; não o reabra. Não use Codex nem Natural Swarm. Não faça mutation de repositório nesta missão; a correção só poderá ocorrer depois de diagnóstico, proposta, review e decisão Harness. A missão de recuperação deve produzir artifacts distintos e encadeados para: diagnóstico/classificação; root cause; recovery candidate proposal; independent review. Não combine proposal e review na mesma task. A capability sob investigação não pode diagnosticar/revisar a si própria, exceto se houver uma task explicitamente autorizada de reproduction probe.",
   "incident": {
     "source_run_id": 35880674047,
     "source_job_id": 107247993105,
@@ -44,6 +44,12 @@
       "github:artifact:10760571943",
       "performance:35880674047:PROVIDER_CRITICAL_PATH_MS=0.000",
       "performance:35880674047:PROVIDER_CUMULATIVE_WORK_MS=0.000"
+    ],
+    "required_artifact_chain": [
+      "DIAGNOSIS_ARTIFACT",
+      "ROOT_CAUSE_ARTIFACT",
+      "RECOVERY_PROPOSAL_ARTIFACT",
+      "INDEPENDENT_REVIEW_ARTIFACT"
     ]
   },
   "canonical_codex_checkpoint": 35850473901,

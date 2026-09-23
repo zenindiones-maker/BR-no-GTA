@@ -266,6 +266,87 @@ def test_editorial_action_is_normalized_from_task_semantics_not_agent_identity()
     assert editorial["task_family"] == "EDITORIAL"
 
 
+def test_provider_incident_diagnosis_uses_development_and_avoids_subject(monkeypatch):
+    requirement = {
+        "task_id": "classify-failure",
+        "task_class": "semantic-synthesis",
+        "action": "RESEARCH",
+        "query": (
+            "classify provider runtime failure from routing authorization and "
+            "transport evidence; diagnose root cause and recovery"
+        ),
+        "objective": (
+            "Classify the provider runtime failure and diagnose whether the "
+            "provider call or transport started."
+        ),
+        "required_capability_description": (
+            "provider runtime failure classification and recovery analysis"
+        ),
+        "candidate_capability_ids": ["gta6.research.semantic-synthesis"],
+        "dependencies": ["collect-evidence"],
+        "expected_output": "ProviderFailureClassification",
+        "acceptance_criteria": ["classify failure from evidence"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "required_operations": [
+            CAN_SEMANTIC_REASONING,
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+    }
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_registry_discover",
+        lambda **kwargs: [
+            {"capability_id": "gta6.research.semantic-synthesis"},
+            {"capability_id": "addy:debugging-and-error-recovery"},
+        ],
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_capability_health",
+        lambda capability_id: SimpleNamespace(
+            to_dict=lambda: {
+                "capability_id": capability_id,
+                "state": "HEALTHY",
+                "reason": "incident routing proof",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_capability_failure_memory",
+        lambda capability_id, context: None,
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_competence_score",
+        lambda record, requirement, context: (0.0, False, None),
+    )
+
+    selected, _, avoided, evidence = select_capability_for_requirement(
+        requirement,
+        context={
+            "mission_class": "SYSTEM_IMPROVEMENT",
+            "canonical_state": {
+                "incident": {
+                    "capability_id": "gta6.research.semantic-synthesis",
+                }
+            },
+        },
+        used=set(),
+    )
+
+    assert evidence["declared_action"] == "RESEARCH"
+    assert evidence["effective_action"] == "DEVELOPMENT"
+    assert evidence["task_family"] == "DEVELOPMENT"
+    assert selected == "addy:debugging-and-error-recovery"
+    assert (
+        "gta6.research.semantic-synthesis:"
+        "incident-subject-cannot-self-diagnose"
+    ) in avoided
+
+
 def test_system_incident_independent_review_normalizes_to_development():
     proposal = MissionPlanProposal(
         interpreted_goal="Recover from a real provider runtime incident.",
