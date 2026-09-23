@@ -423,3 +423,95 @@ def test_addy_correction_turn_uses_harness_structured_output_schema(monkeypatch)
     assert result.result["structured_output_schema"] == (
         "IncidentDiagnosisEvidence"
     )
+
+
+def test_addy_tool_request_correction_uses_harness_tool_schema(monkeypatch):
+    _patch_common(monkeypatch)
+    route = _route(routing_id="routing-tool-structured", model="model-a")
+    route_requests = []
+    generation_calls = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        return route
+
+    def fake_generation(**kwargs):
+        generation_calls.append(kwargs)
+        return HarnessAIProviderEvidence(
+            provider="nvidia_nim",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id="decision-test",
+            execution_id="execution-test",
+            authorization_id="provider-auth",
+            result={
+                "text": (
+                    '{"schema":"ToolRequestEnvelope/v1",'
+                    '"request_id":"req-corrected",'
+                    '"mission_id":"mission-test",'
+                    '"task_id":"task-test",'
+                    '"agent_id":"addy-agent-skills",'
+                    '"capability_id":"addy:debugging-and-error-recovery",'
+                    '"tool_or_capability_id":"artifact.evidence.reuse",'
+                    '"operation":"EXECUTE_CAPABILITY",'
+                    '"arguments":{},'
+                    '"input_refs":["artifact:incident.json"],'
+                    '"reason":"Read observed evidence",'
+                    '"authorization_context":{"authority":"DEEPSEEK_HARNESS"}}'
+                )
+            },
+            routing={"routing_id": "routing-tool-structured"},
+            model="model-a",
+            executor_binding="provider-executor",
+            latency_seconds=0.2,
+            retry_count=0,
+            evidence_refs=("routing:routing-tool-structured",),
+            performance={
+                "structured_output_mode": "json_schema",
+                "total_attempt_latency_ms": 200.0,
+            },
+        )
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        fake_generation,
+    )
+    payload = _payload()
+    payload["functional_role"] = "ROOT_CAUSE"
+    payload["agent_tool_capabilities"] = ["artifact.evidence.reuse"]
+    payload["context"] = {
+        "evidence_refs": ["artifact:incident.json"],
+        "output_validation_feedback": {
+            "schema": "ToolRequestValidationFeedback/v1",
+            "expected_schema": "ToolRequestEnvelope/v1",
+            "errors": ["TOOL_REQUEST_REASON_REQUIRED"],
+        },
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert result.status == "EXECUTED"
+    assert route_requests[0].structured_output_required is True
+    schema = generation_calls[0]["structured_output_schema"]
+    assert schema["properties"]["schema"]["const"] == (
+        "ToolRequestEnvelope/v1"
+    )
+    assert schema["properties"]["tool_or_capability_id"]["enum"] == [
+        "artifact.evidence.reuse"
+    ]
+    assert schema["properties"]["reason"]["minLength"] == 1
+    assert "reason" in schema["required"]
+    assert result.result["structured_output_enforced"] is True
+    assert result.result["structured_output_schema"] == (
+        "ToolRequestEnvelope/v1"
+    )

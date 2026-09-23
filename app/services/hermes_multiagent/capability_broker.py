@@ -37,6 +37,7 @@ from app.services.semantic_tool_loop_service import (
     extract_agent_output_text,
     extract_exact_json_output,
     extract_tool_request,
+    extract_tool_request_candidate,
     provider_call_count,
     tool_request_fingerprint,
     utcnow,
@@ -1448,10 +1449,111 @@ class HermesHarnessCapabilityBroker:
                     agent_id=str(record.agent_id or ""),
                     capability_id=task.capability_id,
                 )
-            except (
-                AgentToolRequestError,
-                AgentToolAuthorizationError,
-            ) as exc:
+            except AgentToolAuthorizationError as exc:
+                failure_result = {
+                    "provider_result": _jsonable(result),
+                    "output_contract_validation": (
+                        output_validation.to_dict()
+                    ),
+                    "tool_error": {
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:1200],
+                    },
+                    "agent_loop": {
+                        "agent_turns": agent_turn,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                }
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_TOOL",
+                    result=failure_result,
+                    failure_mode=type(exc).__name__,
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from exc
+            except AgentToolRequestError as exc:
+                candidate = extract_tool_request_candidate(result)
+                if candidate is not None and agent_turn < max_agent_turns:
+                    output_validation_feedback = {
+                        "schema": "ToolRequestValidationFeedback/v1",
+                        "expected_schema": TOOL_REQUEST_SCHEMA,
+                        "errors": [str(exc)[:240]],
+                        "received_keys": sorted(
+                            str(key) for key in candidate.keys()
+                        ),
+                        "instruction": (
+                            "Return ONLY one corrected ToolRequestEnvelope JSON "
+                            "object. Do not include prose, tool results, or final "
+                            "evidence in the same response. Every required field "
+                            "must be top-level and the tool must remain within "
+                            "the Harness allowlist."
+                        ),
+                    }
+                    validation_row = self._persist_result(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        agent_id=record.agent_id,
+                        routing_id=decision.routing_id,
+                        authorization_id=last_authorization_id,
+                        elapsed_seconds=(
+                            time.perf_counter() - task_started_perf
+                        ),
+                        result={
+                            "provider_result": _jsonable(result),
+                            "output_contract_validation": (
+                                output_validation.to_dict()
+                            ),
+                            "output_validation_feedback": (
+                                output_validation_feedback
+                            ),
+                            "tool_request_candidate": candidate,
+                            "agent_loop": {
+                                "agent_turns": agent_turn,
+                                "tool_calls": tool_calls,
+                                "provider_calls": provider_calls,
+                            },
+                        },
+                        idempotency_key=task.idempotency_key,
+                        capability_version=task.capability_version,
+                        retry_count=retry_attempt,
+                        skill_id=record.skill_id,
+                        executor_binding=str(record.executor_binding or ""),
+                        source_task_ids=tuple(task.dependencies),
+                        started_at=started_at,
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        status="OUTPUT_VALIDATION",
+                    )
+                    self._audit.append({
+                        "event": "TASK_TOOL_REQUEST_VALIDATION",
+                        "authority": "DEEPSEEK_HARNESS",
+                        "mission_id": self.spec.mission_id,
+                        "task_id": task_id,
+                        "task_class": task.task_class,
+                        "functional_role": task.functional_role,
+                        "capability_id": capability_id,
+                        "agent_id": record.agent_id,
+                        "agent_turn": agent_turn,
+                        "status": "OUTPUT_VALIDATION",
+                        "evidence_ref": validation_row["evidence_ref"],
+                        "tool_request_error": str(exc)[:240],
+                    })
+                    previous_output = extract_agent_output_text(result)
+                    continue
+
                 failure_result = {
                     "provider_result": _jsonable(result),
                     "output_contract_validation": (

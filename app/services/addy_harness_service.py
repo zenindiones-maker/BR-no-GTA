@@ -31,6 +31,10 @@ from app.services.provider_health_service import (
 )
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 from app.services.task_output_contract_service import task_output_json_schema
+from app.services.semantic_tool_loop_service import (
+    TOOL_REQUEST_SCHEMA,
+    tool_request_json_schema,
+)
 
 
 ADDY_EXECUTOR_BINDING = (
@@ -184,32 +188,9 @@ def execute_authorized_addy_skill(
         context=payload.get("context"),
     )
 
-    context = payload.get("context")
-    correction_feedback = (
-        context.get("output_validation_feedback")
-        if isinstance(context, dict)
-        else None
-    )
-    functional_role = str(payload.get("functional_role") or "").strip().upper()
-    structured_output_schema = (
-        task_output_json_schema(functional_role)
-        if isinstance(correction_feedback, dict)
-        and correction_feedback.get("expected_schema")
-        else None
-    )
-    if structured_output_schema is not None:
-        expected_schema = str(
-            correction_feedback.get("expected_schema") or ""
-        ).strip()
-        actual_schema = str(
-            structured_output_schema["properties"]["schema"]["const"]
-        )
-        if not expected_schema or expected_schema != actual_schema:
-            raise PermissionError(
-                "Addy correction schema does not match Harness validation feedback"
-            )
-
-    mission_id = str(payload.get("mission_id") or f"addy:{auth.execution_id}").strip()
+    mission_id = str(
+        payload.get("mission_id") or f"addy:{auth.execution_id}"
+    ).strip()
     task_id = str(payload.get("task_id") or skill_name).strip()
     goal_id = str(
         payload.get("goal_id")
@@ -218,6 +199,45 @@ def execute_authorized_addy_skill(
     ).strip()
     if not mission_id or not task_id or not goal_id:
         raise ValueError("mission_id, task_id and goal_id must be non-empty")
+
+    context = payload.get("context")
+    correction_feedback = (
+        context.get("output_validation_feedback")
+        if isinstance(context, dict)
+        else None
+    )
+    functional_role = str(payload.get("functional_role") or "").strip().upper()
+    structured_output_schema = None
+    if isinstance(correction_feedback, dict):
+        expected_schema = str(
+            correction_feedback.get("expected_schema") or ""
+        ).strip()
+        if expected_schema == TOOL_REQUEST_SCHEMA:
+            structured_output_schema = tool_request_json_schema(
+                mission_id=mission_id,
+                task_id=task_id,
+                agent_id=str(record.agent_id or "addy-agent-skills"),
+                capability_id=capability_id,
+                allowed_tool_capability_ids=tuple(
+                    str(item).strip()
+                    for item in (
+                        payload.get("agent_tool_capabilities") or ()
+                    )
+                    if str(item).strip()
+                ),
+            )
+        elif expected_schema:
+            structured_output_schema = task_output_json_schema(
+                functional_role
+            )
+        if structured_output_schema is not None:
+            actual_schema = str(
+                structured_output_schema["properties"]["schema"]["const"]
+            )
+            if not expected_schema or expected_schema != actual_schema:
+                raise PermissionError(
+                    "Addy correction schema does not match Harness validation feedback"
+                )
 
     provider_health = semantic_provider_health()
     eligible_providers = tuple(

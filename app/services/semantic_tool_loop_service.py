@@ -258,6 +258,83 @@ def extract_tool_request(
     return None
 
 
+
+def extract_tool_request_candidate(
+    provider_result: Any,
+) -> dict[str, Any] | None:
+    for item in _iter_dicts(provider_result):
+        if str(item.get("schema") or "").strip() == TOOL_REQUEST_SCHEMA:
+            return dict(item)
+    return None
+
+
+def tool_request_json_schema(
+    *,
+    mission_id: str,
+    task_id: str,
+    agent_id: str,
+    capability_id: str,
+    allowed_tool_capability_ids: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    allowed = [
+        str(item).strip()
+        for item in allowed_tool_capability_ids
+        if str(item).strip()
+    ]
+    if not allowed:
+        raise ValueError("tool request schema requires an allowlisted capability")
+    return {
+        "type": "object",
+        "properties": {
+            "schema": {"type": "string", "const": TOOL_REQUEST_SCHEMA},
+            "request_id": {
+                "type": "string",
+                "pattern": r"^[A-Za-z0-9._:-]{1,96}$",
+            },
+            "mission_id": {"type": "string", "const": str(mission_id)},
+            "task_id": {"type": "string", "const": str(task_id)},
+            "agent_id": {"type": "string", "const": str(agent_id)},
+            "capability_id": {
+                "type": "string",
+                "const": str(capability_id),
+            },
+            "tool_or_capability_id": {
+                "type": "string",
+                "enum": allowed,
+            },
+            "operation": {
+                "type": "string",
+                "const": "EXECUTE_CAPABILITY",
+            },
+            "arguments": {"type": "object"},
+            "input_refs": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+            },
+            "reason": {"type": "string", "minLength": 1},
+            "authorization_context": {
+                "type": "object",
+                "minProperties": 1,
+            },
+        },
+        "required": [
+            "schema",
+            "request_id",
+            "mission_id",
+            "task_id",
+            "agent_id",
+            "capability_id",
+            "tool_or_capability_id",
+            "operation",
+            "arguments",
+            "input_refs",
+            "reason",
+            "authorization_context",
+        ],
+        "additionalProperties": False,
+    }
+
+
 def tool_request_fingerprint(request: ToolRequestEnvelope) -> str:
     payload = {
         "mission_id": request.mission_id,
