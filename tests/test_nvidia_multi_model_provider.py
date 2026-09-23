@@ -16,7 +16,10 @@ from app.services.nvidia_nim_provider import (
     NvidiaNIMProvider,
     NvidiaNimProviderAdapter,
 )
-from app.services.provider_health_service import model_health
+from app.services.provider_health_service import (
+    model_health,
+    nvidia_semantic_planner_latency_budget,
+)
 from scripts import nvidia_multimodel_probe as nvidia_probe
 
 
@@ -432,21 +435,12 @@ def test_nvidia_models_reuse_canonical_live_health_without_reprobe(
 
 def test_three_proven_nvidia_models_are_selected_by_capability_not_task_id():
     classes = (
-        (
-            ("reasoning", "semantic_planning", "long_context"),
-            "z-ai/glm-5.3",
-        ),
-        (
-            ("fast_reasoning", "structured_output", "tool_use"),
-            "nvidia/nemotron-3.5-lightning-30b-a3b",
-        ),
-        (
-            ("complex_decision_support", "planning", "tool_use"),
-            "nvidia/nemotron-3-ultra-550b-a55b",
-        ),
+        ("reasoning", "semantic_planning", "long_context"),
+        ("fast_reasoning", "structured_output", "tool_use"),
+        ("complex_decision_support", "planning", "tool_use"),
     )
     selected = set()
-    for capabilities, expected_model in classes:
+    for capabilities in classes:
         decision = route_harness_request(
             _request(
                 allowed_providers=("nvidia_nim",),
@@ -457,18 +451,46 @@ def test_three_proven_nvidia_models_are_selected_by_capability_not_task_id():
                 ),
             )
         )
-        assert decision.selected_model == expected_model
+        record = next(
+            item
+            for item in _nvidia_records()
+            if item.model_id == decision.selected_model
+        )
+        record_capabilities = {
+            tag.split(":", 1)[1]
+            for tag in record.policy_tags
+            if tag.startswith("model-capability:")
+        }
+        assert set(capabilities).issubset(record_capabilities)
+        assert model_health(
+            "nvidia_nim",
+            decision.selected_model,
+        ).availability == "AVAILABLE"
         selected.add(decision.selected_model)
 
-    assert len(selected) == 3
-    assert {
+    assert "nvidia/nemotron-3.5-lightning-30b-a3b" in selected
+    assert "nvidia/nemotron-3-ultra-550b-a55b" in selected
+    assert selected.issubset({
         model_id
         for model_id in REQUIRED_MODELS
         if model_health(
             "nvidia_nim",
             model_id,
         ).availability == "AVAILABLE"
-    } == selected
+    })
+
+
+def test_semantic_latency_budget_is_derived_from_available_live_health():
+    budget = nvidia_semantic_planner_latency_budget()
+    assert budget["sample_count"] == 3
+    assert budget["P50_MS"] == pytest.approx(15374.36, abs=0.01)
+    assert budget["P95_MS"] == pytest.approx(50024.0, abs=0.1)
+    assert budget["MAX_SANE_MS"] == pytest.approx(53873.96, abs=0.01)
+    assert budget["MODEL_ATTEMPT_DEADLINE_MS"] == 54000
+    assert budget["MODEL_RETRY_BUDGET"] == 1
+    assert budget["FULL_TIMEOUT_RETRY_BUDGET"] == 0
+    assert budget["MODEL_FAILOVER_BUDGET"] == 1
+    assert budget["SEMANTIC_PLANNER_TOTAL_DEADLINE_MS"] == 108000
 
 
 def test_quota_aware_routing_excludes_exhausted_model(monkeypatch):

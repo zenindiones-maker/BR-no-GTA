@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
+import math
 import os
+import statistics
 from pathlib import Path
 import re
 from typing import Any
@@ -194,6 +196,94 @@ def _canonical_nvidia_model_health(model_id: str) -> ModelHealth | None:
         last_verified_at=last_verified_at,
         source="CANONICAL_LIVE_EVIDENCE",
     )
+
+
+def _linear_percentile(values: list[float], percentile: float) -> float:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        raise ValueError("percentile requires at least one value")
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * float(percentile)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
+def nvidia_semantic_planner_latency_budget(
+    *,
+    registry: Any = GLOBAL_CAPABILITY_REGISTRY,
+) -> dict[str, Any]:
+    """Derive bounded semantic-planner latency policy from canonical live health.
+
+    Only NVIDIA models that are currently AVAILABLE and satisfy the semantic
+    planning quality contract contribute samples. The model attempt deadline is
+    the observed sane maximum rounded up to the next whole second; it is not a
+    hand-tuned timeout. One fast transient retry may consume only the remaining
+    time inside that same model-attempt budget. Full timeout/read-stall failures
+    never receive a same-model retry.
+    """
+    required = {"semantic_planning", "reasoning", "structured_output"}
+    samples: list[dict[str, Any]] = []
+    for record in registry.all():
+        if (
+            record.capability_type != "PROVIDER"
+            or str(record.provider_id or "").lower().replace("-", "_")
+            != "nvidia_nim"
+        ):
+            continue
+        model_id = str(getattr(record, "model_id", None) or "").strip()
+        if not model_id:
+            continue
+        capabilities = {
+            str(tag).split(":", 1)[1]
+            for tag in tuple(getattr(record, "policy_tags", ()) or ())
+            if str(tag).startswith("model-capability:")
+        }
+        if not required.issubset(capabilities):
+            continue
+        health = model_health("nvidia_nim", model_id, registry=registry)
+        if health.availability != "AVAILABLE" or health.latency_ms is None:
+            continue
+        latency_ms = float(health.latency_ms)
+        if latency_ms <= 0:
+            continue
+        samples.append({
+            "model_id": model_id,
+            "latency_ms": latency_ms,
+            "evidence_refs": list(health.evidence_refs),
+            "source": health.source,
+        })
+    if not samples:
+        raise RuntimeError("NVIDIA_SEMANTIC_LATENCY_EVIDENCE_UNAVAILABLE")
+
+    latencies = [float(item["latency_ms"]) for item in samples]
+    p50_ms = float(statistics.median(latencies))
+    p95_ms = float(_linear_percentile(latencies, 0.95))
+    sane_max_ms = float(max(latencies))
+    attempt_deadline_ms = int(math.ceil(sane_max_ms / 1000.0) * 1000)
+    failover_budget = min(1, max(0, len(samples) - 1))
+    total_deadline_ms = attempt_deadline_ms * (1 + failover_budget)
+    return {
+        "schema": "nvidia-semantic-latency-budget/v1",
+        "sample_count": len(samples),
+        "samples": samples,
+        "P50_MS": round(p50_ms, 3),
+        "P95_MS": round(p95_ms, 3),
+        "MAX_SANE_MS": round(sane_max_ms, 3),
+        "MODEL_ATTEMPT_DEADLINE_MS": attempt_deadline_ms,
+        "MODEL_RETRY_BUDGET": 1,
+        "FULL_TIMEOUT_RETRY_BUDGET": 0,
+        "MODEL_FAILOVER_BUDGET": failover_budget,
+        "SEMANTIC_PLANNER_TOTAL_DEADLINE_MS": total_deadline_ms,
+        "derivation": (
+            "attempt=ceil(max AVAILABLE semantic-capable live latency); "
+            "total=attempt*(1+bounded failover)"
+        ),
+    }
 
 
 def _learning_nvidia_model_health(

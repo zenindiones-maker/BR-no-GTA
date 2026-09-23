@@ -110,13 +110,25 @@ def test_http_errors_are_structured_and_secret_safe(status, code, retryable):
     assert "super-secret" not in json.dumps(provider_error.to_dict())
 
 
-def test_timeout_is_structured():
-    provider = NvidiaNIMProvider(api_key="secret")
+def test_timeout_is_structured_and_does_not_repeat_full_deadline():
+    provider = NvidiaNIMProvider(
+        api_key="secret",
+        timeout_seconds=0.01,
+        max_retries=1,
+    )
     with patch(
         "app.services.nvidia_nim_provider.request.urlopen",
         side_effect=TimeoutError,
-    ):
+    ) as mocked:
         with pytest.raises(NvidiaNIMProviderError) as raised:
             provider.generate("Teste")
     assert raised.value.to_dict()["code"] == "timeout"
     assert raised.value.to_dict()["retryable"] is True
+    assert mocked.call_count == 1
+    assert provider.last_retry_count == 0
+    assert provider.last_performance_metrics["failure_class"] == (
+        "E_FULL_REQUEST_TIMEOUT"
+    )
+    assert provider.last_performance_metrics[
+        "full_timeout_same_model_retry"
+    ] is False

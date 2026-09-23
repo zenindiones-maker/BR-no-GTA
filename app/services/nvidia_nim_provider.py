@@ -74,47 +74,116 @@ class NvidiaNimProviderAdapter:
             "Accept":"application/json","Content-Type":"application/json",
             "Authorization":f"Bearer {self._api_key}"},method="POST")
         self.last_retry_count=0
+        self.last_http_status=None
         raw=b""
         started=time.perf_counter()
+        deadline=started+self.timeout_seconds
+        first_response_latency_ms: float | None = None
+        subrequest_count=0
+
+        def observe(failure_class: str | None) -> None:
+            elapsed=max(0.0,time.perf_counter()-started)
+            self.last_performance_metrics={
+                "transport":"nvidia_openai_chat_completions",
+                "latency_seconds":elapsed,
+                "connect_latency_ms":None,
+                "first_response_latency_ms":first_response_latency_ms,
+                "total_attempt_latency_ms":elapsed*1000.0,
+                "timeout_budget_ms":self.timeout_seconds*1000.0,
+                "retry_count":self.last_retry_count,
+                "subrequest_count":subrequest_count,
+                "http_status":self.last_http_status,
+                "failure_class":failure_class,
+                "full_timeout_same_model_retry":False
+                if failure_class in {
+                    "D_READ_STALL",
+                    "E_FULL_REQUEST_TIMEOUT",
+                }
+                else None,
+            }
+
         for attempt in range(self.max_retries+1):
+            remaining=max(0.0,deadline-time.perf_counter())
+            if remaining<=0.0:
+                observe("E_FULL_REQUEST_TIMEOUT")
+                raise NvidiaNIMProviderError(
+                    "NVIDIA NIM request exceeded bounded model attempt deadline",
+                    code="timeout",retryable=True,
+                    failure_stage="transport_request",response_present=False,
+                    structured_output_present=False,parse_stage="transport",
+                    exception_class="TimeoutError",sanitized_reason="timeout") from None
+            subrequest_count+=1
             try:
-                with request.urlopen(req,timeout=self.timeout_seconds) as response:
+                response=request.urlopen(req,timeout=remaining)
+                if first_response_latency_ms is None:
+                    first_response_latency_ms=max(
+                        0.0,(time.perf_counter()-started)*1000.0
+                    )
+                with response:
                     self.last_http_status=int(getattr(response,"status",200) or 200)
-                    raw=response.read()
+                    try:
+                        raw=response.read()
+                    except (TimeoutError,SocketTimeout):
+                        observe("D_READ_STALL")
+                        raise NvidiaNIMProviderError(
+                            "NVIDIA NIM response read stalled past the bounded deadline",
+                            code="timeout",retryable=True,
+                            failure_stage="response_read",response_present=True,
+                            structured_output_present=False,parse_stage="response_read",
+                            exception_class="TimeoutError",
+                            sanitized_reason="read_stall") from None
                 break
             except error.HTTPError as exc:
                 self.last_http_status=int(exc.code)
+                if first_response_latency_ms is None:
+                    first_response_latency_ms=max(
+                        0.0,(time.perf_counter()-started)*1000.0
+                    )
                 retryable=int(exc.code) in _RETRYABLE_HTTP_STATUS
-                if retryable and attempt < self.max_retries:
-                    self.last_retry_count += 1
+                failure_class=(
+                    "B_HTTP_429"
+                    if int(exc.code)==429
+                    else "C_HTTP_5XX"
+                    if 500<=int(exc.code)<=599
+                    else "G_OTHER"
+                )
+                remaining_after=max(0.0,deadline-time.perf_counter())
+                if (
+                    retryable
+                    and attempt < self.max_retries
+                    and remaining_after>0.0
+                ):
+                    self.last_retry_count+=1
                     continue
+                observe(failure_class)
                 raise self._http_error(int(exc.code)) from None
             except (TimeoutError,SocketTimeout):
-                if attempt < self.max_retries:
-                    self.last_retry_count += 1
-                    continue
+                # A socket timeout consumed the bounded model-attempt deadline.
+                # Do not repeat the same full timeout locally; return control to
+                # DeepSeek Harness so it can reroute to another eligible model.
+                observe("E_FULL_REQUEST_TIMEOUT")
                 raise NvidiaNIMProviderError(
                     "NVIDIA NIM request timed out",code="timeout",retryable=True,
                     failure_stage="transport_request",response_present=False,
                     structured_output_present=False,parse_stage="transport",
                     exception_class="TimeoutError",sanitized_reason="timeout") from None
             except (error.URLError,OSError) as exc:
-                if attempt < self.max_retries:
-                    self.last_retry_count += 1
+                remaining_after=max(0.0,deadline-time.perf_counter())
+                if attempt < self.max_retries and remaining_after>0.0:
+                    self.last_retry_count+=1
                     continue
+                observe("A_CONNECT_TRANSPORT_FAST_FAILURE")
                 raise NvidiaNIMProviderError(
                     "NVIDIA NIM transport failed",code="transport_error",retryable=True,
                     failure_stage="transport_request",response_present=False,
                     structured_output_present=False,parse_stage="transport",
-                    exception_class=type(exc).__name__,sanitized_reason="transport_error") from None
-        latency=max(0.0,time.perf_counter()-started)
-        self.last_performance_metrics={
-            "transport":"nvidia_openai_chat_completions",
-            "latency_seconds":latency,"timeout_seconds":self.timeout_seconds,
-            "retry_count":self.last_retry_count,"http_status":self.last_http_status}
+                    exception_class=type(exc).__name__,
+                    sanitized_reason="transport_error") from None
+        observe(None)
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError,json.JSONDecodeError):
+            observe("F_MALFORMED_RESPONSE")
             raise NvidiaNIMProviderError(
                 "NVIDIA NIM returned invalid JSON",code="invalid_json",
                 failure_stage="response_decode",response_present=True,
