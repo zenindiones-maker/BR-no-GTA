@@ -7,5 +7,10 @@
   "telegram_primary_human_interface": true,
   "burned_subtitles": false,
   "voice": "pt-BR-ThalitaMultilingualNeural",
-  "canonical_auth_checkpoint": 35850473901
+  "canonical_auth_checkpoint": 35850473901,
+  "resume_metadata": {
+    "retry_of_run": 35880207811,
+    "reason": "resume after redundant clarification guard focused validation",
+    "preserve_human_goal": true
+  }
 }
