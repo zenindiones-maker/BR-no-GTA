@@ -1,9 +1,9 @@
 {
-  "request": "resume-semantic-planner-self-improvement-after-addy-runtime-fix",
+  "request": "resume-semantic-planner-self-improvement-after-semantic-provider-credential-fix",
   "resume_from_parent_run": 35813832706,
-  "original_child_run": 35814058395,
+  "original_child_run": 35814538740,
   "original_natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "dispatcher_main_commit": "d800cf67c1951abf154b199a20c9053af460f355",
+  "dispatcher_main_commit": "3a870bb3f30367b26afb9e4eb772d25a32fbda5c",
   "preserve_auth_control_plane": true,
   "no_replanning": true,
   "preserve": {
@@ -13,7 +13,7 @@
     "YOUTUBE_PUBLICATION": "NO"
   },
   "human_prerequisites_confirmed": true,
-  "retry_reason": "Resume exact existing MissionPlan after fixing lazy pinned Addy source materialization selected by TaskEnvelope; no provider, Registry, payload, or semantic replanning change.",
-  "resume_attempt": 2,
-  "requested_at": "2026-09-23T00:28:00-03:00"
+  "retry_reason": "Resume exact existing MissionPlan after demand-driven semantic provider credential materialization for selected Addy executor; no provider routing, Registry, payload, or semantic plan change.",
+  "resume_attempt": 3,
+  "requested_at": "2026-09-23T00:33:00-03:00"
 }
