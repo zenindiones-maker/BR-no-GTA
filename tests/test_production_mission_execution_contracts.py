@@ -7,7 +7,12 @@ from app.services.capability_execution_contract_service import (
     derive_required_operations,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.harness_adaptive_planning_service import proposal_registry_errors
+import app.services.harness_adaptive_planning_service as adaptive_planning
+from app.services.harness_adaptive_planning_service import (
+    proposal_registry_errors,
+    proposal_requirements,
+    select_capability_for_requirement,
+)
 from app.services.native_capability_adapters import execute_production_plan_capability
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
@@ -207,6 +212,135 @@ def test_semantic_mission_contracts_accept_decomposition_and_reject_telegram_ing
     )
     errors = proposal_registry_errors(bad)
     assert any("telegram.input.ingest" in item for item in errors)
+
+
+def test_editorial_action_is_normalized_from_task_semantics_not_agent_identity():
+    proposal = MissionPlanProposal(
+        interpreted_goal="Create an evidence-grounded GTA6 script.",
+        assumptions=(),
+        required_outcomes=("editorial script",),
+        tasks=(
+            MissionTaskProposal(
+                task_id="script-work",
+                objective=(
+                    "Produce natural PT-BR script, ScriptSpec, ContentItem and "
+                    "persisted ProductionPlan refs"
+                ),
+                task_class="editorial",
+                required_capability_description=(
+                    "editorial script generation from verified evidence"
+                ),
+                candidate_capability_ids=("editorial.process",),
+                dependencies=("research-context",),
+                expected_output=(
+                    "PT-BR script + ScriptSpec + ContentItem + ProductionPlan refs"
+                ),
+                acceptance_criteria=("script_complete", "spec_valid"),
+                risk_side_effect_class="READ_ONLY",
+                action="DEVELOPMENT",
+            ),
+            MissionTaskProposal(
+                task_id="research-context",
+                objective="collect verified GTA6 context",
+                task_class="research",
+                required_capability_description="verified research context",
+                candidate_capability_ids=("gta6.research.semantic-synthesis",),
+                dependencies=(),
+                expected_output="research artifact",
+                acceptance_criteria=("evidence_grounded",),
+                risk_side_effect_class="READ_ONLY",
+                action="RESEARCH",
+            ),
+        ),
+        rationale="Harness normalizes task action from semantics.",
+        context_usage_notes=(),
+        uncertainty=0.1,
+        needs_human_clarification=False,
+    )
+    requirements = {
+        item["task_id"]: item for item in proposal_requirements(proposal)
+    }
+    editorial = requirements["script-work"]
+    assert editorial["declared_action"] == "DEVELOPMENT"
+    assert editorial["action"] == "EDITORIAL"
+    assert editorial["task_family"] == "EDITORIAL"
+
+
+def test_editorial_registry_selection_rejects_development_addy_skill(monkeypatch):
+    requirement = {
+        "task_id": "script-work",
+        "task_class": "editorial",
+        "action": "DEVELOPMENT",
+        "declared_action": "DEVELOPMENT",
+        "query": (
+            "editorial script generation natural PT-BR ScriptSpec ContentItem "
+            "ProductionPlan refs"
+        ),
+        "objective": "Produce natural PT-BR editorial script from verified evidence",
+        "required_capability_description": "editorial script generation",
+        "candidate_capability_ids": [],
+        "dependencies": ["research-context"],
+        "expected_output": (
+            "PT-BR script + ScriptSpec + ContentItem + ProductionPlan artifact refs"
+        ),
+        "acceptance_criteria": ["script_complete", "spec_valid"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "required_operations": [
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+    }
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_registry_discover",
+        lambda **_: [
+            {"capability_id": "addy:api-and-interface-design"},
+            {"capability_id": "editorial.process"},
+        ],
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_capability_health",
+        lambda capability_id: SimpleNamespace(
+            to_dict=lambda: {
+                "capability_id": capability_id,
+                "state": "HEALTHY",
+                "reason": "focused selection proof",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_capability_failure_memory",
+        lambda capability_id, context: None,
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_competence_score",
+        lambda record, requirement, context: (0.0, False, None),
+    )
+
+    selected, _, avoided, evidence = select_capability_for_requirement(
+        requirement,
+        context={"mission_class": "GTA6_INTELLIGENCE"},
+        used=set(),
+    )
+
+    assert selected == "editorial.process"
+    assert evidence["effective_action"] == "EDITORIAL"
+    assert evidence["task_family"] == "EDITORIAL"
+    assert evidence["selected_domain"] == "editorial"
+    assert any(
+        item.startswith(
+            "addy:api-and-interface-design:task-domain-incompatible:"
+        )
+        for item in avoided
+    )
+    assert all(
+        item["capability_id"] != "addy:api-and-interface-design"
+        for item in evidence["top_candidates"]
+    )
 
 
 def test_production_plan_consumes_direct_artifact_and_produces_persisted_ref(monkeypatch):

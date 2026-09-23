@@ -750,6 +750,8 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             "acceptance_criteria": list(task.acceptance_criteria),
             "dependencies": list(task.dependencies),
         }
+        effective_action = _effective_requirement_action(task_requirement)
+        task_requirement["action"] = effective_action
         required_operations = derive_required_operations(task_requirement)
         required_side_effect = execution_side_effect_class(
             effective_required_side_effect_class(
@@ -794,9 +796,17 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                     f"{task.task_id}: {capability_id} {contract_rejection}"
                 )
                 continue
-            if task.action not in record.allowed_actions:
+            if not _record_domain_compatible(record, task_requirement):
                 errors.append(
-                    f"{task.task_id}: action {task.action} not allowed by {capability_id}"
+                    f"{task.task_id}: {capability_id} task-domain-incompatible:"
+                    f"task_family={_task_semantic_family(task_requirement)}:"
+                    f"capability_domain={record.domain}"
+                )
+                continue
+            if effective_action not in record.allowed_actions:
+                errors.append(
+                    f"{task.task_id}: action {effective_action} "
+                    f"(declared {task.action}) not allowed by {capability_id}"
                 )
                 continue
             if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
@@ -859,6 +869,8 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
             "acceptance_criteria": list(task.acceptance_criteria),
             "dependencies": list(task.dependencies),
         }
+        effective_action = _effective_requirement_action(task_requirement)
+        task_requirement["action"] = effective_action
         required_operations = derive_required_operations(task_requirement)
         required_side_effect = execution_side_effect_class(
             effective_required_side_effect_class(
@@ -884,7 +896,8 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                     "agent-office.execute",
                     "collaboration.hermes.execute",
                 }
-                or task.action not in record.allowed_actions
+                or effective_action not in record.allowed_actions
+                or not _record_domain_compatible(record, task_requirement)
             ):
                 continue
             record_side_effect = str(
@@ -917,7 +930,7 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
         if not feasible:
             errors.append(
                 f"{task.task_id}: no healthy Registry implementation can satisfy "
-                f"action={task.action} side_effect={required_side_effect}"
+                f"action={effective_action} side_effect={required_side_effect}"
             )
     return tuple(errors)
 
@@ -933,7 +946,6 @@ def _candidate_hint_is_hard_compatible(
         not record.execution_enabled
         or record.capability_type == "PROVIDER"
         or capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS
-        or task.action not in record.allowed_actions
         or not registry_executor_is_task_adapter_compatible(record.executor_binding)
     ):
         return False
@@ -947,6 +959,12 @@ def _candidate_hint_is_hard_compatible(
         "acceptance_criteria": list(task.acceptance_criteria),
         "dependencies": list(task.dependencies),
     }
+    effective_action = _effective_requirement_action(task_requirement)
+    task_requirement["action"] = effective_action
+    if not _record_domain_compatible(record, task_requirement):
+        return False
+    if effective_action not in record.allowed_actions:
+        return False
     required_operations = derive_required_operations(task_requirement)
     if capability_execution_contract_rejection(record, required_operations):
         return False
@@ -1198,6 +1216,7 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             "task_id": task.task_id,
             "task_class": task.task_class,
             "action": task.action,
+            "declared_action": task.action,
             "query": (
                 task.required_capability_description
                 + " "
@@ -1215,6 +1234,8 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             "declared_risk_side_effect_class": task.risk_side_effect_class,
             "candidate_requirement": candidate_requirement,
         }
+        requirement["action"] = _effective_requirement_action(requirement)
+        requirement["task_family"] = _task_semantic_family(requirement)
         required_operations = derive_required_operations(requirement)
         requirement["required_operations"] = list(required_operations)
         requirement["candidate_requirement"] = execution_candidate_requirement(
@@ -1354,6 +1375,152 @@ def _competence_score(
     return score, True, best
 
 
+def _task_semantic_text(requirement: dict[str, Any]) -> str:
+    return " ".join(
+        str(requirement.get(key) or "").strip().casefold()
+        for key in (
+            "task_class",
+            "objective",
+            "required_capability_description",
+            "expected_output",
+        )
+    )
+
+
+def _task_semantic_family(requirement: dict[str, Any]) -> str:
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
+    text = _task_semantic_text(requirement)
+
+    if any(
+        marker in task_class
+        for marker in (
+            "fresh-evidence",
+            "evidence-collection",
+            "fact-check",
+            "knowledge-retrieval",
+            "research",
+        )
+    ):
+        return "RESEARCH"
+    if "production-plan" in task_class or "production_plan" in task_class:
+        return "PRODUCTION"
+    if "editorial" in task_class:
+        return "EDITORIAL"
+    if "review" in task_class and any(
+        marker in text
+        for marker in (
+            "script",
+            "roteiro",
+            "youtube",
+            "editorial",
+            "content",
+            "conteudo",
+            "conteúdo",
+        )
+    ):
+        return "EDITORIAL"
+
+    engineering_markers = (
+        "repository",
+        "code",
+        "coding",
+        "software",
+        "engineering",
+        "debug",
+        "refactor",
+        "migration",
+        "api",
+        "ci/cd",
+        "ci-cd",
+        "workflow",
+        "git",
+        "pytest",
+        "benchmark",
+        "system improvement",
+        "performance optimization",
+        "architecture change",
+        "candidate patch",
+        "implementation patch",
+    )
+    if (
+        any(
+            marker in task_class
+            for marker in (
+                "development",
+                "engineering",
+                "system-improvement",
+                "code-",
+                "debug",
+                "migration",
+            )
+        )
+        or any(marker in text for marker in engineering_markers)
+    ):
+        return "DEVELOPMENT"
+
+    execution_markers = (
+        "render",
+        "narration",
+        "delivery",
+        "upload",
+        "media execution",
+        "video execution",
+        "audio execution",
+        "qa execution",
+    )
+    if (
+        any(
+            marker in task_class
+            for marker in (
+                "render",
+                "narration",
+                "delivery",
+                "execution",
+                "media-",
+                "qa-",
+            )
+        )
+        or any(marker in text for marker in execution_markers)
+    ):
+        return "EXECUTION"
+    return "GENERAL"
+
+
+def _effective_requirement_action(requirement: dict[str, Any]) -> str:
+    declared = str(requirement.get("action") or "").strip().upper()
+    family = _task_semantic_family(requirement)
+    return {
+        "RESEARCH": "RESEARCH",
+        "EDITORIAL": "EDITORIAL",
+        "PRODUCTION": "EDITORIAL",
+        "DEVELOPMENT": "DEVELOPMENT",
+        "EXECUTION": "EXECUTION",
+    }.get(family, declared)
+
+
+def _record_domain_compatible(
+    record: Any,
+    requirement: dict[str, Any],
+) -> bool:
+    family = _task_semantic_family(requirement)
+    domain = str(getattr(record, "domain", "") or "").strip().casefold()
+
+    if family != "DEVELOPMENT" and (
+        domain == "development" or domain.startswith("development/")
+    ):
+        return False
+    if family == "EDITORIAL":
+        return (
+            domain == "editorial"
+            or domain == "production"
+            or domain == "youtube-department"
+            or domain.startswith("youtube-")
+        )
+    if family == "PRODUCTION":
+        return domain == "production" or domain.startswith("production-")
+    return True
+
+
 _EXECUTION_TOPOLOGY_CAPABILITY_IDS = {
     "agent-office.execute",
     "collaboration.hermes.execute",
@@ -1367,9 +1534,19 @@ def select_capability_for_requirement(
     used: set[str],
 ) -> tuple[str, bool, tuple[str, ...], dict[str, Any]]:
     mission_class = str(context.get("mission_class") or "").strip().upper()
+    declared_action = str(requirement.get("action") or "").strip().upper()
+    effective_action = _effective_requirement_action(requirement)
+    requirement = {
+        **dict(requirement),
+        "declared_action": str(
+            requirement.get("declared_action") or declared_action
+        ).strip().upper(),
+        "action": effective_action,
+        "task_family": _task_semantic_family(requirement),
+    }
     if not _mission_action_allowed(
         mission_class=mission_class,
-        action=requirement.get("action"),
+        action=effective_action,
     ):
         allowed = ",".join(sorted(
             _MISSION_CLASS_ALLOWED_TASK_ACTIONS.get(mission_class) or ()
@@ -1377,12 +1554,12 @@ def select_capability_for_requirement(
         raise PermissionError(
             "MISSION_TASK_ACTION_POLICY_VIOLATION:"
             f"mission_class={mission_class}:"
-            f"action={str(requirement.get('action') or '').strip().upper()}:"
+            f"action={effective_action}:"
             f"allowed_actions={allowed}"
         )
     discovered = _profiled_registry_discover(
         intent=str(requirement["query"]),
-        authorized_action=str(requirement["action"]),
+        authorized_action=effective_action,
         limit=40,
     )
     proposed = [
@@ -1428,7 +1605,14 @@ def select_capability_for_requirement(
         record = _profiled_registry_get(capability_id)
         if record is None or record.capability_type == "PROVIDER":
             continue
-        if not record.execution_enabled or str(requirement["action"]) not in record.allowed_actions:
+        if not _record_domain_compatible(record, requirement):
+            avoided.append(
+                f"{capability_id}:task-domain-incompatible:"
+                f"task_family={requirement['task_family']}:"
+                f"capability_domain={record.domain}"
+            )
+            continue
+        if not record.execution_enabled or effective_action not in record.allowed_actions:
             continue
         if not registry_executor_is_task_adapter_compatible(
             record.executor_binding
@@ -1613,6 +1797,12 @@ def select_capability_for_requirement(
     selection = {
         "task_id": requirement.get("task_id"),
         "selected_capability_id": capability_id,
+        "declared_action": requirement.get("declared_action"),
+        "effective_action": effective_action,
+        "task_family": requirement.get("task_family"),
+        "selected_domain": str(
+            getattr(_profiled_registry_get(capability_id), "domain", "") or ""
+        ),
         "score": best_score,
         "competence_used": competence_used,
         "competence_evidence": competence,
