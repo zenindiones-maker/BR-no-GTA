@@ -474,7 +474,6 @@ def execute_authorized_addy_skill(
                     else "fail closed; Harness replan required"
                 ),
             },
-            evidence_refs=tuple(semantic.evidence_refs or ()),
             boundary=record.security_boundary,
         )
 
