@@ -239,21 +239,8 @@ def select_harness_ai_provider(
             decision.selected_provider_executor_binding or ""
         ):
             raise PermissionError("NVIDIA executor escaped registered Harness binding")
-        timeout_seconds = None
-        max_retries = 1
-        if str((decision.policy_metadata or {}).get("task_class") or "") == "semantic-mission-planning":
-            from app.services.provider_health_service import (
-                nvidia_semantic_planner_latency_budget,
-            )
-            latency_budget = nvidia_semantic_planner_latency_budget()
-            timeout_seconds = (
-                float(latency_budget["MODEL_ATTEMPT_DEADLINE_MS"]) / 1000.0
-            )
-            max_retries = int(latency_budget["MODEL_RETRY_BUDGET"])
         return normalized_provider, NvidiaNIMProvider(
             model=decision.selected_model,
-            timeout_seconds=timeout_seconds,
-            max_retries=max_retries,
         )
 
     if normalized_provider == "tuxevil":

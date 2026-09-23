@@ -453,7 +453,7 @@ def test_three_proven_nvidia_models_are_selected_by_capability_not_task_id():
         )
         record = next(
             item
-            for item in _nvidia_records()
+            for item in _records()
             if item.model_id == decision.selected_model
         )
         record_capabilities = {
