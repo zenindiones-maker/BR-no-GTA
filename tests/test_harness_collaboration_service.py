@@ -257,3 +257,128 @@ def test_system_improvement_independent_review_still_enriches_engineering_review
         "CAN_CONSUME_ARTIFACT_REFS",
         "CAN_PRODUCE_ARTIFACT_REFS",
     }
+
+
+
+def test_real_incident_recovery_uses_typed_read_only_dag_before_semantic_planner():
+    goal = build_goal_envelope(
+        human_goal=(
+            "Diagnose o incidente real, encontre a causa raiz, proponha a menor "
+            "recovery e faça review independente sem aplicar mutation."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-real-incident-recovery",
+        subject="provider/runtime incident recovery",
+        source_surface="github-actions-control",
+        canonical_state={
+            "incident": {
+                "source_run_id": 35898595164,
+                "task_id": "production-planning",
+                "observed_error": (
+                    "no healthy Registry capability for "
+                    "task_class=production-planning"
+                ),
+            },
+            "incident_evidence_artifact_ref": (
+                "artifact:incident-evidence-packet.json"
+            ),
+            "mutation_policy": (
+                "NO_MUTATION_BEFORE_AGENT_DIAGNOSIS_REVIEW_HARNESS_DECISION"
+            ),
+        },
+    )
+
+    requirements = (
+        collaboration_service._deterministic_incident_recovery_requirements(
+            goal
+        )
+    )
+
+    assert goal.mission_class == "SYSTEM_IMPROVEMENT"
+    assert [item["functional_role"] for item in requirements] == [
+        "EVIDENCE",
+        "DIAGNOSIS",
+        "ROOT_CAUSE",
+        "PROPOSAL",
+        "REVIEW",
+    ]
+    assert [item["task_id"] for item in requirements] == [
+        "task-01",
+        "task-02",
+        "task-03",
+        "task-04",
+        "task-05",
+    ]
+    assert requirements[0]["required_operations"] == [
+        "CAN_PRODUCE_ARTIFACT_REFS"
+    ]
+    for item in requirements[1:4]:
+        assert set(item["required_operations"]) == {
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+            "CAN_SEMANTIC_REASONING",
+        }
+        assert item["risk_side_effect_class"] == "READ_ONLY"
+        assert item["candidate_requirement"] == "NOT_APPLICABLE"
+    assert set(requirements[4]["required_operations"]) == {
+        "CAN_REVIEW",
+        "CAN_SEMANTIC_REASONING",
+        "CAN_CONSUME_ARTIFACT_REFS",
+        "CAN_PRODUCE_ARTIFACT_REFS",
+    }
+    assert requirements[0]["dependencies"] == []
+    assert requirements[1]["dependencies"] == ["task-01"]
+    assert requirements[2]["dependencies"] == ["task-02"]
+    assert requirements[3]["dependencies"] == ["task-03"]
+    assert requirements[4]["dependencies"] == ["task-04"]
+
+
+def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
+    goal = build_goal_envelope(
+        human_goal=(
+            "Diagnose and recover the real internal provider/runtime incident "
+            "with independent review."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-no-semantic-planner",
+        subject="real provider incident recovery",
+        source_surface="github-actions-control",
+        canonical_state={
+            "incident": {
+                "source_run_id": 35898595164,
+                "task_id": "production-planning",
+                "observed_error": "planner contract selection failure",
+            },
+            "incident_evidence_artifact_ref": (
+                "artifact:incident-evidence-packet.json"
+            ),
+            "mutation_policy": (
+                "NO_MUTATION_BEFORE_AGENT_DIAGNOSIS_REVIEW_HARNESS_DECISION"
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        collaboration_service,
+        "propose_validated_semantic_plan",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("semantic planner must not run for typed incident recovery")
+        ),
+    )
+
+    plan = collaboration_service.plan_mission_from_human_goal(
+        goal,
+        artifact_ref="artifact:incident-evidence-packet.json",
+    )
+
+    assert plan.planning_mode == "DETERMINISTIC_INCIDENT_RECOVERY"
+    assert plan.planning_evidence["semantic_provider_call_count"] == 0
+    assert len(plan.collaboration_plan.tasks) == 5
+    assert all(
+        task.risk_side_effect_class == "READ_ONLY"
+        for task in plan.collaboration_plan.tasks
+    )
+    assert all(
+        "CAN_WRITE_REPOSITORY" not in set(task.required_operations)
+        and "CAN_MUTATE_CANDIDATE" not in set(task.required_operations)
+        for task in plan.collaboration_plan.tasks
+    )

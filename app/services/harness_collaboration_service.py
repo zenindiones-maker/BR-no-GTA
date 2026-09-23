@@ -953,6 +953,177 @@ def _deterministic_capability_requirements(
     return []
 
 
+def _deterministic_incident_recovery_requirements(
+    goal: GoalEnvelope,
+) -> list[dict[str, Any]]:
+    """Typed incident-recovery DAG for a real observed internal failure.
+
+    This defines causal functions and contracts only. Registry/health/competence
+    still choose the concrete capabilities and agents for each task.
+    """
+    if goal.mission_class != "SYSTEM_IMPROVEMENT":
+        return []
+    state = dict(goal.canonical_state or {})
+    incident = state.get("incident")
+    if not isinstance(incident, dict) or not incident:
+        return []
+    mutation_policy = str(state.get("mutation_policy") or "").strip().upper()
+    if (
+        mutation_policy
+        and not mutation_policy.startswith("NO_MUTATION_BEFORE_")
+    ):
+        return []
+
+    observed_error = str(
+        incident.get("observed_error")
+        or incident.get("failure_class")
+        or "observed internal failure"
+    )[:600]
+    evidence_ref = str(
+        state.get("incident_evidence_artifact_ref") or ""
+    ).strip()
+    functions = (
+        {
+            "role": "EVIDENCE",
+            "task_class": "evidence-collection",
+            "query": (
+                "deterministic observed incident artifact ingestion immutable "
+                "hash lineage evidence packet without semantic interpretation"
+            ),
+            "description": (
+                "deterministic artifact evidence ingestion with immutable ref "
+                "hash and lineage preservation"
+            ),
+            "output": "IncidentEvidenceBundle",
+            "criteria": (
+                "observed incident artifact is resolved",
+                "content hash and lineage are preserved",
+                "no mutation or semantic reinterpretation occurs",
+            ),
+            "operations": (CAN_PRODUCE_ARTIFACT_REFS,),
+        },
+        {
+            "role": "DIAGNOSIS",
+            "task_class": "incident-diagnosis",
+            "query": (
+                "read-only runtime incident diagnosis failure classification "
+                "routing provider contract evidence causal analysis"
+            ),
+            "description": (
+                "semantic read-only diagnosis of a real runtime/system incident "
+                "from bounded observed artifact evidence"
+            ),
+            "output": "IncidentDiagnosisEvidence",
+            "criteria": (
+                "failure class is supported by observed evidence",
+                "diagnosis distinguishes local contract/routing/provider causes",
+                "no repository mutation is performed",
+            ),
+            "operations": (
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+                CAN_SEMANTIC_REASONING,
+            ),
+        },
+        {
+            "role": "ROOT_CAUSE",
+            "task_class": "root-cause-analysis",
+            "query": (
+                "read-only root cause analysis incident diagnosis causal boundary "
+                "smallest proven cause without mutation"
+            ),
+            "description": (
+                "semantic read-only root-cause analysis consuming diagnosis evidence"
+            ),
+            "output": "RootCauseEvidence",
+            "criteria": (
+                "root cause consumes diagnosis artifact",
+                "cause is narrower than symptom",
+                "unsupported causes are rejected",
+            ),
+            "operations": (
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+                CAN_SEMANTIC_REASONING,
+            ),
+        },
+        {
+            "role": "PROPOSAL",
+            "task_class": "recovery-proposal",
+            "query": (
+                "read-only bounded recovery proposal from proven root cause "
+                "smallest safe change no repository mutation"
+            ),
+            "description": (
+                "semantic recovery proposal over proven root-cause artifact, "
+                "without applying the change"
+            ),
+            "output": "RecoveryProposalEvidence",
+            "criteria": (
+                "proposal directly addresses proven root cause",
+                "scope is minimal and bounded",
+                "no mutation is performed by proposal task",
+            ),
+            "operations": (
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+                CAN_SEMANTIC_REASONING,
+            ),
+        },
+        {
+            "role": "REVIEW",
+            "task_class": "independent-review",
+            "query": (
+                "independent semantic review recovery proposal against observed "
+                "incident diagnosis root cause evidence"
+            ),
+            "description": (
+                "independent read-only semantic review of recovery proposal "
+                "against incident evidence"
+            ),
+            "output": "IndependentReviewEvidence",
+            "criteria": (
+                "review consumes proposal and causal evidence",
+                "reviewer is independent from proposal author",
+                "review returns accept or bounded changes",
+            ),
+            "operations": (
+                CAN_REVIEW,
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            ),
+        },
+    )
+
+    tasks: list[dict[str, Any]] = []
+    previous: str | None = None
+    for index, item in enumerate(functions, start=1):
+        task_id = f"task-{index:02d}"
+        dependencies = [previous] if previous else []
+        tasks.append({
+            "task_id": task_id,
+            "functional_role": item["role"],
+            "task_class": item["task_class"],
+            "action": "DEVELOPMENT",
+            "query": item["query"],
+            "objective": (
+                f"{item['description']}. Observed failure: {observed_error}"
+            ),
+            "required_capability_description": item["description"],
+            "candidate_capability_ids": [],
+            "dependencies": dependencies,
+            "input_refs": [evidence_ref] if evidence_ref and not dependencies else [],
+            "expected_output": item["output"],
+            "acceptance_criteria": list(item["criteria"]),
+            "risk_side_effect_class": "READ_ONLY",
+            "candidate_requirement": "NOT_APPLICABLE",
+            "required_operations": list(item["operations"]),
+        })
+        previous = task_id
+    return tasks
+
+
 def _deterministic_fast_path_requirements(
     goal: GoalEnvelope,
 ) -> list[dict[str, Any]]:
@@ -1074,8 +1245,16 @@ def plan_mission_from_human_goal(
             },
         )
 
-    requirements = _deterministic_fast_path_requirements(goal)
-    planning_mode = "DETERMINISTIC_FAST_PATH" if requirements else "SEMANTIC_ADAPTIVE"
+    requirements = _deterministic_incident_recovery_requirements(goal)
+    if requirements:
+        planning_mode = "DETERMINISTIC_INCIDENT_RECOVERY"
+    else:
+        requirements = _deterministic_fast_path_requirements(goal)
+        planning_mode = (
+            "DETERMINISTIC_FAST_PATH"
+            if requirements
+            else "SEMANTIC_ADAPTIVE"
+        )
     proposal = None
     planning_evidence: dict[str, Any] = {
         "planning_mode": planning_mode,
