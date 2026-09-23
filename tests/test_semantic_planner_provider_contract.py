@@ -415,6 +415,10 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         return_value=object(),
     ), patch(
         "app.services.harness_authorization_service.consume_harness_authorization",
+    ), patch(
+        "app.services.nvidia_model_learning_service."
+        "record_nvidia_semantic_model_observation",
+        return_value={"episode_id": "fixture"},
     ):
         text_value, evidence = _live_inference(
             "semantic prompt",
