@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: real-agent-self-improvement-${{ github.ref }}
@@ -66,12 +67,37 @@ jobs:
           python -m py_compile scripts/real_agent_self_improvement_mission.py
           echo "REAL_SELF_IMPROVEMENT_FOCUSED_CONTRACTS=PASS"
 
+      - name: Restore exact real production incident evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          read -r SOURCE_RUN SOURCE_ARTIFACT <<EOF
+          $(python - <<'PY'
+          import json
+          d=json.load(open(".run/real-agent-self-improvement.request.json"))
+          i=d["incident"]
+          print(i["source_run_id"], i["source_artifact_name"])
+          PY
+          )
+          EOF
+          root="runtime/real-agent-self-improvement/incident-source"
+          mkdir -p "$root"
+          gh run download "$SOURCE_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$SOURCE_ARTIFACT" \
+            --dir "$root"
+          test -n "$(find "$root" -type f -print -quit)"
+          echo "INCIDENT_SOURCE_RUN=$SOURCE_RUN"
+          echo "INCIDENT_SOURCE_ARTIFACT=$SOURCE_ARTIFACT"
+          echo "REAL_INCIDENT_EVIDENCE_RESTORED=PASS"
+
       - name: Execute real natural-goal self-improvement mission
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"
+          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source
 
       - name: Assert real self-improvement gates
         run: |
@@ -108,6 +134,15 @@ jobs:
               "NO_FAKE_CANDIDATE",
               "NO_HARDCODED_AGENT_CHAIN",
               "REAL_AGENT_SELF_IMPROVEMENT",
+              "REAL_PROVIDER_FAILURE_EPISODE",
+              "AGENT_DIAGNOSIS",
+              "AGENT_ROOT_CAUSE",
+              "AGENT_CANDIDATE_PROPOSAL",
+              "INDEPENDENT_REVIEW",
+              "HARNESS_FIX_DECISION",
+              "RECOVERY_EXECUTION_LINKED_TO_FAILURE",
+              "LEARNING_MEMORY_UPDATED",
+              "NEXT_SIMILAR_EXECUTION_CAN_USE_RECOVERY",
           )
           for key in true_gates:
               assert data[key] is True, (key, data[key])
@@ -123,6 +158,15 @@ jobs:
           print("REAL_AGENT_SELF_IMPROVEMENT_GATES=PASS")
           print("CANONICAL_CODEX_CHECKPOINT_PRESERVED=PASS")
           print("NO_NEW_NATURAL_SWARM=PASS")
+          print("FAILURE_EPISODE_ID="+str(data.get("FAILURE_EPISODE_ID")))
+          print("DIAGNOSIS_AUTHOR="+str(data.get("DIAGNOSIS_AUTHOR")))
+          print("ROOT_CAUSE_AUTHOR="+str(data.get("ROOT_CAUSE_AUTHOR")))
+          print("CANDIDATE_AUTHOR="+str(data.get("CANDIDATE_AUTHOR")))
+          print("REVIEW_AUTHOR="+str(data.get("REVIEW_AUTHOR")))
+          print("HARNESS_DECISION_ID="+str(data.get("HARNESS_DECISION_ID")))
+          print("PROVIDER_CALL_ATTEMPTED="+str(data.get("PROVIDER_CALL_ATTEMPTED")))
+          print("PROVIDER_FAILURE_CLASS="+str(data.get("PROVIDER_FAILURE_CLASS")))
+          print("PROVIDER_COMPETENCE_PENALIZED="+str(data.get("PROVIDER_COMPETENCE_PENALIZED")))
           PY
 
       - name: Upload real self-improvement evidence
