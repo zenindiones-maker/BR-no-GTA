@@ -1,0 +1,10 @@
+{
+  "request": "capability-resolution-reuse-proof",
+  "source_run_id": 35812717316,
+  "source_response_sha256": "54de6cc4722c6f6d598258b3d68ea19d548bdd9f2b53320734a9d959f31c811d",
+  "provider_calls_allowed": 0,
+  "expected_blocker": "benchmark-compare capability health resolution",
+  "expected_health_policy": "SEMANTIC_PROVIDER_REQUIRED",
+  "natural_swarm_live_allowed": false,
+  "trigger_head": "a96476b9dadba32e16e3b4bdaf667ea0314f16ff"
+}
