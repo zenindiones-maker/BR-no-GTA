@@ -226,6 +226,9 @@ def test_editorial_script_review_keeps_editorial_contract_without_engineering_re
     assert normalized["task_class"] == "youtube-script-review"
     assert normalized["review_contract_enriched"] is False
     assert normalized["mission_action_normalized"] is False
+    assert "CAN_REVIEW" not in set(
+        normalized.get("required_operations") or ()
+    )
 
 
 def test_system_improvement_independent_review_still_enriches_engineering_review_contract():

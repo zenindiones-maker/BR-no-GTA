@@ -651,7 +651,8 @@ def _selection_requirement_for_mission(
         original_task_class == "independent-review"
         or original_task_class.startswith("independent-review-")
         or (
-            str(requirement.get("functional_role") or "").strip().upper()
+            goal.mission_class == "SYSTEM_IMPROVEMENT"
+            and str(requirement.get("functional_role") or "").strip().upper()
             == "REVIEW"
             and "independent" in task_semantics
             and "review" in task_semantics
@@ -1414,7 +1415,15 @@ def plan_mission_from_human_goal(
         competence_used = competence_used or used_competence
         used.add(capability_id)
         input_refs: list[str] = []
-        for ref in ([artifact_ref] if artifact_ref else []) + proposal_reuse_refs:
+        if "input_refs" in requirement:
+            candidate_input_refs = list(
+                requirement.get("input_refs") or ()
+            )
+        else:
+            # Legacy plans may provide one mission-scoped artifact. Typed
+            # plans declare node-local input refs explicitly.
+            candidate_input_refs = [artifact_ref] if artifact_ref else []
+        for ref in [*candidate_input_refs, *proposal_reuse_refs]:
             if ref and ref not in input_refs:
                 input_refs.append(ref)
         record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)

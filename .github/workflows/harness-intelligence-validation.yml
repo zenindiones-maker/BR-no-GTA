@@ -135,6 +135,8 @@ jobs:
           echo "DEPENDENCY_SET_UNCHANGED=PASS"
           echo "NO_SUPPLY_CHAIN_REGRESSION=PASS"
       - name: Focused intelligence tests
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python -m pytest -q             tests/test_harness_adaptive_intelligence.py             tests/test_harness_mission_planner.py             tests/test_harness_collaboration_service.py             tests/test_harness_hermes_delegation_plane.py             tests/test_local_openweight_provider.py
