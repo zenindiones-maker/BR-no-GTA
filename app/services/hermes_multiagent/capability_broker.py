@@ -722,7 +722,7 @@ class HermesHarnessCapabilityBroker:
                 "metrics_refs": list(envelope.get("metrics_refs") or ()),
                 "source_task_ids": list(envelope.get("source_task_ids") or ()),
                 "direct_dependency": bool(direct),
-                "result_payload": envelope.get("result_payload"),
+                "result": envelope.get("result_payload"),
             }
             size = len(json.dumps(candidate, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8"))
             if digest in seen_hashes:
@@ -730,7 +730,7 @@ class HermesHarnessCapabilityBroker:
                 return
             seen_hashes.add(digest)
             if used + size > max_bytes:
-                candidate.pop("result_payload", None)
+                candidate.pop("result", None)
                 candidate["result_omitted"] = "CONTEXT_BUDGET"
                 size = len(json.dumps(candidate, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8"))
             parents.append(candidate)
