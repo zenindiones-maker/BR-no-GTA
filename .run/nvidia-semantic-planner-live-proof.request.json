@@ -1,0 +1,19 @@
+{
+  "request": "nvidia-semantic-planner-live-proof",
+  "source_natural_goal_path": ".run/telegram-natural-system-improvement.request.json",
+  "recent_failure": {
+    "run_id": 35806537500,
+    "model_id": "z-ai/glm-5.3",
+    "failure_class": "timeout",
+    "retry_count": 0,
+    "latency_ms": 109000
+  },
+  "constraints": {
+    "natural_swarm_live_allowed": false,
+    "hardcoded_model_selection": false,
+    "use_harness_routing": true,
+    "use_real_nvidia_provider": true,
+    "same_prompt_context_schema": true,
+    "bounded_parallelism": 3
+  }
+}
