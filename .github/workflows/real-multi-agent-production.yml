@@ -13,6 +13,8 @@ on:
       - "app/services/harness_capability_adapter.py"
       - "app/services/youtube_department_service.py"
       - "app/services/global_capability_registry.py"
+      - "tests/test_youtube_department_learning_boundary.py"
+      - "tests/test_telegram_fresh_research.py"
 
 permissions:
   contents: read
