@@ -4,6 +4,7 @@ from app.services.capability_execution_contract_service import (
     CAN_READ_REPOSITORY,
     CAN_REVIEW,
     CAN_RUN_BENCHMARK,
+    CAN_RUN_TESTS,
     CAN_SEMANTIC_REASONING,
     CAN_PRODUCE_ARTIFACT_REFS,
     CAN_WRITE_REPOSITORY,
