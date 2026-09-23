@@ -36,7 +36,7 @@ def test_profile_task_rejects_semantic_only_addy_and_accepts_repository_profiler
     ))
     assert CAN_READ_REPOSITORY in ops
     addy = GLOBAL_CAPABILITY_REGISTRY.get("addy:planning-and-task-breakdown")
-    profiler = GLOBAL_CAPABILITY_REGISTRY.get("agent-office.deterministic.readonly-analysis")
+    profiler = GLOBAL_CAPABILITY_REGISTRY.get("agent-office.deterministic-analysis")
     assert "execution-contract-insufficient" in capability_execution_contract_rejection(addy, ops)
     assert capability_execution_contract_rejection(profiler, ops) is None
 

@@ -491,7 +491,7 @@ def run(*, legacy_artifact_dir: Path, output: Path) -> dict:
             "addy:planning-and-task-breakdown"
         )
         real_profiler = GLOBAL_CAPABILITY_REGISTRY.get(
-            "agent-office.deterministic.readonly-analysis"
+            "agent-office.deterministic-analysis"
         )
         semantic_candidate = GLOBAL_CAPABILITY_REGISTRY.get(
             "addy:performance-optimization"

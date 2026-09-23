@@ -57,7 +57,7 @@ def test_compact_wire_format_is_expanded_before_schema_validation(monkeypatch):
         "scripts.nvidia_semantic_planner_live_proof."
         "select_capability_for_requirement",
         lambda requirement, context, used: (
-            "agent-office.deterministic.readonly-analysis",
+            "agent-office.deterministic-analysis",
             {},
             (),
             {},

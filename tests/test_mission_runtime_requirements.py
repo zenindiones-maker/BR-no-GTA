@@ -8,7 +8,7 @@ def _plan(*, tools):
             "tasks": [
                 {
                     "task_id": "investigate",
-                    "capability_id": "agent-office.deterministic.readonly-analysis",
+                    "capability_id": "agent-office.deterministic-analysis",
                     "selected_executor_binding": (
                         "app.services.agent_office_harness_service."
                         "execute_authorized_agent_office_specialist"
