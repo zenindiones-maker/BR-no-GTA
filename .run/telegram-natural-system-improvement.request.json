@@ -1,11 +1,11 @@
 {
   "request": "semantic-planner-self-improvement-live",
   "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "bab80935372be9017dbfab8c206a2119f492a064",
+  "source_head": "d908da57dce2f08bb466cf69563390ce1b203c48",
   "resume_context": {
-    "previous_parent_run": 35804680072,
-    "observed_blocker": "Harness rerouted from the first timed-out NVIDIA model to another NVIDIA model, which also timed out; generic model rank favored capability surplus over live latency",
-    "blocker_fix": "semantic planning now requests Harness prefer_low_latency while preserving health, competence, quota, rate-limit and default model-selection contracts"
+    "previous_parent_run": 35805745484,
+    "observed_blocker": "MISSION_PLAN_PAYLOAD_BLOAT",
+    "blocker_fix": "observability only: persist canonical MissionPlan and exact payload profile before preserving the 96 KiB dispatch gate"
   },
   "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
   "preserve": {
