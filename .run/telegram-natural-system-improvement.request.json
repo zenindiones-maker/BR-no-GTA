@@ -1,15 +1,17 @@
 {
   "request": "semantic-planner-self-improvement-agents-resumed",
   "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "02fc602583dda4a0213851d941468f7f48ecf61c",
+  "source_head": "dda8e82381f62ab05dd15a76c7d002719cf873f6",
   "resume_context": {
-    "previous_parent_run": 35812717316,
+    "previous_parent_run": 35813565946,
     "capability_resolution_proof_run": 35813467578,
     "mission_plan_payload_bloat": "CLOSED",
     "nvidia_structured_output": "PROVEN",
     "downstream_capability_selection": "CLOSED",
     "work_direct_system_analysis": "STOP_AFTER_UNBLOCK",
-    "agent_mission_resumed": true
+    "agent_mission_resumed": true,
+    "previous_blocker": "child dispatcher runner missing target branch",
+    "blocker_fix_commit": "dda8e82381f62ab05dd15a76c7d002719cf873f6"
   },
   "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
   "preserve": {
@@ -18,5 +20,5 @@
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
   },
-  "attempt": 5
+  "attempt": 6
 }
