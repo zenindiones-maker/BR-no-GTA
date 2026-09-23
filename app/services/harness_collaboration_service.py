@@ -29,6 +29,8 @@ from app.services.capability_execution_contract_service import (
     CAN_PRODUCE_ARTIFACT_REFS,
     CAN_REVIEW,
     CAN_SEMANTIC_REASONING,
+    CAN_MUTATE_CANDIDATE,
+    CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
 )
 
@@ -56,6 +58,8 @@ class TaskEnvelope:
     input_refs: tuple[str, ...] = ()
     expected_output: str = ""
     task_class: str = "GENERAL"
+    functional_role: str = "GENERAL"
+    mission_policy_class: str = ""
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
@@ -166,6 +170,12 @@ class TaskEnvelope:
             input_refs=input_refs,
             expected_output=expected,
             task_class=str(value.get("task_class") or value.get("task_id") or "GENERAL").strip(),
+            functional_role=str(
+                value.get("functional_role") or "GENERAL"
+            ).strip().upper(),
+            mission_policy_class=str(
+                value.get("mission_policy_class") or ""
+            ).strip().upper(),
             required_capability_description=str(
                 value.get("required_capability_description") or ""
             ).strip(),
@@ -235,6 +245,8 @@ class RoutedCollaborationTask:
     selected_skill_id: str | None
     evidence_expectations: tuple[str, ...]
     task_class: str = "GENERAL"
+    functional_role: str = "GENERAL"
+    mission_policy_class: str = ""
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
@@ -348,6 +360,9 @@ def _task_idempotency_key(
         "write_scope": list(write_scope),
         "candidate_requirement": task.candidate_requirement,
         "required_operations": list(task.required_operations),
+        "task_class": task.task_class,
+        "functional_role": task.functional_role,
+        "mission_policy_class": task.mission_policy_class,
         "objective": task.objective,
     }
     digest = sha256(
@@ -427,6 +442,8 @@ def build_collaboration_plan(
                 selected_skill_id=selected.get("skill_id"),
                 evidence_expectations=decision.evidence_expectations,
                 task_class=task.task_class,
+                functional_role=task.functional_role,
+                mission_policy_class=task.mission_policy_class,
                 required_capability_description=task.required_capability_description,
                 acceptance_criteria=task.acceptance_criteria,
                 candidate_requirement=task.candidate_requirement,
@@ -595,28 +612,36 @@ def _selection_requirement_for_mission(
     goal: GoalEnvelope,
     requirement: dict[str, Any],
 ) -> dict[str, Any]:
-    """Apply Harness mission authority before Registry selection.
-
-    The semantic planner proposes task semantics but cannot widen the action
-    surface authorized by the classified mission. Preserve the proposed task
-    class as evidence while selecting against the canonical mission action.
-    """
+    """Attach mission policy without rewriting task identity or least privilege."""
     normalized = dict(requirement)
     normalized["declared_action"] = str(
         requirement.get("declared_action")
         or requirement.get("action")
+        or requirement.get("authorized_action")
         or ""
     ).strip().upper()
     normalized["declared_task_class"] = str(
         requirement.get("task_class") or ""
-    )
-    original_task_class = str(
-        requirement.get("task_class") or ""
-    ).strip().casefold()
+    ).strip()
+    normalized["mission_policy_class"] = goal.mission_class
+    normalized["mission_constraints"] = {
+        key: value
+        for key, value in dict(goal.canonical_state or {}).items()
+        if key in {
+            "mutation_policy",
+            "fallback_policy",
+            "provider_competence_policy",
+            "youtube_publication_public",
+            "youtube_publication_unlisted",
+            "youtube_private_hd_review",
+        }
+    }
+    original_task_class = normalized["declared_task_class"].casefold()
     task_semantics = " ".join(
         str(requirement.get(key) or "").strip().casefold()
         for key in (
             "task_class",
+            "functional_role",
             "objective",
             "required_capability_description",
             "expected_output",
@@ -626,34 +651,46 @@ def _selection_requirement_for_mission(
         original_task_class == "independent-review"
         or original_task_class.startswith("independent-review-")
         or (
-            goal.mission_class == "SYSTEM_IMPROVEMENT"
+            str(requirement.get("functional_role") or "").strip().upper()
+            == "REVIEW"
             and "independent" in task_semantics
             and "review" in task_semantics
         )
     )
     if independent_review:
-        required_operations = list(
-            dict.fromkeys([
-                *list(requirement.get("required_operations") or ()),
-                CAN_REVIEW,
-                CAN_SEMANTIC_REASONING,
-                CAN_CONSUME_ARTIFACT_REFS,
-                CAN_PRODUCE_ARTIFACT_REFS,
-            ])
-        )
-        normalized["required_operations"] = required_operations
+        normalized["required_operations"] = list(dict.fromkeys([
+            *list(requirement.get("required_operations") or ()),
+            CAN_REVIEW,
+            CAN_SEMANTIC_REASONING,
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ]))
         normalized["review_contract_enriched"] = True
     else:
         normalized["review_contract_enriched"] = False
 
-    if goal.mission_class == "SYSTEM_IMPROVEMENT":
-        normalized["action"] = "DEVELOPMENT"
-        normalized["task_class"] = "system-improvement"
-        normalized["mission_action_normalized"] = True
-    else:
-        normalized["mission_action_normalized"] = False
-    return normalized
+    required_operations = {
+        str(item).strip()
+        for item in normalized.get("required_operations") or ()
+        if str(item).strip()
+    }
+    if (
+        str(normalized.get("risk_side_effect_class") or "READ_ONLY").upper()
+        == "READ_ONLY"
+        and required_operations.intersection({
+            CAN_WRITE_REPOSITORY,
+            CAN_MUTATE_CANDIDATE,
+        })
+    ):
+        raise ValueError(
+            "READ_ONLY_TASK_MUTATION_CONTRACT_VIOLATION:"
+            + normalized["declared_task_class"]
+        )
 
+    # Mission policy constrains the action later through _mission_action_allowed;
+    # it does not rewrite the task-specific action, class, role, or operations.
+    normalized["mission_action_normalized"] = False
+    return normalized
 
 def _clarification_is_resolved_by_explicit_goal(
     goal: GoalEnvelope,
@@ -956,11 +993,7 @@ def _deterministic_capability_requirements(
 def _deterministic_incident_recovery_requirements(
     goal: GoalEnvelope,
 ) -> list[dict[str, Any]]:
-    """Typed incident-recovery DAG for a real observed internal failure.
-
-    This defines causal functions and contracts only. Registry/health/competence
-    still choose the concrete capabilities and agents for each task.
-    """
+    """Typed incident-recovery DAG; mission policy never replaces task identity."""
     if goal.mission_class != "SYSTEM_IMPROVEMENT":
         return []
     state = dict(goal.canonical_state or {})
@@ -968,10 +1001,7 @@ def _deterministic_incident_recovery_requirements(
     if not isinstance(incident, dict) or not incident:
         return []
     mutation_policy = str(state.get("mutation_policy") or "").strip().upper()
-    if (
-        mutation_policy
-        and not mutation_policy.startswith("NO_MUTATION_BEFORE_")
-    ):
+    if mutation_policy and not mutation_policy.startswith("NO_MUTATION_BEFORE_"):
         return []
 
     observed_error = str(
@@ -982,17 +1012,43 @@ def _deterministic_incident_recovery_requirements(
     evidence_ref = str(
         state.get("incident_evidence_artifact_ref") or ""
     ).strip()
+    if not evidence_ref:
+        return []
+
     functions = (
+        {
+            "role": "EVIDENCE",
+            "task_class": "evidence-collection",
+            "domain": "development",
+            "required_domains": ("development",),
+            "query": (
+                "deterministic immutable incident artifact evidence reuse "
+                "sha256 lineage validation without semantic interpretation"
+            ),
+            "description": (
+                "deterministic reuse and lineage validation of the observed "
+                "incident artifact"
+            ),
+            "output": "IncidentEvidenceBundle",
+            "criteria": (
+                "artifact ref and sha256 lineage are preserved",
+                "no semantic provider is called",
+                "no repository mutation is performed",
+            ),
+            "operations": (CAN_PRODUCE_ARTIFACT_REFS,),
+        },
         {
             "role": "DIAGNOSIS",
             "task_class": "incident-diagnosis",
+            "domain": "development",
+            "required_domains": ("development",),
             "query": (
-                "read-only runtime incident diagnosis failure classification "
-                "routing provider contract evidence causal analysis"
+                "runtime incident failure diagnosis classification routing "
+                "provider contract evidence debugging recovery"
             ),
             "description": (
-                "semantic read-only diagnosis of a real runtime/system incident "
-                "from bounded observed artifact evidence"
+                "semantic read-only diagnosis of the observed runtime/system "
+                "incident from the typed evidence bundle"
             ),
             "output": "IncidentDiagnosisEvidence",
             "criteria": (
@@ -1009,9 +1065,11 @@ def _deterministic_incident_recovery_requirements(
         {
             "role": "ROOT_CAUSE",
             "task_class": "root-cause-analysis",
+            "domain": "development",
+            "required_domains": ("development",),
             "query": (
-                "read-only root cause analysis incident diagnosis causal boundary "
-                "smallest proven cause without mutation"
+                "runtime incident root cause causal analysis diagnosis failure "
+                "debugging smallest proven cause recovery"
             ),
             "description": (
                 "semantic read-only root-cause analysis consuming diagnosis evidence"
@@ -1031,13 +1089,15 @@ def _deterministic_incident_recovery_requirements(
         {
             "role": "PROPOSAL",
             "task_class": "recovery-proposal",
+            "domain": "system-improvement",
+            "required_domains": ("system-improvement", "development"),
             "query": (
-                "read-only bounded recovery proposal from proven root cause "
-                "smallest safe change no repository mutation"
+                "recovery proposal system improvement proven root cause "
+                "smallest safe bounded change proposal without mutation"
             ),
             "description": (
-                "semantic recovery proposal over proven root-cause artifact, "
-                "without applying the change"
+                "semantic read-only recovery proposal over proven root-cause "
+                "evidence without applying the change"
             ),
             "output": "RecoveryProposalEvidence",
             "criteria": (
@@ -1054,19 +1114,21 @@ def _deterministic_incident_recovery_requirements(
         {
             "role": "REVIEW",
             "task_class": "independent-review",
+            "domain": "development",
+            "required_domains": ("development",),
             "query": (
-                "independent semantic review recovery proposal against observed "
-                "incident diagnosis root cause evidence"
+                "independent code review quality recovery proposal root cause "
+                "incident evidence accept revise reject"
             ),
             "description": (
                 "independent read-only semantic review of recovery proposal "
-                "against incident evidence"
+                "against root-cause and incident evidence"
             ),
             "output": "IndependentReviewEvidence",
             "criteria": (
                 "review consumes proposal and causal evidence",
-                "reviewer is independent from proposal author",
-                "review returns accept or bounded changes",
+                "reviewer differs from proposal author",
+                "review returns ACCEPT, REVISE or REJECT with structured reasons",
             ),
             "operations": (
                 CAN_REVIEW,
@@ -1087,6 +1149,9 @@ def _deterministic_incident_recovery_requirements(
             "functional_role": item["role"],
             "task_class": item["task_class"],
             "action": "DEVELOPMENT",
+            "authorized_action": "DEVELOPMENT",
+            "domain": item["domain"],
+            "required_domains": list(item["required_domains"]),
             "query": item["query"],
             "objective": (
                 f"{item['description']}. Observed failure: {observed_error}"
@@ -1094,7 +1159,7 @@ def _deterministic_incident_recovery_requirements(
             "required_capability_description": item["description"],
             "candidate_capability_ids": [],
             "dependencies": dependencies,
-            "input_refs": [evidence_ref] if evidence_ref and not dependencies else [],
+            "input_refs": [evidence_ref] if item["role"] == "EVIDENCE" else [],
             "expected_output": item["output"],
             "acceptance_criteria": list(item["criteria"]),
             "risk_side_effect_class": "READ_ONLY",
@@ -1103,7 +1168,6 @@ def _deterministic_incident_recovery_requirements(
         })
         previous = task_id
     return tasks
-
 
 def _deterministic_fast_path_requirements(
     goal: GoalEnvelope,
@@ -1324,6 +1388,16 @@ def plan_mission_from_human_goal(
             **selection,
             "selection_mode": planning_mode,
             "functional_role": requirement.get("functional_role"),
+            "task_class": requirement.get("task_class"),
+            "mission_policy_class": selection_requirement.get(
+                "mission_policy_class"
+            ),
+            "required_operations": list(
+                selection_requirement.get("required_operations") or ()
+            ),
+            "risk_side_effect_class": requirement.get(
+                "risk_side_effect_class"
+            ),
             "declared_task_class": selection_requirement.get(
                 "declared_task_class"
             ),
@@ -1354,6 +1428,13 @@ def plan_mission_from_human_goal(
                 or f"{goal.human_goal} :: {requirement['task_class']}"
             ),
             "task_class": str(requirement.get("task_class") or "GENERAL"),
+            "functional_role": str(
+                requirement.get("functional_role") or "GENERAL"
+            ).upper(),
+            "mission_policy_class": str(
+                selection_requirement.get("mission_policy_class")
+                or goal.mission_class
+            ).upper(),
             "required_capability_description": str(
                 requirement.get("required_capability_description")
                 or requirement.get("query")

@@ -149,9 +149,10 @@ def test_system_improvement_selection_requirement_normalizes_action_without_losi
     assert goal.mission_class == "SYSTEM_IMPROVEMENT"
     assert normalized["declared_action"] == "RESEARCH"
     assert normalized["declared_task_class"] == "evidence-collection"
-    assert normalized["action"] == "DEVELOPMENT"
-    assert normalized["task_class"] == "system-improvement"
-    assert normalized["mission_action_normalized"] is True
+    assert normalized["action"] == "RESEARCH"
+    assert normalized["task_class"] == "evidence-collection"
+    assert normalized["mission_policy_class"] == "SYSTEM_IMPROVEMENT"
+    assert normalized["mission_action_normalized"] is False
     assert requirement["action"] == "RESEARCH"
     assert requirement["task_class"] == "evidence-collection"
 
@@ -192,7 +193,8 @@ def test_independent_review_contract_is_enriched_before_registry_selection():
         "CAN_PRODUCE_ARTIFACT_REFS",
     }
     assert normalized["action"] == "DEVELOPMENT"
-    assert normalized["task_class"] == "system-improvement"
+    assert normalized["task_class"] == "independent-review"
+    assert normalized["mission_policy_class"] == "SYSTEM_IMPROVEMENT"
     assert "CAN_REVIEW" not in requirement["required_operations"]
 
 
@@ -249,7 +251,8 @@ def test_system_improvement_independent_review_still_enriches_engineering_review
         requirement,
     )
     assert normalized["action"] == "DEVELOPMENT"
-    assert normalized["task_class"] == "system-improvement"
+    assert normalized["task_class"] == "independent-review"
+    assert normalized["mission_policy_class"] == "SYSTEM_IMPROVEMENT"
     assert normalized["review_contract_enriched"] is True
     assert set(normalized["required_operations"]) >= {
         "CAN_REVIEW",
@@ -287,47 +290,57 @@ def test_real_incident_recovery_uses_typed_read_only_dag_before_semantic_planner
             ),
         },
     )
-
     requirements = (
         collaboration_service._deterministic_incident_recovery_requirements(
             goal
         )
     )
 
-    assert goal.mission_class == "SYSTEM_IMPROVEMENT"
     assert [item["functional_role"] for item in requirements] == [
-        "DIAGNOSIS",
-        "ROOT_CAUSE",
-        "PROPOSAL",
-        "REVIEW",
+        "EVIDENCE", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL", "REVIEW",
+    ]
+    assert [item["task_class"] for item in requirements] == [
+        "evidence-collection",
+        "incident-diagnosis",
+        "root-cause-analysis",
+        "recovery-proposal",
+        "independent-review",
     ]
     assert [item["task_id"] for item in requirements] == [
-        "task-01",
-        "task-02",
-        "task-03",
-        "task-04",
+        "task-01", "task-02", "task-03", "task-04", "task-05",
     ]
-    for item in requirements[:3]:
+    assert set(requirements[0]["required_operations"]) == {
+        "CAN_PRODUCE_ARTIFACT_REFS"
+    }
+    assert requirements[0]["risk_side_effect_class"] == "READ_ONLY"
+    assert requirements[0]["input_refs"] == [
+        "artifact:incident-evidence-packet.json"
+    ]
+    for item in requirements[1:4]:
         assert set(item["required_operations"]) == {
             "CAN_CONSUME_ARTIFACT_REFS",
             "CAN_PRODUCE_ARTIFACT_REFS",
             "CAN_SEMANTIC_REASONING",
         }
-        assert item["risk_side_effect_class"] == "READ_ONLY"
         assert item["candidate_requirement"] == "NOT_APPLICABLE"
-    assert set(requirements[3]["required_operations"]) == {
+    assert set(requirements[4]["required_operations"]) == {
         "CAN_REVIEW",
         "CAN_SEMANTIC_REASONING",
         "CAN_CONSUME_ARTIFACT_REFS",
         "CAN_PRODUCE_ARTIFACT_REFS",
     }
-    assert requirements[0]["dependencies"] == []
-    assert requirements[0]["input_refs"] == [
-        "artifact:incident-evidence-packet.json"
+    assert all(
+        item["risk_side_effect_class"] == "READ_ONLY"
+        for item in requirements
+    )
+    assert all(
+        "CAN_WRITE_REPOSITORY" not in set(item["required_operations"])
+        and "CAN_MUTATE_CANDIDATE" not in set(item["required_operations"])
+        for item in requirements
+    )
+    assert [item["dependencies"] for item in requirements] == [
+        [], ["task-01"], ["task-02"], ["task-03"], ["task-04"],
     ]
-    assert requirements[1]["dependencies"] == ["task-01"]
-    assert requirements[2]["dependencies"] == ["task-02"]
-    assert requirements[3]["dependencies"] == ["task-03"]
 
 
 def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
@@ -344,6 +357,7 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
             "incident": {
                 "source_run_id": 35898595164,
                 "task_id": "production-planning",
+                "capability_id": "harness.semantic-mission-planner",
                 "observed_error": "planner contract selection failure",
             },
             "incident_evidence_artifact_ref": (
@@ -358,7 +372,9 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
         collaboration_service,
         "propose_validated_semantic_plan",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("semantic planner must not run for typed incident recovery")
+            AssertionError(
+                "semantic planner must not run for typed incident recovery"
+            )
         ),
     )
 
@@ -369,16 +385,59 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
 
     assert plan.planning_mode == "DETERMINISTIC_INCIDENT_RECOVERY"
     assert plan.planning_evidence["semantic_provider_call_count"] == 0
-    assert len(plan.collaboration_plan.tasks) == 4
-    assert plan.collaboration_plan.tasks[0].input_refs == (
-        "artifact:incident-evidence-packet.json",
-    )
+    tasks = list(plan.collaboration_plan.tasks)
+    assert len(tasks) == 5
+    assert [task.task_class for task in tasks] == [
+        "evidence-collection",
+        "incident-diagnosis",
+        "root-cause-analysis",
+        "recovery-proposal",
+        "independent-review",
+    ]
+    assert [task.functional_role for task in tasks] == [
+        "EVIDENCE", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL", "REVIEW",
+    ]
     assert all(
-        task.risk_side_effect_class == "READ_ONLY"
-        for task in plan.collaboration_plan.tasks
+        task.mission_policy_class == "SYSTEM_IMPROVEMENT"
+        for task in tasks
     )
+    assert tasks[0].capability_id == "artifact.evidence.reuse"
+    assert tasks[0].selected_agent_id == "artifact-lineage-worker"
+    assert tasks[0].required_operations == (
+        "CAN_PRODUCE_ARTIFACT_REFS",
+    )
+    assert all(task.risk_side_effect_class == "READ_ONLY" for task in tasks)
     assert all(
         "CAN_WRITE_REPOSITORY" not in set(task.required_operations)
         and "CAN_MUTATE_CANDIDATE" not in set(task.required_operations)
-        for task in plan.collaboration_plan.tasks
+        for task in tasks
     )
+    selections = plan.planning_evidence["selection"]
+    assert [item["task_class"] for item in selections] == [
+        "evidence-collection",
+        "incident-diagnosis",
+        "root-cause-analysis",
+        "recovery-proposal",
+        "independent-review",
+    ]
+    assert all(
+        item["discovery_order_functional_weight"] == 0.0
+        for item in selections
+    )
+    assert all(
+        item["least_privilege_selection"] is True
+        for item in selections
+    )
+    assert all(
+        candidate["score_components"]["registry_discovery"] == 0.0
+        for item in selections
+        for candidate in item["top_candidates"]
+    )
+    review = tasks[-1]
+    proposal = tasks[-2]
+    assert (
+        review.selected_agent_id != proposal.selected_agent_id
+        or review.selected_skill_id != proposal.selected_skill_id
+    )
+
+

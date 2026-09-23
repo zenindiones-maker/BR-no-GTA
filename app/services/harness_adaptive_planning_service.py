@@ -1381,6 +1381,7 @@ def _task_semantic_text(requirement: dict[str, Any]) -> str:
         str(requirement.get(key) or "").strip().casefold()
         for key in (
             "task_class",
+            "functional_role",
             "objective",
             "required_capability_description",
             "expected_output",
@@ -1540,6 +1541,11 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
 
 
 def _effective_requirement_action(requirement: dict[str, Any]) -> str:
+    explicit = str(
+        requirement.get("authorized_action") or ""
+    ).strip().upper()
+    if explicit:
+        return explicit
     declared = str(requirement.get("action") or "").strip().upper()
     family = _task_semantic_family(requirement)
     return {
@@ -1555,15 +1561,25 @@ def _record_domain_compatible(
     record: Any,
     requirement: dict[str, Any],
 ) -> bool:
-    family = _task_semantic_family(requirement)
     domain = str(getattr(record, "domain", "") or "").strip().casefold()
+    explicit_domains = tuple(
+        str(item).strip().casefold()
+        for item in (
+            requirement.get("required_domains")
+            or ([requirement.get("domain")] if requirement.get("domain") else [])
+        )
+        if str(item).strip()
+    )
+    if explicit_domains:
+        return any(
+            domain == required
+            or domain.startswith(required + "/")
+            or domain.startswith(required + "-")
+            for required in explicit_domains
+        )
 
-    if family in {
-        "RESEARCH",
-        "EDITORIAL",
-        "PRODUCTION",
-        "EXECUTION",
-    } and (
+    family = _task_semantic_family(requirement)
+    if family in {"RESEARCH", "EDITORIAL", "PRODUCTION", "EXECUTION"} and (
         domain == "development" or domain.startswith("development/")
     ):
         return False
@@ -1836,12 +1852,23 @@ def select_capability_for_requirement(
         ])
         overlap = len(query_tokens & _tokens(metadata_text))
         lexical = min(5.0, float(overlap) * 0.55)
-        discovery_bonus = max(0.0, 2.4 - 0.05 * float(ordinal))
+        discovery_bonus = 0.0
         proposal_bonus = 0.35 if capability_id in proposal_bonus_ids else 0.0
         competence_score, competence_used, competence = _competence_score(
             record,
             requirement=requirement,
             context=context,
+        )
+        supported_operations = {
+            str(item).strip()
+            for item in getattr(record, "execution_operations", ()) or ()
+            if str(item).strip()
+        }
+        required_operation_set = set(required_operations)
+        excess_operations = supported_operations - required_operation_set
+        least_privilege_penalty = min(
+            1.5,
+            0.15 * float(len(excess_operations)),
         )
         duplicate_penalty = 1.25 if capability_id in used else 0.0
         cost_class = str(record.cost_class or "").upper()
@@ -1871,6 +1898,7 @@ def select_capability_for_requirement(
             "registry_discovery": discovery_bonus,
             "proposal_hint": proposal_bonus,
             "competence": competence_score,
+            "least_privilege": -least_privilege_penalty,
             "duplicate_penalty": -duplicate_penalty,
             "registry_cost": -registry_cost_penalty,
             "registry_latency": -registry_latency_penalty,
@@ -1881,8 +1909,11 @@ def select_capability_for_requirement(
         reasons = [
             f"semantic_overlap={overlap}",
             f"registry_discovery_bonus={discovery_bonus:.3f}",
+            f"discovery_ordinal_tiebreak={ordinal}",
             f"proposal_hint_bonus={proposal_bonus:.3f}",
             f"competence_score={competence_score:.3f}",
+            f"least_privilege_penalty={least_privilege_penalty:.3f}",
+            f"excess_operations={','.join(sorted(excess_operations)) or 'NONE'}",
             f"duplicate_penalty={duplicate_penalty:.3f}",
             f"registry_cost_penalty={registry_cost_penalty:.3f}",
             f"registry_latency_penalty={registry_latency_penalty:.3f}",
@@ -1917,6 +1948,11 @@ def select_capability_for_requirement(
     ) = ranked[0]
     selection = {
         "task_id": requirement.get("task_id"),
+        "task_class": requirement.get("task_class"),
+        "functional_role": requirement.get("functional_role"),
+        "mission_policy_class": requirement.get("mission_policy_class"),
+        "required_operations": list(required_operations),
+        "risk_side_effect_class": requirement.get("risk_side_effect_class"),
         "selected_capability_id": capability_id,
         "declared_action": requirement.get("declared_action"),
         "effective_action": effective_action,
@@ -1930,6 +1966,8 @@ def select_capability_for_requirement(
         "health_evidence": selected_health,
         "score_components": score_components,
         "failure_memory_used": False,
+        "discovery_order_functional_weight": 0.0,
+        "least_privilege_selection": True,
         "failure_memory_avoided": list(dict.fromkeys(avoided)),
         "proposal_candidates": proposed,
         "harness_substituted_proposal": bool(
