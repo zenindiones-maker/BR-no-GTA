@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any
 
 
+ADDY_EXECUTOR_BINDING = (
+    "app.services.addy_harness_service.execute_authorized_addy_skill"
+)
+
+
 def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(mission_plan, dict):
         raise ValueError("Harness MissionPlan is required")
@@ -20,6 +25,7 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         raise ValueError("MissionPlan contains no selected TaskEnvelope")
 
     capabilities: list[str] = []
+    executor_bindings: list[str] = []
     required_tools: set[str] = set()
     tool_owners: dict[str, list[str]] = {}
     for task in tasks:
@@ -30,6 +36,7 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         if not capability_id or not executor:
             raise ValueError("TaskEnvelope lacks routed capability/executor metadata")
         capabilities.append(capability_id)
+        executor_bindings.append(executor)
         task_id = str(task.get("task_id") or capability_id)
         for raw_tool in task.get("allowed_tools") or ():
             tool = str(raw_tool or "").strip().lower()
@@ -44,6 +51,7 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         "source": "HARNESS_ROUTED_TASK_ENVELOPE",
         "task_count": len(tasks),
         "selected_capability_ids": list(dict.fromkeys(capabilities)),
+        "selected_executor_bindings": list(dict.fromkeys(executor_bindings)),
         "required_tools": sorted(required_tools),
         "tool_owners": {
             key: sorted(set(value))
@@ -51,6 +59,7 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         },
         "codex_required": "codex" in required_tools,
         "tuxevil_required": "tuxevil" in required_tools,
+        "addy_source_required": ADDY_EXECUTOR_BINDING in executor_bindings,
         "executor_bootstrap_mode": "LAZY_SELECTED_TASK_TOOLS",
         "global_provider_prerequisite": False,
     }
@@ -89,9 +98,18 @@ def main() -> int:
                 + ("true" if report["tuxevil_required"] else "false")
                 + "\n"
             )
+            handle.write(
+                "addy_source_required="
+                + ("true" if report["addy_source_required"] else "false")
+                + "\n"
+            )
     print("RUNTIME_REQUIREMENTS_FROM_TASK_ENVELOPE=PASS")
     print("CODEX_REQUIRED=" + ("YES" if report["codex_required"] else "NO"))
     print("TUXEVIL_REQUIRED=" + ("YES" if report["tuxevil_required"] else "NO"))
+    print(
+        "ADDY_SOURCE_REQUIRED="
+        + ("YES" if report["addy_source_required"] else "NO")
+    )
     print("TUXEVIL_GLOBAL_PREREQUISITE=NO")
     return 0
 

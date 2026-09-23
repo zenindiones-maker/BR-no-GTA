@@ -134,6 +134,16 @@ jobs:
           echo "PROVIDER_SELECTED_AFTER_GOAL_RECEIPT=PASS"
           echo "TUXEVIL_GLOBAL_PREREQUISITE=NO"
 
+      - name: Restore pinned Addy source only when selected
+        if: steps.runtime.outputs.addy_source_required == 'true'
+        working-directory: target
+        run: |
+          set -euo pipefail
+          bash scripts/agent-tooling/bootstrap.sh addy
+          echo "ADDY_PINNED_SOURCE_BOOTSTRAP=PASS"
+          echo "ADDY_BOOTSTRAP_SELECTED_BY_TASK_ENVELOPE=PASS"
+          echo "CODEX_BOOTSTRAP_FOR_ADDY_SOURCE_ONLY=NO"
+
       - name: Setup Node.js only for selected Codex capability
         if: steps.runtime.outputs.codex_required == 'true'
         uses: actions/setup-node@v4

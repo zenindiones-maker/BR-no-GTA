@@ -2,11 +2,13 @@
 # Development tooling only. Does not dispatch production or run generation.
 set -euo pipefail
 mode="${1:-all}"
-case "$mode" in all|codex|higgsfield) ;; *) echo 'Usage: bootstrap.sh [all|codex|higgsfield]' >&2; exit 2;; esac
+case "$mode" in all|codex|addy|higgsfield) ;; *) echo 'Usage: bootstrap.sh [all|codex|addy|higgsfield]' >&2; exit 2;; esac
 [[ "$(uname -s)" = Linux && -z "${TERMUX_VERSION:-}" ]] || { echo 'Use a Linux cloud agent, not Termux.' >&2; exit 2; }
 command -v git >/dev/null
-command -v npm >/dev/null
-node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
+if [[ "$mode" != "addy" ]]; then
+  command -v npm >/dev/null
+  node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
+fi
 # This directory contains only reproducible packages/source, never authentication.
 tooling_root="${BR_AGENT_TOOLING_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/br-agent-tooling}"
 mkdir -p "$tooling_root"
@@ -21,8 +23,10 @@ checkout_revision() {
   test "$(git -C "$destination" rev-parse HEAD)" = "$sha"
   test -z "$(git -C "$destination" status --porcelain)"
 }
-if [[ "$mode" = all || "$mode" = codex ]]; then
-  npm install --global --prefix "$tooling_root" @openai/codex@0.154.0
+if [[ "$mode" = all || "$mode" = codex || "$mode" = addy ]]; then
+  if [[ "$mode" = all || "$mode" = codex ]]; then
+    npm install --global --prefix "$tooling_root" @openai/codex@0.154.0
+  fi
   addy_sha=be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39
   addy_source="$tooling_root/addy-$addy_sha"
   checkout_revision https://github.com/addyosmani/agent-skills.git "$addy_sha" "$addy_source"
@@ -34,9 +38,14 @@ if [[ "$mode" = all || "$mode" = codex ]]; then
     --exclude=hooks --exclude=skills/browser-testing-with-devtools
   test "$(find "$addy_view/skills" -name SKILL.md | wc -l)" -eq 24
   test ! -e "$addy_view/hooks"
-  codex plugin marketplace add "$addy_view"
-  codex plugin add agent-skills@agent-skills
-  codex plugin list | awk '/agent-skills@agent-skills/ {print; found=1} END {exit !found}'
+  if [[ "$mode" = all || "$mode" = codex ]]; then
+    codex plugin marketplace add "$addy_view"
+    codex plugin add agent-skills@agent-skills
+    codex plugin list | awk '/agent-skills@agent-skills/ {print; found=1} END {exit !found}'
+  fi
+  if [[ "$mode" = addy ]]; then
+    echo "ADDY_SOURCE_ONLY_BOOTSTRAP=PASS"
+  fi
 fi
 if [[ "$mode" = all || "$mode" = higgsfield ]]; then
   npm install --global --prefix "$tooling_root" @higgsfield/cli@1.1.24 skills@1.5.26

@@ -35,3 +35,42 @@ def test_runtime_requirements_bootstrap_codex_only_when_selected_task_allows_it(
     assert report["codex_required"] is True
     assert report["tuxevil_required"] is False
     assert report["tool_owners"]["codex"] == ["investigate"]
+
+
+
+def test_runtime_requirements_restore_addy_source_without_codex_bootstrap():
+    plan = {
+        "authority": "DEEPSEEK_HARNESS",
+        "collaboration_plan": {
+            "tasks": [
+                {
+                    "task_id": "profile",
+                    "capability_id": "addy:planning-and-task-breakdown",
+                    "selected_executor_binding": (
+                        "app.services.addy_harness_service."
+                        "execute_authorized_addy_skill"
+                    ),
+                    "allowed_tools": ["git", "python"],
+                }
+            ]
+        },
+    }
+    report = classify_plan_runtime_requirements(plan)
+    assert report["addy_source_required"] is True
+    assert report["codex_required"] is False
+    assert report["tuxevil_required"] is False
+    assert (
+        "app.services.addy_harness_service.execute_authorized_addy_skill"
+        in report["selected_executor_bindings"]
+    )
+
+
+def test_dynamic_workflow_bootstraps_addy_only_when_task_envelope_requires_it():
+    from pathlib import Path
+
+    source = Path(
+        ".github/workflows/dynamic-system-improvement.yml"
+    ).read_text(encoding="utf-8")
+    assert "steps.runtime.outputs.addy_source_required == 'true'" in source
+    assert "bash scripts/agent-tooling/bootstrap.sh addy" in source
+    assert "CODEX_BOOTSTRAP_FOR_ADDY_SOURCE_ONLY=NO" in source
