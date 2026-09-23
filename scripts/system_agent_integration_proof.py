@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.database.schema import initialize_schema
+
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_MUTATE_CANDIDATE,
@@ -522,6 +524,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    initialize_schema()
     result = build_proof()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
