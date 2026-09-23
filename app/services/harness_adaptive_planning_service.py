@@ -1340,9 +1340,14 @@ def select_capability_for_requirement(
     avoided: list[str] = []
     query_tokens = _tokens(requirement.get("query"), requirement.get("objective"))
     proposal_bonus_ids = set(proposed)
+    # Execution-contract enforcement is explicit at the selector boundary.
+    # Semantic MissionPlan requirements are enriched by proposal_requirements();
+    # legacy/deterministic requirements remain backward compatible until their
+    # planner supplies a typed execution contract.
     required_operations = tuple(
-        requirement.get("required_operations")
-        or derive_required_operations(requirement)
+        str(item).strip()
+        for item in (requirement.get("required_operations") or ())
+        if str(item).strip()
     )
 
     for ordinal, capability_id in enumerate(ordered_ids):

@@ -65,3 +65,43 @@ def test_review_and_benchmark_are_execution_contracts_not_skill_names():
     assert CAN_RUN_BENCHMARK in benchmark_ops
     assert "execution-contract-insufficient" in capability_execution_contract_rejection(semantic_observability, benchmark_ops)
     assert capability_execution_contract_rejection(executor, benchmark_ops) is None
+
+
+def test_legacy_selector_does_not_infer_execution_contract_implicitly():
+    from app.services.harness_adaptive_planning_service import (
+        select_capability_for_requirement,
+    )
+
+    selected, _competence, _avoided, evidence = (
+        select_capability_for_requirement(
+            {
+                "task_id": "legacy-analysis",
+                "task_class": "readonly-analysis",
+                "action": "DEVELOPMENT",
+                "query": "analyze a bounded legacy task",
+                "objective": "analyze",
+                "candidate_capability_ids": [
+                    "system.improvement.propose",
+                ],
+                "dependencies": [],
+                "expected_output": "Evidence",
+                "acceptance_criteria": ["evidence"],
+                "risk_side_effect_class": "READ_ONLY",
+            },
+            context={
+                "relevant_failure_memories": [],
+                "competence_evidence": [],
+            },
+            used=set(),
+        )
+    )
+    assert selected == "system.improvement.propose"
+    assert evidence["required_operations"] == []
+
+
+def test_system_improvement_proposal_has_explicit_semantic_execution_contract():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("system.improvement.propose")
+    assert record is not None
+    assert CAN_SEMANTIC_REASONING in record.execution_operations
+    assert CAN_CONSUME_ARTIFACT_REFS in record.execution_operations
+    assert CAN_PRODUCE_ARTIFACT_REFS in record.execution_operations

@@ -846,6 +846,11 @@ SYSTEM_IMPROVEMENT_RECORD = CapabilityRecord(
     provider_id="internal",
     agent_id="system-improvement-agent",
     side_effects=(),
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 GTA6_BRAIN_DECISION_RECORD = CapabilityRecord(
