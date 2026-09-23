@@ -207,6 +207,38 @@ def execute_authorized_addy_skill(
     provider_attempts: list[dict[str, Any]] = []
     nvidia_latency_budget: dict[str, Any] | None = None
 
+    def _transient_transport_timeout(evidence) -> bool:
+        error = (
+            dict(evidence.error or {})
+            if isinstance(evidence.error, dict)
+            else {}
+        )
+        return bool(
+            evidence.status != "EXECUTED"
+            and error.get("code") == "timeout"
+            and bool(error.get("retryable"))
+            and error.get("failure_stage") == "transport_request"
+            and error.get("response_present") is False
+        )
+
+    def _failure_class(evidence) -> str:
+        error = (
+            dict(evidence.error or {})
+            if isinstance(evidence.error, dict)
+            else {}
+        )
+        if _transient_transport_timeout(evidence):
+            return "TRANSIENT_PROVIDER_TIMEOUT"
+        if error.get("failure_stage") == "transport_request":
+            return "TRANSPORT_TIMEOUT"
+        if error.get("code") in {"gone", "model_unavailable"}:
+            return "MODEL_UNAVAILABLE"
+        if error.get("code") in {"provider_unavailable"}:
+            return "PROVIDER_UNAVAILABLE"
+        if error.get("code") in {"authentication_failed", "forbidden"}:
+            return "AUTHORIZATION_FAILURE"
+        return "OTHER_PROVEN_CAUSE"
+
     def _route_provider(
         *,
         preferred_provider: str | None = None,
@@ -238,7 +270,7 @@ def execute_authorized_addy_skill(
             )
         )
 
-    def _execute_provider(provider_routing):
+    def _execute_provider(provider_routing, *, phase: str):
         nonlocal nvidia_latency_budget
         selected_provider = str(
             provider_routing.selected_provider or ""
@@ -289,6 +321,7 @@ def execute_authorized_addy_skill(
             consume_harness_authorization(provider_auth)
         provider_attempts.append({
             "attempt": len(provider_attempts) + 1,
+            "phase": phase,
             "routing_id": provider_routing.routing_id,
             "provider": semantic_evidence.provider,
             "model": (
@@ -306,19 +339,92 @@ def execute_authorized_addy_skill(
 
     started_at = datetime.now(timezone.utc).isoformat()
     provider_routing = _route_provider()
-    semantic = _execute_provider(provider_routing)
+    semantic = _execute_provider(provider_routing, phase="INITIAL")
+
+    same_routing_retry_count = 0
+    same_routing_retry_result = "NOT_APPLICABLE"
+    transient_retry_exhausted = False
+    localized_replan_attempted = False
+    localized_replan_result = "NOT_APPLICABLE"
+    localized_replan_error = None
+    original_provider = str(
+        semantic.provider or provider_routing.selected_provider or ""
+    ).strip()
+    original_model = str(
+        semantic.model or provider_routing.selected_model or ""
+    ).strip()
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
         error = semantic.error if isinstance(semantic.error, dict) else {}
         if bool(error.get("retryable")):
-            # One bounded retry of the exact same Harness routing decision.
-            # Do not semantic-replan or swap provider/model inside the executor.
-            semantic = _execute_provider(provider_routing)
+            same_routing_retry_count = 1
+            semantic = _execute_provider(
+                provider_routing,
+                phase="SAME_ROUTING_RETRY",
+            )
+            if semantic.status == "EXECUTED" and isinstance(
+                semantic.result, dict
+            ):
+                same_routing_retry_result = "RECOVERED"
+            else:
+                same_routing_retry_result = "EXHAUSTED"
+
+    if (
+        same_routing_retry_result == "EXHAUSTED"
+        and _transient_transport_timeout(semantic)
+        and original_provider
+        and original_model
+    ):
+        transient_retry_exhausted = True
+        localized_replan_attempted = True
+        try:
+            rerouted = _route_provider(
+                preferred_provider=original_provider,
+                unavailable_models=(original_model,),
+                failure_pattern="transient_timeout_retry_exhausted",
+            )
+            rerouted_provider = str(rerouted.selected_provider or "").strip()
+            rerouted_model = str(rerouted.selected_model or "").strip()
+            if rerouted_provider != original_provider:
+                raise PermissionError(
+                    "localized Addy model replan escaped the original provider"
+                )
+            if not rerouted_model or rerouted_model == original_model:
+                raise PermissionError(
+                    "localized Addy model replan did not select an alternate model"
+                )
+            semantic = _execute_provider(
+                rerouted,
+                phase="LOCALIZED_MODEL_REPLAN",
+            )
+            provider_routing = rerouted
+            localized_replan_result = (
+                "RECOVERED"
+                if semantic.status == "EXECUTED"
+                and isinstance(semantic.result, dict)
+                else "FAILED"
+            )
+        except Exception as exc:
+            localized_replan_result = "UNAVAILABLE"
+            localized_replan_error = (
+                f"{type(exc).__name__}: {str(exc)[:800]}"
+            )
 
     finished_at = datetime.now(timezone.utc).isoformat()
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
         error = semantic.error if isinstance(semantic.error, dict) else {}
+        performance = (
+            dict(semantic.performance or {})
+            if isinstance(semantic.performance, dict)
+            else {}
+        )
+        timeout_ms = float(
+            performance.get("total_attempt_latency_ms")
+            or (
+                float(semantic.latency_seconds or 0.0) * 1000.0
+            )
+        )
         return CapabilityEvidence(
             capability_id=capability_id,
             provider=semantic.provider,
@@ -329,14 +435,46 @@ def execute_authorized_addy_skill(
             harness_decision_id=auth.harness_decision_id,
             execution_id=auth.execution_id,
             result={
-                "error_type": str(error.get("error_type") or "AddySemanticProviderFailure"),
-                "error": str(error.get("message") or "Addy semantic provider failed")[:1200],
+                "error_type": str(
+                    error.get("error_type")
+                    or "AddySemanticProviderFailure"
+                ),
+                "error": str(
+                    error.get("message")
+                    or "Addy semantic provider failed"
+                )[:1200],
                 "skill": skill_name,
                 "source_sha": source_sha,
                 "skill_sha256": skill_sha,
                 "provider_evidence": semantic.to_dict(),
                 "provider_attempts": provider_attempts,
+                "PROVIDER_CALL_ATTEMPTED": "YES",
+                "TRANSPORT_STARTED": (
+                    "YES"
+                    if error.get("failure_stage")
+                    in {"transport_request", "transport_response"}
+                    else "UNKNOWN"
+                ),
+                "RESPONSE_PRESENT": error.get("response_present"),
+                "TIMEOUT_STAGE": error.get("failure_stage"),
+                "TIMEOUT_MS": round(timeout_ms, 3),
+                "RETRY_COUNT": same_routing_retry_count,
+                "FAILURE_CLASS": _failure_class(semantic),
+                "TRANSIENT_RETRY_EXHAUSTED": transient_retry_exhausted,
+                "LOCALIZED_REPLAN_ATTEMPTED": localized_replan_attempted,
+                "LOCALIZED_REPLAN_RESULT": localized_replan_result,
+                "LOCALIZED_REPLAN_ERROR": localized_replan_error,
+                "SELECTED_PROVIDER": semantic.provider,
+                "SELECTED_MODEL": (
+                    semantic.model or provider_routing.selected_model
+                ),
+                "RECOVERY_STRATEGY": (
+                    "same-provider alternate-model Harness replan"
+                    if localized_replan_attempted
+                    else "fail closed; Harness replan required"
+                ),
             },
+            evidence_refs=tuple(semantic.evidence_refs or ()),
             boundary=record.security_boundary,
         )
 
@@ -402,6 +540,16 @@ def execute_authorized_addy_skill(
             "provider_profile_version": semantic.provider_profile_version,
             "provider_evidence": semantic.to_dict(),
             "provider_attempts": provider_attempts,
+            "same_routing_retry_count": same_routing_retry_count,
+            "same_routing_retry_result": same_routing_retry_result,
+            "transient_retry_exhausted": transient_retry_exhausted,
+            "localized_replan_attempted": localized_replan_attempted,
+            "localized_replan_result": localized_replan_result,
+            "recovery_strategy": (
+                "same-provider alternate-model Harness replan"
+                if localized_replan_attempted
+                else "initial-or-same-routing execution"
+            ),
             "receipt": receipt.to_dict(),
         },
         boundary=record.security_boundary,
