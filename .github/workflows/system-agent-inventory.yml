@@ -27,6 +27,7 @@ jobs:
     env:
       PYTHONPATH: .
       BR_TEST_DATABASE: /tmp/br-system-agent-inventory.db
+      BR_CODEX_FEDERATION_CONFIGURED: ${{ (vars.OPENAI_FEDERATION_RULE_ID != '' && vars.OPENAI_FEDERATION_AUDIENCE != '') && 'true' || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
