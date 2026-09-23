@@ -538,7 +538,7 @@ def test_simple_high_confidence_system_goal_uses_zero_semantic_provider_calls():
     assert plan.authority == "DEEPSEEK_HARNESS"
 
 
-def test_mission_plan_replans_incompatible_mutation_candidate_before_task_envelope():
+def test_mission_plan_normalizes_mutating_candidate_without_semantic_replan():
     goal = build_goal_envelope(
         human_goal=(
             "Descobre a causa do gargalo e, somente se houver evidência, "
@@ -552,10 +552,7 @@ def test_mission_plan_replans_incompatible_mutation_candidate_before_task_envelo
 
     def inference(prompt, _context):
         calls.append(prompt)
-        candidate_risk = "LOW" if len(calls) == 1 else "MEDIUM"
-        if len(calls) == 2:
-            assert "rejected by DeepSeek Harness validation" in prompt
-            assert "candidate semantics" in prompt
+        candidate_risk = "LOW"
         return {
             "interpreted_goal": (
                 "Diagnosticar o gargalo e implementar somente uma correção "
@@ -609,9 +606,14 @@ def test_mission_plan_replans_incompatible_mutation_candidate_before_task_envelo
     tasks = {task.task_id: task for task in plan.collaboration_plan.tasks}
     candidate = tasks["apply-bounded-change"]
 
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert candidate.capability_id == "agent-office.codex.bounded-development"
     assert candidate.write_scope
-    assert candidate.risk_side_effect_class == "MEDIUM"
+    assert candidate.risk_side_effect_class == "BOUNDED_MUTATION"
     assert candidate.candidate_requirement == "CONDITIONAL"
+    assert "CAN_MUTATE_CANDIDATE" in candidate.required_operations
+    assert "CAN_WRITE_REPOSITORY" in candidate.required_operations
+    assert "CAN_RUN_TESTS" in candidate.required_operations
+    assert plan.planning_evidence["semantic_provider_call_count"] == 1
+    assert int(plan.planning_evidence.get("replan_count") or 0) == 0
     assert plan.authority == "DEEPSEEK_HARNESS"

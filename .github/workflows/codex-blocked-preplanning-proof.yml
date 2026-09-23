@@ -7,6 +7,7 @@ on:
     paths:
       - "app/services/harness_executor_availability_service.py"
       - "app/services/harness_adaptive_planning_service.py"
+      - "app/services/capability_execution_contract_service.py"
       - "app/services/global_capability_registry.py"
       - "app/services/capability_health_service.py"
       - "app/services/planner_replan_learning_service.py"
@@ -14,6 +15,7 @@ on:
       - "scripts/codex_blocked_preplanning_proof.py"
       - "tests/test_harness_executor_availability_service.py"
       - "tests/test_harness_hermes_delegation_plane.py"
+      - "tests/test_harness_adaptive_intelligence.py"
       - "tests/test_capability_health_service.py"
       - ".github/workflows/codex-blocked-preplanning-proof.yml"
   workflow_dispatch:

@@ -79,8 +79,10 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
         "causal", "propose",
     )
 
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
     candidate_mutation = (
-        any(marker in normalized_text for marker in candidate_markers)
+        task_class in {"bounded-development", "adaptive-code-change"}
+        or any(marker in normalized_text for marker in candidate_markers)
         or (
             "candidate" in normalized_text
             and any(

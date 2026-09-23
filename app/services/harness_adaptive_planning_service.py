@@ -645,6 +645,7 @@ def build_semantic_planning_context(
 
 _BOUNDED_MUTATION_TASK_CLASSES = {
     "bounded-development",
+    "adaptive-code-change",
 }
 
 
