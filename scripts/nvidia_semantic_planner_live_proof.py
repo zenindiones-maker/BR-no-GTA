@@ -41,6 +41,7 @@ from app.services.provider_health_service import (
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     build_semantic_planner_prompt,
+    expand_compact_mission_plan_mapping,
     mission_plan_json_schema,
     semantic_prompt_component_bytes,
 )
@@ -106,11 +107,19 @@ def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
     selected: list[str] = []
     mapping: dict[str, Any] | None = None
 
+    wire_format = None
+    raw_top_level_keys: list[str] = []
     try:
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
             raise ValueError("semantic response is not a JSON object")
-        mapping = parsed
+        raw_top_level_keys = sorted(str(key) for key in parsed)
+        wire_format = (
+            "COMPACT"
+            if "g" in parsed and "t" in parsed
+            else "CANONICAL"
+        )
+        mapping = expand_compact_mission_plan_mapping(parsed)
         strict_json = True
     except Exception as exc:
         parse_error = f"{type(exc).__name__}:{str(exc)[:400]}"
@@ -165,6 +174,8 @@ def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
     return {
         "PARSE_STARTED": True,
         "PARSE_ERROR": parse_error,
+        "WIRE_FORMAT_DETECTED": wire_format,
+        "RAW_TOP_LEVEL_KEYS": raw_top_level_keys,
         "STRUCTURED_OUTPUT_VALID": strict_json,
         "SCHEMA_VALID": proposal is not None,
         "MISSION_PROPOSAL_SCHEMA_VALID": proposal is not None,
@@ -595,6 +606,8 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
                 else {
                     "PARSE_STARTED": False,
                     "PARSE_ERROR": None,
+                    "WIRE_FORMAT_DETECTED": None,
+                    "RAW_TOP_LEVEL_KEYS": [],
                     "STRUCTURED_OUTPUT_VALID": False,
                     "SCHEMA_VALID": False,
                     "MISSION_PROPOSAL_SCHEMA_VALID": False,
