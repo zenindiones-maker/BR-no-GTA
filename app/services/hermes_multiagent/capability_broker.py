@@ -565,9 +565,23 @@ class HermesHarnessCapabilityBroker:
         context: dict[str, Any] | None,
     ) -> dict[str, Any]:
         source = dict(context or {})
+        explicit_incident_refs = (
+            tuple(
+                str(item).strip()
+                for item in (
+                    source.get("input_refs")
+                    or source.get("evidence_refs")
+                    or ()
+                )
+                if str(item).strip()
+            )
+            if str(task.functional_role or "").upper() == "DIAGNOSIS"
+            else ()
+        )
         validation = resolve_task_input_contract(
             functional_role=task.functional_role,
             task_input_refs=tuple(task.input_refs or ()),
+            explicit_incident_refs=explicit_incident_refs,
             parent_handoffs=tuple(source.get("parent_handoffs") or ()),
         )
         if not validation.required:
@@ -608,6 +622,7 @@ class HermesHarnessCapabilityBroker:
         repaired = resolve_task_input_contract(
             functional_role=task.functional_role,
             task_input_refs=tuple(task.input_refs or ()),
+            explicit_incident_refs=explicit_incident_refs,
             parent_handoffs=tuple(fresh.get("parent_handoffs") or ()),
         )
         if not repaired.valid:

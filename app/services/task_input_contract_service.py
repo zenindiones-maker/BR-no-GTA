@@ -123,6 +123,7 @@ def resolve_task_input_contract(
     *,
     functional_role: str | None,
     task_input_refs: tuple[str, ...] | list[str] = (),
+    explicit_incident_refs: tuple[str, ...] | list[str] = (),
     parent_handoffs: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
 ) -> TaskInputValidation:
     descriptor = task_input_contract_descriptor(functional_role)
@@ -145,6 +146,9 @@ def resolve_task_input_contract(
         )
 
     candidates: dict[str, list[tuple[str, str | None]]] = {}
+    for ref in _refs(explicit_incident_refs):
+        _add(candidates, "incident_evidence", ref, None)
+
     for ref in _refs(task_input_refs):
         _add(candidates, "incident_evidence", ref, None)
         if "candidate-spec" in ref.casefold():
@@ -352,11 +356,13 @@ def require_valid_task_inputs(
     *,
     functional_role: str | None,
     task_input_refs: tuple[str, ...] | list[str] = (),
+    explicit_incident_refs: tuple[str, ...] | list[str] = (),
     parent_handoffs: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
 ) -> TaskInputValidation:
     validation = resolve_task_input_contract(
         functional_role=functional_role,
         task_input_refs=task_input_refs,
+        explicit_incident_refs=explicit_incident_refs,
         parent_handoffs=parent_handoffs,
     )
     if validation.required and not validation.valid:
