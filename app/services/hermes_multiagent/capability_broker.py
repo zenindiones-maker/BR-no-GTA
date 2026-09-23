@@ -19,6 +19,26 @@ from app.services.harness_authorization_service import (
 from app.services.harness_capability_service import CapabilityEvidence
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
+from app.services.capability_execution_contract_service import (
+    CAN_MUTATE_CANDIDATE,
+    CAN_WRITE_REPOSITORY,
+)
+from app.services.semantic_tool_loop_service import (
+    AgentToolAuthorizationError,
+    AgentToolBudgetExceeded,
+    AgentToolRequestError,
+    MAX_AGENT_CONTEXT_CHARS,
+    MAX_AGENT_TURNS,
+    MAX_PROVIDER_CALLS,
+    MAX_TOOL_CALLS,
+    TOOL_REQUEST_SCHEMA,
+    TOOL_RESULT_SCHEMA,
+    build_tool_result_envelope,
+    extract_agent_output_text,
+    extract_tool_request,
+    provider_call_count,
+    utcnow,
+)
 from app.services.bounded_memory_context_service import build_bounded_memory_context
 from app.services.task_result_envelope_service import (
     DependencyArtifactMissing,
@@ -28,6 +48,7 @@ from app.services.task_result_envelope_service import (
 )
 from app.services.task_output_contract_service import (
     TaskOutputContractViolation,
+    task_output_contract_descriptor,
     validate_task_output_contract,
 )
 from app.services.task_dependency_precondition_service import (
@@ -39,7 +60,10 @@ from app.services.telegram_group_human_surface_service import (
     send_harness_message_to_human_group,
 )
 
-from app.services.harness_collaboration_service import RoutedCollaborationTask
+from app.services.harness_collaboration_service import (
+    RoutedCollaborationTask,
+    TaskEnvelope,
+)
 from .contracts import (
     HERMES_RUNTIME_CAPABILITY_ID,
     HermesMissionExecutionSpec,
@@ -438,6 +462,574 @@ class HermesHarnessCapabilityBroker:
             "result": result,
         }
 
+    @staticmethod
+    def _context_chars(value: Any) -> int:
+        return len(
+            json.dumps(
+                _jsonable(value),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+
+    def _agent_tool_capability_ids(self, task) -> tuple[str, ...]:
+        allowed: list[str] = ["artifact.evidence.reuse"]
+        for item in tuple(task.allowed_tools or ()):
+            candidate = str(item or "").strip()
+            if candidate and self.registry.get(candidate) is not None:
+                allowed.append(candidate)
+        return tuple(dict.fromkeys(allowed))
+
+    @staticmethod
+    def _authorized_tool_input_refs(task, context: dict[str, Any]) -> set[str]:
+        refs = {
+            str(item).strip()
+            for item in tuple(task.input_refs or ())
+            if str(item).strip()
+        }
+        refs.update(
+            str(item).strip()
+            for item in (context.get("evidence_refs") or ())
+            if str(item).strip()
+        )
+        for item in context.get("input_artifacts") or ():
+            if isinstance(item, dict):
+                ref = str(item.get("artifact_ref") or "").strip()
+                if ref:
+                    refs.add(ref)
+        for handoff in context.get("parent_handoffs") or ():
+            if not isinstance(handoff, dict):
+                continue
+            for key in ("task_result_ref", "evidence_ref"):
+                ref = str(handoff.get(key) or "").strip()
+                if ref:
+                    refs.add(ref)
+            for key in ("output_artifact_refs", "evidence_refs", "metrics_refs"):
+                refs.update(
+                    str(item).strip()
+                    for item in (handoff.get(key) or ())
+                    if str(item).strip()
+                )
+            result = handoff.get("result")
+            if isinstance(result, dict):
+                refs.update(
+                    str(item).strip()
+                    for item in (result.get("artifact_refs") or ())
+                    if str(item).strip()
+                )
+        return refs
+
+    def _materialize_tool_input_artifacts(
+        self,
+        *,
+        refs: tuple[str, ...],
+        authorized_refs: set[str],
+        max_chars: int = 9000,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        remaining = max(0, int(max_chars))
+        root = self.artifact_dir.resolve()
+        for ref in refs:
+            value = str(ref or "").strip()
+            if not value:
+                continue
+            if value not in authorized_refs:
+                raise AgentToolAuthorizationError(
+                    "TOOL_INPUT_REF_OUTSIDE_TASK_SCOPE:" + value
+                )
+            if not value.startswith("artifact:"):
+                continue
+            relative = value.split(":", 1)[1].lstrip("/")
+            if not relative:
+                raise AgentToolRequestError("TOOL_INPUT_ARTIFACT_REF_EMPTY")
+            path = (self.artifact_dir / relative).resolve()
+            if path != root and root not in path.parents:
+                raise AgentToolAuthorizationError(
+                    "TOOL_INPUT_ARTIFACT_PATH_ESCAPE"
+                )
+            if not path.is_file():
+                raise AgentToolRequestError(
+                    "TOOL_INPUT_ARTIFACT_NOT_FOUND:" + value
+                )
+            raw = path.read_bytes()
+            decoded = raw.decode("utf-8", errors="replace")
+            try:
+                content: Any = json.loads(decoded)
+                encoding = "json"
+            except json.JSONDecodeError:
+                content = decoded
+                encoding = "text"
+            row: dict[str, Any] = {
+                "artifact_ref": value,
+                "sha256": sha256(raw).hexdigest(),
+                "size_bytes": len(raw),
+                "encoding": encoding,
+            }
+            rendered = json.dumps(
+                content,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            if remaining > 0 and len(rendered) <= remaining:
+                row["content"] = content
+                remaining -= len(rendered)
+            elif remaining > 0:
+                excerpt = rendered[:remaining]
+                row["content_excerpt"] = excerpt
+                row["content_truncated"] = True
+                remaining = 0
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _compact_parent_handoffs(context: dict[str, Any]) -> None:
+        compacted = []
+        for item in context.get("parent_handoffs") or ():
+            if not isinstance(item, dict):
+                continue
+            compacted.append({
+                key: item.get(key)
+                for key in (
+                    "task_id",
+                    "capability_id",
+                    "agent_id",
+                    "skill_id",
+                    "task_result_ref",
+                    "content_sha256",
+                    "result_summary",
+                    "output_artifact_refs",
+                    "evidence_refs",
+                    "metrics_refs",
+                    "source_task_ids",
+                    "direct_dependency",
+                )
+                if item.get(key) is not None
+            })
+        context["parent_handoffs"] = compacted
+
+    def _next_agent_context(
+        self,
+        *,
+        base_context: dict[str, Any],
+        tool_results: list[dict[str, Any]],
+        previous_output: str,
+        agent_turn: int,
+    ) -> dict[str, Any]:
+        context = _jsonable(base_context)
+        if not isinstance(context, dict):
+            context = {}
+        context = dict(context)
+        context["agent_turn"] = int(agent_turn)
+        context["agent_tool_results"] = list(tool_results)
+        if previous_output:
+            context["previous_agent_output"] = previous_output[:2400]
+        if self._context_chars(context) <= MAX_AGENT_CONTEXT_CHARS:
+            return context
+
+        artifacts = []
+        for item in context.get("input_artifacts") or ():
+            if isinstance(item, dict):
+                artifacts.append({
+                    key: item.get(key)
+                    for key in ("artifact_ref", "sha256", "size_bytes", "encoding")
+                    if item.get(key) is not None
+                })
+        if artifacts:
+            context["input_artifacts"] = artifacts
+        self._compact_parent_handoffs(context)
+        context.pop("relevant_memory", None)
+        context.pop("relevant_human_decisions", None)
+        if self._context_chars(context) <= MAX_AGENT_CONTEXT_CHARS:
+            return context
+
+        minimal = {
+            key: context.get(key)
+            for key in (
+                "mission_id",
+                "task_id",
+                "goal_id",
+                "task",
+                "evidence_refs",
+                "allowed_tools",
+                "memory_write",
+            )
+            if context.get(key) is not None
+        }
+        minimal["agent_turn"] = int(agent_turn)
+        minimal["agent_tool_results"] = list(tool_results)
+        if previous_output:
+            minimal["previous_agent_output"] = previous_output[:1200]
+        if self._context_chars(minimal) > MAX_AGENT_CONTEXT_CHARS:
+            minimal.pop("previous_agent_output", None)
+        if self._context_chars(minimal) > MAX_AGENT_CONTEXT_CHARS:
+            raise AgentToolBudgetExceeded("MAX_CONTEXT_CHARS")
+        return minimal
+
+    @staticmethod
+    def _semantic_runtime_task_text(
+        *,
+        task,
+        base_task_text: str,
+        mission_id: str,
+        agent_id: str,
+        agent_turn: int,
+        allowed_tool_capability_ids: tuple[str, ...],
+    ) -> str:
+        descriptor = task_output_contract_descriptor(task.functional_role)
+        runtime_contract = {
+            "schema": "SemanticAgentRuntimeContract/v1",
+            "mission_id": mission_id,
+            "task_id": task.task_id,
+            "agent_id": agent_id,
+            "capability_id": task.capability_id,
+            "agent_turn": int(agent_turn),
+            "final_output_contract": descriptor,
+            "tool_request_contract": {
+                "schema": TOOL_REQUEST_SCHEMA,
+                "allowed_tool_or_capability_ids": list(
+                    allowed_tool_capability_ids
+                ),
+                "operation": "EXECUTE_CAPABILITY",
+                "required_fields": [
+                    "schema",
+                    "request_id",
+                    "mission_id",
+                    "task_id",
+                    "agent_id",
+                    "capability_id",
+                    "tool_or_capability_id",
+                    "operation",
+                    "arguments",
+                    "input_refs",
+                    "reason",
+                    "authorization_context",
+                ],
+            },
+            "rules": [
+                "Never claim that a tool executed unless a ToolResultEnvelope is present in context.",
+                "If more evidence is required, return ONLY one ToolRequestEnvelope JSON object.",
+                "If enough evidence is available, return ONLY one JSON object matching final_output_contract.",
+                "Do not return preliminary prose as the final answer.",
+                "Do not change mission_id, task_id, agent_id or capability_id.",
+            ],
+        }
+        return (
+            str(base_task_text or task.objective).strip()
+            + "\n\nHARNESS_RUNTIME_CONTRACT_JSON:\n"
+            + json.dumps(
+                runtime_contract,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+
+    def _persist_tool_result(
+        self,
+        *,
+        task_id: str,
+        request_id: str,
+        payload: dict[str, Any],
+    ) -> str:
+        safe = "".join(
+            ch if ch.isalnum() or ch in "._-" else "_"
+            for ch in str(request_id)
+        )[:96]
+        relative = Path("tool-results") / f"{task_id}-{safe}.json"
+        target = self.artifact_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        return f"artifact:{relative.as_posix()}"
+
+    def _execute_agent_tool_request(
+        self,
+        *,
+        task,
+        request,
+        parent_context: dict[str, Any],
+        agent_turn: int,
+    ) -> dict[str, Any]:
+        target = request.tool_or_capability_id
+        if target not in set(self._agent_tool_capability_ids(task)):
+            raise AgentToolAuthorizationError(
+                "TOOL_NOT_ALLOWLISTED:" + target
+            )
+        record = self.registry.get(target)
+        if record is None or not record.execution_enabled:
+            raise AgentToolRequestError("UNKNOWN_TOOL:" + target)
+        if task.action not in tuple(record.allowed_actions or ()):
+            raise AgentToolAuthorizationError(
+                "TOOL_ACTION_NOT_ALLOWED:" + target
+            )
+        operations = set(getattr(record, "execution_operations", ()) or ())
+        if (
+            CAN_WRITE_REPOSITORY in operations
+            or CAN_MUTATE_CANDIDATE in operations
+            or str(getattr(record, "side_effect_class", "") or "").upper()
+            not in {"", "READ_ONLY"}
+        ):
+            raise AgentToolAuthorizationError(
+                "READ_ONLY_ROLE_CANNOT_USE_MUTATING_TOOL:" + target
+            )
+        if request.operation != "EXECUTE_CAPABILITY":
+            raise AgentToolRequestError(
+                "TOOL_OPERATION_UNSUPPORTED:" + request.operation
+            )
+
+        authorized_refs = self._authorized_tool_input_refs(
+            task,
+            parent_context,
+        )
+        refs = tuple(dict.fromkeys([
+            *request.input_refs,
+            *(
+                str(item).strip()
+                for item in (
+                    request.arguments.get("artifact_refs")
+                    or request.arguments.get("input_refs")
+                    or ()
+                )
+                if str(item).strip()
+            ),
+        ]))
+        input_artifacts = self._materialize_tool_input_artifacts(
+            refs=refs,
+            authorized_refs=authorized_refs,
+        )
+
+        decision = route_harness_request(
+            HarnessRoutingRequest(
+                intent=(
+                    f"authorized agent tool request for {task.task_id}: "
+                    f"{request.reason}"
+                ),
+                authorized_action=task.action,
+                domain=record.domain,
+                task_class=f"agent-tool:{task.functional_role.casefold()}",
+                goal_id=self.spec.goal_id,
+                required_capability_id=target,
+                agent_id=record.agent_id,
+                fallback_allowed=False,
+                provider_required=False,
+                learning_required=True,
+            )
+        )
+        if decision.selected_capability_id != target:
+            raise AgentToolAuthorizationError(
+                "TOOL_ROUTING_CHANGED_CAPABILITY"
+            )
+        if decision.selected_executor_binding != record.executor_binding:
+            raise AgentToolAuthorizationError(
+                "TOOL_ROUTING_EXECUTOR_DRIFT"
+            )
+
+        tool_task = TaskEnvelope(
+            task_id=task.task_id,
+            capability_id=target,
+            action=task.action,
+            objective=request.reason,
+            input_refs=refs,
+            expected_output=TOOL_RESULT_SCHEMA,
+            task_class=f"agent-tool:{task.task_class}",
+            functional_role="TOOL",
+            mission_policy_class=task.mission_policy_class,
+            required_capability_description=request.reason,
+            acceptance_criteria=("return observed bounded tool evidence",),
+            candidate_requirement="NOT_APPLICABLE",
+            required_operations=tuple(
+                str(item) for item in operations
+            ),
+            read_scope=tuple(task.read_scope or ()),
+            write_scope=(),
+            allowed_tools=(),
+            allowed_side_effects=(),
+            forbidden_side_effects=tuple(task.forbidden_side_effects or ()),
+            time_budget_seconds=max(1, min(int(task.time_budget_seconds), 300)),
+            cost_budget=0.0,
+            context_budget_bytes=min(
+                int(task.context_budget_bytes),
+                MAX_AGENT_CONTEXT_CHARS,
+            ),
+            tool_budget=0,
+            retry_budget=0,
+            evidence_contract=str(record.evidence_contract or ""),
+            review_policy="NONE",
+            risk_side_effect_class="READ_ONLY",
+            idempotency_key=(
+                f"agent-tool:{self.spec.mission_id}:"
+                f"{task.task_id}:{request.request_id}"
+            ),
+            expires_at=task.expires_at,
+            human_gate_policy="NONE",
+            mission_id=self.spec.mission_id,
+            goal_id=self.spec.goal_id,
+        )
+        executor = self.adapter.resolve_binding(
+            str(record.executor_binding or "")
+        )
+        tool_auth = issue_harness_authorization(
+            authorized_action=task.action,
+            subject=self.adapter.authorization_subject(
+                executor,
+                tool_task,
+            ),
+            harness_decision_id=self.spec.harness_decision_id,
+            execution_id=self.parent_authorization.execution_id,
+            lineage={
+                "parent_authorization_id": (
+                    self.parent_authorization.authorization_id
+                ),
+                "hermes_mission_id": self.spec.mission_id,
+                "hermes_task_id": task.task_id,
+                "goal_id": self.spec.goal_id,
+                "agent_turn": int(agent_turn),
+                "request_id": request.request_id,
+                "requested_by_agent_id": request.agent_id,
+                "requested_by_capability_id": request.capability_id,
+                "capability_id": target,
+                "routing_id": decision.routing_id,
+                "selected_executor_binding": record.executor_binding,
+                "risk_side_effect_class": "READ_ONLY",
+            },
+        )
+        payload = dict(request.arguments)
+        payload.pop("artifact_refs", None)
+        payload.pop("input_refs", None)
+        if refs:
+            payload["input_artifact_refs"] = list(refs)
+        tool_context = dict(parent_context)
+        if input_artifacts:
+            tool_context["input_artifacts"] = input_artifacts
+        payload["context"] = tool_context
+        started_at = utcnow()
+        try:
+            adapted = self.adapter.execute(
+                authorization=tool_auth,
+                task_envelope=tool_task,
+                routing_decision=decision,
+                payload=payload,
+                parent_context=None,
+            )
+            result = adapted.result
+            status = "EXECUTED"
+            error = None
+        except Exception as exc:
+            result = {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:1200],
+            }
+            status = "FAILED"
+            error = dict(result)
+        finally:
+            consume_harness_authorization(tool_auth)
+        finished_at = utcnow()
+
+        envelope = build_tool_result_envelope(
+            request=request,
+            tool_id=target,
+            operation=request.operation,
+            authorization_id=tool_auth.authorization_id,
+            output_refs=(),
+            result_payload=result,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            error=error,
+        )
+        body = envelope.to_dict()
+        artifact_ref = self._persist_tool_result(
+            task_id=task.task_id,
+            request_id=request.request_id,
+            payload=body,
+        )
+        body["output_refs"] = [artifact_ref]
+        self._persist_tool_result(
+            task_id=task.task_id,
+            request_id=request.request_id,
+            payload=body,
+        )
+        self._audit.append({
+            "event": (
+                "TOOL_EXECUTED"
+                if status == "EXECUTED"
+                else "TOOL_FAILED"
+            ),
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "task_id": task.task_id,
+            "functional_role": task.functional_role,
+            "agent_turn": int(agent_turn),
+            "request_id": request.request_id,
+            "tool_id": target,
+            "operation": request.operation,
+            "authorization_id": tool_auth.authorization_id,
+            "routing_id": decision.routing_id,
+            "status": status,
+            "tool_result_ref": artifact_ref,
+        })
+        if status != "EXECUTED":
+            raise AgentToolRequestError(
+                "TOOL_EXECUTION_FAILED:" + target
+            )
+        return body
+
+    def _persist_loop_failure(
+        self,
+        *,
+        task,
+        record,
+        decision,
+        authorization_id: str,
+        elapsed: float,
+        started_at: str,
+        retry_attempt: int,
+        status: str,
+        result: dict[str, Any],
+        failure_mode: str,
+    ) -> None:
+        result_row = self._persist_result(
+            task_id=task.task_id,
+            capability_id=task.capability_id,
+            agent_id=record.agent_id,
+            routing_id=decision.routing_id,
+            authorization_id=authorization_id,
+            elapsed_seconds=elapsed,
+            result=result,
+            idempotency_key=task.idempotency_key,
+            capability_version=task.capability_version,
+            retry_count=retry_attempt,
+            skill_id=record.skill_id,
+            executor_binding=str(record.executor_binding or ""),
+            source_task_ids=tuple(task.dependencies),
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            status=status,
+        )
+        self._audit.append({
+            "event": f"TASK_{status}",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "task_id": task.task_id,
+            "task_class": task.task_class,
+            "functional_role": task.functional_role,
+            "capability_id": task.capability_id,
+            "routing_id": decision.routing_id,
+            "authorization_id": authorization_id,
+            "status": status,
+            "failure_mode": failure_mode,
+            "evidence_ref": result_row["evidence_ref"],
+        })
+
     def execute_delegated_capability(
         self,
         *,
@@ -549,78 +1141,478 @@ class HermesHarnessCapabilityBroker:
         })
 
         record, decision = self._route(task)
-        executor = self.adapter.resolve_binding(str(record.executor_binding or ""))
-        child = self._issue_child(
-            task=task,
-            record=record,
-            decision=decision,
-            executor=executor,
+        base_payload = dict(payload)
+        base_context = dict(
+            base_payload.get("context")
+            or prepared_context
+            or {}
         )
+        base_task_text = str(
+            base_payload.get("task")
+            or task.objective
+        ).strip()
+        output_contract = task_output_contract_descriptor(
+            task.functional_role
+        )
+        semantic_loop = bool(output_contract.get("required"))
+        max_agent_turns = MAX_AGENT_TURNS if semantic_loop else 1
+        max_tool_calls = min(
+            MAX_TOOL_CALLS,
+            max(0, int(task.tool_budget)),
+        )
+        allowed_tool_ids = (
+            self._agent_tool_capability_ids(task)
+            if semantic_loop
+            else ()
+        )
+        tool_results: list[dict[str, Any]] = []
+        seen_request_ids: set[str] = set()
+        previous_output = ""
+        provider_calls = 0
+        tool_calls = 0
+        task_started_perf = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
-        try:
-            adapted = self.adapter.execute(
-                authorization=child,
-                task_envelope=task,
-                routing_decision=decision,
-                payload=dict(payload),
-                parent_context=None,
-            )
-            result = adapted.result
-            elapsed = float(adapted.elapsed_seconds)
-        except Exception as exc:
-            retry_allowed = (
-                bool(task.supports_retry)
-                and retry_attempt < int(task.retry_budget)
-            )
-            failure = DelegatedCapabilityFailure(
-                task_id=task_id,
-                capability_id=capability_id,
-                failure_mode=type(exc).__name__,
-                retry_attempt=retry_attempt,
-                retry_allowed=retry_allowed,
-                requires_harness_replan=not retry_allowed,
-            )
-            self._audit.append({
-                "event": "TASK_FAILED",
-                "authority": "DEEPSEEK_HARNESS",
-                "mission_id": self.spec.mission_id,
-                "task_id": task_id,
-                "task_class": task.task_class,
-                "capability_id": capability_id,
-                "routing_id": decision.routing_id,
-                "authorization_id": child.authorization_id,
-                "parent_authorization_id": self.parent_authorization.authorization_id,
-                "idempotency_key": task.idempotency_key,
-                "retry_count": retry_attempt,
-                "retry_allowed": retry_allowed,
-                "requires_harness_replan": not retry_allowed,
-                "failure_mode": type(exc).__name__,
-                "evidence_refs": [],
-            })
-            raise failure from exc
-        finally:
-            consume_harness_authorization(child)
+        last_authorization_id = self.parent_authorization.authorization_id
+        last_elapsed = 0.0
+        last_result: Any = None
 
-        output_validation = validate_task_output_contract(
-            functional_role=task.functional_role,
-            result=result,
-        )
-        if (
-            output_validation.required
-            and not output_validation.final_output_valid
-        ):
-            invalid_result = {
-                "provider_result": _jsonable(result),
-                "output_contract_validation": output_validation.to_dict(),
-            }
-            result_row = self._persist_result(
+        for agent_turn in range(1, max_agent_turns + 1):
+            elapsed_wall = time.perf_counter() - task_started_perf
+            if elapsed_wall > float(task.time_budget_seconds):
+                failure_result = {
+                    "error": "MAX_TASK_WALL_CLOCK_MS",
+                    "agent_loop": {
+                        "agent_turns": agent_turn - 1,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                }
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=elapsed_wall,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_BUDGET",
+                    result=failure_result,
+                    failure_mode="MAX_TASK_WALL_CLOCK_MS",
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode="AgentToolBudgetExceeded",
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                )
+
+            turn_payload = dict(base_payload)
+            turn_context = self._next_agent_context(
+                base_context=base_context,
+                tool_results=tool_results,
+                previous_output=previous_output,
+                agent_turn=agent_turn,
+            )
+            turn_payload["context"] = turn_context
+            turn_payload["agent_turn"] = agent_turn
+            turn_payload["functional_role"] = task.functional_role
+            turn_payload["agent_tool_capabilities"] = list(
+                allowed_tool_ids
+            )
+            turn_payload["task"] = self._semantic_runtime_task_text(
+                task=task,
+                base_task_text=base_task_text,
+                mission_id=self.spec.mission_id,
+                agent_id=str(record.agent_id or ""),
+                agent_turn=agent_turn,
+                allowed_tool_capability_ids=allowed_tool_ids,
+            )
+
+            executor = self.adapter.resolve_binding(
+                str(record.executor_binding or "")
+            )
+            child = self._issue_child(
+                task=task,
+                record=record,
+                decision=decision,
+                executor=executor,
+            )
+            last_authorization_id = child.authorization_id
+            try:
+                adapted = self.adapter.execute(
+                    authorization=child,
+                    task_envelope=task,
+                    routing_decision=decision,
+                    payload=turn_payload,
+                    parent_context=None,
+                )
+                result = adapted.result
+                last_result = result
+                last_elapsed = float(adapted.elapsed_seconds)
+            except Exception as exc:
+                retry_allowed = (
+                    bool(task.supports_retry)
+                    and retry_attempt < int(task.retry_budget)
+                )
+                failure = DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=retry_allowed,
+                    requires_harness_replan=not retry_allowed,
+                )
+                self._audit.append({
+                    "event": "TASK_FAILED",
+                    "authority": "DEEPSEEK_HARNESS",
+                    "mission_id": self.spec.mission_id,
+                    "task_id": task_id,
+                    "task_class": task.task_class,
+                    "capability_id": capability_id,
+                    "routing_id": decision.routing_id,
+                    "authorization_id": child.authorization_id,
+                    "parent_authorization_id": self.parent_authorization.authorization_id,
+                    "idempotency_key": task.idempotency_key,
+                    "retry_count": retry_attempt,
+                    "retry_allowed": retry_allowed,
+                    "requires_harness_replan": not retry_allowed,
+                    "failure_mode": type(exc).__name__,
+                    "evidence_refs": [],
+                })
+                raise failure from exc
+            finally:
+                consume_harness_authorization(child)
+
+            observed_provider_calls = provider_call_count(result)
+            if semantic_loop:
+                provider_calls += max(1, observed_provider_calls)
+            else:
+                provider_calls += observed_provider_calls
+            if provider_calls > MAX_PROVIDER_CALLS:
+                failure_result = {
+                    "provider_result": _jsonable(result),
+                    "error": "MAX_PROVIDER_CALLS",
+                    "agent_loop": {
+                        "agent_turns": agent_turn,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                }
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_BUDGET",
+                    result=failure_result,
+                    failure_mode="MAX_PROVIDER_CALLS",
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode="AgentToolBudgetExceeded",
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                )
+
+            output_validation = validate_task_output_contract(
+                functional_role=task.functional_role,
+                result=result,
+            )
+            if (
+                not output_validation.required
+                or output_validation.final_output_valid
+            ):
+                normalized_result = _jsonable(result)
+                loop_metrics = {
+                    "agent_turns": agent_turn,
+                    "tool_calls": tool_calls,
+                    "provider_calls": provider_calls,
+                    "max_agent_turns": max_agent_turns,
+                    "max_tool_calls": max_tool_calls,
+                    "max_provider_calls": MAX_PROVIDER_CALLS,
+                    "task_wall_clock_ms": round(
+                        (time.perf_counter() - task_started_perf) * 1000.0,
+                        3,
+                    ),
+                    "final_output_schema": (
+                        output_validation.final_output_schema
+                    ),
+                    "final_output_valid": (
+                        output_validation.final_output_valid
+                    ),
+                }
+                if isinstance(normalized_result, dict):
+                    persisted_result = {
+                        **normalized_result,
+                        "agent_loop": loop_metrics,
+                    }
+                else:
+                    persisted_result = {
+                        "provider_result": normalized_result,
+                        "agent_loop": loop_metrics,
+                    }
+                result_row = self._persist_result(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    agent_id=record.agent_id,
+                    routing_id=decision.routing_id,
+                    authorization_id=last_authorization_id,
+                    elapsed_seconds=(
+                        time.perf_counter() - task_started_perf
+                    ),
+                    result=persisted_result,
+                    idempotency_key=task.idempotency_key,
+                    capability_version=task.capability_version,
+                    retry_count=retry_attempt,
+                    skill_id=record.skill_id,
+                    executor_binding=str(record.executor_binding or ""),
+                    source_task_ids=tuple(task.dependencies),
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                )
+                audit = {
+                    "event": "TASK_COMPLETED",
+                    "authority": "DEEPSEEK_HARNESS",
+                    "mission_id": self.spec.mission_id,
+                    "task_id": task_id,
+                    "task_class": task.task_class,
+                    "functional_role": task.functional_role,
+                    "capability_id": capability_id,
+                    "agent_id": record.agent_id,
+                    "runtime": "hermes",
+                    "routing_id": decision.routing_id,
+                    "authorization_id": last_authorization_id,
+                    "parent_authorization_id": self.parent_authorization.authorization_id,
+                    "executor_binding": record.executor_binding,
+                    "started_at": started_at,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "elapsed_seconds": round(
+                        time.perf_counter() - task_started_perf,
+                        6,
+                    ),
+                    "success": True,
+                    "evidence_quality": "REGISTRY_BOUND_CAPABILITY_ADAPTER",
+                    "idempotency_key": task.idempotency_key,
+                    "capability_version": task.capability_version,
+                    "human_correction": False,
+                    "review_rejection": False,
+                    "retry_count": retry_attempt,
+                    "policy_violations": 0,
+                    "cost": 0.0,
+                    "evidence_ref": result_row["evidence_ref"],
+                    "agent_loop": loop_metrics,
+                }
+                self._audit.append(audit)
+                return {
+                    "authority": "DEEPSEEK_HARNESS",
+                    "executed": True,
+                    "reused": False,
+                    "capability_id": capability_id,
+                    "agent_id": record.agent_id,
+                    "routing_id": decision.routing_id,
+                    "authorization_id": last_authorization_id,
+                    "executor_binding": record.executor_binding,
+                    "evidence_ref": result_row["evidence_ref"],
+                    "result": persisted_result,
+                    "agent_loop": loop_metrics,
+                }
+
+            try:
+                request = extract_tool_request(
+                    result,
+                    mission_id=self.spec.mission_id,
+                    task_id=task.task_id,
+                    agent_id=str(record.agent_id or ""),
+                    capability_id=task.capability_id,
+                )
+            except (
+                AgentToolRequestError,
+                AgentToolAuthorizationError,
+            ) as exc:
+                failure_result = {
+                    "provider_result": _jsonable(result),
+                    "output_contract_validation": (
+                        output_validation.to_dict()
+                    ),
+                    "tool_error": {
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:1200],
+                    },
+                    "agent_loop": {
+                        "agent_turns": agent_turn,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                }
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_TOOL",
+                    result=failure_result,
+                    failure_mode=type(exc).__name__,
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from exc
+
+            if request is None:
+                invalid_result = {
+                    "provider_result": _jsonable(result),
+                    "output_contract_validation": (
+                        output_validation.to_dict()
+                    ),
+                    "agent_loop": {
+                        "agent_turns": agent_turn,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                }
+                result_row = self._persist_result(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    agent_id=record.agent_id,
+                    routing_id=decision.routing_id,
+                    authorization_id=last_authorization_id,
+                    elapsed_seconds=(
+                        time.perf_counter() - task_started_perf
+                    ),
+                    result=invalid_result,
+                    idempotency_key=task.idempotency_key,
+                    capability_version=task.capability_version,
+                    retry_count=retry_attempt,
+                    skill_id=record.skill_id,
+                    executor_binding=str(record.executor_binding or ""),
+                    source_task_ids=tuple(task.dependencies),
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                    status="FAILED_CONTRACT",
+                )
+                self._audit.append({
+                    "event": "TASK_FAILED_CONTRACT",
+                    "authority": "DEEPSEEK_HARNESS",
+                    "mission_id": self.spec.mission_id,
+                    "task_id": task_id,
+                    "task_class": task.task_class,
+                    "functional_role": task.functional_role,
+                    "capability_id": capability_id,
+                    "routing_id": decision.routing_id,
+                    "authorization_id": last_authorization_id,
+                    "status": "FAILED_CONTRACT",
+                    "FALSE_COMPLETED_PREVENTED": "PASS",
+                    "evidence_ref": result_row["evidence_ref"],
+                    "output_contract_validation": (
+                        output_validation.to_dict()
+                    ),
+                })
+                violation = TaskOutputContractViolation(
+                    output_validation
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(violation).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from violation
+
+            if request.request_id in seen_request_ids:
+                exc = AgentToolRequestError(
+                    "DUPLICATE_TOOL_REQUEST_ID:"
+                    + request.request_id
+                )
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_TOOL",
+                    result={
+                        "provider_result": _jsonable(result),
+                        "tool_request": request.to_dict(),
+                        "error": str(exc),
+                    },
+                    failure_mode=type(exc).__name__,
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from exc
+            if tool_calls >= max_tool_calls:
+                exc = AgentToolBudgetExceeded("MAX_TOOL_CALLS")
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status="FAILED_BUDGET",
+                    result={
+                        "provider_result": _jsonable(result),
+                        "tool_request": request.to_dict(),
+                        "agent_loop": {
+                            "agent_turns": agent_turn,
+                            "tool_calls": tool_calls,
+                            "provider_calls": provider_calls,
+                        },
+                    },
+                    failure_mode="MAX_TOOL_CALLS",
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from exc
+
+            seen_request_ids.add(request.request_id)
+            waiting_row = self._persist_result(
                 task_id=task_id,
                 capability_id=capability_id,
                 agent_id=record.agent_id,
                 routing_id=decision.routing_id,
-                authorization_id=child.authorization_id,
-                elapsed_seconds=elapsed,
-                result=invalid_result,
+                authorization_id=last_authorization_id,
+                elapsed_seconds=time.perf_counter() - task_started_perf,
+                result={
+                    "provider_result": _jsonable(result),
+                    "tool_request": request.to_dict(),
+                    "output_contract_validation": (
+                        output_validation.to_dict()
+                    ),
+                    "agent_loop": {
+                        "agent_turns": agent_turn,
+                        "tool_calls": tool_calls,
+                        "provider_calls": provider_calls,
+                    },
+                },
                 idempotency_key=task.idempotency_key,
                 capability_version=task.capability_version,
                 retry_count=retry_attempt,
@@ -629,109 +1621,100 @@ class HermesHarnessCapabilityBroker:
                 source_task_ids=tuple(task.dependencies),
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc).isoformat(),
-                status="FAILED_CONTRACT",
+                status="WAITING_TOOL",
             )
             self._audit.append({
-                "event": "TASK_FAILED_CONTRACT",
+                "event": "TASK_WAITING_TOOL",
                 "authority": "DEEPSEEK_HARNESS",
                 "mission_id": self.spec.mission_id,
                 "task_id": task_id,
-                "task_class": task.task_class,
                 "functional_role": task.functional_role,
                 "capability_id": capability_id,
-                "routing_id": decision.routing_id,
-                "authorization_id": child.authorization_id,
-                "status": "FAILED_CONTRACT",
-                "FALSE_COMPLETED_PREVENTED": "PASS",
-                "evidence_ref": result_row["evidence_ref"],
-                "output_contract_validation": output_validation.to_dict(),
+                "agent_id": record.agent_id,
+                "agent_turn": agent_turn,
+                "request_id": request.request_id,
+                "tool_id": request.tool_or_capability_id,
+                "status": "WAITING_TOOL",
+                "evidence_ref": waiting_row["evidence_ref"],
             })
-            violation = TaskOutputContractViolation(output_validation)
-            raise DelegatedCapabilityFailure(
-                task_id=task_id,
-                capability_id=capability_id,
-                failure_mode=type(violation).__name__,
-                retry_attempt=retry_attempt,
-                retry_allowed=False,
-                requires_harness_replan=True,
-            ) from violation
 
-        result_row = self._persist_result(
+            try:
+                tool_result = self._execute_agent_tool_request(
+                    task=task,
+                    request=request,
+                    parent_context=turn_context,
+                    agent_turn=agent_turn,
+                )
+            except (
+                AgentToolRequestError,
+                AgentToolAuthorizationError,
+                AgentToolBudgetExceeded,
+            ) as exc:
+                self._persist_loop_failure(
+                    task=task,
+                    record=record,
+                    decision=decision,
+                    authorization_id=last_authorization_id,
+                    elapsed=time.perf_counter() - task_started_perf,
+                    started_at=started_at,
+                    retry_attempt=retry_attempt,
+                    status=(
+                        "FAILED_BUDGET"
+                        if isinstance(exc, AgentToolBudgetExceeded)
+                        else "FAILED_TOOL"
+                    ),
+                    result={
+                        "provider_result": _jsonable(result),
+                        "tool_request": request.to_dict(),
+                        "tool_error": {
+                            "error_type": type(exc).__name__,
+                            "error": str(exc)[:1200],
+                        },
+                    },
+                    failure_mode=type(exc).__name__,
+                )
+                raise DelegatedCapabilityFailure(
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    failure_mode=type(exc).__name__,
+                    retry_attempt=retry_attempt,
+                    retry_allowed=False,
+                    requires_harness_replan=True,
+                ) from exc
+
+            tool_calls += 1
+            tool_results.append(tool_result)
+            previous_output = extract_agent_output_text(result)
+
+        failure_result = {
+            "provider_result": _jsonable(last_result),
+            "error": "MAX_AGENT_TURNS",
+            "agent_loop": {
+                "agent_turns": max_agent_turns,
+                "tool_calls": tool_calls,
+                "provider_calls": provider_calls,
+            },
+        }
+        self._persist_loop_failure(
+            task=task,
+            record=record,
+            decision=decision,
+            authorization_id=last_authorization_id,
+            elapsed=time.perf_counter() - task_started_perf,
+            started_at=started_at,
+            retry_attempt=retry_attempt,
+            status="FAILED_BUDGET",
+            result=failure_result,
+            failure_mode="MAX_AGENT_TURNS",
+        )
+        raise DelegatedCapabilityFailure(
             task_id=task_id,
             capability_id=capability_id,
-            agent_id=record.agent_id,
-            routing_id=decision.routing_id,
-            authorization_id=child.authorization_id,
-            elapsed_seconds=elapsed,
-            result=result,
-            idempotency_key=task.idempotency_key,
-            capability_version=task.capability_version,
-            retry_count=retry_attempt,
-            skill_id=record.skill_id,
-            executor_binding=str(record.executor_binding or ""),
-            source_task_ids=tuple(task.dependencies),
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc).isoformat(),
+            failure_mode="AgentToolBudgetExceeded",
+            retry_attempt=retry_attempt,
+            retry_allowed=False,
+            requires_harness_replan=True,
         )
-        audit = {
-            "event": "TASK_COMPLETED",
-            "authority": "DEEPSEEK_HARNESS",
-            "mission_id": self.spec.mission_id,
-            "task_id": task_id,
-            "task_class": task.task_class,
-            "functional_role": task.functional_role,
-            "capability_id": capability_id,
-            "agent_id": record.agent_id,
-            "runtime": "hermes",
-            "routing_id": decision.routing_id,
-            "authorization_id": child.authorization_id,
-            "retrieved_memory_ids": [
-                item.get("memory_id")
-                for item in (
-                    (decision.policy_metadata.get("bounded_memory_context") or {}).get(
-                        "operational_memory"
-                    ) or ()
-                )
-                if item.get("memory_id")
-            ],
-            "retrieved_human_decision_ids": [
-                item.get("decision_id")
-                for item in (
-                    (decision.policy_metadata.get("bounded_memory_context") or {}).get(
-                        "conversation_memory"
-                    ) or ()
-                )
-                if item.get("decision_id")
-            ],
-            "parent_authorization_id": self.parent_authorization.authorization_id,
-            "executor_binding": record.executor_binding,
-            "started_at": started_at,
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "elapsed_seconds": round(elapsed, 6),
-            "success": True,
-            "evidence_quality": "REGISTRY_BOUND_CAPABILITY_ADAPTER",
-            "idempotency_key": task.idempotency_key,
-            "capability_version": task.capability_version,
-            "human_correction": False,
-            "review_rejection": False,
-            "retry_count": retry_attempt,
-            "policy_violations": 0,
-            "cost": 0.0,
-            "evidence_ref": result_row["evidence_ref"],
-        }
-        self._audit.append(audit)
-        return {
-            "authority": "DEEPSEEK_HARNESS",
-            "executed": True,
-            "reused": False,
-            "capability_id": capability_id,
-            "agent_id": record.agent_id,
-            "routing_id": decision.routing_id,
-            "authorization_id": child.authorization_id,
-            "executor_binding": record.executor_binding,
-            "evidence_ref": result_row["evidence_ref"],
-            "result": _jsonable(result),
-        }
 
     def retry_delegated_capability(
         self,

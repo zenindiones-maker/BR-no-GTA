@@ -207,6 +207,29 @@ def validate_task_output_contract(*, functional_role: str | None, result: Any) -
     )
 
 
+
+def task_output_contract_descriptor(functional_role: str | None) -> dict[str, Any]:
+    role = str(functional_role or "GENERAL").strip().upper() or "GENERAL"
+    contract = _ROLE_SCHEMA.get(role)
+    if contract is None:
+        return {
+            "functional_role": role,
+            "required": False,
+            "schema": None,
+            "required_fields": [],
+            "allowed_verdicts": [],
+        }
+    schema, fields = contract
+    return {
+        "functional_role": role,
+        "required": True,
+        "schema": schema,
+        "required_fields": list(fields),
+        "allowed_verdicts": (
+            ["ACCEPT", "REVISE", "REJECT"] if role == "REVIEW" else []
+        ),
+    }
+
 def require_valid_task_output(*, functional_role: str | None, result: Any) -> TaskOutputValidation:
     validation = validate_task_output_contract(functional_role=functional_role, result=result)
     if validation.required and not validation.final_output_valid:
