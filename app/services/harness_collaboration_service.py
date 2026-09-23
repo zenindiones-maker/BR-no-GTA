@@ -24,7 +24,13 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
-from app.services.capability_execution_contract_service import capability_execution_contract_rejection
+from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_REVIEW,
+    CAN_SEMANTIC_REASONING,
+    capability_execution_contract_rejection,
+)
 
 
 def _text(value: Any, field: str) -> str:
@@ -604,6 +610,37 @@ def _selection_requirement_for_mission(
     normalized["declared_task_class"] = str(
         requirement.get("task_class") or ""
     )
+    original_task_class = str(
+        requirement.get("task_class") or ""
+    ).strip().casefold()
+    task_semantics = " ".join(
+        str(requirement.get(key) or "").strip().casefold()
+        for key in (
+            "task_class",
+            "objective",
+            "required_capability_description",
+            "expected_output",
+        )
+    )
+    independent_review = (
+        "independent-review" in original_task_class
+        or ("independent" in task_semantics and "review" in task_semantics)
+    )
+    if independent_review:
+        required_operations = list(
+            dict.fromkeys([
+                *list(requirement.get("required_operations") or ()),
+                CAN_REVIEW,
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            ])
+        )
+        normalized["required_operations"] = required_operations
+        normalized["review_contract_enriched"] = True
+    else:
+        normalized["review_contract_enriched"] = False
+
     if goal.mission_class == "SYSTEM_IMPROVEMENT":
         normalized["action"] = "DEVELOPMENT"
         normalized["task_class"] = "system-improvement"
@@ -1128,6 +1165,9 @@ def plan_mission_from_human_goal(
             "mission_action_normalized": bool(
                 selection_requirement.get("mission_action_normalized")
             ),
+            "review_contract_enriched": bool(
+                selection_requirement.get("review_contract_enriched")
+            ),
         }
         planning_evidence["selection"].append(selection)
         avoided_paths.extend(avoided)
@@ -1169,7 +1209,9 @@ def plan_mission_from_human_goal(
                     else "NOT_APPLICABLE"
                 )
             ).upper(),
-            "required_operations": list(requirement.get("required_operations") or ()),
+            "required_operations": list(
+                selection_requirement.get("required_operations") or ()
+            ),
             "read_scope": list(record.default_read_scope),
             "write_scope": list(record.default_write_scope),
             "allowed_tools": list(record.allowed_tools),

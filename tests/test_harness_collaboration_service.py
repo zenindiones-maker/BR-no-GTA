@@ -154,3 +154,43 @@ def test_system_improvement_selection_requirement_normalizes_action_without_losi
     assert normalized["mission_action_normalized"] is True
     assert requirement["action"] == "RESEARCH"
     assert requirement["task_class"] == "evidence-collection"
+
+
+
+def test_independent_review_contract_is_enriched_before_registry_selection():
+    goal = build_goal_envelope(
+        human_goal="Diagnose and recover a provider runtime incident with independent review.",
+        project="BR-no-GTA",
+        goal_id="goal-review-contract",
+        subject="provider incident recovery",
+        source_surface="github-actions-control",
+    )
+    requirement = {
+        "task_id": "review-recovery",
+        "task_class": "independent-review",
+        "action": "DEVELOPMENT",
+        "objective": "Independently review the recovery proposal.",
+        "required_capability_description": "independent semantic engineering review",
+        "dependencies": ["proposal"],
+        "expected_output": "INDEPENDENT_REVIEW_ARTIFACT",
+        "required_operations": [
+            "CAN_SEMANTIC_REASONING",
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+        ],
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    normalized = collaboration_service._selection_requirement_for_mission(
+        goal,
+        requirement,
+    )
+    assert normalized["review_contract_enriched"] is True
+    assert set(normalized["required_operations"]) >= {
+        "CAN_REVIEW",
+        "CAN_SEMANTIC_REASONING",
+        "CAN_CONSUME_ARTIFACT_REFS",
+        "CAN_PRODUCE_ARTIFACT_REFS",
+    }
+    assert normalized["action"] == "DEVELOPMENT"
+    assert normalized["task_class"] == "system-improvement"
+    assert "CAN_REVIEW" not in requirement["required_operations"]
