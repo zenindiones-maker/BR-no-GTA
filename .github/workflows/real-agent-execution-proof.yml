@@ -1,0 +1,102 @@
+name: Real Agent Execution Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "scripts/real_agent_execution_proof.py"
+      - "app/services/agent_office_harness_service.py"
+      - "app/services/agent_office/munder_adapter.py"
+      - "app/services/harness_adaptive_planning_service.py"
+      - "app/services/system_synergy_service.py"
+      - "app/services/task_result_envelope_service.py"
+      - "app/services/harness_episode_capture_service.py"
+      - ".github/workflows/real-agent-execution-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-agent-execution-proof-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-agent-execution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+      ZERO_COST_OPERATION: "TRUE"
+      BR_CODEX_FEDERATION_CONFIGURED: "false"
+      BR_TEST_DATABASE: runtime/real-agent-execution-proof/learning.sqlite3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Focused contract checks
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_task_result_envelope_service.py \
+            tests/test_system_synergy_service.py
+          echo "REAL_AGENT_FOCUSED_CONTRACTS=PASS"
+
+      - name: Execute real Harness agent mission
+        run: |
+          set -euo pipefail
+          python scripts/real_agent_execution_proof.py \
+            --output runtime/real-agent-execution-proof/result.json
+
+      - name: Assert real execution gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("runtime/real-agent-execution-proof/result.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          assert data["REAL_AGENT_EXECUTION_PROOF"] is True
+          assert data["ANALYSIS_SELECTION_FROM_REGISTRY"] is True
+          assert data["ANALYSIS_AGENT_EXECUTED"] is True
+          assert data["TASK_RESULT_ENVELOPE_REAL"] is True
+          assert data["DOWNSTREAM_ARTIFACT_CONSUMED"] is True
+          assert data["DOWNSTREAM_AGENT_EXECUTED"] is True
+          assert data["LEARNING_PLANE_REAL_EPISODE"] is True
+          assert data["NO_CODEX_EXECUTION"] is True
+          assert data["NO_NVIDIA_CALL"] is True
+          assert data["NO_REPOSITORY_MUTATION"] is True
+          assert data["NO_NEW_NATURAL_SWARM"] is True
+          assert data["NO_SEMANTIC_REPLAN"] is True
+          assert data["CANONICAL_AUTH_CHECKPOINT"] == 35850473901
+          assert data["INDEPENDENT_REVIEW"] == "NOT_APPLICABLE_NO_MUTATING_CANDIDATE"
+          assert data["CANDIDATE_BENCHMARK"] == "NOT_APPLICABLE_NO_CANDIDATE"
+          assert float(data["MEASURED_PROFILE_LATENCY_MS"]) >= 0.0
+          print("REAL_AGENT_EXECUTION_GATES=PASS")
+          print("CANONICAL_AUTH_CHECKPOINT_PRESERVED=PASS")
+          print("CODEX_BLOCKED_MISSION_UNTOUCHED=PASS")
+          PY
+
+      - name: Upload real execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-agent-execution-proof-\${{ github.run_id }}
+          path: runtime/real-agent-execution-proof/
+          if-no-files-found: error
+          retention-days: 30
