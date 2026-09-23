@@ -62,6 +62,7 @@ class HarnessRoutingRequest:
     preferred_models: tuple[str, ...] = ()
     unavailable_provider_ids: tuple[str, ...] = ()
     unavailable_model_ids: tuple[str, ...] = ()
+    prefer_low_latency: bool = False
     quality_requirement: str | None = None
     latency_constraint: str | None = None
     cost_constraint: str | None = None
@@ -528,6 +529,11 @@ def _provider_records(
             if m_health is not None and m_health.latency_ms is not None
             else 1e9
         )
+        fit_latency_rank = (
+            (latency, capability_surplus)
+            if request.prefer_low_latency
+            else (capability_surplus, latency)
+        )
         return (
             preference.get(provider_id, len(preference) + 1),
             model_preference.get(model_id, len(model_preference) + 1),
@@ -549,8 +555,7 @@ def _provider_records(
             -float((competence or {}).get("confidence") or 0.0),
             -int((competence or {}).get("tested_cases") or 0),
             cost_rank.get(str(record.cost_class).upper(), 9),
-            latency,
-            capability_surplus,
+            *fit_latency_rank,
             _MATURITY_RANK.get(record.maturity, 99),
             record.capability_id,
         )
@@ -1028,6 +1033,7 @@ def route_harness_request(
         ),
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "unavailable_model_ids": list(request.unavailable_model_ids),
+        "prefer_low_latency": bool(request.prefer_low_latency),
         "selected_implementation": {
             "type": capability.capability_type,
             "implementation": capability.implementation,

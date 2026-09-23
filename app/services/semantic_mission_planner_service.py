@@ -790,6 +790,7 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
                     ),
                     allowed_providers=providers,
                     unavailable_model_ids=unavailable_models,
+                    prefer_low_latency=True,
                     required_model_capabilities=(
                         "semantic_planning",
                         "reasoning",

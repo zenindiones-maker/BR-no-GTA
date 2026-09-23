@@ -457,6 +457,7 @@ def test_nvidia_routing_uses_live_latency_before_capability_surplus(monkeypatch)
             provider_required=True,
             preferred_providers=("nvidia_nim",),
             allowed_providers=("nvidia_nim",),
+            prefer_low_latency=True,
             required_model_capabilities=tuple(sorted(required)),
             structured_output_required=True,
             fallback_allowed=False,
