@@ -134,7 +134,16 @@ class CapabilityAdapter:
                 executor=executor,
             )
         if contract == EXECUTION_CONTEXT:
-            return executor(authorization_to_context(authorization))
+            # The executor contract is keyed by the named execution_context
+            # parameter. Passing the authorization context positionally can bind
+            # to an unrelated leading parameter (for example ai_provider on the
+            # editorial consumer). Preserve caller payload as bounded task
+            # context while canonical authorization fields win on collisions.
+            execution_context = {
+                **dict(payload or {}),
+                **authorization_to_context(authorization),
+            }
+            return executor(execution_context=execution_context)
         raise PermissionError(
             "Registry executor signature is not supported by CapabilityAdapter"
         )
