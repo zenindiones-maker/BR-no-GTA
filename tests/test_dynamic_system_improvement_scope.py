@@ -664,3 +664,42 @@ def test_structured_handoff_summary_prefers_submitted_evidence():
     assert "CAUSE_A" in summary
     assert "CLASS_A" in summary
     assert "kanban_comment" not in summary
+
+
+
+def test_functional_role_is_authoritative_for_proposal_even_without_keyword():
+    from scripts.real_agent_self_improvement_mission import roles
+
+    plan = {
+        "collaboration_plan": {
+            "tasks": [
+                {
+                    "task_id": "task-04",
+                    "task_class": "system-improvement",
+                    "functional_role": "PROPOSAL",
+                    "objective": "Define the bounded next change.",
+                    "required_capability_description": "bounded change definition",
+                    "expected_output": "RecoveryProposalEvidence",
+                    "required_operations": [],
+                },
+                {
+                    "task_id": "task-05",
+                    "task_class": "independent-review",
+                    "functional_role": "REVIEW",
+                    "objective": "Assess the previous artifact.",
+                    "required_capability_description": "independent assessment",
+                    "expected_output": "IndependentReviewEvidence",
+                    "required_operations": ["CAN_REVIEW"],
+                },
+            ]
+        }
+    }
+    results = {
+        "task-04": {"task_id": "task-04", "result_summary": "typed artifact"},
+        "task-05": {"task_id": "task-05", "result_summary": "typed review"},
+    }
+
+    found = roles(plan, results, incident_mode=True)
+
+    assert found["proposal"]["task_id"] == "task-04"
+    assert found["review"]["task_id"] == "task-05"

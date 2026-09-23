@@ -26,6 +26,10 @@ from app.services.task_result_envelope_service import (
     load_task_result_envelope,
     persist_task_result_envelope,
 )
+from app.services.task_output_contract_service import (
+    TaskOutputContractViolation,
+    validate_task_output_contract,
+)
 from app.services.task_dependency_precondition_service import (
     TaskDependencyPreconditionFailure,
     validate_task_dependency_preconditions,
@@ -263,6 +267,7 @@ class HermesHarnessCapabilityBroker:
         source_task_ids: tuple[str, ...] = (),
         started_at: str | None = None,
         completed_at: str | None = None,
+        status: str = "COMPLETED",
     ) -> dict[str, Any]:
         persist_started = time.perf_counter()
         normalized = _jsonable(result)
@@ -277,7 +282,7 @@ class HermesHarnessCapabilityBroker:
             agent_id=agent_id,
             skill_id=skill_id,
             executor_binding=executor_binding,
-            status="COMPLETED",
+            status=str(status or ""),
             started_at=started_at or now,
             completed_at=completed_at or now,
             elapsed_ms=float(elapsed_seconds) * 1000.0,
@@ -299,7 +304,7 @@ class HermesHarnessCapabilityBroker:
             "idempotency_key": idempotency_key,
             "capability_version": capability_version,
             "retry_count": int(retry_count),
-            "status": "COMPLETED",
+            "status": str(status or ""),
             "elapsed_seconds": round(elapsed_seconds, 6),
             "cost": 0.0,
             "policy_violations": 0,
@@ -330,6 +335,22 @@ class HermesHarnessCapabilityBroker:
                 and str(row.get("capability_version") or "1")
                 == str(task.capability_version or "1")
             ):
+                validation = validate_task_output_contract(
+                    functional_role=task.functional_role,
+                    result=row.get("result"),
+                )
+                if validation.required and not validation.final_output_valid:
+                    self._audit.append({
+                        "event": "LEGACY_COMPLETION_UNVERIFIED",
+                        "authority": "DEEPSEEK_HARNESS",
+                        "mission_id": self.spec.mission_id,
+                        "task_id": task.task_id,
+                        "task_class": task.task_class,
+                        "functional_role": task.functional_role,
+                        "capability_id": task.capability_id,
+                        "output_contract_validation": validation.to_dict(),
+                    })
+                    continue
                 return dict(row)
         return None
 
@@ -580,6 +601,61 @@ class HermesHarnessCapabilityBroker:
         finally:
             consume_harness_authorization(child)
 
+        output_validation = validate_task_output_contract(
+            functional_role=task.functional_role,
+            result=result,
+        )
+        if (
+            output_validation.required
+            and not output_validation.final_output_valid
+        ):
+            invalid_result = {
+                "provider_result": _jsonable(result),
+                "output_contract_validation": output_validation.to_dict(),
+            }
+            result_row = self._persist_result(
+                task_id=task_id,
+                capability_id=capability_id,
+                agent_id=record.agent_id,
+                routing_id=decision.routing_id,
+                authorization_id=child.authorization_id,
+                elapsed_seconds=elapsed,
+                result=invalid_result,
+                idempotency_key=task.idempotency_key,
+                capability_version=task.capability_version,
+                retry_count=retry_attempt,
+                skill_id=record.skill_id,
+                executor_binding=str(record.executor_binding or ""),
+                source_task_ids=tuple(task.dependencies),
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                status="FAILED_CONTRACT",
+            )
+            self._audit.append({
+                "event": "TASK_FAILED_CONTRACT",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "task_class": task.task_class,
+                "functional_role": task.functional_role,
+                "capability_id": capability_id,
+                "routing_id": decision.routing_id,
+                "authorization_id": child.authorization_id,
+                "status": "FAILED_CONTRACT",
+                "FALSE_COMPLETED_PREVENTED": "PASS",
+                "evidence_ref": result_row["evidence_ref"],
+                "output_contract_validation": output_validation.to_dict(),
+            })
+            violation = TaskOutputContractViolation(output_validation)
+            raise DelegatedCapabilityFailure(
+                task_id=task_id,
+                capability_id=capability_id,
+                failure_mode=type(violation).__name__,
+                retry_attempt=retry_attempt,
+                retry_allowed=False,
+                requires_harness_replan=True,
+            ) from violation
+
         result_row = self._persist_result(
             task_id=task_id,
             capability_id=capability_id,
@@ -603,6 +679,7 @@ class HermesHarnessCapabilityBroker:
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
             "task_class": task.task_class,
+            "functional_role": task.functional_role,
             "capability_id": capability_id,
             "agent_id": record.agent_id,
             "runtime": "hermes",

@@ -43,6 +43,10 @@ from app.services.mission_plan_payload_service import (
 )
 from app.services.memory_plane_service import evaluate_memory_candidate
 from app.services.task_result_envelope_service import load_task_result_envelope
+from app.services.task_output_contract_service import (
+    CANONICAL_FUNCTIONAL_ROLES,
+    validate_task_output_contract,
+)
 from scripts.dynamic_system_improvement_mission import run as execute_dynamic_mission
 
 CHECKPOINT = 35850473901
@@ -416,6 +420,19 @@ def restore_compatible_node_checkpoints(
         if envelope.get("task_id") != task_id:
             hash_valid = False
             break
+        output_validation = validate_task_output_contract(
+            functional_role=current.get("functional_role"),
+            result=envelope.get("result_payload"),
+        )
+        if (
+            output_validation.required
+            and not output_validation.final_output_valid
+        ):
+            semantic_valid = False
+            evidence["RERUN_REASON"] = (
+                "LEGACY_COMPLETION_UNVERIFIED:" + task_id
+            )
+            break
         expected_sources = list(current.get("dependencies") or ())
         if list(envelope.get("source_task_ids") or ()) != expected_sources:
             lineage_valid = False
@@ -654,8 +671,17 @@ def task_text(task):
     return " ".join(str(task.get(k) or "") for k in ("task_id", "task_class", "objective", "required_capability_description", "expected_output")).casefold()
 
 
-def roles(plan, results, *, incident_mode: bool = False):
-    by_id = {str(t.get("task_id") or ""): t for t in tasks(plan)}
+def _canonical_functional_role(task: dict[str, Any]) -> str | None:
+    role = str(task.get("functional_role") or "").strip().upper()
+    return role if role in CANONICAL_FUNCTIONAL_ROLES else None
+
+
+def _legacy_roles(
+    by_id: dict[str, dict[str, Any]],
+    results: dict[str, dict[str, Any]],
+    *,
+    incident_mode: bool,
+) -> dict[str, dict[str, Any] | None]:
     review_ids = [
         i for i,t in by_id.items()
         if i in results and (
@@ -699,7 +725,10 @@ def roles(plan, results, *, incident_mode: bool = False):
             i for i,t in by_id.items()
             if i in results and i != diagnosis_id and any(
                 x in task_text(t)
-                for x in ("root cause", "root-cause", "causal", "failure classification")
+                for x in (
+                    "root cause", "root-cause", "causal",
+                    "failure classification",
+                )
             )
         ]
         root = results.get(root_ids[0]) if root_ids else diagnosis
@@ -715,12 +744,11 @@ def roles(plan, results, *, incident_mode: bool = False):
                 )
             )
         ]
-        proposal = results.get(proposal_ids[-1]) if proposal_ids else None
         return {
             "profile": diagnosis,
             "diagnosis": diagnosis,
             "root": root,
-            "proposal": proposal,
+            "proposal": results.get(proposal_ids[-1]) if proposal_ids else None,
             "review": results.get(review_ids[-1]) if review_ids else None,
             "benchmark": results.get(benchmark_ids[-1]) if benchmark_ids else None,
         }
@@ -730,7 +758,8 @@ def roles(plan, results, *, incident_mode: bool = False):
     root_ids = [
         i for i,t in by_id.items()
         if i in results and i != profile_id and any(
-            x in task_text(t) for x in ("root cause", "root-cause", "diagnos", "causal")
+            x in task_text(t)
+            for x in ("root cause", "root-cause", "diagnos", "causal")
         )
     ]
     root = results.get(root_ids[0]) if root_ids else None
@@ -739,7 +768,8 @@ def roles(plan, results, *, incident_mode: bool = False):
     proposal_ids = [
         i for i,t in by_id.items()
         if i in results and i not in excluded and any(
-            x in task_text(t) for x in ("proposal", "recommend", "recomend", "improvement")
+            x in task_text(t)
+            for x in ("proposal", "recommend", "recomend", "improvement")
         )
     ]
     return {
@@ -750,6 +780,57 @@ def roles(plan, results, *, incident_mode: bool = False):
         "review": results.get(review_ids[-1]) if review_ids else None,
         "benchmark": results.get(benchmark_ids[-1]) if benchmark_ids else None,
     }
+
+
+def roles(plan, results, *, incident_mode: bool = False):
+    by_id = {str(t.get("task_id") or ""): t for t in tasks(plan)}
+    typed: dict[str, list[dict[str, Any]]] = {
+        role: [] for role in CANONICAL_FUNCTIONAL_ROLES
+    }
+    legacy_by_id: dict[str, dict[str, Any]] = {}
+    for task_id, task in by_id.items():
+        if task_id not in results:
+            continue
+        role = _canonical_functional_role(task)
+        if role is None:
+            legacy_by_id[task_id] = task
+            continue
+        typed[role].append(results[task_id])
+
+    legacy = _legacy_roles(
+        legacy_by_id,
+        {k: v for k, v in results.items() if k in legacy_by_id},
+        incident_mode=incident_mode,
+    )
+    diagnosis = (
+        typed["DIAGNOSIS"][-1]
+        if typed["DIAGNOSIS"]
+        else legacy.get("diagnosis")
+    )
+    root = (
+        typed["ROOT_CAUSE"][-1]
+        if typed["ROOT_CAUSE"]
+        else legacy.get("root")
+    )
+    proposal = (
+        typed["PROPOSAL"][-1]
+        if typed["PROPOSAL"]
+        else legacy.get("proposal")
+    )
+    review = (
+        typed["REVIEW"][-1]
+        if typed["REVIEW"]
+        else legacy.get("review")
+    )
+    return {
+        "profile": diagnosis or legacy.get("profile"),
+        "diagnosis": diagnosis,
+        "root": root,
+        "proposal": proposal,
+        "review": review,
+        "benchmark": legacy.get("benchmark"),
+    }
+
 def ref(row):
     if not row:
         return None
