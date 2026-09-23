@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-23T00:35:00Z",
-  "base_head": "82727ff906aff973793b84a549dd975e62b5327b",
-  "purpose": "Re-run native DeepSeek Harness proof after aligning stale provider fixtures with Harness-governed NVIDIA routing and preserving fail-closed runtime selection.",
+  "requested_at": "2026-09-23T00:38:00Z",
+  "base_head": "26510817eac3420b9c4390e9c09916bbd0fd3c48",
+  "purpose": "Re-run native DeepSeek Harness proof after removing an artificial provider-constructor hook assertion; validate governed NVIDIA routing/authorization and current provider construction.",
   "job18_unchanged": true,
   "publication": false
 }

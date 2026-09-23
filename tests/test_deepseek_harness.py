@@ -72,15 +72,6 @@ def test_editorial_provider_boundary_selects_primary_zero_cost_provider(
     monkeypatch,
 ):
     monkeypatch.setenv("NVIDIA_API_KEY", "test-only-nvidia-key")
-    selected = {}
-
-    def select(*, routing_decision, authorization, **_kwargs):
-        selected["routing"] = routing_decision
-        selected["authorization"] = authorization
-        selected["provider"] = object()
-        return routing_decision.selected_provider, selected["provider"]
-
-    monkeypatch.setattr(server, "select_harness_ai_provider", select)
     routing, provider_authorization, ai_provider = server._route_editorial_provider()
 
     _assert_zero_cost_nvidia_primary(routing)
@@ -96,9 +87,8 @@ def test_editorial_provider_boundary_selects_primary_zero_cost_provider(
     )
     assert provider_authorization.lineage["selected_provider"] == "nvidia_nim"
     assert provider_authorization.lineage["selected_model"] == routing.selected_model
-    assert selected["routing"] == routing
-    assert selected["authorization"] == provider_authorization
-    assert ai_provider is selected["provider"]
+    assert getattr(ai_provider, "provider", None) == "nvidia_nim"
+    assert getattr(ai_provider, "model", None) == routing.selected_model
 
 
 def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
