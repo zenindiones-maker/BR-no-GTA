@@ -163,9 +163,9 @@ def test_natural_performance_goal_builds_dynamic_harness_plan_without_team_keywo
 def _authorized_private_review_goal():
     return build_goal_envelope(
         human_goal=(
-            "Produza um vídeo GTA 6 real com pipeline multiagente completo e "
-            "MASTER_FINAL PRIVATE para revisão HD humana. Não publique public "
-            "nem unlisted."
+            "Produza um vídeo GTA 6 real com os agentes do pipeline multiagente "
+            "completo e MASTER_FINAL PRIVATE para revisão HD humana. Não publique "
+            "public nem unlisted."
         ),
         project="BR-no-GTA",
         goal_id="goal-explicit-private-review",
