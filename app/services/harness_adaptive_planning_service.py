@@ -1069,25 +1069,26 @@ def propose_validated_semantic_plan(
             evidence["validated_by"] = "DEEPSEEK_HARNESS"
             return result, evidence
         evidence["rejection_reasons"].append(list(errors))
+        sanitized, discarded = discard_incompatible_registered_candidate_hints(
+            result.proposal
+        )
+        sanitized_errors = tuple([
+            *_mission_action_policy_errors(
+                sanitized,
+                mission_class=context.get("mission_class"),
+            ),
+            *proposal_registry_errors(sanitized),
+        ])
+        if discarded and not sanitized_errors:
+            evidence["candidate_hints_discarded"] = list(discarded)
+            evidence["provider_evidence"] = dict(result.provider_evidence)
+            evidence["prompt_sha256"] = result.prompt_sha256
+            evidence["planner_authority"] = "NONE"
+            evidence["validated_by"] = "DEEPSEEK_HARNESS"
+            evidence["selection_authority"] = "DEEPSEEK_HARNESS"
+            evidence["candidate_hint_replan_avoided"] = True
+            return replace(result, proposal=sanitized), evidence
         if attempt >= max_replans:
-            sanitized, discarded = discard_incompatible_registered_candidate_hints(
-                result.proposal
-            )
-            sanitized_errors = tuple([
-                *_mission_action_policy_errors(
-                    sanitized,
-                    mission_class=context.get("mission_class"),
-                ),
-                *proposal_registry_errors(sanitized),
-            ])
-            if discarded and not sanitized_errors:
-                evidence["candidate_hints_discarded"] = list(discarded)
-                evidence["provider_evidence"] = dict(result.provider_evidence)
-                evidence["prompt_sha256"] = result.prompt_sha256
-                evidence["planner_authority"] = "NONE"
-                evidence["validated_by"] = "DEEPSEEK_HARNESS"
-                evidence["selection_authority"] = "DEEPSEEK_HARNESS"
-                return replace(result, proposal=sanitized), evidence
             raise RuntimeError(
                 "SEMANTIC_MISSION_PROPOSAL_REJECTED:" + " | ".join(errors)
             )
