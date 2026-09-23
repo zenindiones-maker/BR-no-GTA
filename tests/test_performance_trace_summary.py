@@ -235,4 +235,3 @@ def test_dependency_cache_contract_invalidates_on_manifest_or_bootstrap_change()
     ).read_text(encoding="utf-8")
     assert "pip install -r requirements.txt pytest" in contract
     assert "pip check" in contract
-
