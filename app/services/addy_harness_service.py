@@ -289,6 +289,23 @@ def execute_authorized_addy_skill(
             and error.get("response_present") is False
         )
 
+    def _localized_model_replan_pattern(evidence) -> str | None:
+        error = (
+            dict(evidence.error or {})
+            if isinstance(evidence.error, dict)
+            else {}
+        )
+        if _transient_transport_timeout(evidence):
+            return "transient_timeout_retry_exhausted"
+        if (
+            evidence.status != "EXECUTED"
+            and bool(error.get("retryable"))
+            and error.get("code") == "upstream_error"
+            and error.get("failure_stage") == "transport_response"
+        ):
+            return "retryable_upstream_error_exhausted"
+        return None
+
     def _failure_class(evidence) -> str:
         error = (
             dict(evidence.error or {})
@@ -419,6 +436,7 @@ def execute_authorized_addy_skill(
     localized_replan_attempted = False
     localized_replan_result = "NOT_APPLICABLE"
     localized_replan_error = None
+    localized_replan_failure_pattern = None
     original_provider = str(
         semantic.provider or provider_routing.selected_provider or ""
     ).strip()
@@ -441,19 +459,23 @@ def execute_authorized_addy_skill(
             else:
                 same_routing_retry_result = "EXHAUSTED"
 
+    localized_replan_failure_pattern = (
+        _localized_model_replan_pattern(semantic)
+        if same_routing_retry_result == "EXHAUSTED"
+        else None
+    )
     if (
-        same_routing_retry_result == "EXHAUSTED"
-        and _transient_transport_timeout(semantic)
+        localized_replan_failure_pattern
         and original_provider
         and original_model
     ):
-        transient_retry_exhausted = True
+        transient_retry_exhausted = _transient_transport_timeout(semantic)
         localized_replan_attempted = True
         try:
             rerouted = _route_provider(
                 preferred_provider=original_provider,
                 unavailable_models=(original_model,),
-                failure_pattern="transient_timeout_retry_exhausted",
+                failure_pattern=localized_replan_failure_pattern,
             )
             rerouted_provider = str(rerouted.selected_provider or "").strip()
             rerouted_model = str(rerouted.selected_model or "").strip()
@@ -536,6 +558,9 @@ def execute_authorized_addy_skill(
                 "LOCALIZED_REPLAN_ATTEMPTED": localized_replan_attempted,
                 "LOCALIZED_REPLAN_RESULT": localized_replan_result,
                 "LOCALIZED_REPLAN_ERROR": localized_replan_error,
+                "LOCALIZED_REPLAN_FAILURE_PATTERN": (
+                    localized_replan_failure_pattern
+                ),
                 "SELECTED_PROVIDER": semantic.provider,
                 "SELECTED_MODEL": (
                     semantic.model or provider_routing.selected_model
@@ -626,6 +651,9 @@ def execute_authorized_addy_skill(
             "transient_retry_exhausted": transient_retry_exhausted,
             "localized_replan_attempted": localized_replan_attempted,
             "localized_replan_result": localized_replan_result,
+            "localized_replan_failure_pattern": (
+                localized_replan_failure_pattern
+            ),
             "recovery_strategy": (
                 "same-provider alternate-model Harness replan"
                 if localized_replan_attempted

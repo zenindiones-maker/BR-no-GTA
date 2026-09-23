@@ -117,6 +117,41 @@ def _timeout(model: str, routing_id: str) -> HarnessAIProviderEvidence:
     )
 
 
+def _upstream_failure(model: str, routing_id: str) -> HarnessAIProviderEvidence:
+    return HarnessAIProviderEvidence(
+        provider="nvidia_nim",
+        status="FAILED",
+        active=False,
+        authority="deepseek_harness",
+        authorized_action="DEVELOPMENT",
+        harness_decision_id="decision-test",
+        execution_id="execution-test",
+        authorization_id="provider-auth",
+        error={
+            "code": "upstream_error",
+            "retryable": True,
+            "message": "NVIDIA NIM upstream service failed",
+            "error_type": "HTTPError",
+            "failure_stage": "transport_response",
+            "response_present": True,
+            "structured_output_present": None,
+            "parse_stage": "http_status",
+            "status_code": 503,
+        },
+        routing={"routing_id": routing_id},
+        model=model,
+        executor_binding="provider-executor",
+        latency_seconds=0.4,
+        retry_count=0,
+        evidence_refs=(f"routing:{routing_id}",),
+        performance={
+            "total_attempt_latency_ms": 400.0,
+            "failure_class": "C_HTTP_5XX",
+            "response_present": True,
+        },
+    )
+
+
 def _success(model: str, routing_id: str) -> HarnessAIProviderEvidence:
     return HarnessAIProviderEvidence(
         provider="nvidia_nim",
@@ -249,6 +284,59 @@ def test_addy_timeout_replans_same_provider_to_alternate_model(monkeypatch):
         "nvidia_nim",
         "nvidia_nim",
     ]
+    assert [row["model"] for row in result.result["provider_attempts"]] == [
+        "model-a",
+        "model-a",
+        "model-b",
+    ]
+
+
+def test_addy_retryable_upstream_error_replans_same_provider_model(monkeypatch):
+    _patch_common(monkeypatch)
+    route_a = _route(routing_id="routing-upstream-a", model="model-a")
+    route_b = _route(routing_id="routing-upstream-b", model="model-b")
+    route_requests = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        return route_a if len(route_requests) == 1 else route_b
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    calls = iter([
+        _upstream_failure("model-a", "routing-upstream-a"),
+        _upstream_failure("model-a", "routing-upstream-a"),
+        _success("model-b", "routing-upstream-b"),
+    ])
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: next(calls),
+    )
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=_payload(),
+    )
+
+    assert result.status == "EXECUTED"
+    assert len(route_requests) == 2
+    assert route_requests[1].preferred_providers == ("nvidia_nim",)
+    assert route_requests[1].unavailable_model_ids == ("model-a",)
+    assert route_requests[1].failure_pattern == (
+        "retryable_upstream_error_exhausted"
+    )
+    assert route_requests[1].fallback_allowed is False
+    assert result.result["same_routing_retry_count"] == 1
+    assert result.result["same_routing_retry_result"] == "EXHAUSTED"
+    assert result.result["transient_retry_exhausted"] is False
+    assert result.result["localized_replan_attempted"] is True
+    assert result.result["localized_replan_result"] == "RECOVERED"
+    assert result.result["localized_replan_failure_pattern"] == (
+        "retryable_upstream_error_exhausted"
+    )
     assert [row["model"] for row in result.result["provider_attempts"]] == [
         "model-a",
         "model-a",
