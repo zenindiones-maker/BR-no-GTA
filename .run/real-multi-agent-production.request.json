@@ -1,0 +1,11 @@
+{
+  "schema": "real-multi-agent-production-request/v1",
+  "human_goal": "Produza um novo vídeo real do BR no GTA 6 usando o sistema multiagente completo disponível. Quero que os agentes encontrem uma pauta GTA 6 realmente atual e relevante, pesquisem evidências verificáveis, construam o conteúdo editorial, preparem narração e produção audiovisual, gerem um master de alta qualidade para revisão humana e aprendam com a execução. Não faça publicação pública nem unlisted. O MASTER_FINAL com QA aprovado pode ser enviado ao YouTube exclusivamente como PRIVATE para revisão audiovisual HD humana, com o Telegram permanecendo a interface humana principal.",
+  "youtube_private_hd_review": true,
+  "youtube_public_release": false,
+  "youtube_unlisted_release": false,
+  "telegram_primary_human_interface": true,
+  "burned_subtitles": false,
+  "voice": "pt-BR-ThalitaMultilingualNeural",
+  "canonical_auth_checkpoint": 35850473901
+}
