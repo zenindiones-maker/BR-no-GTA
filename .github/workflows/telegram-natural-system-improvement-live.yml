@@ -59,7 +59,14 @@ jobs:
           from app.database.telegram_conversation_repository import update_conversation_state
           from app.services.telegram_conversation_service import handle_telegram_conversation
 
-          literal="Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade."
+          request_payload=json.loads(
+              Path(".run/telegram-natural-system-improvement.request.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          literal=str(request_payload.get("natural_goal") or "").strip()
+          if not literal:
+              raise SystemExit("NATURAL_GOAL_REQUEST=FAIL")
           chat_id=880021
           user_id=990021
           initialize_schema()
@@ -192,7 +199,14 @@ jobs:
           plan=ingress["plan"]["mission_plan"]
           tasks=plan["collaboration_plan"]["tasks"]
           agents={str(t.get("selected_agent_id") or t.get("selected_skill_id") or t["capability_id"]) for t in tasks}
-          assert ingress["literal_human_input"]=="Analisa onde o sistema está ineficiente e usa os agentes necessários para melhorar sem reduzir qualidade."
+          request=json.loads(
+              Path(".run/telegram-natural-system-improvement.request.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          expected_goal=str(request.get("natural_goal") or "").strip()
+          assert expected_goal, "NATURAL_GOAL_REQUEST=FAIL"
+          assert ingress["literal_human_input"]==expected_goal
           assert d["authority"]=="DEEPSEEK_HARNESS"
           assert d["hermes_canonical_result"]["authority"]=="DEEPSEEK_HARNESS"
           assert len(tasks)>=2
