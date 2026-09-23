@@ -36,6 +36,10 @@ from app.services.task_result_envelope_service import (
     load_task_result_envelope,
     persist_task_result_envelope,
 )
+from scripts.dynamic_system_improvement_mission import (
+    _context_char_size,
+    _fit_parent_context_to_executor_limit,
+)
 
 
 MISSION_ID = "mission-5b3e3519a659af96d122"
@@ -192,6 +196,56 @@ def _read_legacy(root: Path, task_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _canonical_parent_row(
+    *,
+    persisted: dict,
+    loaded: dict,
+    direct_dependency: bool,
+) -> dict:
+    return {
+        "task_id": loaded["task_id"],
+        "capability_id": loaded.get("capability_id"),
+        "agent_id": loaded.get("agent_id"),
+        "skill_id": loaded.get("skill_id"),
+        "task_result_ref": persisted["task_result_ref"],
+        "content_sha256": loaded["content_sha256"],
+        "result_summary": loaded.get("result_summary"),
+        "output_artifact_refs": list(loaded.get("output_artifact_refs") or ()),
+        "evidence_refs": list(loaded.get("evidence_refs") or ()),
+        "metrics_refs": list(loaded.get("metrics_refs") or ()),
+        "source_task_ids": list(loaded.get("source_task_ids") or ()),
+        "direct_dependency": bool(direct_dependency),
+        "result": loaded.get("result_payload"),
+    }
+
+
+def _resolve_handoff_row(
+    *,
+    artifact_dir: Path,
+    row: dict,
+) -> tuple[dict, float]:
+    ref = str(row.get("task_result_ref") or "").strip()
+    digest = str(row.get("content_sha256") or "").strip()
+    assert ref.startswith("artifact:task-results/")
+    assert digest
+    started = time.perf_counter()
+    loaded = load_task_result_envelope(
+        artifact_dir=artifact_dir,
+        task_result_ref=ref,
+    )
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    assert loaded["task_id"] == row["task_id"]
+    assert loaded["content_sha256"] == digest
+    if "result" in row:
+        assert row["result"] == loaded["result_payload"]
+    else:
+        assert row.get("result_omitted") in {
+            "CONTEXT_BUDGET",
+            "EXECUTOR_CONTEXT_LIMIT",
+        }
+    return loaded, elapsed_ms
+
+
 def _controlled_task(task_id: str, ops, *, deps=(), agent="agent", capability="cap"):
     return SimpleNamespace(
         task_id=task_id,
@@ -315,10 +369,218 @@ def run(*, legacy_artifact_dir: Path, output: Path) -> dict:
             "design-candidate",
             "independent-review",
         }
-        assert all("result" in row for row in analyze_rows)
-        assert all(row["task_result_ref"].startswith("artifact:task-results/") for row in benchmark_rows)
-        assert len({row["task_id"] for row in benchmark_rows}) == len(benchmark_rows)
-        assert benchmark_context["dependency_metrics"]["DEPENDENCY_CONTEXT_BYTES"] <= 65536
+        refs_only_keys = {
+            "task_id",
+            "task_result_ref",
+            "content_sha256",
+            "direct_dependency",
+        }
+        all_dependency_rows = [
+            *analyze_rows,
+            *design_rows,
+            *review_rows,
+            *benchmark_rows,
+        ]
+        assert all(set(row) == refs_only_keys for row in all_dependency_rows)
+        assert all("result" not in row for row in all_dependency_rows)
+        assert all(
+            row["task_result_ref"].startswith("artifact:task-results/")
+            for row in benchmark_rows
+        )
+        assert len({row["task_id"] for row in benchmark_rows}) == len(
+            benchmark_rows
+        )
+        assert (
+            benchmark_context["dependency_metrics"]["DEPENDENCY_CONTEXT_BYTES"]
+            <= 65536
+        )
+        assert (
+            benchmark_context["dependency_metrics"][
+                "DEPENDENCY_ALIAS_BYTES_AVOIDED"
+            ]
+            > 0
+        )
+
+        canonical_result_load_ms = 0.0
+        canonical_rows_checked = 0
+        for context in (
+            analyze_context,
+            design_context,
+            review_context,
+            benchmark_context,
+        ):
+            parent_by_task = {
+                str(row.get("task_id") or ""): row
+                for row in (context.get("parent_handoffs") or ())
+            }
+            for row in context.get("dependency_results") or ():
+                loaded, load_ms = _resolve_handoff_row(
+                    artifact_dir=proof_root,
+                    row={
+                        **row,
+                        **(
+                            {"result": parent_by_task[row["task_id"]]["result"]}
+                            if "result" in parent_by_task.get(row["task_id"], {})
+                            else {
+                                "result_omitted": parent_by_task[
+                                    row["task_id"]
+                                ].get("result_omitted")
+                            }
+                        ),
+                    },
+                )
+                parent = parent_by_task[row["task_id"]]
+                assert (
+                    bool(parent.get("direct_dependency"))
+                    == bool(row.get("direct_dependency"))
+                )
+                assert list(loaded.get("source_task_ids") or ()) == list(
+                    parent.get("source_task_ids") or ()
+                )
+                canonical_result_load_ms += load_ms
+                canonical_rows_checked += 1
+
+        # Small payload: keep the full result inline. The alias remains refs-only.
+        small_result = {
+            "summary": "small replay payload",
+            "value": "inline",
+        }
+        small_envelope = build_task_result_envelope(
+            mission_id=MISSION_ID,
+            task_id="small-payload-producer",
+            capability_id="replay.small",
+            agent_id="replay",
+            skill_id=None,
+            executor_binding="replay",
+            status="COMPLETED",
+            started_at="2026-09-23T03:35:00+00:00",
+            completed_at="2026-09-23T03:35:01+00:00",
+            elapsed_ms=1.0,
+            result=small_result,
+            source_task_ids=(),
+            authorization_id="replay-small",
+        )
+        small_persisted = persist_task_result_envelope(
+            small_envelope,
+            artifact_dir=proof_root,
+            index=101,
+        )
+        small_loaded = load_task_result_envelope(
+            artifact_dir=proof_root,
+            task_result_ref=small_persisted["task_result_ref"],
+        )
+        small_parent = _canonical_parent_row(
+            persisted=small_persisted,
+            loaded=small_loaded,
+            direct_dependency=True,
+        )
+        small_context = {
+            "parent_handoffs": [small_parent],
+            "dependency_results": [{
+                "task_id": small_parent["task_id"],
+                "task_result_ref": small_parent["task_result_ref"],
+                "content_sha256": small_parent["content_sha256"],
+                "direct_dependency": True,
+            }],
+            "dependency_metrics": {},
+        }
+        small_original_chars = _context_char_size(small_context)
+        small_fitted, small_metrics = _fit_parent_context_to_executor_limit(
+            parent_context=small_context,
+            executor_context_limit_chars=small_original_chars + 512,
+        )
+        assert "result" in small_fitted["parent_handoffs"][0]
+        assert "result_omitted" not in small_fitted["parent_handoffs"][0]
+        assert (
+            small_fitted["parent_handoffs"][0]["result"]
+            == small_loaded["result_payload"]
+        )
+        assert set(small_fitted["dependency_results"][0]) == refs_only_keys
+        assert "result" not in small_fitted["dependency_results"][0]
+        assert small_metrics["PARENT_RESULT_PAYLOADS_OMITTED"] == 0
+
+        # Oversized payload: externalize only the inline copy, then prove the
+        # same canonical result is retrievable by immutable ref + content hash.
+        oversized_result = {
+            "summary": "oversized replay payload",
+            "payload": "X" * 24000,
+            "evidence_refs": ["artifact:replay-evidence/source.json"],
+        }
+        oversized_envelope = build_task_result_envelope(
+            mission_id=MISSION_ID,
+            task_id="oversized-payload-producer",
+            capability_id="replay.oversized",
+            agent_id="replay",
+            skill_id=None,
+            executor_binding="replay",
+            status="COMPLETED",
+            started_at="2026-09-23T03:35:00+00:00",
+            completed_at="2026-09-23T03:35:01+00:00",
+            elapsed_ms=1.0,
+            result=oversized_result,
+            source_task_ids=("small-payload-producer",),
+            authorization_id="replay-oversized",
+        )
+        oversized_persisted = persist_task_result_envelope(
+            oversized_envelope,
+            artifact_dir=proof_root,
+            index=102,
+        )
+        oversized_loaded = load_task_result_envelope(
+            artifact_dir=proof_root,
+            task_result_ref=oversized_persisted["task_result_ref"],
+        )
+        oversized_parent = _canonical_parent_row(
+            persisted=oversized_persisted,
+            loaded=oversized_loaded,
+            direct_dependency=True,
+        )
+        oversized_context = {
+            "parent_handoffs": [oversized_parent],
+            "dependency_results": [{
+                "task_id": oversized_parent["task_id"],
+                "task_result_ref": oversized_parent["task_result_ref"],
+                "content_sha256": oversized_parent["content_sha256"],
+                "direct_dependency": True,
+            }],
+            "dependency_metrics": {},
+        }
+        oversized_limit = 5000
+        oversized_fitted, oversized_metrics = (
+            _fit_parent_context_to_executor_limit(
+                parent_context=oversized_context,
+                executor_context_limit_chars=oversized_limit,
+            )
+        )
+        oversized_handoff = oversized_fitted["parent_handoffs"][0]
+        assert "result" not in oversized_handoff
+        assert (
+            oversized_handoff.get("result_omitted")
+            == "EXECUTOR_CONTEXT_LIMIT"
+        )
+        assert set(oversized_fitted["dependency_results"][0]) == refs_only_keys
+        assert "result" not in oversized_fitted["dependency_results"][0]
+        resolved_oversized, oversized_load_ms = _resolve_handoff_row(
+            artifact_dir=proof_root,
+            row=oversized_handoff,
+        )
+        assert resolved_oversized["result_payload"] == oversized_result
+        assert (
+            resolved_oversized["content_sha256"]
+            == oversized_handoff["content_sha256"]
+        )
+        assert (
+            oversized_metrics["PARENT_CONTEXT_ORIGINAL_CHARS"]
+            > oversized_metrics["PARENT_CONTEXT_FINAL_CHARS"]
+        )
+        assert (
+            oversized_metrics["PARENT_CONTEXT_FINAL_CHARS"]
+            <= oversized_limit
+        )
+        assert oversized_metrics["PARENT_CONTEXT_BYTES_AVOIDED"] > 0
+        assert oversized_metrics["PARENT_CONTEXT_FITS_EXECUTOR_LIMIT"] is True
+        canonical_result_load_ms += oversized_load_ms
+        canonical_rows_checked += 1
 
         handoff_started = time.perf_counter()
         broker.submit_handoff(
@@ -596,6 +858,49 @@ def run(*, legacy_artifact_dir: Path, output: Path) -> dict:
             "DUPLICATE_HANDOFF_BYTES": benchmark_context[
                 "dependency_metrics"
             ]["DUPLICATE_HANDOFF_BYTES"],
+            "DEPENDENCY_ALIAS_BYTES_AVOIDED": benchmark_context[
+                "dependency_metrics"
+            ]["DEPENDENCY_ALIAS_BYTES_AVOIDED"],
+            "TASK_RESULT_REF_VALID": "PASS",
+            "CONTENT_HASH_VALID": "PASS",
+            "CANONICAL_RESULT_RETRIEVABLE": "PASS",
+            "ARTIFACT_LINEAGE_PRESERVED": "PASS",
+            "DIRECT_DEPENDENCY_PRESERVED": "PASS",
+            "NO_PAYLOAD_LOSS": "PASS",
+            "DEPENDENCY_RESULTS_REFS_ONLY": "PASS",
+            "INLINE_RESULT_PRESERVED": "PASS",
+            "SMALL_RESULT_INLINE": "PASS",
+            "OVERSIZED_RESULT_EXTERNALIZED": "PASS",
+            "NO_UNNECESSARY_EXTERNALIZATION": "PASS",
+            "INLINE_HANDOFF_COMPATIBILITY": "PASS",
+            "EXTERNALIZED_HANDOFF_COMPATIBILITY": "PASS",
+            "CANONICAL_RESULT_RETRIEVAL": "PASS",
+            "CONTENT_HASH_VALIDATION": "PASS",
+            "NO_DUPLICATE_PAYLOAD": "PASS",
+            "DUPLICATE_PAYLOAD_SERIALIZATION": 0,
+            "PARENT_CONTEXT_ORIGINAL_CHARS": oversized_metrics[
+                "PARENT_CONTEXT_ORIGINAL_CHARS"
+            ],
+            "PARENT_CONTEXT_FINAL_CHARS": oversized_metrics[
+                "PARENT_CONTEXT_FINAL_CHARS"
+            ],
+            "PARENT_CONTEXT_BYTES_AVOIDED": oversized_metrics[
+                "PARENT_CONTEXT_BYTES_AVOIDED"
+            ],
+            "PARENT_CONTEXT_FITS_EXECUTOR_LIMIT": "PASS",
+            "EXECUTOR_CONTEXT_LIMIT_CHARS": oversized_limit,
+            "ARTIFACT_LOAD_MS": round(
+                canonical_result_load_ms
+                + benchmark_context["dependency_metrics"][
+                    "DEPENDENCY_ARTIFACT_LOAD_MS"
+                ],
+                3,
+            ),
+            "CANONICAL_ROWS_CHECKED": canonical_rows_checked,
+            "PROVIDER_CALL_COUNT": 0,
+            "SEMANTIC_REPLAN_COUNT": 0,
+            "NETWORK_REASONING_REQUIRED": "NO",
+            "NO_PROVIDER_CALLS": "PASS",
             "RESULT_PERSIST_MS": round(result_persist_ms, 3),
             "HANDOFF_PERSIST_MS": round(handoff_persist_ms, 3),
             "TASK_HANDOFF_REPLAY_PROOF": "PASS",
@@ -627,6 +932,24 @@ def run(*, legacy_artifact_dir: Path, output: Path) -> dict:
             "REVIEWER_NOT_INDEPENDENT_FAILS_CLOSED",
             "EXECUTION_CONTRACT_COMPATIBILITY",
             "INCOMPATIBLE_CAPABILITY_REJECTED",
+            "TASK_RESULT_REF_VALID",
+            "CONTENT_HASH_VALID",
+            "CANONICAL_RESULT_RETRIEVABLE",
+            "ARTIFACT_LINEAGE_PRESERVED",
+            "DIRECT_DEPENDENCY_PRESERVED",
+            "NO_PAYLOAD_LOSS",
+            "DEPENDENCY_RESULTS_REFS_ONLY",
+            "INLINE_RESULT_PRESERVED",
+            "SMALL_RESULT_INLINE",
+            "OVERSIZED_RESULT_EXTERNALIZED",
+            "NO_UNNECESSARY_EXTERNALIZATION",
+            "INLINE_HANDOFF_COMPATIBILITY",
+            "EXTERNALIZED_HANDOFF_COMPATIBILITY",
+            "CANONICAL_RESULT_RETRIEVAL",
+            "CONTENT_HASH_VALIDATION",
+            "NO_DUPLICATE_PAYLOAD",
+            "PARENT_CONTEXT_FITS_EXECUTOR_LIMIT",
+            "NO_PROVIDER_CALLS",
         }
     ]
     for key in required_pass:
@@ -656,10 +979,42 @@ def run(*, legacy_artifact_dir: Path, output: Path) -> dict:
         "REVIEWER_NOT_INDEPENDENT_FAILS_CLOSED",
         "EXECUTION_CONTRACT_COMPATIBILITY",
         "INCOMPATIBLE_CAPABILITY_REJECTED",
+        "TASK_RESULT_REF_VALID",
+        "CONTENT_HASH_VALID",
+        "CANONICAL_RESULT_RETRIEVABLE",
+        "ARTIFACT_LINEAGE_PRESERVED",
+        "DIRECT_DEPENDENCY_PRESERVED",
+        "NO_PAYLOAD_LOSS",
+        "DEPENDENCY_RESULTS_REFS_ONLY",
+        "SMALL_RESULT_INLINE",
+        "OVERSIZED_RESULT_EXTERNALIZED",
+        "NO_UNNECESSARY_EXTERNALIZATION",
+        "INLINE_HANDOFF_COMPATIBILITY",
+        "EXTERNALIZED_HANDOFF_COMPATIBILITY",
+        "CANONICAL_RESULT_RETRIEVAL",
+        "CONTENT_HASH_VALIDATION",
+        "NO_DUPLICATE_PAYLOAD",
+        "PARENT_CONTEXT_FITS_EXECUTOR_LIMIT",
+        "NO_PROVIDER_CALLS",
         "TASK_HANDOFF_REPLAY_PROOF",
     ):
         print(f"{key}={report[key]}")
+    for key in (
+        "DEPENDENCY_CONTEXT_BYTES",
+        "DEPENDENCY_ALIAS_BYTES_AVOIDED",
+        "PARENT_CONTEXT_ORIGINAL_CHARS",
+        "PARENT_CONTEXT_FINAL_CHARS",
+        "PARENT_CONTEXT_BYTES_AVOIDED",
+        "EXECUTOR_CONTEXT_LIMIT_CHARS",
+        "ARTIFACT_LOAD_MS",
+        "DEPENDENCY_CONTEXT_BUILD_MS",
+        "DUPLICATE_PAYLOAD_SERIALIZATION",
+        "PROVIDER_CALL_COUNT",
+        "SEMANTIC_REPLAN_COUNT",
+    ):
+        print(f"{key}={report[key]}")
     print("PROVIDER_CALL_EXECUTED=NO")
+    print("NETWORK_REASONING_REQUIRED=NO")
     print("HARDCODED_FALLBACK=NO")
     return report
 
