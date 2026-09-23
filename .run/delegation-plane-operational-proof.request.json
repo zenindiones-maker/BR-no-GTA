@@ -3,14 +3,18 @@
   "mission": "HARNESS_HERMES_DELEGATION_PLANE_V1",
   "phase": "first",
   "diagnostic_only": true,
-  "requested_base_sha": "d549d4c0dc139e7a146cfcdbd8d4715302a78400",
-  "mode": "FINE_GRAINED_PERFORMANCE_BASELINE",
-  "baseline_reference_runs": {
-    "historical_pathological": 35789429747,
-    "mission_isolated_coarse": 35794915172
+  "requested_base_sha": "ee362749679a00e642941de9bfd5d83ffae5e6ec",
+  "mode": "PERFORMANCE_CANDIDATE_A_PIP_CACHE_AB",
+  "baseline_run_id": 35796932345,
+  "baseline_head": "2ef72dee62d00fa9ab25310a9ae12ad2dfc0a37b",
+  "candidate_head": "ee362749679a00e642941de9bfd5d83ffae5e6ec",
+  "candidate": "content-addressed canonical Python environment reuse",
+  "objective": "Measure Candidate A against fine-grained baseline. Preserve workload, QA, security, budgets, authorization lineage and Harness authority. Do not auto-dispatch second phase.",
+  "validation_runs": {
+    "agent_office": 35800040185,
+    "harness_intelligence": 35800040132,
+    "br_no_gta_ci": 35800040399
   },
-  "observability_head": "d549d4c0dc139e7a146cfcdbd8d4715302a78400",
-  "objective": "Measure fine-grained current critical path only. No functional optimization in this run. Preserve quality, security, budgets and Harness authority.",
   "live_run_budget": 1,
   "no_parallel_proof": true
 }
