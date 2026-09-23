@@ -542,7 +542,6 @@ def _provider_records(
                 m_health.rate_limit_state if m_health else "UNKNOWN",
                 9,
             ),
-            capability_surplus,
             1 if competence is None else 0,
             -float((competence or {}).get("success_rate") or 0.0),
             float((competence or {}).get("failure_rate") or 0.0),
@@ -551,6 +550,7 @@ def _provider_records(
             -int((competence or {}).get("tested_cases") or 0),
             cost_rank.get(str(record.cost_class).upper(), 9),
             latency,
+            capability_surplus,
             _MATURITY_RANK.get(record.maturity, 99),
             record.capability_id,
         )

@@ -12,6 +12,8 @@ from app.services.harness_ai_provider_service import (
     select_harness_ai_provider,
 )
 from app.services.harness_authorization_service import issue_harness_authorization
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.provider_health_service import model_health
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
@@ -438,3 +440,53 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         "model-a",
         "model-b",
     ]
+
+
+
+def test_nvidia_routing_uses_live_latency_before_capability_surplus(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    required = {"semantic_planning", "reasoning", "structured_output"}
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="semantic mission planning proposal only",
+            authorized_action="DECISION",
+            domain="ai",
+            goal_id="goal-nvidia-latency-rank",
+            task_class="semantic-mission-planning",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("nvidia_nim",),
+            allowed_providers=("nvidia_nim",),
+            required_model_capabilities=tuple(sorted(required)),
+            structured_output_required=True,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=False,
+        )
+    )
+
+    eligible = []
+    for record in GLOBAL_CAPABILITY_REGISTRY.all():
+        if record.capability_type != "PROVIDER":
+            continue
+        if str(record.provider_id or "").lower().replace("-", "_") != "nvidia_nim":
+            continue
+        if not record.model_id or not record.available:
+            continue
+        capabilities = {
+            tag.split(":", 1)[1]
+            for tag in record.policy_tags
+            if tag.startswith("model-capability:")
+        }
+        if not required.issubset(capabilities):
+            continue
+        health = model_health("nvidia_nim", record.model_id)
+        if health.availability != "AVAILABLE" or health.latency_ms is None:
+            continue
+        eligible.append((float(health.latency_ms), record.model_id))
+
+    assert len(eligible) >= 2
+    minimum_latency = min(item[0] for item in eligible)
+    selected_health = decision.policy_metadata["selected_model_health"]
+    assert decision.selected_provider == "nvidia_nim"
+    assert float(selected_health["latency_ms"]) == minimum_latency
