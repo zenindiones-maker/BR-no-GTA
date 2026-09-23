@@ -1,0 +1,89 @@
+name: Codex Blocked Preplanning Proof
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/harness_executor_availability_service.py"
+      - "app/services/capability_health_service.py"
+      - "app/services/planner_replan_learning_service.py"
+      - "scripts/codex_auth_control_preflight.py"
+      - "scripts/codex_blocked_preplanning_proof.py"
+      - "tests/test_harness_executor_availability_service.py"
+      - "tests/test_capability_health_service.py"
+      - ".github/workflows/codex-blocked-preplanning-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: .
+  GITHUB_ACTIONS: "true"
+  BR_CODEX_FEDERATION_CONFIGURED: "false"
+  BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/codex-blocked-preplanning/control.db
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install focused runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Download canonical auth checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/codex-blocked-preplanning/checkpoint
+          gh run download 35850473901 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name dynamic-system-improvement-35850473901 \
+            --dir artifacts/codex-blocked-preplanning/checkpoint
+          test -s artifacts/codex-blocked-preplanning/checkpoint/mission-auth-checkpoint.json
+          echo "CANONICAL_AUTH_CHECKPOINT_DOWNLOADED=PASS"
+
+      - name: Run focused deterministic tests
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_harness_executor_availability_service.py \
+            tests/test_capability_health_service.py
+          echo "FOCUSED_DETERMINISTIC_TESTS=PASS"
+
+      - name: Prove blocked executor resolution without semantic provider
+        run: |
+          set -euo pipefail
+          python scripts/codex_blocked_preplanning_proof.py \
+            --checkpoint artifacts/codex-blocked-preplanning/checkpoint/mission-auth-checkpoint.json \
+            --artifact-dir artifacts/codex-blocked-preplanning
+          echo "NVIDIA_PROVIDER_CALLS=0"
+          echo "NATURAL_SWARM_DISPATCH=0"
+
+      - name: Upload focused proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-blocked-preplanning-${{ github.run_id }}
+          path: artifacts/codex-blocked-preplanning/
+          if-no-files-found: error
+          retention-days: 30

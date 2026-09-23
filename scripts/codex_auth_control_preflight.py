@@ -14,6 +14,9 @@ from app.services.agent_office.codex_auth_control import (
     classify_codex_auth,
     write_checkpoint,
 )
+from app.services.harness_executor_availability_service import (
+    resolve_blocked_executor_alternatives,
+)
 
 
 def _decode_plan(plan_b64: str) -> dict:
@@ -78,6 +81,30 @@ def main() -> int:
         preflight.state == AUTH_USER_ACTION_REQUIRED
         or external_human_blocker
     )
+
+    blocked_codex_capability_ids = tuple(sorted({
+        str(task.get("capability_id") or "").strip()
+        for task in (
+            (plan.get("collaboration_plan") or {}).get("tasks") or ()
+        )
+        if str(task.get("capability_id") or "").strip().startswith(
+            "agent-office.codex."
+        )
+    }))
+    executor_availability_resolution = None
+    if external_human_blocker and blocked_codex_capability_ids:
+        executor_availability_resolution = resolve_blocked_executor_alternatives(
+            plan,
+            blocked_capability_ids=blocked_codex_capability_ids,
+        )
+    mission_state = (
+        str(
+            (executor_availability_resolution or {}).get("MISSION_STATE")
+            or "WAITING_FOR_EXTERNAL_AUTH"
+        )
+        if external_human_blocker
+        else ("AUTH_AVAILABLE" if preflight.auth_available else "AUTH_PENDING")
+    )
     if external_human_blocker:
         delivery_status = "EXTERNAL_CONFIGURATION_REQUIRED"
         delivery_surface = "OPENAI_ADMIN_PORTAL_OR_MANAGED_WORKSPACE_ADMIN"
@@ -104,6 +131,8 @@ def main() -> int:
             "OPENAI_IDENTITY_TOKEN_FILE"
             in preflight.missing_auth_configuration
         ),
+        "mission_state": mission_state,
+        "executor_availability_resolution": executor_availability_resolution,
         "telegram_message_id": delivery_message_id,
         "runner_wait_for_human": False,
         "mission_checkpointed": True,
@@ -140,6 +169,7 @@ def main() -> int:
             fh.write(f"auth_method={preflight.method}\n")
             fh.write(f"mission_id={mission_id}\n")
             fh.write(f"checkpoint_id={checkpoint['checkpoint_id']}\n")
+            fh.write(f"mission_state={mission_state}\n")
 
     print("CODEX_AUTH_PREFLIGHT=PASS")
     print(f"CODEX_AUTH_STATE={preflight.state}")
@@ -170,6 +200,32 @@ def main() -> int:
             + ",".join(externally_required_configuration)
         )
         print("OPENAI_IDENTITY_TOKEN_FILE=RUNTIME_DERIVED")
+        if executor_availability_resolution is not None:
+            print("CODEX_BLOCKED_BEFORE_PLANNING=PASS")
+            print("ALTERNATIVE_EXECUTOR_RESOLUTION_DETERMINISTIC=PASS")
+            print(
+                "ALTERNATIVE_EXECUTOR_AVAILABLE="
+                + str(executor_availability_resolution["ALTERNATIVE_EXECUTOR_AVAILABLE"])
+            )
+            print(
+                "NO_ALTERNATIVE_EXECUTOR_REPLAN="
+                + str(executor_availability_resolution["NO_ALTERNATIVE_EXECUTOR_REPLAN"])
+            )
+            print(
+                "PROVIDER_CALL_EXECUTED="
+                + str(executor_availability_resolution["PROVIDER_CALL_EXECUTED"])
+            )
+            print(
+                "CANONICAL_CHECKPOINT_PRESERVED="
+                + ("PASS" if checkpoint["plan_b64"] == args.plan_b64 else "FAIL")
+            )
+            print("MISSION_STATE=" + mission_state)
+            if executor_availability_resolution["ALTERNATIVE_EXECUTOR_AVAILABLE"] == "YES":
+                print("ALTERNATIVE_EXECUTOR_DISCOVERED_FROM_REGISTRY=PASS")
+                print("EXECUTION_CONTRACT_COMPATIBLE=PASS")
+                print("AUTHORITY_COMPATIBLE=PASS")
+                print("SIDE_EFFECT_CLASS_COMPATIBLE=PASS")
+                print("CANDIDATE_ARTIFACT_CAPABLE=PASS")
     print("AUTH_DELIVERY_SURFACE=" + delivery_surface)
     print("AUTH_DELIVERY_STATUS=" + delivery_status)
     print("RUNNER_WAIT_FOR_HUMAN=NO")

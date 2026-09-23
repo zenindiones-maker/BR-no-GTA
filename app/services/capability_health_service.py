@@ -281,7 +281,9 @@ def capability_health(capability_id: str) -> CapabilityHealth:
                 reason=(
                     "GitHub Actions runner cannot authorize Codex because the "
                     "repository federation rule/audience configuration is absent. "
-                    "Harness must replan instead of selecting this capability."
+                    "Harness must run deterministic Registry alternative resolution "
+                    "first; if no compatible executor exists, preserve the canonical "
+                    "checkpoint and wait for external auth without a semantic provider call."
                 ),
                 retry_allowed=False,
                 confidence=1.0,

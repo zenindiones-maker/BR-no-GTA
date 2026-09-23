@@ -86,7 +86,8 @@ def test_codex_health_is_blocked_before_planning_when_github_federation_is_missi
     assert observed.state == BLOCKED
     assert observed.retry_allowed is False
     assert observed.source == "GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG"
-    assert "replan" in observed.reason.casefold()
+    assert "deterministic registry alternative resolution" in observed.reason.casefold()
+    assert "semantic replan" not in observed.reason.casefold()
 
 
 def test_codex_health_remains_preflight_unknown_when_federation_is_configured(
