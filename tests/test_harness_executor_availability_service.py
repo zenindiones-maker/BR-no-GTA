@@ -99,13 +99,13 @@ def test_checkpoint_resolves_no_complete_codex_alternative_without_provider(monk
     by_task = {item["task_id"]: item for item in result["blocked_tasks"]}
     assert by_task["instrument-planner"]["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "YES"
     assert any(
-        item["capability_id"] == "agent-office.deterministic.readonly-analysis"
+        item["capability_id"] == "agent-office.deterministic-analysis"
         for item in by_task["instrument-planner"]["alternatives"]
     )
     readonly_diag = next(
         item
         for item in by_task["instrument-planner"]["candidate_diagnostics"]
-        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+        if item["CAPABILITY_ID"] == "agent-office.deterministic-analysis"
     )
     assert readonly_diag["EXECUTION_ENABLED"] is True
     assert readonly_diag["ALLOWED_ACTIONS"] == ["DEVELOPMENT"]
@@ -132,7 +132,7 @@ def test_checkpoint_resolves_no_complete_codex_alternative_without_provider(monk
     mutating_diag = next(
         item
         for item in by_task["create-candidate"]["candidate_diagnostics"]
-        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+        if item["CAPABILITY_ID"] == "agent-office.deterministic-analysis"
     )
     assert mutating_diag["FINAL_REJECTION_REASON"].startswith(
         "execution-contract-insufficient:missing="
@@ -155,7 +155,7 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
                     "capability_id": "agent-office.codex.readonly-analysis",
                     "action": "DEVELOPMENT",
                     "objective": "Profile repository latency with evidence",
-                    "task_class": "repository-profiling",
+                    "task_class": "root-cause-analysis",
                     "expected_output": "profiling-report",
                     "dependencies": [],
                     "required_operations": [
@@ -180,13 +180,13 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
     assert result["blocked_tasks"][0]["TASK_LEVEL_ALTERNATIVE_AVAILABLE"] == "YES"
     alternatives = result["blocked_tasks"][0]["alternatives"]
     assert any(
-        item["capability_id"] == "agent-office.deterministic.readonly-analysis"
+        item["capability_id"] == "agent-office.deterministic-analysis"
         for item in alternatives
     )
     selected = next(
         item
         for item in alternatives
-        if item["capability_id"] == "agent-office.deterministic.readonly-analysis"
+        if item["capability_id"] == "agent-office.deterministic-analysis"
     )
     assert selected["execution_contract_compatible"] is True
     assert selected["authority_compatible"] is True
@@ -194,7 +194,7 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
     diagnostic = next(
         item
         for item in result["blocked_tasks"][0]["candidate_diagnostics"]
-        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+        if item["CAPABILITY_ID"] == "agent-office.deterministic-analysis"
     )
     assert diagnostic["REQUIRED_OPERATIONS"] == [
         "CAN_PRODUCE_ARTIFACT_REFS",

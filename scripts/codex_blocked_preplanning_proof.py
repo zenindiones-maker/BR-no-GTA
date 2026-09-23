@@ -81,17 +81,17 @@ def main() -> int:
     readonly_alternative = next(
         item
         for item in readonly["alternatives"]
-        if item["capability_id"] == "agent-office.deterministic.readonly-analysis"
+        if item["capability_id"] == "agent-office.deterministic-analysis"
     )
     readonly_diagnostic = next(
         item
         for item in readonly["candidate_diagnostics"]
-        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+        if item["CAPABILITY_ID"] == "agent-office.deterministic-analysis"
     )
     mutating_diagnostic = next(
         item
         for item in mutating["candidate_diagnostics"]
-        if item["CAPABILITY_ID"] == "agent-office.deterministic.readonly-analysis"
+        if item["CAPABILITY_ID"] == "agent-office.deterministic-analysis"
     )
     assert readonly_diagnostic["FINAL_REJECTION_REASON"] == "ACCEPTED"
     assert mutating_diagnostic["FINAL_REJECTION_REASON"].startswith(

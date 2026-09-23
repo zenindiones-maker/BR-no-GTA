@@ -170,7 +170,7 @@ HERMES_MULTIAGENT_RUNTIME_RECORD = CapabilityRecord(
 
 
 AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD = CapabilityRecord(
-    capability_id="agent-office.deterministic.readonly-analysis",
+    capability_id="agent-office.deterministic-analysis",
     capability_type="AGENT",
     domain="development",
     implementation=(

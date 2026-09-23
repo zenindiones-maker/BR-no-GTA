@@ -5,6 +5,7 @@ from typing import Any, Iterable
 from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
     CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_SEMANTIC_REASONING,
     CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
     derive_required_operations,
@@ -42,7 +43,17 @@ def _effective_task_contract(task: dict[str, Any]) -> dict[str, Any]:
         if str(item).strip()
     }
     derived_operations = set(derive_required_operations(task))
-    required_operations = tuple(sorted(explicit_operations | derived_operations))
+    if explicit_operations:
+        # Typed operations from the checkpoint are authoritative. Deterministic
+        # safety enrichment may add concrete execution primitives inferred from
+        # candidate/benchmark/review semantics, but it must not invent a new
+        # semantic-provider dependency merely because prose says "analysis".
+        required_operations = tuple(sorted(
+            explicit_operations
+            | (derived_operations - {CAN_SEMANTIC_REASONING})
+        ))
+    else:
+        required_operations = tuple(sorted(derived_operations))
     candidate_requirement = effective_candidate_requirement(
         str(task.get("candidate_requirement") or "NOT_APPLICABLE"),
         required_operations,
