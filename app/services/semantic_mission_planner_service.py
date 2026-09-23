@@ -756,6 +756,16 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     prompt_sha = sha256(prompt.encode("utf-8")).hexdigest()
     provider_attempts: list[dict[str, Any]] = []
 
+    def _routing_snapshot(routing: Any) -> dict[str, Any]:
+        serializer = getattr(routing, "to_dict", None)
+        if callable(serializer):
+            return dict(serializer())
+        return {
+            "routing_id": getattr(routing, "routing_id", None),
+            "selected_provider": getattr(routing, "selected_provider", None),
+            "selected_model": getattr(routing, "selected_model", None),
+        }
+
     def _route(
         *,
         preferred_provider: str | None = None,
@@ -810,7 +820,7 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
                 "semantic_planner_role": "PROPOSAL_ONLY",
                 "routing_id": routing.routing_id,
                 "selected_provider": selected_provider,
-                "selected_model": routing.selected_model,
+                "selected_model": getattr(routing, "selected_model", None),
                 "prompt_sha256": prompt_sha,
                 "authority": "DEEPSEEK_HARNESS",
                 "planner_authority": "NONE",
@@ -829,10 +839,10 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     evidence = _execute(routing)
     provider_attempts.append({
         "provider": evidence.provider,
-        "model": evidence.model or routing.selected_model,
+        "model": evidence.model or getattr(routing, "selected_model", None),
         "routing_id": routing.routing_id,
         "status": evidence.status,
-        "retry_count": int(evidence.retry_count or 0),
+        "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
         "latency_seconds": evidence.latency_seconds,
         "error": dict(
             _sanitized_provider_failure_evidence(evidence).get("error") or {}
@@ -841,7 +851,7 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
 
     if evidence.status != "EXECUTED" or not evidence.active:
         error = dict(evidence.error or {})
-        failed_model = str(evidence.model or routing.selected_model or "").strip()
+        failed_model = str(evidence.model or getattr(routing, "selected_model", None) or "").strip()
         failed_provider = str(
             evidence.provider or routing.selected_provider or ""
         ).strip()
@@ -859,10 +869,10 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
             routing = rerouted
             provider_attempts.append({
                 "provider": evidence.provider,
-                "model": evidence.model or routing.selected_model,
+                "model": evidence.model or getattr(routing, "selected_model", None),
                 "routing_id": routing.routing_id,
                 "status": evidence.status,
-                "retry_count": int(evidence.retry_count or 0),
+                "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
                 "latency_seconds": evidence.latency_seconds,
                 "error": dict(
                     _sanitized_provider_failure_evidence(evidence).get("error")
@@ -896,9 +906,9 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     )
     return response_text, {
         "provider": evidence.provider,
-        "model": evidence.model or routing.selected_model,
+        "model": evidence.model or getattr(routing, "selected_model", None),
         "routing_id": routing.routing_id,
-        "routing": routing.to_dict(),
+        "routing": _routing_snapshot(routing),
         "authorization_id": evidence.authorization_id,
         "executor_binding": evidence.executor_binding,
         "latency_seconds": evidence.latency_seconds,
