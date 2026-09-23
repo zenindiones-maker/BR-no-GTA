@@ -87,8 +87,8 @@ def test_editorial_provider_boundary_selects_primary_zero_cost_provider(
     )
     assert provider_authorization.lineage["selected_provider"] == "nvidia_nim"
     assert provider_authorization.lineage["selected_model"] == routing.selected_model
-    assert getattr(ai_provider, "provider", None) == "nvidia_nim"
-    assert getattr(ai_provider, "model", None) == routing.selected_model
+    assert ai_provider.__class__.__name__ == "NvidiaNimProviderAdapter"
+    assert ai_provider.model == routing.selected_model
 
 
 def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
