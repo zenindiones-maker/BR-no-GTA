@@ -16,8 +16,8 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 5,
-  "trigger_head": "fe47b6905f315c3dcf4a3da59bb92975dc86dea6",
+  "attempt": 6,
+  "trigger_head": "4475f8e628883151df69d698ef18cf5ad41144c5",
   "preflight_only": false,
   "generation_options": {
     "max_tokens": 2048,
@@ -26,5 +26,6 @@
       "rule": "next_power_of_two_above_observed_valid_completion",
       "headroom_tokens": 359
     }
-  }
+  },
+  "measurement_goal": "identify_exact_live_semantic_output_failure_stage_before_any_policy_change"
 }
