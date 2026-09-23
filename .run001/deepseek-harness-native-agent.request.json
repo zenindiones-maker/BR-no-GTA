@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "requested_at": "2026-09-19T12:12:10Z",
-  "base_head": "56cdbdb164cdff0f71657b829eb0b3af268fad33",
-  "purpose": "Re-run native DeepSeek Harness proof after materializing pinned Addy skills required by current MCP boundary tests.",
+  "requested_at": "2026-09-23T00:35:00Z",
+  "base_head": "82727ff906aff973793b84a549dd975e62b5327b",
+  "purpose": "Re-run native DeepSeek Harness proof after aligning stale provider fixtures with Harness-governed NVIDIA routing and preserving fail-closed runtime selection.",
   "job18_unchanged": true,
   "publication": false
 }
