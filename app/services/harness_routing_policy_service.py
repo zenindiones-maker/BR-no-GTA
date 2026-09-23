@@ -61,6 +61,7 @@ class HarnessRoutingRequest:
     allowed_providers: tuple[str, ...] = ()
     preferred_models: tuple[str, ...] = ()
     unavailable_provider_ids: tuple[str, ...] = ()
+    unavailable_model_ids: tuple[str, ...] = ()
     quality_requirement: str | None = None
     latency_constraint: str | None = None
     cost_constraint: str | None = None
@@ -333,6 +334,11 @@ def _provider_records(
         normalize_provider_id(provider_id)
         for provider_id in request.unavailable_provider_ids
     }
+    unavailable_models = {
+        str(model_id).strip()
+        for model_id in request.unavailable_model_ids
+        if str(model_id).strip()
+    }
     exhausted_free_quota = {
         normalize_provider_id(provider_id)
         for provider_id in request.exhausted_free_quota_provider_ids
@@ -367,6 +373,8 @@ def _provider_records(
             reasons.append("provider_runtime_unavailable")
         if request.preferred_models and model_id not in request.preferred_models:
             reasons.append("model_not_allowed_by_request")
+        if model_id and model_id in unavailable_models:
+            reasons.append("model_runtime_unavailable")
         if required_caps and not required_caps.issubset(capabilities):
             reasons.append("required_model_capabilities_missing")
         if request.tool_use_required and not (
@@ -1019,6 +1027,7 @@ def route_harness_request(
             (provider_model_binding or {}).get("evidence_refs") or ()
         ),
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
+        "unavailable_model_ids": list(request.unavailable_model_ids),
         "selected_implementation": {
             "type": capability.capability_type,
             "implementation": capability.implementation,

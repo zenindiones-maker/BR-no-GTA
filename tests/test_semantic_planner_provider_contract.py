@@ -1,6 +1,7 @@
 import io
 import json
 from urllib import error
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +18,7 @@ from app.services.harness_routing_policy_service import (
 )
 from app.services.semantic_mission_planner_service import (
     SemanticPlannerProviderFailure,
+    _live_inference,
     _sanitized_provider_failure_evidence,
 )
 from app.services.tuxevil_ai_provider import TuxevilAIProvider
@@ -279,3 +281,160 @@ def test_provider_health_route_consistency_uses_same_runtime_model_and_transport
     assert provider.model == decision.selected_model
     assert provider.base_url == "http://127.0.0.1:51200/v1/responses"
     assert provider.transport == "tuxevil_responses"
+
+
+
+def test_harness_routing_excludes_runtime_failed_nvidia_model(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    base = HarnessRoutingRequest(
+        intent="semantic mission planning proposal only",
+        authorized_action="DECISION",
+        domain="ai",
+        goal_id="goal-nvidia-model-reroute",
+        task_class="semantic-mission-planning",
+        required_capability_id="ai.reasoning.text",
+        provider_required=True,
+        preferred_providers=("nvidia_nim",),
+        allowed_providers=("nvidia_nim",),
+        required_model_capabilities=(
+            "semantic_planning",
+            "reasoning",
+            "structured_output",
+        ),
+        structured_output_required=True,
+        fallback_allowed=False,
+        zero_cost_operation=True,
+        learning_required=False,
+    )
+    first = route_harness_request(base)
+    assert first.selected_provider == "nvidia_nim"
+    assert first.selected_model
+
+    second = route_harness_request(
+        HarnessRoutingRequest(
+            **{
+                **base.__dict__,
+                "unavailable_model_ids": (first.selected_model,),
+            }
+        )
+    )
+    assert second.selected_provider == "nvidia_nim"
+    assert second.selected_model
+    assert second.selected_model != first.selected_model
+    assert first.selected_model in second.policy_metadata["unavailable_model_ids"]
+
+
+def test_live_semantic_inference_reroutes_retryable_model_failure():
+    route_one = SimpleNamespace(
+        selected_provider="nvidia_nim",
+        selected_model="model-a",
+        routing_id="routing-a",
+        to_dict=lambda: {
+            "selected_provider": "nvidia_nim",
+            "selected_model": "model-a",
+            "routing_id": "routing-a",
+        },
+    )
+    route_two = SimpleNamespace(
+        selected_provider="nvidia_nim",
+        selected_model="model-b",
+        routing_id="routing-b",
+        to_dict=lambda: {
+            "selected_provider": "nvidia_nim",
+            "selected_model": "model-b",
+            "routing_id": "routing-b",
+        },
+    )
+    failed = HarnessAIProviderEvidence(
+        provider="nvidia_nim",
+        status="FAILED",
+        active=False,
+        authority="DEEPSEEK_HARNESS",
+        authorized_action="DECISION",
+        harness_decision_id="routing-a",
+        execution_id="execution-a",
+        model="model-a",
+        executor_binding="app.services.harness_ai_provider_service.execute_harness_ai_generation",
+        latency_seconds=240.0,
+        retry_count=1,
+        error={
+            "code": "timeout",
+            "retryable": True,
+            "failure_pattern": "nvidia_nim_timeout",
+            "failure_stage": "transport_request",
+            "transport": "nvidia_openai_chat_completions",
+            "response_present": False,
+            "structured_output_present": False,
+            "parse_stage": "transport",
+            "sanitized_reason": "timeout",
+            "error_type": "TimeoutError",
+        },
+        performance={
+            "transport": "nvidia_openai_chat_completions",
+            "retry_count": 1,
+        },
+    )
+    success = HarnessAIProviderEvidence(
+        provider="nvidia_nim",
+        status="EXECUTED",
+        active=True,
+        authority="DEEPSEEK_HARNESS",
+        authorized_action="DECISION",
+        harness_decision_id="routing-b",
+        execution_id="execution-b",
+        model="model-b",
+        executor_binding="app.services.harness_ai_provider_service.execute_harness_ai_generation",
+        latency_seconds=1.2,
+        retry_count=0,
+        result={
+            "text": '{"ok":true}',
+            "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+            "finish_reason": "stop",
+        },
+        performance={
+            "transport": "nvidia_openai_chat_completions",
+            "retry_count": 0,
+        },
+    )
+    requests = []
+
+    def fake_route(request):
+        requests.append(request)
+        return route_one if len(requests) == 1 else route_two
+
+    with patch(
+        "app.services.harness_routing_policy_service.route_harness_request",
+        side_effect=fake_route,
+    ), patch(
+        "app.services.harness_ai_provider_service.execute_harness_ai_generation",
+        side_effect=[failed, success],
+    ), patch(
+        "app.services.harness_authorization_service.issue_harness_authorization",
+        return_value=object(),
+    ), patch(
+        "app.services.harness_authorization_service.consume_harness_authorization",
+    ):
+        text_value, evidence = _live_inference(
+            "semantic prompt",
+            {
+                "goal_id": "goal-reroute",
+                "provider_health": {
+                    "eligible_zero_cost_provider_ids": ["nvidia_nim"]
+                },
+            },
+        )
+
+    assert text_value == '{"ok":true}'
+    assert len(requests) == 2
+    assert requests[1].preferred_providers == ("nvidia_nim",)
+    assert requests[1].unavailable_model_ids == ("model-a",)
+    assert requests[1].failure_pattern == "nvidia_nim_timeout"
+    assert evidence["provider"] == "nvidia_nim"
+    assert evidence["model"] == "model-b"
+    assert evidence["routing"]["selected_model"] == "model-b"
+    assert evidence["provider_reroute_count"] == 1
+    assert evidence["model_call_count"] == 3
+    assert [item["model"] for item in evidence["provider_attempts"]] == [
+        "model-a",
+        "model-b",
+    ]

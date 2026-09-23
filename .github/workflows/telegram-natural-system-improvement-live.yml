@@ -102,6 +102,7 @@ jobs:
           assert plan["mission_plan"]["authority"]=="DEEPSEEK_HARNESS"
           assert plan["mission_plan"]["goal"]["mission_class"]=="SYSTEM_IMPROVEMENT"
           mission_plan=plan["mission_plan"]
+          assert mission_plan["goal"]["human_goal"] == literal, mission_plan["goal"]
           tasks=mission_plan["collaboration_plan"]["tasks"]
           assert 2 <= len(tasks) <= mission_plan["resource_bounds"]["max_tasks_per_mission"]
           planning=dict(mission_plan.get("planning_evidence") or {})
@@ -136,6 +137,8 @@ jobs:
           print("HUMAN_INPUT_LITERAL_MATCH=PASS")
           print("NATURAL_GOAL_RECEIVED=PASS")
           print("HARNESS_MISSION_PLAN=PASS")
+          print("MISSION_PLAN_DERIVED_FROM_CURRENT_NATURAL_GOAL=PASS")
+          print("PLAN_NOT_PREFABRICATED=PASS")
           print("HARNESS_NATURAL_GOAL_BEFORE_TUXEVIL=PASS")
           print("NVIDIA_PROVIDER_AVAILABLE_TO_PLANNER=PASS")
           print("NVIDIA_PROVIDER_ROUTED_BY_HARNESS=PASS")

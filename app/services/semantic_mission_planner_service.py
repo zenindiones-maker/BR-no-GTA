@@ -746,90 +746,159 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
     )
 
     health = dict(context.get("provider_health") or {})
-    providers = tuple(str(item) for item in health.get("eligible_zero_cost_provider_ids") or ())
+    providers = tuple(
+        str(item)
+        for item in health.get("eligible_zero_cost_provider_ids") or ()
+    )
     if not providers:
         raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
 
-    try:
-        routing = route_harness_request(
-            HarnessRoutingRequest(
-                intent=(
-                    "semantic planning reasoning structured output "
-                    "for a bounded mission proposal"
-                ),
-                authorized_action="DECISION",
-                domain="ai",
-                goal_id=str(context.get("goal_id") or "semantic-plan"),
-                task_class="semantic-mission-planning",
-                required_capability_id="ai.reasoning.text",
-                provider_required=True,
-                allowed_providers=providers,
-                required_model_capabilities=(
-                    "semantic_planning",
-                    "reasoning",
-                    "structured_output",
-                ),
-                structured_output_required=True,
-                fallback_allowed=False,
-                zero_cost_operation=True,
-                learning_required=True,
-            )
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
-        ) from exc
-    selected_provider = routing.selected_provider
-    if not selected_provider:
-        raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-
     prompt_sha = sha256(prompt.encode("utf-8")).hexdigest()
-    authorization = issue_harness_authorization(
-        authorized_action="DECISION",
-        subject=f"provider:{selected_provider}",
-        harness_decision_id=routing.routing_id,
-        lineage={
-            "goal_id": str(context.get("goal_id") or "semantic-plan"),
-            "semantic_planner_role": "PROPOSAL_ONLY",
-            "routing_id": routing.routing_id,
-            "selected_provider": selected_provider,
-            "prompt_sha256": prompt_sha,
-            "authority": "DEEPSEEK_HARNESS",
-            "planner_authority": "NONE",
-        },
-    )
-    try:
-        evidence = execute_harness_ai_generation(
-            prompt=prompt,
-            authorization=authorization,
-            routing_decision=routing,
+    provider_attempts: list[dict[str, Any]] = []
+
+    def _route(
+        *,
+        preferred_provider: str | None = None,
+        unavailable_models: tuple[str, ...] = (),
+        failure_pattern: str | None = None,
+    ):
+        try:
+            return route_harness_request(
+                HarnessRoutingRequest(
+                    intent=(
+                        "semantic planning reasoning structured output "
+                        "for a bounded mission proposal"
+                    ),
+                    authorized_action="DECISION",
+                    domain="ai",
+                    goal_id=str(context.get("goal_id") or "semantic-plan"),
+                    task_class="semantic-mission-planning",
+                    required_capability_id="ai.reasoning.text",
+                    provider_required=True,
+                    preferred_providers=(
+                        (preferred_provider,) if preferred_provider else ()
+                    ),
+                    allowed_providers=providers,
+                    unavailable_model_ids=unavailable_models,
+                    required_model_capabilities=(
+                        "semantic_planning",
+                        "reasoning",
+                        "structured_output",
+                    ),
+                    structured_output_required=True,
+                    fallback_allowed=False,
+                    zero_cost_operation=True,
+                    failure_pattern=failure_pattern,
+                    learning_required=True,
+                )
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "SEMANTIC_REASONING_PROVIDER_UNAVAILABLE"
+            ) from exc
+
+    def _execute(routing):
+        selected_provider = routing.selected_provider
+        if not selected_provider:
+            raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
+        authorization = issue_harness_authorization(
+            authorized_action="DECISION",
+            subject=f"provider:{selected_provider}",
+            harness_decision_id=routing.routing_id,
+            lineage={
+                "goal_id": str(context.get("goal_id") or "semantic-plan"),
+                "semantic_planner_role": "PROPOSAL_ONLY",
+                "routing_id": routing.routing_id,
+                "selected_provider": selected_provider,
+                "selected_model": routing.selected_model,
+                "prompt_sha256": prompt_sha,
+                "authority": "DEEPSEEK_HARNESS",
+                "planner_authority": "NONE",
+            },
         )
-    finally:
-        consume_harness_authorization(authorization)
+        try:
+            return execute_harness_ai_generation(
+                prompt=prompt,
+                authorization=authorization,
+                routing_decision=routing,
+            )
+        finally:
+            consume_harness_authorization(authorization)
+
+    routing = _route()
+    evidence = _execute(routing)
+    provider_attempts.append({
+        "provider": evidence.provider,
+        "model": evidence.model or routing.selected_model,
+        "routing_id": routing.routing_id,
+        "status": evidence.status,
+        "retry_count": int(evidence.retry_count or 0),
+        "latency_seconds": evidence.latency_seconds,
+        "error": dict(
+            _sanitized_provider_failure_evidence(evidence).get("error") or {}
+        ),
+    })
+
+    if evidence.status != "EXECUTED" or not evidence.active:
+        error = dict(evidence.error or {})
+        failed_model = str(evidence.model or routing.selected_model or "").strip()
+        failed_provider = str(
+            evidence.provider or routing.selected_provider or ""
+        ).strip()
+        if bool(error.get("retryable")) and failed_model and failed_provider:
+            rerouted = _route(
+                preferred_provider=failed_provider,
+                unavailable_models=(failed_model,),
+                failure_pattern=str(
+                    error.get("failure_pattern")
+                    or error.get("code")
+                    or "provider_retryable_failure"
+                ),
+            )
+            evidence = _execute(rerouted)
+            routing = rerouted
+            provider_attempts.append({
+                "provider": evidence.provider,
+                "model": evidence.model or routing.selected_model,
+                "routing_id": routing.routing_id,
+                "status": evidence.status,
+                "retry_count": int(evidence.retry_count or 0),
+                "latency_seconds": evidence.latency_seconds,
+                "error": dict(
+                    _sanitized_provider_failure_evidence(evidence).get("error")
+                    or {}
+                ),
+            })
 
     if evidence.status != "EXECUTED" or not evidence.active:
         error = dict(evidence.error or {})
         code = str(error.get("code") or "provider_failed")
-        raise SemanticPlannerProviderFailure(
-            code,
-            _sanitized_provider_failure_evidence(evidence),
-        )
+        sanitized = _sanitized_provider_failure_evidence(evidence)
+        sanitized["provider_attempts"] = provider_attempts
+        raise SemanticPlannerProviderFailure(code, sanitized)
+
     result = dict(evidence.result or {})
     response_text = str(result.get("text") or "").strip()
     if not response_text:
-        raise SemanticPlannerProviderFailure(
-            "empty_response",
-            _sanitized_provider_failure_evidence(evidence),
-        )
+        sanitized = _sanitized_provider_failure_evidence(evidence)
+        sanitized["provider_attempts"] = provider_attempts
+        raise SemanticPlannerProviderFailure("empty_response", sanitized)
+
     strict_json_valid = False
     try:
         strict_json_valid = isinstance(json.loads(response_text), dict)
     except json.JSONDecodeError:
         strict_json_valid = False
+
+    model_call_count = sum(
+        1 + int(item.get("retry_count") or 0)
+        for item in provider_attempts
+    )
     return response_text, {
         "provider": evidence.provider,
-        "model": evidence.model,
+        "model": evidence.model or routing.selected_model,
         "routing_id": routing.routing_id,
+        "routing": routing.to_dict(),
         "authorization_id": evidence.authorization_id,
         "executor_binding": evidence.executor_binding,
         "latency_seconds": evidence.latency_seconds,
@@ -841,6 +910,9 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
         "status": evidence.status,
         "authority": evidence.authority,
         "planner_authority": "NONE",
+        "provider_attempts": provider_attempts,
+        "provider_reroute_count": max(0, len(provider_attempts) - 1),
+        "model_call_count": model_call_count,
     }
 
 
@@ -861,7 +933,9 @@ def propose_semantic_mission_plan(
     prompt_sha = sha256(prompt.encode("utf-8")).hexdigest()
     if inference is None:
         raw, provider_evidence = _live_inference(prompt, context)
-        provider_call_count = 1
+        provider_call_count = int(
+            provider_evidence.get("model_call_count") or 1
+        )
     else:
         raw = inference(prompt, context)
         provider_evidence = {
