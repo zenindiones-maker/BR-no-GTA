@@ -1419,6 +1419,25 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
         )
     ):
         return "EDITORIAL"
+    if "review" in task_class and any(
+        marker in text
+        for marker in (
+            "system",
+            "provider",
+            "runtime",
+            "routing",
+            "authorization",
+            "adapter",
+            "infrastructure",
+            "incident",
+            "failure",
+            "recovery",
+            "repository",
+            "implementation",
+            "code",
+        )
+    ):
+        return "DEVELOPMENT"
 
     engineering_markers = (
         "repository",

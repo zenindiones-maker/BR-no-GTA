@@ -266,6 +266,41 @@ def test_editorial_action_is_normalized_from_task_semantics_not_agent_identity()
     assert editorial["task_family"] == "EDITORIAL"
 
 
+def test_system_incident_independent_review_normalizes_to_development():
+    proposal = MissionPlanProposal(
+        interpreted_goal="Recover from a real provider runtime incident.",
+        assumptions=(),
+        required_outcomes=("reviewed recovery strategy",),
+        tasks=(
+            MissionTaskProposal(
+                task_id="independent-review",
+                objective=(
+                    "Independently review the provider runtime failure diagnosis, "
+                    "authorization/routing evidence and proposed recovery."
+                ),
+                task_class="independent-review",
+                required_capability_description=(
+                    "independent review of provider runtime recovery evidence"
+                ),
+                candidate_capability_ids=(),
+                dependencies=("recovery-proposal",),
+                expected_output="independent review verdict",
+                acceptance_criteria=("review evidence and recovery safety",),
+                risk_side_effect_class="READ_ONLY",
+                action="RESEARCH",
+            ),
+        ),
+        rationale="Review is system/runtime governance, not research collection.",
+        context_usage_notes=(),
+        uncertainty=0.1,
+        needs_human_clarification=False,
+    )
+    requirement = proposal_requirements(proposal)[0]
+    assert requirement["declared_action"] == "RESEARCH"
+    assert requirement["task_family"] == "DEVELOPMENT"
+    assert requirement["action"] == "DEVELOPMENT"
+
+
 def test_editorial_registry_selection_rejects_development_addy_skill(monkeypatch):
     requirement = {
         "task_id": "script-work",
