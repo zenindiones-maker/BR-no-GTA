@@ -294,6 +294,14 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
     assert editorial_route.hermes_used is True
     assert editorial_route.task_count >= 2
     assert editorial_route.provider_required is False
+    editorial_tasks = list(editorial.collaboration_plan.tasks)
+    review_task = next(
+        task for task in editorial_tasks
+        if task.task_class == "youtube-script-review"
+    )
+    assert review_task.action == "EDITORIAL"
+    assert review_task.capability_id == "youtube.department.script-review"
+    assert "CAN_REVIEW" not in set(review_task.required_operations)
 
 
 def test_system_improvement_rejects_research_fact_check_before_registry_execution():

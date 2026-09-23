@@ -623,8 +623,13 @@ def _selection_requirement_for_mission(
         )
     )
     independent_review = (
-        "independent-review" in original_task_class
-        or ("independent" in task_semantics and "review" in task_semantics)
+        original_task_class == "independent-review"
+        or original_task_class.startswith("independent-review-")
+        or (
+            goal.mission_class == "SYSTEM_IMPROVEMENT"
+            and "independent" in task_semantics
+            and "review" in task_semantics
+        )
     )
     if independent_review:
         required_operations = list(

@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 import os
 import re
+import time
 from typing import Any, Callable
 
 _ALLOWED_ACTIONS = {"RESEARCH", "EDITORIAL", "DEVELOPMENT", "EXECUTION", "DECISION"}
@@ -37,6 +38,27 @@ class SemanticPlannerProviderFailure(RuntimeError):
             "structured_output_present": error.get("structured_output_present"),
             "parse_stage": error.get("parse_stage"),
             "sanitized_reason": error.get("sanitized_reason") or self.code,
+            "same_routing_retry_count": int(
+                self.evidence.get("same_routing_retry_count") or 0
+            ),
+            "same_routing_retry_result": self.evidence.get(
+                "same_routing_retry_result"
+            ),
+            "transient_retry_exhausted": bool(
+                self.evidence.get("transient_retry_exhausted")
+            ),
+            "localized_replan_required": bool(
+                self.evidence.get("localized_replan_required")
+            ),
+            "transport_request_ms": self.evidence.get(
+                "transport_request_ms"
+            ),
+            "total_provider_ms": self.evidence.get("total_provider_ms"),
+            "prompt_build_ms": (
+                (self.evidence.get("planner_performance") or {}).get(
+                    "prompt_build_ms"
+                )
+            ),
         }
         safe = json.dumps(
             self.diagnostics,
@@ -72,6 +94,16 @@ def _sanitized_provider_failure_evidence(evidence: Any) -> dict[str, Any]:
         "time_to_first_token_seconds",
         "transport",
         "retry_count",
+        "connect_latency_ms",
+        "first_response_latency_ms",
+        "total_attempt_latency_ms",
+        "timeout_budget_ms",
+        "subrequest_count",
+        "http_status",
+        "failure_class",
+        "response_present",
+        "raw_response_bytes",
+        "full_timeout_same_model_retry",
     }
     safe_error_keys = {
         "code",
@@ -867,54 +899,127 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
         finally:
             consume_harness_authorization(authorization)
 
+    def _attempt_row(evidence: Any, routing: Any, *, phase: str) -> dict[str, Any]:
+        sanitized = _sanitized_provider_failure_evidence(evidence)
+        return {
+            "phase": phase,
+            "provider": evidence.provider,
+            "model": evidence.model or getattr(routing, "selected_model", None),
+            "routing_id": routing.routing_id,
+            "status": evidence.status,
+            "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
+            "latency_seconds": evidence.latency_seconds,
+            "error": dict(sanitized.get("error") or {}),
+            "performance": dict(sanitized.get("performance") or {}),
+        }
+
+    def _is_transient_transport_timeout(evidence: Any) -> bool:
+        error = dict(getattr(evidence, "error", None) or {})
+        return bool(
+            evidence.status != "EXECUTED"
+            and not evidence.active
+            and error.get("code") == "timeout"
+            and bool(error.get("retryable"))
+            and error.get("failure_stage") == "transport_request"
+            and error.get("response_present") is False
+        )
+
+    def _record_failed_nvidia(
+        evidence: Any,
+        routing: Any,
+        *,
+        failure_class: str | None = None,
+        retry_count: int | None = None,
+    ) -> None:
+        if str(evidence.provider or "") != "nvidia_nim":
+            return
+        from app.services.nvidia_model_learning_service import (
+            record_nvidia_semantic_model_observation,
+        )
+        performance = dict(evidence.performance or {})
+        error = dict(evidence.error or {})
+        record_nvidia_semantic_model_observation(
+            model_id=str(
+                evidence.model
+                or getattr(routing, "selected_model", None)
+                or ""
+            ),
+            goal_id=str(context.get("goal_id") or "semantic-plan"),
+            routing_id=str(routing.routing_id),
+            success=False,
+            latency_ms=float(
+                performance.get("total_attempt_latency_ms")
+                or ((evidence.latency_seconds or 0.0) * 1000.0)
+            ),
+            failure_class=str(
+                failure_class
+                or error.get("code")
+                or performance.get("failure_class")
+                or "provider_failure"
+            ),
+            http_status=error.get("status_code"),
+            retry_count=int(
+                retry_count
+                if retry_count is not None
+                else (evidence.retry_count or 0)
+            ),
+            run_id=str(os.getenv("GITHUB_RUN_ID") or "local"),
+            started_at=evidence.started_at,
+            finished_at=evidence.finished_at,
+        )
+
+    same_routing_retry_count = 0
+    same_routing_retry_result = "NOT_APPLICABLE"
+    transient_retry_exhausted = False
+    localized_replan_required = False
+
     routing = _route()
     evidence = _execute(routing)
+    provider_attempts.append(
+        _attempt_row(evidence, routing, phase="INITIAL")
+    )
+
     if evidence.status != "EXECUTED" or not evidence.active:
-        if str(evidence.provider or "") == "nvidia_nim":
-            from app.services.nvidia_model_learning_service import (
-                record_nvidia_semantic_model_observation,
+        if _is_transient_transport_timeout(evidence):
+            same_routing_retry_count = 1
+            retry_evidence = _execute(routing)
+            evidence = retry_evidence
+            provider_attempts.append(
+                _attempt_row(
+                    evidence,
+                    routing,
+                    phase="SAME_ROUTING_RETRY",
+                )
             )
-            performance = dict(evidence.performance or {})
-            error = dict(evidence.error or {})
-            record_nvidia_semantic_model_observation(
-                model_id=str(
-                    evidence.model
-                    or getattr(routing, "selected_model", None)
-                    or ""
-                ),
-                goal_id=str(context.get("goal_id") or "semantic-plan"),
-                routing_id=str(routing.routing_id),
-                success=False,
-                latency_ms=float(
-                    performance.get("total_attempt_latency_ms")
-                    or ((evidence.latency_seconds or 0.0) * 1000.0)
-                ),
-                failure_class=str(
-                    error.get("code")
-                    or performance.get("failure_class")
-                    or "provider_failure"
-                ),
-                http_status=error.get("status_code"),
-                retry_count=int(evidence.retry_count or 0),
-                run_id=str(os.getenv("GITHUB_RUN_ID") or "local"),
-                started_at=evidence.started_at,
-                finished_at=evidence.finished_at,
-            )
-    provider_attempts.append({
-        "provider": evidence.provider,
-        "model": evidence.model or getattr(routing, "selected_model", None),
-        "routing_id": routing.routing_id,
-        "status": evidence.status,
-        "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
-        "latency_seconds": evidence.latency_seconds,
-        "error": dict(
-            _sanitized_provider_failure_evidence(evidence).get("error") or {}
-        ),
-    })
+            if evidence.status == "EXECUTED" and evidence.active:
+                same_routing_retry_result = "RECOVERED"
+            elif _is_transient_transport_timeout(evidence):
+                same_routing_retry_result = "EXHAUSTED"
+                transient_retry_exhausted = True
+                localized_replan_required = True
+                _record_failed_nvidia(
+                    evidence,
+                    routing,
+                    failure_class="TRANSIENT_TIMEOUT",
+                    retry_count=1,
+                )
+            else:
+                same_routing_retry_result = "FAILED_DIFFERENT_CAUSE"
+                _record_failed_nvidia(
+                    evidence,
+                    routing,
+                    retry_count=1,
+                )
+        else:
+            _record_failed_nvidia(evidence, routing)
 
     if evidence.status != "EXECUTED" or not evidence.active:
         error = dict(evidence.error or {})
-        failed_model = str(evidence.model or getattr(routing, "selected_model", None) or "").strip()
+        failed_model = str(
+            evidence.model
+            or getattr(routing, "selected_model", None)
+            or ""
+        ).strip()
         failed_provider = str(
             evidence.provider or routing.selected_provider or ""
         ).strip()
@@ -922,63 +1027,86 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
             rerouted = _route(
                 preferred_provider=failed_provider,
                 unavailable_models=(failed_model,),
-                failure_pattern=str(
-                    error.get("failure_pattern")
-                    or error.get("code")
-                    or "provider_retryable_failure"
+                failure_pattern=(
+                    "transient_timeout_retry_exhausted"
+                    if transient_retry_exhausted
+                    else str(
+                        error.get("failure_pattern")
+                        or error.get("code")
+                        or "provider_retryable_failure"
+                    )
                 ),
             )
             evidence = _execute(rerouted)
             routing = rerouted
+            provider_attempts.append(
+                _attempt_row(
+                    evidence,
+                    routing,
+                    phase="LOCALIZED_REPLAN",
+                )
+            )
             if evidence.status != "EXECUTED" or not evidence.active:
-                if str(evidence.provider or "") == "nvidia_nim":
-                    from app.services.nvidia_model_learning_service import (
-                        record_nvidia_semantic_model_observation,
-                    )
-                    performance = dict(evidence.performance or {})
-                    reroute_error = dict(evidence.error or {})
-                    record_nvidia_semantic_model_observation(
-                        model_id=str(
-                            evidence.model
-                            or getattr(routing, "selected_model", None)
-                            or ""
-                        ),
-                        goal_id=str(context.get("goal_id") or "semantic-plan"),
-                        routing_id=str(routing.routing_id),
-                        success=False,
-                        latency_ms=float(
-                            performance.get("total_attempt_latency_ms")
-                            or ((evidence.latency_seconds or 0.0) * 1000.0)
-                        ),
-                        failure_class=str(
-                            reroute_error.get("code")
-                            or performance.get("failure_class")
-                            or "provider_failure"
-                        ),
-                        http_status=reroute_error.get("status_code"),
-                        retry_count=int(evidence.retry_count or 0),
-                        run_id=str(os.getenv("GITHUB_RUN_ID") or "local"),
-                        started_at=evidence.started_at,
-                        finished_at=evidence.finished_at,
-                    )
-            provider_attempts.append({
-                "provider": evidence.provider,
-                "model": evidence.model or getattr(routing, "selected_model", None),
-                "routing_id": routing.routing_id,
-                "status": evidence.status,
-                "retry_count": int(getattr(evidence, "retry_count", 0) or 0),
-                "latency_seconds": evidence.latency_seconds,
-                "error": dict(
-                    _sanitized_provider_failure_evidence(evidence).get("error")
-                    or {}
-                ),
-            })
+                _record_failed_nvidia(evidence, routing)
+
+    routing_ids = [
+        str(item.get("routing_id") or "")
+        for item in provider_attempts
+        if str(item.get("routing_id") or "")
+    ]
+    unique_routing_ids = list(dict.fromkeys(routing_ids))
+    provider_reroute_count = max(0, len(unique_routing_ids) - 1)
+    transport_request_ms = round(sum(
+        float(
+            (item.get("performance") or {}).get(
+                "total_attempt_latency_ms"
+            )
+            or ((item.get("latency_seconds") or 0.0) * 1000.0)
+        )
+        for item in provider_attempts
+    ), 3)
+    total_provider_ms = round(sum(
+        float(item.get("latency_seconds") or 0.0) * 1000.0
+        for item in provider_attempts
+    ), 3)
+    provider_queue_or_connect_ms = next(
+        (
+            float((item.get("performance") or {}).get(
+                "first_response_latency_ms"
+            ))
+            for item in provider_attempts
+            if (item.get("performance") or {}).get(
+                "first_response_latency_ms"
+            ) is not None
+        ),
+        None,
+    )
+    ttft_ms = next(
+        (
+            float((item.get("performance") or {}).get(
+                "time_to_first_token_seconds"
+            )) * 1000.0
+            for item in provider_attempts
+            if (item.get("performance") or {}).get(
+                "time_to_first_token_seconds"
+            ) is not None
+        ),
+        None,
+    )
 
     if evidence.status != "EXECUTED" or not evidence.active:
         error = dict(evidence.error or {})
         code = str(error.get("code") or "provider_failed")
         sanitized = _sanitized_provider_failure_evidence(evidence)
         sanitized["provider_attempts"] = provider_attempts
+        sanitized["same_routing_retry_count"] = same_routing_retry_count
+        sanitized["same_routing_retry_result"] = same_routing_retry_result
+        sanitized["transient_retry_exhausted"] = transient_retry_exhausted
+        sanitized["localized_replan_required"] = localized_replan_required
+        sanitized["transport_request_ms"] = transport_request_ms
+        sanitized["provider_queue_or_connect_ms"] = provider_queue_or_connect_ms
+        sanitized["ttft_ms"] = ttft_ms
+        sanitized["total_provider_ms"] = total_provider_ms
         raise SemanticPlannerProviderFailure(code, sanitized)
 
     result = dict(evidence.result or {})
@@ -1015,7 +1143,15 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
         "authority": evidence.authority,
         "planner_authority": "NONE",
         "provider_attempts": provider_attempts,
-        "provider_reroute_count": max(0, len(provider_attempts) - 1),
+        "provider_reroute_count": provider_reroute_count,
+        "same_routing_retry_count": same_routing_retry_count,
+        "same_routing_retry_result": same_routing_retry_result,
+        "transient_retry_exhausted": transient_retry_exhausted,
+        "localized_replan_required": localized_replan_required,
+        "transport_request_ms": transport_request_ms,
+        "provider_queue_or_connect_ms": provider_queue_or_connect_ms,
+        "ttft_ms": ttft_ms,
+        "total_provider_ms": total_provider_ms,
         "model_call_count": model_call_count,
     }
 
@@ -1030,13 +1166,36 @@ def propose_semantic_mission_plan(
     max_tasks = int(resources.get("max_tasks_per_mission") or 8)
     if max_tasks < 1 or max_tasks > 12:
         raise ValueError("semantic planner max_tasks is outside Harness resource governance")
+    prompt_started = time.perf_counter()
     prompt = build_semantic_planner_prompt(
         context,
         validation_feedback=validation_feedback,
     )
+    prompt_build_ms = max(
+        0.0,
+        (time.perf_counter() - prompt_started) * 1000.0,
+    )
     prompt_sha = sha256(prompt.encode("utf-8")).hexdigest()
     if inference is None:
-        raw, provider_evidence = _live_inference(prompt, context)
+        try:
+            raw, provider_evidence = _live_inference(prompt, context)
+        except SemanticPlannerProviderFailure as exc:
+            enriched = dict(exc.evidence or {})
+            planner_performance = dict(
+                enriched.get("planner_performance") or {}
+            )
+            planner_performance["prompt_build_ms"] = round(
+                prompt_build_ms, 3
+            )
+            enriched["planner_performance"] = planner_performance
+            raise SemanticPlannerProviderFailure(
+                exc.code,
+                enriched,
+            ) from exc
+        provider_evidence = dict(provider_evidence)
+        provider_evidence["planner_performance"] = {
+            "prompt_build_ms": round(prompt_build_ms, 3),
+        }
         provider_call_count = int(
             provider_evidence.get("model_call_count") or 1
         )

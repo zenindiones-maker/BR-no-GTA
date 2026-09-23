@@ -326,39 +326,35 @@ def test_harness_routing_excludes_runtime_failed_nvidia_model(monkeypatch):
     assert first.selected_model in second.policy_metadata["unavailable_model_ids"]
 
 
-def test_live_semantic_inference_reroutes_retryable_model_failure():
-    route_one = SimpleNamespace(
+def _planner_route(model: str, routing_id: str):
+    return SimpleNamespace(
         selected_provider="nvidia_nim",
-        selected_model="model-a",
-        routing_id="routing-a",
+        selected_model=model,
+        routing_id=routing_id,
         to_dict=lambda: {
             "selected_provider": "nvidia_nim",
-            "selected_model": "model-a",
-            "routing_id": "routing-a",
+            "selected_model": model,
+            "routing_id": routing_id,
         },
     )
-    route_two = SimpleNamespace(
-        selected_provider="nvidia_nim",
-        selected_model="model-b",
-        routing_id="routing-b",
-        to_dict=lambda: {
-            "selected_provider": "nvidia_nim",
-            "selected_model": "model-b",
-            "routing_id": "routing-b",
-        },
-    )
-    failed = HarnessAIProviderEvidence(
+
+
+def _planner_timeout(model: str, routing_id: str):
+    return HarnessAIProviderEvidence(
         provider="nvidia_nim",
         status="FAILED",
         active=False,
         authority="DEEPSEEK_HARNESS",
         authorized_action="DECISION",
-        harness_decision_id="routing-a",
-        execution_id="execution-a",
-        model="model-a",
-        executor_binding="app.services.harness_ai_provider_service.execute_harness_ai_generation",
-        latency_seconds=240.0,
-        retry_count=1,
+        harness_decision_id=routing_id,
+        execution_id="execution-" + routing_id,
+        model=model,
+        executor_binding=(
+            "app.services.harness_ai_provider_service."
+            "execute_harness_ai_generation"
+        ),
+        latency_seconds=120.0,
+        retry_count=0,
         error={
             "code": "timeout",
             "retryable": True,
@@ -373,19 +369,29 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         },
         performance={
             "transport": "nvidia_openai_chat_completions",
-            "retry_count": 1,
+            "retry_count": 0,
+            "total_attempt_latency_ms": 120000.0,
+            "timeout_budget_ms": 120000.0,
+            "failure_class": "E_FULL_REQUEST_TIMEOUT",
+            "response_present": False,
         },
     )
-    success = HarnessAIProviderEvidence(
+
+
+def _planner_success(model: str, routing_id: str):
+    return HarnessAIProviderEvidence(
         provider="nvidia_nim",
         status="EXECUTED",
         active=True,
         authority="DEEPSEEK_HARNESS",
         authorized_action="DECISION",
-        harness_decision_id="routing-b",
-        execution_id="execution-b",
-        model="model-b",
-        executor_binding="app.services.harness_ai_provider_service.execute_harness_ai_generation",
+        harness_decision_id=routing_id,
+        execution_id="execution-" + routing_id,
+        model=model,
+        executor_binding=(
+            "app.services.harness_ai_provider_service."
+            "execute_harness_ai_generation"
+        ),
         latency_seconds=1.2,
         retry_count=0,
         result={
@@ -396,8 +402,75 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         performance={
             "transport": "nvidia_openai_chat_completions",
             "retry_count": 0,
+            "total_attempt_latency_ms": 1200.0,
+            "first_response_latency_ms": 300.0,
         },
     )
+
+
+def test_live_semantic_inference_retries_same_routing_once_before_reroute():
+    route_one = _planner_route("model-a", "routing-a")
+    failed = _planner_timeout("model-a", "routing-a")
+    recovered = _planner_success("model-a", "routing-a")
+    requests = []
+
+    def fake_route(request):
+        requests.append(request)
+        return route_one
+
+    with patch(
+        "app.services.harness_routing_policy_service.route_harness_request",
+        side_effect=fake_route,
+    ), patch(
+        "app.services.harness_ai_provider_service.execute_harness_ai_generation",
+        side_effect=[failed, recovered],
+    ) as execute_mock, patch(
+        "app.services.harness_authorization_service.issue_harness_authorization",
+        return_value=object(),
+    ), patch(
+        "app.services.harness_authorization_service.consume_harness_authorization",
+    ), patch(
+        "app.services.nvidia_model_learning_service."
+        "record_nvidia_semantic_model_observation",
+        return_value={"episode_id": "fixture"},
+    ) as learning_mock:
+        text_value, evidence = _live_inference(
+            "semantic prompt",
+            {
+                "goal_id": "goal-same-routing-retry",
+                "provider_health": {
+                    "eligible_zero_cost_provider_ids": ["nvidia_nim"]
+                },
+            },
+        )
+
+    assert text_value == '{"ok":true}'
+    assert len(requests) == 1
+    assert execute_mock.call_count == 2
+    assert evidence["model"] == "model-a"
+    assert evidence["provider_reroute_count"] == 0
+    assert evidence["same_routing_retry_count"] == 1
+    assert evidence["same_routing_retry_result"] == "RECOVERED"
+    assert evidence["transient_retry_exhausted"] is False
+    assert evidence["localized_replan_required"] is False
+    assert evidence["model_call_count"] == 2
+    assert [item["routing_id"] for item in evidence["provider_attempts"]] == [
+        "routing-a",
+        "routing-a",
+    ]
+    assert [item["phase"] for item in evidence["provider_attempts"]] == [
+        "INITIAL",
+        "SAME_ROUTING_RETRY",
+    ]
+    learning_mock.assert_not_called()
+
+
+def test_live_semantic_inference_replans_only_after_same_timeout_retry_exhausted():
+    route_one = _planner_route("model-a", "routing-a")
+    route_two = _planner_route("model-b", "routing-b")
+    failed_one = _planner_timeout("model-a", "routing-a")
+    failed_two = _planner_timeout("model-a", "routing-a")
+    recovered = _planner_success("model-b", "routing-b")
     requests = []
 
     def fake_route(request):
@@ -409,8 +482,8 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         side_effect=fake_route,
     ), patch(
         "app.services.harness_ai_provider_service.execute_harness_ai_generation",
-        side_effect=[failed, success],
-    ), patch(
+        side_effect=[failed_one, failed_two, recovered],
+    ) as execute_mock, patch(
         "app.services.harness_authorization_service.issue_harness_authorization",
         return_value=object(),
     ), patch(
@@ -419,11 +492,11 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
         "app.services.nvidia_model_learning_service."
         "record_nvidia_semantic_model_observation",
         return_value={"episode_id": "fixture"},
-    ):
+    ) as learning_mock:
         text_value, evidence = _live_inference(
             "semantic prompt",
             {
-                "goal_id": "goal-reroute",
+                "goal_id": "goal-localized-replan",
                 "provider_health": {
                     "eligible_zero_cost_provider_ids": ["nvidia_nim"]
                 },
@@ -432,18 +505,26 @@ def test_live_semantic_inference_reroutes_retryable_model_failure():
 
     assert text_value == '{"ok":true}'
     assert len(requests) == 2
+    assert execute_mock.call_count == 3
     assert requests[1].preferred_providers == ("nvidia_nim",)
     assert requests[1].unavailable_model_ids == ("model-a",)
-    assert requests[1].failure_pattern == "nvidia_nim_timeout"
-    assert evidence["provider"] == "nvidia_nim"
+    assert requests[1].failure_pattern == "transient_timeout_retry_exhausted"
     assert evidence["model"] == "model-b"
-    assert evidence["routing"]["selected_model"] == "model-b"
     assert evidence["provider_reroute_count"] == 1
+    assert evidence["same_routing_retry_count"] == 1
+    assert evidence["same_routing_retry_result"] == "EXHAUSTED"
+    assert evidence["transient_retry_exhausted"] is True
+    assert evidence["localized_replan_required"] is True
     assert evidence["model_call_count"] == 3
-    assert [item["model"] for item in evidence["provider_attempts"]] == [
-        "model-a",
-        "model-b",
+    assert [item["phase"] for item in evidence["provider_attempts"]] == [
+        "INITIAL",
+        "SAME_ROUTING_RETRY",
+        "LOCALIZED_REPLAN",
     ]
+    learning_mock.assert_called_once()
+    kwargs = learning_mock.call_args.kwargs
+    assert kwargs["failure_class"] == "TRANSIENT_TIMEOUT"
+    assert kwargs["retry_count"] == 1
 
 
 

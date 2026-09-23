@@ -141,7 +141,25 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
             CAN_CONSUME_ARTIFACT_REFS,
             CAN_PRODUCE_ARTIFACT_REFS,
         })
-    if any(marker in text for marker in review_markers):
+    editorial_review_task = (
+        "review" in task_class
+        and any(
+            marker in normalized_text
+            for marker in (
+                "script",
+                "roteiro",
+                "youtube",
+                "editorial",
+                "content",
+                "conteudo",
+                "conteúdo",
+            )
+        )
+    )
+    if (
+        any(marker in text for marker in review_markers)
+        and not editorial_review_task
+    ):
         operations.update({
             CAN_REVIEW,
             CAN_CONSUME_ARTIFACT_REFS,
