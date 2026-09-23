@@ -349,6 +349,22 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
         if recent_model
         else None
     )
+    timeout_memory_preflight = learning_repository.list_memories(
+        status="ACTIVE",
+        memory_type="FAILURE",
+        domain="ai",
+        task_class="semantic-mission-planning",
+        limit=100,
+    )
+    recent_memory = [
+        item for item in timeout_memory_preflight
+        if (
+            str((item.get("metadata") or {}).get("model_id") or "")
+            == recent_model
+            and str(item.get("failure_pattern") or "")
+            in {"timeout", "nvidia_nim_timeout"}
+        )
+    ]
     routing_after_failure = route_harness_request(
         HarnessRoutingRequest(
             intent="semantic planning after recent timeout evidence",
