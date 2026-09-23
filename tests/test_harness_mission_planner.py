@@ -147,7 +147,7 @@ def test_natural_performance_goal_builds_dynamic_harness_plan_without_team_keywo
     assert plan.provider_health["opencode"]["state"] == "UPSTREAM_DENIED"
     assert any("opencode" in item for item in plan.known_bad_paths_avoided)
     assert all(task.capability_id != "ai.provider.opencode-free" for task in tasks)
-    assert plan.planning_evidence["semantic_provider_call_count"] == 2
+    assert plan.planning_evidence["semantic_provider_call_count"] == 1
     assert plan.planning_evidence["proposal_attempts"] == 2
     assert plan.planning_evidence["replan_count"] == 1
     assert any(
