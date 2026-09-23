@@ -838,6 +838,37 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
 
     routing = _route()
     evidence = _execute(routing)
+    if evidence.status != "EXECUTED" or not evidence.active:
+        if str(evidence.provider or "") == "nvidia_nim":
+            from app.services.nvidia_model_learning_service import (
+                record_nvidia_semantic_model_observation,
+            )
+            performance = dict(evidence.performance or {})
+            error = dict(evidence.error or {})
+            record_nvidia_semantic_model_observation(
+                model_id=str(
+                    evidence.model
+                    or getattr(routing, "selected_model", None)
+                    or ""
+                ),
+                goal_id=str(context.get("goal_id") or "semantic-plan"),
+                routing_id=str(routing.routing_id),
+                success=False,
+                latency_ms=float(
+                    performance.get("total_attempt_latency_ms")
+                    or ((evidence.latency_seconds or 0.0) * 1000.0)
+                ),
+                failure_class=str(
+                    error.get("code")
+                    or performance.get("failure_class")
+                    or "provider_failure"
+                ),
+                http_status=error.get("status_code"),
+                retry_count=int(evidence.retry_count or 0),
+                run_id=str(os.getenv("GITHUB_RUN_ID") or "local"),
+                started_at=evidence.started_at,
+                finished_at=evidence.finished_at,
+            )
     provider_attempts.append({
         "provider": evidence.provider,
         "model": evidence.model or getattr(routing, "selected_model", None),
@@ -868,6 +899,37 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
             )
             evidence = _execute(rerouted)
             routing = rerouted
+            if evidence.status != "EXECUTED" or not evidence.active:
+                if str(evidence.provider or "") == "nvidia_nim":
+                    from app.services.nvidia_model_learning_service import (
+                        record_nvidia_semantic_model_observation,
+                    )
+                    performance = dict(evidence.performance or {})
+                    reroute_error = dict(evidence.error or {})
+                    record_nvidia_semantic_model_observation(
+                        model_id=str(
+                            evidence.model
+                            or getattr(routing, "selected_model", None)
+                            or ""
+                        ),
+                        goal_id=str(context.get("goal_id") or "semantic-plan"),
+                        routing_id=str(routing.routing_id),
+                        success=False,
+                        latency_ms=float(
+                            performance.get("total_attempt_latency_ms")
+                            or ((evidence.latency_seconds or 0.0) * 1000.0)
+                        ),
+                        failure_class=str(
+                            reroute_error.get("code")
+                            or performance.get("failure_class")
+                            or "provider_failure"
+                        ),
+                        http_status=reroute_error.get("status_code"),
+                        retry_count=int(evidence.retry_count or 0),
+                        run_id=str(os.getenv("GITHUB_RUN_ID") or "local"),
+                        started_at=evidence.started_at,
+                        finished_at=evidence.finished_at,
+                    )
             provider_attempts.append({
                 "provider": evidence.provider,
                 "model": evidence.model or getattr(routing, "selected_model", None),
