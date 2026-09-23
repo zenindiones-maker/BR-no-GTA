@@ -232,6 +232,21 @@ def execute_youtube_specialist_via_harness(
         if not context_text.strip() or len(context_text) > 24_000:
             raise ValueError("semantic_context must be non-empty and <= 24000 serialized characters")
 
+        from app.services.provider_health_service import semantic_provider_health
+
+        semantic_contract = _semantic_output_contract(capability_id)
+        provider_health = semantic_provider_health()
+        preferred_providers = tuple(
+            str(item)
+            for item in (
+                provider_health.get("eligible_zero_cost_provider_ids") or ()
+            )
+            if str(item).strip()
+        )
+        if not preferred_providers:
+            raise RuntimeError(
+                "No healthy zero-cost semantic provider is available for the YouTube specialist"
+            )
         provider_routing = route_harness_request(
             HarnessRoutingRequest(
                 intent=f"{capability_id} specialist reasoning over verified YouTube evidence",
@@ -242,15 +257,15 @@ def execute_youtube_specialist_via_harness(
                 required_capability_id="ai.reasoning.text",
                 provider_required=True,
                 provider_domain="ai",
-                preferred_providers=("opencode",),
-                allowed_providers=("opencode",),
+                preferred_providers=preferred_providers,
+                required_model_capabilities=("reasoning",),
+                structured_output_required=semantic_contract is not None,
+                prefer_low_latency=True,
                 fallback_allowed=False,
                 zero_cost_operation=True,
                 learning_required=True,
             )
         )
-        if provider_routing.selected_provider != "opencode":
-            raise RuntimeError("Harness did not select the governed zero-cost OpenCode provider")
         provider_authorization = issue_harness_authorization(
             authorized_action=auth.authorized_action,
             subject=f"provider:{provider_routing.selected_provider}",
@@ -282,7 +297,6 @@ def execute_youtube_specialist_via_harness(
             "Return a concise professional analysis with: findings, risks, recommendation, "
             "and what evidence is still missing. Explicitly separate verified facts from inference."
         )
-        semantic_contract = _semantic_output_contract(capability_id)
         if semantic_contract is not None:
             prompt += (
                 "\n\nOUTPUT_CONTRACT: Return ONLY valid JSON, without markdown or extra prose, "
