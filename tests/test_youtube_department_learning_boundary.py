@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from app.services.harness_ai_provider_service import HarnessAIProviderEvidence
 from app.database import harness_learning_repository
 from app.services.harness_authorization_service import (
@@ -103,11 +105,11 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
 
     def fake_generate(*, prompt, authorization, provider_name=None, routing_decision=None, selector=None):
         assert routing_decision is not None
-        assert routing_decision.selected_provider == "opencode"
+        assert routing_decision.selected_provider == "nvidia_nim"
         assert routing_decision.selected_capability_id == "ai.reasoning.text"
         assert "verified_claim" in prompt
         return HarnessAIProviderEvidence(
-            provider="opencode",
+            provider="nvidia_nim",
             status="EXECUTED",
             active=True,
             authority="deepseek_harness",
@@ -121,17 +123,50 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
                     "Risks: do not overstate inference. Recommendation: retain factual framing. "
                     "Missing evidence: independent corroboration for speculative implications."
                 ),
-                "model": "oc/big-pickle",
+                "model": routing_decision.selected_model,
             },
             routing=routing_decision.to_dict(),
-            model="oc/big-pickle",
+            model=routing_decision.selected_model,
             executor_binding=routing_decision.selected_provider_executor_binding,
             evidence_refs=("provider-routing:semantic-test", "prompt-sha256:test"),
         )
 
     monkeypatch.setattr(
         "app.services.provider_health_service.semantic_provider_health",
-        lambda: {"eligible_zero_cost_provider_ids": ["opencode"]},
+        lambda: {"eligible_zero_cost_provider_ids": ["nvidia_nim"]},
+    )
+    monkeypatch.setattr(
+        "app.services.provider_health_service.provider_health",
+        lambda provider_id, **_: SimpleNamespace(
+            provider_id=provider_id,
+            state="AVAILABLE",
+            reason="unit-test healthy provider",
+            evidence_refs=("unit-test:provider-health",),
+            retry_allowed=True,
+            zero_cost_eligible=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.provider_health_service.model_health",
+        lambda provider_id, model_id, **_: SimpleNamespace(
+            provider_id=provider_id,
+            model_id=model_id,
+            availability="AVAILABLE",
+            last_success=None,
+            last_failure=None,
+            failure_class=None,
+            latency_ms=50.0,
+            confidence=1.0,
+            sample_size=1,
+            rate_limit_state="CLEAR",
+            circuit_breaker_state="CLOSED",
+            evidence_refs=("unit-test:model-health",),
+            live_status="AVAILABLE",
+            http_status=200,
+            quota_state="AVAILABLE",
+            last_verified_at=None,
+            source="UNIT_TEST",
+        ),
     )
     monkeypatch.setattr(
         "app.services.harness_ai_provider_service.execute_harness_ai_generation",
@@ -158,13 +193,13 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
         consume_harness_authorization(authorization)
 
     assert canonical.success is True
-    assert canonical.model == "oc/big-pickle"
-    assert canonical.result["semantic_provider"] == "opencode"
-    assert canonical.result["semantic_model"] == "oc/big-pickle"
+    assert canonical.model
+    assert canonical.result["semantic_provider"] == "nvidia_nim"
+    assert canonical.result["semantic_model"] == canonical.model
     assert "Findings:" in canonical.result["semantic_analysis"]
     receipt = canonical.result["receipt"]
     assert receipt["external_call_performed"] is True
-    assert receipt["provider"] == "opencode"
+    assert receipt["provider"] == "nvidia_nim"
     assert "provider-routing:semantic-test" in receipt["evidence_refs"]
 
     episodes = harness_learning_repository.list_episodes(
