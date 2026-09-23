@@ -17,6 +17,7 @@ env:
   ZERO_COST_OPERATION: "TRUE"
   BR_GITHUB_REPOSITORY: ${{ github.repository }}
   BR_GITHUB_REF: work/gate6f-analytics-learning
+  BR_CODEX_FEDERATION_CONFIGURED: ${{ vars.OPENAI_FEDERATION_RULE_ID != '' && vars.OPENAI_FEDERATION_AUDIENCE != '' }}
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/telegram-natural-system-improvement/control.db
   BR_TELEGRAM_FINAL_RESULT_CHAT_ID: ${{ vars.TELEGRAM_REVIEW_CHAT_ID || secrets.TELEGRAM_REVIEW_CHAT_ID || '0' }}
 

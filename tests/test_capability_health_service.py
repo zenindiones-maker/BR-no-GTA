@@ -2,6 +2,7 @@ from app.services import capability_health_service
 from app.services.capability_health_service import (
     BLOCKED,
     HEALTHY,
+    UNKNOWN,
     capability_health,
 )
 from app.services.provider_health_service import ProviderHealth
@@ -71,3 +72,30 @@ def test_addy_health_fails_closed_when_semantic_provider_pool_is_empty(monkeypat
     observed = capability_health("addy:performance-optimization")
     assert observed.state == BLOCKED
     assert observed.source == "SEMANTIC_PROVIDER_HEALTH"
+
+
+
+def test_codex_health_is_blocked_before_planning_when_github_federation_is_missing(
+    monkeypatch,
+):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("BR_CODEX_FEDERATION_CONFIGURED", "false")
+
+    observed = capability_health("agent-office.codex.bounded-development")
+
+    assert observed.state == BLOCKED
+    assert observed.retry_allowed is False
+    assert observed.source == "GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG"
+    assert "replan" in observed.reason.casefold()
+
+
+def test_codex_health_remains_preflight_unknown_when_federation_is_configured(
+    monkeypatch,
+):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("BR_CODEX_FEDERATION_CONFIGURED", "true")
+
+    observed = capability_health("agent-office.codex.bounded-development")
+
+    assert observed.state == UNKNOWN
+    assert observed.source == "CODEX_AUTH_PREFLIGHT_REQUIRED"

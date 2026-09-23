@@ -270,6 +270,30 @@ def capability_health(capability_id: str) -> CapabilityHealth:
         )
 
     if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
+        github_actions = str(os.getenv("GITHUB_ACTIONS") or "").strip().lower()
+        federation_config = str(
+            os.getenv("BR_CODEX_FEDERATION_CONFIGURED") or ""
+        ).strip().lower()
+        if github_actions == "true" and federation_config == "false":
+            return CapabilityHealth(
+                capability_id=record.capability_id,
+                state=BLOCKED,
+                reason=(
+                    "GitHub Actions runner cannot authorize Codex because the "
+                    "repository federation rule/audience configuration is absent. "
+                    "Harness must replan instead of selecting this capability."
+                ),
+                retry_allowed=False,
+                confidence=1.0,
+                sample_size=0,
+                last_success_at=None,
+                last_failure_at=None,
+                evidence_refs=(
+                    "runtime-config:OPENAI_FEDERATION_RULE_ID",
+                    "runtime-config:OPENAI_FEDERATION_AUDIENCE",
+                ),
+                source="GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG",
+            )
         episodes = _episodes(record.capability_id)
         failure_memories = _failure_memories(record.capability_id)
         strongest_failure = max(
