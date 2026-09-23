@@ -142,6 +142,7 @@ def classify_internal_failure(
             "upstream service failed",
             "provider unavailable",
             "timeout",
+            "timed out",
             "temporar",
             "http 429",
             "http 5",

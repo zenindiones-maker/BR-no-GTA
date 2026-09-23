@@ -100,3 +100,19 @@ def test_provider_transient_escalates_without_repeating_strategy(tmp_path):
     third = state.select_recovery(observed)
     assert third.recoverable is False
     assert third.exhausted is True
+
+
+def test_capability_timeout_wording_is_provider_transient():
+    failure = RuntimeError(
+        "CapabilityReturnedFailure: capability returned non-executed "
+        "evidence: addy:constraint-driven-development status=FAILED "
+        "reason=NVIDIA NIM request timed out"
+    )
+    classification = classify_internal_failure(
+        failure,
+        task=_task(),
+        context={"dependency_context_sha256": "timeout-lineage"},
+    )
+    assert classification.failure_class == PROVIDER_TRANSIENT
+    assert classification.recoverable is True
+    assert classification.human_intervention_required is False
