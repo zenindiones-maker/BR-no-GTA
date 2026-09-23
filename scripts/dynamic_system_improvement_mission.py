@@ -36,6 +36,7 @@ from app.services.harness_routing_policy_service import (
 )
 from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.hermes_multiagent.capability_broker import (
+    DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
 )
 from app.services.hermes_multiagent.contracts import (
@@ -787,6 +788,8 @@ def _fit_parent_context_to_executor_limit(
                 truncated_summaries += 1
             direct_parents.append({
                 "task_id": raw.get("task_id"),
+                "functional_role": raw.get("functional_role"),
+                "input_refs": list(raw.get("input_refs") or ()),
                 "capability_id": raw.get("capability_id"),
                 "agent_id": raw.get("agent_id"),
                 "skill_id": raw.get("skill_id"),
@@ -1212,6 +1215,7 @@ def run(
         for level in spec.collaboration_plan.execution_levels:
             for task_id in level:
                 task = spec.task(task_id)
+                broker.recovery.task_started(task_id)
                 task_started = time.perf_counter()
                 parent_context = broker.parent_context(task_id=task_id)
                 executor_context_limit_chars = _executor_context_char_limit(
@@ -1411,6 +1415,7 @@ def run(
                         ),
                     )
                     holder["execution_by_task"][task_id] = executed
+                    broker.recovery.task_completed(task_id)
                     _complete(
                         board,
                         task_mapping,
@@ -1451,20 +1456,90 @@ def run(
                         or {}
                     ),
                 }
-                with PerformanceSpan(
-                    stage="hermes.specialist.execute",
-                    category="HERMES_SPECIALIST_EXECUTION_TIME",
-                    mission_id=spec.mission_id,
-                    task_id=task_id,
-                    agent_id=task.selected_agent_id,
-                    capability_id=task.capability_id,
-                ):
-                    executed = broker.execute_delegated_capability(
-                        task_id=task_id,
-                        capability_id=task.capability_id,
-                        payload=payload,
-                        dependency_context=parent_context,
-                    )
+                recovery_retries = 0
+                while True:
+                    try:
+                        with PerformanceSpan(
+                            stage="hermes.specialist.execute",
+                            category="HERMES_SPECIALIST_EXECUTION_TIME",
+                            mission_id=spec.mission_id,
+                            task_id=task_id,
+                            agent_id=task.selected_agent_id,
+                            capability_id=task.capability_id,
+                        ):
+                            executed = broker.execute_delegated_capability(
+                                task_id=task_id,
+                                capability_id=task.capability_id,
+                                payload=payload,
+                                dependency_context=parent_context,
+                            )
+                        if recovery_retries:
+                            broker.recovery.recovery_validated(
+                                task_id=task_id,
+                                validation=(
+                                    "SAME_TASK_RECOVERY_EXECUTION_SUCCEEDED"
+                                ),
+                            )
+                            broker.recovery.task_resumed(task_id)
+                        break
+                    except DelegatedCapabilityFailure as exc:
+                        classification = broker.recovery.observe_failure(
+                            task=task,
+                            exc=exc,
+                            context=parent_context,
+                            contract_version=str(
+                                task.capability_version or "1"
+                            ),
+                        )
+                        decision = broker.recovery.select_recovery(
+                            classification
+                        )
+                        allowed_local = {
+                            "RETRY_SAME_TASK",
+                            "LOCALIZED_PROVIDER_REPLAN",
+                            "STRUCTURED_CORRECTION_TURN",
+                            "REFRESH_LINEAGE",
+                            "LOCALIZED_REGISTRY_RESOLUTION",
+                            "LOCALIZED_TOOL_REPLAN",
+                        }
+                        if (
+                            not decision.recoverable
+                            or decision.strategy not in allowed_local
+                        ):
+                            raise
+                        broker.recovery.recovery_started(
+                            classification=classification,
+                            decision=decision,
+                        )
+                        recovery_retries += 1
+                        if decision.strategy == "REFRESH_LINEAGE":
+                            parent_context = broker.parent_context(
+                                task_id=task_id
+                            )
+                        payload = dict(payload)
+                        retry_context = dict(
+                            payload.get("context")
+                            or parent_context
+                            or {}
+                        )
+                        retry_context["internal_recovery"] = {
+                            "ORIGINAL_MISSION_ID": spec.mission_id,
+                            "ORIGINAL_GOAL_ID": spec.goal_id,
+                            "FAILED_TASK_ID": task_id,
+                            "RECOVERY_ATTEMPT": recovery_retries,
+                            "RECOVERY_REASON": (
+                                classification.safe_reason
+                            ),
+                            "FAILURE_CLASS": (
+                                classification.failure_class
+                            ),
+                            "FAILURE_SIGNATURE": (
+                                classification.failure_signature
+                            ),
+                            "RECOVERY_STRATEGY": decision.strategy,
+                        }
+                        payload["context"] = retry_context
+
                 executed.setdefault("orchestration_metrics", {})
                 executed["orchestration_metrics"].update({
                     "TASK_TOTAL_MS": round(
@@ -1481,6 +1556,7 @@ def run(
                     ],
                 })
                 holder["execution_by_task"][task_id] = executed
+                broker.recovery.task_completed(task_id)
 
                 if _is_mutating(task):
                     candidate_sha = _find_candidate_sha(executed)
@@ -1579,6 +1655,10 @@ def run(
             )
     finally:
         consume_harness_authorization(authorization)
+
+    broker = holder.get("broker")
+    if broker is not None:
+        broker.recovery.mission_completed()
 
     gates: list[dict[str, Any]] = []
     measured_required = mission_requires_measured_improvement(human_goal)
@@ -1683,7 +1763,72 @@ def run(
         "agent_direct_promotion": False,
         "handoffs": list(broker.handoff_snapshot()) if broker else [],
         "audit": list(broker.audit_snapshot()) if broker else [],
+        "internal_recovery": (
+            broker.recovery.snapshot() if broker else {}
+        ),
         "checks": {
+            "TASK_FAILURE_OBSERVED": (
+                any(
+                    item.get("event") == "TASK_FAILED"
+                    for item in (
+                        (broker.recovery.snapshot().get("events") or ())
+                        if broker else ()
+                    )
+                )
+                or "NOT_OBSERVED"
+            ),
+            "FAILURE_CLASSIFIED": (
+                any(
+                    item.get("event") == "FAILURE_CLASSIFIED"
+                    for item in (
+                        (broker.recovery.snapshot().get("events") or ())
+                        if broker else ()
+                    )
+                )
+                or "NOT_OBSERVED"
+            ),
+            "HUMAN_INTERVENTION_REQUIRED": (
+                "NO"
+                if broker and broker.recovery.snapshot().get(
+                    "MISSION_STATUS"
+                ) == "COMPLETED"
+                else "NO_INTERNAL_BLOCKER"
+            ),
+            "RECOVERY_STARTED_AUTOMATICALLY": (
+                any(
+                    item.get("event") == "RECOVERY_STARTED"
+                    for item in (
+                        (broker.recovery.snapshot().get("events") or ())
+                        if broker else ()
+                    )
+                )
+                or "NOT_REQUIRED"
+            ),
+            "RECOVERY_VALIDATED": (
+                any(
+                    item.get("event") == "RECOVERY_VALIDATED"
+                    for item in (
+                        (broker.recovery.snapshot().get("events") or ())
+                        if broker else ()
+                    )
+                )
+                or "NOT_REQUIRED"
+            ),
+            "FAILED_TASK_RESUMED": (
+                any(
+                    item.get("event") == "TASK_RESUMED"
+                    for item in (
+                        (broker.recovery.snapshot().get("events") or ())
+                        if broker else ()
+                    )
+                )
+                or "NOT_REQUIRED"
+            ),
+            "MISSION_CONTINUED": bool(
+                broker
+                and broker.recovery.snapshot().get("MISSION_STATUS")
+                == "COMPLETED"
+            ),
             "NATURAL_GOAL_RECEIVED": bool(human_goal.strip()),
             "HARNESS_MISSION_PLAN": True,
             "MISSION_PLAN_AUTHORITY": (

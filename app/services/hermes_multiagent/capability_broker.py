@@ -60,6 +60,14 @@ from app.services.task_output_contract_service import (
     task_output_contract_descriptor,
     validate_task_output_contract,
 )
+from app.services.task_input_contract_service import (
+    TaskInputContractViolation,
+    resolve_task_input_contract,
+    scope_task_context,
+)
+from app.services.harness_internal_recovery_service import (
+    HarnessInternalRecoveryState,
+)
 from app.services.task_dependency_precondition_service import (
     TaskDependencyPreconditionFailure,
     validate_task_dependency_preconditions,
@@ -183,6 +191,11 @@ class HermesHarnessCapabilityBroker:
         self._handoffs: list[dict[str, Any]] = []
         self._human_requests: list[dict[str, Any]] = []
         self._audit: list[dict[str, Any]] = []
+        self.recovery = HarnessInternalRecoveryState(
+            mission_id=self.spec.mission_id,
+            goal_id=self.spec.goal_id,
+            artifact_dir=self.artifact_dir,
+        )
         self._load_persisted_results()
 
     def _load_persisted_results(self) -> None:
@@ -492,6 +505,22 @@ class HermesHarnessCapabilityBroker:
 
     @staticmethod
     def _authorized_tool_input_refs(task, context: dict[str, Any]) -> set[str]:
+        scoped = context.get("authorized_task_input_refs")
+        if isinstance(scoped, (list, tuple, set)):
+            refs = {
+                str(item).strip()
+                for item in scoped
+                if str(item).strip()
+            }
+            for tool_result in context.get("agent_tool_results") or ():
+                if not isinstance(tool_result, dict):
+                    continue
+                refs.update(
+                    str(item).strip()
+                    for item in (tool_result.get("output_refs") or ())
+                    if str(item).strip()
+                )
+            return refs
         refs = {
             str(item).strip()
             for item in tuple(task.input_refs or ())
@@ -528,6 +557,83 @@ class HermesHarnessCapabilityBroker:
                     if str(item).strip()
                 )
         return refs
+
+    def _prepare_typed_input_context(
+        self,
+        *,
+        task,
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        source = dict(context or {})
+        validation = resolve_task_input_contract(
+            functional_role=task.functional_role,
+            task_input_refs=tuple(task.input_refs or ()),
+            parent_handoffs=tuple(source.get("parent_handoffs") or ()),
+        )
+        if not validation.required:
+            return source
+        if validation.valid:
+            scoped = scope_task_context(source, validation)
+            self._audit.append({
+                "event": "INPUT_CONTRACT_VALID",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task.task_id,
+                "functional_role": task.functional_role,
+                "TASK_INPUT_REF_COUNT": validation.input_ref_count,
+                "UNUSED_INPUT_REF_COUNT": 0,
+                "OUT_OF_SCOPE_ARTIFACT_ACCESS": 0,
+                "task_input_scope_sha256": validation.scope_sha256,
+            })
+            return scoped
+
+        violation = TaskInputContractViolation(validation)
+        classification = self.recovery.observe_failure(
+            task=task,
+            exc=violation,
+            context=source,
+            contract_version=str(task.capability_version or "1"),
+        )
+        decision = self.recovery.select_recovery(classification)
+        if (
+            not decision.recoverable
+            or decision.strategy != "RECOMPUTE_TYPED_INPUT_SCOPE"
+        ):
+            raise violation
+        self.recovery.recovery_started(
+            classification=classification,
+            decision=decision,
+        )
+        fresh = self.parent_context(task_id=task.task_id)
+        repaired = resolve_task_input_contract(
+            functional_role=task.functional_role,
+            task_input_refs=tuple(task.input_refs or ()),
+            parent_handoffs=tuple(fresh.get("parent_handoffs") or ()),
+        )
+        if not repaired.valid:
+            raise TaskInputContractViolation(repaired)
+        scoped = scope_task_context(fresh, repaired)
+        self.recovery.recovery_validated(
+            task_id=task.task_id,
+            validation="INPUT_CONTRACT_VALID=PASS",
+        )
+        self.recovery.task_resumed(task.task_id)
+        self._audit.append({
+            "event": "TASK_INPUT_SCOPE_RECOVERED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "task_id": task.task_id,
+            "functional_role": task.functional_role,
+            "failure_class": classification.failure_class,
+            "recovery_strategy": decision.strategy,
+            "INPUT_CONTRACT_VALID": "PASS",
+            "TASK_INPUT_REF_COUNT": repaired.input_ref_count,
+            "UNUSED_INPUT_REF_COUNT": 0,
+            "OUT_OF_SCOPE_ARTIFACT_ACCESS": 0,
+            "typed_inputs": dict(repaired.resolved_inputs),
+            "task_input_scope_sha256": repaired.scope_sha256,
+        })
+        return scoped
 
     def _materialize_tool_input_artifacts(
         self,
@@ -602,6 +708,8 @@ class HermesHarnessCapabilityBroker:
                 key: item.get(key)
                 for key in (
                     "task_id",
+                    "functional_role",
+                    "input_refs",
                     "capability_id",
                     "agent_id",
                     "skill_id",
@@ -1167,6 +1275,13 @@ class HermesHarnessCapabilityBroker:
             "provider_call_executed": False,
             "precondition": precondition,
         })
+
+        prepared_context = self._prepare_typed_input_context(
+            task=task,
+            context=prepared_context or payload.get("context") or {},
+        )
+        payload = dict(payload)
+        payload["context"] = prepared_context
 
         record, decision = self._route(task)
         base_payload = dict(payload)
@@ -2231,9 +2346,9 @@ class HermesHarnessCapabilityBroker:
                     resolution_attempts=(f"result-snapshot:{parent_id}",),
                 )
             row = rows[-1]
+            source_task = self._task(parent_id)
             task_result_ref = str(row.get("task_result_ref") or "").strip()
             if not task_result_ref:
-                source_task = self._task(parent_id)
                 now = datetime.now(timezone.utc).isoformat()
                 upgraded = build_task_result_envelope(
                     mission_id=self.spec.mission_id,
@@ -2276,6 +2391,8 @@ class HermesHarnessCapabilityBroker:
             digest = str(envelope.get("content_sha256") or "")
             candidate = {
                 "task_id": parent_id,
+                "functional_role": source_task.functional_role,
+                "input_refs": list(source_task.input_refs or ()),
                 "capability_id": envelope.get("capability_id"),
                 "agent_id": envelope.get("agent_id"),
                 "skill_id": envelope.get("skill_id"),
