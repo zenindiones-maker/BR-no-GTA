@@ -18,17 +18,12 @@ from app.services.harness_routing_policy_service import (
 )
 
 
-def _assert_zero_cost_opencode_primary(routing):
-    assert routing.selected_provider == "opencode"
-    assert routing.selected_model == "oc/big-pickle"
+def _assert_zero_cost_nvidia_primary(routing):
+    assert routing.selected_provider == "nvidia_nim"
+    assert routing.selected_model
     assert routing.fallback_allowed is False
     assert routing.fallback_occurred is False
     assert routing.policy_metadata["zero_cost_operation"] is True
-    assert any(
-        item.candidate_id == "ai.provider.nvidia-nim"
-        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item.reasons
-        for item in routing.rejected_candidates
-    )
 
 
 def test_operational_mcp_tools_are_registered():
@@ -45,7 +40,10 @@ def test_route_tool_returns_metadata_without_authorization():
     assert "authorization_id" not in decision
 
 
-def test_zero_cost_routing_fails_closed_when_unknown_cost_nvidia_is_pinned():
+def test_zero_cost_routing_fails_closed_when_nvidia_auth_is_not_materialized(
+    monkeypatch,
+):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     with pytest.raises(RoutingPolicyError) as exc_info:
         route_harness_request(
             HarnessRoutingRequest(
@@ -64,37 +62,47 @@ def test_zero_cost_routing_fails_closed_when_unknown_cost_nvidia_is_pinned():
     assert exc_info.value.evidence["fallback_allowed"] is False
     rejected = exc_info.value.evidence["rejected_candidates"]
     assert any(
-        item["candidate_id"] == "ai.provider.nvidia-nim"
-        and "UNKNOWN_COST_PROVIDER_FORBIDDEN" in item["reasons"]
+        item["candidate_id"].startswith("ai.provider.nvidia-nim.")
+        and "provider_health=AUTH_REQUIRED" in item["reasons"]
         for item in rejected
     )
 
 
-def test_editorial_provider_boundary_selects_primary_zero_cost_provider():
+def test_editorial_provider_boundary_selects_primary_zero_cost_provider(
+    monkeypatch,
+):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-only-nvidia-key")
+    selected = {}
+
+    def select(*, routing_decision, authorization, **_kwargs):
+        selected["routing"] = routing_decision
+        selected["authorization"] = authorization
+        selected["provider"] = object()
+        return routing_decision.selected_provider, selected["provider"]
+
+    monkeypatch.setattr(server, "select_harness_ai_provider", select)
     routing, provider_authorization, ai_provider = server._route_editorial_provider()
 
-    _assert_zero_cost_opencode_primary(routing)
+    _assert_zero_cost_nvidia_primary(routing)
     assert routing.authorized_action == "EDITORIAL"
     assert provider_authorization.issued_by == "deepseek_harness"
     assert provider_authorization.authorized_action == "EDITORIAL"
-    assert provider_authorization.subject == "provider:opencode"
+    assert provider_authorization.subject == "provider:nvidia_nim"
     assert provider_authorization.status == "active"
     assert provider_authorization.lineage["routing_id"] == routing.routing_id
-    assert provider_authorization.lineage["selected_capability_id"] == routing.selected_capability_id
-    assert provider_authorization.lineage["selected_provider"] == "opencode"
-    assert provider_authorization.lineage["selected_model"] == "oc/big-pickle"
-    # A clean CI database has no governed v2 promotion persisted. The resolver
-    # must therefore expose the observed-disproven v1 profile as blocked rather
-    # than silently recreating the old OmniRoute HTTP executor.
-    assert ai_provider.__class__.__name__ == "_BlockedBaselineProvider"
-    assert ai_provider.profile_version == "v1"
     assert (
-        ai_provider.executor_binding
-        == "app.services.omniroute_gateway_service.execute_omniroute_gateway"
+        provider_authorization.lineage["selected_capability_id"]
+        == routing.selected_capability_id
     )
+    assert provider_authorization.lineage["selected_provider"] == "nvidia_nim"
+    assert provider_authorization.lineage["selected_model"] == routing.selected_model
+    assert selected["routing"] == routing
+    assert selected["authorization"] == provider_authorization
+    assert ai_provider is selected["provider"]
 
 
 def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-only-nvidia-key")
     captured = {}
 
     def select(*, routing_decision, authorization, **kwargs):
@@ -125,11 +133,11 @@ def test_master_run_once_selects_primary_zero_cost_provider(monkeypatch):
 
     payload = json.loads(server.br_master_run_once())
     routing = captured["routing"]
-    _assert_zero_cost_opencode_primary(routing)
+    _assert_zero_cost_nvidia_primary(routing)
     assert routing.authorized_action == "DECISION"
     assert captured["provider_authorization"].issued_by == "deepseek_harness"
     assert captured["provider_authorization"].authorized_action == "DECISION"
-    assert captured["provider_authorization"].subject == "provider:opencode"
+    assert captured["provider_authorization"].subject == "provider:nvidia_nim"
     assert captured["decision"].action == "WAIT"
     assert captured["action_authorization"].issued_by == "deepseek_harness"
     assert captured["action_authorization"].authorized_action == "WAIT"

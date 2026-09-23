@@ -229,7 +229,6 @@ jobs:
 
       - name: Resolve selected-runtime mission gate
         id: mission_gate
-        if: always()
         working-directory: target
         env:
           CODEX_REQUIRED: ${{ steps.runtime.outputs.codex_required }}

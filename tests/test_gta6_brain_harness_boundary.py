@@ -22,6 +22,7 @@ class _FakeProvider:
 
 
 def test_gta6_brain_is_selectable_but_cannot_authorize_execution(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-only-nvidia-key")
     capability_id = brain_service.GTA6_BRAIN_CAPABILITY_ID
     routing = route_harness_request(
         HarnessRoutingRequest(
