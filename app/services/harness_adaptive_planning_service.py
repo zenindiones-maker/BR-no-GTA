@@ -978,6 +978,28 @@ def _candidate_hint_is_hard_compatible(
     return True
 
 
+def _discarded_hints_require_semantic_replan(
+    proposal: MissionPlanProposal,
+    discarded: tuple[str, ...],
+) -> bool:
+    discarded_set = set(discarded)
+    for task in proposal.tasks:
+        typed_requirement = _candidate_requirement_for_task(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+            dependencies=task.dependencies,
+        )
+        if typed_requirement != "NOT_APPLICABLE":
+            continue
+        for capability_id in task.candidate_capability_ids:
+            if f"{task.task_id}:{capability_id}" not in discarded_set:
+                continue
+            record = _profiled_registry_get(capability_id)
+            if record is not None and _record_is_mutation_capable(record):
+                return True
+    return False
+
+
 def discard_incompatible_registered_candidate_hints(
     proposal: MissionPlanProposal,
 ) -> tuple[MissionPlanProposal, tuple[str, ...]]:
@@ -1079,7 +1101,11 @@ def propose_validated_semantic_plan(
             ),
             *proposal_registry_errors(sanitized),
         ])
-        if discarded and not sanitized_errors:
+        semantic_replan_required = _discarded_hints_require_semantic_replan(
+            result.proposal,
+            discarded,
+        )
+        if discarded and not sanitized_errors and not semantic_replan_required:
             evidence["candidate_hints_discarded"] = list(discarded)
             evidence["provider_evidence"] = dict(result.provider_evidence)
             evidence["prompt_sha256"] = result.prompt_sha256
