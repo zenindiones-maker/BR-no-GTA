@@ -130,6 +130,10 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
         )
 
     monkeypatch.setattr(
+        "app.services.provider_health_service.semantic_provider_health",
+        lambda: {"eligible_zero_cost_provider_ids": ["opencode"]},
+    )
+    monkeypatch.setattr(
         "app.services.harness_ai_provider_service.execute_harness_ai_generation",
         fake_generate,
     )
