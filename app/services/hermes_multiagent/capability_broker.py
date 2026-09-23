@@ -26,6 +26,10 @@ from app.services.task_result_envelope_service import (
     load_task_result_envelope,
     persist_task_result_envelope,
 )
+from app.services.task_dependency_precondition_service import (
+    TaskDependencyPreconditionFailure,
+    validate_task_dependency_preconditions,
+)
 from app.services.telegram_group_human_surface_service import (
     HUMAN_SURFACE,
     send_harness_message_to_human_group,
@@ -492,6 +496,36 @@ class HermesHarnessCapabilityBroker:
             payload = dict(payload)
             payload["context"] = prepared_context
             payload.pop("parent_context", None)
+
+        try:
+            precondition = validate_task_dependency_preconditions(
+                task=task,
+                dependency_context=prepared_context,
+                task_lookup=self._task,
+            )
+        except TaskDependencyPreconditionFailure as exc:
+            self._audit.append({
+                "event": "TASK_PRECONDITION_FAILED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "task_class": task.task_class,
+                "capability_id": capability_id,
+                "failure_mode": exc.code,
+                "dependency_task_id": exc.dependency_task_id,
+                "details": dict(exc.details),
+                "provider_call_executed": False,
+            })
+            raise
+        self._audit.append({
+            "event": "TASK_PRECONDITION_PASSED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "task_id": task_id,
+            "capability_id": capability_id,
+            "provider_call_executed": False,
+            "precondition": precondition,
+        })
 
         record, decision = self._route(task)
         executor = self.adapter.resolve_binding(str(record.executor_binding or ""))
