@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from app.services.harness_ai_provider_service import HarnessAIProviderEvidence
 from app.database import harness_learning_repository
 from app.services.harness_authorization_service import (
@@ -11,6 +9,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.youtube_department_service import execute_youtube_specialist_via_harness
+from app.services.provider_health_service import ModelHealth, ProviderHealth
 
 
 def test_tubegent_specialist_returns_receipt_and_persists_learning_episode():
@@ -137,7 +136,7 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
     )
     monkeypatch.setattr(
         "app.services.provider_health_service.provider_health",
-        lambda provider_id, **_: SimpleNamespace(
+        lambda provider_id, **_: ProviderHealth(
             provider_id=provider_id,
             state="AVAILABLE",
             reason="unit-test healthy provider",
@@ -148,7 +147,7 @@ def test_tubegent_semantic_reasoning_uses_harness_selected_provider(monkeypatch)
     )
     monkeypatch.setattr(
         "app.services.provider_health_service.model_health",
-        lambda provider_id, model_id, **_: SimpleNamespace(
+        lambda provider_id, model_id, **_: ModelHealth(
             provider_id=provider_id,
             model_id=model_id,
             availability="AVAILABLE",
