@@ -243,7 +243,6 @@ def test_addy_timeout_replans_same_provider_to_alternate_model(monkeypatch):
     monkeypatch.setattr(service, "route_harness_request", fake_route)
     calls = iter([
         _timeout("model-a", "routing-a"),
-        _timeout("model-a", "routing-a"),
         _success("model-b", "routing-b"),
     ])
     monkeypatch.setattr(
@@ -266,26 +265,24 @@ def test_addy_timeout_replans_same_provider_to_alternate_model(monkeypatch):
     assert route_requests[1].preferred_providers == ("nvidia_nim",)
     assert route_requests[1].unavailable_model_ids == ("model-a",)
     assert route_requests[1].failure_pattern == (
-        "transient_timeout_retry_exhausted"
+        "full_timeout_same_model_retry_forbidden"
     )
     assert route_requests[1].fallback_allowed is False
-    assert result.result["same_routing_retry_count"] == 1
-    assert result.result["same_routing_retry_result"] == "EXHAUSTED"
+    assert result.result["same_routing_retry_count"] == 0
+    assert result.result["same_routing_retry_result"] == "NOT_APPLICABLE"
     assert result.result["transient_retry_exhausted"] is True
+    assert result.result["same_model_full_timeout_retry_avoided"] is True
     assert result.result["localized_replan_attempted"] is True
     assert result.result["localized_replan_result"] == "RECOVERED"
     assert [row["phase"] for row in result.result["provider_attempts"]] == [
         "INITIAL",
-        "SAME_ROUTING_RETRY",
         "LOCALIZED_MODEL_REPLAN",
     ]
     assert [row["provider"] for row in result.result["provider_attempts"]] == [
         "nvidia_nim",
         "nvidia_nim",
-        "nvidia_nim",
     ]
     assert [row["model"] for row in result.result["provider_attempts"]] == [
-        "model-a",
         "model-a",
         "model-b",
     ]
@@ -361,7 +358,6 @@ def test_addy_localized_replan_fails_closed_on_provider_drift(monkeypatch):
     monkeypatch.setattr(service, "route_harness_request", fake_route)
     calls = iter([
         _timeout("model-a", "routing-a"),
-        _timeout("model-a", "routing-a"),
     ])
     monkeypatch.setattr(
         service,
@@ -385,7 +381,56 @@ def test_addy_localized_replan_fails_closed_on_provider_drift(monkeypatch):
     assert "escaped the original provider" in (
         result.result["LOCALIZED_REPLAN_ERROR"]
     )
-    assert len(result.result["provider_attempts"]) == 2
+    assert len(result.result["provider_attempts"]) == 1
+
+
+def test_addy_read_stall_skips_same_model_retry(monkeypatch):
+    _patch_common(monkeypatch)
+    route_a = _route(routing_id="routing-read-a", model="model-a")
+    route_b = _route(routing_id="routing-read-b", model="model-b")
+    route_requests = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        return route_a if len(route_requests) == 1 else route_b
+
+    stalled = _timeout("model-a", "routing-read-a")
+    stalled = HarnessAIProviderEvidence(
+        **{
+            **stalled.to_dict(),
+            "error": {
+                **stalled.error,
+                "failure_stage": "response_read",
+                "response_present": True,
+            },
+        }
+    )
+    calls = iter([
+        stalled,
+        _success("model-b", "routing-read-b"),
+    ])
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: next(calls),
+    )
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=_payload(),
+    )
+
+    assert result.status == "EXECUTED"
+    assert result.result["same_routing_retry_count"] == 0
+    assert result.result["same_model_full_timeout_retry_avoided"] is True
+    assert [row["phase"] for row in result.result["provider_attempts"]] == [
+        "INITIAL",
+        "LOCALIZED_MODEL_REPLAN",
+    ]
 
 
 def test_addy_nonretryable_failure_does_not_replan(monkeypatch):

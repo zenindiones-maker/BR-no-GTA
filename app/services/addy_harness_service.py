@@ -275,7 +275,7 @@ def execute_authorized_addy_skill(
     provider_attempts: list[dict[str, Any]] = []
     nvidia_latency_budget: dict[str, Any] | None = None
 
-    def _transient_transport_timeout(evidence) -> bool:
+    def _full_timeout_or_read_stall(evidence) -> bool:
         error = (
             dict(evidence.error or {})
             if isinstance(evidence.error, dict)
@@ -285,9 +285,12 @@ def execute_authorized_addy_skill(
             evidence.status != "EXECUTED"
             and error.get("code") == "timeout"
             and bool(error.get("retryable"))
-            and error.get("failure_stage") == "transport_request"
-            and error.get("response_present") is False
+            and error.get("failure_stage")
+            in {"transport_request", "response_read"}
         )
+
+    def _transient_transport_timeout(evidence) -> bool:
+        return _full_timeout_or_read_stall(evidence)
 
     def _localized_model_replan_pattern(evidence) -> str | None:
         error = (
@@ -295,8 +298,8 @@ def execute_authorized_addy_skill(
             if isinstance(evidence.error, dict)
             else {}
         )
-        if _transient_transport_timeout(evidence):
-            return "transient_timeout_retry_exhausted"
+        if _full_timeout_or_read_stall(evidence):
+            return "full_timeout_same_model_retry_forbidden"
         if (
             evidence.status != "EXECUTED"
             and bool(error.get("retryable"))
@@ -433,6 +436,7 @@ def execute_authorized_addy_skill(
     same_routing_retry_count = 0
     same_routing_retry_result = "NOT_APPLICABLE"
     transient_retry_exhausted = False
+    same_model_full_timeout_retry_avoided = False
     localized_replan_attempted = False
     localized_replan_result = "NOT_APPLICABLE"
     localized_replan_error = None
@@ -446,7 +450,13 @@ def execute_authorized_addy_skill(
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
         error = semantic.error if isinstance(semantic.error, dict) else {}
-        if bool(error.get("retryable")):
+        if _full_timeout_or_read_stall(semantic):
+            same_model_full_timeout_retry_avoided = True
+            transient_retry_exhausted = True
+            localized_replan_failure_pattern = (
+                _localized_model_replan_pattern(semantic)
+            )
+        elif bool(error.get("retryable")):
             same_routing_retry_count = 1
             semantic = _execute_provider(
                 provider_routing,
@@ -458,18 +468,19 @@ def execute_authorized_addy_skill(
                 same_routing_retry_result = "RECOVERED"
             else:
                 same_routing_retry_result = "EXHAUSTED"
+                localized_replan_failure_pattern = (
+                    _localized_model_replan_pattern(semantic)
+                )
 
-    localized_replan_failure_pattern = (
-        _localized_model_replan_pattern(semantic)
-        if same_routing_retry_result == "EXHAUSTED"
-        else None
-    )
     if (
         localized_replan_failure_pattern
         and original_provider
         and original_model
     ):
-        transient_retry_exhausted = _transient_transport_timeout(semantic)
+        transient_retry_exhausted = bool(
+            transient_retry_exhausted
+            or _full_timeout_or_read_stall(semantic)
+        )
         localized_replan_attempted = True
         try:
             rerouted = _route_provider(
@@ -555,6 +566,9 @@ def execute_authorized_addy_skill(
                 "RETRY_COUNT": same_routing_retry_count,
                 "FAILURE_CLASS": _failure_class(semantic),
                 "TRANSIENT_RETRY_EXHAUSTED": transient_retry_exhausted,
+                "SAME_MODEL_FULL_TIMEOUT_RETRY_AVOIDED": (
+                    same_model_full_timeout_retry_avoided
+                ),
                 "LOCALIZED_REPLAN_ATTEMPTED": localized_replan_attempted,
                 "LOCALIZED_REPLAN_RESULT": localized_replan_result,
                 "LOCALIZED_REPLAN_ERROR": localized_replan_error,
@@ -649,6 +663,9 @@ def execute_authorized_addy_skill(
             "same_routing_retry_count": same_routing_retry_count,
             "same_routing_retry_result": same_routing_retry_result,
             "transient_retry_exhausted": transient_retry_exhausted,
+            "same_model_full_timeout_retry_avoided": (
+                same_model_full_timeout_retry_avoided
+            ),
             "localized_replan_attempted": localized_replan_attempted,
             "localized_replan_result": localized_replan_result,
             "localized_replan_failure_pattern": (
