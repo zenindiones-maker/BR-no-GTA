@@ -53,8 +53,20 @@ def _decode_plan(value: str) -> dict[str, Any]:
     if not raw or len(raw) > 96 * 1024:
         raise ValueError("mission plan envelope exceeds bounded size")
     data = json.loads(raw.decode("utf-8"))
+    if data.get("schema") != "execution-mission-envelope/v1":
+        raise ValueError("dynamic mission requires ExecutionMissionEnvelope v1")
     if data.get("authority") != "DEEPSEEK_HARNESS":
         raise PermissionError("mission plan escaped Harness authority")
+    if data.get("evidence_dropped") is not False:
+        raise PermissionError("execution envelope lost canonical evidence")
+    if data.get("evidence_externalized") is not True:
+        raise PermissionError("execution envelope lacks externalized evidence")
+    canonical_ref = dict(data.get("canonical_mission_plan_ref") or {})
+    planning_ref = dict(data.get("planning_evidence_ref") or {})
+    if not str(canonical_ref.get("content_hash") or "").startswith("sha256:"):
+        raise PermissionError("canonical MissionPlan hash is missing")
+    if not str(planning_ref.get("content_hash") or "").startswith("sha256:"):
+        raise PermissionError("planning evidence hash is missing")
     collaboration = data.get("collaboration_plan")
     if not isinstance(collaboration, dict) or not collaboration.get("tasks"):
         raise ValueError("mission plan collaboration DAG is missing")
@@ -77,6 +89,8 @@ def _rebuild_plan(data: dict[str, Any]):
             str(item["capability_id"]),
             str(item["selected_executor_binding"]),
             str(item.get("capability_version") or "1"),
+            str(item.get("selected_agent_id") or ""),
+            str(item.get("selected_skill_id") or ""),
         )
         for item in collaboration["tasks"]
     }
@@ -85,6 +99,8 @@ def _rebuild_plan(data: dict[str, Any]):
             item.capability_id,
             item.selected_executor_binding,
             item.capability_version,
+            str(item.selected_agent_id or ""),
+            str(item.selected_skill_id or ""),
         )
         for item in rebuilt.tasks
     }
@@ -95,7 +111,7 @@ def _rebuild_plan(data: dict[str, Any]):
     return rebuilt
 
 
-def _auth(plan):
+def _auth(plan, *, envelope: dict[str, Any] | None = None):
     routing = route_harness_request(HarnessRoutingRequest(
         intent=f"execute dynamic system improvement mission {plan.mission_id}",
         authorized_action="EXECUTION",
@@ -121,6 +137,12 @@ def _auth(plan):
             "runtime": "hermes",
             "ingress": "natural-goal",
             "agent_direct_promotion": False,
+            "canonical_mission_plan_ref": dict(
+                (envelope or {}).get("canonical_mission_plan_ref") or {}
+            ),
+            "planning_evidence_ref": dict(
+                (envelope or {}).get("planning_evidence_ref") or {}
+            ),
         },
     )
     return routing, auth
@@ -750,7 +772,10 @@ def run(
         mission_id=collaboration.mission_id,
         goal_id=collaboration.goal_id,
     ):
-        routing, authorization = _auth(collaboration)
+        routing, authorization = _auth(
+            collaboration,
+            envelope=mission_plan,
+        )
     resource_bounds = dict(mission_plan.get("resource_bounds") or {})
     spec = HermesMissionExecutionSpec.from_plan(
         collaboration_plan=collaboration,
@@ -782,7 +807,11 @@ def run(
             "independent review when mutating",
             "deterministic integration gate when candidate exists",
         ),
-        human_gates=tuple(mission_plan.get("gates") or ()),
+        human_gates=tuple(
+            mission_plan.get("human_gates")
+            or mission_plan.get("gates")
+            or ()
+        ),
         max_child_depth=2,
         max_child_tasks=max(4, len(collaboration.tasks) * 3),
     )
