@@ -1062,6 +1062,32 @@ for _capability_id, _binding in _NATIVE_ADAPTER_BINDINGS.items():
         )
     )
 
+# Make the production-relevant contracts explicit to the semantic planner.
+# This is metadata only: authority and executable identities remain unchanged.
+for _capability_id, _metadata in {
+    "gta6.research": {
+        "implementation": "Harness-governed current GTA6 research pipeline with Knowledge Brain retrieval and editorial evaluation",
+        "input_contract": "current GTA6 research intent under persisted Harness RESEARCH authorization",
+        "output_contract": "fresh source-grounded research + novelty/editorial evaluation + selected Goal/Idea/queue when approved",
+    },
+    "editorial.process": {
+        "implementation": "Harness-governed AI-backed targeted editorial queue consumer",
+        "input_contract": "Harness-selected Goal + verified research context + dynamic zero-cost semantic provider",
+        "output_contract": "natural PT-BR script + ScriptSpec + ContentItem + persisted ProductionPlan",
+    },
+}.items():
+    _existing = _REGISTRY._by_id.get(_capability_id)
+    if _existing is None:
+        raise ValueError(f"Missing production capability Registry record: {_capability_id}")
+    _described = replace(_existing, **_metadata)
+    _REGISTRY._by_id[_capability_id] = _described
+    _REGISTRY._records = tuple(
+        sorted(
+            (_described if record.capability_id == _capability_id else record for record in _REGISTRY._records),
+            key=lambda item: item.capability_id,
+        )
+    )
+
 _LEGACY_SUPERSEDED_CAPABILITIES = {
     "cloud.github-actions": "infrastructure primitive; use specific cloud capability such as media.analysis.cloud or production.render.execute",
     "media.ffmpeg": "internal render-engine implementation; use production.render.execute",
