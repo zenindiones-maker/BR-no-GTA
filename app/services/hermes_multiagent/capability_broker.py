@@ -497,6 +497,10 @@ class HermesHarnessCapabilityBroker:
 
     def _agent_tool_capability_ids(self, task) -> tuple[str, ...]:
         allowed: list[str] = ["artifact.evidence.reuse"]
+        role = str(task.functional_role or "").strip().upper()
+        if role in {"ROOT_CAUSE", "PROPOSAL"}:
+            if self.registry.get("repository.read-scoped") is not None:
+                allowed.append("repository.read-scoped")
         for item in tuple(task.allowed_tools or ()):
             candidate = str(item or "").strip()
             if candidate and self.registry.get(candidate) is not None:
@@ -847,6 +851,20 @@ class HermesHarnessCapabilityBroker:
                     "reason",
                     "authorization_context",
                 ],
+                "tool_contracts": {
+                    "repository.read-scoped": {
+                        "arguments": {
+                            "paths": "optional list of repository-relative files",
+                            "search_terms": "optional list of exact search terms",
+                        },
+                        "rule": (
+                            "read-only; Harness enforces the task read_scope"
+                        ),
+                    }
+                }
+                if "repository.read-scoped"
+                in allowed_tool_capability_ids
+                else {},
             },
             "agent_turn_contract": {
                 "schema": AGENT_TURN_SCHEMA,
@@ -1058,6 +1076,13 @@ class HermesHarnessCapabilityBroker:
         payload.pop("input_refs", None)
         if refs:
             payload["input_artifact_refs"] = list(refs)
+        if target == "repository.read-scoped":
+            payload["repository_root"] = str(Path.cwd().resolve())
+            payload["allowed_paths"] = list(task.read_scope or ())
+            payload["max_chars"] = min(
+                MAX_TOOL_RESULT_CHARS,
+                MAX_AGENT_CONTEXT_CHARS,
+            )
         tool_context = dict(parent_context)
         if input_artifacts:
             tool_context["input_artifacts"] = input_artifacts

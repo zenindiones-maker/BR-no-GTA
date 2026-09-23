@@ -1,7 +1,7 @@
 {
   "schema": "real-agent-self-improvement-request/v2",
   "mode": "REAL_INCIDENT_RECOVERY",
-  "human_goal": "Use o incidente REAL da produção 35898595164 como evidência observada e diagnostique somente o primeiro estágio quebrado da linha principal: semantic planning/Registry selection para task_class=production-planning. O planner executou por 86077.831 ms e a produção terminou com 'no healthy Registry capability for task_class=production-planning' antes de existir produto. Determine a partir dos artifacts reais: PRODUCTION_PLANNING_REQUIREMENTS, CANDIDATE_CAPABILITIES, REJECTION_REASONS, EXPECTED_EXECUTOR, EXPECTED_AGENT, HEALTH_STATE, MISSING_CONTRACT e MISSING_IMPLEMENTATION. Compare com a implementação canônica production.plan e com evidência histórica real disponível, sem assumir que Registry discoverable significa executor funcional. Produza artifacts distintos e encadeados para diagnóstico, root cause, menor recovery proposal e independent review. Não mutar repositório nesta missão. Não aumentar timeout. Não trocar provider/model às cegas. Não reabrir Telegram, Codex, Natural Swarm ou inventário geral. A coleta/diagnóstico deste incidente é trabalho de debugging/recovery; API/interface design só é válido se a semântica real da task exigir design de API. O output deve deixar explícito AGENT_DIAGNOSIS_AUTHOR, ROOT_CAUSE_AUTHOR, CANDIDATE_AUTHOR, REVIEW_AUTHOR e a decisão recomendada ao Harness. Use também runtime_recovery_evidence como execução seguinte observada: verifique independentemente se a recovery candidata já aplicada removeu causalmente o blocker production-planning sem regressão, e classifique o novo primeiro blocker evidence.deep. Não invente um novo goal; esta continua sendo a subtask da CURRENT_REAL_PRODUCTION_MISSION.",
+  "human_goal": "Use o incidente REAL da produção 35898595164 como evidência observada e diagnostique somente o primeiro estágio quebrado da linha principal: semantic planning/Registry selection para task_class=production-planning. O planner executou por 86077.831 ms e a produção terminou com 'no healthy Registry capability for task_class=production-planning' antes de existir produto. Determine a partir dos artifacts reais: PRODUCTION_PLANNING_REQUIREMENTS, CANDIDATE_CAPABILITIES, REJECTION_REASONS, EXPECTED_EXECUTOR, EXPECTED_AGENT, HEALTH_STATE, MISSING_CONTRACT e MISSING_IMPLEMENTATION. Compare com a implementação canônica production.plan e com evidência histórica real disponível, sem assumir que Registry discoverable significa executor funcional. Produza artifacts distintos e encadeados para diagnóstico, root cause, menor recovery proposal e independent review. Não mutar repositório antes de independent review=ACCEPT e Harness decision=AUTHORIZED. Se uma mudança de código for necessária, o PROPOSAL deve produzir proposed_change estruturado com mutation_required, summary e unified_diff, scope explícito e validation_plan com focused_test_commands; o Harness deve materializar esse diff em RecoveryCandidateSpec e somente então permitir APPLY_RECOVERY sandboxed + VALIDATE_RECOVERY. Não aumentar timeout. Não trocar provider/model às cegas. Não reabrir Telegram, Codex, Natural Swarm ou inventário geral. A coleta/diagnóstico deste incidente é trabalho de debugging/recovery; API/interface design só é válido se a semântica real da task exigir design de API. O output deve deixar explícito AGENT_DIAGNOSIS_AUTHOR, ROOT_CAUSE_AUTHOR, CANDIDATE_AUTHOR, REVIEW_AUTHOR e a decisão recomendada ao Harness. Use também runtime_recovery_evidence como execução seguinte observada: verifique independentemente se a recovery candidata já aplicada removeu causalmente o blocker production-planning sem regressão, e classifique o novo primeiro blocker evidence.deep. Não invente um novo goal; esta continua sendo a subtask da CURRENT_REAL_PRODUCTION_MISSION.",
   "incident": {
     "source_run_id": 35898595164,
     "source_job_id": 107308666117,
@@ -59,7 +59,7 @@
   "canonical_codex_checkpoint": 35850473901,
   "codex_state": "BLOCKED_EXTERNAL",
   "codex_blocker": "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION",
-  "mutation_policy": "NO_MUTATION_BEFORE_AGENT_DIAGNOSIS_REVIEW_HARNESS_DECISION",
+  "mutation_policy": "ALLOW_SANDBOXED_MUTATION_ONLY_AFTER_ACCEPT_REVIEW_AND_HARNESS_AUTHORIZATION",
   "fallback_policy": "PRESERVE_FALLBACK_ALLOWED_FALSE",
   "provider_competence_policy": "DO_NOT_PENALIZE_PROVIDER_FOR_PLANNER_CONTRACT_FAILURE",
   "natural_swarm": "FORBIDDEN_FOR_THIS_MISSION",
@@ -133,5 +133,13 @@
     ],
     "resume_from_task_id": "task-03",
     "validation": "schema+content_sha256+task_contract+input_lineage"
-  }
+  },
+  "required_recovery_runtime": [
+    "typed input contract before provider execution",
+    "internal failure classification and bounded localized continuation",
+    "RecoveryCandidateSpec from reviewed structured unified diff",
+    "sandboxed APPLY_RECOVERY",
+    "deterministic VALIDATE_RECOVERY",
+    "no remote push or canonical promotion by actuator"
+  ]
 }

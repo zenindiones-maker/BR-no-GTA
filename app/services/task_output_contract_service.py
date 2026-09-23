@@ -147,6 +147,18 @@ def _candidate_for_schema(value: Any, expected_schema: str) -> dict[str, Any] | 
     return None
 
 
+def extract_task_output(
+    *,
+    functional_role: str | None,
+    result: Any,
+) -> dict[str, Any] | None:
+    role = str(functional_role or "GENERAL").strip().upper() or "GENERAL"
+    contract = _ROLE_SCHEMA.get(role)
+    if contract is None:
+        return None
+    return _candidate_for_schema(result, contract[0])
+
+
 def validate_task_output_contract(*, functional_role: str | None, result: Any) -> TaskOutputValidation:
     role = str(functional_role or "GENERAL").strip().upper() or "GENERAL"
     contract = _ROLE_SCHEMA.get(role)
@@ -191,6 +203,64 @@ def validate_task_output_contract(*, functional_role: str | None, result: Any) -
                 errors.append("INVALID_TYPE:confidence")
             elif not 0.0 <= float(confidence) <= 1.0:
                 errors.append("INVALID_RANGE:confidence")
+
+        if role == "PROPOSAL":
+            proposed_change = candidate.get("proposed_change")
+            if not isinstance(proposed_change, dict):
+                errors.append("INVALID_TYPE:proposed_change")
+            else:
+                mutation_required = proposed_change.get("mutation_required")
+                if not isinstance(mutation_required, bool):
+                    errors.append(
+                        "INVALID_TYPE:proposed_change.mutation_required"
+                    )
+                if not _nonempty(proposed_change.get("summary")):
+                    errors.append(
+                        "EMPTY_FIELD:proposed_change.summary"
+                    )
+                unified_diff = proposed_change.get("unified_diff")
+                if not isinstance(unified_diff, str):
+                    errors.append(
+                        "INVALID_TYPE:proposed_change.unified_diff"
+                    )
+                elif mutation_required is True and not unified_diff.strip():
+                    errors.append(
+                        "EMPTY_FIELD:proposed_change.unified_diff"
+                    )
+
+            scope = candidate.get("scope")
+            if not isinstance(scope, (list, tuple)) or not scope:
+                errors.append("INVALID_TYPE:scope")
+            elif not all(
+                isinstance(item, str) and item.strip()
+                for item in scope
+            ):
+                errors.append("INVALID_VALUE:scope")
+
+            validation_plan = candidate.get("validation_plan")
+            commands = (
+                validation_plan.get("focused_test_commands")
+                if isinstance(validation_plan, dict)
+                else None
+            )
+            if not isinstance(validation_plan, dict):
+                errors.append("INVALID_TYPE:validation_plan")
+            elif not isinstance(commands, (list, tuple)) or not commands:
+                errors.append(
+                    "INVALID_TYPE:validation_plan.focused_test_commands"
+                )
+            elif not all(
+                isinstance(command, (list, tuple))
+                and len(command) >= 5
+                and all(
+                    isinstance(part, str) and part.strip()
+                    for part in command
+                )
+                for command in commands
+            ):
+                errors.append(
+                    "INVALID_VALUE:validation_plan.focused_test_commands"
+                )
 
         if role == "REVIEW" and candidate.get("verdict") not in {"ACCEPT", "REVISE", "REJECT"}:
             errors.append("INVALID_VERDICT")
@@ -253,6 +323,45 @@ def task_output_json_schema(functional_role: str | None) -> dict[str, Any] | Non
             "type": "array",
             "minItems": 1,
             "items": {"type": "string", "minLength": 1},
+        }
+    if role == "PROPOSAL":
+        properties["proposed_change"] = {
+            "type": "object",
+            "properties": {
+                "mutation_required": {"type": "boolean"},
+                "summary": {"type": "string", "minLength": 1},
+                "unified_diff": {"type": "string"},
+            },
+            "required": [
+                "mutation_required",
+                "summary",
+                "unified_diff",
+            ],
+            "additionalProperties": False,
+        }
+        properties["scope"] = {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+        }
+        properties["validation_plan"] = {
+            "type": "object",
+            "properties": {
+                "focused_test_commands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "array",
+                        "minItems": 5,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                    },
+                },
+            },
+            "required": ["focused_test_commands"],
+            "additionalProperties": False,
         }
     if role == "REVIEW":
         properties["verdict"] = {

@@ -1371,4 +1371,249 @@ _REGISTRY._records = tuple(
     )
 )
 
+
+REPOSITORY_READ_SCOPED_RECORD = CapabilityRecord(
+    capability_id="repository.read-scoped",
+    capability_type="EXECUTOR",
+    domain="repository-read",
+    implementation=(
+        "Harness-governed deterministic bounded repository reader/searcher"
+    ),
+    input_contract=(
+        "Harness-authorized repository_root + task read scope + explicit "
+        "paths or search terms"
+    ),
+    output_contract=(
+        "RepositoryReadResult/v1 with bounded content and sha256 evidence"
+    ),
+    requirements=("DeepSeek Harness DEVELOPMENT authorization",),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "recovery",
+        "repository",
+        "read-only",
+        "tool",
+        "deterministic",
+    ),
+    security_boundary=(
+        "Exact Harness authorization and Registry binding; read-only; "
+        "requested paths must remain inside task-scoped read roots; no shell, "
+        "repository mutation, secrets, publication, or policy authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="BOUNDED_READ_FAIL_CLOSED",
+    evidence_contract=(
+        "app.services.recovery_execution_service.RepositoryReadResult/v1"
+    ),
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.recovery_execution_service."
+        "execute_repository_read_scoped"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="harness-repository-reader",
+    side_effects=(),
+    supports_parallelism=True,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(
+        "app",
+        "scripts",
+        "tests",
+        ".github/workflows",
+        "config",
+        "integrations",
+    ),
+    default_write_scope=(),
+    allowed_tools=(),
+    health_policy="DEFAULT",
+    execution_operations=(
+        CAN_READ_REPOSITORY,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+)
+
+RECOVERY_APPLY_LOCAL_RECORD = CapabilityRecord(
+    capability_id="harness.recovery.apply-local",
+    capability_type="EXECUTOR",
+    domain="recovery-execution",
+    implementation=(
+        "Harness-governed deterministic RecoveryCandidateSpec actuator in a "
+        "disposable git worktree"
+    ),
+    input_contract=(
+        "RecoveryCandidateSpec/v1 with ACCEPT review, AUTHORIZED Harness "
+        "decision, base SHA, patch hash and path allowlist"
+    ),
+    output_contract="RecoveryApplyReceipt/v1",
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "git worktree support",
+        "reviewed patch artifact",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "recovery",
+        "apply",
+        "sandbox",
+        "deterministic",
+        "mutation",
+    ),
+    security_boundary=(
+        "No reasoning or routing authority. Applies only reviewed hashed patch "
+        "artifacts to a detached disposable worktree after base-SHA and path "
+        "allowlist verification. Never pushes, merges, publishes, or executes "
+        "model text as shell."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="SANDBOXED_PATCH_FAIL_CLOSED",
+    evidence_contract=(
+        "app.services.recovery_execution_service.RecoveryApplyReceipt"
+    ),
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.recovery_execution_service."
+        "execute_recovery_apply_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="harness-recovery-actuator",
+    side_effects=("ephemeral worktree", "local candidate commit"),
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="BOUNDED_MUTATION",
+    default_read_scope=(
+        "app",
+        "scripts",
+        "tests",
+        ".github/workflows",
+        "config",
+        "integrations",
+    ),
+    default_write_scope=(
+        "app",
+        "scripts",
+        "tests",
+        ".github/workflows",
+        "config",
+        "integrations",
+    ),
+    allowed_tools=("git",),
+    health_policy="DEFAULT",
+    execution_operations=(
+        CAN_READ_REPOSITORY,
+        CAN_WRITE_REPOSITORY,
+        CAN_MUTATE_CANDIDATE,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+)
+
+RECOVERY_VALIDATE_LOCAL_RECORD = CapabilityRecord(
+    capability_id="harness.recovery.validate-local",
+    capability_type="EXECUTOR",
+    domain="recovery-validation",
+    implementation=(
+        "Harness-governed deterministic candidate validator in a detached "
+        "disposable git worktree"
+    ),
+    input_contract="RecoveryCandidateSpec/v1 + RecoveryApplyReceipt/v1",
+    output_contract="RecoveryValidationReceipt/v1",
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "git worktree support",
+        "pytest",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "recovery",
+        "validation",
+        "tests",
+        "deterministic",
+        "read-only",
+    ),
+    security_boundary=(
+        "No mutation or promotion authority. Executes only argv-validated "
+        "python -m pytest -q commands against the detached candidate SHA; "
+        "no shell interpolation, push, merge, publication, or policy authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL",
+    quality_class="FOCUSED_TEST_VALIDATION_FAIL_CLOSED",
+    evidence_contract=(
+        "app.services.recovery_execution_service.RecoveryValidationReceipt"
+    ),
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.recovery_execution_service."
+        "execute_recovery_validate_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="harness-recovery-validator",
+    side_effects=("ephemeral worktree", "test processes"),
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=True,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=(
+        "app",
+        "scripts",
+        "tests",
+        ".github/workflows",
+        "config",
+        "integrations",
+    ),
+    default_write_scope=(),
+    allowed_tools=("git", "python", "pytest"),
+    health_policy="DEFAULT",
+    execution_operations=(
+        CAN_READ_REPOSITORY,
+        CAN_RUN_TESTS,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+)
+
+for _recovery_record in (
+    REPOSITORY_READ_SCOPED_RECORD,
+    RECOVERY_APPLY_LOCAL_RECORD,
+    RECOVERY_VALIDATE_LOCAL_RECORD,
+):
+    if _REGISTRY._by_id.get(_recovery_record.capability_id) is not None:
+        raise ValueError(
+            "Duplicate recovery capability id: "
+            + _recovery_record.capability_id
+        )
+    _REGISTRY._by_id[_recovery_record.capability_id] = _recovery_record
+
+_REGISTRY._records = tuple(
+    sorted(
+        (
+            *_REGISTRY._records,
+            REPOSITORY_READ_SCOPED_RECORD,
+            RECOVERY_APPLY_LOCAL_RECORD,
+            RECOVERY_VALIDATE_LOCAL_RECORD,
+        ),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
