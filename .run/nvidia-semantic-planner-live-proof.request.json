@@ -16,8 +16,8 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 6,
-  "trigger_head": "4475f8e628883151df69d698ef18cf5ad41144c5",
+  "attempt": 7,
+  "trigger_head": "215f28c37e64c5e70e7c640c1b9f6d57b0211f6a",
   "preflight_only": false,
   "generation_options": {
     "max_tokens": 2048,
@@ -27,5 +27,5 @@
       "headroom_tokens": 359
     }
   },
-  "measurement_goal": "identify_exact_live_semantic_output_failure_stage_before_any_policy_change"
+  "measurement_goal": "prove compact semantic wire output validates through production-equivalent expansion"
 }
