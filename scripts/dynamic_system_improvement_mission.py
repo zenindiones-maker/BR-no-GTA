@@ -696,7 +696,7 @@ def _generic_payload(
         "gaps": [item for item in gaps if item],
         "input_artifact_refs": evidence_refs,
         "evidence_refs": evidence_refs,
-        "parent_context": parent_context,
+        "context": parent_context,
         "candidate_sha": candidate_sha,
         "mission_read_scope": list(task.read_scope),
         "mission_write_scope": list(task.write_scope),
@@ -835,12 +835,12 @@ def run(
         for level in spec.collaboration_plan.execution_levels:
             for task_id in level:
                 task = spec.task(task_id)
+                task_started = time.perf_counter()
+                parent_context = broker.parent_context(task_id=task_id)
                 for dependency in task.dependencies:
                     rows = broker.result_snapshot().get(dependency) or []
                     if not rows:
-                        raise RuntimeError(
-                            f"dependency result missing: {dependency}"
-                        )
+                        raise RuntimeError(f"dependency result missing: {dependency}")
                     row = rows[-1]
                     with PerformanceSpan(
                         stage="hermes.handoff",
@@ -852,11 +852,8 @@ def run(
                         broker.submit_handoff(
                             from_task_id=dependency,
                             to_task_id=task_id,
-                            evidence_refs=[row["evidence_ref"]],
-                            summary=(
-                                "Observed typed evidence from the authorized "
-                                f"dependency {dependency}."
-                            ),
+                            evidence_refs=[str(row.get("task_result_ref") or row["evidence_ref"])],
+                            summary=f"Resolved TaskResultEnvelope from authorized dependency {dependency}.",
                         )
                 run_id = _claim(board, task_mapping, profiles, task_id)
                 with PerformanceSpan(
@@ -865,11 +862,10 @@ def run(
                     mission_id=spec.mission_id,
                     task_id=task_id,
                 ) as context_span:
-                    parent_context = broker.parent_context(task_id=task_id)
                     context_bytes = len(json.dumps(parent_context, ensure_ascii=False, default=str).encode("utf-8"))
                     context_span.set(
                         output_size=context_bytes,
-                        metadata={"context_package_count": 1, "context_bytes": context_bytes},
+                        metadata={"context_package_count": 1, "context_bytes": context_bytes, **dict(parent_context.get("dependency_metrics") or {})},
                     )
                 candidate_context = _candidate_execution_decision(
                     task=task,
@@ -906,6 +902,7 @@ def run(
                         + str(candidate_context["reason"])
                     )
 
+                prompt_build_started = time.perf_counter()
                 payload = _generic_payload(
                     task=task,
                     human_goal=human_goal,
@@ -916,6 +913,7 @@ def run(
                     snapshot=snapshot,
                     parent_context=parent_context,
                 )
+                payload["orchestration_metrics"] = {"PROMPT_BUILD_MS": round((time.perf_counter() - prompt_build_started) * 1000.0, 3), **dict(parent_context.get("dependency_metrics") or {})}
                 with PerformanceSpan(
                     stage="hermes.specialist.execute",
                     category="HERMES_SPECIALIST_EXECUTION_TIME",
@@ -928,7 +926,10 @@ def run(
                         task_id=task_id,
                         capability_id=task.capability_id,
                         payload=payload,
+                        dependency_context=parent_context,
                     )
+                executed.setdefault("orchestration_metrics", {})
+                executed["orchestration_metrics"].update({"TASK_TOTAL_MS": round((time.perf_counter() - task_started) * 1000.0, 3), **dict(parent_context.get("dependency_metrics") or {}), "PROMPT_BUILD_MS": payload["orchestration_metrics"]["PROMPT_BUILD_MS"]})
                 holder["execution_by_task"][task_id] = executed
 
                 if _is_mutating(task):

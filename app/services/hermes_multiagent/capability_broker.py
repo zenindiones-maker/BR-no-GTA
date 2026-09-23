@@ -6,6 +6,7 @@ from hashlib import sha256
 import inspect
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -19,6 +20,12 @@ from app.services.harness_capability_service import CapabilityEvidence
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.harness_routing_policy_service import HarnessRoutingRequest, route_harness_request
 from app.services.bounded_memory_context_service import build_bounded_memory_context
+from app.services.task_result_envelope_service import (
+    DependencyArtifactMissing,
+    build_task_result_envelope,
+    load_task_result_envelope,
+    persist_task_result_envelope,
+)
 from app.services.telegram_group_human_surface_service import (
     HUMAN_SURFACE,
     send_harness_message_to_human_group,
@@ -247,11 +254,36 @@ class HermesHarnessCapabilityBroker:
         idempotency_key: str,
         capability_version: str,
         retry_count: int,
+        skill_id: str | None = None,
+        executor_binding: str = "",
+        source_task_ids: tuple[str, ...] = (),
+        started_at: str | None = None,
+        completed_at: str | None = None,
     ) -> dict[str, Any]:
+        persist_started = time.perf_counter()
         normalized = _jsonable(result)
         index = len(self._task_results.get(task_id, ())) + 1
         relative = Path("capability-results") / f"{task_id}-{index}.json"
         target = self.artifact_dir / relative
+        now = datetime.now(timezone.utc).isoformat()
+        task_result = build_task_result_envelope(
+            mission_id=self.spec.mission_id,
+            task_id=task_id,
+            capability_id=capability_id,
+            agent_id=agent_id,
+            skill_id=skill_id,
+            executor_binding=executor_binding,
+            status="COMPLETED",
+            started_at=started_at or now,
+            completed_at=completed_at or now,
+            elapsed_ms=float(elapsed_seconds) * 1000.0,
+            result=normalized,
+            source_task_ids=source_task_ids,
+            authorization_id=authorization_id,
+        )
+        task_result_record = persist_task_result_envelope(
+            task_result, artifact_dir=self.artifact_dir, index=index
+        )
         payload = {
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
@@ -268,6 +300,9 @@ class HermesHarnessCapabilityBroker:
             "cost": 0.0,
             "policy_violations": 0,
             "result": normalized,
+            "task_result_ref": task_result_record["task_result_ref"],
+            "task_result_sha256": task_result_record["content_sha256"],
+            "result_persist_ms": round((time.perf_counter() - persist_started) * 1000.0, 3),
         }
         raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
         target.write_text(raw + "\n", encoding="utf-8")
@@ -345,6 +380,9 @@ class HermesHarnessCapabilityBroker:
             idempotency_key=task.idempotency_key,
             capability_version=task.capability_version,
             retry_count=0,
+            skill_id=task.selected_skill_id,
+            executor_binding=task.selected_executor_binding,
+            source_task_ids=tuple(task.dependencies),
         )
         self._audit.append({
             "event": "TASK_COMPLETED_NOT_REQUIRED",
@@ -382,6 +420,7 @@ class HermesHarnessCapabilityBroker:
         capability_id: str,
         payload: dict[str, Any],
         retry_attempt: int = 0,
+        dependency_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         task = self._task(task_id)
         if capability_id != task.capability_id:
@@ -427,6 +466,33 @@ class HermesHarnessCapabilityBroker:
         if retry_attempt > 0 and not task.supports_retry:
             raise PermissionError("capability does not support retry")
 
+        prepared_context = dependency_context
+        if task.dependencies:
+            if prepared_context is None:
+                prepared_context = self.parent_context(task_id=task_id)
+            direct = {
+                str(item.get("task_id") or ""): item
+                for item in (prepared_context.get("parent_handoffs") or ())
+                if item.get("direct_dependency") is True
+            }
+            for dependency in task.dependencies:
+                rows = self._task_results.get(dependency) or []
+                if not rows:
+                    raise DependencyArtifactMissing(
+                        task_id=task_id,
+                        dependency_task_id=dependency,
+                        resolution_attempts=(f"result-snapshot:{dependency}",),
+                    )
+                latest = rows[-1]
+                supplied = direct.get(dependency)
+                expected_ref = str(latest.get("task_result_ref") or latest.get("evidence_ref") or "")
+                expected_hash = str(latest.get("task_result_sha256") or latest.get("sha256") or "")
+                if supplied is None or str(supplied.get("task_result_ref") or "") != expected_ref or str(supplied.get("content_sha256") or "") != expected_hash:
+                    raise PermissionError("prepared dependency context does not match persisted artifact")
+            payload = dict(payload)
+            payload["context"] = prepared_context
+            payload.pop("parent_context", None)
+
         record, decision = self._route(task)
         executor = self.adapter.resolve_binding(str(record.executor_binding or ""))
         child = self._issue_child(
@@ -442,8 +508,7 @@ class HermesHarnessCapabilityBroker:
                 task_envelope=task,
                 routing_decision=decision,
                 payload=dict(payload),
-                parent_context=self.parent_context(task_id=task_id)
-                if task.dependencies else None,
+                parent_context=None,
             )
             result = adapted.result
             elapsed = float(adapted.elapsed_seconds)
@@ -492,6 +557,11 @@ class HermesHarnessCapabilityBroker:
             idempotency_key=task.idempotency_key,
             capability_version=task.capability_version,
             retry_count=retry_attempt,
+            skill_id=record.skill_id,
+            executor_binding=str(record.executor_binding or ""),
+            source_task_ids=tuple(task.dependencies),
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc).isoformat(),
         )
         audit = {
             "event": "TASK_COMPLETED",
@@ -573,38 +643,108 @@ class HermesHarnessCapabilityBroker:
         )
 
     def parent_context(self, *, task_id: str) -> dict[str, Any]:
+        context_started = time.perf_counter()
         task = self._task(task_id)
         parents: list[dict[str, Any]] = []
         max_bytes = int(self.spec.budgets.get("context_bytes", 65536))
         used = 0
-        for parent_id in task.dependencies:
+        artifact_load_ms = 0.0
+        duplicate_bytes = 0
+        seen_tasks: set[str] = set()
+        seen_hashes: set[str] = set()
+
+        def resolve(parent_id: str, *, direct: bool) -> None:
+            nonlocal used, artifact_load_ms, duplicate_bytes
+            if parent_id in seen_tasks:
+                return
+            seen_tasks.add(parent_id)
             rows = self._task_results.get(parent_id) or []
             if not rows:
-                raise RuntimeError(f"parent output not available: {parent_id}")
+                raise DependencyArtifactMissing(
+                    task_id=task_id,
+                    dependency_task_id=parent_id,
+                    resolution_attempts=(f"result-snapshot:{parent_id}",),
+                )
             row = rows[-1]
+            task_result_ref = str(row.get("task_result_ref") or "").strip()
+            if not task_result_ref:
+                source_task = self._task(parent_id)
+                now = datetime.now(timezone.utc).isoformat()
+                upgraded = build_task_result_envelope(
+                    mission_id=self.spec.mission_id,
+                    task_id=parent_id,
+                    capability_id=str(row.get("capability_id") or source_task.capability_id),
+                    agent_id=row.get("agent_id"),
+                    skill_id=source_task.selected_skill_id,
+                    executor_binding=source_task.selected_executor_binding,
+                    status=str(row.get("status") or "COMPLETED"),
+                    started_at=now,
+                    completed_at=now,
+                    elapsed_ms=float(row.get("elapsed_seconds") or 0.0) * 1000.0,
+                    result=row.get("result"),
+                    source_task_ids=tuple(source_task.dependencies),
+                    authorization_id=str(row.get("authorization_id") or self.parent_authorization.authorization_id),
+                )
+                upgraded_record = persist_task_result_envelope(
+                    upgraded, artifact_dir=self.artifact_dir, index=len(rows)
+                )
+                task_result_ref = upgraded_record["task_result_ref"]
+                row["task_result_ref"] = task_result_ref
+                row["task_result_sha256"] = upgraded_record["content_sha256"]
+            load_started = time.perf_counter()
+            try:
+                envelope = load_task_result_envelope(
+                    artifact_dir=self.artifact_dir,
+                    task_result_ref=task_result_ref,
+                )
+            except (FileNotFoundError, ValueError, PermissionError) as exc:
+                raise DependencyArtifactMissing(
+                    task_id=task_id,
+                    dependency_task_id=parent_id,
+                    resolution_attempts=(
+                        f"result-snapshot:{parent_id}",
+                        task_result_ref,
+                        type(exc).__name__,
+                    ),
+                ) from exc
+            artifact_load_ms += (time.perf_counter() - load_started) * 1000.0
+            digest = str(envelope.get("content_sha256") or "")
             candidate = {
                 "task_id": parent_id,
-                "capability_id": row["capability_id"],
-                "agent_id": row["agent_id"],
-                "evidence_ref": row["evidence_ref"],
-                "sha256": row["sha256"],
-                "result": row["result"],
+                "capability_id": envelope.get("capability_id"),
+                "agent_id": envelope.get("agent_id"),
+                "skill_id": envelope.get("skill_id"),
+                "task_result_ref": task_result_ref,
+                "content_sha256": digest,
+                "result_summary": envelope.get("result_summary"),
+                "output_artifact_refs": list(envelope.get("output_artifact_refs") or ()),
+                "evidence_refs": list(envelope.get("evidence_refs") or ()),
+                "metrics_refs": list(envelope.get("metrics_refs") or ()),
+                "source_task_ids": list(envelope.get("source_task_ids") or ()),
+                "direct_dependency": bool(direct),
+                "result_payload": envelope.get("result_payload"),
             }
-            size = len(json.dumps(candidate, ensure_ascii=False, default=str).encode("utf-8"))
+            size = len(json.dumps(candidate, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8"))
+            if digest in seen_hashes:
+                duplicate_bytes += size
+                return
+            seen_hashes.add(digest)
             if used + size > max_bytes:
-                candidate.pop("result", None)
+                candidate.pop("result_payload", None)
                 candidate["result_omitted"] = "CONTEXT_BUDGET"
-                size = len(json.dumps(candidate, ensure_ascii=False).encode("utf-8"))
+                size = len(json.dumps(candidate, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8"))
             parents.append(candidate)
             used += size
+            for source_id in envelope.get("source_task_ids") or ():
+                resolve(str(source_id), direct=False)
+
+        for parent_id in task.dependencies:
+            resolve(str(parent_id), direct=True)
 
         record = self.registry.get(task.capability_id)
         if record is None:
             raise PermissionError("Hermes task capability disappeared from Registry")
-        artifact_ref = next(
-            (str(ref) for ref in task.input_refs if str(ref).strip()),
-            None,
-        )
+        artifact_ref = next((str(ref) for ref in task.input_refs if str(ref).strip()), None)
         bounded = build_bounded_memory_context(
             goal_id=self.spec.goal_id,
             domain=record.domain,
@@ -617,22 +757,27 @@ class HermesHarnessCapabilityBroker:
         ).to_dict()
         profile = HermesProfileFactory(registry=self.registry).project_task(task)
         evidence_refs = list(dict.fromkeys([
-            *[
-                ref
-                for item in bounded["operational_memory"]
-                for ref in (item.get("evidence_refs") or ())
-            ],
-            *[
-                ref
-                for item in bounded["conversation_memory"]
-                for ref in (item.get("evidence_refs") or ())
-            ],
-            *[
-                ref
-                for item in bounded["artifact_lineage_memory"]
-                for ref in (item.get("evidence_refs") or ())
-            ],
+            *[str(item.get("task_result_ref") or "") for item in parents if str(item.get("task_result_ref") or "").strip()],
+            *[str(ref) for item in parents for ref in (
+                list(item.get("output_artifact_refs") or ())
+                + list(item.get("evidence_refs") or ())
+                + list(item.get("metrics_refs") or ())
+            ) if str(ref).strip()],
+            *[ref for item in bounded["operational_memory"] for ref in (item.get("evidence_refs") or ())],
+            *[ref for item in bounded["conversation_memory"] for ref in (item.get("evidence_refs") or ())],
+            *[ref for item in bounded["artifact_lineage_memory"] for ref in (item.get("evidence_refs") or ())],
         ]))
+        dependency_metrics = {
+            "DEPENDENCY_ARTIFACT_COUNT": len(parents),
+            "DEPENDENCY_CONTEXT_BYTES": used,
+            "DEPENDENCY_CONTEXT_BUILD_MS": round((time.perf_counter() - context_started) * 1000.0, 3),
+            "DEPENDENCY_ARTIFACT_LOAD_MS": round(artifact_load_ms, 3),
+            "DUPLICATE_HANDOFF_BYTES": duplicate_bytes,
+        }
+        dependency_fingerprint = sha256(json.dumps({
+            "task_id": task_id,
+            "parents": [{"task_id": item.get("task_id"), "content_sha256": item.get("content_sha256")} for item in parents],
+        }, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         return {
             "mission_id": self.spec.mission_id,
             "task_id": task_id,
@@ -645,6 +790,9 @@ class HermesHarnessCapabilityBroker:
                 "action": task.action,
             },
             "parent_handoffs": parents,
+            "dependency_results": parents,
+            "dependency_metrics": dependency_metrics,
+            "dependency_context_sha256": dependency_fingerprint,
             "relevant_memory": {
                 "operational_memory": bounded["operational_memory"],
                 "knowledge_memory": bounded["knowledge_memory"],
@@ -683,7 +831,7 @@ class HermesHarnessCapabilityBroker:
             if str(ref).strip()
         ))
         rows = self._task_results.get(from_task_id, ())
-        known_refs = {row["evidence_ref"] for row in rows}
+        known_refs = {str(ref) for row in rows for ref in (row.get("evidence_ref"), row.get("task_result_ref")) if str(ref or "").strip()}
         if not refs or not set(refs).issubset(known_refs):
             raise PermissionError(
                 "Hermes handoff may reference only observed source-task evidence"
@@ -696,7 +844,7 @@ class HermesHarnessCapabilityBroker:
             from_task_id=from_task_id,
             to_task_id=to_task_id,
             evidence_refs=refs,
-            result_ref=str(latest["evidence_ref"]),
+            result_ref=str(latest.get("task_result_ref") or latest["evidence_ref"]),
             output_contract=str(source_record.output_contract or ""),
             summary=str(summary).strip()[:1600],
             acceptance_state="ACCEPTED_FOR_DEPENDENCY",
