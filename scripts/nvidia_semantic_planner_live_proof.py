@@ -41,6 +41,8 @@ from app.services.provider_health_service import (
 from app.services.semantic_mission_planner_service import (
     MissionPlanProposal,
     build_semantic_planner_prompt,
+    mission_plan_json_schema,
+    semantic_prompt_component_bytes,
 )
 
 
@@ -315,6 +317,31 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
     )
     prompt = build_semantic_planner_prompt(context)
     prompt_bytes = len(prompt.encode("utf-8"))
+    prompt_component_bytes = semantic_prompt_component_bytes(context)
+    context_bytes = len(
+        json.dumps(
+            context,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    schema_bytes = len(
+        json.dumps(
+            mission_plan_json_schema(
+                max_tasks=int(
+                    (context.get("resource_bounds") or {}).get(
+                        "max_tasks_per_mission"
+                    )
+                    or 8
+                )
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
 
     models_before = _semantic_models()
     recent_health = (
@@ -343,6 +370,65 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
     )
 
     budget_before = nvidia_semantic_planner_latency_budget()
+    if bool(request_payload.get("preflight_only")):
+        report = {
+            "schema": "nvidia-semantic-planner-live-proof-preflight/v1",
+            "status": "PASS",
+            "PRELIGHT_ONLY": True,
+            "PROMPT_BYTES": prompt_bytes,
+            "PROMPT_COMPONENT_BYTES": prompt_component_bytes,
+            "PLANNING_CONTEXT_BYTES": context_bytes,
+            "MISSION_PLAN_SCHEMA_BYTES": schema_bytes,
+            "REGISTRY_RECORDS_SERIALIZED": len(
+                context.get("registry_summary") or ()
+            ),
+            "COMPETENCE_RECORDS_SERIALIZED": len(
+                context.get("competence_evidence") or ()
+            ),
+            "FAILURE_MEMORY_RECORDS_SERIALIZED": len(
+                context.get("relevant_failure_memories") or ()
+            ),
+            "MODEL_TIMEOUT_RECORDED": bool(recent_memory),
+            "RECENT_FAILURE_MODEL_HEALTH": recent_health,
+            "RECENT_FAILURE_INFLUENCES_SELECTION": bool(
+                recent_model
+                and routing_after_failure.selected_model != recent_model
+                and recent_health
+                and recent_health.get("source")
+                == "LEARNING_PLANE_LIVE_EVIDENCE"
+            ),
+            "NEXT_SELECTION_MODEL": routing_after_failure.selected_model,
+            "LATENCY_BUDGET_BEFORE": budget_before,
+            "MODELS_BEFORE": models_before,
+            "PROVIDER_CALLS_EXECUTED": 0,
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        for key in (
+            "PROMPT_BYTES",
+            "PLANNING_CONTEXT_BYTES",
+            "MISSION_PLAN_SCHEMA_BYTES",
+            "REGISTRY_RECORDS_SERIALIZED",
+            "COMPETENCE_RECORDS_SERIALIZED",
+            "FAILURE_MEMORY_RECORDS_SERIALIZED",
+            "MODEL_TIMEOUT_RECORDED",
+            "RECENT_FAILURE_INFLUENCES_SELECTION",
+            "NEXT_SELECTION_MODEL",
+            "PROVIDER_CALLS_EXECUTED",
+        ):
+            value = report.get(key)
+            if isinstance(value, bool):
+                value = "PASS" if value else "FAIL"
+            print(f"{key}={value}")
+        print(
+            "PROMPT_COMPONENT_BYTES="
+            + json.dumps(prompt_component_bytes, sort_keys=True)
+        )
+        return report
+
     os.environ["NVIDIA_NIM_TIMEOUT_SECONDS"] = str(
         float(budget_before["MODEL_ATTEMPT_DEADLINE_MS"]) / 1000.0
     )
