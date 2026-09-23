@@ -203,8 +203,15 @@ def persist_real_failure_episode(request: dict, *, base_sha: str, manifest: list
             or "harness-selected-capability"
         ),
         capability_id=capability_id,
-        domain=str(getattr(record, "domain", None) or "research"),
-        task_class="provider-runtime-failure",
+        domain=str(
+            incident.get("domain")
+            or getattr(record, "domain", None)
+            or "system-improvement"
+        ),
+        task_class=str(
+            incident.get("task_class")
+            or "provider-runtime-failure"
+        ),
         started_at=str(incident.get("started_at") or datetime.now(timezone.utc).isoformat()),
         finished_at=str(incident.get("finished_at") or datetime.now(timezone.utc).isoformat()),
         duration_seconds=max(0.0, float(incident.get("duration_seconds") or 0.0)),

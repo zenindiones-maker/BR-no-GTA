@@ -340,6 +340,45 @@ _ADDY_EXECUTION_OPERATION_OVERRIDES = {
     "code-review-and-quality": (*_ADDY_BASE_EXECUTION_OPERATIONS, CAN_REVIEW),
 }
 
+# These tags describe the pinned skill's documented purpose. They do not grant
+# actions or execution operations; they only let semantic Registry ranking
+# distinguish specialists that otherwise share the same Addy executor wrapper.
+_ADDY_SEMANTIC_PURPOSE_TAGS = {
+    "api-and-interface-design": (
+        "api", "interface", "contract", "schema", "endpoint", "boundary",
+    ),
+    "ci-cd-and-automation": (
+        "ci", "cd", "automation", "workflow", "pipeline",
+    ),
+    "code-review-and-quality": (
+        "code-review", "review", "quality", "regression",
+    ),
+    "constraint-driven-development": (
+        "constraint", "requirements", "guardrail", "bounded",
+    ),
+    "context-engineering": (
+        "context", "context-window", "retrieval", "prompt",
+    ),
+    "debugging-and-error-recovery": (
+        "incident", "failure", "runtime", "error", "debugging",
+        "diagnosis", "root-cause", "triage", "recovery", "logs",
+    ),
+    "observability-and-instrumentation": (
+        "observability", "telemetry", "instrumentation", "trace",
+        "metrics", "logging",
+    ),
+    "performance-optimization": (
+        "performance", "latency", "profiling", "optimization",
+        "bottleneck", "benchmark",
+    ),
+    "planning-and-task-breakdown": (
+        "planning", "decomposition", "task-breakdown", "execution-plan",
+    ),
+    "test-driven-development": (
+        "test", "testing", "regression", "tdd",
+    ),
+}
+
 
 def _addy_records() -> tuple[CapabilityRecord, ...]:
     return tuple(
@@ -361,7 +400,12 @@ def _addy_records() -> tuple[CapabilityRecord, ...]:
             maturity=FUNCTIONAL,
             availability=AVAILABLE,
             allowed_actions=("DEVELOPMENT",),
-            policy_tags=("development", "semantic-skill", *tuple(name.split("-"))),
+            policy_tags=(
+                "development",
+                "semantic-skill",
+                *tuple(name.split("-")),
+                *_ADDY_SEMANTIC_PURPOSE_TAGS.get(name, ()),
+            ),
             security_boundary=(
                 "HarnessAuthorization + exact pinned Addy skill identity + "
                 "Harness-selected zero-cost semantic provider; no autonomous routing, "

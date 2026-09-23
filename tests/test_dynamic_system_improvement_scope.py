@@ -5,6 +5,7 @@ from pathlib import Path
 from app.services.harness_collaboration_service import TaskEnvelope
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services import harness_adaptive_planning_service as adaptive_planning
 from scripts.dynamic_system_improvement_mission import (
     _artifact_content_budget_chars,
     _context_char_size,
@@ -317,3 +318,68 @@ def test_artifact_telemetry_is_not_embedded_in_agent_context():
     assert 'parent_context["input_artifact_metrics"]' not in source
     assert '"input_artifact_metrics_by_task"' in source
     assert "INPUT_ARTIFACT_CONTEXT_CHARS" in source
+
+
+
+def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
+    requirement = {
+        "task_id": "incident-evidence",
+        "task_class": "system-improvement",
+        "action": "DEVELOPMENT",
+        "declared_action": "DEVELOPMENT",
+        "query": (
+            "collect parse incident evidence artifacts runtime failure "
+            "performance trace capability results diagnosis recovery"
+        ),
+        "objective": (
+            "Collect and parse observed production incident evidence before "
+            "root-cause diagnosis."
+        ),
+        "required_capability_description": (
+            "incident evidence collection for runtime failure diagnosis"
+        ),
+        "candidate_capability_ids": [],
+        "dependencies": [],
+        "expected_output": "incident evidence packet",
+        "acceptance_criteria": ["preserve observed failure evidence"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "required_operations": ["CAN_PRODUCE_ARTIFACT_REFS"],
+    }
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_profiled_capability_health",
+        lambda capability_id: type("Health", (), {
+            "to_dict": lambda self: {
+                "capability_id": capability_id,
+                "state": "HEALTHY",
+                "reason": "focused semantic-fit guard",
+            }
+        })(),
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_capability_failure_memory",
+        lambda capability_id, context: None,
+    )
+    monkeypatch.setattr(
+        adaptive_planning,
+        "_competence_score",
+        lambda record, requirement, context: (0.0, False, None),
+    )
+
+    selected, _, _, evidence = (
+        adaptive_planning.select_capability_for_requirement(
+            requirement,
+            context={"mission_class": "SYSTEM_IMPROVEMENT"},
+            used=set(),
+        )
+    )
+
+    assert selected == "addy:debugging-and-error-recovery"
+    assert evidence["top_candidates"][0]["capability_id"] == selected
+    assert all(
+        item["capability_id"] != "addy:api-and-interface-design"
+        or item["score"] < evidence["top_candidates"][0]["score"]
+        for item in evidence["top_candidates"]
+    )
