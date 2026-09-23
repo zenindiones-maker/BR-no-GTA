@@ -306,3 +306,178 @@ def test_addy_nested_semantic_provider_is_harness_selected_not_hardcoded(
     assert evidence.status == "EXECUTED"
     assert evidence.result["semantic_provider"] == "nvidia_nim"
     assert evidence.result["semantic_model"]
+
+
+
+def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
+    from types import SimpleNamespace
+
+    skill_name = "observability-and-instrumentation"
+    capability_id = f"addy:{skill_name}"
+
+    import app.services.provider_health_service as health_service
+
+    monkeypatch.setattr(
+        addy_harness_service,
+        "semantic_provider_health",
+        lambda: {
+            "semantic_reasoning_available": True,
+            "eligible_zero_cost_provider_ids": ["nvidia_nim"],
+            "providers": [],
+        },
+    )
+    monkeypatch.setattr(
+        addy_harness_service,
+        "resolve_pinned_addy_skill",
+        lambda name: (
+            f"# {name}\nReturn bounded evidence.",
+            "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39",
+            "3" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        addy_harness_service,
+        "capture_canonical_execution_episode",
+        lambda *args, **kwargs: {"status": "captured"},
+    )
+
+    outer = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute selected Addy skill",
+            authorized_action="DEVELOPMENT",
+            domain="development",
+            task_class="test-addy-reroute",
+            goal_id="goal-addy-reroute",
+            required_capability_id=capability_id,
+            provider_required=False,
+            fallback_allowed=False,
+            learning_required=True,
+        )
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{capability_id}",
+        harness_decision_id="addy-reroute-parent-decision",
+        execution_id="addy-reroute-execution",
+        lineage={
+            "routing_id": outer.routing_id,
+            "capability_id": outer.selected_capability_id,
+            "selected_executor_binding": outer.selected_executor_binding,
+            "goal_id": "goal-addy-reroute",
+        },
+    )
+
+    decisions = [
+        SimpleNamespace(
+            routing_id="provider-route-a",
+            selected_provider="nvidia_nim",
+            selected_model="nvidia/model-a",
+            selected_capability_id="ai.reasoning.text",
+            selected_provider_executor_binding=(
+                "app.services.harness_ai_provider_service."
+                "execute_harness_ai_generation"
+            ),
+        ),
+        SimpleNamespace(
+            routing_id="provider-route-b",
+            selected_provider="nvidia_nim",
+            selected_model="nvidia/model-b",
+            selected_capability_id="ai.reasoning.text",
+            selected_provider_executor_binding=(
+                "app.services.harness_ai_provider_service."
+                "execute_harness_ai_generation"
+            ),
+        ),
+    ]
+    routing_requests = []
+
+    def fake_route(request):
+        routing_requests.append(request)
+        return decisions[len(routing_requests) - 1]
+
+    monkeypatch.setattr(
+        addy_harness_service,
+        "route_harness_request",
+        fake_route,
+    )
+
+    calls = []
+
+    def fake_generate(*, routing_decision, authorization, **kwargs):
+        calls.append(routing_decision.selected_model)
+        if routing_decision.selected_model == "nvidia/model-a":
+            return HarnessAIProviderEvidence(
+                provider="nvidia_nim",
+                status="FAILED",
+                active=False,
+                authority="deepseek_harness",
+                authorized_action="DEVELOPMENT",
+                harness_decision_id=authorization.harness_decision_id,
+                execution_id=authorization.execution_id,
+                authorization_id=authorization.authorization_id,
+                error={
+                    "code": "timeout",
+                    "retryable": True,
+                    "failure_pattern": "nvidia_nim_timeout",
+                    "message": "bounded timeout",
+                },
+                routing={"routing_id": routing_decision.routing_id},
+                model="nvidia/model-a",
+                executor_binding=(
+                    routing_decision.selected_provider_executor_binding
+                ),
+                latency_seconds=1.0,
+                retry_count=0,
+            )
+        return HarnessAIProviderEvidence(
+            provider="nvidia_nim",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            authorization_id=authorization.authorization_id,
+            result={
+                "text": "rerouted-success",
+                "model": "nvidia/model-b",
+            },
+            routing={"routing_id": routing_decision.routing_id},
+            model="nvidia/model-b",
+            executor_binding=(
+                routing_decision.selected_provider_executor_binding
+            ),
+            latency_seconds=0.2,
+            retry_count=0,
+            evidence_refs=("test:addy:reroute",),
+        )
+
+    monkeypatch.setattr(
+        addy_harness_service,
+        "execute_harness_ai_generation",
+        fake_generate,
+    )
+
+    try:
+        evidence = execute_authorized_addy_skill(
+            authorization=authorization,
+            routing_decision=outer,
+            payload={
+                "mission_id": "mission-addy-reroute",
+                "task_id": "benchmark-compare",
+                "goal_id": "goal-addy-reroute",
+                "task": "Compare baseline and candidate.",
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+
+    assert evidence.status == "EXECUTED"
+    assert evidence.result["semantic_model"] == "nvidia/model-b"
+    assert calls == ["nvidia/model-a", "nvidia/model-b"]
+    assert routing_requests[0].unavailable_model_ids == ()
+    assert routing_requests[1].unavailable_model_ids == ("nvidia/model-a",)
+    assert routing_requests[1].failure_pattern == "nvidia_nim_timeout"
+    assert len(evidence.result["provider_attempts"]) == 2
+    assert evidence.result["provider_attempts"][0]["status"] == "FAILED"
+    assert evidence.result["provider_attempts"][1]["status"] == "EXECUTED"

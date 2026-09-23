@@ -201,63 +201,120 @@ def execute_authorized_addy_skill(
     if not eligible_providers:
         raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
 
-    provider_routing = route_harness_request(
-        HarnessRoutingRequest(
-            intent=(
-                f"execute pinned Addy skill {skill_name} with governed "
-                "semantic reasoning and structured output"
-            ),
-            authorized_action="DEVELOPMENT",
-            domain="ai",
-            task_class=f"addy-semantic:{skill_name}",
-            goal_id=goal_id,
-            required_capability_id="ai.reasoning.text",
-            provider_required=True,
-            provider_domain="ai",
-            allowed_providers=eligible_providers,
-            fallback_allowed=False,
-            zero_cost_operation=True,
-            learning_required=True,
-        )
-    )
-    selected_provider = str(
-        provider_routing.selected_provider or ""
-    ).strip()
-    if not selected_provider:
-        raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
+    provider_attempts: list[dict[str, Any]] = []
 
-    provider_auth = issue_harness_authorization(
-        authorized_action="DEVELOPMENT",
-        subject=f"provider:{selected_provider}",
-        harness_decision_id=auth.harness_decision_id,
-        execution_id=auth.execution_id,
-        lineage={
-            "parent_authorization_id": auth.authorization_id,
+    def _route_provider(
+        *,
+        preferred_provider: str | None = None,
+        unavailable_models: tuple[str, ...] = (),
+        failure_pattern: str | None = None,
+    ):
+        return route_harness_request(
+            HarnessRoutingRequest(
+                intent=(
+                    f"execute pinned Addy skill {skill_name} with governed "
+                    "semantic reasoning and structured output"
+                ),
+                authorized_action="DEVELOPMENT",
+                domain="ai",
+                task_class=f"addy-semantic:{skill_name}",
+                goal_id=goal_id,
+                required_capability_id="ai.reasoning.text",
+                provider_required=True,
+                provider_domain="ai",
+                preferred_providers=(
+                    (preferred_provider,) if preferred_provider else ()
+                ),
+                allowed_providers=eligible_providers,
+                unavailable_model_ids=unavailable_models,
+                fallback_allowed=False,
+                zero_cost_operation=True,
+                failure_pattern=failure_pattern,
+                learning_required=True,
+            )
+        )
+
+    def _execute_provider(provider_routing):
+        selected_provider = str(
+            provider_routing.selected_provider or ""
+        ).strip()
+        if not selected_provider:
+            raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
+        provider_auth = issue_harness_authorization(
+            authorized_action="DEVELOPMENT",
+            subject=f"provider:{selected_provider}",
+            harness_decision_id=auth.harness_decision_id,
+            execution_id=auth.execution_id,
+            lineage={
+                "parent_authorization_id": auth.authorization_id,
+                "routing_id": provider_routing.routing_id,
+                "capability_id": provider_routing.selected_capability_id,
+                "selected_provider": selected_provider,
+                "selected_model": provider_routing.selected_model,
+                "eligible_zero_cost_provider_ids": list(eligible_providers),
+                "selected_executor_binding": (
+                    provider_routing.selected_provider_executor_binding
+                ),
+                "mission_id": mission_id,
+                "task_id": task_id,
+                "goal_id": goal_id,
+                "addy_capability_id": capability_id,
+                "addy_skill_id": skill_name,
+                "addy_source_sha": source_sha,
+                "addy_skill_sha256": skill_sha,
+            },
+        )
+        try:
+            semantic_evidence = execute_harness_ai_generation(
+                prompt=prompt,
+                authorization=provider_auth,
+                routing_decision=provider_routing,
+            )
+        finally:
+            consume_harness_authorization(provider_auth)
+        provider_attempts.append({
             "routing_id": provider_routing.routing_id,
-            "capability_id": provider_routing.selected_capability_id,
-            "selected_provider": selected_provider,
-            "selected_model": provider_routing.selected_model,
-            "eligible_zero_cost_provider_ids": list(eligible_providers),
-            "selected_executor_binding": provider_routing.selected_provider_executor_binding,
-            "mission_id": mission_id,
-            "task_id": task_id,
-            "goal_id": goal_id,
-            "addy_capability_id": capability_id,
-            "addy_skill_id": skill_name,
-            "addy_source_sha": source_sha,
-            "addy_skill_sha256": skill_sha,
-        },
-    )
+            "provider": semantic_evidence.provider,
+            "model": (
+                semantic_evidence.model
+                or provider_routing.selected_model
+            ),
+            "status": semantic_evidence.status,
+            "retry_count": int(semantic_evidence.retry_count or 0),
+            "latency_seconds": semantic_evidence.latency_seconds,
+            "error": dict(semantic_evidence.error or {}),
+        })
+        return semantic_evidence
 
     started_at = datetime.now(timezone.utc).isoformat()
-    try:
-        semantic = execute_harness_ai_generation(
-            prompt=prompt,
-            authorization=provider_auth,
-            routing_decision=provider_routing,
-        )
-    finally:
-        consume_harness_authorization(provider_auth)
+    provider_routing = _route_provider()
+    semantic = _execute_provider(provider_routing)
+
+    if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
+        error = semantic.error if isinstance(semantic.error, dict) else {}
+        failed_model = str(
+            semantic.model or provider_routing.selected_model or ""
+        ).strip()
+        failed_provider = str(
+            semantic.provider or provider_routing.selected_provider or ""
+        ).strip()
+        if bool(error.get("retryable")) and failed_model and failed_provider:
+            try:
+                rerouted = _route_provider(
+                    preferred_provider=failed_provider,
+                    unavailable_models=(failed_model,),
+                    failure_pattern=str(
+                        error.get("failure_pattern")
+                        or error.get("code")
+                        or "provider_retryable_failure"
+                    ),
+                )
+            except Exception:
+                rerouted = None
+            if rerouted is not None:
+                provider_routing = rerouted
+                semantic = _execute_provider(provider_routing)
+
     finished_at = datetime.now(timezone.utc).isoformat()
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
@@ -278,6 +335,7 @@ def execute_authorized_addy_skill(
                 "source_sha": source_sha,
                 "skill_sha256": skill_sha,
                 "provider_evidence": semantic.to_dict(),
+                "provider_attempts": provider_attempts,
             },
             boundary=record.security_boundary,
         )
@@ -343,6 +401,7 @@ def execute_authorized_addy_skill(
             "provider_profile_skill_id": semantic.provider_profile_skill_id,
             "provider_profile_version": semantic.provider_profile_version,
             "provider_evidence": semantic.to_dict(),
+            "provider_attempts": provider_attempts,
             "receipt": receipt.to_dict(),
         },
         boundary=record.security_boundary,
