@@ -78,6 +78,15 @@ jobs:
           assert data["DOWNSTREAM_ARTIFACT_CONSUMED"] is True
           assert data["DOWNSTREAM_AGENT_EXECUTED"] is True
           assert data["LEARNING_PLANE_REAL_EPISODE"] is True
+          assert data["SECOND_SIMILAR_EXECUTION"] is True
+          assert data["SECOND_DOWNSTREAM_ARTIFACT_CONSUMED"] is True
+          assert data["FIRST_EPISODE_RETRIEVED_BEFORE_SECOND_EXECUTION"] is True
+          assert data["SECOND_EXECUTION_USED_FIRST_EPISODE"] is True
+          assert data["COMPETENCE_ACTIVE_AFTER_SECOND_EXECUTION"] is True
+          assert int(data["COMPETENCE_TESTED_CASES"]) >= 2
+          assert data["NEXT_SIMILAR_DECISION_READS_COMPETENCE"] is True
+          assert data["NEXT_SIMILAR_DECISION_USES_COMPETENCE"] is True
+          assert data["REAL_LEARNING_CAUSAL_EFFECT"] is True
           assert data["NO_CODEX_EXECUTION"] is True
           assert data["NO_NVIDIA_CALL"] is True
           assert data["NO_REPOSITORY_MUTATION"] is True
@@ -88,6 +97,7 @@ jobs:
           assert data["CANDIDATE_BENCHMARK"] == "NOT_APPLICABLE_NO_CANDIDATE"
           assert float(data["MEASURED_PROFILE_LATENCY_MS"]) >= 0.0
           print("REAL_AGENT_EXECUTION_GATES=PASS")
+          print("REAL_LEARNING_CAUSAL_EFFECT=PASS")
           print("CANONICAL_AUTH_CHECKPOINT_PRESERVED=PASS")
           print("CODEX_BLOCKED_MISSION_UNTOUCHED=PASS")
           PY

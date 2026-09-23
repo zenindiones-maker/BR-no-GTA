@@ -41,9 +41,11 @@ from app.services.task_result_envelope_service import (
 
 CANONICAL_AUTH_CHECKPOINT = 35850473901
 MISSION_ID = "real-agent-execution-readonly-system-improvement"
+SECOND_MISSION_ID = "real-agent-execution-readonly-system-improvement-repeat"
 GOAL_ID = "prove-real-agent-execution-without-codex-wif"
 ANALYSIS_TASK_ID = "repository-profile"
 IMPROVEMENT_TASK_ID = "system-improvement-proposal"
+SECOND_IMPROVEMENT_TASK_ID = "system-improvement-proposal-repeat"
 IMPROVEMENT_TASK_CLASS = "real-readonly-system-improvement-proposal"
 
 
@@ -384,8 +386,226 @@ def run(*, artifact_dir: Path) -> dict[str, Any]:
     if not bool((observed_episode.get("actual_outcome") or {}).get("observed")):
         raise RuntimeError("Learning Plane episode is not marked observed")
 
+    # The first observed episode is deliberately insufficient to activate competence:
+    # MIN_COMPETENCE_CASES=2. The second similar real execution must therefore consume
+    # the first episode through bounded artifact-lineage memory, then promote the
+    # measured competence only after its own observed result is persisted.
+    second_improvement_routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=(
+                "produce a second evidence-driven proposal-only system improvement "
+                "from the same real repository analysis class; do not mutate repository"
+            ),
+            authorized_action="DEVELOPMENT",
+            domain="system-improvement",
+            task_class=IMPROVEMENT_TASK_CLASS,
+            goal_id=GOAL_ID,
+            provider_required=False,
+            fallback_allowed=False,
+            learning_required=True,
+        )
+    )
+    if second_improvement_routing.selected_capability_id != improvement_record.capability_id:
+        raise RuntimeError("second similar execution selected a different capability")
+
+    second_learning_context = dict(
+        second_improvement_routing.policy_metadata.get("learning_context") or {}
+    )
+    second_bounded_context = dict(
+        second_learning_context.get("bounded_memory_context") or {}
+    )
+    second_lineage_memory = list(
+        second_bounded_context.get("artifact_lineage_memory") or ()
+    )
+    first_episode_retrieved = any(
+        isinstance(item, dict)
+        and str(item.get("episode_id") or "") == str(observed_episode["episode_id"])
+        for item in second_lineage_memory
+    )
+    if not first_episode_retrieved:
+        raise RuntimeError(
+            "second similar execution did not retrieve the first real episode "
+            "through artifact-lineage memory"
+        )
+
+    second_improvement_auth = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{improvement_record.capability_id}",
+        harness_decision_id="decision-real-agent-system-improvement-repeat",
+        execution_id=SECOND_MISSION_ID,
+        lineage={
+            "routing_id": second_improvement_routing.routing_id,
+            "capability_id": improvement_record.capability_id,
+            "selected_executor_binding": second_improvement_routing.selected_executor_binding,
+            "goal_id": GOAL_ID,
+            "mission_id": SECOND_MISSION_ID,
+            "source_task_result_ref": persisted_analysis["task_result_ref"],
+            "source_learning_episode_id": observed_episode["episode_id"],
+            "proof": "REAL_AGENT_EXECUTION_PROOF",
+        },
+    )
+
+    second_input_refs = [
+        *downstream_input_refs,
+        persisted_improvement["task_result_ref"],
+    ]
+    second_canonical = execute_system_improvement_via_harness(
+        authorization=second_improvement_auth,
+        routing_decision=second_improvement_routing,
+        payload={
+            "mission_id": SECOND_MISSION_ID,
+            "task_id": SECOND_IMPROVEMENT_TASK_ID,
+            "goal_id": GOAL_ID,
+            "task_class": IMPROVEMENT_TASK_CLASS,
+            "gaps": gaps,
+            "evidence_refs": second_input_refs,
+        },
+    )
+    if not second_canonical.success:
+        raise RuntimeError("second system-improvement execution did not succeed")
+    second_proposal = dict(second_canonical.result or {})
+    if second_proposal.get("status") != "PROPOSAL_ONLY":
+        raise PermissionError("second system-improvement execution escaped proposal-only boundary")
+
+    second_receipt = dict(second_proposal.get("receipt") or {})
+    second_started_at = str(second_receipt.get("started_at") or "")
+    second_finished_at = str(second_receipt.get("finished_at") or "")
+    second_improvement_envelope = build_task_result_envelope(
+        mission_id=SECOND_MISSION_ID,
+        task_id=SECOND_IMPROVEMENT_TASK_ID,
+        capability_id=improvement_record.capability_id,
+        agent_id=improvement_record.agent_id,
+        skill_id=improvement_record.skill_id,
+        executor_binding=str(improvement_record.executor_binding or ""),
+        status="COMPLETED",
+        started_at=second_started_at,
+        completed_at=second_finished_at,
+        elapsed_ms=_iso_seconds(second_started_at, second_finished_at) * 1000.0,
+        result=second_canonical.to_dict(),
+        source_task_ids=(ANALYSIS_TASK_ID, IMPROVEMENT_TASK_ID),
+        authorization_id=second_improvement_auth.authorization_id,
+    )
+    persisted_second_improvement = persist_task_result_envelope(
+        second_improvement_envelope,
+        artifact_dir=artifact_dir,
+        index=3,
+    )
+    loaded_second_improvement = load_task_result_envelope(
+        artifact_dir=artifact_dir,
+        task_result_ref=persisted_second_improvement["task_result_ref"],
+    )
+    second_artifact_consumed = (
+        persisted_improvement["task_result_ref"]
+        in set(second_receipt.get("input_refs") or ())
+        and IMPROVEMENT_TASK_ID
+        in set(loaded_second_improvement.get("source_task_ids") or ())
+    )
+    if not second_artifact_consumed:
+        raise RuntimeError("second execution did not consume prior real task evidence")
+
+    second_episodes = harness_learning_repository.list_episodes(
+        domain="system-improvement",
+        task_class=IMPROVEMENT_TASK_CLASS,
+        capability_id=improvement_record.capability_id,
+        limit=20,
+    )
+    second_episode = next(
+        (
+            item
+            for item in second_episodes
+            if item.get("execution_id") == SECOND_MISSION_ID
+            and item.get("task_id") == SECOND_IMPROVEMENT_TASK_ID
+        ),
+        None,
+    )
+    if second_episode is None:
+        raise RuntimeError("Learning Plane did not capture the second real execution")
+    if not bool((second_episode.get("actual_outcome") or {}).get("observed")):
+        raise RuntimeError("second Learning Plane episode is not marked observed")
+
+    second_episode_lineage = dict(second_episode.get("lineage") or {})
+    second_episode_bounded = dict(
+        second_episode_lineage.get("bounded_memory_context") or {}
+    )
+    second_episode_artifact_lineage = list(
+        second_episode_bounded.get("artifact_lineage_memory") or ()
+    )
+    second_execution_used_first_episode = any(
+        isinstance(item, dict)
+        and str(item.get("episode_id") or "") == str(observed_episode["episode_id"])
+        for item in second_episode_artifact_lineage
+    )
+    if not second_execution_used_first_episode:
+        raise RuntimeError(
+            "second observed episode does not prove first-episode learning lineage"
+        )
+
+    competence_rows = harness_learning_repository.list_competence(
+        domain="system-improvement",
+        task_class=IMPROVEMENT_TASK_CLASS,
+        capability_id=improvement_record.capability_id,
+        agent_id=improvement_record.agent_id,
+        limit=10,
+    )
+    active_competence = next(
+        (
+            item
+            for item in competence_rows
+            if item.get("status") == "ACTIVE"
+            and int(item.get("tested_cases") or 0) >= 2
+        ),
+        None,
+    )
+    if active_competence is None:
+        raise RuntimeError(
+            "two observed real executions did not activate measured competence"
+        )
+
+    next_similar_routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=(
+                "evaluate the next similar proposal-only system-improvement task "
+                "using persisted operational learning"
+            ),
+            authorized_action="DEVELOPMENT",
+            domain="system-improvement",
+            task_class=IMPROVEMENT_TASK_CLASS,
+            goal_id=GOAL_ID,
+            provider_required=False,
+            fallback_allowed=False,
+            learning_required=True,
+        )
+    )
+    if next_similar_routing.selected_capability_id != improvement_record.capability_id:
+        raise RuntimeError("post-learning decision changed capability unexpectedly")
+    next_learning_context = dict(
+        next_similar_routing.policy_metadata.get("learning_context") or {}
+    )
+    next_competence = list(next_learning_context.get("competence_records") or ())
+    next_decision_reads_competence = any(
+        str(item.get("capability_id") or "") == improvement_record.capability_id
+        and item.get("evidence_sufficient") is True
+        and int(item.get("tested_cases") or 0) >= 2
+        for item in next_competence
+        if isinstance(item, dict)
+    )
+    competence_evidence_used = list(
+        next_similar_routing.policy_metadata.get("competence_evidence_used") or ()
+    )
+    next_decision_uses_competence = any(
+        str(item.get("capability_id") or "") == improvement_record.capability_id
+        and int(item.get("tested_cases") or 0) >= 2
+        for item in competence_evidence_used
+        if isinstance(item, dict)
+    )
+    if not (next_decision_reads_competence and next_decision_uses_competence):
+        raise RuntimeError(
+            "next similar Harness decision did not consume active measured competence"
+        )
+
     consume_harness_authorization(analysis_auth)
     consume_harness_authorization(improvement_auth)
+    consume_harness_authorization(second_improvement_auth)
 
     commands = [
         str(item)
@@ -399,7 +619,10 @@ def run(*, artifact_dir: Path) -> dict[str, Any]:
     no_nvidia = (
         analysis_routing.selected_provider is None
         and improvement_routing.selected_provider is None
+        and second_improvement_routing.selected_provider is None
+        and next_similar_routing.selected_provider is None
         and receipt.get("external_call_performed") is False
+        and second_receipt.get("external_call_performed") is False
     )
     no_mutation = (
         not worker_result.get("files_changed")
@@ -446,6 +669,18 @@ def run(*, artifact_dir: Path) -> dict[str, Any]:
         "LEARNING_PLANE_REAL_EPISODE": True,
         "LEARNING_EPISODE_ID": observed_episode["episode_id"],
         "LEARNING_EPISODE_STATUS": observed_episode["status"],
+        "SECOND_SIMILAR_EXECUTION": True,
+        "SECOND_DOWNSTREAM_TASK_RESULT_REF": persisted_second_improvement["task_result_ref"],
+        "SECOND_DOWNSTREAM_ARTIFACT_CONSUMED": second_artifact_consumed,
+        "SECOND_LEARNING_EPISODE_ID": second_episode["episode_id"],
+        "SECOND_LEARNING_EPISODE_STATUS": second_episode["status"],
+        "FIRST_EPISODE_RETRIEVED_BEFORE_SECOND_EXECUTION": first_episode_retrieved,
+        "SECOND_EXECUTION_USED_FIRST_EPISODE": second_execution_used_first_episode,
+        "COMPETENCE_ACTIVE_AFTER_SECOND_EXECUTION": True,
+        "COMPETENCE_TESTED_CASES": int(active_competence.get("tested_cases") or 0),
+        "NEXT_SIMILAR_DECISION_READS_COMPETENCE": next_decision_reads_competence,
+        "NEXT_SIMILAR_DECISION_USES_COMPETENCE": next_decision_uses_competence,
+        "REAL_LEARNING_CAUSAL_EFFECT": True,
         "HARNESS_FINAL_DECISION": final_decision,
         "INDEPENDENT_REVIEW": "NOT_APPLICABLE_NO_MUTATING_CANDIDATE",
         "CANDIDATE_BENCHMARK": "NOT_APPLICABLE_NO_CANDIDATE",
@@ -487,6 +722,15 @@ def main() -> int:
     print("DOWNSTREAM_AGENT_EXECUTED=PASS")
     print("LEARNING_PLANE_REAL_EPISODE=PASS")
     print(f"LEARNING_EPISODE_ID={result['LEARNING_EPISODE_ID']}")
+    print("SECOND_SIMILAR_EXECUTION=PASS")
+    print(f"SECOND_LEARNING_EPISODE_ID={result['SECOND_LEARNING_EPISODE_ID']}")
+    print("FIRST_EPISODE_RETRIEVED_BEFORE_SECOND_EXECUTION=PASS")
+    print("SECOND_EXECUTION_USED_FIRST_EPISODE=PASS")
+    print("COMPETENCE_ACTIVE_AFTER_SECOND_EXECUTION=PASS")
+    print(f"COMPETENCE_TESTED_CASES={result['COMPETENCE_TESTED_CASES']}")
+    print("NEXT_SIMILAR_DECISION_READS_COMPETENCE=PASS")
+    print("NEXT_SIMILAR_DECISION_USES_COMPETENCE=PASS")
+    print("REAL_LEARNING_CAUSAL_EFFECT=PASS")
     print("HARNESS_FINAL_DECISION=PROPOSAL_CAPTURED_NO_ACTIVATION")
     print("INDEPENDENT_REVIEW=NOT_APPLICABLE_NO_MUTATING_CANDIDATE")
     print("CANDIDATE_BENCHMARK=NOT_APPLICABLE_NO_CANDIDATE")
