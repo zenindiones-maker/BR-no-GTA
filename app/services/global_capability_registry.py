@@ -1035,7 +1035,6 @@ for _record in (
 # Harness capabilities.
 _NATIVE_ADAPTER_BINDINGS = {
     "editorial.process": "app.services.production_mission_capability_adapters.execute_editorial_process_task",
-    "gta6.research.fresh-cloud": "app.services.production_mission_capability_adapters.execute_fresh_research_task",
     "media.discovery": "app.services.native_capability_adapters.execute_media_discovery_capability",
     "production.plan": "app.services.native_capability_adapters.execute_production_plan_capability",
     "qa.preflight": "app.services.native_capability_adapters.execute_qa_preflight_capability",
