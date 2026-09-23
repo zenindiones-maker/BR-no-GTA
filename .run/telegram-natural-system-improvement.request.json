@@ -1,11 +1,11 @@
 {
   "request": "semantic-planner-self-improvement-live",
   "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "5f2a3bf8648d26d947491580331e9bee56d65223",
+  "source_head": "6645b88ceb04d9b9374f6d95bee6669e02566790",
   "resume_context": {
-    "previous_parent_run": 35800318285,
-    "observed_blocker": "GLOBAL_PROVIDER_PREFLIGHT_ORDERING corrected; NVIDIA native proof is GREEN",
-    "blocker_fix": "natural goal now reaches Harness/NVIDIA semantic planning before executor-specific bootstrap"
+    "previous_parent_run": 35803769903,
+    "observed_blocker": "NVIDIA selected model z-ai/glm-5.3 timed out after bounded retry before MissionPlan completion",
+    "blocker_fix": "Harness same-provider model reroute excludes the transiently failed model for the current semantic turn; no model hardcoded"
   },
   "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
   "preserve": {
@@ -13,5 +13,6 @@
     "FULL_RENDER": "NO",
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
-  }
+  },
+  "attempt": 2
 }
