@@ -49,7 +49,9 @@ jobs:
           started="$(date +%s%N)"
           mkdir -p runtime/real-agent-self-improvement
           python -m pip install --upgrade pip >/dev/null
-          python -m pip install --disable-pip-version-check --no-input             -r requirements.txt             -r config/delegation-plane-preflight-extra-requirements.txt             pytest >/dev/null
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest >/dev/null
+          python -m pip install --disable-pip-version-check --no-input -r config/delegation-plane-preflight-extra-requirements.txt >/dev/null
+          python -m pip check >/dev/null
           finished="$(date +%s%N)"
           python - "$started" "$finished" <<'PY' >> "$GITHUB_ENV"
           import sys
