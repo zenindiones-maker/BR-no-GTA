@@ -16,7 +16,15 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 4,
-  "trigger_head": "b049d78b2bc7ea660985b14509500bcf88c908bb",
-  "preflight_only": true
+  "attempt": 5,
+  "trigger_head": "fe47b6905f315c3dcf4a3da59bb92975dc86dea6",
+  "preflight_only": false,
+  "generation_options": {
+    "max_tokens": 2048,
+    "derivation": {
+      "observed_valid_completion_tokens": 1689,
+      "rule": "next_power_of_two_above_observed_valid_completion",
+      "headroom_tokens": 359
+    }
+  }
 }
