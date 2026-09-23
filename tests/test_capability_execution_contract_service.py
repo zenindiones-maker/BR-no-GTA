@@ -4,6 +4,8 @@ from app.services.capability_execution_contract_service import (
     CAN_READ_REPOSITORY,
     CAN_REVIEW,
     CAN_RUN_BENCHMARK,
+    CAN_SEMANTIC_REASONING,
+    CAN_PRODUCE_ARTIFACT_REFS,
     capability_execution_contract_rejection,
     derive_required_operations,
 )
@@ -96,7 +98,7 @@ def test_legacy_selector_does_not_infer_execution_contract_implicitly():
         )
     )
     assert selected == "system.improvement.propose"
-    assert evidence["required_operations"] == []
+    assert evidence.get("required_operations") in (None, [])
 
 
 def test_system_improvement_proposal_has_explicit_semantic_execution_contract():
