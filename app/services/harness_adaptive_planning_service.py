@@ -9,6 +9,13 @@ from typing import Any, Callable
 from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.capability_health_service import capability_health
+from app.services.capability_execution_contract_service import (
+    CAN_MUTATE_CANDIDATE,
+    capability_execution_contract_rejection,
+    derive_required_operations,
+    effective_candidate_requirement as execution_candidate_requirement,
+    effective_side_effect_class as execution_side_effect_class,
+)
 from app.services.harness_executor_contract_service import (
     registry_executor_is_task_adapter_compatible,
 )
@@ -728,14 +735,31 @@ def _mission_action_policy_errors(
 def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     errors: list[str] = []
     for task in proposal.tasks:
-        required_side_effect = effective_required_side_effect_class(
-            task_class=task.task_class,
-            declared=task.risk_side_effect_class,
+        task_requirement = {
+            "task_id": task.task_id,
+            "task_class": task.task_class,
+            "action": task.action,
+            "objective": task.objective,
+            "required_capability_description": task.required_capability_description,
+            "expected_output": task.expected_output,
+            "acceptance_criteria": list(task.acceptance_criteria),
+            "dependencies": list(task.dependencies),
+        }
+        required_operations = derive_required_operations(task_requirement)
+        required_side_effect = execution_side_effect_class(
+            effective_required_side_effect_class(
+                task_class=task.task_class,
+                declared=task.risk_side_effect_class,
+            ),
+            required_operations,
         )
-        candidate_requirement = _candidate_requirement_for_task(
-            task_class=task.task_class,
-            declared=task.risk_side_effect_class,
-            dependencies=task.dependencies,
+        candidate_requirement = execution_candidate_requirement(
+            _candidate_requirement_for_task(
+                task_class=task.task_class,
+                declared=task.risk_side_effect_class,
+                dependencies=task.dependencies,
+            ),
+            required_operations,
         )
         for capability_id in task.candidate_capability_ids:
             record = _profiled_registry_get(capability_id)
@@ -755,6 +779,14 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                 errors.append(
                     f"{task.task_id}: capability executor is not TaskEnvelope-compatible: "
                     f"{capability_id}"
+                )
+                continue
+            contract_rejection = capability_execution_contract_rejection(
+                record, required_operations
+            )
+            if contract_rejection:
+                errors.append(
+                    f"{task.task_id}: {capability_id} {contract_rejection}"
                 )
                 continue
             if task.action not in record.allowed_actions:
@@ -812,14 +844,31 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
     for task in proposal.tasks:
         if task.candidate_capability_ids:
             continue
-        required_side_effect = effective_required_side_effect_class(
-            task_class=task.task_class,
-            declared=task.risk_side_effect_class,
+        task_requirement = {
+            "task_id": task.task_id,
+            "task_class": task.task_class,
+            "action": task.action,
+            "objective": task.objective,
+            "required_capability_description": task.required_capability_description,
+            "expected_output": task.expected_output,
+            "acceptance_criteria": list(task.acceptance_criteria),
+            "dependencies": list(task.dependencies),
+        }
+        required_operations = derive_required_operations(task_requirement)
+        required_side_effect = execution_side_effect_class(
+            effective_required_side_effect_class(
+                task_class=task.task_class,
+                declared=task.risk_side_effect_class,
+            ),
+            required_operations,
         )
-        candidate_requirement = _candidate_requirement_for_task(
-            task_class=task.task_class,
-            declared=task.risk_side_effect_class,
-            dependencies=task.dependencies,
+        candidate_requirement = execution_candidate_requirement(
+            _candidate_requirement_for_task(
+                task_class=task.task_class,
+                declared=task.risk_side_effect_class,
+                dependencies=task.dependencies,
+            ),
+            required_operations,
         )
         feasible = False
         for record in GLOBAL_CAPABILITY_REGISTRY.all():
@@ -851,6 +900,10 @@ def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
                 continue
             if required_side_effect == "READ_ONLY" and mutation_capable:
                 continue
+            if capability_execution_contract_rejection(
+                record, required_operations
+            ):
+                continue
             health = _profiled_capability_health(record.capability_id)
             if health.state in {"BLOCKED", "QUARANTINED"}:
                 continue
@@ -879,14 +932,33 @@ def _candidate_hint_is_hard_compatible(
         or not registry_executor_is_task_adapter_compatible(record.executor_binding)
     ):
         return False
-    required_side_effect = effective_required_side_effect_class(
-        task_class=task.task_class,
-        declared=task.risk_side_effect_class,
+    task_requirement = {
+        "task_id": task.task_id,
+        "task_class": task.task_class,
+        "action": task.action,
+        "objective": task.objective,
+        "required_capability_description": task.required_capability_description,
+        "expected_output": task.expected_output,
+        "acceptance_criteria": list(task.acceptance_criteria),
+        "dependencies": list(task.dependencies),
+    }
+    required_operations = derive_required_operations(task_requirement)
+    if capability_execution_contract_rejection(record, required_operations):
+        return False
+    required_side_effect = execution_side_effect_class(
+        effective_required_side_effect_class(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+        ),
+        required_operations,
     )
-    candidate_requirement = _candidate_requirement_for_task(
-        task_class=task.task_class,
-        declared=task.risk_side_effect_class,
-        dependencies=task.dependencies,
+    candidate_requirement = execution_candidate_requirement(
+        _candidate_requirement_for_task(
+            task_class=task.task_class,
+            declared=task.risk_side_effect_class,
+            dependencies=task.dependencies,
+        ),
+        required_operations,
     )
     mutation_capable = _record_is_mutation_capable(record)
     if (
@@ -1053,7 +1125,7 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             declared=task.risk_side_effect_class,
             dependencies=task.dependencies,
         )
-        requirements.append({
+        requirement = {
             "task_id": task.task_id,
             "task_class": task.task_class,
             "action": task.action,
@@ -1065,6 +1137,7 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
                 + " ".join(task.acceptance_criteria)
             ),
             "objective": task.objective,
+            "required_capability_description": task.required_capability_description,
             "candidate_capability_ids": list(task.candidate_capability_ids),
             "dependencies": list(task.dependencies),
             "expected_output": task.expected_output,
@@ -1072,7 +1145,16 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
             "risk_side_effect_class": effective_risk,
             "declared_risk_side_effect_class": task.risk_side_effect_class,
             "candidate_requirement": candidate_requirement,
-        })
+        }
+        required_operations = derive_required_operations(requirement)
+        requirement["required_operations"] = list(required_operations)
+        requirement["candidate_requirement"] = execution_candidate_requirement(
+            candidate_requirement, required_operations
+        )
+        requirement["risk_side_effect_class"] = execution_side_effect_class(
+            effective_risk, required_operations
+        )
+        requirements.append(requirement)
     return requirements
 
 def _capability_failure_memory(
@@ -1258,6 +1340,10 @@ def select_capability_for_requirement(
     avoided: list[str] = []
     query_tokens = _tokens(requirement.get("query"), requirement.get("objective"))
     proposal_bonus_ids = set(proposed)
+    required_operations = tuple(
+        requirement.get("required_operations")
+        or derive_required_operations(requirement)
+    )
 
     for ordinal, capability_id in enumerate(ordered_ids):
         if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
@@ -1277,26 +1363,38 @@ def select_capability_for_requirement(
                 f"{capability_id}:task-adapter-incompatible"
             )
             continue
-        required_side_effect = effective_required_side_effect_class(
+        contract_rejection = capability_execution_contract_rejection(
+            record, required_operations
+        )
+        if contract_rejection:
+            avoided.append(f"{capability_id}:{contract_rejection}")
+            continue
+        required_side_effect = execution_side_effect_class(
+            effective_required_side_effect_class(
             task_class=str(requirement.get("task_class") or ""),
-            declared=str(
-                requirement.get("risk_side_effect_class") or "READ_ONLY"
+                declared=str(
+                    requirement.get("risk_side_effect_class") or "READ_ONLY"
+                ),
             ),
+            required_operations,
         )
         record_side_effect = str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ).upper()
         mutation_capable = _record_is_mutation_capable(record)
-        candidate_requirement = str(
-            requirement.get("candidate_requirement")
-            or _candidate_requirement_for_task(
-                task_class=str(requirement.get("task_class") or ""),
-                declared=str(
-                    requirement.get("risk_side_effect_class") or "READ_ONLY"
-                ),
-                dependencies=requirement.get("dependencies") or (),
-            )
-        ).strip().upper()
+        candidate_requirement = execution_candidate_requirement(
+            str(
+                requirement.get("candidate_requirement")
+                or _candidate_requirement_for_task(
+                    task_class=str(requirement.get("task_class") or ""),
+                    declared=str(
+                        requirement.get("risk_side_effect_class") or "READ_ONLY"
+                    ),
+                    dependencies=requirement.get("dependencies") or (),
+                )
+            ).strip().upper(),
+            required_operations,
+        )
         if candidate_requirement not in {
             "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
         }:

@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
+from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_REVIEW,
+    CAN_SEMANTIC_REASONING,
+)
+
 
 AVAILABLE = "AVAILABLE"
 BLOCKED = "BLOCKED"
@@ -61,6 +68,7 @@ class CapabilityRecord:
     default_write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
     health_policy: str = "DEFAULT"
+    execution_operations: tuple[str, ...] = ()
 
     @property
     def provider(self) -> str:
@@ -280,6 +288,7 @@ def _record(
     default_write_scope: tuple[str, ...] = (),
     allowed_tools: tuple[str, ...] = (),
     health_policy: str = "DEFAULT",
+    execution_operations: tuple[str, ...] = (),
 ) -> CapabilityRecord:
     return CapabilityRecord(
         capability_id=capability_id,
@@ -318,7 +327,18 @@ def _record(
         default_write_scope=default_write_scope,
         allowed_tools=allowed_tools,
         health_policy=health_policy,
+        execution_operations=execution_operations,
     )
+
+
+_ADDY_BASE_EXECUTION_OPERATIONS = (
+    CAN_SEMANTIC_REASONING,
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_PRODUCE_ARTIFACT_REFS,
+)
+_ADDY_EXECUTION_OPERATION_OVERRIDES = {
+    "code-review-and-quality": (*_ADDY_BASE_EXECUTION_OPERATIONS, CAN_REVIEW),
+}
 
 
 def _addy_records() -> tuple[CapabilityRecord, ...]:
@@ -363,6 +383,10 @@ def _addy_records() -> tuple[CapabilityRecord, ...]:
             latency_class="EXTERNAL_EPHEMERAL",
             quality_class="SKILL_AND_PROVIDER_DEPENDENT",
             health_policy="SEMANTIC_PROVIDER_REQUIRED",
+            supports_review=(name == "code-review-and-quality"),
+            execution_operations=_ADDY_EXECUTION_OPERATION_OVERRIDES.get(
+                name, _ADDY_BASE_EXECUTION_OPERATIONS
+            ),
         )
         for name in ADDY_SKILLS
     )

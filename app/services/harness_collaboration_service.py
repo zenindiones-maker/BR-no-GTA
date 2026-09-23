@@ -24,6 +24,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.capability_execution_contract_service import capability_execution_contract_rejection
 
 
 def _text(value: Any, field: str) -> str:
@@ -52,6 +53,7 @@ class TaskEnvelope:
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
+    required_operations: tuple[str, ...] = ()
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -163,6 +165,7 @@ class TaskEnvelope:
             ).strip(),
             acceptance_criteria=acceptance,
             candidate_requirement=candidate_requirement,
+            required_operations=tuple(str(item).strip() for item in value.get("required_operations") or () if str(item).strip()),
             read_scope=read_scope,
             write_scope=write_scope,
             allowed_tools=tuple(
@@ -229,6 +232,7 @@ class RoutedCollaborationTask:
     required_capability_description: str = ""
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
+    required_operations: tuple[str, ...] = ()
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -337,6 +341,7 @@ def _task_idempotency_key(
         "read_scope": list(read_scope),
         "write_scope": list(write_scope),
         "candidate_requirement": task.candidate_requirement,
+        "required_operations": list(task.required_operations),
         "objective": task.objective,
     }
     digest = sha256(
@@ -368,6 +373,9 @@ def build_collaboration_plan(
         record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability_id)
         if record is None:
             raise ValueError(f"unknown capability: {task.capability_id}")
+        contract_rejection = capability_execution_contract_rejection(record, task.required_operations)
+        if contract_rejection:
+            raise PermissionError(f"{task.task_id}:{task.capability_id}:{contract_rejection}")
         decision = route_harness_request(
             HarnessRoutingRequest(
                 intent=f"{task.objective} {task.capability_id}",
@@ -416,6 +424,7 @@ def build_collaboration_plan(
                 required_capability_description=task.required_capability_description,
                 acceptance_criteria=task.acceptance_criteria,
                 candidate_requirement=task.candidate_requirement,
+                required_operations=task.required_operations,
                 read_scope=read_scope,
                 write_scope=write_scope,
                 allowed_tools=allowed_tools,
@@ -1040,6 +1049,7 @@ def plan_mission_from_human_goal(
                     else "NOT_APPLICABLE"
                 )
             ).upper(),
+            "required_operations": list(requirement.get("required_operations") or ()),
             "read_scope": list(record.default_read_scope),
             "write_scope": list(record.default_write_scope),
             "allowed_tools": list(record.allowed_tools),

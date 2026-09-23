@@ -16,6 +16,17 @@ from app.services.monetization_observability_service import (
     MONETIZATION_EXECUTOR_BINDING,
 )
 from app.services.youtube_department_service import youtube_department_records
+from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_MUTATE_CANDIDATE,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_READ_REPOSITORY,
+    CAN_REVIEW,
+    CAN_RUN_BENCHMARK,
+    CAN_RUN_TESTS,
+    CAN_SEMANTIC_REASONING,
+    CAN_WRITE_REPOSITORY,
+)
 from app.services.media_analysis_cloud_service import (
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
     MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
@@ -216,6 +227,11 @@ AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD = CapabilityRecord(
     default_write_scope=(),
     allowed_tools=("git",),
     health_policy="DEFAULT",
+    execution_operations=(
+        CAN_READ_REPOSITORY,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
@@ -262,6 +278,15 @@ AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
     default_write_scope=(),
     allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
     health_policy="CODEX_AUTH_REQUIRED",
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_READ_REPOSITORY,
+        CAN_RUN_TESTS,
+        CAN_RUN_BENCHMARK,
+        CAN_REVIEW,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
@@ -316,6 +341,17 @@ AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
     default_write_scope=("app", "scripts", "tests"),
     allowed_tools=("git", "python", "pytest", "codex", "rg", "cat", "ls", "sed", "head", "wc"),
     health_policy="CODEX_AUTH_REQUIRED",
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_READ_REPOSITORY,
+        CAN_WRITE_REPOSITORY,
+        CAN_RUN_TESTS,
+        CAN_RUN_BENCHMARK,
+        CAN_MUTATE_CANDIDATE,
+        CAN_REVIEW,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 PHONE_CONTROL_RECORD = CapabilityRecord(capability_id="phone.control", capability_type="EXECUTOR", domain="device/mobile-control", implementation="Harness-authorized bounded Mobile Harness adapter over Mobilerun Portal HTTP", input_contract="allowlisted phone operation + deterministic parameters", output_contract="sanitized phone control result + Harness evidence", requirements=("persisted Harness EXECUTION authorization", "local-android-http backend", "Mobilerun Portal on loopback", "isolated Mobile Harness Python runtime", "runtime-only Portal token"), maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",), policy_tags=("phone", "mobile", "android", "device-control", "local", "zero-cost"), security_boundary="DeepSeek Harness routing + persisted capability authorization + exact executor binding; explicit allowlist only; no autonomous authority, publication, install, permission grant, or arbitrary script", cost_class="FREE_NO_BILLING", quota_class="LOCAL_DEVICE", latency_class="LOCAL_INTERACTIVE", quality_class="PROVEN_PRIMITIVES_BOUNDED_ADAPTER", evidence_contract="app.services.harness_capability_service.CapabilityEvidence", fallback_eligibility=False, executor_binding="app.services.phone_control_service.execute_phone_control_capability", version="1", provider_id="mobilerun-local", side_effects=("device UI state change",))
