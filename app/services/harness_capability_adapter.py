@@ -184,13 +184,30 @@ class CapabilityAdapter:
         if parent_context:
             body.setdefault("parent_context", dict(parent_context))
         started = time.perf_counter()
-        result = self._invoke(
-            executor=executor,
-            task=task,
-            decision=routing_decision,
-            authorization=auth,
-            payload=body,
-        )
+        if (
+            record.domain == "youtube-department"
+            and record.capability_type == "AGENT"
+            and body.get("semantic_context") is not None
+        ):
+            # TUBEGENT keeps the Registry executor as the deterministic
+            # capability boundary, while this existing governed wrapper adds
+            # Harness-selected semantic reasoning and a live agent receipt.
+            from app.services.youtube_department_service import (
+                execute_youtube_specialist_via_harness,
+            )
+            result = execute_youtube_specialist_via_harness(
+                authorization=auth,
+                routing_decision=routing_decision,
+                payload=body,
+            )
+        else:
+            result = self._invoke(
+                executor=executor,
+                task=task,
+                decision=routing_decision,
+                authorization=auth,
+                payload=body,
+            )
         if isinstance(result, CapabilityEvidence) and (
             result.status != "EXECUTED" or result.active is not True
         ):
