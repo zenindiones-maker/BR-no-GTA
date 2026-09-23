@@ -1,23 +1,21 @@
 {
-  "request": "semantic-planner-self-improvement-handoff-contracts-green",
+  "request": "semantic-planner-self-improvement-preplanning-codex-health",
   "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "0495c02456e9da2abae549be5ebe1be00beff136",
+  "source_head": "2fc8af22567563b8a4cdfd26c1bc0dcd4c03d646",
   "resume_context": {
-    "previous_parent_run": 35813832706,
-    "previous_child_run": 35814819125,
-    "system_agent_inventory_run": 35849850393,
-    "handoff_replay_proof_run": 35850213347,
-    "optimized_local_profile_run": 35849850500,
-    "ci_run": 35850214019,
-    "mission_plan_payload_bloat": "CLOSED",
-    "nvidia_structured_output": "PROVEN",
-    "registry_capability_resolution": "PROVEN",
-    "task_result_envelope": "PROVEN",
-    "dependency_artifact_resolution": "PROVEN",
-    "execution_contract_compatibility": "PROVEN",
-    "missing_dependency_fail_closed": "PROVEN",
-    "candidate_artifact_false_positive": "FIXED",
-    "provider_call_on_precondition_failure": "NO",
+    "previous_parent_run": 35850351490,
+    "previous_child_run": 35850473901,
+    "handoff_replay_run": 35850213347,
+    "inventory_run": 35849850393,
+    "local_profile_run": 35849850500,
+    "routing_normalization_ci": 35851426505,
+    "codex_external_human_blocker": "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION",
+    "missing_external_config": [
+      "OPENAI_FEDERATION_RULE_ID",
+      "OPENAI_FEDERATION_AUDIENCE"
+    ],
+    "typed_execution_risk_normalized": true,
+    "codex_health_exposed_before_planning": true,
     "work_direct_system_analysis": "STOP_WHEN_SPECIALIST_EXECUTION_STARTS",
     "agent_mission_resumed": true
   },
@@ -28,5 +26,5 @@
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
   },
-  "attempt": 7
+  "attempt": 8
 }
