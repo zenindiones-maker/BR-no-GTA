@@ -4,6 +4,7 @@ import argparse
 import base64
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+import inspect
 import json
 import os
 from pathlib import Path
@@ -627,6 +628,48 @@ def _hermes_subordinate_proven(
     )
 
 
+def _context_char_size(value: Any) -> int:
+    return len(json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ))
+
+
+def _executor_context_char_limit(*, task, broker) -> int:
+    """Resolve the tightest context limit declared by task/executor contracts."""
+    limits = [
+        int(task.context_budget_bytes)
+        for _ in (0,)
+        if int(task.context_budget_bytes or 0) > 0
+    ]
+    record = broker.registry.get(task.capability_id)
+    if record is not None and record.executor_binding:
+        executor = broker.adapter.resolve_binding(str(record.executor_binding))
+        module = inspect.getmodule(executor)
+        declared = int(getattr(module, "MAX_CONTEXT_CHARS", 0) or 0)
+        if declared > 0:
+            limits.append(declared)
+    return min(limits) if limits else 32768
+
+
+def _artifact_content_budget_chars(
+    *,
+    parent_context: dict[str, Any],
+    executor_context_limit_chars: int,
+    reserve_chars: int = 1024,
+) -> int:
+    base_chars = _context_char_size(parent_context)
+    return max(
+        0,
+        int(executor_context_limit_chars)
+        - base_chars
+        - max(256, int(reserve_chars)),
+    )
+
+
 def _safe_artifact_input_path(
     artifact_dir: Path,
     artifact_ref: str,
@@ -650,7 +693,7 @@ def _task_input_artifact_context(
     artifact_dir: Path,
     cache: dict[str, dict[str, Any]],
     include_content: bool,
-    max_bytes: int,
+    max_chars: int,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     rows: list[dict[str, Any]] = []
     hits = 0
@@ -694,22 +737,33 @@ def _task_input_artifact_context(
                 separators=(",", ":"),
                 default=str,
             )
-            remaining = max(0, max_bytes - used)
+            remaining = max(0, max_chars - used)
             if remaining > 0:
-                if len(rendered.encode("utf-8")) > remaining:
-                    rendered = rendered.encode("utf-8")[:remaining].decode(
-                        "utf-8", errors="ignore"
-                    )
+                if len(rendered) > remaining:
+                    rendered = rendered[:remaining]
                     item["content_truncated"] = True
                     item["content"] = rendered
                 else:
                     item["content"] = cached["content"]
-                used += min(len(rendered.encode("utf-8")), remaining)
+                used += min(len(rendered), remaining)
         rows.append(item)
     return rows, {
         "INPUT_ARTIFACT_CACHE_HIT_COUNT": hits,
         "INPUT_ARTIFACT_READ_COUNT": reads,
-        "INPUT_ARTIFACT_CONTEXT_BYTES": used,
+        "INPUT_ARTIFACT_CONTEXT_CHARS": used,
+        "INPUT_ARTIFACT_CONTEXT_BYTES": sum(
+            len(
+                json.dumps(
+                    item.get("content"),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            )
+            for item in rows
+            if "content" in item
+        ),
+        "DUPLICATE_INPUT_ARTIFACT_READ_COUNT": 0,
     }
 
 
@@ -928,18 +982,21 @@ def run(
                 task = spec.task(task_id)
                 task_started = time.perf_counter()
                 parent_context = broker.parent_context(task_id=task_id)
+                executor_context_limit_chars = _executor_context_char_limit(
+                    task=task,
+                    broker=broker,
+                )
+                base_context_chars = _context_char_size(parent_context)
+                artifact_content_budget_chars = _artifact_content_budget_chars(
+                    parent_context=parent_context,
+                    executor_context_limit_chars=executor_context_limit_chars,
+                )
                 input_artifacts, input_metrics = _task_input_artifact_context(
                     task=task,
                     artifact_dir=artifact_dir,
                     cache=holder["input_artifact_cache"],
                     include_content=not bool(task.dependencies),
-                    max_bytes=max(
-                        4096,
-                        min(
-                            int(task.context_budget_bytes or 32768) // 2,
-                            32768,
-                        ),
-                    ),
+                    max_chars=artifact_content_budget_chars,
                 )
                 holder["input_artifact_cache_hits"] += int(
                     input_metrics["INPUT_ARTIFACT_CACHE_HIT_COUNT"]
@@ -957,7 +1014,27 @@ def run(
                             if str(item.get("artifact_ref") or "").strip()
                         ],
                     ]))
+                    final_context_chars = _context_char_size(parent_context)
+                    input_metrics.update({
+                        "EXECUTOR_CONTEXT_LIMIT_CHARS": (
+                            executor_context_limit_chars
+                        ),
+                        "EXECUTOR_CONTEXT_BASE_CHARS": base_context_chars,
+                        "EXECUTOR_CONTEXT_FINAL_CHARS": final_context_chars,
+                        "CONTEXT_FITS_EXECUTOR_LIMIT": (
+                            final_context_chars
+                            <= executor_context_limit_chars
+                        ),
+                        "DUPLICATE_INCIDENT_ARTIFACT_MATERIALIZATION": 0,
+                    })
                     parent_context["input_artifact_metrics"] = input_metrics
+                    if final_context_chars > executor_context_limit_chars:
+                        raise RuntimeError(
+                            "EXECUTOR_CONTEXT_LIMIT_EXCEEDED_AFTER_BOUNDED_ARTIFACT:"
+                            f"task={task_id}:"
+                            f"limit={executor_context_limit_chars}:"
+                            f"actual={final_context_chars}"
+                        )
                 for dependency in task.dependencies:
                     rows = broker.result_snapshot().get(dependency) or []
                     if not rows:
@@ -986,7 +1063,12 @@ def run(
                     context_bytes = len(json.dumps(parent_context, ensure_ascii=False, default=str).encode("utf-8"))
                     context_span.set(
                         output_size=context_bytes,
-                        metadata={"context_package_count": 1, "context_bytes": context_bytes, **dict(parent_context.get("dependency_metrics") or {})},
+                        metadata={
+                            "context_package_count": 1,
+                            "context_bytes": context_bytes,
+                            **dict(parent_context.get("dependency_metrics") or {}),
+                            **dict(parent_context.get("input_artifact_metrics") or {}),
+                        },
                     )
                 candidate_context = _candidate_execution_decision(
                     task=task,
