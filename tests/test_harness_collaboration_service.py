@@ -470,6 +470,3 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
         review.selected_agent_id != proposal.selected_agent_id
         or review.selected_skill_id != proposal.selected_skill_id
     )
-
-
-\n
