@@ -324,7 +324,7 @@ def test_artifact_telemetry_is_not_embedded_in_agent_context():
 
 
 
-def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
+def test_real_incident_collection_prefers_deterministic_artifact_reuse(monkeypatch):
     requirement = {
         "task_id": "incident-evidence",
         "task_class": "system-improvement",
@@ -332,14 +332,14 @@ def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
         "declared_action": "DEVELOPMENT",
         "query": (
             "collect parse incident evidence artifacts runtime failure "
-            "performance trace capability results diagnosis recovery"
+            "performance trace capability results before diagnosis"
         ),
         "objective": (
-            "Collect and parse observed production incident evidence before "
-            "root-cause diagnosis."
+            "Collect and normalize already-materialized production incident "
+            "evidence before root-cause diagnosis."
         ),
         "required_capability_description": (
-            "incident evidence collection for runtime failure diagnosis"
+            "incident evidence artifact reuse without semantic interpretation"
         ),
         "candidate_capability_ids": [],
         "dependencies": [],
@@ -371,7 +371,7 @@ def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
         lambda record, requirement, context: (0.0, False, None),
     )
 
-    selected, _, _, evidence = (
+    selected, _, avoided, evidence = (
         adaptive_planning.select_capability_for_requirement(
             requirement,
             context={"mission_class": "SYSTEM_IMPROVEMENT"},
@@ -379,12 +379,12 @@ def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
         )
     )
 
-    assert selected == "addy:debugging-and-error-recovery"
+    assert selected == "artifact.evidence.reuse"
     assert evidence["top_candidates"][0]["capability_id"] == selected
-    assert all(
-        item["capability_id"] != "addy:api-and-interface-design"
-        or item["score"] < evidence["top_candidates"][0]["score"]
-        for item in evidence["top_candidates"]
+    assert any(
+        item.endswith("semantic-provider-unnecessary-for-contract")
+        for item in avoided
+        if item.startswith("addy:")
     )
 
 
