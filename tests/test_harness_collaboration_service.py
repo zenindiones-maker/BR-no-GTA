@@ -1,3 +1,4 @@
+from app.services import harness_collaboration_service as collaboration_service
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_collaboration_service import (
     build_collaboration_plan,
@@ -118,3 +119,38 @@ def test_provider_runtime_incident_is_system_improvement_even_with_gta6_subject(
         source_surface="github-actions-control",
     )
     assert goal.mission_class == "SYSTEM_IMPROVEMENT"
+
+
+
+def test_system_improvement_selection_requirement_normalizes_action_without_losing_declared_semantics():
+    goal = build_goal_envelope(
+        human_goal="Diagnose and recover a provider runtime incident.",
+        project="BR-no-GTA",
+        goal_id="goal-system-action-policy",
+        subject="provider incident recovery",
+        source_surface="github-actions-control",
+    )
+    requirement = {
+        "task_id": "collect-evidence",
+        "task_class": "evidence-collection",
+        "action": "RESEARCH",
+        "objective": "collect observed incident evidence",
+        "dependencies": [],
+        "expected_output": "EvidencePacket",
+        "required_operations": [
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+        ],
+    }
+    normalized = collaboration_service._selection_requirement_for_mission(
+        goal,
+        requirement,
+    )
+    assert goal.mission_class == "SYSTEM_IMPROVEMENT"
+    assert normalized["declared_action"] == "RESEARCH"
+    assert normalized["declared_task_class"] == "evidence-collection"
+    assert normalized["action"] == "DEVELOPMENT"
+    assert normalized["task_class"] == "system-improvement"
+    assert normalized["mission_action_normalized"] is True
+    assert requirement["action"] == "RESEARCH"
+    assert requirement["task_class"] == "evidence-collection"

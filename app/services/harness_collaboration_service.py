@@ -585,6 +585,34 @@ def build_goal_envelope(
     )
 
 
+def _selection_requirement_for_mission(
+    goal: GoalEnvelope,
+    requirement: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply Harness mission authority before Registry selection.
+
+    The semantic planner proposes task semantics but cannot widen the action
+    surface authorized by the classified mission. Preserve the proposed task
+    class as evidence while selecting against the canonical mission action.
+    """
+    normalized = dict(requirement)
+    normalized["declared_action"] = str(
+        requirement.get("declared_action")
+        or requirement.get("action")
+        or ""
+    ).strip().upper()
+    normalized["declared_task_class"] = str(
+        requirement.get("task_class") or ""
+    )
+    if goal.mission_class == "SYSTEM_IMPROVEMENT":
+        normalized["action"] = "DEVELOPMENT"
+        normalized["task_class"] = "system-improvement"
+        normalized["mission_action_normalized"] = True
+    else:
+        normalized["mission_action_normalized"] = False
+    return normalized
+
+
 def _clarification_is_resolved_by_explicit_goal(
     goal: GoalEnvelope,
     question: str | None,
@@ -1079,9 +1107,13 @@ def plan_mission_from_human_goal(
     proposal_reuse_refs = list(proposal.reused_artifact_refs) if proposal else []
 
     for requirement in requirements:
+        selection_requirement = _selection_requirement_for_mission(
+            goal,
+            requirement,
+        )
         capability_id, used_competence, avoided, selection = (
             select_capability_for_requirement(
-                requirement,
+                selection_requirement,
                 context=adaptive_context,
                 used=used,
             )
@@ -1090,6 +1122,12 @@ def plan_mission_from_human_goal(
             **selection,
             "selection_mode": planning_mode,
             "functional_role": requirement.get("functional_role"),
+            "declared_task_class": selection_requirement.get(
+                "declared_task_class"
+            ),
+            "mission_action_normalized": bool(
+                selection_requirement.get("mission_action_normalized")
+            ),
         }
         planning_evidence["selection"].append(selection)
         avoided_paths.extend(avoided)
@@ -1105,7 +1143,7 @@ def plan_mission_from_human_goal(
         selected_tasks.append({
             "task_id": requirement["task_id"],
             "capability_id": capability_id,
-            "action": requirement["action"],
+            "action": selection_requirement["action"],
             "objective": str(
                 requirement.get("objective")
                 or f"{goal.human_goal} :: {requirement['task_class']}"
