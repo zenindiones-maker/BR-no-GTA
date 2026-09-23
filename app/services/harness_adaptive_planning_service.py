@@ -1433,31 +1433,41 @@ def select_capability_for_requirement(
         if contract_rejection:
             avoided.append(f"{capability_id}:{contract_rejection}")
             continue
-        required_side_effect = execution_side_effect_class(
-            effective_required_side_effect_class(
+        declared_side_effect = effective_required_side_effect_class(
             task_class=str(requirement.get("task_class") or ""),
-                declared=str(
-                    requirement.get("risk_side_effect_class") or "READ_ONLY"
-                ),
+            declared=str(
+                requirement.get("risk_side_effect_class") or "READ_ONLY"
             ),
-            required_operations,
+        )
+        required_side_effect = (
+            execution_side_effect_class(
+                declared_side_effect,
+                required_operations,
+            )
+            if required_operations
+            else declared_side_effect
         )
         record_side_effect = str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ).upper()
         mutation_capable = _record_is_mutation_capable(record)
-        candidate_requirement = execution_candidate_requirement(
-            str(
-                requirement.get("candidate_requirement")
-                or _candidate_requirement_for_task(
-                    task_class=str(requirement.get("task_class") or ""),
-                    declared=str(
-                        requirement.get("risk_side_effect_class") or "READ_ONLY"
-                    ),
-                    dependencies=requirement.get("dependencies") or (),
-                )
-            ).strip().upper(),
-            required_operations,
+        declared_candidate_requirement = str(
+            requirement.get("candidate_requirement")
+            or _candidate_requirement_for_task(
+                task_class=str(requirement.get("task_class") or ""),
+                declared=str(
+                    requirement.get("risk_side_effect_class") or "READ_ONLY"
+                ),
+                dependencies=requirement.get("dependencies") or (),
+            )
+        ).strip().upper()
+        candidate_requirement = (
+            execution_candidate_requirement(
+                declared_candidate_requirement,
+                required_operations,
+            )
+            if required_operations
+            else declared_candidate_requirement
         )
         if candidate_requirement not in {
             "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
