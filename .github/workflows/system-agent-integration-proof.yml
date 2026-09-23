@@ -79,6 +79,7 @@ jobs:
           gates = d["gates"]
 
           required = (
+              "ROUTING_CASES_VALID",
               "ALL_ACTIVE_CAPABILITIES_DISCOVERABLE",
               "ALL_AGENT_IDENTITIES_CANONICAL",
               "EXECUTOR_BINDINGS_VALID",
@@ -133,8 +134,19 @@ jobs:
           assert all(
               case["SELECTION_FROM_REGISTRY"] is True
               and case["HARDCODED_AGENT_SELECTION"] is False
+              and case["SELECTION_STATE"] in {"SELECTED", "BLOCKED_EXTERNAL"}
               for case in d["routing_cases"]
           )
+          assert not any(
+              case["SELECTION_STATE"] == "NO_COMPATIBLE_CAPABILITY"
+              for case in d["routing_cases"]
+          )
+          policy_cases = [
+              case for case in d["routing_cases"]
+              if case["ROUTING_MODE"] == "HARNESS_POLICY"
+          ]
+          assert len(policy_cases) == 4
+          assert all(case["SELECTED_CAPABILITY"] for case in policy_cases)
           assert all(d["negative_routing"].values())
 
           print("CODEX_DISCOVERABLE=PASS")
@@ -142,6 +154,7 @@ jobs:
           print("CODEX_ROUTABLE_WHEN_AUTH_AVAILABLE=PASS")
           print("CODEX_CURRENT_HEALTH=BLOCKED_EXTERNAL")
           print("CODEX_BLOCKER_EXPLICIT=PASS")
+          print("ROUTING_CASES_VALID=PASS")
           print("NEGATIVE_ROUTING_GATES=PASS")
           print("REAL_FAILURE_EPISODES_LINKED=PASS")
           print("FAILURE_DOMAIN_CORRECT=PASS")

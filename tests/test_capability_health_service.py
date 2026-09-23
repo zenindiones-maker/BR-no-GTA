@@ -118,4 +118,3 @@ def test_provenance_provider_id_does_not_create_fake_external_blocker(monkeypatc
     assert observed.state == UNKNOWN
     assert observed.source == "REGISTRY_PLUS_LEARNING"
     assert "sufficient recent execution evidence" in observed.reason
-

@@ -23,6 +23,10 @@ from app.services.capability_health_service import capability_health
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_adaptive_planning_service import select_capability_for_requirement
 from app.services.harness_learning_service import retrieve_known_failure_patterns
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 from app.services.planner_replan_learning_service import (
     REAL_AUTH_CHECKPOINT_RUN_ID,
     REAL_WASTED_REPLAN_RUN_ID,
@@ -52,6 +56,9 @@ def _case(
     required_operations: tuple[str, ...] = (),
     side_effect_class: str = "READ_ONLY",
     candidate_requirement: str = "NOT_APPLICABLE",
+    routing_mode: str = "TASK_ENVELOPE",
+    required_domain: str | None = None,
+    required_policy_tags: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     return {
         "case_id": case_id,
@@ -68,6 +75,9 @@ def _case(
         "required_operations": list(required_operations),
         "risk_side_effect_class": side_effect_class,
         "candidate_requirement": candidate_requirement,
+        "routing_mode": routing_mode,
+        "required_domain": required_domain,
+        "required_policy_tags": list(required_policy_tags),
     }
 
 
@@ -121,23 +131,35 @@ def _routing_cases() -> tuple[dict[str, Any], ...]:
         ),
         _case(
             "research",
-            query="GTA6 research current official sources evidence",
+            query="GTA6 continuous research delta official sources evidence",
             action="RESEARCH",
+            routing_mode="HARNESS_POLICY",
+            required_domain="gta6",
+            required_policy_tags=("research", "delta"),
         ),
         _case(
             "audiovisual-task",
-            query="audiovisual media analysis render narration worker evidence",
+            query="cloud media audiovisual analysis evidence",
             action="EXECUTION",
+            routing_mode="HARNESS_POLICY",
+            required_domain="media-analysis",
+            required_policy_tags=("media", "analysis", "cloud"),
         ),
         _case(
             "gta6-knowledge-retrieval",
             query="GTA6 knowledge retrieval canonical claims provenance",
             action="RESEARCH",
+            routing_mode="HARNESS_POLICY",
+            required_domain="gta6-knowledge",
+            required_policy_tags=("knowledge", "retrieval"),
         ),
         _case(
             "presentation-human-facing-response",
             query="human presentation action first Telegram response",
             action="DECISION",
+            routing_mode="HARNESS_POLICY",
+            required_domain="human-presentation",
+            required_policy_tags=("presentation", "human", "action-first"),
         ),
     )
 
@@ -151,6 +173,24 @@ def _static_contract_candidates(requirement: dict[str, Any]) -> tuple[list[str],
         if record.capability_type == "PROVIDER" or record.capability_id in TOPOLOGY_ONLY:
             continue
         if str(requirement["action"]) not in record.allowed_actions:
+            continue
+        required_domain = str(requirement.get("required_domain") or "").strip()
+        if required_domain and record.domain != required_domain:
+            rejected.append({
+                "capability_id": record.capability_id,
+                "reason": f"domain-mismatch:{record.domain}",
+            })
+            continue
+        required_tags = {
+            str(item).strip()
+            for item in (requirement.get("required_policy_tags") or ())
+            if str(item).strip()
+        }
+        if required_tags and not required_tags.issubset(set(record.policy_tags)):
+            rejected.append({
+                "capability_id": record.capability_id,
+                "reason": "required-policy-tags-missing",
+            })
             continue
         if not record.execution_enabled:
             rejected.append({
@@ -202,19 +242,46 @@ def _routing_case_result(requirement: dict[str, Any]) -> dict[str, Any]:
     selector_rejections: tuple[str, ...] = ()
     selection_evidence: dict[str, Any] = {}
     selector_error: str | None = None
+    routing_mode = str(requirement.get("routing_mode") or "TASK_ENVELOPE")
     try:
-        selected, _, selector_rejections, selection_evidence = (
-            select_capability_for_requirement(
-                requirement,
-                context={
-                    "mission_class": "OPEN_SEMANTIC",
-                    "goal_id": "system-agent-integration-proof",
-                    "domain": "agent-integration",
-                    "task_class": requirement["task_class"],
-                },
-                used=set(),
+        if routing_mode == "HARNESS_POLICY":
+            decision = route_harness_request(
+                HarnessRoutingRequest(
+                    intent=str(requirement["query"]),
+                    authorized_action=str(requirement["action"]),
+                    domain=(
+                        str(requirement.get("required_domain") or "").strip()
+                        or None
+                    ),
+                    required_policy_tags=tuple(
+                        str(item)
+                        for item in (
+                            requirement.get("required_policy_tags") or ()
+                        )
+                        if str(item).strip()
+                    ),
+                )
             )
-        )
+            selected = decision.selected_capability_id
+            selector_rejections = tuple(
+                f"{item.candidate_id}:"
+                + ",".join(item.reasons)
+                for item in decision.rejected_candidates
+            )
+            selection_evidence = decision.to_dict()
+        else:
+            selected, _, selector_rejections, selection_evidence = (
+                select_capability_for_requirement(
+                    requirement,
+                    context={
+                        "mission_class": "OPEN_SEMANTIC",
+                        "goal_id": "system-agent-integration-proof",
+                        "domain": "agent-integration",
+                        "task_class": requirement["task_class"],
+                    },
+                    used=set(),
+                )
+            )
     except Exception as exc:
         selector_error = f"{type(exc).__name__}:{exc}"
 
@@ -238,8 +305,17 @@ def _routing_case_result(requirement: dict[str, Any]) -> dict[str, Any]:
     return {
         "CASE_ID": requirement["case_id"],
         "REQUIRED_OPERATIONS": list(requirement.get("required_operations") or ()),
+        "REQUIRED_DOMAIN": requirement.get("required_domain"),
+        "REQUIRED_POLICY_TAGS": list(
+            requirement.get("required_policy_tags") or ()
+        ),
+        "ROUTING_MODE": routing_mode,
         "CONTRACT_MODE": (
-            "TYPED" if requirement.get("required_operations") else "STRUCTURAL"
+            "TYPED"
+            if requirement.get("required_operations")
+            else "POLICY_DOMAIN"
+            if routing_mode == "HARNESS_POLICY"
+            else "STRUCTURAL"
         ),
         "ELIGIBLE_CAPABILITIES": static_eligible,
         "RUNTIME_ELIGIBLE_CAPABILITIES": runtime_eligible,
@@ -435,7 +511,34 @@ def build_proof() -> dict[str, Any]:
         if row.get("STATUS") == "BLOCKED_EXTERNAL"
     ]
 
+    routing_cases_valid = all(
+        case["SELECTION_FROM_REGISTRY"]
+        and case["SELECTION_STATE"] in {"SELECTED", "BLOCKED_EXTERNAL"}
+        and (
+            case["SELECTED_CAPABILITY"] is not None
+            or bool(case["ELIGIBLE_CAPABILITIES"])
+        )
+        for case in routing_cases
+    )
+    for case in routing_cases:
+        selected_id = case["SELECTED_CAPABILITY"]
+        if selected_id is None:
+            continue
+        selected_record = GLOBAL_CAPABILITY_REGISTRY.get(selected_id)
+        if selected_record is None:
+            routing_cases_valid = False
+            continue
+        required_domain = str(case.get("REQUIRED_DOMAIN") or "").strip()
+        required_tags = set(case.get("REQUIRED_POLICY_TAGS") or ())
+        if required_domain and selected_record.domain != required_domain:
+            routing_cases_valid = False
+        if required_tags and not required_tags.issubset(
+            set(selected_record.policy_tags)
+        ):
+            routing_cases_valid = False
+
     gates = {
+        "ROUTING_CASES_VALID": routing_cases_valid,
         "ALL_ACTIVE_CAPABILITIES_DISCOVERABLE": all(
             row.get("DISCOVERABLE") for row in active_rows
         ),
@@ -555,6 +658,15 @@ def main() -> int:
             "REQUIRED_OPERATIONS="
             + ",".join(case["REQUIRED_OPERATIONS"])
         )
+        print(
+            "REQUIRED_DOMAIN="
+            + str(case["REQUIRED_DOMAIN"] or "")
+        )
+        print(
+            "REQUIRED_POLICY_TAGS="
+            + ",".join(case["REQUIRED_POLICY_TAGS"])
+        )
+        print("ROUTING_MODE=" + case["ROUTING_MODE"])
         print(
             "ELIGIBLE_CAPABILITIES="
             + ",".join(case["ELIGIBLE_CAPABILITIES"])
