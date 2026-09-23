@@ -230,6 +230,43 @@ def task_output_contract_descriptor(functional_role: str | None) -> dict[str, An
         ),
     }
 
+def task_output_json_schema(functional_role: str | None) -> dict[str, Any] | None:
+    descriptor = task_output_contract_descriptor(functional_role)
+    if not descriptor["required"]:
+        return None
+    role = str(descriptor["functional_role"])
+    expected_schema = str(descriptor["schema"])
+    required_fields = list(descriptor["required_fields"])
+    properties: dict[str, Any] = {
+        "schema": {"type": "string", "const": expected_schema},
+    }
+    for field in required_fields:
+        properties[field] = {}
+    if "confidence" in properties:
+        properties["confidence"] = {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+        }
+    if "evidence_refs" in properties:
+        properties["evidence_refs"] = {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+        }
+    if role == "REVIEW":
+        properties["verdict"] = {
+            "type": "string",
+            "enum": ["ACCEPT", "REVISE", "REJECT"],
+        }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": ["schema", *required_fields],
+        "additionalProperties": False,
+    }
+
+
 def require_valid_task_output(*, functional_role: str | None, result: Any) -> TaskOutputValidation:
     validation = validate_task_output_contract(functional_role=functional_role, result=result)
     if validation.required and not validation.final_output_valid:

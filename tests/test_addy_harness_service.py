@@ -342,3 +342,84 @@ def test_addy_nonretryable_failure_does_not_replan(monkeypatch):
     assert result.result["RETRY_COUNT"] == 0
     assert result.result["TRANSIENT_RETRY_EXHAUSTED"] is False
     assert result.result["LOCALIZED_REPLAN_ATTEMPTED"] is False
+
+
+def test_addy_correction_turn_uses_harness_structured_output_schema(monkeypatch):
+    _patch_common(monkeypatch)
+    route = _route(routing_id="routing-structured", model="model-a")
+    route_requests = []
+    generation_calls = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        return route
+
+    def fake_generation(**kwargs):
+        generation_calls.append(kwargs)
+        return HarnessAIProviderEvidence(
+            provider="nvidia_nim",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id="decision-test",
+            execution_id="execution-test",
+            authorization_id="provider-auth",
+            result={
+                "text": (
+                    '{"schema":"IncidentDiagnosisEvidence",'
+                    '"failure_class":"REGISTRY_SELECTION_FAILURE",'
+                    '"observed_evidence":["artifact:incident.json"],'
+                    '"localization":"Registry selection",'
+                    '"confidence":0.9,'
+                    '"evidence_refs":["artifact:incident.json"]}'
+                )
+            },
+            routing={"routing_id": "routing-structured"},
+            model="model-a",
+            executor_binding="provider-executor",
+            latency_seconds=0.2,
+            retry_count=0,
+            evidence_refs=("routing:routing-structured",),
+            performance={
+                "structured_output_mode": "json_schema",
+                "total_attempt_latency_ms": 200.0,
+            },
+        )
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        fake_generation,
+    )
+    payload = _payload()
+    payload["functional_role"] = "DIAGNOSIS"
+    payload["context"] = {
+        "evidence_refs": ["artifact:incident.json"],
+        "output_validation_feedback": {
+            "schema": "TaskOutputValidationFeedback/v1",
+            "expected_schema": "IncidentDiagnosisEvidence",
+            "errors": ["FINAL_STRUCTURED_OUTPUT_MISSING"],
+        },
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert result.status == "EXECUTED"
+    assert route_requests[0].structured_output_required is True
+    schema = generation_calls[0]["structured_output_schema"]
+    assert schema["properties"]["schema"]["const"] == (
+        "IncidentDiagnosisEvidence"
+    )
+    assert "schema" in schema["required"]
+    assert result.result["structured_output_enforced"] is True
+    assert result.result["structured_output_schema"] == (
+        "IncidentDiagnosisEvidence"
+    )

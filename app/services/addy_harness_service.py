@@ -30,6 +30,7 @@ from app.services.provider_health_service import (
     semantic_provider_health,
 )
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
+from app.services.task_output_contract_service import task_output_json_schema
 
 
 ADDY_EXECUTOR_BINDING = (
@@ -183,6 +184,31 @@ def execute_authorized_addy_skill(
         context=payload.get("context"),
     )
 
+    context = payload.get("context")
+    correction_feedback = (
+        context.get("output_validation_feedback")
+        if isinstance(context, dict)
+        else None
+    )
+    functional_role = str(payload.get("functional_role") or "").strip().upper()
+    structured_output_schema = (
+        task_output_json_schema(functional_role)
+        if isinstance(correction_feedback, dict)
+        and correction_feedback.get("expected_schema")
+        else None
+    )
+    if structured_output_schema is not None:
+        expected_schema = str(
+            correction_feedback.get("expected_schema") or ""
+        ).strip()
+        actual_schema = str(
+            structured_output_schema["properties"]["schema"]["const"]
+        )
+        if not expected_schema or expected_schema != actual_schema:
+            raise PermissionError(
+                "Addy correction schema does not match Harness validation feedback"
+            )
+
     mission_id = str(payload.get("mission_id") or f"addy:{auth.execution_id}").strip()
     task_id = str(payload.get("task_id") or skill_name).strip()
     goal_id = str(
@@ -267,6 +293,9 @@ def execute_authorized_addy_skill(
                 zero_cost_operation=True,
                 failure_pattern=failure_pattern,
                 learning_required=True,
+                structured_output_required=(
+                    structured_output_schema is not None
+                ),
             )
         )
 
@@ -315,6 +344,7 @@ def execute_authorized_addy_skill(
                 prompt=prompt,
                 authorization=provider_auth,
                 routing_decision=provider_routing,
+                structured_output_schema=structured_output_schema,
                 request_timeout_seconds=request_timeout_seconds,
             )
         finally:
@@ -539,6 +569,16 @@ def execute_authorized_addy_skill(
             "provider_profile_version": semantic.provider_profile_version,
             "provider_evidence": semantic.to_dict(),
             "provider_attempts": provider_attempts,
+            "structured_output_enforced": (
+                structured_output_schema is not None
+            ),
+            "structured_output_schema": (
+                str(
+                    structured_output_schema["properties"]["schema"]["const"]
+                )
+                if structured_output_schema is not None
+                else None
+            ),
             "same_routing_retry_count": same_routing_retry_count,
             "same_routing_retry_result": same_routing_retry_result,
             "transient_retry_exhausted": transient_retry_exhausted,

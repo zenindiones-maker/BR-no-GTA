@@ -721,6 +721,7 @@ class HermesHarnessCapabilityBroker:
                 "Never claim that a tool executed unless a ToolResultEnvelope is present in context.",
                 "If more evidence is required, return ONLY one ToolRequestEnvelope JSON object.",
                 "If enough evidence is available, return ONLY one JSON object matching final_output_contract.",
+                "The final JSON MUST include the top-level field schema with the exact value in final_output_contract.schema.",
                 "Do not return preliminary prose as the final answer.",
                 "Do not change mission_id, task_id, agent_id or capability_id.",
             ],
@@ -1499,9 +1500,10 @@ class HermesHarnessCapabilityBroker:
                             for key in correction_candidate.keys()
                         ),
                         "instruction": (
-                            "Return ONLY a corrected final JSON object matching "
-                            "the required schema. Do not invent tool execution and "
-                            "do not omit required fields."
+                            "Return ONLY a corrected final JSON object. The "
+                            "top-level field schema MUST equal expected_schema "
+                            "exactly. Do not invent tool execution and do not "
+                            "omit required fields."
                         ),
                     }
                     validation_row = self._persist_result(
