@@ -591,7 +591,7 @@ def test_malformed_canonical_tool_request_gets_typed_correction_before_execution
                         "authority": "DEEPSEEK_HARNESS"
                     },
                 })
-                + "\\n\\n<tool_result>{\\"invented\\":true}</tool_result>"
+                + '\n\n<tool_result>{"invented":true}</tool_result>'
             ),
             "provider_attempts": [{"status": "EXECUTED"}],
         }
