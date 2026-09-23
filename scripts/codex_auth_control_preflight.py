@@ -63,11 +63,30 @@ def main() -> int:
     write_checkpoint(checkpoint_path, checkpoint)
 
     delivery_message_id = None
-    delivery_status = (
-        "SUPPRESSED_AUTONOMOUS_EGRESS"
-        if preflight.state == AUTH_USER_ACTION_REQUIRED
-        else "NOT_REQUIRED"
+    externally_required_configuration = [
+        item
+        for item in preflight.missing_auth_configuration
+        if item != "OPENAI_IDENTITY_TOKEN_FILE"
+    ]
+    external_human_blocker = (
+        "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION"
+        if preflight.state == "BLOCKED"
+        and externally_required_configuration
+        else None
     )
+    human_gate_required = bool(
+        preflight.state == AUTH_USER_ACTION_REQUIRED
+        or external_human_blocker
+    )
+    if external_human_blocker:
+        delivery_status = "EXTERNAL_CONFIGURATION_REQUIRED"
+        delivery_surface = "OPENAI_ADMIN_PORTAL_OR_MANAGED_WORKSPACE_ADMIN"
+    elif preflight.state == AUTH_USER_ACTION_REQUIRED:
+        delivery_status = "SUPPRESSED_AUTONOMOUS_EGRESS"
+        delivery_surface = "INTERNAL_CHECKPOINT_ONLY"
+    else:
+        delivery_status = "NOT_REQUIRED"
+        delivery_surface = "INTERNAL_CHECKPOINT_ONLY"
 
     report = {
         "schema": "codex-auth-control-preflight/v1",
@@ -76,8 +95,15 @@ def main() -> int:
         "preflight": preflight.to_dict(),
         "checkpoint_id": checkpoint["checkpoint_id"],
         "checkpoint_path": checkpoint_path.name,
-        "auth_delivery_surface": "INTERNAL_CHECKPOINT_ONLY",
+        "auth_delivery_surface": delivery_surface,
         "auth_delivery_status": delivery_status,
+        "human_gate_required": human_gate_required,
+        "external_human_blocker": external_human_blocker,
+        "externally_required_auth_configuration": externally_required_configuration,
+        "identity_token_file_runtime_derived": (
+            "OPENAI_IDENTITY_TOKEN_FILE"
+            in preflight.missing_auth_configuration
+        ),
         "telegram_message_id": delivery_message_id,
         "runner_wait_for_human": False,
         "mission_checkpointed": True,
@@ -135,9 +161,16 @@ def main() -> int:
     print("DEVICE_AUTH_REVIEW_GROUP_FALLBACK=NO")
     print(
         "AUTH_USER_ACTION_REQUIRED_REPRESENTED_AS_HUMAN_GATE="
-        + ("PASS" if preflight.state == AUTH_USER_ACTION_REQUIRED else "NOT_REQUIRED")
+        + ("PASS" if human_gate_required else "NOT_REQUIRED")
     )
-    print("AUTH_DELIVERY_SURFACE=INTERNAL_CHECKPOINT_ONLY")
+    if external_human_blocker:
+        print("EXTERNAL_HUMAN_BLOCKER=" + external_human_blocker)
+        print(
+            "EXTERNALLY_REQUIRED_AUTH_CONFIGURATION="
+            + ",".join(externally_required_configuration)
+        )
+        print("OPENAI_IDENTITY_TOKEN_FILE=RUNTIME_DERIVED")
+    print("AUTH_DELIVERY_SURFACE=" + delivery_surface)
     print("AUTH_DELIVERY_STATUS=" + delivery_status)
     print("RUNNER_WAIT_FOR_HUMAN=NO")
     print("MISSION_CHECKPOINTED_BEFORE_AUTH_WAIT=PASS")
