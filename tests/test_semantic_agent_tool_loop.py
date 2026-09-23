@@ -16,6 +16,10 @@ from app.services.harness_collaboration_service import (
     TaskEnvelope,
     build_collaboration_plan,
 )
+from app.services.capability_execution_contract_service import (
+    CAN_SEMANTIC_REASONING,
+)
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.hermes_multiagent.capability_broker import (
     DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
@@ -542,3 +546,13 @@ def test_semantically_duplicate_tool_request_reuses_prior_result_without_executi
         ] is True
     finally:
         consume_harness_authorization(parent)
+
+
+def test_deterministic_system_improvement_proposal_does_not_claim_semantic_reasoning():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("system.improvement.propose")
+    assert record is not None
+    assert record.provider_id == "internal"
+    assert record.latency_class == "LOCAL"
+    assert CAN_SEMANTIC_REASONING not in set(
+        record.execution_operations or ()
+    )
