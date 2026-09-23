@@ -57,7 +57,7 @@ def _repo(tmp_path: Path) -> tuple[Path, str, str]:
     (root / "tests" / "test_ok.py").write_text(
         "from pathlib import Path\n\n"
         "def test_value():\n"
-        "    assert Path('app/value.txt').read_text() == 'after\\\\n'\n",
+        "    assert Path('app/value.txt').read_text() == 'after\\n'\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "add", "--all"], cwd=root, check=True)
