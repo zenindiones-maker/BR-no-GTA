@@ -1,9 +1,9 @@
 {
-  "request": "resume-semantic-planner-self-improvement-after-addy-model-failover-fix",
+  "request": "resume-semantic-planner-self-improvement-after-bounded-addy-failover-fix",
   "resume_from_parent_run": 35813832706,
-  "original_child_run": 35814819125,
+  "original_child_run": 35815481018,
   "original_natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "dispatcher_main_commit": "da5192ec92b3393aec73fdf979b15e54d00d45ed",
+  "dispatcher_main_commit": "84f5ac3816165e9238756f3670c9984adb915bbf",
   "preserve_auth_control_plane": true,
   "no_replanning": true,
   "preserve": {
@@ -13,7 +13,7 @@
     "YOUTUBE_PUBLICATION": "NO"
   },
   "human_prerequisites_confirmed": true,
-  "retry_reason": "Resume exact existing MissionPlan after adding one bounded Harness-governed Addy semantic model reroute on retryable provider failure; no semantic plan, Registry, payload, or capability selection change.",
-  "resume_attempt": 4,
-  "requested_at": "2026-09-23T00:44:00-03:00"
+  "retry_reason": "Resume exact existing MissionPlan after bounding each Harness-selected NVIDIA attempt inside the Addy semantic executor with the canonical health-derived model attempt deadline; no replanning, Registry, MissionPlan, team, model hardcode, retry-count increase, or timeout increase.",
+  "resume_attempt": 5,
+  "requested_at": "2026-09-23T00:57:00-03:00"
 }
