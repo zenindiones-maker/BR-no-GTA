@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
@@ -580,6 +580,67 @@ def build_goal_envelope(
     )
 
 
+def _clarification_is_resolved_by_explicit_goal(
+    goal: GoalEnvelope,
+    question: str | None,
+) -> bool:
+    state = dict(goal.canonical_state or {})
+    if state.get("human_goal_execution_authorized") is not True:
+        return False
+
+    folded = re.sub(r"\s+", " ", str(question or "").strip().casefold())
+    if not folded:
+        return False
+    if not any(
+        marker in folded
+        for marker in (
+            "confirm",
+            "confirma",
+            "prosseguir",
+            "continuar com",
+            "iniciar",
+            "executar o",
+            "executar a",
+        )
+    ):
+        return False
+
+    if (
+        "public" in folded
+        and str(state.get("youtube_publication_public") or "").upper()
+        == "FORBIDDEN"
+    ):
+        return False
+    if (
+        "unlisted" in folded
+        and str(state.get("youtube_publication_unlisted") or "").upper()
+        == "FORBIDDEN"
+    ):
+        return False
+    if (
+        "private" in folded
+        and str(state.get("youtube_private_hd_review") or "").upper()
+        != "ALLOWED"
+    ):
+        return False
+
+    stop = {
+        "confirmar", "confirma", "confirmacao", "confirmação", "execucao",
+        "execução", "executar", "pipeline", "completo", "para", "como",
+        "uma", "com", "dos", "das", "que", "esta", "está",
+    }
+    def tokens(value: str) -> set[str]:
+        return {
+            item
+            for item in re.findall(r"[0-9a-zà-ÿ]+", value.casefold())
+            if len(item) >= 4 and item not in stop
+        }
+
+    question_tokens = tokens(folded)
+    goal_tokens = tokens(goal.human_goal)
+    return len(question_tokens.intersection(goal_tokens)) >= 2
+
+
 def _deterministic_capability_requirements(
     goal: GoalEnvelope,
 ) -> list[dict[str, Any]]:
@@ -980,10 +1041,26 @@ def plan_mission_from_human_goal(
             semantic_evidence.get("proposal_attempts") or 1
         )
         if proposal.needs_human_clarification:
-            raise RuntimeError(
-                "MISSION_NEEDS_HUMAN_CLARIFICATION:"
-                + str(proposal.clarification_question or "")
-            )
+            if _clarification_is_resolved_by_explicit_goal(
+                goal,
+                proposal.clarification_question,
+            ):
+                planning_evidence["clarification_resolution"] = (
+                    "EXPLICIT_HUMAN_GOAL_AUTHORIZATION"
+                )
+                planning_evidence["clarification_question_resolved"] = str(
+                    proposal.clarification_question or ""
+                )
+                proposal = replace(
+                    proposal,
+                    needs_human_clarification=False,
+                    clarification_question=None,
+                )
+            else:
+                raise RuntimeError(
+                    "MISSION_NEEDS_HUMAN_CLARIFICATION:"
+                    + str(proposal.clarification_question or "")
+                )
         requirements = proposal_requirements(proposal)
 
     requirements = requirements[: int(resources["max_tasks_per_mission"])]

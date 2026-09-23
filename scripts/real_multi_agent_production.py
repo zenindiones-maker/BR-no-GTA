@@ -703,6 +703,7 @@ def run(
     base_sha: str,
     upstream_root: Path,
     artifact_dir: Path,
+    human_execution_authorized: bool = False,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     initialize_schema()
@@ -724,6 +725,9 @@ def run(
             "voice": "pt-BR-ThalitaMultilingualNeural",
             "master": "1920x1080@30 H264 AAC",
             "codex_external_checkpoint": CODEX_CHECKPOINT,
+            "human_goal_execution_authorized": bool(
+                human_execution_authorized
+            ),
         },
     )
 
@@ -1020,6 +1024,7 @@ def main() -> int:
         base_sha=args.base_sha,
         upstream_root=args.upstream_root,
         artifact_dir=args.artifact_dir,
+        human_execution_authorized=True,
     )
     print("NATURAL_GOAL_RECEIVED=PASS")
     print("MISSION_PLAN_CREATED=PASS")

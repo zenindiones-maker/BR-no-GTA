@@ -160,6 +160,86 @@ def test_natural_performance_goal_builds_dynamic_harness_plan_without_team_keywo
     assert "Agent Office" not in human_goal
     assert "Codex" not in human_goal
 
+def _authorized_private_review_goal():
+    return build_goal_envelope(
+        human_goal=(
+            "Produza um vídeo GTA 6 real com pipeline multiagente completo e "
+            "MASTER_FINAL PRIVATE para revisão HD humana. Não publique public "
+            "nem unlisted."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-explicit-private-review",
+        subject="real multi-agent GTA6 audiovisual production",
+        source_surface="work",
+        canonical_state={
+            "human_goal_execution_authorized": True,
+            "youtube_private_hd_review": "ALLOWED",
+            "youtube_publication_public": "FORBIDDEN",
+            "youtube_publication_unlisted": "FORBIDDEN",
+        },
+    )
+
+
+def _clarifying_research_proposal(question):
+    return {
+        "interpreted_goal": "Executar a produção privada explicitamente solicitada.",
+        "assumptions": [],
+        "required_outcomes": ["evidência atual"],
+        "tasks": [{
+            "task_id": "research-evidence",
+            "objective": "collect fresh evidence from current GTA6 official sources",
+            "task_class": "evidence-collection",
+            "required_capability_description": "fresh GTA6 evidence collection",
+            "candidate_capability_ids": ["gta6.research"],
+            "dependencies": [],
+            "expected_output": "fresh research artifact",
+            "acceptance_criteria": ["fresh official evidence"],
+            "risk_side_effect_class": "READ_ONLY",
+            "action": "RESEARCH",
+        }],
+        "rationale": "Use only already-authorized private review scope.",
+        "context_usage_notes": [],
+        "uncertainty": 0.1,
+        "needs_human_clarification": True,
+        "clarification_question": question,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+
+
+def test_explicit_human_goal_resolves_redundant_private_review_confirmation():
+    goal = _authorized_private_review_goal()
+    plan = plan_mission_from_human_goal(
+        goal,
+        semantic_inference=lambda _prompt, _context: _clarifying_research_proposal(
+            "Confirmar execução do pipeline completo multiagente para vídeo GTA 6 "
+            "real com master PRIVATE para revisão HD?"
+        ),
+    )
+    assert (
+        plan.planning_evidence["clarification_resolution"]
+        == "EXPLICIT_HUMAN_GOAL_AUTHORIZATION"
+    )
+    assert plan.semantic_plan_proposal["needs_human_clarification"] is False
+    assert plan.semantic_plan_proposal["clarification_question"] is None
+
+
+def test_explicit_private_authorization_does_not_clear_forbidden_public_scope():
+    goal = _authorized_private_review_goal()
+    try:
+        plan_mission_from_human_goal(
+            goal,
+            semantic_inference=lambda _prompt, _context: _clarifying_research_proposal(
+                "Confirmar upload PUBLIC do vídeo GTA 6 real?"
+            ),
+        )
+    except RuntimeError as exc:
+        assert str(exc).startswith("MISSION_NEEDS_HUMAN_CLARIFICATION:")
+    else:
+        raise AssertionError("forbidden PUBLIC scope must keep the human gate")
+
+
 def test_open_semantic_goal_fails_explicitly_when_no_zero_cost_provider_is_healthy():
     _active_opencode_failure()
     goal = build_goal_envelope(

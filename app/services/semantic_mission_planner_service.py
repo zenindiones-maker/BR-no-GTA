@@ -696,7 +696,10 @@ def build_semantic_planner_prompt(
     )
     instructions = (
         "MissionPlan proposal only; authority=NONE. Strict JSON, minimum "
-        "sufficient dynamic DAG. Unknown cause: observe before mutation. Use "
+        "sufficient dynamic DAG. Ask for human clarification only when material "
+        "information or authority is genuinely missing; never ask the human to "
+        "reconfirm an explicit imperative goal or an already explicit canonical "
+        "allowed/forbidden scope. Unknown cause: observe before mutation. Use "
         "relevant memory, competence and bad paths. Risky/mutating work needs "
         "independent validation. Prefer caps=[] plus a precise need so DeepSeek "
         "Harness performs final Registry selection. Action semantics are strict: "
