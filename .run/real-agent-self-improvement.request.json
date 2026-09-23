@@ -1,7 +1,7 @@
 {
   "schema": "real-agent-self-improvement-request/v2",
   "mode": "REAL_INCIDENT_RECOVERY",
-  "human_goal": "Use o incidente REAL da produção 35898595164 como evidência observada e diagnostique somente o primeiro estágio quebrado da linha principal: semantic planning/Registry selection para task_class=production-planning. O planner executou por 86077.831 ms e a produção terminou com 'no healthy Registry capability for task_class=production-planning' antes de existir produto. Determine a partir dos artifacts reais: PRODUCTION_PLANNING_REQUIREMENTS, CANDIDATE_CAPABILITIES, REJECTION_REASONS, EXPECTED_EXECUTOR, EXPECTED_AGENT, HEALTH_STATE, MISSING_CONTRACT e MISSING_IMPLEMENTATION. Compare com a implementação canônica production.plan e com evidência histórica real disponível, sem assumir que Registry discoverable significa executor funcional. Produza artifacts distintos e encadeados para diagnóstico, root cause, menor recovery proposal e independent review. Não mutar repositório nesta missão. Não aumentar timeout. Não trocar provider/model às cegas. Não reabrir Telegram, Codex, Natural Swarm ou inventário geral. A coleta/diagnóstico deste incidente é trabalho de debugging/recovery; API/interface design só é válido se a semântica real da task exigir design de API. O output deve deixar explícito AGENT_DIAGNOSIS_AUTHOR, ROOT_CAUSE_AUTHOR, CANDIDATE_AUTHOR, REVIEW_AUTHOR e a decisão recomendada ao Harness.",
+  "human_goal": "Use o incidente REAL da produção 35898595164 como evidência observada e diagnostique somente o primeiro estágio quebrado da linha principal: semantic planning/Registry selection para task_class=production-planning. O planner executou por 86077.831 ms e a produção terminou com 'no healthy Registry capability for task_class=production-planning' antes de existir produto. Determine a partir dos artifacts reais: PRODUCTION_PLANNING_REQUIREMENTS, CANDIDATE_CAPABILITIES, REJECTION_REASONS, EXPECTED_EXECUTOR, EXPECTED_AGENT, HEALTH_STATE, MISSING_CONTRACT e MISSING_IMPLEMENTATION. Compare com a implementação canônica production.plan e com evidência histórica real disponível, sem assumir que Registry discoverable significa executor funcional. Produza artifacts distintos e encadeados para diagnóstico, root cause, menor recovery proposal e independent review. Não mutar repositório nesta missão. Não aumentar timeout. Não trocar provider/model às cegas. Não reabrir Telegram, Codex, Natural Swarm ou inventário geral. A coleta/diagnóstico deste incidente é trabalho de debugging/recovery; API/interface design só é válido se a semântica real da task exigir design de API. O output deve deixar explícito AGENT_DIAGNOSIS_AUTHOR, ROOT_CAUSE_AUTHOR, CANDIDATE_AUTHOR, REVIEW_AUTHOR e a decisão recomendada ao Harness. Use também runtime_recovery_evidence como execução seguinte observada: verifique independentemente se a recovery candidata já aplicada removeu causalmente o blocker production-planning sem regressão, e classifique o novo primeiro blocker evidence.deep. Não invente um novo goal; esta continua sendo a subtask da CURRENT_REAL_PRODUCTION_MISSION.",
   "incident": {
     "source_run_id": 35898595164,
     "source_job_id": 107308666117,
@@ -63,5 +63,64 @@
   "fallback_policy": "PRESERVE_FALLBACK_ALLOWED_FALSE",
   "provider_competence_policy": "DO_NOT_PENALIZE_PROVIDER_FOR_PLANNER_CONTRACT_FAILURE",
   "natural_swarm": "FORBIDDEN_FOR_THIS_MISSION",
-  "max_same_cause_fix_attempts": 2
+  "max_same_cause_fix_attempts": 2,
+  "runtime_recovery_evidence": {
+    "subordinate_timeout_run_id": 35904686940,
+    "subordinate_timeout_task": "collect-evidence",
+    "selected_capability": "addy:context-engineering",
+    "addy_selection_valid": false,
+    "selection_score": 1.5,
+    "selection_reason": "semantic_overlap=0; discovery-order bonus selected a semantic provider-backed skill for a deterministic artifact task",
+    "addy_domain": "development",
+    "addy_skill_purpose": "agent context setup/curation, not deterministic incident evidence extraction",
+    "addy_execution_operations": [
+      "CAN_SEMANTIC_REASONING",
+      "CAN_CONSUME_ARTIFACT_REFS",
+      "CAN_PRODUCE_ARTIFACT_REFS"
+    ],
+    "correct_collection_contract": [
+      "CAN_PRODUCE_ARTIFACT_REFS"
+    ],
+    "provider": "nvidia_nim",
+    "first_model": "nvidia/nemotron-3-ultra-550b-a55b",
+    "invalid_second_model_reroute": "z-ai/glm-5.3",
+    "provider_call_attempted": "YES",
+    "transport_started": "YES",
+    "response_present": "NO",
+    "timeout_stage": "transport_request",
+    "failure_class": "TRANSPORT_TIMEOUT",
+    "provider_internal_failure_class": "E_FULL_REQUEST_TIMEOUT",
+    "executor_context_limit_chars": 16000,
+    "executor_context_final_chars": 15790,
+    "input_artifact_context_chars": 14183,
+    "input_artifact_sha256": "2b6b33fe06312cba9af64df46afc5f2c849d844c2620125b720167345684cd31",
+    "recovery_candidate_commits": [
+      "7a63610b3357b9f26e32c531838227b752012c9d",
+      "3e63e9382fbc6810ba6f7e6a31bd56cb4eef3059",
+      "ce09498fea955682b439f30b45c624ddfaf2d60d"
+    ],
+    "recovery_candidate_summary": [
+      "deterministic pre-materialized artifact reuse before semantic diagnosis",
+      "semantic-provider capabilities rejected when execution contract does not require semantic reasoning",
+      "semantic incident tasks explicitly require CAN_SEMANTIC_REASONING",
+      "retryable Addy timeout permits one retry of the same routing decision/model instead of blind model reroute"
+    ],
+    "next_real_production_observation": {
+      "run_id": 35906570079,
+      "head": "7a63610b3357b9f26e32c531838227b752012c9d",
+      "production_planning_original_blocker_recurred": false,
+      "reached_task": "evidence.deep",
+      "reached_capability": "gta6.research.semantic-synthesis",
+      "terminal_error": "semantic research provider did not execute",
+      "implication": "production-planning is no longer the first broken stage; recovery effect must be independently reviewed before promotion"
+    },
+    "required_agent_decision": [
+      "verify whether production-planning recovery is causally valid",
+      "verify whether deterministic artifact reuse is the correct collection boundary",
+      "classify NVIDIA timeout without treating context size as proven root cause",
+      "review same-routing bounded retry policy",
+      "recommend retain/revise/revert candidate recovery",
+      "identify next first broken product stage from run 35906570079"
+    ]
+  }
 }
