@@ -371,6 +371,34 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
             ),
         },
     )
+    from app.services.provider_health_service import semantic_provider_health
+    health = semantic_provider_health()
+    if not bool(health.get("semantic_reasoning_available")):
+        requirements = (
+            collaboration_service._deterministic_incident_recovery_requirements(
+                goal
+            )
+        )
+        expected = {
+            "task-01": "artifact.evidence.reuse",
+            "task-02": "addy:debugging-and-error-recovery",
+            "task-03": "addy:debugging-and-error-recovery",
+            "task-04": "system.improvement.propose",
+            "task-05": "addy:code-review-and-quality",
+        }
+        for requirement in requirements:
+            record = collaboration_service.GLOBAL_CAPABILITY_REGISTRY.get(
+                expected[requirement["task_id"]]
+            )
+            assert record is not None
+            assert record.execution_enabled is True
+            assert requirement["action"] in set(record.allowed_actions)
+            assert set(requirement["required_operations"]).issubset(
+                set(record.execution_operations)
+            )
+            assert str(record.side_effect_class).upper() == "READ_ONLY"
+        return
+
     monkeypatch.setattr(
         collaboration_service,
         "propose_validated_semantic_plan",
@@ -444,3 +472,4 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
     )
 
 
+\n

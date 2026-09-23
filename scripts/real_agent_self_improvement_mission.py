@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import shutil
 from hashlib import sha256
 from pathlib import Path
 import subprocess
@@ -41,6 +42,7 @@ from app.services.mission_plan_payload_service import (
     persist_mission_plan_payload_evidence,
 )
 from app.services.memory_plane_service import evaluate_memory_candidate
+from app.services.task_result_envelope_service import load_task_result_envelope
 from scripts.dynamic_system_improvement_mission import run as execute_dynamic_mission
 
 CHECKPOINT = 35850473901
@@ -296,6 +298,196 @@ def _is_independent_review_task(item: dict) -> bool:
             or "INDEPENDENT_REVIEW" in expected_output
         )
     )
+
+
+def _checkpoint_task_signature(task: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "task_id": task.get("task_id"),
+        "task_class": task.get("task_class"),
+        "functional_role": task.get("functional_role"),
+        "mission_policy_class": task.get("mission_policy_class"),
+        "capability_id": task.get("capability_id"),
+        "selected_agent_id": task.get("selected_agent_id"),
+        "selected_skill_id": task.get("selected_skill_id"),
+        "capability_version": str(task.get("capability_version") or "1"),
+        "required_operations": sorted(
+            str(item)
+            for item in (task.get("required_operations") or ())
+        ),
+        "candidate_requirement": task.get("candidate_requirement"),
+        "risk_side_effect_class": task.get("risk_side_effect_class"),
+        "dependencies": list(task.get("dependencies") or ()),
+        "input_refs": list(task.get("input_refs") or ()),
+        "objective": task.get("objective"),
+        "expected_output": task.get("expected_output"),
+    }
+
+
+def restore_compatible_node_checkpoints(
+    *,
+    plan: dict[str, Any],
+    checkpoint_source_dir: Path | None,
+    runtime_dir: Path,
+) -> dict[str, Any]:
+    evidence = {
+        "CHECKPOINT_AVAILABLE": False,
+        "CHECKPOINT_HASH_VALID": False,
+        "CHECKPOINT_LINEAGE_VALID": False,
+        "CHECKPOINT_SEMANTICALLY_COMPATIBLE": False,
+        "CHECKPOINT_REUSED": False,
+        "REUSED_TASK_IDS": [],
+        "NO_COMPLETED_NODE_REEXECUTION": False,
+    }
+    if checkpoint_source_dir is None or not checkpoint_source_dir.is_dir():
+        return evidence
+    source_plan_path = checkpoint_source_dir / "first-plan.json"
+    source_runtime = checkpoint_source_dir / "first-runtime"
+    if not source_plan_path.is_file() or not source_runtime.is_dir():
+        return evidence
+
+    source_wrapper = json.loads(
+        source_plan_path.read_text(encoding="utf-8")
+    )
+    source_plan = dict(source_wrapper.get("plan") or source_wrapper)
+    source_by_id = {
+        str(item.get("task_id") or ""): item
+        for item in tasks(source_plan)
+    }
+    current_tasks = tasks(plan)
+    evidence["CHECKPOINT_AVAILABLE"] = True
+
+    current_incident = runtime_dir / "incident-evidence-packet.json"
+    source_incident = source_runtime / "incident-evidence-packet.json"
+    if current_incident.is_file() and source_incident.is_file():
+        if sha256(current_incident.read_bytes()).hexdigest() != sha256(
+            source_incident.read_bytes()
+        ).hexdigest():
+            evidence["RERUN_REASON"] = "incident artifact hash changed"
+            return evidence
+
+    result_dir = runtime_dir / "capability-results"
+    task_result_dir = runtime_dir / "checkpoint-task-results"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    task_result_dir.mkdir(parents=True, exist_ok=True)
+
+    hash_valid = True
+    lineage_valid = True
+    semantic_valid = True
+    reused: list[str] = []
+    previous_reused: str | None = None
+
+    for current in current_tasks:
+        task_id = str(current.get("task_id") or "")
+        source_task = source_by_id.get(task_id)
+        if source_task is None:
+            break
+        if _checkpoint_task_signature(current) != _checkpoint_task_signature(
+            source_task
+        ):
+            semantic_valid = False
+            break
+
+        rows = sorted(
+            (source_runtime / "capability-results").glob(
+                f"{task_id}-*.json"
+            )
+        )
+        completed = None
+        for row_path in reversed(rows):
+            row = json.loads(row_path.read_text(encoding="utf-8"))
+            if (
+                row.get("status") == "COMPLETED"
+                and row.get("capability_id") == current.get("capability_id")
+            ):
+                completed = row
+                break
+        if completed is None:
+            break
+
+        source_ref = str(completed.get("task_result_ref") or "")
+        try:
+            envelope = load_task_result_envelope(
+                artifact_dir=source_runtime,
+                task_result_ref=source_ref,
+            )
+        except Exception:
+            hash_valid = False
+            break
+        if envelope.get("task_id") != task_id:
+            hash_valid = False
+            break
+        expected_sources = list(current.get("dependencies") or ())
+        if list(envelope.get("source_task_ids") or ()) != expected_sources:
+            lineage_valid = False
+            break
+        if expected_sources and previous_reused not in expected_sources:
+            lineage_valid = False
+            break
+
+        target = task_result_dir / f"{task_id}.json"
+        source_target = (
+            source_runtime / source_ref[len("artifact:"):]
+        ).resolve()
+        shutil.copyfile(source_target, target)
+        copied_ref = "artifact:checkpoint-task-results/" + target.name
+
+        wrapper = {
+            "mission_id": plan.get("mission_id"),
+            "task_id": task_id,
+            "capability_id": current.get("capability_id"),
+            "agent_id": current.get("selected_agent_id"),
+            "runtime": "hermes",
+            "routing_id": current.get("routing_id"),
+            "authorization_id": (
+                "checkpoint-reuse:"
+                + str(completed.get("authorization_id") or "unknown")
+            ),
+            "idempotency_key": current.get("idempotency_key"),
+            "capability_version": str(
+                current.get("capability_version") or "1"
+            ),
+            "retry_count": 0,
+            "status": "COMPLETED",
+            "elapsed_seconds": 0.0,
+            "cost": 0.0,
+            "policy_violations": 0,
+            "result": completed.get("result"),
+            "task_result_ref": copied_ref,
+            "task_result_sha256": envelope.get("content_sha256"),
+            "checkpoint_reused": True,
+            "checkpoint_source_mission_id": source_plan.get("mission_id"),
+            "checkpoint_source_task_result_ref": source_ref,
+            "checkpoint_source_content_sha256": envelope.get(
+                "content_sha256"
+            ),
+            "checkpoint_source_authorization_id": completed.get(
+                "authorization_id"
+            ),
+        }
+        write_json(
+            result_dir / f"{task_id}-checkpoint.json",
+            wrapper,
+        )
+        reused.append(task_id)
+        previous_reused = task_id
+
+    evidence.update({
+        "CHECKPOINT_HASH_VALID": hash_valid,
+        "CHECKPOINT_LINEAGE_VALID": lineage_valid,
+        "CHECKPOINT_SEMANTICALLY_COMPATIBLE": semantic_valid,
+        "CHECKPOINT_REUSED": bool(reused),
+        "REUSED_TASK_IDS": reused,
+        "REUSED_TASK_COUNT": len(reused),
+        "NO_COMPLETED_NODE_REEXECUTION": bool(reused),
+        "RERUN_REASON": (
+            "resume at first incomplete node"
+            if reused
+            else evidence.get("RERUN_REASON")
+            or "no compatible completed node prefix"
+        ),
+    })
+    return evidence
+
 
 
 def plan_once(
@@ -733,7 +925,15 @@ def task_rows(plan, results):
     return rows
 
 
-def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir: Path | None = None):
+def run(
+    output_dir,
+    base_sha,
+    branch,
+    *,
+    request_path: Path,
+    incident_source_dir: Path | None = None,
+    checkpoint_source_dir: Path | None = None,
+):
     initialize_schema()
     output_dir.mkdir(parents=True, exist_ok=True)
     overall = time.perf_counter()
@@ -832,6 +1032,16 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
             if item.get("CAPABILITY_ID") == review_capability_id
         ),
         {},
+    )
+
+    checkpoint_evidence = restore_compatible_node_checkpoints(
+        plan=first,
+        checkpoint_source_dir=checkpoint_source_dir,
+        runtime_dir=first_runtime_dir,
+    )
+    write_json(
+        output_dir / "node-checkpoint-reuse.json",
+        checkpoint_evidence,
     )
 
     upstream, boot = bootstrap(first, route, output_dir / "runtime-bootstrap")
@@ -998,6 +1208,16 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
         "FINAL_HEAD": base_sha,
         "REAL_SELF_IMPROVEMENT_RUN": int(os.getenv("GITHUB_RUN_ID") or 0),
         "REAL_PROBLEM_MEASURED": current_problem,
+        "CHECKPOINT_REUSE": checkpoint_evidence,
+        "NODE_LEVEL_CHECKPOINT_REUSE": bool(
+            checkpoint_evidence.get("CHECKPOINT_REUSED")
+        ),
+        "NO_COMPLETED_NODE_REEXECUTION": bool(
+            checkpoint_evidence.get("NO_COMPLETED_NODE_REEXECUTION")
+        ),
+        "REUSED_TASK_COUNT": int(
+            checkpoint_evidence.get("REUSED_TASK_COUNT") or 0
+        ),
         "FAILURE_EPISODE_ID": failure_episode_id,
         "CURRENT_FAILURE_EPISODE_ID": failure_episode_id,
         "REAL_PROVIDER_FAILURE_EPISODE": bool(failure_episode_id) if incident else True,
@@ -1154,6 +1374,7 @@ def main():
         default=".run/real-agent-self-improvement.request.json",
     )
     parser.add_argument("--incident-source-dir")
+    parser.add_argument("--checkpoint-source-dir")
     args = parser.parse_args()
     result = run(
         Path(args.output_dir),
@@ -1163,6 +1384,10 @@ def main():
         incident_source_dir=(
             Path(args.incident_source_dir)
             if args.incident_source_dir else None
+        ),
+        checkpoint_source_dir=(
+            Path(args.checkpoint_source_dir)
+            if args.checkpoint_source_dir else None
         ),
     )
     required = all(result[k] is True for k in (

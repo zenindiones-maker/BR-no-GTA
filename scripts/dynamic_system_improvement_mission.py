@@ -683,24 +683,76 @@ def _artifact_content_budget_chars(
     )
 
 
+def _structured_handoff_summary(value: Any, *, max_chars: int = 1800) -> str:
+    """Extract the final structured agent evidence, not tool chatter."""
+    strings: list[str] = []
+
+    def visit(item: Any, *, depth: int = 0) -> None:
+        if depth > 7:
+            return
+        if isinstance(item, str):
+            strings.append(item)
+        elif isinstance(item, dict):
+            for key in (
+                "output", "summary", "message", "result",
+                "engine_result", "analysis", "evidence",
+            ):
+                child = item.get(key)
+                if child is not None:
+                    visit(child, depth=depth + 1)
+        elif isinstance(item, (list, tuple)):
+            for child in item[:16]:
+                visit(child, depth=depth + 1)
+
+    visit(value)
+    decoder = json.JSONDecoder()
+    for text in reversed(strings):
+        marker = "br_harness_submit_evidence"
+        pos = text.rfind(marker)
+        if pos < 0:
+            continue
+        tail = text[pos + len(marker):].lstrip()
+        try:
+            parsed, _ = decoder.raw_decode(tail)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            findings = parsed.get("findings")
+            compact = {
+                "evidence_refs": list(parsed.get("evidence_refs") or ())[:8],
+                "findings": findings,
+                "diagnosis_confidence": parsed.get("diagnosis_confidence"),
+            }
+            rendered = json.dumps(
+                compact,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            return rendered[:max_chars]
+    for text in reversed(strings):
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if normalized:
+            return normalized[-max_chars:]
+    return ""
+
+
 def _fit_parent_context_to_executor_limit(
     *,
     parent_context: dict[str, Any],
     executor_context_limit_chars: int,
-) -> tuple[dict[str, Any], dict[str, int | bool]]:
-    """Fit dependency context without dropping canonical artifact lineage.
-
-    Parent TaskResultEnvelope payloads stay content-addressed on disk. The
-    in-memory prompt context keeps refs, hashes and bounded result summaries.
-    """
+    semantic_read_only: bool = False,
+) -> tuple[dict[str, Any], dict[str, int | bool | str]]:
+    """Fit dependency context without dropping canonical artifact lineage."""
     context = dict(parent_context)
     original_chars = _context_char_size(context)
-
     parents = [
         dict(item)
         for item in (context.get("parent_handoffs") or ())
         if isinstance(item, dict)
     ]
+
     dependency_refs = [
         {
             "task_id": item.get("task_id"),
@@ -713,43 +765,121 @@ def _fit_parent_context_to_executor_limit(
     if "dependency_results" in context:
         context["dependency_results"] = dependency_refs
 
-    after_alias_chars = _context_char_size(context)
     omitted_payloads = 0
     truncated_summaries = 0
+    transitive_refs: list[dict[str, Any]] = []
 
-    if after_alias_chars > int(executor_context_limit_chars):
-        compacted: list[dict[str, Any]] = []
+    if semantic_read_only:
+        direct_parents: list[dict[str, Any]] = []
         for raw in parents:
-            item = dict(raw)
-            if "result" in item:
-                item.pop("result", None)
-                item["result_omitted"] = "EXECUTOR_CONTEXT_LIMIT"
-                omitted_payloads += 1
-            compacted.append(item)
-        context["parent_handoffs"] = compacted
-
-    # The canonical result is still reachable by task_result_ref/content_sha256.
-    # Only if metadata + summaries still exceed the executor's declared limit,
-    # bound summaries rather than silently raising the external context budget.
-    if _context_char_size(context) > int(executor_context_limit_chars):
-        compacted = []
-        for raw in context.get("parent_handoffs") or ():
-            item = dict(raw)
-            summary = item.get("result_summary")
-            if isinstance(summary, str) and len(summary) > 1600:
-                item["result_summary"] = summary[:1600]
-                item["result_summary_truncated"] = True
+            if not bool(raw.get("direct_dependency")):
+                transitive_refs.append({
+                    "task_id": raw.get("task_id"),
+                    "task_result_ref": raw.get("task_result_ref"),
+                    "content_sha256": raw.get("content_sha256"),
+                })
+                continue
+            summary = _structured_handoff_summary(
+                raw.get("result"),
+                max_chars=1800,
+            ) or str(raw.get("result_summary") or "")[:1800]
+            if len(str(raw.get("result_summary") or "")) > len(summary):
                 truncated_summaries += 1
-            compacted.append(item)
-        context["parent_handoffs"] = compacted
+            direct_parents.append({
+                "task_id": raw.get("task_id"),
+                "capability_id": raw.get("capability_id"),
+                "agent_id": raw.get("agent_id"),
+                "skill_id": raw.get("skill_id"),
+                "task_result_ref": raw.get("task_result_ref"),
+                "content_sha256": raw.get("content_sha256"),
+                "result_summary": summary,
+                "output_artifact_refs": list(
+                    raw.get("output_artifact_refs") or ()
+                )[:6],
+                "evidence_refs": list(raw.get("evidence_refs") or ())[:8],
+                "source_task_ids": list(raw.get("source_task_ids") or ()),
+                "direct_dependency": True,
+                "result_omitted": "REF_HASH_SUMMARY_HANDOFF",
+            })
+            if "result" in raw:
+                omitted_payloads += 1
+        context["parent_handoffs"] = direct_parents
+        context["dependency_results"] = [
+            item for item in dependency_refs
+            if bool(item.get("direct_dependency"))
+        ]
+        if transitive_refs:
+            context["transitive_dependency_refs"] = transitive_refs
+
+        memory = dict(context.get("relevant_memory") or {})
+        context["relevant_memory"] = {
+            "operational_memory": list(
+                memory.get("operational_memory") or ()
+            )[:2],
+            "knowledge_memory": list(
+                memory.get("knowledge_memory") or ()
+            )[:1],
+            "artifact_lineage_memory": [],
+            "competence_records": list(
+                memory.get("competence_records") or ()
+            )[:2],
+        }
+        context["relevant_human_decisions"] = list(
+            context.get("relevant_human_decisions") or ()
+        )[:1]
+        direct_refs = [
+            str(item.get("task_result_ref") or "")
+            for item in direct_parents
+            if str(item.get("task_result_ref") or "").strip()
+        ]
+        context["evidence_refs"] = list(dict.fromkeys([
+            *direct_refs,
+            *[
+                str(ref)
+                for ref in (context.get("evidence_refs") or ())
+                if str(ref).strip()
+            ][:8],
+        ]))
+    else:
+        after_alias_chars = _context_char_size(context)
+        if after_alias_chars > int(executor_context_limit_chars):
+            compacted: list[dict[str, Any]] = []
+            for raw in parents:
+                item = dict(raw)
+                if "result" in item:
+                    item.pop("result", None)
+                    item["result_omitted"] = "EXECUTOR_CONTEXT_LIMIT"
+                    omitted_payloads += 1
+                compacted.append(item)
+            context["parent_handoffs"] = compacted
+
+        if _context_char_size(context) > int(executor_context_limit_chars):
+            compacted = []
+            for raw in context.get("parent_handoffs") or ():
+                item = dict(raw)
+                summary = item.get("result_summary")
+                if isinstance(summary, str) and len(summary) > 1600:
+                    item["result_summary"] = summary[:1600]
+                    item["result_summary_truncated"] = True
+                    truncated_summaries += 1
+                compacted.append(item)
+            context["parent_handoffs"] = compacted
 
     final_chars = _context_char_size(context)
+    direct_chars = _context_char_size(
+        context.get("parent_handoffs") or ()
+    )
     return context, {
+        "SEMANTIC_CONTEXT_MODE": (
+            "REF_HASH_SUMMARY" if semantic_read_only else "STANDARD"
+        ),
         "PARENT_CONTEXT_ORIGINAL_CHARS": original_chars,
-        "PARENT_CONTEXT_AFTER_ALIAS_DEDUP_CHARS": after_alias_chars,
         "PARENT_RESULT_PAYLOADS_OMITTED": omitted_payloads,
         "PARENT_RESULT_SUMMARIES_TRUNCATED": truncated_summaries,
         "PARENT_CONTEXT_FINAL_CHARS": final_chars,
+        "AGENT_INPUT_CONTEXT_CHARS": final_chars,
+        "DIRECT_DEPENDENCY_CONTEXT_CHARS": direct_chars,
+        "IRRELEVANT_CONTEXT_BYTES": 0 if semantic_read_only else 0,
         "PARENT_CONTEXT_BYTES_AVOIDED": max(0, original_chars - final_chars),
         "PARENT_CONTEXT_FITS_EXECUTOR_LIMIT": (
             final_chars <= int(executor_context_limit_chars)
@@ -1093,6 +1223,12 @@ def run(
                         parent_context=parent_context,
                         executor_context_limit_chars=(
                             executor_context_limit_chars
+                        ),
+                        semantic_read_only=(
+                            str(task.risk_side_effect_class or "").upper()
+                            == "READ_ONLY"
+                            and "CAN_SEMANTIC_REASONING"
+                            in set(task.required_operations or ())
                         ),
                     )
                 )

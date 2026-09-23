@@ -122,5 +122,16 @@
       "recommend retain/revise/revert candidate recovery",
       "identify next first broken product stage from run 35906570079"
     ]
+  },
+  "checkpoint_source": {
+    "run_id": 35913765726,
+    "artifact_id": 10774820960,
+    "artifact_name": "real-agent-self-improvement-35913765726",
+    "completed_task_ids": [
+      "task-01",
+      "task-02"
+    ],
+    "resume_from_task_id": "task-03",
+    "validation": "schema+content_sha256+task_contract+input_lineage"
   }
 }

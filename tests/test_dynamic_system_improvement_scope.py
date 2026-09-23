@@ -14,6 +14,7 @@ from scripts.dynamic_system_improvement_mission import (
     _context_char_size,
     _executor_context_char_limit,
     _fit_parent_context_to_executor_limit,
+    _structured_handoff_summary,
     _generic_payload,
     _is_mutating,
     _task_input_artifact_context,
@@ -579,3 +580,87 @@ def test_parent_handoff_compaction_fits_addy_without_losing_lineage():
             fitted["parent_handoffs"][0]["result_omitted"]
             == "EXECUTOR_CONTEXT_LIMIT"
         )
+
+
+
+def test_semantic_readonly_handoff_uses_ref_hash_and_structured_summary():
+    parent = {
+        "mission_id": "m",
+        "task_id": "task-03",
+        "goal_id": "g",
+        "task": {"objective": "find root cause"},
+        "parent_handoffs": [
+            {
+                "task_id": "task-02",
+                "capability_id": "addy:debugging-and-error-recovery",
+                "agent_id": "addy-agent-skills",
+                "skill_id": "debugging-and-error-recovery",
+                "task_result_ref": "artifact:task-results/task-02-1.json",
+                "content_sha256": "a" * 64,
+                "result_summary": "tool chatter " * 300,
+                "evidence_refs": ["artifact:incident.json"],
+                "output_artifact_refs": [],
+                "source_task_ids": ["task-01"],
+                "direct_dependency": True,
+                "result": {
+                    "result": {
+                        "output": (
+                            'kanban_comment {"comment":"noise"}\n'
+                            'br_harness_submit_evidence '
+                            '{"evidence_refs":["artifact:incident.json"],'
+                            '"findings":{"root_cause":"REGISTRY_HEALTH_GATE",'
+                            '"failure_class":"PLANNER_CONTRACT",'
+                            '"localization":"registry -> health -> zero candidates"}}'
+                        )
+                    }
+                },
+            },
+            {
+                "task_id": "task-01",
+                "task_result_ref": "artifact:task-results/task-01-1.json",
+                "content_sha256": "b" * 64,
+                "direct_dependency": False,
+                "result": {"huge": "x" * 6000},
+            },
+        ],
+        "dependency_results": [],
+        "relevant_memory": {
+            "operational_memory": [{"memory_id": "op1"}, {"memory_id": "op2"}, {"memory_id": "op3"}],
+            "knowledge_memory": [{"memory_id": "k1"}, {"memory_id": "k2"}],
+            "artifact_lineage_memory": [{"memory_id": "a1"}],
+            "competence_records": [{"id": "c1"}, {"id": "c2"}, {"id": "c3"}],
+        },
+        "relevant_human_decisions": [{"id": "h1"}, {"id": "h2"}],
+        "evidence_refs": ["artifact:incident.json", "artifact:extra.json"],
+    }
+    compact, metrics = _fit_parent_context_to_executor_limit(
+        parent_context=parent,
+        executor_context_limit_chars=16000,
+        semantic_read_only=True,
+    )
+    assert len(compact["parent_handoffs"]) == 1
+    handoff = compact["parent_handoffs"][0]
+    assert "result" not in handoff
+    assert handoff["task_result_ref"].endswith("task-02-1.json")
+    assert handoff["content_sha256"] == "a" * 64
+    assert "REGISTRY_HEALTH_GATE" in handoff["result_summary"]
+    assert compact["transitive_dependency_refs"][0]["task_id"] == "task-01"
+    assert compact["relevant_memory"]["artifact_lineage_memory"] == []
+    assert metrics["SEMANTIC_CONTEXT_MODE"] == "REF_HASH_SUMMARY"
+    assert metrics["IRRELEVANT_CONTEXT_BYTES"] == 0
+    assert metrics["PARENT_CONTEXT_FINAL_CHARS"] < metrics["PARENT_CONTEXT_ORIGINAL_CHARS"]
+
+
+def test_structured_handoff_summary_prefers_submitted_evidence():
+    value = {
+        "output": (
+            'kanban_comment {"comment":"noise"}\n'
+            'br_harness_submit_evidence '
+            '{"evidence_refs":["artifact:e"],'
+            '"findings":{"root_cause":"CAUSE_A","failure_class":"CLASS_A"}}'
+        )
+    }
+    summary = _structured_handoff_summary(value)
+    assert "CAUSE_A" in summary
+    assert "CLASS_A" in summary
+    assert "kanban_comment" not in summary

@@ -70,8 +70,6 @@ jobs:
           PY
 
       - name: Focused real-execution contracts
-        env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py             tests/test_harness_executor_availability_service.py             tests/test_harness_collaboration_service.py             tests/test_addy_harness_service.py
@@ -103,12 +101,34 @@ jobs:
           echo "INCIDENT_SOURCE_ARTIFACT=$SOURCE_ARTIFACT"
           echo "REAL_INCIDENT_EVIDENCE_RESTORED=PASS"
 
+          read -r CHECKPOINT_RUN CHECKPOINT_ARTIFACT <<EOF
+          $(python - <<'PY'
+          import json
+          d=json.load(open(".run/real-agent-self-improvement.request.json"))
+          c=d.get("checkpoint_source") or {}
+          print(c.get("run_id") or "", c.get("artifact_name") or "")
+          PY
+          )
+          EOF
+          if [ -n "$CHECKPOINT_RUN" ] && [ -n "$CHECKPOINT_ARTIFACT" ]; then
+            checkpoint_root="runtime/real-agent-self-improvement/checkpoint-source"
+            mkdir -p "$checkpoint_root"
+            gh run download "$CHECKPOINT_RUN" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$CHECKPOINT_ARTIFACT" \
+              --dir "$checkpoint_root"
+            test -n "$(find "$checkpoint_root" -type f -print -quit)"
+            echo "NODE_CHECKPOINT_SOURCE_RUN=$CHECKPOINT_RUN"
+            echo "NODE_CHECKPOINT_SOURCE_ARTIFACT=$CHECKPOINT_ARTIFACT"
+            echo "NODE_CHECKPOINT_SOURCE_RESTORED=PASS"
+          fi
+
       - name: Execute real natural-goal self-improvement mission
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source
+          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source             --checkpoint-source-dir runtime/real-agent-self-improvement/checkpoint-source
 
       - name: Assert real self-improvement gates
         run: |
