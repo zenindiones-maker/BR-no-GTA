@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+import json
 import time
 from typing import Any, Callable
 
@@ -226,6 +227,7 @@ def select_harness_ai_provider(
     provider_name: str | None = None,
     authorization: HarnessAIProviderAuthorization,
     routing_decision: HarnessRoutingDecision | None = None,
+    structured_output_schema: dict[str, Any] | None = None,
 ) -> tuple[str, AIProvider]:
     """Construct exactly the AI provider selected by Harness routing/policy."""
     decision, resolved_authorization, normalized_provider = _resolve_routing(
@@ -239,9 +241,22 @@ def select_harness_ai_provider(
             decision.selected_provider_executor_binding or ""
         ):
             raise PermissionError("NVIDIA executor escaped registered Harness binding")
-        return normalized_provider, NvidiaNIMProvider(
-            model=decision.selected_model,
-        )
+        provider_kwargs: dict[str, Any] = {
+            "model": decision.selected_model,
+        }
+        if structured_output_schema is not None:
+            if not bool(
+                (decision.policy_metadata or {}).get(
+                    "structured_output_required"
+                )
+            ):
+                raise PermissionError(
+                    "structured output schema escaped Harness routing policy"
+                )
+            provider_kwargs["structured_output_schema"] = (
+                structured_output_schema
+            )
+        return normalized_provider, NvidiaNIMProvider(**provider_kwargs)
 
     if normalized_provider == "tuxevil":
         if "ai_provider_factory.create_ai_provider" not in (
@@ -284,6 +299,7 @@ def execute_harness_ai_generation(
     authorization: HarnessAIProviderAuthorization,
     provider_name: str | None = None,
     routing_decision: HarnessRoutingDecision | None = None,
+    structured_output_schema: dict[str, Any] | None = None,
     selector: Callable[..., tuple[str, AIProvider]] = select_harness_ai_provider,
 ) -> HarnessAIProviderEvidence:
     """Execute one routed provider and preserve structured observed evidence."""
@@ -301,6 +317,18 @@ def execute_harness_ai_generation(
         authorization=resolved_authorization,
         prompt=prompt,
     )
+    if structured_output_schema is not None:
+        schema_raw = json.dumps(
+            structured_output_schema,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        refs = (
+            *refs,
+            "structured-schema-sha256:"
+            + sha256(schema_raw).hexdigest(),
+        )
     model = decision.selected_model
     provider: AIProvider | None = None
 
@@ -313,6 +341,7 @@ def execute_harness_ai_generation(
                 provider_name=selector_provider_name,
                 authorization=resolved_authorization,
                 routing_decision=decision,
+                structured_output_schema=structured_output_schema,
             )
         else:
             normalized_provider, provider = selector(

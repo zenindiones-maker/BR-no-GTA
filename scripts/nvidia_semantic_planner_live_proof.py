@@ -194,6 +194,7 @@ def _execute_model(
     model_id: str,
     goal_id: str,
     prompt: str,
+    structured_output_schema: dict[str, Any],
 ) -> dict[str, Any]:
     routing = route_harness_request(
         HarnessRoutingRequest(
@@ -235,6 +236,7 @@ def _execute_model(
             prompt=prompt,
             authorization=authorization,
             routing_decision=routing,
+            structured_output_schema=structured_output_schema,
         )
     finally:
         consume_harness_authorization(authorization)
@@ -285,6 +287,15 @@ def _execute_model(
         if error.get("response_present") is None
         else bool(error.get("response_present")),
         "RAW_RESPONSE_BYTES": performance.get("raw_response_bytes"),
+        "STRUCTURED_OUTPUT_MODE": performance.get(
+            "structured_output_mode"
+        ),
+        "STRUCTURED_OUTPUT_SCHEMA_SHA256": performance.get(
+            "structured_output_schema_sha256"
+        ),
+        "THINKING_DISABLED_FOR_STRUCTURED_OUTPUT": performance.get(
+            "thinking_disabled_for_structured_output"
+        ),
         "RESPONSE_TEXT": response_text,
         "RESPONSE_BYTES": len(response_text.encode("utf-8")),
         "FINISH_REASON": result.get("finish_reason"),
@@ -391,16 +402,17 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             default=str,
         ).encode("utf-8")
     )
+    structured_output_schema = mission_plan_json_schema(
+        max_tasks=int(
+            (context.get("resource_bounds") or {}).get(
+                "max_tasks_per_mission"
+            )
+            or 8
+        )
+    )
     schema_bytes = len(
         json.dumps(
-            mission_plan_json_schema(
-                max_tasks=int(
-                    (context.get("resource_bounds") or {}).get(
-                        "max_tasks_per_mission"
-                    )
-                    or 8
-                )
-            ),
+            structured_output_schema,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -557,6 +569,7 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
                 model_id=item["model_id"],
                 goal_id=goal.goal_id,
                 prompt=prompt,
+                structured_output_schema=structured_output_schema,
             ): item
             for item in executable
         }

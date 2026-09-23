@@ -179,3 +179,51 @@ def test_generate_omits_max_tokens_when_not_configured(monkeypatch):
         provider.generate("unchanged default")
     body = json.loads(mocked.call_args.args[0].data.decode())
     assert "max_tokens" not in body
+
+
+def test_generate_enforces_harness_structured_output_schema():
+    schema = {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "maxItems": 2,
+                "items": {"type": "string"},
+            }
+        },
+        "required": ["items"],
+        "additionalProperties": False,
+    }
+    payload = {
+        "model": "nvidia/test-model",
+        "choices": [
+            {
+                "message": {"content": '{"items":["a"]}'},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 4,
+            "completion_tokens": 6,
+            "total_tokens": 10,
+        },
+    }
+    provider = NvidiaNIMProvider(
+        model="nvidia/test-model",
+        api_key="secret-value",
+        structured_output_schema=schema,
+    )
+    with patch(
+        "app.services.nvidia_nim_provider.request.urlopen",
+        return_value=FakeResponse(payload),
+    ) as mocked:
+        provider.generate("return bounded JSON")
+    body = json.loads(mocked.call_args.args[0].data.decode())
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["schema"] == schema
+    assert body["temperature"] == 0.0
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    safe = provider.safe_configuration()
+    assert safe["structured_output_schema_configured"] is True
+    assert len(safe["structured_output_schema_sha256"]) == 64
+    assert safe["thinking_disabled_for_structured_output"] is True

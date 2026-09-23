@@ -1034,6 +1034,9 @@ def route_harness_request(
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "unavailable_model_ids": list(request.unavailable_model_ids),
         "prefer_low_latency": bool(request.prefer_low_latency),
+        "structured_output_required": bool(
+            request.structured_output_required
+        ),
         "selected_implementation": {
             "type": capability.capability_type,
             "implementation": capability.implementation,

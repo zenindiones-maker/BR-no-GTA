@@ -829,10 +829,19 @@ def _live_inference(prompt: str, context: dict[str, Any]) -> tuple[str, dict[str
             },
         )
         try:
+            max_tasks = int(
+                (context.get("resource_bounds") or {}).get(
+                    "max_tasks_per_mission"
+                )
+                or 8
+            )
             return execute_harness_ai_generation(
                 prompt=prompt,
                 authorization=authorization,
                 routing_decision=routing,
+                structured_output_schema=mission_plan_json_schema(
+                    max_tasks=max_tasks
+                ),
             )
         finally:
             consume_harness_authorization(authorization)
