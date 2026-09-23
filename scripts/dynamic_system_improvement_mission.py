@@ -740,12 +740,22 @@ def _task_input_artifact_context(
             remaining = max(0, max_chars - used)
             if remaining > 0:
                 if len(rendered) > remaining:
-                    rendered = rendered[:remaining]
+                    # Keep the semantic excerpt readable while making its JSON
+                    # serialization cost predictable. The canonical artifact
+                    # itself remains referenced by immutable hash/ref.
+                    excerpt = re.sub(
+                        r'[\\"\x00-\x1f]+',
+                        " ",
+                        rendered,
+                    )
+                    excerpt = re.sub(r"\s+", " ", excerpt).strip()
+                    excerpt = excerpt[:remaining]
                     item["content_truncated"] = True
-                    item["content"] = rendered
+                    item["content_excerpt"] = excerpt
+                    used += len(excerpt)
                 else:
                     item["content"] = cached["content"]
-                used += min(len(rendered), remaining)
+                    used += len(rendered)
         rows.append(item)
     return rows, {
         "INPUT_ARTIFACT_CACHE_HIT_COUNT": hits,
@@ -754,14 +764,18 @@ def _task_input_artifact_context(
         "INPUT_ARTIFACT_CONTEXT_BYTES": sum(
             len(
                 json.dumps(
-                    item.get("content"),
+                    (
+                        item.get("content")
+                        if "content" in item
+                        else item.get("content_excerpt")
+                    ),
                     ensure_ascii=False,
                     separators=(",", ":"),
                     default=str,
                 ).encode("utf-8")
             )
             for item in rows
-            if "content" in item
+            if "content" in item or "content_excerpt" in item
         ),
         "DUPLICATE_INPUT_ARTIFACT_READ_COUNT": 0,
     }
@@ -987,23 +1001,65 @@ def run(
                     broker=broker,
                 )
                 base_context_chars = _context_char_size(parent_context)
-                artifact_content_budget_chars = _artifact_content_budget_chars(
-                    parent_context=parent_context,
-                    executor_context_limit_chars=executor_context_limit_chars,
-                )
-                input_artifacts, input_metrics = _task_input_artifact_context(
-                    task=task,
-                    artifact_dir=artifact_dir,
-                    cache=holder["input_artifact_cache"],
-                    include_content=not bool(task.dependencies),
-                    max_chars=artifact_content_budget_chars,
-                )
-                holder["input_artifact_cache_hits"] += int(
-                    input_metrics["INPUT_ARTIFACT_CACHE_HIT_COUNT"]
+                metadata_artifacts, metadata_metrics = (
+                    _task_input_artifact_context(
+                        task=task,
+                        artifact_dir=artifact_dir,
+                        cache=holder["input_artifact_cache"],
+                        include_content=False,
+                        max_chars=0,
+                    )
                 )
                 holder["input_artifact_reads"] += int(
-                    input_metrics["INPUT_ARTIFACT_READ_COUNT"]
+                    metadata_metrics["INPUT_ARTIFACT_READ_COUNT"]
                 )
+                input_artifacts = metadata_artifacts
+                input_metrics = metadata_metrics
+                if metadata_artifacts and not bool(task.dependencies):
+                    metadata_context = dict(parent_context)
+                    metadata_context["input_artifacts"] = metadata_artifacts
+                    metadata_context["evidence_refs"] = list(dict.fromkeys([
+                        *list(metadata_context.get("evidence_refs") or ()),
+                        *[
+                            str(item.get("artifact_ref") or "")
+                            for item in metadata_artifacts
+                            if str(item.get("artifact_ref") or "").strip()
+                        ],
+                    ]))
+                    artifact_content_budget_chars = (
+                        _artifact_content_budget_chars(
+                            parent_context=metadata_context,
+                            executor_context_limit_chars=(
+                                executor_context_limit_chars
+                            ),
+                            reserve_chars=192,
+                        )
+                    )
+                    input_artifacts, content_metrics = (
+                        _task_input_artifact_context(
+                            task=task,
+                            artifact_dir=artifact_dir,
+                            cache=holder["input_artifact_cache"],
+                            include_content=True,
+                            max_chars=artifact_content_budget_chars,
+                        )
+                    )
+                    holder["input_artifact_cache_hits"] += int(
+                        content_metrics["INPUT_ARTIFACT_CACHE_HIT_COUNT"]
+                    )
+                    input_metrics = {
+                        **metadata_metrics,
+                        **content_metrics,
+                        "INPUT_ARTIFACT_READ_COUNT": int(
+                            metadata_metrics["INPUT_ARTIFACT_READ_COUNT"]
+                        ),
+                        "INPUT_ARTIFACT_CACHE_HIT_COUNT": int(
+                            content_metrics["INPUT_ARTIFACT_CACHE_HIT_COUNT"]
+                        ),
+                        "ARTIFACT_CONTENT_BUDGET_CHARS": (
+                            artifact_content_budget_chars
+                        ),
+                    }
                 if input_artifacts:
                     parent_context["input_artifacts"] = input_artifacts
                     parent_context["evidence_refs"] = list(dict.fromkeys([

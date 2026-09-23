@@ -184,19 +184,30 @@ def test_executor_declared_context_limit_bounds_incident_artifact(tmp_path):
         "evidence_refs": ["artifact:incident-evidence-packet.json"],
         "input_refs": ["artifact:incident-evidence-packet.json"],
     }
-    budget = _artifact_content_budget_chars(
-        parent_context=parent_context,
-        executor_context_limit_chars=limit,
-    )
-    assert 0 < budget < limit
-
     packet = tmp_path / "incident-evidence-packet.json"
     packet.write_text(
         '{"evidence":"' + ("x" * 50000) + '"}',
         encoding="utf-8",
     )
     cache = {}
-    artifacts, metrics = _task_input_artifact_context(
+    metadata, first = _task_input_artifact_context(
+        task=task,
+        artifact_dir=tmp_path,
+        cache=cache,
+        include_content=False,
+        max_chars=0,
+    )
+    parent_context["input_artifacts"] = metadata
+    metadata_size = _context_char_size(parent_context)
+    budget = _artifact_content_budget_chars(
+        parent_context=parent_context,
+        executor_context_limit_chars=limit,
+        reserve_chars=192,
+    )
+    assert metadata_size < limit
+    assert 0 < budget < limit
+
+    artifacts, second = _task_input_artifact_context(
         task=task,
         artifact_dir=tmp_path,
         cache=cache,
@@ -204,11 +215,13 @@ def test_executor_declared_context_limit_bounds_incident_artifact(tmp_path):
         max_chars=budget,
     )
     parent_context["input_artifacts"] = artifacts
-    parent_context["input_artifact_metrics"] = metrics
 
-    assert metrics["INPUT_ARTIFACT_READ_COUNT"] == 1
-    assert metrics["DUPLICATE_INPUT_ARTIFACT_READ_COUNT"] == 0
+    assert first["INPUT_ARTIFACT_READ_COUNT"] == 1
+    assert second["INPUT_ARTIFACT_READ_COUNT"] == 0
+    assert second["INPUT_ARTIFACT_CACHE_HIT_COUNT"] == 1
+    assert second["DUPLICATE_INPUT_ARTIFACT_READ_COUNT"] == 0
     assert artifacts[0]["content_truncated"] is True
+    assert "content_excerpt" in artifacts[0]
     assert _context_char_size(parent_context) <= limit
 
 
@@ -237,3 +250,60 @@ def test_incident_artifact_cache_avoids_duplicate_materialization(tmp_path):
     assert second["INPUT_ARTIFACT_READ_COUNT"] == 0
     assert second["INPUT_ARTIFACT_CACHE_HIT_COUNT"] == 1
     assert second["DUPLICATE_INPUT_ARTIFACT_READ_COUNT"] == 0
+
+
+
+def test_artifact_metadata_overhead_is_counted_before_excerpt_budget(tmp_path):
+    task = _addy_task()
+    limit = 16000
+    packet = tmp_path / "incident-evidence-packet.json"
+    packet.write_text(
+        '{"raw_text_files":[{"path":"log.txt","content":"'
+        + ("evidence line " * 5000)
+        + '"}]}',
+        encoding="utf-8",
+    )
+    parent_context = {
+        "mission_id": "m" * 200,
+        "task_id": task.task_id,
+        "goal_id": "g" * 200,
+        "task": {
+            "objective": "diagnose " * 300,
+            "capability_id": task.capability_id,
+        },
+        "relevant_memory": {
+            "operational_memory": [],
+            "knowledge_memory": [],
+            "artifact_lineage_memory": [],
+            "competence_records": [],
+        },
+        "relevant_human_decisions": [],
+        "evidence_refs": ["artifact:incident-evidence-packet.json"],
+        "input_refs": ["artifact:incident-evidence-packet.json"],
+    }
+    cache = {}
+    metadata, first = _task_input_artifact_context(
+        task=task,
+        artifact_dir=tmp_path,
+        cache=cache,
+        include_content=False,
+        max_chars=0,
+    )
+    parent_context["input_artifacts"] = metadata
+    budget = _artifact_content_budget_chars(
+        parent_context=parent_context,
+        executor_context_limit_chars=limit,
+        reserve_chars=192,
+    )
+    artifacts, second = _task_input_artifact_context(
+        task=task,
+        artifact_dir=tmp_path,
+        cache=cache,
+        include_content=True,
+        max_chars=budget,
+    )
+    parent_context["input_artifacts"] = artifacts
+
+    assert first["INPUT_ARTIFACT_READ_COUNT"] == 1
+    assert second["INPUT_ARTIFACT_READ_COUNT"] == 0
+    assert _context_char_size(parent_context) <= limit
