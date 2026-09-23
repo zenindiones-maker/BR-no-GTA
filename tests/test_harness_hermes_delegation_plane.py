@@ -271,7 +271,7 @@ def test_hermes_profiles_are_task_scoped_when_one_specialist_owns_multiple_tasks
     tasks = [
         TaskEnvelope(
             task_id="inspect-one",
-            capability_id="agent-office.deterministic.readonly-analysis",
+            capability_id="agent-office.deterministic-analysis",
             action="DEVELOPMENT",
             objective="Inspect first bounded architecture concern",
             task_class="system-root-cause-analysis",
@@ -281,7 +281,7 @@ def test_hermes_profiles_are_task_scoped_when_one_specialist_owns_multiple_tasks
         ),
         TaskEnvelope(
             task_id="inspect-two",
-            capability_id="agent-office.deterministic.readonly-analysis",
+            capability_id="agent-office.deterministic-analysis",
             action="DEVELOPMENT",
             objective="Inspect second bounded architecture concern",
             task_class="system-root-cause-analysis",
@@ -356,7 +356,7 @@ def test_selector_excludes_blocked_health_and_records_health_evidence(monkeypatc
         "agent-office.codex.readonly-analysis"
     )
     alternate = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     assert primary is not None and alternate is not None
 
@@ -418,7 +418,7 @@ def test_task_selection_skips_registry_executor_incompatible_with_capability_ada
 ):
     incompatible = GLOBAL_CAPABILITY_REGISTRY.get("executor.omniroute-gateway")
     compatible = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     assert incompatible is not None and compatible is not None
     assert incompatible.execution_enabled is True
@@ -487,7 +487,7 @@ def test_task_selection_skips_registry_executor_incompatible_with_capability_ada
 
 def test_mutating_requirement_rejects_readonly_profiler(monkeypatch):
     profiler = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     assert profiler is not None
 
@@ -533,7 +533,7 @@ def test_mutating_requirement_rejects_readonly_profiler(monkeypatch):
 
 def test_readonly_requirement_rejects_mutating_executor(monkeypatch):
     profiler = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     mutator = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
@@ -950,7 +950,7 @@ def test_semantic_registry_mismatch_replans_to_harness_selected_capability(
                 "task_class": "readonly-analysis",
                 "required_capability_description": "",
                 "candidate_capability_ids": [
-                    "agent-office.deterministic.readonly-analysis"
+                    "agent-office.deterministic-analysis"
                 ],
                 "dependencies": [],
                 "expected_output": "analysis evidence",
@@ -992,7 +992,7 @@ def test_semantic_registry_mismatch_replans_to_harness_selected_capability(
         if task.candidate_capability_ids:
             return (
                 "observe: action RESEARCH not allowed by "
-                "agent-office.deterministic.readonly-analysis",
+                "agent-office.deterministic-analysis",
             )
         return ()
 
@@ -1030,7 +1030,7 @@ def test_final_replan_discards_registered_incompatible_hint_and_preserves_harnes
                 "task_class": "readonly-analysis",
                 "required_capability_description": "",
                 "candidate_capability_ids": [
-                    "agent-office.deterministic.readonly-analysis"
+                    "agent-office.deterministic-analysis"
                 ],
                 "dependencies": [],
                 "expected_output": "analysis evidence",
@@ -1059,7 +1059,7 @@ def test_final_replan_discards_registered_incompatible_hint_and_preserves_harnes
         if task.candidate_capability_ids:
             return (
                 "analyze-repo: action RESEARCH not allowed by "
-                "agent-office.deterministic.readonly-analysis",
+                "agent-office.deterministic-analysis",
             )
         return ()
 
@@ -1078,7 +1078,7 @@ def test_final_replan_discards_registered_incompatible_hint_and_preserves_harnes
     assert task.candidate_capability_ids == ()
     assert task.required_capability_description == task.objective
     assert evidence["candidate_hints_discarded"] == [
-        "analyze-repo:agent-office.deterministic.readonly-analysis"
+        "analyze-repo:agent-office.deterministic-analysis"
     ]
     assert evidence["planner_authority"] == "NONE"
     assert evidence["selection_authority"] == "DEEPSEEK_HARNESS"
@@ -1130,7 +1130,7 @@ def test_bounded_development_rejects_readonly_candidate_before_handoff(
     monkeypatch,
 ):
     profiler = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     bounded = GLOBAL_CAPABILITY_REGISTRY.get(
         "agent-office.codex.bounded-development"
@@ -1264,7 +1264,7 @@ def test_selector_excludes_execution_topology_from_task_capability(monkeypatch):
     office = GLOBAL_CAPABILITY_REGISTRY.get("agent-office.execute")
     hermes = GLOBAL_CAPABILITY_REGISTRY.get("collaboration.hermes.execute")
     profiler = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     assert office is not None and hermes is not None and profiler is not None
 
@@ -1392,7 +1392,7 @@ def test_deterministic_agent_office_profiler_emits_real_repository_metrics(tmp_p
     task = AgentOfficeTask.from_mapping({
         "task_id": "profile-repo",
         "agent": "deterministic-analysis",
-        "capability": "agent-office.deterministic.readonly-analysis",
+        "capability": "agent-office.deterministic-analysis",
         "action": "analyze",
         "objective": "profile repository concentration",
         "allowed_tools": ["git"],
@@ -1457,7 +1457,7 @@ def test_capability_adapter_rejects_failed_capability_evidence(
     monkeypatch,
 ):
     record = GLOBAL_CAPABILITY_REGISTRY.get(
-        "agent-office.deterministic.readonly-analysis"
+        "agent-office.deterministic-analysis"
     )
     assert record is not None
 

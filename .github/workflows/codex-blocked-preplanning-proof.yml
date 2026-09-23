@@ -12,6 +12,7 @@ on:
       - "scripts/codex_auth_control_preflight.py"
       - "scripts/codex_blocked_preplanning_proof.py"
       - "tests/test_harness_executor_availability_service.py"
+      - "tests/test_harness_hermes_delegation_plane.py"
       - "tests/test_capability_health_service.py"
       - ".github/workflows/codex-blocked-preplanning-proof.yml"
   workflow_dispatch:
