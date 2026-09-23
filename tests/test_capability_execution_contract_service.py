@@ -6,8 +6,11 @@ from app.services.capability_execution_contract_service import (
     CAN_RUN_BENCHMARK,
     CAN_SEMANTIC_REASONING,
     CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
     derive_required_operations,
+    effective_candidate_requirement,
+    effective_side_effect_class,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 
@@ -107,3 +110,61 @@ def test_system_improvement_proposal_has_explicit_semantic_execution_contract():
     assert CAN_SEMANTIC_REASONING in record.execution_operations
     assert CAN_CONSUME_ARTIFACT_REFS in record.execution_operations
     assert CAN_PRODUCE_ARTIFACT_REFS in record.execution_operations
+
+
+
+def test_semantic_medium_risk_cannot_escalate_readonly_profile_to_mutation():
+    requirement = _req(
+        "instrument-planner",
+        "profiling-report",
+        objective=(
+            "Profile semantic planner execution to locate redundant context, "
+            "duplicate calls, and serial bottlenecks"
+        ),
+    )
+    requirement["risk_side_effect_class"] = "MEDIUM"
+    ops = derive_required_operations(requirement)
+    assert CAN_READ_REPOSITORY in ops
+    assert CAN_WRITE_REPOSITORY not in ops
+    assert CAN_MUTATE_CANDIDATE not in ops
+    assert effective_candidate_requirement("REQUIRED", ops) == "NOT_APPLICABLE"
+    assert effective_side_effect_class("MEDIUM", ops) == "READ_ONLY"
+
+
+def test_hyphenated_candidate_output_requires_real_mutation_contract():
+    requirement = _req(
+        "create-candidate",
+        "candidate-patch",
+        deps=("instrument-planner",),
+        objective=(
+            "Implement minimal isolated candidate addressing the identified "
+            "bottleneck"
+        ),
+    )
+    requirement["risk_side_effect_class"] = "MEDIUM"
+    ops = derive_required_operations(requirement)
+    assert CAN_READ_REPOSITORY in ops
+    assert CAN_WRITE_REPOSITORY in ops
+    assert CAN_MUTATE_CANDIDATE in ops
+    assert CAN_RUN_TESTS in ops
+    assert effective_candidate_requirement("CONDITIONAL", ops) == "CONDITIONAL"
+    assert effective_side_effect_class("MEDIUM", ops) == "BOUNDED_MUTATION"
+
+
+def test_benchmark_semantic_medium_risk_remains_readonly_execution():
+    requirement = _req(
+        "validate-candidate",
+        "validation-report",
+        deps=("create-candidate",),
+        objective=(
+            "Benchmark candidate vs 14105.371 ms baseline; verify no "
+            "quality safety evidence regression"
+        ),
+    )
+    requirement["risk_side_effect_class"] = "MEDIUM"
+    ops = derive_required_operations(requirement)
+    assert CAN_RUN_BENCHMARK in ops
+    assert CAN_WRITE_REPOSITORY not in ops
+    assert CAN_MUTATE_CANDIDATE not in ops
+    assert effective_candidate_requirement("CONDITIONAL", ops) == "NOT_APPLICABLE"
+    assert effective_side_effect_class("MEDIUM", ops) == "READ_ONLY"

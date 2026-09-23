@@ -37,14 +37,30 @@ def _blob(requirement: dict[str, Any]) -> str:
 
 def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
     text = _blob(requirement)
+    normalized_text = text.replace("-", " ").replace("_", " ")
     operations: set[str] = {CAN_PRODUCE_ARTIFACT_REFS}
     dependencies = tuple(requirement.get("dependencies") or ())
     if dependencies:
         operations.add(CAN_CONSUME_ARTIFACT_REFS)
 
     candidate_markers = (
-        "candidate patch", "candidate diff", "patch/diff", "local candidate",
-        "candidate commit", "implement candidate", "code candidate",
+        "candidate patch",
+        "candidate diff",
+        "patch diff",
+        "local candidate",
+        "candidate commit",
+        "code candidate",
+    )
+    candidate_action_markers = (
+        "implement",
+        "create",
+        "build",
+        "produce",
+        "apply",
+        "write",
+        "modify",
+        "change",
+        "fix",
     )
     benchmark_markers = (
         "benchmark", "baseline_ms", "candidate_ms", "wall clock",
@@ -63,7 +79,17 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
         "causal", "propose",
     )
 
-    if any(marker in text for marker in candidate_markers):
+    candidate_mutation = (
+        any(marker in normalized_text for marker in candidate_markers)
+        or (
+            "candidate" in normalized_text
+            and any(
+                marker in normalized_text
+                for marker in candidate_action_markers
+            )
+        )
+    )
+    if candidate_mutation:
         operations.update({
             CAN_READ_REPOSITORY,
             CAN_WRITE_REPOSITORY,
@@ -101,17 +127,27 @@ def effective_candidate_requirement(
     declared: str,
     required_operations: tuple[str, ...] | list[str],
 ) -> str:
-    if CAN_MUTATE_CANDIDATE in set(required_operations):
-        return "REQUIRED"
-    return str(declared or "NOT_APPLICABLE").strip().upper()
+    operations = set(required_operations)
+    if CAN_MUTATE_CANDIDATE in operations:
+        normalized = str(declared or "REQUIRED").strip().upper()
+        return (
+            normalized
+            if normalized in {"REQUIRED", "CONDITIONAL"}
+            else "REQUIRED"
+        )
+    return "NOT_APPLICABLE"
 
 def effective_side_effect_class(
     declared: str,
     required_operations: tuple[str, ...] | list[str],
 ) -> str:
-    if CAN_MUTATE_CANDIDATE in set(required_operations):
+    operations = set(required_operations)
+    if (
+        CAN_MUTATE_CANDIDATE in operations
+        or CAN_WRITE_REPOSITORY in operations
+    ):
         return "BOUNDED_MUTATION"
-    return str(declared or "READ_ONLY").strip().upper()
+    return "READ_ONLY"
 
 def capability_execution_contract_rejection(
     record: Any,
