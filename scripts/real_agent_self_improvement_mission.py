@@ -275,6 +275,29 @@ def marker_from_rows(rows, key: str):
             return match.group(1).strip()
     return None
 
+def _is_independent_review_task(item: dict) -> bool:
+    operations = {
+        str(value).strip()
+        for value in (item.get("required_operations") or ())
+        if str(value).strip()
+    }
+    expected_output = str(item.get("expected_output") or "").strip().upper()
+    task_id = str(item.get("task_id") or "").strip().casefold()
+    semantic_text = " ".join(
+        str(item.get(key) or "").strip().casefold()
+        for key in ("task_class", "objective", "required_capability_description")
+    )
+    return bool(
+        CAN_REVIEW in operations
+        and (
+            "review" in semantic_text
+            or "revis" in semantic_text
+            or "independent-review" in task_id
+            or "INDEPENDENT_REVIEW" in expected_output
+        )
+    )
+
+
 def plan_once(
     goal_id,
     out,
@@ -772,8 +795,7 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
     review_tasks = [
         item
         for item in tasks(first)
-        if "independent-review" in str(item.get("task_class") or "").casefold()
-        or "independent review" in str(item.get("objective") or "").casefold()
+        if _is_independent_review_task(item)
     ]
     if not review_tasks:
         raise RuntimeError("INDEPENDENT_REVIEW_TASK_MISSING")

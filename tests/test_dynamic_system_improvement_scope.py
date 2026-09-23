@@ -6,6 +6,9 @@ from app.services.harness_collaboration_service import TaskEnvelope
 from app.services.harness_capability_adapter import CapabilityAdapter
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services import harness_adaptive_planning_service as adaptive_planning
+from scripts.real_agent_self_improvement_mission import (
+    _is_independent_review_task,
+)
 from scripts.dynamic_system_improvement_mission import (
     _artifact_content_budget_chars,
     _context_char_size,
@@ -383,3 +386,25 @@ def test_real_incident_semantics_rank_debugging_above_api_design(monkeypatch):
         or item["score"] < evidence["top_candidates"][0]["score"]
         for item in evidence["top_candidates"]
     )
+
+
+
+def test_independent_review_detector_uses_contract_not_english_wording():
+    task = {
+        "task_id": "independent-review",
+        "task_class": "review",
+        "objective": (
+            "Revisão independente do diagnóstico, root cause e recovery proposal"
+        ),
+        "required_capability_description": (
+            "Revisão independente por capability de code-review"
+        ),
+        "expected_output": "INDEPENDENT_REVIEW_ARTIFACT",
+        "required_operations": [
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+            "CAN_SEMANTIC_REASONING",
+            "CAN_REVIEW",
+        ],
+    }
+    assert _is_independent_review_task(task) is True
