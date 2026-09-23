@@ -16,8 +16,8 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 8,
-  "trigger_head": "2cbd2ac1b8e4ea69f5f79ebf640c4ab5aa788de0",
+  "attempt": 9,
+  "trigger_head": "7696259951016820dd47d0569dd132065a5f5924",
   "preflight_only": false,
   "generation_options": {
     "max_tokens": 4096,
@@ -30,5 +30,11 @@
       "deadline_unchanged_ms": 54000
     }
   },
-  "measurement_goal": "prove bounded semantic generation after observed 2048-token truncation"
+  "measurement_goal": "prove Harness-governed NVIDIA json_schema semantic output with thinking disabled",
+  "structured_output_contract": {
+    "mode": "json_schema",
+    "authority": "DEEPSEEK_HARNESS",
+    "schema_source": "mission_plan_json_schema",
+    "disable_thinking": true
+  }
 }
