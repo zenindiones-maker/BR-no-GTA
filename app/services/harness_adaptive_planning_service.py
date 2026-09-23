@@ -1419,6 +1419,10 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
         )
     ):
         return "EDITORIAL"
+    if task_class == "independent-review" or task_class.startswith(
+        "independent-review-"
+    ):
+        return "DEVELOPMENT"
     if "review" in task_class and any(
         marker in text
         for marker in (

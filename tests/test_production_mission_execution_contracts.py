@@ -356,12 +356,12 @@ def test_system_incident_independent_review_normalizes_to_development():
             MissionTaskProposal(
                 task_id="independent-review",
                 objective=(
-                    "Independently review the provider runtime failure diagnosis, "
-                    "authorization/routing evidence and proposed recovery."
+                    "Independently review the diagnosis and proposed recovery "
+                    "using the supplied evidence artifact."
                 ),
                 task_class="independent-review",
                 required_capability_description=(
-                    "independent review of provider runtime recovery evidence"
+                    "independent review over supplied evidence"
                 ),
                 candidate_capability_ids=(),
                 dependencies=("recovery-proposal",),
