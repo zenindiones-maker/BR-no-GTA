@@ -7,7 +7,11 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
-from scripts.audit_harness_ecosystem import _worker_runner_identity
+from scripts.audit_harness_ecosystem import (
+    _worker_runner_identity,
+    canonical_worker_engine_ids,
+)
+from app.services.agent_office.munder_adapter import registered_worker_runners
 
 
 def _resolve(binding: str):
@@ -70,7 +74,10 @@ def test_worker_engine_classification_counts_physical_engines_not_runner_aliases
         "WORKER_ENGINE",
         "deterministic-analysis",
     )
-    assert _worker_runner_identity("codex") == ("WORKER_ENGINE", "codex")
+    assert _worker_runner_identity("codex-readonly") == (
+        "WORKER_ENGINE",
+        "codex-readonly",
+    )
     assert _worker_runner_identity("codex-development") == (
         "WORKER_ENGINE",
         "codex",
@@ -79,21 +86,15 @@ def test_worker_engine_classification_counts_physical_engines_not_runner_aliases
         "AGENT",
         "addy-agent-skills",
     )
-    assert _worker_runner_identity("nvidia_nim") == (
-        "WORKER_ENGINE",
-        "nvidia_nim",
-    )
-    registered_runner_ids = {
+    registered_runner_ids = set(registered_worker_runners())
+    assert registered_runner_ids == {
         "deterministic-analysis",
-        "codex",
+        "codex-readonly",
         "codex-development",
         "addy-specialist",
     }
-    physical_worker_ids = {
-        identity
-        for runner_id in registered_runner_ids
-        for kind, identity in [_worker_runner_identity(runner_id)]
-        if kind == "WORKER_ENGINE"
-    }
-    assert physical_worker_ids == {"codex", "deterministic-analysis"}
-    assert "nvidia_nim" not in registered_runner_ids
+    assert canonical_worker_engine_ids() == (
+        "codex",
+        "codex-readonly",
+        "deterministic-analysis",
+    )

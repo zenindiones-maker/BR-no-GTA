@@ -81,7 +81,10 @@ jobs:
           assert len(d['HIGGSFIELD_SKILL_IDS'])==4
           assert d['TOTAL_AGENTS_FOUND'] >= 17
           assert d['TOTAL_SKILLS_FOUND'] >= 35
-          assert d['TOTAL_WORKER_ENGINES_FOUND'] == 2
+          assert d['EXPECTED_WORKER_ENGINE_IDS'] == d['ACTUAL_WORKER_ENGINE_IDS']
+          assert d['MISSING_WORKER_ENGINES'] == []
+          assert d['UNEXPECTED_WORKER_ENGINES'] == []
+          assert d['WORKER_ENGINE_INVENTORY_ALIGNMENT'] is True
           assert d['NATIVE_HARNESS_DECLARED_AGENT_COUNT'] == 1
           assert d['NATIVE_HARNESS_DECLARED_AGENT_IDS'] == ['gta6-master']
           assert d['NATIVE_HARNESS_SEMANTIC_EXECUTION_PROVEN'] is False
@@ -101,7 +104,11 @@ jobs:
           print('AGENT_INVENTORY_COMPLETE=PASS')
           print('ADDY_24_INVENTORIED=PASS')
           print('HIGGSFIELD_4_INVENTORIED=PASS')
-          print('AGENT_OFFICE_WORKER_ENGINES=2')
+          print('EXPECTED_WORKER_ENGINE_IDS=' + ','.join(d['EXPECTED_WORKER_ENGINE_IDS']))
+          print('ACTUAL_WORKER_ENGINE_IDS=' + ','.join(d['ACTUAL_WORKER_ENGINE_IDS']))
+          print('UNEXPECTED_WORKER_ENGINES=[]')
+          print('MISSING_WORKER_ENGINES=[]')
+          print('WORKER_ENGINE_INVENTORY_ALIGNMENT=PASS')
           print('NATIVE_HARNESS_DECLARED_AGENT=gta6-master')
           print('NATIVE_HARNESS_SEMANTIC_TURN=PENDING')
           print('ACTIVE_CAPABILITY_ROUTING=PASS')

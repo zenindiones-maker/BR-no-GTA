@@ -1,0 +1,83 @@
+name: Swarm Handoff Replay Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "scripts/swarm_handoff_replay_proof.py"
+      - "app/services/task_result_envelope_service.py"
+      - "app/services/task_dependency_precondition_service.py"
+      - "app/services/capability_execution_contract_service.py"
+      - "app/services/hermes_multiagent/capability_broker.py"
+      - "tests/test_task_result_envelope_service.py"
+      - "tests/test_task_dependency_precondition_service.py"
+      - "tests/test_capability_execution_contract_service.py"
+      - ".github/workflows/swarm-handoff-replay-proof.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+      BR_TEST_DATABASE: /tmp/br-swarm-handoff-replay.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install focused runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Download real legacy child artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/handoff-replay/source
+          gh run download 35814819125 \
+            -R "${{ github.repository }}" \
+            -n dynamic-system-improvement-35814819125 \
+            -D runtime/handoff-replay/source
+          test -f runtime/handoff-replay/source/capability-results/instrument-baseline-1.json
+          test -f runtime/handoff-replay/source/capability-results/analyze-root-cause-1.json
+          test -f runtime/handoff-replay/source/capability-results/design-candidate-1.json
+          test -f runtime/handoff-replay/source/capability-results/independent-review-1.json
+
+      - name: Replay typed task-result handoff without provider calls
+        run: |
+          set -euo pipefail
+          python scripts/swarm_handoff_replay_proof.py \
+            --legacy-artifact-dir runtime/handoff-replay/source \
+            --output runtime/handoff-replay/handoff-proof.json
+
+      - name: Run focused handoff contract gates
+        run: |
+          set -euo pipefail
+          pytest -q \
+            tests/test_task_result_envelope_service.py \
+            tests/test_task_dependency_precondition_service.py \
+            tests/test_capability_execution_contract_service.py
+
+      - name: Upload replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-handoff-replay-${{ github.run_id }}
+          path: runtime/handoff-replay/
+          if-no-files-found: error
+          retention-days: 30

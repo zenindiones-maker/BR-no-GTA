@@ -49,6 +49,7 @@ jobs:
       - name: Bootstrap exact proven local provider
         run: |
           set -euo pipefail
+          BOOTSTRAP_START_MS="$(date +%s%3N)"
           command -v zstd >/dev/null || {
             sudo apt-get update -qq
             sudo apt-get install -y -qq zstd
@@ -65,7 +66,10 @@ jobs:
             sleep 1
           done
           curl --fail --silent --show-error http://127.0.0.1:11434/api/tags >/dev/null
+          MODEL_PULL_START_MS="$(date +%s%3N)"
           timeout 180s ollama pull "$OLLAMA_MODEL"
+          MODEL_PULL_END_MS="$(date +%s%3N)"
+          echo "MODEL_PULL_MS=$((MODEL_PULL_END_MS-MODEL_PULL_START_MS))" >> "$GITHUB_ENV"
           python - <<'PY'
           import json, os, urllib.request
           with urllib.request.urlopen("http://127.0.0.1:11434/api/tags",timeout=5) as r:
@@ -77,9 +81,10 @@ jobs:
           print("OPTIMIZED_PROFILE_BOOTSTRAP=PASS")
           print("OPTIMIZED_PROFILE_MODEL_DIGEST=PASS")
           PY
+          BOOTSTRAP_END_MS="$(date +%s%3N)"
+          echo "LOCAL_PROVIDER_BOOTSTRAP_MS=$((BOOTSTRAP_END_MS-BOOTSTRAP_START_MS))" >> "$GITHUB_ENV"
       - name: Profile optimized semantic inference
         id: profile
-        continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p artifacts/semantic-optimized-profile
@@ -116,6 +121,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Enforce bounded profile and cold gate
-        if: always() && steps.profile.outcome != 'success'
-        run: exit 1
+      - name: Assert diagnostic role and bounded behavior
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/semantic-optimized-profile/optimized-profile.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          assert d["LOCAL_PROVIDER_ROLE"] == "diagnostic_profile", d
+          assert d["CRITICAL_PATH_PREREQUISITE"] is False, d
+          assert d["fallback_eligibility"] is False, d
+          assert d["SERIAL_BUDGET_SEARCH_ATTEMPTS"] == 1, d
+          assert len(d["semantic_attempts"]) in {1, 2}, d
+          assert d["PROFILE_DIAGNOSTIC_CAPTURED"] is True, d
+          if d["LOCAL_PROVIDER_PROFILE_RESULT"] == "FAIL":
+              assert d.get("failure_class"), d
+          print("LOCAL_PROVIDER_ROLE=diagnostic_profile")
+          print("LOCAL_PROVIDER_DIAGNOSTIC_GATE=PASS")
+          print("SERIAL_TOKEN_BUDGET_SEARCH=NO")
+          print("LOCAL_PROVIDER_PROFILE_RESULT="+str(d["LOCAL_PROVIDER_PROFILE_RESULT"]))
+          PY

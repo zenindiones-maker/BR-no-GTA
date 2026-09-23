@@ -325,6 +325,17 @@ def _worker_runner_identity(worker_id: str) -> tuple[str, str]:
     return "WORKER_ENGINE", normalized
 
 
+def canonical_worker_engine_ids() -> tuple[str, ...]:
+    """Derive the physical worker-engine set from the registered runner source of truth."""
+    identities = {
+        identity
+        for worker_id in registered_worker_runners()
+        for kind, identity in (_worker_runner_identity(worker_id),)
+        if kind == "WORKER_ENGINE"
+    }
+    return tuple(sorted(identities))
+
+
 def _identity_inventory(capabilities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     identities: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -596,6 +607,9 @@ def audit() -> dict[str, Any]:
         for row in identities
         if row["IDENTITY_KIND"] == "WORKER_ENGINE"
     }
+    expected_worker_ids = set(canonical_worker_engine_ids())
+    missing_worker_ids = sorted(expected_worker_ids - worker_ids)
+    unexpected_worker_ids = sorted(worker_ids - expected_worker_ids)
     addy_ids = set(ADDY_SKILLS)
     higgsfield_ids = {
         record.capability_id
@@ -652,6 +666,13 @@ def audit() -> dict[str, Any]:
         "TOTAL_AGENTS_FOUND": len(agent_ids),
         "TOTAL_SKILLS_FOUND": len(skill_ids),
         "TOTAL_WORKER_ENGINES_FOUND": len(worker_ids),
+        "EXPECTED_WORKER_ENGINE_IDS": sorted(expected_worker_ids),
+        "ACTUAL_WORKER_ENGINE_IDS": sorted(worker_ids),
+        "MISSING_WORKER_ENGINES": missing_worker_ids,
+        "UNEXPECTED_WORKER_ENGINES": unexpected_worker_ids,
+        "WORKER_ENGINE_INVENTORY_ALIGNMENT": (
+            not missing_worker_ids and not unexpected_worker_ids
+        ),
         "NATIVE_HARNESS_DECLARED_AGENT_COUNT": len(_dsh_declared_agents()),
         "NATIVE_HARNESS_DECLARED_AGENT_IDS": sorted(item["agent_id"] for item in _dsh_declared_agents()),
         "NATIVE_HARNESS_AGENT_RUNTIME": "DSH_AGENT_LOOP_DECLARATIVE",
