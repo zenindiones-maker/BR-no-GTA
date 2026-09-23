@@ -23,7 +23,7 @@ WORKFLOW = "dynamic-system-improvement.yml"
 CAPABILITY_ID = "system.improvement.propose"
 
 
-def _runner(*, repository: str, expected_title: str):
+def _runner(*, repository: str, expected_title: str, branch: str):
     def run(command) -> str:
         subprocess.run(
             list(command),
@@ -34,7 +34,7 @@ def _runner(*, repository: str, expected_title: str):
         )
         query = [
             "gh", "run", "list", "--repo", repository,
-            "--workflow", WORKFLOW, "--branch", "main",
+            "--workflow", WORKFLOW, "--branch", branch,
             "--event", "workflow_dispatch", "--limit", "30",
             "--json", "databaseId,url,displayTitle,createdAt",
         ]
@@ -144,7 +144,7 @@ def dispatch_telegram_system_improvement_mission(
         dispatched = dispatcher.dispatch(
             repository=repository,
             workflow=WORKFLOW,
-            ref="main",
+            ref=target_ref,
             inputs={
                 "dispatch_id": dispatch_id,
                 "target_ref": target_ref,

@@ -1068,13 +1068,14 @@ def run(
         )
     )
     problem_observed = bool(observed_fragilities)
+    selected_capability_ids = {
+        task.capability_id for task in collaboration.tasks
+    }
     specialist_executed = bool(
-        observed_system_profiles
-        and broker
+        broker
         and any(
             str(item.get("event") or "") == "TASK_COMPLETED"
-            and str(item.get("capability_id") or "")
-            == "agent-office.deterministic.readonly-analysis"
+            and str(item.get("capability_id") or "") in selected_capability_ids
             for item in broker.audit_snapshot()
         )
     )

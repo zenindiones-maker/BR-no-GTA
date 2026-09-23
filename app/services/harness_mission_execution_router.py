@@ -351,14 +351,24 @@ def execute_harness_mission_plan(
     mission_goal = dict(mission_plan.get("goal") or {})
 
     if route.runtime in {"HERMES_COLLABORATION", "HERMES_KANBAN"}:
-        from app.services.telegram_hermes_dispatch_service import (
-            dispatch_telegram_hermes_mission,
-        )
-        result = dispatch_telegram_hermes_mission(
-            plan=plan,
-            state=state,
-            message=message,
-        )
+        if route.mission_class == "SYSTEM_IMPROVEMENT":
+            from app.services.telegram_system_improvement_dispatch_service import (
+                dispatch_telegram_system_improvement_mission,
+            )
+            result = dispatch_telegram_system_improvement_mission(
+                plan=plan,
+                state=state,
+                message=message,
+            )
+        else:
+            from app.services.telegram_hermes_dispatch_service import (
+                dispatch_telegram_hermes_mission,
+            )
+            result = dispatch_telegram_hermes_mission(
+                plan=plan,
+                state=state,
+                message=message,
+            )
     elif route.runtime == "DIRECT_CAPABILITY":
         result = _execute_direct_capability(
             mission_plan=mission_plan,

@@ -78,11 +78,6 @@ jobs:
           cache: pip
           cache-dependency-path: target/requirements.txt
 
-      - name: Setup Node.js for bounded Codex runtime
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
       - name: Prepare auth-control artifact directory
         working-directory: target
         run: |
@@ -127,7 +122,26 @@ jobs:
           echo "LEARNING_SOURCE_RUN_ID=$source_run"
           echo "SECOND_LEARNING_PLANE=NO"
 
+      - name: Classify selected executor runtime requirements
+        id: runtime
+        working-directory: target
+        run: |
+          set -euo pipefail
+          python scripts/mission_runtime_requirements.py \
+            --plan-b64 "$PLAN_B64" \
+            --output artifacts/dynamic-system-improvement/runtime-requirements.json \
+            --github-output "$GITHUB_OUTPUT"
+          echo "PROVIDER_SELECTED_AFTER_GOAL_RECEIPT=PASS"
+          echo "TUXEVIL_GLOBAL_PREREQUISITE=NO"
+
+      - name: Setup Node.js only for selected Codex capability
+        if: steps.runtime.outputs.codex_required == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Install minimal auth-control Python dependency
+        if: steps.runtime.outputs.codex_required == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -138,6 +152,7 @@ jobs:
           PY
 
       - name: Prepare isolated Codex home
+        if: steps.runtime.outputs.codex_required == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -147,6 +162,7 @@ jobs:
           echo "CODEX_HOME_ISOLATED=PASS"
 
       - name: Install bounded Codex tooling
+        if: steps.runtime.outputs.codex_required == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -154,6 +170,7 @@ jobs:
           echo "CODEX_TOOLING_BOOTSTRAP=PASS"
 
       - name: Prepare trusted workload identity when configured
+        if: steps.runtime.outputs.codex_required == 'true'
         id: wif
         working-directory: target
         env:
@@ -202,6 +219,7 @@ jobs:
           echo "OPENAI_WIF_TOKEN_PERSISTED=NO"
 
       - name: Codex auth control preflight
+        if: steps.runtime.outputs.codex_required == 'true'
         id: auth
         working-directory: target
         run: |
@@ -209,8 +227,27 @@ jobs:
           python scripts/codex_auth_control_preflight.py             --dispatch-id "${{ inputs.dispatch_id }}"             --target-ref "$TARGET_REF"             --target-sha "$TARGET_SHA"             --plan-b64 "$PLAN_B64"             --human-goal-b64 "$HUMAN_GOAL_B64"             --telegram-chat-id "$TELEGRAM_CHAT_ID_INPUT"             --artifact-dir artifacts/dynamic-system-improvement
           echo "CODEX_AUTH_PREFLIGHT=PASS"
 
+      - name: Resolve selected-runtime mission gate
+        id: mission_gate
+        if: always()
+        working-directory: target
+        env:
+          CODEX_REQUIRED: ${{ steps.runtime.outputs.codex_required }}
+          CODEX_AUTH_AVAILABLE: ${{ steps.auth.outputs.auth_available }}
+        run: |
+          set -euo pipefail
+          if [ "${CODEX_REQUIRED:-false}" = "true" ]; then
+            ready="${CODEX_AUTH_AVAILABLE:-false}"
+          else
+            ready="true"
+            echo "CODEX_BOOTSTRAP_SKIPPED=PASS"
+            echo "CODEX_AUTH_PREFLIGHT=NOT_REQUIRED"
+          fi
+          echo "mission_ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "MISSION_RUNTIME_GATE_READY=$ready"
+
       - name: Install bounded cloud runtime
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -222,7 +259,7 @@ jobs:
           echo "HERMES_UPSTREAM_PINNED=PASS"
 
       - name: Prepare and prove Codex sandbox
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true' && steps.runtime.outputs.codex_required == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -234,7 +271,7 @@ jobs:
           echo "CODEX_AUTH_AVAILABLE=PASS"
 
       - name: Compile dynamic mission
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -242,7 +279,7 @@ jobs:
           echo "DYNAMIC_SYSTEM_IMPROVEMENT_COMPILE=PASS"
 
       - name: Execute Harness planned Hermes swarm
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -254,7 +291,7 @@ jobs:
           python scripts/dynamic_system_improvement_mission.py             --plan-b64 "$PLAN_B64"             --human-goal "$HUMAN_GOAL"             --base-sha "$TARGET_SHA"             --branch "$TARGET_REF"             --upstream-root "$BR_HERMES_UPSTREAM_ROOT"             --artifact-dir artifacts/dynamic-system-improvement             2>&1 | tee artifacts/dynamic-system-improvement/mission.log
 
       - name: Validate governed closed loop
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -313,7 +350,7 @@ jobs:
           PY
 
       - name: Assert autonomous Telegram silence
-        if: steps.auth.outputs.auth_available == 'true'
+        if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
         run: |
           set -euo pipefail
@@ -327,7 +364,7 @@ jobs:
           echo "PROOF_REAL_TELEGRAM_EGRESS=0"
 
       - name: Classify auth-gated mission state
-        if: steps.auth.outputs.auth_available != 'true'
+        if: steps.runtime.outputs.codex_required == 'true' && steps.mission_gate.outputs.mission_ready != 'true'
         working-directory: target
         run: |
           set -euo pipefail

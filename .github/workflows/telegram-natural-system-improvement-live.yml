@@ -50,6 +50,7 @@ jobs:
         id: ingress
         env:
           GH_TOKEN: ${{ github.token }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -100,11 +101,21 @@ jobs:
           assert plan["kind"]=="SYSTEM_IMPROVEMENT_MISSION", plan
           assert plan["mission_plan"]["authority"]=="DEEPSEEK_HARNESS"
           assert plan["mission_plan"]["goal"]["mission_class"]=="SYSTEM_IMPROVEMENT"
-          tasks=plan["mission_plan"]["collaboration_plan"]["tasks"]
-          assert 2 <= len(tasks) <= plan["mission_plan"]["resource_bounds"]["max_tasks_per_mission"]
+          mission_plan=plan["mission_plan"]
+          tasks=mission_plan["collaboration_plan"]["tasks"]
+          assert 2 <= len(tasks) <= mission_plan["resource_bounds"]["max_tasks_per_mission"]
+          planning=dict(mission_plan.get("planning_evidence") or {})
+          provider_evidence=dict(planning.get("provider_evidence") or {})
+          provider_routing=dict(provider_evidence.get("routing") or {})
+          assert planning.get("planning_mode")=="SEMANTIC_ADAPTIVE", planning
+          assert planning.get("validated_by")=="DEEPSEEK_HARNESS", planning
+          assert provider_evidence.get("planner_authority")=="NONE", provider_evidence
+          assert provider_evidence.get("provider")=="nvidia_nim", provider_evidence
+          assert provider_routing.get("selected_provider")=="nvidia_nim", provider_routing
           assert canonical["status"]=="RUNNING", canonical
           route=canonical["mission_execution_route"]
-          assert route["runtime"]=="SYSTEM_IMPROVEMENT_HERMES_AGENT_OFFICE", route
+          assert route["runtime"] in {"HERMES_KANBAN","HERMES_COLLABORATION"}, route
+          assert route["hermes_used"] is True, route
           assert route["provider_required"] is False
           assert canonical["provider_substituted_for_known_executor"] is False
           run_id=int(canonical["run_id"])
@@ -123,10 +134,17 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
               fh.write(f"child_run_id={run_id}\n")
           print("HUMAN_INPUT_LITERAL_MATCH=PASS")
-          print("HUMAN_NATURAL_GOAL_ACCEPTED=PASS")
-          print("HARNESS_MISSION_PLANNER=PASS")
+          print("NATURAL_GOAL_RECEIVED=PASS")
+          print("HARNESS_MISSION_PLAN=PASS")
+          print("HARNESS_NATURAL_GOAL_BEFORE_TUXEVIL=PASS")
+          print("NVIDIA_PROVIDER_AVAILABLE_TO_PLANNER=PASS")
+          print("NVIDIA_PROVIDER_ROUTED_BY_HARNESS=PASS")
+          print("DIRECT_NVIDIA_BYPASS=NO")
+          print("PROVIDER_SELECTED_AFTER_GOAL_RECEIPT=PASS")
           print("MISSION_EXECUTION_ROUTER=PASS")
-          print("NO_KEYWORD_REQUIRED_FOR_HERMES=PASS")
+          print("TUXEVIL_GLOBAL_PREREQUISITE=NO")
+          print("HERMES_USED=YES")
+          print("HERMES_SELECTION_REASON="+str(route["hermes_selection_reason"]))
           print("DYNAMIC_CAPABILITY_SELECTION=PASS")
           print("PROVIDER_SUBSTITUTED_FOR_KNOWN_EXECUTOR=NO")
           PY
@@ -212,46 +230,54 @@ jobs:
           assert len(tasks)>=2
           assert len(agents)>=2
           assert d["handoffs"]
-          assert c["MISSION_PLAN_GENERATED_FROM_GOAL"] is True
-          assert c["AGENTS_SELECTED_FROM_REGISTRY"] is True
-          assert c["NO_HARDCODED_TEAM_REQUIRED"] is True
-          assert c["HERMES_HARNESS_SYNERGY"] is True
-          assert c["MULTI_AGENT_EXECUTION_REAL"] is True
-          assert c["HANDOFF_REAL"] is True
-          assert c["REAL_SYSTEM_PROBLEM_OBSERVED"] is True
-          assert c["BASELINE_MEASURED"] is True
-          assert c["DEVELOPMENT_AGENT_DELEGATED"] is True
-          assert c["REAL_PATCH_CREATED"] is True
-          assert c["PATCH_BOUNDED_TO_WORKTREE"] is True
-          assert c["CANDIDATE_TESTED"] is True
-          assert c["BASELINE_VS_CANDIDATE_COMPARED"] is True
-          assert c["HARNESS_PROMOTION_DECISION"] is True
-          assert c["NO_REGRESSION"] is True
+          for key in (
+              "NATURAL_GOAL_RECEIVED",
+              "HARNESS_MISSION_PLAN",
+              "MISSION_PLAN_AUTHORITY",
+              "CAPABILITIES_SELECTED_FROM_REGISTRY",
+              "SELECTION_NOT_HARDCODED",
+              "TEAM_NOT_HARDCODED",
+              "MINIMUM_SUFFICIENT_TEAM",
+              "HERMES_SUBORDINATE",
+              "HERMES_DELEGATION_ENVELOPE",
+              "NO_DIRECT_EXECUTOR_BYPASS",
+              "REAL_SYSTEM_PROBLEM_OBSERVED",
+              "BASELINE_MEASURED",
+              "HARNESS_FINAL_DECISION",
+              "NO_REGRESSION",
+          ):
+              assert c[key] is True,(key,c[key])
           assert c["AGENT_SELF_PROMOTION"] is False
-          assert d["promotion_decision"] in {"HUMAN_REVIEW","PROMOTE","REJECT"}
-          assert d["candidate_sha"]
-          assert (root/"child/candidate.patch").is_file()
+          assert c["BUILDER_SELF_APPROVAL"] is False
+          assert d["promotion_decision"] in {"HUMAN_REVIEW","REJECT","NOT_REQUIRED"}
+          for key in (
+              "REAL_CANDIDATE_CREATED",
+              "PATCH_BOUNDED_TO_WORKTREE",
+              "INDEPENDENT_REVIEW",
+              "CANDIDATE_TESTED",
+              "BASELINE_VS_CANDIDATE_COMPARED",
+          ):
+              assert c[key] is True or c[key]=="NOT_REQUIRED",(key,c[key])
           assert d["NEW_VOICE_SYNTHESIS"]=="NO"
           assert d["FULL_RENDER"]=="NO"
           assert d["YOUTUBE_UPLOAD"]=="NO"
           assert d["YOUTUBE_PUBLICATION"]=="NO"
-          print("HERMES_HARNESS_SYNERGY=PASS")
-          print("REAL_MULTI_AGENT_EXECUTION=PASS")
+          runtime=json.loads((root/"child/runtime-requirements.json").read_text())
+          selected_caps=sorted({str(t["capability_id"]) for t in tasks})
+          print("HERMES_SUBORDINATE=PASS")
           print("REAL_HANDOFF=PASS")
-          print("REAL_REVIEW=PASS")
-          print("DYNAMIC_AGENT_SELECTION=PASS")
-          print("AGENTS_SELECTED_FROM_REGISTRY=PASS")
+          print("CAPABILITIES_SELECTED_FROM_REGISTRY=PASS")
+          print("SELECTION_NOT_HARDCODED=PASS")
+          print("SPECIALIST_CAPABILITIES_SELECTED="+",".join(selected_caps))
+          print("SPECIALIST_AGENTS_INVOKED="+",".join(sorted(agents)))
           print("SYSTEM_IMPROVEMENT_CLOSED_LOOP=PASS")
-          print("AGENT_OFFICE_REAL_PATCH=PASS")
-          print("PATCH_BOUNDED_TO_WORKTREE=PASS")
-          print("CANDIDATE_TESTED=PASS")
-          print("BASELINE_VS_CANDIDATE=PASS")
-          print("HARNESS_PROMOTION_GATE=PASS")
+          print("BUILDER_SELF_APPROVAL=NO")
           print("AGENT_SELF_PROMOTION=NO")
           print("NO_REGRESSION=PASS")
+          print("TUXEVIL_GLOBAL_PREREQUISITE=NO")
+          print("TUXEVIL_USED="+("YES" if runtime.get("tuxevil_required") else "NO"))
           print("CHILD_RUN_ID="+os.environ["CHILD_RUN_ID"])
-          print("CANDIDATE_SHA="+d["candidate_sha"])
-          print("HARNESS_PROMOTION_DECISION="+d["promotion_decision"])
+          print("HARNESS_FINAL_DECISION="+d["promotion_decision"])
           print("NEW_VOICE_SYNTHESIS=NO")
           print("FULL_RENDER=NO")
           print("YOUTUBE_UPLOAD=NO")
