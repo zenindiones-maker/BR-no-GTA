@@ -18,6 +18,13 @@ from app.services.harness_collaboration_service import build_goal_envelope, plan
 from app.services.harness_learning_service import HarnessEpisode, persist_episode, record_memory
 from app.services.harness_mission_execution_router import select_mission_execution_route
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.execution_mission_envelope_service import (
+    build_execution_mission_envelope,
+    persist_execution_mission_envelope,
+)
+from app.services.mission_plan_payload_service import (
+    persist_mission_plan_payload_evidence,
+)
 from app.services.memory_plane_service import evaluate_memory_candidate
 from scripts.dynamic_system_improvement_mission import run as execute_dynamic_mission
 
@@ -238,8 +245,31 @@ def bootstrap(plan, route, root):
 
 
 def execute(plan, base_sha, branch, upstream, root, *, goal_text: str):
+    envelope_root = root / "mission-envelope"
+    payload_profile = persist_mission_plan_payload_evidence(
+        plan,
+        artifact_dir=envelope_root,
+    )
+    envelope = build_execution_mission_envelope(
+        plan,
+        canonical_artifact_ref=(
+            "artifact:mission-envelope/canonical-mission-plan.json"
+        ),
+        profile_artifact_ref=(
+            "artifact:mission-envelope/mission-plan-payload-profile.json"
+        ),
+        payload_profile=payload_profile,
+    )
+    persist_execution_mission_envelope(
+        envelope,
+        artifact_dir=envelope_root,
+    )
     encoded = base64.b64encode(
-        json.dumps(plan, ensure_ascii=False, separators=(",", ":")).encode()
+        json.dumps(
+            envelope.to_dict(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
     ).decode()
     started = time.perf_counter()
     report = execute_dynamic_mission(
