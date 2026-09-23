@@ -1,5 +1,8 @@
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
-from app.services.harness_collaboration_service import build_collaboration_plan
+from app.services.harness_collaboration_service import (
+    build_collaboration_plan,
+    build_goal_envelope,
+)
 
 
 def test_collaboration_plan_routes_real_specialists_and_handoffs():
@@ -100,3 +103,18 @@ def test_tubegent_and_improvement_are_in_global_registry():
         assert record.available is True
         assert record.executor_binding
         assert record.evidence_contract
+
+
+
+def test_provider_runtime_incident_is_system_improvement_even_with_gta6_subject():
+    goal = build_goal_envelope(
+        human_goal=(
+            "Diagnose and recover the real runtime provider incident for "
+            "gta6.research.semantic-synthesis without changing the GTA6 product goal."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-provider-incident",
+        subject="BR-no-GTA real provider incident recovery",
+        source_surface="github-actions-control",
+    )
+    assert goal.mission_class == "SYSTEM_IMPROVEMENT"

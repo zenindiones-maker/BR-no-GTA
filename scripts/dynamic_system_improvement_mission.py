@@ -626,6 +626,92 @@ def _hermes_subordinate_proven(
     )
 
 
+def _safe_artifact_input_path(
+    artifact_dir: Path,
+    artifact_ref: str,
+) -> Path | None:
+    ref = str(artifact_ref or "").strip()
+    if not ref.startswith("artifact:"):
+        return None
+    relative = ref.split(":", 1)[1].lstrip("/")
+    if not relative:
+        return None
+    root = artifact_dir.resolve()
+    candidate = (artifact_dir / relative).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise PermissionError("artifact input ref escapes mission artifact root")
+    return candidate
+
+
+def _task_input_artifact_context(
+    *,
+    task,
+    artifact_dir: Path,
+    cache: dict[str, dict[str, Any]],
+    include_content: bool,
+    max_bytes: int,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    rows: list[dict[str, Any]] = []
+    hits = 0
+    reads = 0
+    used = 0
+    for raw_ref in tuple(task.input_refs or ()):
+        ref = str(raw_ref or "").strip()
+        path = _safe_artifact_input_path(artifact_dir, ref)
+        if path is None or not path.is_file():
+            continue
+        cached = cache.get(ref)
+        if cached is None:
+            raw = path.read_bytes()
+            decoded = raw.decode("utf-8", errors="replace")
+            try:
+                parsed: Any = json.loads(decoded)
+                encoding = "json"
+            except json.JSONDecodeError:
+                parsed = decoded
+                encoding = "text"
+            cached = {
+                "artifact_ref": ref,
+                "sha256": sha256(raw).hexdigest(),
+                "size_bytes": len(raw),
+                "encoding": encoding,
+                "content": parsed,
+            }
+            cache[ref] = cached
+            reads += 1
+        else:
+            hits += 1
+        item = {
+            key: value
+            for key, value in cached.items()
+            if key != "content"
+        }
+        if include_content:
+            rendered = json.dumps(
+                cached["content"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            remaining = max(0, max_bytes - used)
+            if remaining > 0:
+                if len(rendered.encode("utf-8")) > remaining:
+                    rendered = rendered.encode("utf-8")[:remaining].decode(
+                        "utf-8", errors="ignore"
+                    )
+                    item["content_truncated"] = True
+                    item["content"] = rendered
+                else:
+                    item["content"] = cached["content"]
+                used += min(len(rendered.encode("utf-8")), remaining)
+        rows.append(item)
+    return rows, {
+        "INPUT_ARTIFACT_CACHE_HIT_COUNT": hits,
+        "INPUT_ARTIFACT_READ_COUNT": reads,
+        "INPUT_ARTIFACT_CONTEXT_BYTES": used,
+    }
+
+
 def _generic_payload(
     *,
     task,
@@ -822,6 +908,9 @@ def run(
         "candidate_decisions": {},
         "execution_by_task": {},
         "reviewed_candidates": set(),
+        "input_artifact_cache": {},
+        "input_artifact_cache_hits": 0,
+        "input_artifact_reads": 0,
     }
 
     def runner(*, spec, board, task_mapping, profiles):
@@ -838,6 +927,36 @@ def run(
                 task = spec.task(task_id)
                 task_started = time.perf_counter()
                 parent_context = broker.parent_context(task_id=task_id)
+                input_artifacts, input_metrics = _task_input_artifact_context(
+                    task=task,
+                    artifact_dir=artifact_dir,
+                    cache=holder["input_artifact_cache"],
+                    include_content=not bool(task.dependencies),
+                    max_bytes=max(
+                        4096,
+                        min(
+                            int(task.context_budget_bytes or 32768) // 2,
+                            32768,
+                        ),
+                    ),
+                )
+                holder["input_artifact_cache_hits"] += int(
+                    input_metrics["INPUT_ARTIFACT_CACHE_HIT_COUNT"]
+                )
+                holder["input_artifact_reads"] += int(
+                    input_metrics["INPUT_ARTIFACT_READ_COUNT"]
+                )
+                if input_artifacts:
+                    parent_context["input_artifacts"] = input_artifacts
+                    parent_context["evidence_refs"] = list(dict.fromkeys([
+                        *list(parent_context.get("evidence_refs") or ()),
+                        *[
+                            str(item.get("artifact_ref") or "")
+                            for item in input_artifacts
+                            if str(item.get("artifact_ref") or "").strip()
+                        ],
+                    ]))
+                    parent_context["input_artifact_metrics"] = input_metrics
                 for dependency in task.dependencies:
                     rows = broker.result_snapshot().get(dependency) or []
                     if not rows:

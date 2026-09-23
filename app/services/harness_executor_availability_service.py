@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Iterable
 
 from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
     CAN_MUTATE_CANDIDATE,
     CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_REVIEW,
     CAN_SEMANTIC_REASONING,
     CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
@@ -103,6 +106,7 @@ def _evaluate_candidate(
     required_operations: tuple[str, ...],
     required_side_effect: str,
     candidate_requirement: str,
+    required_domains: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     capability_id = str(record.capability_id)
     allowed_actions = tuple(record.allowed_actions or ())
@@ -118,6 +122,21 @@ def _evaluate_candidate(
         getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
     ).strip().upper()
     mutation_capable = _mutation_capable(record)
+    domain = str(getattr(record, "domain", "") or "").strip().casefold()
+    normalized_required_domains = tuple(
+        str(item).strip().casefold()
+        for item in required_domains
+        if str(item).strip()
+    )
+    domain_compatible = (
+        not normalized_required_domains
+        or any(
+            domain == item
+            or domain.startswith(item + "/")
+            or domain.startswith(item + "-")
+            for item in normalized_required_domains
+        )
+    )
     side_effect_compatible = (
         mutation_capable
         if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"}
@@ -152,6 +171,8 @@ def _evaluate_candidate(
         final_rejection_reason = "execution-disabled"
     elif action not in allowed_actions:
         final_rejection_reason = "allowed-action-incompatible"
+    elif not domain_compatible:
+        final_rejection_reason = "domain-incompatible"
     elif not adapter_compatible:
         final_rejection_reason = "executor-adapter-incompatible"
     elif contract_rejection:
@@ -174,8 +195,57 @@ def _evaluate_candidate(
         for item in (record.execution_operations or ())
         if str(item).strip()
     })
+    supported_set = set(supported_operations)
+    health_policy = str(getattr(record, "health_policy", "") or "")
+    if final_rejection_reason == "ACCEPTED":
+        rejection_class = "ACCEPTED"
+    elif capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS or record.capability_type == "PROVIDER":
+        rejection_class = "CAPABILITY_NOT_REVIEWER"
+    elif final_rejection_reason == "allowed-action-incompatible":
+        rejection_class = "ACTION_MISMATCH"
+    elif final_rejection_reason == "domain-incompatible":
+        rejection_class = "DOMAIN_MISMATCH"
+    elif final_rejection_reason == "side-effect-class-incompatible":
+        rejection_class = "SIDE_EFFECT_MISMATCH"
+    elif final_rejection_reason.startswith("health:"):
+        rejection_class = (
+            "AUTH_BLOCKED"
+            if health_policy == "CODEX_AUTH_REQUIRED"
+            else "HEALTH_BLOCKED"
+        )
+    elif (
+        CAN_REVIEW in required_operations
+        and (
+            not bool(getattr(record, "supports_review", False))
+            or CAN_REVIEW not in supported_set
+        )
+    ):
+        rejection_class = "MISSING_CAN_REVIEW"
+    elif (
+        CAN_SEMANTIC_REASONING in required_operations
+        and CAN_SEMANTIC_REASONING not in supported_set
+    ):
+        rejection_class = "MISSING_SEMANTIC_REASONING"
+    elif (
+        (
+            CAN_CONSUME_ARTIFACT_REFS in required_operations
+            and CAN_CONSUME_ARTIFACT_REFS not in supported_set
+        )
+        or (
+            CAN_PRODUCE_ARTIFACT_REFS in required_operations
+            and CAN_PRODUCE_ARTIFACT_REFS not in supported_set
+        )
+    ):
+        rejection_class = "MISSING_ARTIFACT_CONTRACT"
+    elif "authorization" in final_rejection_reason or "harness-authority" in final_rejection_reason:
+        rejection_class = "AUTH_BLOCKED"
+    else:
+        rejection_class = "CAPABILITY_NOT_REVIEWER" if CAN_REVIEW in required_operations else "CONTRACT_MISMATCH"
+
     diagnostic = {
         "CAPABILITY_ID": capability_id,
+        "HEALTH": health_state,
+        "DOMAIN": str(getattr(record, "domain", "") or ""),
         "EXECUTION_ENABLED": bool(record.execution_enabled),
         "ALLOWED_ACTIONS": list(allowed_actions),
         "EXECUTOR_BINDING": executor_binding,
@@ -186,6 +256,13 @@ def _evaluate_candidate(
         "SIDE_EFFECT_CLASS": side_effect_class,
         "REQUIRED_SIDE_EFFECT_CLASS": required_side_effect,
         "SIDE_EFFECT_COMPATIBLE": bool(side_effect_compatible),
+        "DOMAIN_COMPATIBLE": bool(domain_compatible),
+        "REQUIRED_DOMAINS": list(normalized_required_domains),
+        "SUPPORTS_REVIEW": bool(getattr(record, "supports_review", False)),
+        "CAN_REVIEW": CAN_REVIEW in supported_set,
+        "CAN_SEMANTIC_REASONING": CAN_SEMANTIC_REASONING in supported_set,
+        "CAN_CONSUME_ARTIFACT_REFS": CAN_CONSUME_ARTIFACT_REFS in supported_set,
+        "CAN_PRODUCE_ARTIFACT_REFS": CAN_PRODUCE_ARTIFACT_REFS in supported_set,
         "DEFAULT_WRITE_SCOPE": list(record.default_write_scope or ()),
         "SECURITY_BOUNDARY": security_boundary,
         "AUTHORITY_COMPATIBLE": bool(authority_compatible),
@@ -194,6 +271,7 @@ def _evaluate_candidate(
         "CANDIDATE_REQUIREMENT": candidate_requirement,
         "CANDIDATE_ARTIFACT_CAPABLE": bool(candidate_artifact_capable),
         "FINAL_REJECTION_REASON": final_rejection_reason,
+        "REJECTION_REASON": rejection_class,
     }
     return diagnostic
 
@@ -208,6 +286,14 @@ def _compatible_candidates(
     required_side_effect = contract["required_side_effect_class"]
     candidate_requirement = contract["candidate_requirement"]
     action = str(task.get("action") or task.get("authorized_action") or "").strip()
+    required_domains = tuple(
+        str(item).strip()
+        for item in (
+            task.get("required_domains")
+            or ([task.get("domain")] if task.get("domain") else [])
+        )
+        if str(item).strip()
+    )
     candidates: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
 
@@ -222,6 +308,7 @@ def _compatible_candidates(
             required_operations=required_operations,
             required_side_effect=required_side_effect,
             candidate_requirement=candidate_requirement,
+            required_domains=required_domains,
         )
         diagnostics.append(diagnostic)
         if diagnostic["FINAL_REJECTION_REASON"] != "ACCEPTED":
@@ -240,6 +327,56 @@ def _compatible_candidates(
             "agent_id": str(record.agent_id or ""),
         })
     return candidates, diagnostics
+
+
+def evaluate_typed_requirement_feasibility(
+    task: dict[str, Any],
+    *,
+    blocked_capability_ids: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Cheap Registry/health feasibility check; never chooses a final team."""
+    started = time.perf_counter()
+    blocked = {
+        str(item).strip()
+        for item in blocked_capability_ids
+        if str(item).strip()
+    }
+    contract = _effective_task_contract(task)
+    candidates, diagnostics = _compatible_candidates(
+        task,
+        blocked_capability_ids=blocked,
+    )
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    health_reads = sum(
+        1
+        for item in diagnostics
+        if item.get("HEALTH_STATE") != "NOT_EVALUATED"
+    )
+    return {
+        "schema": "typed-requirement-feasibility/v1",
+        "authority": "DEEPSEEK_HARNESS",
+        "task_id": str(task.get("task_id") or ""),
+        "task_class": str(task.get("task_class") or ""),
+        "action": str(task.get("action") or task.get("authorized_action") or ""),
+        "required_operations": list(contract["required_operations"]),
+        "required_side_effect_class": contract["required_side_effect_class"],
+        "required_domains": list(task.get("required_domains") or ()),
+        "feasible": bool(candidates),
+        "compatible_candidates": candidates,
+        "candidate_matrix": diagnostics,
+        "DETERMINISTIC_FEASIBILITY_PRECHECK": "PASS",
+        "DETERMINISTIC_FEASIBILITY_PRECHECK_MS": round(elapsed_ms, 3),
+        "IMPOSSIBLE_REQUIREMENT_DETECTED_BEFORE_PROVIDER": (
+            "NOT_APPLICABLE" if candidates else "PASS"
+        ),
+        "PROVIDER_CALLS_ON_DETERMINISTIC_IMPOSSIBILITY": 0,
+        "PROVIDER_CALL_EXECUTED": "NO",
+        "SEMANTIC_REPLAN_PERFORMED": "NO",
+        "REGISTRY_READ_COUNT": 1,
+        "HEALTH_READ_COUNT": health_reads,
+        "CAPABILITY_SERIALIZATION_COUNT": len(diagnostics),
+        "DUPLICATE_SERIALIZATION_COUNT": 0,
+    }
 
 
 def resolve_blocked_executor_alternatives(

@@ -531,14 +531,19 @@ def _goal_class(text: str) -> str:
     folded = re.sub(r"\s+", " ", str(text or "").strip().casefold())
     if (
         any(term in folded for term in (
-            "sistema", "pipeline", "desempenho", "performance", "latencia",
-            "latência", "demorando", "lento", "telegram",
+            "sistema", "system", "pipeline", "runtime", "provider", "incident",
+            "adapter", "routing", "authorization", "desempenho", "performance",
+            "latencia", "latência", "demorando", "lento", "telegram",
         ))
         and any(term in folded for term in (
-            "melhora", "melhore", "melhorar", "corrige", "corrija", "corrigir",
-            "otimiza", "otimize", "otimizar", "analisa", "analise", "analisar",
-            "descobre", "descobrir", "investiga", "investigue", "investigar",
-            "resolve", "resolver",
+            "melhora", "melhore", "melhorar", "improve",
+            "corrige", "corrija", "corrigir", "fix",
+            "otimiza", "otimize", "otimizar",
+            "analisa", "analise", "analisar", "analy",
+            "diagnos", "classif",
+            "descobre", "descobrir",
+            "investiga", "investigue", "investigar", "investigat",
+            "resolve", "resolver", "recover",
         ))
     ):
         return "SYSTEM_IMPROVEMENT"

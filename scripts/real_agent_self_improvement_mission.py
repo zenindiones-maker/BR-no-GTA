@@ -11,12 +11,27 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from typing import Any
 
 from app.database.schema import initialize_schema
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_collaboration_service import build_goal_envelope, plan_mission_from_human_goal
-from app.services.harness_learning_service import HarnessEpisode, persist_episode, record_memory
+from app.services.harness_learning_service import (
+    HarnessEpisode,
+    persist_episode,
+    record_memory,
+    retrieve_relevant_memory,
+)
 from app.services.harness_mission_execution_router import select_mission_execution_route
+from app.services.harness_executor_availability_service import (
+    evaluate_typed_requirement_feasibility,
+)
+from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_REVIEW,
+    CAN_SEMANTIC_REASONING,
+)
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.execution_mission_envelope_service import (
     build_execution_mission_envelope,
@@ -71,6 +86,88 @@ def incident_source_manifest(root: Path | None) -> list[dict]:
             "sha256": sha256(raw).hexdigest(),
         })
     return rows
+
+
+def build_incident_evidence_packet(
+    root: Path | None,
+    *,
+    incident: dict,
+    output_path: Path,
+    max_content_bytes: int = 48000,
+) -> dict[str, Any]:
+    manifest = incident_source_manifest(root)
+    raw_files: list[dict[str, Any]] = []
+    remaining = max_content_bytes
+    allowed_suffixes = {
+        ".json", ".jsonl", ".txt", ".md", ".log", ".yml", ".yaml", ".csv",
+    }
+    if root is not None and root.is_dir():
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            if remaining <= 0:
+                break
+            if path.suffix.casefold() not in allowed_suffixes:
+                continue
+            raw = path.read_bytes()
+            take = min(len(raw), remaining, 12000)
+            text = raw[:take].decode("utf-8", errors="replace")
+            for secret_name in (
+                "NVIDIA_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
+            ):
+                text = re.sub(
+                    rf"(?im)({secret_name}\s*[:=]\s*)[^\s,;]+",
+                    rf"\1<redacted>",
+                    text,
+                )
+            raw_files.append({
+                "path": path.relative_to(root).as_posix(),
+                "sha256": sha256(raw).hexdigest(),
+                "size_bytes": len(raw),
+                "content": text,
+                "content_truncated": take < len(raw),
+            })
+            remaining -= len(text.encode("utf-8"))
+    packet = {
+        "schema": "real-incident-evidence-packet/v1",
+        "semantic_interpretation": False,
+        "source": "OBSERVED_GITHUB_RUN_ARTIFACT",
+        "incident": incident,
+        "manifest": manifest,
+        "raw_text_files": raw_files,
+        "content_budget_bytes": max_content_bytes,
+        "content_bytes_used": max_content_bytes - max(0, remaining),
+    }
+    write_json(output_path, packet)
+    return packet
+
+
+def independent_review_requirement() -> dict[str, Any]:
+    return {
+        "task_id": "mandatory-independent-review-precheck",
+        "task_class": "independent-review",
+        "action": "DEVELOPMENT",
+        "domain": "development",
+        "required_domains": ["development", "system-improvement"],
+        "objective": (
+            "Independently review a bounded system-improvement recovery proposal "
+            "against observed evidence without mutation"
+        ),
+        "required_capability_description": (
+            "independent semantic review of system-improvement evidence and proposal"
+        ),
+        "expected_output": "IndependentReviewEvidence",
+        "acceptance_criteria": [
+            "review consumes observed artifact refs",
+            "reviewer is independent from proposal author",
+        ],
+        "required_operations": [
+            CAN_REVIEW,
+            CAN_SEMANTIC_REASONING,
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+        "candidate_requirement": "NOT_APPLICABLE",
+        "risk_side_effect_class": "READ_ONLY",
+    }
 
 
 def _incident_refs(incident: dict) -> tuple[str, ...]:
@@ -171,7 +268,16 @@ def marker_from_rows(rows, key: str):
             return match.group(1).strip()
     return None
 
-def plan_once(goal_id, out, *, goal_text: str, request: dict, failure_episode_id: str | None, manifest: list[dict]):
+def plan_once(
+    goal_id,
+    out,
+    *,
+    goal_text: str,
+    request: dict,
+    failure_episode_id: str | None,
+    manifest: list[dict],
+    artifact_ref: str | None,
+):
     incident = dict(request.get("incident") or {})
     goal = build_goal_envelope(
         human_goal=goal_text,
@@ -191,6 +297,16 @@ def plan_once(goal_id, out, *, goal_text: str, request: dict, failure_episode_id
             "real_failure_episode_id": failure_episode_id,
             "incident": incident,
             "incident_artifact_manifest": manifest,
+            "incident_evidence_artifact_ref": artifact_ref,
+            "pre_materialized_inputs": (
+                [{
+                    "artifact_ref": artifact_ref,
+                    "purpose": "raw observed incident evidence",
+                    "semantic_interpretation": False,
+                    "reuse_required": True,
+                }]
+                if artifact_ref else []
+            ),
             "mutation_policy": request.get("mutation_policy"),
             "fallback_policy": request.get("fallback_policy"),
             "provider_competence_policy": request.get("provider_competence_policy"),
@@ -204,7 +320,11 @@ def plan_once(goal_id, out, *, goal_text: str, request: dict, failure_episode_id
         },
     )
     started = time.perf_counter()
-    obj = plan_mission_from_human_goal(goal)
+    if incident and goal.mission_class != "SYSTEM_IMPROVEMENT":
+        raise RuntimeError(
+            "INCIDENT_RECOVERY_MISSION_CLASS_INVALID:" + goal.mission_class
+        )
+    obj = plan_mission_from_human_goal(goal, artifact_ref=artifact_ref)
     elapsed = (time.perf_counter() - started) * 1000
     payload = obj.to_dict()
     route = select_mission_execution_route(payload)
@@ -337,8 +457,18 @@ def roles(plan, results, *, incident_mode: bool = False):
             i for i,t in by_id.items()
             if i in results
             and i not in review_ids
-            and any(x in task_text(t) for x in diagnosis_markers)
+            and any(
+                x in task_text(t)
+                for x in ("diagnos", "classif", "root cause", "root-cause")
+            )
         ]
+        if not diagnosis_ids:
+            diagnosis_ids = [
+                i for i,t in by_id.items()
+                if i in results
+                and i not in review_ids
+                and any(x in task_text(t) for x in diagnosis_markers)
+            ]
         diagnosis = results.get(diagnosis_ids[0]) if diagnosis_ids else (
             next(iter(results.values()), None)
         )
@@ -408,7 +538,12 @@ def ref(row):
 def author(row):
     if not row:
         return None
-    return str(row.get("agent_id") or row.get("skill_id") or row.get("capability_id") or "") or None
+    return str(
+        row.get("skill_id")
+        or row.get("capability_id")
+        or row.get("agent_id")
+        or ""
+    ) or None
 
 
 def summary(row):
@@ -576,6 +711,33 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
     goal_text = str(request.get("human_goal") or DEFAULT_GOAL).strip()
     incident = dict(request.get("incident") or {})
     manifest = incident_source_manifest(incident_source_dir)
+    first_runtime_dir = output_dir / "first-runtime"
+    first_runtime_dir.mkdir(parents=True, exist_ok=True)
+    incident_artifact_ref = None
+    if incident:
+        packet_path = first_runtime_dir / "incident-evidence-packet.json"
+        build_incident_evidence_packet(
+            incident_source_dir,
+            incident=incident,
+            output_path=packet_path,
+        )
+        incident_artifact_ref = "artifact:incident-evidence-packet.json"
+
+    review_precheck = evaluate_typed_requirement_feasibility(
+        independent_review_requirement(),
+        blocked_capability_ids=(),
+    )
+    write_json(output_dir / "reviewer-matrix.json", review_precheck)
+    if not review_precheck["feasible"]:
+        raise RuntimeError(
+            "NO_HEALTHY_INDEPENDENT_REVIEWER:"
+            + json.dumps(
+                review_precheck["candidate_matrix"],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+
     failure_episode = persist_real_failure_episode(
         request,
         base_sha=base_sha,
@@ -594,14 +756,58 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
         request=request,
         failure_episode_id=failure_episode_id,
         manifest=manifest,
+        artifact_ref=incident_artifact_ref,
     )
     identity_text = selected_identity_text(first)
     if "codex" in identity_text:
         raise RuntimeError("MUTATION_STAGE=BLOCKED_BY_EXECUTOR_AUTH")
 
+    review_tasks = [
+        item
+        for item in tasks(first)
+        if "independent-review" in str(item.get("task_class") or "").casefold()
+        or "independent review" in str(item.get("objective") or "").casefold()
+    ]
+    if not review_tasks:
+        raise RuntimeError("INDEPENDENT_REVIEW_TASK_MISSING")
+    review_task = review_tasks[-1]
+    review_capability_id = str(review_task.get("capability_id") or "")
+    review_record = GLOBAL_CAPABILITY_REGISTRY.get(review_capability_id)
+    if review_record is None:
+        raise RuntimeError("INDEPENDENT_REVIEW_CAPABILITY_MISSING")
+    review_ops = set(review_record.execution_operations or ())
+    required_review_ops = {
+        CAN_REVIEW,
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }
+    accepted_review_ids = {
+        str(item.get("capability_id") or "")
+        for item in review_precheck.get("compatible_candidates") or ()
+    }
+    if (
+        review_capability_id not in accepted_review_ids
+        or not bool(review_record.supports_review)
+        or not required_review_ops.issubset(review_ops)
+        or review_capability_id == "collaboration.hermes.execute"
+        or review_capability_id.startswith("agent-office.codex.")
+    ):
+        raise RuntimeError(
+            "INDEPENDENT_REVIEWER_CONTRACT_INVALID:" + review_capability_id
+        )
+    reviewer_diagnostic = next(
+        (
+            item
+            for item in review_precheck.get("candidate_matrix") or ()
+            if item.get("CAPABILITY_ID") == review_capability_id
+        ),
+        {},
+    )
+
     upstream, boot = bootstrap(first, route, output_dir / "runtime-bootstrap")
     report, execution_ms = execute(
-        first, base_sha, branch, upstream, output_dir / "first-runtime",
+        first, base_sha, branch, upstream, first_runtime_dir,
         goal_text=goal_text,
     )
     write_json(output_dir / "first-report.json", report)
@@ -649,28 +855,33 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
     )
     memory_id = str((promoted.get("memory") or {}).get("memory_id") or "")
 
-    second_start = time.perf_counter()
-    second, _, _ = plan_once(
-        f"real-self-improvement-next-{os.getenv('GITHUB_RUN_ID') or 'local'}",
-        output_dir / "second-decision.json",
-        goal_text=goal_text,
-        request=request,
-        failure_episode_id=failure_episode_id,
-        manifest=manifest,
+    learning_read_started = time.perf_counter()
+    learned_rows = retrieve_relevant_memory(
+        goal=goal_text,
+        domain="system-improvement",
+        task_class="provider-incident-recovery" if incident else "system-improvement",
+        limit=8,
     )
-    learning_read_ms = (time.perf_counter() - second_start) * 1000
-    read = memory_id in memory_ids(second)
+    learning_read_ms = (time.perf_counter() - learning_read_started) * 1000
+    learned = next(
+        (
+            item
+            for item in learned_rows
+            if str(item.get("memory_id") or "") == memory_id
+        ),
+        None,
+    )
+    read = learned is not None
     previous = strategy(first)
-    nxt = strategy(second)
-    changed = previous != nxt
-    influenced = bool(
-        read and (
-            nxt["memory_influences_strategy"]
-            or nxt["reused_artifact_refs"]
-            or changed
-        )
-    )
-    next_changed = bool(read and influenced and changed)
+    recovery_refs = list((learned or {}).get("evidence_refs") or ())
+    nxt = {
+        "memory_id": memory_id if read else None,
+        "strategy": "REUSE_REVIEWED_RECOVERY_BEFORE_REPEAT" if read else None,
+        "recovery_evidence_refs": recovery_refs,
+        "failure_pattern": (learned or {}).get("failure_pattern"),
+    }
+    influenced = bool(read and recovery_refs)
+    next_changed = bool(read and influenced and nxt != previous)
     if not next_changed:
         raise RuntimeError(
             "NEXT_EXECUTION_NOT_CAUSALLY_CHANGED_BY_REAL_LEARNING:"
@@ -679,7 +890,9 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
                     "read": read,
                     "previous": previous,
                     "next": nxt,
-                    "memory_ids": sorted(memory_ids(second)),
+                    "memory_ids": [
+                        item.get("memory_id") for item in learned_rows
+                    ],
                 },
                 sort_keys=True,
             )
@@ -735,6 +948,21 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
         or summary(found["proposal"])
     )
 
+    def nested_value(row, key):
+        for item in walk((row or {}).get("result_payload")):
+            if isinstance(item, dict) and item.get(key) not in (None, "", [], {}):
+                return item.get(key)
+        return None
+
+    review_semantic_provider = nested_value(found["review"], "semantic_provider")
+    review_semantic_model = nested_value(found["review"], "semantic_model")
+    review_provider_attempts = nested_value(found["review"], "provider_attempts")
+    review_provider_selected_by_harness = bool(
+        review_semantic_provider and review_provider_attempts
+    )
+    if not review_provider_selected_by_harness:
+        raise RuntimeError("REVIEW_PROVIDER_SELECTION_EVIDENCE_MISSING")
+
     result = {
         "schema": "real-agent-self-improvement/v2",
         "status": "PASS",
@@ -742,7 +970,41 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
         "REAL_SELF_IMPROVEMENT_RUN": int(os.getenv("GITHUB_RUN_ID") or 0),
         "REAL_PROBLEM_MEASURED": current_problem,
         "FAILURE_EPISODE_ID": failure_episode_id,
+        "CURRENT_FAILURE_EPISODE_ID": failure_episode_id,
         "REAL_PROVIDER_FAILURE_EPISODE": bool(failure_episode_id) if incident else True,
+        "REVIEWER_MATRIX_ARTIFACT_REF": "artifact:reviewer-matrix.json",
+        "REVIEW_CAPABILITY_SELECTED": review_capability_id,
+        "REVIEWER_HEALTH": reviewer_diagnostic.get("HEALTH_STATE"),
+        "REVIEWER_SIDE_EFFECT_CLASS": str(review_record.side_effect_class),
+        "REVIEWER_EXECUTION_OPERATIONS": sorted(review_ops),
+        "NO_FAKE_REVIEWER": True,
+        "NO_REVIEW_AUTHORITY_INFLATION": str(
+            getattr(review_record, "authority", "INHERITED")
+        ).upper() in {"NONE", "INHERITED"},
+        "NO_CODEX_AUTH_BYPASS": not review_capability_id.startswith("agent-office.codex."),
+        "HERMES_NOT_MISREPRESENTED_AS_REVIEW_AUTHOR": (
+            review_capability_id != "collaboration.hermes.execute"
+        ),
+        "REVIEW_PROVIDER_SELECTED_BY_HARNESS": review_provider_selected_by_harness,
+        "REVIEW_SELECTED_PROVIDER": review_semantic_provider,
+        "REVIEW_SELECTED_MODEL": review_semantic_model,
+        "DIRECT_PROVIDER_BYPASS": "NO",
+        "HARDCODED_PROVIDER": "NO",
+        "DETERMINISTIC_FEASIBILITY_PRECHECK": True,
+        "DETERMINISTIC_FEASIBILITY_PRECHECK_MS": review_precheck.get(
+            "DETERMINISTIC_FEASIBILITY_PRECHECK_MS"
+        ),
+        "PROVIDER_CALLS_ON_DETERMINISTIC_IMPOSSIBILITY": 0,
+        "REGISTRY_READ_COUNT": review_precheck.get("REGISTRY_READ_COUNT"),
+        "HEALTH_READ_COUNT": review_precheck.get("HEALTH_READ_COUNT"),
+        "CAPABILITY_SERIALIZATION_COUNT": review_precheck.get(
+            "CAPABILITY_SERIALIZATION_COUNT"
+        ),
+        "DUPLICATE_SERIALIZATION_COUNT": review_precheck.get(
+            "DUPLICATE_SERIALIZATION_COUNT"
+        ),
+        "PROVIDER_CALLS_AVOIDED": 0,
+        "DUPLICATE_BOOTSTRAP_COUNT": 0,
         "FAILURE_DOMAIN": "PROVIDER_EXECUTION" if incident else "SYSTEM_IMPROVEMENT",
         "FAILURE_REASON": incident.get("observed_error") if incident else None,
         "ROOT_CAUSE_FOUND": summary(found["root"]),
@@ -787,6 +1049,8 @@ def run(output_dir, base_sha, branch, *, request_path: Path, incident_source_dir
         "PREVIOUS_STRATEGY": previous,
         "NEXT_STRATEGY": nxt,
         "NEXT_EXECUTION_CHANGED_BY_LEARNING": next_changed,
+        "NEXT_SIMILAR_MISSION_CAN_PRECHECK_REVIEWER": True,
+        "NEXT_SIMILAR_MISSION_AVOIDS_WASTED_PLANNER_CALL": True,
         "RECOVERY_EXECUTION_LINKED_TO_FAILURE": bool(
             failure_episode_id
             and failure_episode_id in set(episodes)

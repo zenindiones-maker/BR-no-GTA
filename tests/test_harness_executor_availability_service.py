@@ -202,3 +202,91 @@ def test_read_only_blocked_executor_can_be_replaced_deterministically(monkeypatc
     ]
     assert diagnostic["EXECUTION_CONTRACT_REJECTION"] is None
     assert diagnostic["FINAL_REJECTION_REASON"] == "ACCEPTED"
+
+
+
+def test_independent_review_feasibility_matrix_finds_real_addy_reviewer(monkeypatch):
+    monkeypatch.setattr(service, "capability_health", _health)
+    task = {
+        "task_id": "independent-review",
+        "task_class": "independent-review",
+        "action": "DEVELOPMENT",
+        "domain": "development",
+        "required_domains": ["development", "system-improvement"],
+        "objective": "independently review recovery evidence without mutation",
+        "expected_output": "IndependentReviewEvidence",
+        "required_operations": [
+            "CAN_REVIEW",
+            "CAN_SEMANTIC_REASONING",
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+        ],
+        "candidate_requirement": "NOT_APPLICABLE",
+        "risk_side_effect_class": "READ_ONLY",
+    }
+
+    result = service.evaluate_typed_requirement_feasibility(task)
+
+    assert result["DETERMINISTIC_FEASIBILITY_PRECHECK"] == "PASS"
+    assert result["PROVIDER_CALL_EXECUTED"] == "NO"
+    assert result["SEMANTIC_REPLAN_PERFORMED"] == "NO"
+    assert result["feasible"] is True
+    assert result["DETERMINISTIC_FEASIBILITY_PRECHECK_MS"] >= 0
+    accepted = {
+        item["capability_id"] for item in result["compatible_candidates"]
+    }
+    assert "addy:code-review-and-quality" in accepted
+
+    matrix = {
+        item["CAPABILITY_ID"]: item for item in result["candidate_matrix"]
+    }
+    addy = matrix["addy:code-review-and-quality"]
+    assert addy["HEALTH_STATE"] == "HEALTHY"
+    assert addy["DOMAIN"] == "development"
+    assert addy["SIDE_EFFECT_CLASS"] == "READ_ONLY"
+    assert addy["SUPPORTS_REVIEW"] is True
+    assert addy["CAN_REVIEW"] is True
+    assert addy["CAN_SEMANTIC_REASONING"] is True
+    assert addy["CAN_CONSUME_ARTIFACT_REFS"] is True
+    assert addy["CAN_PRODUCE_ARTIFACT_REFS"] is True
+    assert addy["REJECTION_REASON"] == "ACCEPTED"
+
+    deterministic = matrix["agent-office.deterministic-analysis"]
+    assert deterministic["SUPPORTS_REVIEW"] is False
+    assert deterministic["REJECTION_REASON"] == "MISSING_CAN_REVIEW"
+
+    codex = matrix["agent-office.codex.readonly-analysis"]
+    assert codex["REJECTION_REASON"] == "AUTH_BLOCKED"
+
+    hermes = matrix["collaboration.hermes.execute"]
+    assert hermes["REJECTION_REASON"] == "CAPABILITY_NOT_REVIEWER"
+
+    proposal = matrix["system.improvement.propose"]
+    assert proposal["REJECTION_REASON"] == "MISSING_CAN_REVIEW"
+
+
+def test_impossible_independent_review_is_detected_without_provider(monkeypatch):
+    monkeypatch.setattr(service, "capability_health", _health)
+    task = {
+        "task_id": "independent-review",
+        "task_class": "independent-review",
+        "action": "DEVELOPMENT",
+        "domain": "development",
+        "required_domains": ["development"],
+        "required_operations": [
+            "CAN_REVIEW",
+            "CAN_SEMANTIC_REASONING",
+            "CAN_CONSUME_ARTIFACT_REFS",
+            "CAN_PRODUCE_ARTIFACT_REFS",
+        ],
+        "candidate_requirement": "NOT_APPLICABLE",
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    result = service.evaluate_typed_requirement_feasibility(
+        task,
+        blocked_capability_ids={"addy:code-review-and-quality"},
+    )
+    assert result["feasible"] is False
+    assert result["IMPOSSIBLE_REQUIREMENT_DETECTED_BEFORE_PROVIDER"] == "PASS"
+    assert result["PROVIDER_CALLS_ON_DETERMINISTIC_IMPOSSIBILITY"] == 0
+    assert result["PROVIDER_CALL_EXECUTED"] == "NO"
