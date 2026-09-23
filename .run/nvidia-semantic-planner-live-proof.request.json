@@ -16,8 +16,8 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 9,
-  "trigger_head": "7696259951016820dd47d0569dd132065a5f5924",
+  "attempt": 10,
+  "trigger_head": "e931165cfc0cda719152389ae4033ac966bed7e3",
   "preflight_only": false,
   "generation_options": {
     "max_tokens": 4096,
@@ -30,11 +30,12 @@
       "deadline_unchanged_ms": 54000
     }
   },
-  "measurement_goal": "prove Harness-governed NVIDIA json_schema semantic output with thinking disabled",
+  "measurement_goal": "capture sanitized NVIDIA semantic output and exact downstream Harness validation failure without changing generation policy",
   "structured_output_contract": {
     "mode": "json_schema",
     "authority": "DEEPSEEK_HARNESS",
     "schema_source": "mission_plan_json_schema",
     "disable_thinking": true
-  }
+  },
+  "observability_only": true
 }

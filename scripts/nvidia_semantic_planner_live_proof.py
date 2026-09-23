@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import statistics
 import time
+from hashlib import sha256
 from typing import Any
 
 from app.database import harness_learning_repository as learning_repository
@@ -106,11 +107,15 @@ def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
     harness_errors: list[str] = []
     selected: list[str] = []
     mapping: dict[str, Any] | None = None
+    top_level_type: str | None = None
+    requirement_summaries: list[dict[str, Any]] = []
+    failed_requirement: dict[str, Any] | None = None
 
     wire_format = None
     raw_top_level_keys: list[str] = []
     try:
         parsed = json.loads(text)
+        top_level_type = type(parsed).__name__
         if not isinstance(parsed, dict):
             raise ValueError("semantic response is not a JSON object")
         raw_top_level_keys = sorted(str(key) for key in parsed)
@@ -144,15 +149,62 @@ def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
             requirements = proposal_requirements(proposal)
             if not requirements:
                 raise ValueError("semantic proposal resolved no requirements")
+            requirement_summaries = [
+                {
+                    "task_id": str(item.get("task_id") or "")[:80],
+                    "task_class": str(item.get("task_class") or "")[:80],
+                    "action": str(item.get("action") or "")[:32],
+                    "risk_side_effect_class": str(
+                        item.get("risk_side_effect_class") or ""
+                    )[:40],
+                    "candidate_requirement": str(
+                        item.get("candidate_requirement") or ""
+                    )[:40],
+                    "candidate_capability_ids": [
+                        str(value)[:160]
+                        for value in list(
+                            item.get("candidate_capability_ids") or ()
+                        )[:6]
+                    ],
+                    "query": str(item.get("query") or "")[:600],
+                }
+                for item in requirements[:8]
+            ]
             used: set[str] = set()
             for requirement in requirements:
-                capability_id, _competence, _avoided, _selection = (
-                    select_capability_for_requirement(
-                        requirement,
-                        context=context,
-                        used=used,
+                try:
+                    capability_id, _competence, _avoided, _selection = (
+                        select_capability_for_requirement(
+                            requirement,
+                            context=context,
+                            used=used,
+                        )
                     )
-                )
+                except Exception:
+                    failed_requirement = {
+                        "task_id": str(requirement.get("task_id") or "")[:80],
+                        "task_class": str(
+                            requirement.get("task_class") or ""
+                        )[:80],
+                        "action": str(requirement.get("action") or "")[:32],
+                        "risk_side_effect_class": str(
+                            requirement.get("risk_side_effect_class") or ""
+                        )[:40],
+                        "candidate_requirement": str(
+                            requirement.get("candidate_requirement") or ""
+                        )[:40],
+                        "candidate_capability_ids": [
+                            str(value)[:160]
+                            for value in list(
+                                requirement.get(
+                                    "candidate_capability_ids"
+                                )
+                                or ()
+                            )[:6]
+                        ],
+                        "query": str(requirement.get("query") or "")[:600],
+                    }
+                    raise
                 used.add(capability_id)
                 selected.append(capability_id)
         except Exception as exc:
@@ -176,13 +228,20 @@ def _validate_response(text: str, context: dict[str, Any]) -> dict[str, Any]:
         "PARSE_ERROR": parse_error,
         "WIRE_FORMAT_DETECTED": wire_format,
         "RAW_TOP_LEVEL_KEYS": raw_top_level_keys,
+        "TOP_LEVEL_TYPE": top_level_type,
+        "JSON_PARSE_VALID": strict_json,
         "STRUCTURED_OUTPUT_VALID": strict_json,
         "SCHEMA_VALID": proposal is not None,
+        "SCHEMA_VALIDATION_ERRORS": (
+            [schema_error] if schema_error else []
+        ),
         "MISSION_PROPOSAL_SCHEMA_VALID": proposal is not None,
         "HARNESS_VALIDATION_PASS": bool(
             proposal is not None and not harness_errors
         ),
         "HARNESS_VALIDATION_ERRORS": harness_errors,
+        "REQUIREMENT_SUMMARIES": requirement_summaries,
+        "FAILED_REQUIREMENT": failed_requirement,
         "OUTPUT_FAILURE_CLASS": output_failure_class,
         "SELECTED_CAPABILITIES": selected,
         "VALIDATION_ERROR": validation_error,
@@ -297,10 +356,16 @@ def _execute_model(
             "thinking_disabled_for_structured_output"
         ),
         "RESPONSE_TEXT": response_text,
+        "RESPONSE_TEXT_SHA256": (
+            sha256(response_text.encode("utf-8")).hexdigest()
+            if response_text else None
+        ),
         "RESPONSE_BYTES": len(response_text.encode("utf-8")),
         "FINISH_REASON": result.get("finish_reason"),
         "OUTPUT_TOKENS": usage.get("completion_tokens"),
+        "COMPLETION_TOKENS": usage.get("completion_tokens"),
         "PROMPT_TOKENS": usage.get("prompt_tokens"),
+        "TOTAL_TOKENS": usage.get("total_tokens"),
         "EVIDENCE_REFS": list(evidence.evidence_refs or ()),
         "STARTED_AT": evidence.started_at,
         "FINISHED_AT": evidence.finished_at,
@@ -601,10 +666,13 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
                     "RESPONSE_PRESENT": False,
                     "RAW_RESPONSE_BYTES": 0,
                     "RESPONSE_TEXT": "",
+                    "RESPONSE_TEXT_SHA256": None,
                     "RESPONSE_BYTES": 0,
                     "FINISH_REASON": None,
                     "OUTPUT_TOKENS": None,
+                    "COMPLETION_TOKENS": None,
                     "PROMPT_TOKENS": None,
+                    "TOTAL_TOKENS": None,
                     "EVIDENCE_REFS": [],
                     "PARSE_STARTED": False,
                     "PARSE_ERROR": None,
@@ -621,11 +689,16 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
                     "PARSE_ERROR": None,
                     "WIRE_FORMAT_DETECTED": None,
                     "RAW_TOP_LEVEL_KEYS": [],
+                    "TOP_LEVEL_TYPE": None,
+                    "JSON_PARSE_VALID": False,
                     "STRUCTURED_OUTPUT_VALID": False,
                     "SCHEMA_VALID": False,
+                    "SCHEMA_VALIDATION_ERRORS": [],
                     "MISSION_PROPOSAL_SCHEMA_VALID": False,
                     "HARNESS_VALIDATION_PASS": False,
                     "HARNESS_VALIDATION_ERRORS": [],
+                    "REQUIREMENT_SUMMARIES": [],
+                    "FAILED_REQUIREMENT": None,
                     "OUTPUT_FAILURE_CLASS": None,
                     "SELECTED_CAPABILITIES": [],
                     "VALIDATION_ERROR": attempt.get("VALIDATION_ERROR"),
@@ -638,6 +711,22 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             ):
                 attempt["FAILURE_CLASS"] = attempt["OUTPUT_FAILURE_CLASS"]
             attempts.append(attempt)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    response_dir = output.parent / "sanitized-responses"
+    response_dir.mkdir(parents=True, exist_ok=True)
+    for attempt in attempts:
+        response_text = str(attempt.get("RESPONSE_TEXT") or "")
+        if not response_text:
+            attempt["SANITIZED_RESPONSE_ARTIFACT"] = None
+            continue
+        digest = sha256(response_text.encode("utf-8")).hexdigest()
+        response_path = response_dir / f"{digest}.json"
+        response_path.write_text(response_text + "\n", encoding="utf-8")
+        attempt["RESPONSE_TEXT_SHA256"] = digest
+        attempt["SANITIZED_RESPONSE_ARTIFACT"] = str(
+            response_path.relative_to(output.parent)
+        )
 
     run_id = str(os.getenv("GITHUB_RUN_ID") or "local")
     for attempt in attempts:
@@ -802,14 +891,32 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             if any(item.get("PROVIDER_CALL_STARTED") for item in attempts)
             else "NO"
         ),
+        "JSON_PARSE_VALID": bool(
+            observed_attempt and observed_attempt.get("JSON_PARSE_VALID")
+        ),
         "STRUCTURED_OUTPUT_VALID": bool(
-            fastest and fastest.get("STRUCTURED_OUTPUT_VALID")
+            observed_attempt and observed_attempt.get("STRUCTURED_OUTPUT_VALID")
         ),
         "MISSION_PROPOSAL_SCHEMA_VALID": bool(
-            fastest and fastest.get("MISSION_PROPOSAL_SCHEMA_VALID")
+            observed_attempt
+            and observed_attempt.get("MISSION_PROPOSAL_SCHEMA_VALID")
         ),
         "HARNESS_VALIDATION_PASS": bool(
-            fastest and fastest.get("HARNESS_VALIDATION_PASS")
+            observed_attempt and observed_attempt.get("HARNESS_VALIDATION_PASS")
+        ),
+        "ROOT_CAUSE_CLASS": (
+            "DOWNSTREAM_HARNESS_CAPABILITY_SELECTION"
+            if (
+                observed_attempt
+                and observed_attempt.get("STRUCTURED_OUTPUT_VALID")
+                and observed_attempt.get("MISSION_PROPOSAL_SCHEMA_VALID")
+                and not observed_attempt.get("HARNESS_VALIDATION_PASS")
+            )
+            else (
+                observed_attempt.get("OUTPUT_FAILURE_CLASS")
+                if observed_attempt
+                else "NO_PROVIDER_RESULT"
+            )
         ),
         "MODEL_TIMEOUT_RECORDED": bool(recent_memory),
         "FAILED_MODEL_HEALTH_DEGRADED_OR_FAILURE_MEMORY_CAPTURED": bool(
@@ -882,9 +989,11 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
         "LIVE_SEMANTIC_MODEL_PROOF",
         "LIVE_MODEL_ID",
         "LIVE_SEMANTIC_LATENCY_MS",
+        "JSON_PARSE_VALID",
         "STRUCTURED_OUTPUT_VALID",
         "MISSION_PROPOSAL_SCHEMA_VALID",
         "HARNESS_VALIDATION_PASS",
+        "ROOT_CAUSE_CLASS",
         "MODEL_TIMEOUT_RECORDED",
         "FAILED_MODEL_HEALTH_DEGRADED_OR_FAILURE_MEMORY_CAPTURED",
         "RECENT_FAILURE_INFLUENCES_SELECTION",
