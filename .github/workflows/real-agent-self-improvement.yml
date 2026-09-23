@@ -1,0 +1,133 @@
+name: Real Agent Self Improvement Mission
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "scripts/real_agent_self_improvement_mission.py"
+      - ".github/workflows/real-agent-self-improvement.yml"
+      - ".run/real-agent-self-improvement.request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-agent-self-improvement-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+  BR_CODEX_FEDERATION_CONFIGURED: "false"
+  BR_TEST_DATABASE: ${{ github.workspace }}/runtime/real-agent-self-improvement/learning.sqlite3
+  BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/runtime/real-agent-self-improvement/performance-trace.jsonl
+  BR_PERFORMANCE_TRACE_ID: real-agent-self-improvement:${{ github.run_id }}:${{ github.run_attempt }}
+
+jobs:
+  mission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            config/delegation-plane-preflight-extra-requirements.txt
+
+      - name: Install bounded runtime
+        run: |
+          set -euo pipefail
+          started="$(date +%s%N)"
+          mkdir -p runtime/real-agent-self-improvement
+          python -m pip install --upgrade pip >/dev/null
+          python -m pip install --disable-pip-version-check --no-input             -r requirements.txt             -r config/delegation-plane-preflight-extra-requirements.txt             pytest >/dev/null
+          finished="$(date +%s%N)"
+          python - "$started" "$finished" <<'PY' >> "$GITHUB_ENV"
+          import sys
+          started=int(sys.argv[1]); finished=int(sys.argv[2])
+          print(f"BASE_WORKFLOW_BOOTSTRAP_MS={max(0, finished-started)/1_000_000:.3f}")
+          PY
+
+      - name: Focused real-execution contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py
+          python -m py_compile scripts/real_agent_self_improvement_mission.py
+          echo "REAL_SELF_IMPROVEMENT_FOCUSED_CONTRACTS=PASS"
+
+      - name: Execute real natural-goal self-improvement mission
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          set -euo pipefail
+          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"
+
+      - name: Assert real self-improvement gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data=json.loads(
+              Path("runtime/real-agent-self-improvement/final.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          true_gates=(
+              "PROFILE_ARTIFACT_CREATED",
+              "ROOT_CAUSE_INPUT_PROFILE_RESOLVED",
+              "ROOT_CAUSE_ARTIFACT_CREATED",
+              "PROPOSAL_INPUT_ROOT_CAUSE_RESOLVED",
+              "PROPOSAL_ARTIFACT_CREATED",
+              "TRANSITIVE_LINEAGE_PRESERVED",
+              "TASK_RESULT_ENVELOPE_REAL",
+              "DOWNSTREAM_ARTIFACT_CONSUMED",
+              "REVIEW_SELECTED_FROM_REGISTRY",
+              "REVIEWER_DIFFERENT_FROM_PRIMARY_AUTHOR",
+              "REVIEW_INPUT_ARTIFACT_RESOLVED",
+              "REVIEW_AGENT_EXECUTED",
+              "REVIEW_ARTIFACT_CREATED",
+              "LEARNING_CAPTURED_FROM_REAL_EXECUTION",
+              "NEXT_EXECUTION_READS_LEARNING",
+              "LEARNING_INFLUENCED_SELECTION_OR_STRATEGY",
+              "NEXT_EXECUTION_CHANGED_BY_LEARNING",
+              "PROVIDER_COMPETENCE_NOT_WRONGLY_PENALIZED",
+              "NO_NEW_CODEX_MISSION",
+              "NO_FAKE_CANDIDATE",
+              "NO_HARDCODED_AGENT_CHAIN",
+              "REAL_AGENT_SELF_IMPROVEMENT",
+          )
+          for key in true_gates:
+              assert data[key] is True, (key, data[key])
+          assert data["CODEX_CHECKPOINT_PRESERVED"] == 35850473901
+          assert float(data["TOTAL_MISSION_WALL_CLOCK_MS"]) > 0
+          assert float(data["HARNESS_PLANNING_MS"]) > 0
+          assert float(data["REGISTRY_SELECTION_MS"]) >= 0
+          assert float(data["AGENT_EXECUTION_TOTAL_MS"]) > 0
+          assert float(data["ARTIFACT_HANDOFF_MS"]) >= 0
+          assert float(data["LEARNING_WRITE_MS"]) > 0
+          assert float(data["NEXT_EXECUTION_LEARNING_READ_MS"]) > 0
+          assert 0 <= float(data["USEFUL_WORK_RATIO"]) <= 1
+          print("REAL_AGENT_SELF_IMPROVEMENT_GATES=PASS")
+          print("CANONICAL_CODEX_CHECKPOINT_PRESERVED=PASS")
+          print("NO_NEW_NATURAL_SWARM=PASS")
+          PY
+
+      - name: Upload real self-improvement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-agent-self-improvement-${{ github.run_id }}
+          path: runtime/real-agent-self-improvement/
+          if-no-files-found: error
+          retention-days: 30

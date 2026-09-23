@@ -1,0 +1,9 @@
+{
+  "schema": "real-agent-self-improvement-request/v1",
+  "human_goal": "Encontre uma perda mensurável e atual de eficiência, qualidade ou trabalho redundante no BR-no-GTA, usando a execução real atual do sistema como evidência. Faça o mínimo necessário para identificar a causa, produzir uma recomendação técnica auditável, revisar independentemente essa conclusão e alimentar o Learning Plane para que uma execução semelhante seguinte use esse aprendizado. Não faça mutation de repositório se não existir executor autorizado.",
+  "canonical_codex_checkpoint": 35850473901,
+  "codex_state": "BLOCKED_EXTERNAL",
+  "codex_blocker": "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION",
+  "mutation_policy": "NO_MUTATION_WITHOUT_AUTHORIZED_EXECUTOR",
+  "natural_swarm": "FORBIDDEN_FOR_THIS_MISSION"
+}
