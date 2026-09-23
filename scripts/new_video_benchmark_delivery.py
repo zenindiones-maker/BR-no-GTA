@@ -111,7 +111,12 @@ def _research_evidence(product: dict[str, Any]) -> tuple[list[dict[str, Any]], d
     seen_urls: set[str] = set()
     for item in product.get("claims") or []:
         claim_id = str(item.get("claim_id") or "")
-        if item.get("verification_status") != "VERIFIED" or item.get("fact_check_result") != "SUPPORTED":
+        verification_basis = str(item.get("verification_basis") or "").upper()
+        fact_supported = item.get("fact_check_result") == "SUPPORTED"
+        official_primary = verification_basis == "OFFICIAL_PRIMARY"
+        if item.get("verification_status") != "VERIFIED" or not (
+            fact_supported or official_primary
+        ):
             raise RuntimeError(f"claim is not verified/supported: {claim_id}")
         urls = [
             str(ref) for ref in item.get("evidence_refs") or []
