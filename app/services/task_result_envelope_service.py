@@ -53,7 +53,16 @@ def _collect_refs(result: Any):
                     text = str(item or "").strip()
                     if text:
                         add(outputs, "git-commit:" + text)
-                elif key in {"candidate_diff_ref", "patch_ref", "candidate_patch_ref", "output_ref", "output_refs", "artifact_ref", "artifact_refs"}:
+                elif key in {
+                    "candidate_diff_ref",
+                    "patch_ref",
+                    "candidate_patch_ref",
+                    "output_ref",
+                    "output_refs",
+                    "output_path",
+                    "artifact_ref",
+                    "artifact_refs",
+                }:
                     add(outputs, item)
                 if key in {"evidence_ref", "evidence_refs", "input_refs"}:
                     add(evidence, item)

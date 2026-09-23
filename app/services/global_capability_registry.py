@@ -470,6 +470,11 @@ PRODUCTION_RENDER_RECORD = CapabilityRecord(
     agent_id="audiovisual-worker",
     skill_id="vedit.longform.render-profile",
     side_effects=("GitHub Actions dispatch", "render artifact creation"),
+    side_effect_class="EXTERNAL_SIDE_EFFECT",
+    execution_operations=(
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 NARRATION_GENERATE_PTBR_RECORD = CapabilityRecord(
@@ -552,6 +557,7 @@ GTA6_KNOWLEDGE_RETRIEVE_RECORD = CapabilityRecord(
     routing_authority="NONE",
     editorial_authority="NONE",
     publication_authority="NONE",
+    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
 )
 
 GTA6_DELTA_RESEARCH_RECORD = CapabilityRecord(
@@ -638,6 +644,108 @@ FRESH_GTA6_RESEARCH_RECORD = CapabilityRecord(
     version="1",
     provider_id="internal",
     side_effects=(),
+    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
+)
+
+
+GTA6_RESEARCH_SEMANTIC_RECORD = CapabilityRecord(
+    capability_id="gta6.research.semantic-synthesis",
+    capability_type="AGENT",
+    domain="research",
+    implementation="Harness-subordinated semantic synthesis over persisted GTA6 research artifacts",
+    input_contract="direct TaskResultEnvelope research artifacts + objective + persisted Harness RESEARCH authorization",
+    output_contract="provider-grounded topic synthesis + findings/risks/evidence refs + task output ref",
+    requirements=(
+        "persisted Harness RESEARCH authorization",
+        "direct dependency TaskResultEnvelope artifact",
+        "Harness-selected healthy zero-cost semantic provider",
+        "exact Registry executor binding",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH",),
+    policy_tags=(
+        "gta6", "research", "semantic", "reasoning", "synthesis",
+        "evidence", "artifact-lineage", "zero-cost",
+    ),
+    security_boundary=(
+        "DeepSeek Harness is sole authority. This capability may reason only over "
+        "persisted dependency research artifacts using the Harness-selected provider; "
+        "it cannot collect sources, mutate canonical knowledge, publish, or choose routing."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="HARNESS_AI_PROVIDER_POLICY",
+    latency_class="REMOTE_AI",
+    quality_class="EVIDENCE_GROUNDED_STRUCTURED_SEMANTIC_SYNTHESIS",
+    evidence_contract="semantic research JSON + HarnessAIProviderEvidence + TaskResultEnvelope lineage",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.production_mission_capability_adapters."
+        "execute_research_semantic_synthesis_task"
+    ),
+    version="1",
+    provider_id=None,
+    agent_id="gta6-research-semantic",
+    side_effects=(),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+)
+
+TELEGRAM_REVIEW_DELIVERY_RECORD = CapabilityRecord(
+    capability_id="telegram.review.deliver",
+    capability_type="PRESENTATION",
+    domain="telegram-outbound",
+    implementation="Harness-governed outbound human-review delivery through the canonical Telegram group surface",
+    input_contract="persisted direct dependency artifact + genuine editorial lineage + human-readable review sections",
+    output_contract="Telegram SENT receipts/message refs with outbound direction evidence",
+    requirements=(
+        "persisted Harness EXECUTION authorization",
+        "direct TaskResultEnvelope dependency artifact",
+        "canonical Telegram group human surface",
+        "genuine editorial artifact lineage",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("EXECUTION",),
+    policy_tags=(
+        "telegram", "outbound", "human-review", "delivery", "presentation",
+        "artifact-lineage", "zero-cost",
+    ),
+    security_boundary=(
+        "Outbound presentation only: Harness -> Telegram -> human. It has no ingress, "
+        "memory, routing, editorial, scheduler, promotion, or publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="TELEGRAM_API",
+    latency_class="REMOTE_API",
+    quality_class="HUMAN_READABLE_GENUINE_ARTIFACT_FAIL_CLOSED",
+    evidence_contract="Telegram delivery receipts + message artifact refs + TaskResultEnvelope lineage",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.production_mission_capability_adapters."
+        "execute_telegram_review_delivery_task"
+    ),
+    version="1",
+    provider_id="telegram-bot-api",
+    side_effects=("Telegram human-review messages",),
+    side_effect_class="EXTERNAL_SIDE_EFFECT",
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    execution_operations=(
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 YOUTUBE_PACKAGE_PERSIST_RECORD = CapabilityRecord(
@@ -794,6 +902,7 @@ TELEGRAM_USER_INPUT_RECORD = CapabilityRecord(
     version="1",
     provider_id="internal",
     side_effects=("canonical Telegram ingress persistence", "Memory Event append", "bounded semantic memory learning"),
+    execution_operations=(),
 )
 
 MONETIZATION_RECORD = CapabilityRecord(
@@ -1010,6 +1119,8 @@ for _record in (
     GTA6_KNOWLEDGE_RETRIEVE_RECORD,
     GTA6_DELTA_RESEARCH_RECORD,
     FRESH_GTA6_RESEARCH_RECORD,
+    GTA6_RESEARCH_SEMANTIC_RECORD,
+    TELEGRAM_REVIEW_DELIVERY_RECORD,
     YOUTUBE_PACKAGE_PERSIST_RECORD,
     YOUTUBE_ANALYTICS_READ_RECORD,
     YOUTUBE_ANALYTICS_LEARNING_RECORD,
@@ -1065,14 +1176,28 @@ for _capability_id, _binding in _NATIVE_ADAPTER_BINDINGS.items():
 # This is metadata only: authority and executable identities remain unchanged.
 for _capability_id, _metadata in {
     "gta6.research": {
-        "implementation": "Harness-governed current GTA6 research pipeline with Knowledge Brain retrieval and editorial evaluation",
+        "implementation": "Harness-governed deterministic current GTA6 collection + Knowledge retrieval + editorial scoring/Goal creation",
         "input_contract": "current GTA6 research intent under persisted Harness RESEARCH authorization",
-        "output_contract": "fresh source-grounded research + novelty/editorial evaluation + selected Goal/Idea/queue when approved",
+        "output_contract": "fresh source-grounded research artifact refs + deterministic novelty/editorial evaluation + selected Goal/Idea/queue when approved",
+        "execution_operations": (CAN_PRODUCE_ARTIFACT_REFS,),
     },
     "editorial.process": {
-        "implementation": "Harness-governed AI-backed targeted editorial queue consumer",
-        "input_contract": "Harness-selected Goal + verified research context + dynamic zero-cost semantic provider",
-        "output_contract": "natural PT-BR script + ScriptSpec + ContentItem + persisted ProductionPlan",
+        "implementation": "Harness-governed AI-backed targeted editorial queue consumer over persisted research lineage",
+        "input_contract": "Harness-selected Goal + direct dependency TaskResultEnvelope + verified research context + dynamic zero-cost semantic provider",
+        "output_contract": "natural PT-BR script + ScriptSpec + ContentItem + persisted ProductionPlan artifact refs",
+        "execution_operations": (
+            CAN_SEMANTIC_REASONING,
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ),
+    },
+    "production.plan": {
+        "input_contract": "direct dependency TaskResultEnvelope containing persisted ContentItem",
+        "output_contract": "persisted ProductionPlan + production-plan artifact ref + direct input refs",
+        "execution_operations": (
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ),
     },
 }.items():
     _existing = _REGISTRY._by_id.get(_capability_id)

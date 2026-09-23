@@ -50,6 +50,7 @@ class FreshResearchEvidence:
     secondary_source_count: int
     packet: dict[str, Any]
     execution_ref: str
+    artifact_ref: str
 
 
 class FreshResearchTransport(Protocol):
@@ -293,6 +294,7 @@ def execute_fresh_gta6_research_capability(
         secondary_source_count=int(packet.get("secondary_source_count") or 0),
         packet=packet,
         execution_ref=execution_ref,
+        artifact_ref=execution_ref,
     )
 
 

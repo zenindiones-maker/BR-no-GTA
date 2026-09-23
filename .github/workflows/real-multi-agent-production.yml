@@ -13,6 +13,13 @@ on:
       - "app/services/harness_capability_adapter.py"
       - "app/services/youtube_department_service.py"
       - "app/services/global_capability_registry.py"
+      - "app/services/capability_execution_contract_service.py"
+      - "app/services/harness_adaptive_planning_service.py"
+      - "app/services/semantic_mission_planner_service.py"
+      - "app/services/native_capability_adapters.py"
+      - "app/services/task_result_envelope_service.py"
+      - "app/services/telegram_fresh_research_service.py"
+      - "tests/test_production_mission_execution_contracts.py"
       - "tests/test_youtube_department_learning_boundary.py"
       - "tests/test_telegram_fresh_research.py"
 
@@ -83,13 +90,24 @@ jobs:
             scripts/real_multi_agent_production.py \
             app/services/production_mission_capability_adapters.py \
             app/services/harness_capability_adapter.py \
-            app/services/youtube_department_service.py
+            app/services/youtube_department_service.py \
+            app/services/capability_execution_contract_service.py \
+            app/services/harness_adaptive_planning_service.py \
+            app/services/semantic_mission_planner_service.py \
+            app/services/native_capability_adapters.py \
+            app/services/task_result_envelope_service.py
           python -m pytest -q \
             tests/test_global_capability_registry.py \
             tests/test_harness_mission_planner.py \
             tests/test_telegram_fresh_research.py \
-            tests/test_youtube_department_learning_boundary.py
+            tests/test_youtube_department_learning_boundary.py \
+            tests/test_production_mission_execution_contracts.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
+          echo "ARTIFACT_CONSUMPTION_REAL=PASS"
+          echo "ARTIFACT_PRODUCTION_REAL=PASS"
+          echo "DIRECT_LINEAGE_PRESERVED=PASS"
+          echo "TELEGRAM_INGRESS_NOT_USED_FOR_DELIVERY=PASS"
+          echo "TELEGRAM_OUTBOUND_BOUNDARY_VALID=PASS"
 
       - name: Execute natural goal through Harness-selected agents
         env:

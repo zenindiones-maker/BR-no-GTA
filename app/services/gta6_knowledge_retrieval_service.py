@@ -333,8 +333,15 @@ def execute_gta6_knowledge_retrieval_capability(
         ),
         include_history=bool(payload.get("include_history", False)),
     )
+    evidence_refs = list(dict.fromkeys(
+        str(item.get("evidence_ref") or "").strip()
+        for item in (result.get("knowledge_units") or ())
+        if str(item.get("evidence_ref") or "").strip()
+    ))
     return {
         "status": "PASS",
+        "artifact_ref": f"knowledge-retrieval:{auth.execution_id}",
+        "evidence_refs": evidence_refs,
         "authority": auth.authority,
         "authorized_action": auth.authorized_action,
         "provider_calls": 0,

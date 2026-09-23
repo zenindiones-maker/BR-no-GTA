@@ -127,7 +127,25 @@ def run_gta6_research(
         research_results,
     )
 
+    evidence_refs = list(dict.fromkeys(
+        str(
+            item.get("url")
+            or item.get("source_url")
+            or item.get("canonical_url")
+            or ""
+        ).strip()
+        for item in research_results
+        if str(
+            item.get("url")
+            or item.get("source_url")
+            or item.get("canonical_url")
+            or ""
+        ).strip()
+    ))
+
     return {
+        "artifact_ref": f"research-execution:{execution_id}",
+        "evidence_refs": evidence_refs[:48],
         "existing_knowledge": existing_knowledge,
         "research_gap": research_gap,
         "discovered_sources": discovered_sources,

@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from app.database.production_plan_repository import (
+    get_production_plan_by_content_item_id,
+    insert_production_plan,
+)
 from app.services.production_plan_service import create_production_plan
 from app.services.gta6_media_discovery_service import discover_gta6_media_candidates
 from app.services.render_artifact_validator import RenderArtifactValidator
@@ -51,13 +55,68 @@ def execute_production_plan_capability(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     _validate(capability, "production.plan")
+    context = payload.get("context")
+    if not isinstance(context, dict):
+        raise ValueError("production.plan requires dependency artifact context")
+    parents = [
+        dict(item)
+        for item in (context.get("parent_handoffs") or ())
+        if isinstance(item, dict) and item.get("direct_dependency") is True
+    ]
+    if not parents:
+        raise ValueError("production.plan requires direct dependency artifact")
+    input_refs: list[str] = []
+    parent_content_item = None
+    for parent in parents:
+        ref = str(parent.get("task_result_ref") or "").strip()
+        digest = str(parent.get("content_sha256") or "").strip()
+        if not ref.startswith("artifact:") or len(digest) != 64:
+            raise ValueError("production.plan dependency artifact lineage is invalid")
+        if ref not in input_refs:
+            input_refs.append(ref)
+        result = parent.get("result")
+        if isinstance(result, dict):
+            candidate = result.get("content_item")
+            if isinstance(candidate, dict):
+                parent_content_item = dict(candidate)
     content_item = payload.get("content_item")
+    if content_item is None:
+        content_item = parent_content_item
     if not isinstance(content_item, dict):
-        raise ValueError("production.plan requires content_item object")
-    plan = create_production_plan(content_item)
+        raise ValueError("production.plan requires content_item from dependency artifact")
+    if (
+        parent_content_item is not None
+        and content_item.get("id") != parent_content_item.get("id")
+    ):
+        raise PermissionError("production.plan content_item drifted from dependency artifact")
+    content_item_id = content_item.get("id")
+    if (
+        isinstance(content_item_id, bool)
+        or not isinstance(content_item_id, int)
+        or content_item_id <= 0
+    ):
+        raise ValueError("production.plan requires persisted positive content_item id")
+
+    stored = get_production_plan_by_content_item_id(content_item_id)
+    if stored is None:
+        plan = create_production_plan(content_item)
+        production_plan_id = insert_production_plan(
+            content_item_id=content_item_id,
+            production_plan=plan,
+        )
+        reused = False
+    else:
+        plan = stored["production_plan"]
+        production_plan_id = int(stored["id"])
+        reused = True
     return {
         "status": "EXECUTED",
         "production_plan": plan,
+        "production_plan_id": production_plan_id,
+        "artifact_ref": f"production-plan:{production_plan_id}",
+        "input_refs": input_refs,
+        "direct_lineage_preserved": True,
+        "idempotent": reused,
     }
 
 

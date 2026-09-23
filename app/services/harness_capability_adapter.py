@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
+import inspect
 import time
 from typing import Any
 
@@ -143,7 +144,16 @@ class CapabilityAdapter:
                 **dict(payload or {}),
                 **authorization_to_context(authorization),
             }
-            return executor(execution_context=execution_context)
+            params = inspect.signature(executor).parameters
+            named = {
+                name: payload[name]
+                for name in params
+                if name != "execution_context" and name in payload
+            }
+            return executor(
+                execution_context=execution_context,
+                **named,
+            )
         raise PermissionError(
             "Registry executor signature is not supported by CapabilityAdapter"
         )

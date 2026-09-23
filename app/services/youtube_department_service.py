@@ -8,6 +8,11 @@ from typing import Any
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
 from app.services.global_capability_registry_base import AVAILABLE, FUNCTIONAL, CapabilityRecord
+from app.services.capability_execution_contract_service import (
+    CAN_CONSUME_ARTIFACT_REFS,
+    CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_SEMANTIC_REASONING,
+)
 
 
 EXECUTOR_BINDING = "app.services.youtube_department_service.execute_youtube_specialist_capability"
@@ -72,6 +77,11 @@ def youtube_department_records() -> tuple[CapabilityRecord, ...]:
                 provider_id="internal-role-adapter",
                 agent_id=agent_id,
                 side_effects=(),
+                execution_operations=(
+                    CAN_SEMANTIC_REASONING,
+                    CAN_CONSUME_ARTIFACT_REFS,
+                    CAN_PRODUCE_ARTIFACT_REFS,
+                ),
             )
         )
     return tuple(records)

@@ -173,8 +173,11 @@ def _compact_registry_record(record: Any) -> dict[str, Any]:
         "type": record.capability_type,
         "domain": record.domain,
         "actions": list(record.allowed_actions),
-        "tags": list(record.policy_tags)[:4],
-        "output": str(record.output_contract or "")[:80],
+        "operations": list(
+            tuple(getattr(record, "execution_operations", ()) or ())
+        ),
+        "tags": list(record.policy_tags)[:5],
+        "output": str(record.output_contract or "")[:96],
         "side_effect_class": str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ),
@@ -213,6 +216,7 @@ def _registry_search_text(record: Any) -> str:
             record.output_contract,
             " ".join(record.allowed_actions),
             " ".join(record.policy_tags),
+            " ".join(tuple(getattr(record, "execution_operations", ()) or ())),
             str(record.agent_id or ""),
             str(record.skill_id or ""),
         ]
@@ -989,6 +993,7 @@ def _candidate_hint_errors_are_safe_to_discard(
         "candidate semantics",
         "candidate_requirement",
         "mission_class",
+        "execution-contract-insufficient",
     )
     for error in errors:
         normalized = str(error or "").casefold()
@@ -1159,9 +1164,13 @@ def propose_validated_semantic_plan(
                     "Replan using the capability metadata as hard constraints. Prefer "
                     "candidate_capability_ids=[] and describe the required capability so "
                     "DeepSeek Harness performs final Registry selection. If a candidate "
-                    "ID is supplied, the task action must be literally present in that "
-                    "record's allowed actions and the requested side-effect class must "
-                    "fit the record. Mission class is also a hard authority constraint: "
+                    "ID is supplied, the task action and every derived execution operation "
+                    "must be supported by that Registry record. Treat deterministic fresh "
+                    "collection/retrieval/fact-check separately from semantic reasoning; "
+                    "when both are needed, decompose them into dependency-linked tasks rather "
+                    "than assigning semantic reasoning to a deterministic executor. Telegram "
+                    "ingress capabilities are never outbound delivery capabilities. The requested "
+                    "side-effect class must fit the record. Mission class is also a hard authority constraint: "
                     "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT, including measurement, "
                     "verification, review and benchmark work; do not route those tasks through "
                     "RESEARCH capabilities. The goal says a code candidate is conditional; do "

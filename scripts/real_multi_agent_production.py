@@ -65,6 +65,7 @@ DELIVERY_CAPABILITIES = frozenset({
     "production.media.select-segments",
     "production.media.bind-selected-segments",
     "production.render.execute",
+    "telegram.review.deliver",
     "qa.preflight",
     "youtube.upload-private",
     "video.edit.vedit",
@@ -329,6 +330,13 @@ def _payload_for_task(
             **common,
             "query": human_goal,
         }
+    if capability_id == "gta6.research.semantic-synthesis":
+        return {
+            **common,
+            "query": human_goal,
+            "selected_topic": state.get("selected_topic"),
+            "verified_claims": list(state.get("claims") or ())[:24],
+        }
     if capability_id in {"gta6.knowledge.retrieve", "knowledge.retrieve"}:
         return {
             **common,
@@ -406,6 +414,7 @@ def _payload_for_task(
                 ),
                 "content_strategy_evidence_refs": evidence_refs,
                 "novelty_gate": state.get("topic_selection"),
+                "research_semantic": state.get("research_semantic"),
             },
         }
     if capability_id == "script.generate":
@@ -479,6 +488,10 @@ def _observe_execution(
             state["claims"][0]["fact_check_result"] = "SUPPORTED"
             state["claims"][0]["verification_basis"] = "FACT_CHECK"
 
+    if capability_id == "gta6.research.semantic-synthesis" and isinstance(payload, dict):
+        state["research_semantic"] = payload.get("semantic_output")
+        state["research_semantic_provider"] = payload.get("semantic_provider")
+
     if capability_id.startswith("youtube.department."):
         state.setdefault("specialist_outputs", {})[capability_id] = payload
 
@@ -500,7 +513,10 @@ def _observe_execution(
         plan = payload.get("production_plan")
         if isinstance(plan, dict):
             state["production_plan"] = plan
-            if not state.get("production_plan_id"):
+            persisted_plan_id = int(payload.get("production_plan_id") or 0)
+            if persisted_plan_id > 0:
+                state["production_plan_id"] = persisted_plan_id
+            elif not state.get("production_plan_id"):
                 content_item_id = int(state.get("content_item_id") or 0)
                 if content_item_id > 0:
                     state["production_plan_id"] = insert_production_plan(

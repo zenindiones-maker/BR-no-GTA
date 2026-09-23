@@ -76,7 +76,25 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
     )
     reasoning_markers = (
         "root cause", "analyze", "analysis", "diagnose", "reasoning",
-        "causal", "propose",
+        "causal", "propose", "synthesize", "synthesis", "interpret",
+    )
+    deterministic_evidence_classes = {
+        "evidence-collection",
+        "fresh-evidence-collection",
+        "knowledge-retrieval",
+        "fact-check",
+        "source-verification",
+    }
+    deterministic_evidence_markers = (
+        "collect fresh evidence",
+        "collect evidence",
+        "evidence collection",
+        "retrieve knowledge",
+        "knowledge retrieval",
+        "fact-check",
+        "fact check",
+        "source verification",
+        "source packet",
     )
 
     task_class = str(requirement.get("task_class") or "").strip().casefold()
@@ -121,7 +139,14 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
     if any(marker in text for marker in reasoning_markers):
         operations.add(CAN_SEMANTIC_REASONING)
 
-    if operations == {CAN_PRODUCE_ARTIFACT_REFS}:
+    deterministic_evidence_task = (
+        task_class in deterministic_evidence_classes
+        or any(marker in normalized_text for marker in deterministic_evidence_markers)
+    )
+    if (
+        operations == {CAN_PRODUCE_ARTIFACT_REFS}
+        and not deterministic_evidence_task
+    ):
         operations.add(CAN_SEMANTIC_REASONING)
     return tuple(sorted(operations))
 
