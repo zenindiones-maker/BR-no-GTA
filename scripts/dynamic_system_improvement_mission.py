@@ -683,6 +683,80 @@ def _artifact_content_budget_chars(
     )
 
 
+def _fit_parent_context_to_executor_limit(
+    *,
+    parent_context: dict[str, Any],
+    executor_context_limit_chars: int,
+) -> tuple[dict[str, Any], dict[str, int | bool]]:
+    """Fit dependency context without dropping canonical artifact lineage.
+
+    Parent TaskResultEnvelope payloads stay content-addressed on disk. The
+    in-memory prompt context keeps refs, hashes and bounded result summaries.
+    """
+    context = dict(parent_context)
+    original_chars = _context_char_size(context)
+
+    parents = [
+        dict(item)
+        for item in (context.get("parent_handoffs") or ())
+        if isinstance(item, dict)
+    ]
+    dependency_refs = [
+        {
+            "task_id": item.get("task_id"),
+            "task_result_ref": item.get("task_result_ref"),
+            "content_sha256": item.get("content_sha256"),
+            "direct_dependency": bool(item.get("direct_dependency")),
+        }
+        for item in parents
+    ]
+    if "dependency_results" in context:
+        context["dependency_results"] = dependency_refs
+
+    after_alias_chars = _context_char_size(context)
+    omitted_payloads = 0
+    truncated_summaries = 0
+
+    if after_alias_chars > int(executor_context_limit_chars):
+        compacted: list[dict[str, Any]] = []
+        for raw in parents:
+            item = dict(raw)
+            if "result" in item:
+                item.pop("result", None)
+                item["result_omitted"] = "EXECUTOR_CONTEXT_LIMIT"
+                omitted_payloads += 1
+            compacted.append(item)
+        context["parent_handoffs"] = compacted
+
+    # The canonical result is still reachable by task_result_ref/content_sha256.
+    # Only if metadata + summaries still exceed the executor's declared limit,
+    # bound summaries rather than silently raising the external context budget.
+    if _context_char_size(context) > int(executor_context_limit_chars):
+        compacted = []
+        for raw in context.get("parent_handoffs") or ():
+            item = dict(raw)
+            summary = item.get("result_summary")
+            if isinstance(summary, str) and len(summary) > 1600:
+                item["result_summary"] = summary[:1600]
+                item["result_summary_truncated"] = True
+                truncated_summaries += 1
+            compacted.append(item)
+        context["parent_handoffs"] = compacted
+
+    final_chars = _context_char_size(context)
+    return context, {
+        "PARENT_CONTEXT_ORIGINAL_CHARS": original_chars,
+        "PARENT_CONTEXT_AFTER_ALIAS_DEDUP_CHARS": after_alias_chars,
+        "PARENT_RESULT_PAYLOADS_OMITTED": omitted_payloads,
+        "PARENT_RESULT_SUMMARIES_TRUNCATED": truncated_summaries,
+        "PARENT_CONTEXT_FINAL_CHARS": final_chars,
+        "PARENT_CONTEXT_BYTES_AVOIDED": max(0, original_chars - final_chars),
+        "PARENT_CONTEXT_FITS_EXECUTOR_LIMIT": (
+            final_chars <= int(executor_context_limit_chars)
+        ),
+    }
+
+
 def _safe_artifact_input_path(
     artifact_dir: Path,
     artifact_ref: str,
@@ -1014,6 +1088,14 @@ def run(
                     task=task,
                     broker=broker,
                 )
+                parent_context, parent_context_metrics = (
+                    _fit_parent_context_to_executor_limit(
+                        parent_context=parent_context,
+                        executor_context_limit_chars=(
+                            executor_context_limit_chars
+                        ),
+                    )
+                )
                 base_context_chars = _context_char_size(parent_context)
                 metadata_artifacts, metadata_metrics = (
                     _task_input_artifact_context(
@@ -1093,6 +1175,7 @@ def run(
                     ]))
                     final_context_chars = _context_char_size(parent_context)
                     input_metrics.update({
+                        **parent_context_metrics,
                         "EXECUTOR_CONTEXT_LIMIT_CHARS": (
                             executor_context_limit_chars
                         ),
@@ -1110,6 +1193,27 @@ def run(
                     if final_context_chars > executor_context_limit_chars:
                         raise RuntimeError(
                             "EXECUTOR_CONTEXT_LIMIT_EXCEEDED_AFTER_BOUNDED_ARTIFACT:"
+                            f"task={task_id}:"
+                            f"limit={executor_context_limit_chars}:"
+                            f"actual={final_context_chars}"
+                        )
+                if not input_artifacts:
+                    final_context_chars = _context_char_size(parent_context)
+                    holder["input_artifact_metrics_by_task"][task_id] = {
+                        **parent_context_metrics,
+                        "EXECUTOR_CONTEXT_LIMIT_CHARS": (
+                            executor_context_limit_chars
+                        ),
+                        "EXECUTOR_CONTEXT_BASE_CHARS": base_context_chars,
+                        "EXECUTOR_CONTEXT_FINAL_CHARS": final_context_chars,
+                        "CONTEXT_FITS_EXECUTOR_LIMIT": (
+                            final_context_chars
+                            <= executor_context_limit_chars
+                        ),
+                    }
+                    if final_context_chars > executor_context_limit_chars:
+                        raise RuntimeError(
+                            "EXECUTOR_CONTEXT_LIMIT_EXCEEDED_AFTER_HANDOFF_COMPACTION:"
                             f"task={task_id}:"
                             f"limit={executor_context_limit_chars}:"
                             f"actual={final_context_chars}"

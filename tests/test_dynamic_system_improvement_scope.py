@@ -13,6 +13,7 @@ from scripts.dynamic_system_improvement_mission import (
     _artifact_content_budget_chars,
     _context_char_size,
     _executor_context_char_limit,
+    _fit_parent_context_to_executor_limit,
     _generic_payload,
     _is_mutating,
     _task_input_artifact_context,
@@ -486,3 +487,95 @@ def test_nonsemantic_artifact_task_rejects_provider_backed_addy(monkeypatch):
         "semantic-provider-unnecessary-for-contract"
     ) in avoided
     assert evidence["selected_capability_id"] == selected
+
+
+
+def test_parent_handoff_compaction_fits_addy_without_losing_lineage():
+    large_result = {
+        "evidence_summary": [{
+            "artifact_ref": "artifact:incident-evidence-packet.json",
+            "summary": {"excerpt": "evidence " * 1200},
+        }],
+        "artifact_manifest": [{
+            "artifact_ref": "artifact:incident-evidence-packet.json",
+            "sha256": "a" * 64,
+            "size_bytes": 32526,
+        }],
+    }
+    parent = {
+        "task_id": "evidence-ingest",
+        "capability_id": "artifact.evidence.reuse",
+        "agent_id": "artifact-lineage-worker",
+        "skill_id": None,
+        "task_result_ref": "artifact:task-results/evidence-ingest-1.json",
+        "content_sha256": "b" * 64,
+        "result_summary": '{"summary":"' + ("diagnostic " * 500) + '"}',
+        "output_artifact_refs": [
+            "incident-evidence-normalized:" + ("c" * 64)
+        ],
+        "evidence_refs": ["artifact:incident-evidence-packet.json"],
+        "metrics_refs": [],
+        "source_task_ids": [],
+        "direct_dependency": True,
+        "result": large_result,
+    }
+    context = {
+        "mission_id": "mission-observed-context-overrun",
+        "task_id": "agent-diagnosis",
+        "goal_id": "goal-observed-context-overrun",
+        "task": {
+            "objective": "Diagnose the observed production incident.",
+            "capability_id": "addy:debugging-and-error-recovery",
+            "agent_id": "addy-agent-skills",
+            "skill_id": "debugging-and-error-recovery",
+            "action": "DEVELOPMENT",
+        },
+        "parent_handoffs": [parent],
+        # Legacy alias used to serialize the same 10KB+ result twice.
+        "dependency_results": [dict(parent)],
+        "dependency_metrics": {},
+        "dependency_context_sha256": "d" * 64,
+        "relevant_memory": {
+            "operational_memory": [],
+            "knowledge_memory": [],
+            "artifact_lineage_memory": [],
+            "competence_records": [],
+        },
+        "relevant_human_decisions": [],
+        "evidence_refs": [
+            "artifact:task-results/evidence-ingest-1.json",
+            "artifact:incident-evidence-packet.json",
+        ],
+        "allowed_tools": [],
+        "memory_write": "FORBIDDEN",
+        "input_refs": ["artifact:incident-evidence-packet.json"],
+        "budget_bytes": 65536,
+        "used_bytes": 14500,
+        "bounded_memory_context": True,
+    }
+    assert _context_char_size(context) > 16000
+
+    fitted, metrics = _fit_parent_context_to_executor_limit(
+        parent_context=context,
+        executor_context_limit_chars=16000,
+    )
+
+    assert _context_char_size(fitted) <= 16000
+    assert metrics["PARENT_CONTEXT_BYTES_AVOIDED"] > 0
+    assert metrics["PARENT_CONTEXT_FITS_EXECUTOR_LIMIT"] is True
+    assert fitted["parent_handoffs"][0]["task_result_ref"] == (
+        "artifact:task-results/evidence-ingest-1.json"
+    )
+    assert fitted["parent_handoffs"][0]["content_sha256"] == "b" * 64
+    assert fitted["parent_handoffs"][0]["result_summary"]
+    assert fitted["dependency_results"] == [{
+        "task_id": "evidence-ingest",
+        "task_result_ref": "artifact:task-results/evidence-ingest-1.json",
+        "content_sha256": "b" * 64,
+        "direct_dependency": True,
+    }]
+    if "result" not in fitted["parent_handoffs"][0]:
+        assert (
+            fitted["parent_handoffs"][0]["result_omitted"]
+            == "EXECUTOR_CONTEXT_LIMIT"
+        )

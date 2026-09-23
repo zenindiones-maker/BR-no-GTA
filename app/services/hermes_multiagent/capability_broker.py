@@ -801,12 +801,37 @@ class HermesHarnessCapabilityBroker:
             *[ref for item in bounded["conversation_memory"] for ref in (item.get("evidence_refs") or ())],
             *[ref for item in bounded["artifact_lineage_memory"] for ref in (item.get("evidence_refs") or ())],
         ]))
+        dependency_result_refs = [
+            {
+                "task_id": item.get("task_id"),
+                "task_result_ref": item.get("task_result_ref"),
+                "content_sha256": item.get("content_sha256"),
+                "direct_dependency": bool(item.get("direct_dependency")),
+            }
+            for item in parents
+        ]
+        full_dependency_alias_bytes = len(json.dumps(
+            parents,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8"))
+        ref_dependency_alias_bytes = len(json.dumps(
+            dependency_result_refs,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8"))
         dependency_metrics = {
             "DEPENDENCY_ARTIFACT_COUNT": len(parents),
             "DEPENDENCY_CONTEXT_BYTES": used,
             "DEPENDENCY_CONTEXT_BUILD_MS": round((time.perf_counter() - context_started) * 1000.0, 3),
             "DEPENDENCY_ARTIFACT_LOAD_MS": round(artifact_load_ms, 3),
             "DUPLICATE_HANDOFF_BYTES": duplicate_bytes,
+            "DEPENDENCY_ALIAS_BYTES_AVOIDED": max(
+                0,
+                full_dependency_alias_bytes - ref_dependency_alias_bytes,
+            ),
         }
         dependency_fingerprint = sha256(json.dumps({
             "task_id": task_id,
@@ -824,7 +849,10 @@ class HermesHarnessCapabilityBroker:
                 "action": task.action,
             },
             "parent_handoffs": parents,
-            "dependency_results": parents,
+            # Backward-compatible dependency_results is intentionally refs-only.
+            # The canonical payload lives once in parent_handoffs and in the
+            # content-addressed TaskResultEnvelope artifact.
+            "dependency_results": dependency_result_refs,
             "dependency_metrics": dependency_metrics,
             "dependency_context_sha256": dependency_fingerprint,
             "relevant_memory": {
