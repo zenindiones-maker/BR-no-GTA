@@ -184,7 +184,24 @@ class CapabilityAdapter:
         if parent_context:
             body.setdefault("parent_context", dict(parent_context))
         started = time.perf_counter()
-        if (
+        if record.capability_id == "gta6.research.fresh-cloud":
+            # Preserve the canonical fresh-research Registry binding. The
+            # TaskEnvelope carries the natural query inside payload, while the
+            # canonical executor exposes it as a named argument.
+            query = str(body.get("query") or body.get("objective") or "").strip()
+            if not query:
+                raise ValueError("fresh research TaskEnvelope requires query")
+            result = executor(
+                query=query,
+                authorization=auth,
+                routing_decision=routing_decision,
+                source_context=(
+                    dict(body.get("source_context"))
+                    if isinstance(body.get("source_context"), dict)
+                    else None
+                ),
+            )
+        elif (
             record.domain == "youtube-department"
             and record.capability_type == "AGENT"
             and body.get("semantic_context") is not None
