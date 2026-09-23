@@ -16,8 +16,8 @@
     "same_prompt_context_schema": true,
     "bounded_parallelism": 3
   },
-  "attempt": 10,
-  "trigger_head": "e931165cfc0cda719152389ae4033ac966bed7e3",
+  "attempt": 11,
+  "trigger_head": "596ed9f10ec8068adf5f7fd966293914783d15ba",
   "preflight_only": false,
   "generation_options": {
     "max_tokens": 4096,
@@ -30,12 +30,12 @@
       "deadline_unchanged_ms": 54000
     }
   },
-  "measurement_goal": "capture sanitized NVIDIA semantic output and exact downstream Harness validation failure without changing generation policy",
+  "measurement_goal": "prove NVIDIA structured output plus downstream Harness capability selection after generic semantic-provider health fix",
   "structured_output_contract": {
     "mode": "json_schema",
     "authority": "DEEPSEEK_HARNESS",
     "schema_source": "mission_plan_json_schema",
     "disable_thinking": true
   },
-  "observability_only": true
+  "observability_only": false
 }
