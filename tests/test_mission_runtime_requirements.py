@@ -25,6 +25,7 @@ def test_runtime_requirements_do_not_make_codex_or_tuxevil_global_prerequisites(
     assert report["codex_required"] is False
     assert report["tuxevil_required"] is False
     assert report["global_provider_prerequisite"] is False
+    assert report["semantic_provider_required"] is False
     assert report["executor_bootstrap_mode"] == "LAZY_SELECTED_TASK_TOOLS"
 
 
@@ -57,6 +58,8 @@ def test_runtime_requirements_restore_addy_source_without_codex_bootstrap():
     }
     report = classify_plan_runtime_requirements(plan)
     assert report["addy_source_required"] is True
+    assert report["semantic_provider_required"] is True
+    assert report["semantic_provider_task_ids"] == ["profile"]
     assert report["codex_required"] is False
     assert report["tuxevil_required"] is False
     assert (

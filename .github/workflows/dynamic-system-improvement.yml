@@ -290,6 +290,8 @@ jobs:
       - name: Execute Harness planned Hermes swarm
         if: steps.mission_gate.outputs.mission_ready == 'true'
         working-directory: target
+        env:
+          NVIDIA_API_KEY: ${{ steps.runtime.outputs.semantic_provider_required == 'true' && secrets.NVIDIA_API_KEY || '' }}
         run: |
           set -euo pipefail
           HUMAN_GOAL="$(python - <<'PY'

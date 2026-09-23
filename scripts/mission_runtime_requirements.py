@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+
 
 ADDY_EXECUTOR_BINDING = (
     "app.services.addy_harness_service.execute_authorized_addy_skill"
@@ -26,6 +28,7 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
 
     capabilities: list[str] = []
     executor_bindings: list[str] = []
+    semantic_provider_task_ids: list[str] = []
     required_tools: set[str] = set()
     tool_owners: dict[str, list[str]] = {}
     for task in tasks:
@@ -38,6 +41,13 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         capabilities.append(capability_id)
         executor_bindings.append(executor)
         task_id = str(task.get("task_id") or capability_id)
+        record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+        if (
+            record is not None
+            and str(record.health_policy or "")
+            == "SEMANTIC_PROVIDER_REQUIRED"
+        ):
+            semantic_provider_task_ids.append(task_id)
         for raw_tool in task.get("allowed_tools") or ():
             tool = str(raw_tool or "").strip().lower()
             if not tool:
@@ -60,6 +70,10 @@ def classify_plan_runtime_requirements(mission_plan: dict[str, Any]) -> dict[str
         "codex_required": "codex" in required_tools,
         "tuxevil_required": "tuxevil" in required_tools,
         "addy_source_required": ADDY_EXECUTOR_BINDING in executor_bindings,
+        "semantic_provider_required": bool(semantic_provider_task_ids),
+        "semantic_provider_task_ids": sorted(
+            set(semantic_provider_task_ids)
+        ),
         "executor_bootstrap_mode": "LAZY_SELECTED_TASK_TOOLS",
         "global_provider_prerequisite": False,
     }
@@ -103,12 +117,29 @@ def main() -> int:
                 + ("true" if report["addy_source_required"] else "false")
                 + "\n"
             )
+            handle.write(
+                "semantic_provider_required="
+                + (
+                    "true"
+                    if report["semantic_provider_required"]
+                    else "false"
+                )
+                + "\n"
+            )
     print("RUNTIME_REQUIREMENTS_FROM_TASK_ENVELOPE=PASS")
     print("CODEX_REQUIRED=" + ("YES" if report["codex_required"] else "NO"))
     print("TUXEVIL_REQUIRED=" + ("YES" if report["tuxevil_required"] else "NO"))
     print(
         "ADDY_SOURCE_REQUIRED="
         + ("YES" if report["addy_source_required"] else "NO")
+    )
+    print(
+        "SEMANTIC_PROVIDER_REQUIRED="
+        + (
+            "YES"
+            if report["semantic_provider_required"]
+            else "NO"
+        )
     )
     print("TUXEVIL_GLOBAL_PREREQUISITE=NO")
     return 0
