@@ -359,4 +359,3 @@ def test_child_execution_lease_accepts_only_explicit_child_capabilities():
         task_id="verify",
         capability_id="web.search.discover",
     )
-
