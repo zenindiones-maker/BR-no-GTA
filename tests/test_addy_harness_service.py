@@ -893,3 +893,136 @@ def test_failed_provider_attempt_persists_failed_episode(monkeypatch):
     assert len(episodes) == 1
     assert episodes[0].success is False
     assert episodes[0].status == "FAILED"
+
+
+
+def test_external_replan_revalidates_degraded_nvidia_model_before_route(
+    monkeypatch,
+):
+    _patch_common(monkeypatch)
+    route_kimi = _route(
+        routing_id="routing-kimi-current",
+        model="moonshotai/kimi-k3",
+    )
+    route_requests = []
+    revalidations = []
+    candidate = SimpleNamespace(
+        provider_id="nvidia_nim",
+        model_id="moonshotai/kimi-k3",
+        capability_id="ai.provider.nvidia-nim.kimi-k3",
+    )
+
+    def fake_route(request):
+        route_requests.append(request)
+        if len(route_requests) == 1:
+            raise service.RoutingPolicyError(
+                "no currently AVAILABLE model",
+                evidence={"rejected_candidates": []},
+            )
+        return route_kimi
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "select_provider_model_revalidation_candidate",
+        lambda request: candidate,
+    )
+    monkeypatch.setattr(
+        service,
+        "revalidate_nvidia_model_runtime_health",
+        lambda model_id, timeout_seconds: (
+            revalidations.append((model_id, timeout_seconds))
+            or {
+                "schema": "NvidiaModelHealthRevalidation/v1",
+                "provider_id": "nvidia_nim",
+                "model_id": model_id,
+                "availability": "AVAILABLE",
+                "health_probe_passed": True,
+                "structured_output_probe_passed": True,
+                "response_valid": True,
+                "latency_ms": 1200.0,
+                "http_status": 200,
+                "failure_class": None,
+                "evidence_refs": [
+                    "github:run:test:nvidia-model-revalidation:kimi"
+                ],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: _success(
+            "moonshotai/kimi-k3",
+            "routing-kimi-current",
+        ),
+    )
+
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "ATTEMPTED_ROUTING_IDS": [
+            "routing-glm",
+            "routing-lightning",
+            "routing-ultra",
+        ],
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "z-ai/glm-5.3",
+                "routing_id": "routing-glm",
+            },
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+                "routing_id": "routing-lightning",
+            },
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "nvidia/nemotron-3-ultra-550b-a55b",
+                "routing_id": "routing-ultra",
+            },
+        ],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "z-ai/glm-5.3",
+                "routing_id": "routing-glm",
+            },
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+                "routing_id": "routing-lightning",
+            },
+            {
+                "provider_id": "nvidia_nim",
+                "model_id": "nvidia/nemotron-3-ultra-550b-a55b",
+                "routing_id": "routing-ultra",
+            },
+        ],
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert result.status == "EXECUTED"
+    assert len(route_requests) == 2
+    assert revalidations == [
+        ("moonshotai/kimi-k3", 54.0)
+    ]
+    assert result.result["semantic_model"] == "moonshotai/kimi-k3"
+    assert len(result.result["provider_health_revalidations"]) == 1
+    assert result.result["provider_health_revalidations"][0][
+        "health_probe_passed"
+    ] is True
+    assert result.result["provider_attempts"][0]["phase"] == (
+        "HEALTH_REVALIDATION"
+    )
+    assert result.result["provider_attempts"][1]["phase"] == "INITIAL"
+    assert result.result["BOUNDED_PROVIDER_ATTEMPTS"] is True
