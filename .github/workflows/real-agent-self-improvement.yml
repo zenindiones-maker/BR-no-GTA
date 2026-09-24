@@ -284,7 +284,10 @@ jobs:
                       model=str(item.get("model_id") or item.get("model") or "")
                       if provider and model:
                           exhausted.add((provider,model))
-                  for item in node.get("provider_attempts") or []:
+                  provider_attempt_rows=node.get("PROVIDER_ATTEMPTS")
+              if provider_attempt_rows is None:
+                  provider_attempt_rows=node.get("provider_attempts")
+              for item in provider_attempt_rows or []:
                       if not isinstance(item,dict):
                           continue
                       if str(item.get("status") or "").upper()!="FAILED":
