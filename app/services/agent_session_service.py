@@ -281,7 +281,17 @@ class AgentSessionRuntime:
             return False
         if str(self.state.get("STATUS") or "").upper() != "FAILED":
             return False
-        if str(self.state.get("FAILURE_CLASS") or "") != "RoutingPolicyError":
+        failure_class = str(self.state.get("FAILURE_CLASS") or "")
+        provider_recovery = self.provider_recovery_state()
+        has_failed_provider_history = bool(
+            provider_recovery.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
+        )
+        causal_budget_exhaustion = bool(
+            failure_class == "AgentToolBudgetExceeded"
+            and has_failed_provider_history
+            and not bool(self.state.get("FINAL_OUTPUT_VALID"))
+        )
+        if failure_class != "RoutingPolicyError" and not causal_budget_exhaustion:
             return False
 
         consumed = self.state.get("FAILURE_TURN_CONSUMED")
@@ -311,6 +321,23 @@ class AgentSessionRuntime:
                 changed = True
         elif self._release_unconsumed_resume_segment():
             changed = True
+        elif consumed is False and causal_budget_exhaustion:
+            # The terminal budget check happened before a new provider call,
+            # after the previous recovery turn had already persisted its
+            # provider failure. Reclaim exactly that unconsumed recovery turn
+            # and paired segment; bounds remain unchanged.
+            current = int(self.state.get("TURN_INDEX") or 0)
+            if current > 0:
+                self.state["TURN_INDEX"] = current - 1
+                changed = True
+            used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
+            if used > 0:
+                self.state["RESUME_SEGMENTS_USED"] = used - 1
+                self.state["PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"] = (
+                    int(self.state.get("PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT") or 0)
+                    + 1
+                )
+                changed = True
 
         if not changed:
             return False
