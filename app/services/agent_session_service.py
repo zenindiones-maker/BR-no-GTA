@@ -91,6 +91,7 @@ class AgentSessionRuntime:
         checkpoint_ref = (
             "artifact:agent-sessions/" + self.path.name
         )
+        self.restored = False
         initial = {
             "schema": AGENT_SESSION_SCHEMA,
             "AGENT_INSTANCE_ID": self.agent_instance_id,
@@ -140,8 +141,11 @@ class AgentSessionRuntime:
                 == self.agent_instance_id
                 and loaded.get("MISSION_ID") == mission_id
                 and loaded.get("TASK_ID") == task_id
+                and loaded.get("CAPABILITY_ID") == capability_id
+                and loaded.get("AGENT_ID") == agent_id
             ):
                 initial.update(loaded)
+                self.restored = True
         self.state = initial
         self._persist()
 
@@ -277,6 +281,131 @@ class AgentSessionRuntime:
             self.state["FAILURE_EVIDENCE"] = dict(evidence)
         self._persist()
 
+    def provider_recovery_state(self) -> dict[str, Any]:
+        def walk(value: Any):
+            if isinstance(value, dict):
+                yield value
+                for child in value.values():
+                    yield from walk(child)
+            elif isinstance(value, (list, tuple)):
+                for child in value:
+                    yield from walk(child)
+
+        attempted: list[dict[str, Any]] = []
+        exhausted: list[dict[str, Any]] = []
+        attempts: list[dict[str, Any]] = []
+        for node in walk(self.state):
+            for item in node.get("provider_attempts") or ():
+                if isinstance(item, dict):
+                    attempts.append(dict(item))
+            for item in (
+                node.get("ATTEMPTED_PROVIDER_MODEL_PAIRS")
+                or node.get("attempted_provider_model_pairs")
+                or ()
+            ):
+                if isinstance(item, dict):
+                    attempted.append(dict(item))
+            for item in (
+                node.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
+                or node.get("exhausted_provider_model_pairs")
+                or ()
+            ):
+                if isinstance(item, dict):
+                    exhausted.append(dict(item))
+
+        def normalized_pair(item: dict[str, Any]) -> dict[str, Any] | None:
+            provider_id = str(
+                item.get("provider_id") or item.get("provider") or ""
+            ).strip()
+            model_id = str(
+                item.get("model_id") or item.get("model") or ""
+            ).strip()
+            if not provider_id or not model_id:
+                return None
+            return {
+                "provider_id": provider_id,
+                "model_id": model_id,
+                "routing_id": str(item.get("routing_id") or "").strip(),
+                "attempt_id": str(item.get("attempt_id") or "").strip(),
+                "failure_class": str(
+                    item.get("failure_class") or ""
+                ).strip(),
+                "status": str(item.get("status") or "").strip().upper(),
+            }
+
+        attempted.extend(
+            row for row in (
+                normalized_pair(item) for item in attempts
+            )
+            if row is not None
+        )
+        exhausted.extend(
+            row for row in (
+                normalized_pair(item)
+                for item in attempts
+                if str(item.get("status") or "").strip().upper() == "FAILED"
+            )
+            if row is not None
+        )
+
+        def unique_pairs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            seen: set[tuple[str, str, str]] = set()
+            out: list[dict[str, Any]] = []
+            for item in rows:
+                row = normalized_pair(item)
+                if row is None:
+                    continue
+                key = (
+                    row["provider_id"],
+                    row["model_id"],
+                    row["routing_id"],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(row)
+            return out
+
+        attempted = unique_pairs(attempted)
+        exhausted = unique_pairs(exhausted)
+        attempted_routes = list(dict.fromkeys(
+            row["routing_id"]
+            for row in attempted
+            if row["routing_id"]
+        ))
+        full_timeout = any(
+            row.get("failure_class") == "TRANSIENT_PROVIDER_TIMEOUT"
+            for row in exhausted
+        )
+        previous = exhausted[-1] if exhausted else (
+            attempted[-1] if attempted else {}
+        )
+        attempt_ids = {
+            str(item.get("attempt_id") or "").strip()
+            for item in attempts
+            if str(item.get("attempt_id") or "").strip()
+        }
+        provider_call_count = (
+            len(attempt_ids)
+            if attempt_ids
+            else len(attempts)
+        )
+        return {
+            "ATTEMPTED_PROVIDER_MODEL_PAIRS": attempted,
+            "EXHAUSTED_PROVIDER_MODEL_PAIRS": exhausted,
+            "ATTEMPTED_ROUTING_IDS": attempted_routes,
+            "PREVIOUS_SELECTED_PROVIDER": previous.get("provider_id"),
+            "PREVIOUS_SELECTED_MODEL": previous.get("model_id"),
+            "SAME_MODEL_FULL_TIMEOUT_RETRY": (
+                "FORBIDDEN" if full_timeout else None
+            ),
+            "RECOVERY_STRATEGY": (
+                "LOCALIZED_PROVIDER_REPLAN" if exhausted else None
+            ),
+            "PROVIDER_CALL_COUNT": provider_call_count,
+            "FAILED_PROVIDER_ATTEMPTS_PERSISTED": bool(exhausted),
+        }
+
     def prior_tool_results(self) -> list[dict[str, Any]]:
         requests = {
             str(item.get("request_id") or ""): dict(item)
@@ -309,6 +438,19 @@ class AgentSessionRuntime:
                 if not isinstance(envelope, dict):
                     continue
                 if envelope.get("schema") != "ToolResultEnvelope/v1":
+                    continue
+                if envelope.get("mission_id") != self.state.get("MISSION_ID"):
+                    continue
+                if envelope.get("task_id") != self.state.get("TASK_ID"):
+                    continue
+                expected_hash = str(
+                    execution.get("content_sha256") or ""
+                ).strip()
+                if (
+                    expected_hash
+                    and str(envelope.get("content_sha256") or "").strip()
+                    != expected_hash
+                ):
                     continue
                 rows.append({
                     "request": request,

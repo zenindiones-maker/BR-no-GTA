@@ -12,6 +12,7 @@ on:
       - "app/services/harness_executor_availability_service.py"
       - "app/services/harness_collaboration_service.py"
       - "app/services/addy_harness_service.py"
+      - "app/services/agent_session_service.py"
       - "app/services/hermes_multiagent/capability_broker.py"
       - "app/services/task_input_contract_service.py"
       - "app/services/harness_internal_recovery_service.py"

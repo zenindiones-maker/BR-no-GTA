@@ -1401,20 +1401,116 @@ class HermesHarnessCapabilityBroker:
             max_wall_clock_seconds=float(task.time_budget_seconds),
             mandatory_tool_requirements=mandatory_tool_requirements,
         )
-        tool_results: list[dict[str, Any]] = []
+        restored_tool_rows = (
+            session.prior_tool_results()
+            if session.restored
+            else []
+        )
+        tool_results: list[dict[str, Any]] = [
+            dict(item["result"])
+            for item in restored_tool_rows
+            if isinstance(item.get("result"), dict)
+        ]
         tool_result_by_fingerprint: dict[str, dict[str, Any]] = {}
         seen_request_ids: set[str] = set()
+        for item in restored_tool_rows:
+            request = extract_tool_request(
+                item.get("request") or {},
+                mission_id=self.spec.mission_id,
+                task_id=task.task_id,
+                agent_id=str(record.agent_id or ""),
+                capability_id=task.capability_id,
+            )
+            result_row = item.get("result")
+            if request is None or not isinstance(result_row, dict):
+                continue
+            seen_request_ids.add(request.request_id)
+            tool_result_by_fingerprint[
+                tool_request_fingerprint(request)
+            ] = dict(result_row)
+
+        session_recovery = (
+            session.provider_recovery_state()
+            if session.restored
+            else {}
+        )
+        if session_recovery.get("RECOVERY_STRATEGY"):
+            base_context = dict(base_context)
+            prior_internal = dict(
+                base_context.get("internal_recovery") or {}
+            )
+            base_context["internal_recovery"] = {
+                **prior_internal,
+                **{
+                    key: value
+                    for key, value in session_recovery.items()
+                    if value not in (None, "", [], {})
+                },
+                "ORIGINAL_MISSION_ID": self.spec.mission_id,
+                "ORIGINAL_GOAL_ID": self.spec.goal_id,
+                "FAILED_TASK_ID": task.task_id,
+            }
+
+        restored_turn_index = (
+            int(session.state.get("TURN_INDEX") or 0)
+            if session.restored
+            else 0
+        )
+        start_agent_turn = max(1, restored_turn_index + 1)
         previous_output = ""
         output_validation_feedback: dict[str, Any] | None = None
-        provider_calls = 0
-        tool_calls = 0
+        provider_calls = int(
+            session_recovery.get("PROVIDER_CALL_COUNT") or 0
+        )
+        tool_calls = len({
+            str(item.get("request_id") or "")
+            for item in tool_results
+            if str(item.get("request_id") or "")
+        })
+        if session.restored:
+            self._audit.append({
+                "event": "AGENT_SESSION_RESTORED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task.task_id,
+                "capability_id": task.capability_id,
+                "agent_id": record.agent_id,
+                "agent_instance_id": session.agent_instance_id,
+                "checkpoint_ref": session.artifact_ref,
+                "restored_turn_index": restored_turn_index,
+                "next_turn_index": start_agent_turn,
+                "restored_tool_result_count": len(tool_results),
+                "restored_provider_call_count": provider_calls,
+                "TASK_AGENT_SESSION_RESTORED": "PASS",
+                "SAME_AGENT_AFTER_TOOL_RESULT": "PASS",
+                "PRIOR_TOOL_RESULT_CONSUMED": (
+                    "PASS" if tool_results else "NOT_APPLICABLE"
+                ),
+                "FAILED_PROVIDER_ATTEMPTS_PERSISTED": (
+                    "PASS"
+                    if session_recovery.get(
+                        "FAILED_PROVIDER_ATTEMPTS_PERSISTED"
+                    )
+                    else "NOT_APPLICABLE"
+                ),
+            })
         task_started_perf = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
         last_authorization_id = self.parent_authorization.authorization_id
         last_elapsed = 0.0
         last_result: Any = None
 
-        for agent_turn in range(1, max_agent_turns + 1):
+        if start_agent_turn > max_agent_turns:
+            raise DelegatedCapabilityFailure(
+                task_id=task_id,
+                capability_id=capability_id,
+                failure_mode="AgentToolBudgetExceeded",
+                retry_attempt=retry_attempt,
+                retry_allowed=False,
+                requires_harness_replan=True,
+            )
+
+        for agent_turn in range(start_agent_turn, max_agent_turns + 1):
             session.begin_turn(agent_turn)
             elapsed_wall = time.perf_counter() - task_started_perf
             if elapsed_wall > float(task.time_budget_seconds):

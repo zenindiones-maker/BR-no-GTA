@@ -27,8 +27,11 @@ from app.services.hermes_multiagent.capability_broker import (
 from app.services.hermes_multiagent.contracts import DelegationEnvelope
 from app.services.semantic_tool_loop_service import (
     TOOL_REQUEST_SCHEMA,
+    build_tool_result_envelope,
     extract_tool_request,
+    utcnow,
 )
+from app.services.agent_session_service import AgentSessionRuntime
 
 
 class _Board:
@@ -788,5 +791,212 @@ def test_agent_turn_rejects_fake_tool_result_mixed_response(
         failure = broker.result_snapshot()["task-02"][-1]
         assert failure["status"] == "FAILED_CONTRACT"
         assert failure["result"]["FAKE_TOOL_RESULT_ACCEPTED"] == "NO"
+    finally:
+        consume_harness_authorization(parent)
+
+
+
+def test_restored_session_resumes_after_real_tool_result_without_reexecution(
+    monkeypatch,
+    tmp_path,
+):
+    parent, envelope, broker, context = _fixture(tmp_path)
+    record = GLOBAL_CAPABILITY_REGISTRY.get(
+        "addy:debugging-and-error-recovery"
+    )
+    assert record is not None
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id=envelope.mission_id,
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=(
+            "artifact:incident-evidence-packet.json",
+        ),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    session.begin_turn(1)
+    request = extract_tool_request(
+        _legacy_request(
+            "diag-restored-1",
+            "artifact.evidence.reuse",
+        ),
+        mission_id=envelope.mission_id,
+        task_id="task-02",
+        agent_id="addy-agent-skills",
+        capability_id="addy:debugging-and-error-recovery",
+    )
+    assert request is not None
+    session.record_tool_request(request.to_dict())
+    started = utcnow()
+    result_envelope = build_tool_result_envelope(
+        request=request,
+        tool_id="artifact.evidence.reuse",
+        operation="EXECUTE_CAPABILITY",
+        authorization_id="tool-auth-restored",
+        output_refs=(
+            "artifact:tool-results/task-02-diag-restored-1.json",
+        ),
+        result_payload={
+            "status": "REUSED",
+            "artifact_refs": [
+                "artifact:incident-evidence-packet.json"
+            ],
+            "evidence_summary": [{"observed": True}],
+        },
+        status="EXECUTED",
+        started_at=started,
+        finished_at=utcnow(),
+        error=None,
+    ).to_dict()
+    tool_path = (
+        tmp_path
+        / "tool-results"
+        / "task-02-diag-restored-1.json"
+    )
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    tool_path.write_text(
+        json.dumps(result_envelope),
+        encoding="utf-8",
+    )
+    session.record_tool_result(result_envelope)
+    session.begin_turn(2)
+    session.fail(
+        failure_class="CapabilityReturnedFailure",
+        evidence={
+            "result": {
+                "FAILURE_CLASS": "TRANSIENT_PROVIDER_TIMEOUT",
+                "ATTEMPTED_PROVIDER_MODEL_PAIRS": [
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": "z-ai/glm-5.3",
+                        "routing_id": "route-old-a",
+                        "attempt_id": "attempt-a",
+                        "failure_class": "TRANSIENT_PROVIDER_HTTP_5XX",
+                        "status": "FAILED",
+                    },
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": (
+                            "nvidia/nemotron-3.5-lightning-30b-a3b"
+                        ),
+                        "routing_id": "route-old-b",
+                        "attempt_id": "attempt-b",
+                        "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+                        "status": "FAILED",
+                    },
+                ],
+                "EXHAUSTED_PROVIDER_MODEL_PAIRS": [
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": "z-ai/glm-5.3",
+                        "routing_id": "route-old-a",
+                        "attempt_id": "attempt-a",
+                        "failure_class": "TRANSIENT_PROVIDER_HTTP_5XX",
+                        "status": "FAILED",
+                    },
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": (
+                            "nvidia/nemotron-3.5-lightning-30b-a3b"
+                        ),
+                        "routing_id": "route-old-b",
+                        "attempt_id": "attempt-b",
+                        "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+                        "status": "FAILED",
+                    },
+                ],
+                "provider_attempts": [
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": "z-ai/glm-5.3",
+                        "routing_id": "route-old-a",
+                        "attempt_id": "attempt-a",
+                        "failure_class": "TRANSIENT_PROVIDER_HTTP_5XX",
+                        "status": "FAILED",
+                    },
+                    {
+                        "provider_id": "nvidia_nim",
+                        "model_id": (
+                            "nvidia/nemotron-3.5-lightning-30b-a3b"
+                        ),
+                        "routing_id": "route-old-b",
+                        "attempt_id": "attempt-b",
+                        "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+                        "status": "FAILED",
+                    },
+                ],
+            }
+        },
+    )
+
+    calls = []
+
+    def fake_execute(**kwargs):
+        task = kwargs["task_envelope"]
+        calls.append(task.capability_id)
+        assert task.capability_id == (
+            "addy:debugging-and-error-recovery"
+        )
+        payload = kwargs["payload"]
+        assert payload["agent_turn"] == 3
+        assert payload["agent_instance_id"] == session.agent_instance_id
+        assert len(
+            payload["context"]["agent_tool_results"]
+        ) == 1
+        internal = payload["context"]["internal_recovery"]
+        assert internal["RECOVERY_STRATEGY"] == (
+            "LOCALIZED_PROVIDER_REPLAN"
+        )
+        assert len(
+            internal["EXHAUSTED_PROVIDER_MODEL_PAIRS"]
+        ) == 2
+        assert internal["SAME_MODEL_FULL_TIMEOUT_RETRY"] == "FORBIDDEN"
+        return SimpleNamespace(
+            result=_final_diagnosis(),
+            elapsed_seconds=0.001,
+        )
+
+    monkeypatch.setattr(broker.adapter, "execute", fake_execute)
+    try:
+        result = broker.execute_delegated_capability(
+            task_id="task-02",
+            capability_id="addy:debugging-and-error-recovery",
+            payload={
+                "mission_id": envelope.mission_id,
+                "task_id": "task-02",
+                "goal_id": envelope.goal_id,
+                "task": "Resume diagnosis from checkpoint.",
+                "context": context,
+            },
+            dependency_context=context,
+        )
+        assert calls == ["addy:debugging-and-error-recovery"]
+        assert result["agent_instance_id"] == session.agent_instance_id
+        assert result["agent_loop"]["agent_turns"] == 3
+        assert result["agent_loop"]["tool_calls"] == 1
+        assert result["agent_loop"]["final_output_valid"] is True
+        restored = [
+            row for row in broker.audit_snapshot()
+            if row["event"] == "AGENT_SESSION_RESTORED"
+        ]
+        assert len(restored) == 1
+        assert restored[0]["restored_turn_index"] == 2
+        assert restored[0]["restored_tool_result_count"] == 1
+        assert restored[0]["TASK_AGENT_SESSION_RESTORED"] == "PASS"
+        final_session = json.loads(session.path.read_text())
+        assert final_session["TURN_INDEX"] == 3
+        assert final_session["STATUS"] == "COMPLETED"
+        assert len(final_session["TOOL_EXECUTIONS"]) == 1
+        assert len(final_session["TOOL_RESULTS_CONSUMED"]) == 1
     finally:
         consume_harness_authorization(parent)

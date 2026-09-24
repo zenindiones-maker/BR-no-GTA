@@ -363,6 +363,12 @@ def restore_compatible_node_checkpoints(
         "CHECKPOINT_REUSED": False,
         "REUSED_TASK_IDS": [],
         "NO_COMPLETED_NODE_REEXECUTION": False,
+        "PARTIAL_TASK_SESSION_RESTORED": False,
+        "PARTIAL_TASK_ID": None,
+        "PARTIAL_AGENT_INSTANCE_ID": None,
+        "RESTORED_TOOL_RESULT_COUNT": 0,
+        "RESTORED_TURN_INDEX": 0,
+        "RESTORED_PROVIDER_ATTEMPT_COUNT": 0,
     }
     if checkpoint_source_dir is None or not checkpoint_source_dir.is_dir():
         return evidence
@@ -401,6 +407,8 @@ def restore_compatible_node_checkpoints(
     semantic_valid = True
     reused: list[str] = []
     previous_reused: str | None = None
+    partial_task_id: str | None = None
+    partial_source_task: dict[str, Any] | None = None
 
     for current in current_tasks:
         task_id = str(current.get("task_id") or "")
@@ -428,6 +436,8 @@ def restore_compatible_node_checkpoints(
                 completed = row
                 break
         if completed is None:
+            partial_task_id = task_id
+            partial_source_task = source_task
             break
 
         source_ref = str(completed.get("task_result_ref") or "")
@@ -510,6 +520,162 @@ def restore_compatible_node_checkpoints(
         reused.append(task_id)
         previous_reused = task_id
 
+    if (
+        partial_task_id
+        and partial_source_task is not None
+        and semantic_valid
+        and hash_valid
+        and lineage_valid
+    ):
+        current_partial = next(
+            (
+                item for item in current_tasks
+                if str(item.get("task_id") or "") == partial_task_id
+            ),
+            None,
+        )
+        if (
+            current_partial is not None
+            and _checkpoint_task_signature(current_partial)
+            == _checkpoint_task_signature(partial_source_task)
+        ):
+            session_candidates = sorted(
+                (source_runtime / "agent-sessions").glob(
+                    f"{partial_task_id}-agent-*.json"
+                )
+            )
+            for source_session_path in reversed(session_candidates):
+                try:
+                    source_session = json.loads(
+                        source_session_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if (
+                    source_session.get("schema") != "AgentSession/v1"
+                    or source_session.get("TASK_ID") != partial_task_id
+                    or source_session.get("CAPABILITY_ID")
+                    != current_partial.get("capability_id")
+                    or source_session.get("AGENT_ID")
+                    != current_partial.get("selected_agent_id")
+                ):
+                    continue
+                session_dir = runtime_dir / "agent-sessions"
+                session_dir.mkdir(parents=True, exist_ok=True)
+                target_session = session_dir / source_session_path.name
+                shutil.copyfile(source_session_path, target_session)
+
+                restored_tool_results = 0
+                tool_results_valid = True
+                for execution in source_session.get("TOOL_EXECUTIONS") or ():
+                    if not isinstance(execution, dict):
+                        continue
+                    expected_hash = str(
+                        execution.get("content_sha256") or ""
+                    ).strip()
+                    for ref in execution.get("output_refs") or ():
+                        value = str(ref or "").strip()
+                        if not value.startswith("artifact:tool-results/"):
+                            continue
+                        relative = value[len("artifact:"):]
+                        source_tool = (source_runtime / relative).resolve()
+                        source_root = source_runtime.resolve()
+                        if (
+                            source_tool != source_root
+                            and source_root not in source_tool.parents
+                        ):
+                            tool_results_valid = False
+                            break
+                        if not source_tool.is_file():
+                            tool_results_valid = False
+                            break
+                        try:
+                            envelope = json.loads(
+                                source_tool.read_text(encoding="utf-8")
+                            )
+                        except (OSError, json.JSONDecodeError):
+                            tool_results_valid = False
+                            break
+                        if (
+                            envelope.get("schema") != "ToolResultEnvelope/v1"
+                            or envelope.get("task_id") != partial_task_id
+                            or (
+                                expected_hash
+                                and str(
+                                    envelope.get("content_sha256") or ""
+                                ).strip() != expected_hash
+                            )
+                        ):
+                            tool_results_valid = False
+                            break
+                        target_tool = (runtime_dir / relative).resolve()
+                        runtime_root = runtime_dir.resolve()
+                        if (
+                            target_tool != runtime_root
+                            and runtime_root not in target_tool.parents
+                        ):
+                            tool_results_valid = False
+                            break
+                        target_tool.parent.mkdir(
+                            parents=True,
+                            exist_ok=True,
+                        )
+                        shutil.copyfile(source_tool, target_tool)
+                        restored_tool_results += 1
+                    if not tool_results_valid:
+                        break
+
+                if not tool_results_valid:
+                    target_session.unlink(missing_ok=True)
+                    continue
+
+                failure_evidence = source_session.get(
+                    "FAILURE_EVIDENCE"
+                )
+                provider_attempt_count = 0
+                if isinstance(failure_evidence, dict):
+                    stack = [failure_evidence]
+                    seen_attempt_ids = set()
+                    while stack:
+                        item = stack.pop()
+                        if isinstance(item, dict):
+                            attempts = item.get("provider_attempts")
+                            if isinstance(attempts, list):
+                                for attempt in attempts:
+                                    if not isinstance(attempt, dict):
+                                        continue
+                                    attempt_id = str(
+                                        attempt.get("attempt_id") or ""
+                                    )
+                                    seen_attempt_ids.add(
+                                        attempt_id
+                                        or json.dumps(
+                                            attempt,
+                                            sort_keys=True,
+                                            default=str,
+                                        )
+                                    )
+                            stack.extend(item.values())
+                        elif isinstance(item, list):
+                            stack.extend(item)
+                    provider_attempt_count = len(seen_attempt_ids)
+
+                evidence.update({
+                    "PARTIAL_TASK_SESSION_RESTORED": True,
+                    "PARTIAL_TASK_ID": partial_task_id,
+                    "PARTIAL_AGENT_INSTANCE_ID": source_session.get(
+                        "AGENT_INSTANCE_ID"
+                    ),
+                    "RESTORED_TOOL_RESULT_COUNT": restored_tool_results,
+                    "RESTORED_TURN_INDEX": int(
+                        source_session.get("TURN_INDEX") or 0
+                    ),
+                    "RESTORED_PROVIDER_ATTEMPT_COUNT": (
+                        provider_attempt_count
+                    ),
+                })
+                break
+
     evidence.update({
         "CHECKPOINT_HASH_VALID": hash_valid,
         "CHECKPOINT_LINEAGE_VALID": lineage_valid,
@@ -519,7 +685,9 @@ def restore_compatible_node_checkpoints(
         "REUSED_TASK_COUNT": len(reused),
         "NO_COMPLETED_NODE_REEXECUTION": bool(reused),
         "RERUN_REASON": (
-            "resume at first incomplete node"
+            "resume partial agent session at " + str(partial_task_id)
+            if evidence.get("PARTIAL_TASK_SESSION_RESTORED")
+            else "resume at first incomplete node"
             if reused
             else evidence.get("RERUN_REASON")
             or "no compatible completed node prefix"
@@ -1731,6 +1899,26 @@ def run(
         ),
         "REUSED_TASK_COUNT": int(
             checkpoint_evidence.get("REUSED_TASK_COUNT") or 0
+        ),
+        "TASK01_REUSED": (
+            "task-01"
+            in set(checkpoint_evidence.get("REUSED_TASK_IDS") or ())
+        ),
+        "TASK02_AGENT_SESSION_RESTORED": bool(
+            checkpoint_evidence.get("PARTIAL_TASK_SESSION_RESTORED")
+            and checkpoint_evidence.get("PARTIAL_TASK_ID") == "task-02"
+        ),
+        "RESTORED_AGENT_INSTANCE_ID": checkpoint_evidence.get(
+            "PARTIAL_AGENT_INSTANCE_ID"
+        ),
+        "RESTORED_TOOL_RESULT_COUNT": int(
+            checkpoint_evidence.get("RESTORED_TOOL_RESULT_COUNT") or 0
+        ),
+        "RESTORED_TURN_INDEX": int(
+            checkpoint_evidence.get("RESTORED_TURN_INDEX") or 0
+        ),
+        "RESTORED_PROVIDER_ATTEMPT_COUNT": int(
+            checkpoint_evidence.get("RESTORED_PROVIDER_ATTEMPT_COUNT") or 0
         ),
         "FAILURE_EPISODE_ID": failure_episode_id,
         "CURRENT_FAILURE_EPISODE_ID": failure_episode_id,
