@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse,json,os,time
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
-from app.services.harness_collaboration_service import CollaborationTask,build_collaboration_plan
+from app.services.harness_collaboration_service import CollaborationTask,build_collaboration_plan\nfrom app.database.schema import initialize_schema
 from app.services.harness_routing_policy_service import HarnessRoutingRequest,route_harness_request
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.hermes_multiagent.contracts import HERMES_RUNTIME_CAPABILITY_ID,HermesMissionExecutionSpec
@@ -22,7 +22,7 @@ def _artifact_receipt(row,tid):
  return {"task_id":tid,"agent_id":row.get("agent_id"),"hermes_evidence_ref":row["evidence_ref"],"task_result_ref":row.get("task_result_ref"),"worker_artifact_ref":x.get("artifact_ref"),"worker_artifact_sha256":x.get("artifact_sha256"),"execution_id":p.get("execution_id"),"started_at":p.get("started_at"),"finished_at":p.get("finished_at"),"worker_result":x}
 def main():
  a=argparse.ArgumentParser();a.add_argument("--checkpoint-root",type=Path,required=True);a.add_argument("--request",type=Path,required=True);a.add_argument("--artifact-dir",type=Path,required=True);x=a.parse_args()
- req=json.loads(x.request.read_text()); base=os.environ.get("GITHUB_SHA") or ""; mission="TASK02_DETERMINISTIC_REAL_CHAIN"; goal="goal-task02-deterministic-real-chain"
+ initialize_schema()\n req=json.loads(x.request.read_text()); base=os.environ.get("GITHUB_SHA") or ""; mission="TASK02_DETERMINISTIC_REAL_CHAIN"; goal="goal-task02-deterministic-real-chain"
  scopes={"agent-session-inspection":("runtime/real-agent-self-improvement/checkpoint-source",),"routing-history-inspection":("app/services/harness_routing_policy_service.py","app/services/provider_health_service.py"),"contract-inspection":("app/services/task_output_contract_service.py","app/services/task_result_envelope_service.py"),"code-path-inspection":("app/services/addy_harness_service.py","app/services/semantic_agent_tool_loop_service.py")}
  tasks=[]
  for tid,scope in scopes.items():
