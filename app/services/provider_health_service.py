@@ -1026,6 +1026,174 @@ def provider_health(provider_id: str, *, registry: Any = GLOBAL_CAPABILITY_REGIS
         evidence_refs=(),retry_allowed=True,zero_cost_eligible=zero_cost_eligible)
 
 
+def revalidate_nvidia_model_runtime_health(
+    model_id: str,
+    *,
+    timeout_seconds: float,
+    registry: Any = GLOBAL_CAPABILITY_REGISTRY,
+) -> dict[str, Any]:
+    """Bounded current-run health revalidation for one Harness-selected model.
+
+    DEGRADED/UNKNOWN evidence remains ineligible for normal routing. This
+    performs exactly one live probe and writes a CURRENT_RUN_RUNTIME_PROOF
+    override only when that probe succeeds.
+    """
+    model = str(model_id or "").strip()
+    if not model:
+        raise ValueError("model_id is required")
+    timeout = float(timeout_seconds)
+    if timeout <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    record = next(
+        (
+            item
+            for item in registry.all()
+            if item.capability_type == "PROVIDER"
+            and str(item.provider_id or "").lower().replace("-", "_")
+            == "nvidia_nim"
+            and str(getattr(item, "model_id", None) or "") == model
+        ),
+        None,
+    )
+    if record is None or not record.available:
+        raise ValueError("NVIDIA recovery model is not Registry-available")
+    if str(record.cost_class or "").upper() != "FREE_ENDPOINT":
+        raise PermissionError(
+            "NVIDIA recovery health probe must remain zero-cost"
+        )
+
+    from app.services.nvidia_nim_provider import NvidiaNimProviderAdapter
+
+    started_at = datetime.now(timezone.utc)
+    provider = NvidiaNimProviderAdapter(
+        model=model,
+        max_retries=0,
+        timeout_seconds=timeout,
+    )
+    error_payload: dict[str, Any] | None = None
+    try:
+        probe = provider.probe_capabilities()
+    except Exception as exc:
+        safe = (
+            exc.to_dict()
+            if callable(getattr(exc, "to_dict", None))
+            else {
+                "code": type(exc).__name__,
+                "status_code": None,
+                "retryable": False,
+            }
+        )
+        error_payload = dict(safe or {})
+        probe = {
+            "MODEL_ID": model,
+            "HTTP_STATUS": error_payload.get("status_code"),
+            "RESPONSE_VALID": False,
+            "LATENCY_MS": round(
+                max(
+                    0.0,
+                    float(
+                        provider.last_performance_metrics.get(
+                            "latency_seconds"
+                        )
+                        or (
+                            datetime.now(timezone.utc) - started_at
+                        ).total_seconds()
+                    ),
+                )
+                * 1000.0,
+                3,
+            ),
+            "TOOL_USE_SUPPORTED": False,
+            "STRUCTURED_OUTPUT_RESULT": "FAIL",
+            "RATE_LIMIT_OBSERVED": (
+                error_payload.get("code") == "rate_limited"
+            ),
+            "HEALTH": "DEGRADED",
+            "FAILURE_CLASS": (
+                error_payload.get("code") or type(exc).__name__
+            ),
+        }
+
+    finished_at = datetime.now(timezone.utc)
+    response_valid = probe.get("RESPONSE_VALID") is True
+    structured_valid = (
+        str(probe.get("STRUCTURED_OUTPUT_RESULT") or "").upper()
+        == "PASS"
+    )
+    available = bool(response_valid and structured_valid)
+    run_id = str(os.getenv("GITHUB_RUN_ID") or "local").strip() or "local"
+    model_hash = sha256(model.encode("utf-8")).hexdigest()[:16]
+    evidence_ref = (
+        f"github:run:{run_id}:nvidia-model-revalidation:{model_hash}"
+    )
+    latency_ms = float(probe.get("LATENCY_MS") or 0.0)
+    item = {
+        "availability": "AVAILABLE" if available else "DEGRADED",
+        "last_success": finished_at.isoformat() if available else None,
+        "last_failure": None if available else finished_at.isoformat(),
+        "failure_class": (
+            None
+            if available
+            else str(
+                probe.get("FAILURE_CLASS")
+                or (error_payload or {}).get("code")
+                or "health_revalidation_failed"
+            )
+        ),
+        "latency_ms": latency_ms if latency_ms > 0 else None,
+        "confidence": 1.0,
+        "sample_size": 1,
+        "rate_limit_state": (
+            "RATE_LIMITED"
+            if probe.get("RATE_LIMIT_OBSERVED") is True
+            else "CLEAR"
+        ),
+        "circuit_breaker_state": "CLOSED",
+        "github_run_id": run_id,
+        "evidence_refs": [evidence_ref],
+        "live_status": "PASS" if available else "FAIL",
+        "http_status": probe.get("HTTP_STATUS"),
+        "quota_state": "AVAILABLE_UNMEASURED",
+        "last_verified_at": finished_at.isoformat(),
+    }
+
+    raw = str(os.getenv("BR_RUNTIME_MODEL_HEALTH_JSON") or "").strip()
+    try:
+        runtime_payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        runtime_payload = {}
+    if not isinstance(runtime_payload, dict):
+        runtime_payload = {}
+    group = runtime_payload.setdefault("nvidia_nim", {})
+    if not isinstance(group, dict):
+        group = {}
+        runtime_payload["nvidia_nim"] = group
+    group[model] = item
+    os.environ["BR_RUNTIME_MODEL_HEALTH_JSON"] = json.dumps(
+        runtime_payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    return {
+        "schema": "NvidiaModelHealthRevalidation/v1",
+        "provider_id": "nvidia_nim",
+        "model_id": model,
+        "availability": item["availability"],
+        "health_probe_passed": available,
+        "structured_output_probe_passed": structured_valid,
+        "response_valid": response_valid,
+        "latency_ms": item["latency_ms"],
+        "http_status": item["http_status"],
+        "failure_class": item["failure_class"],
+        "evidence_refs": [evidence_ref],
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "timeout_seconds": timeout,
+    }
+
+
 def semantic_provider_health() -> dict[str, Any]:
     providers = [
         provider_health(provider)
