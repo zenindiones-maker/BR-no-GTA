@@ -29,6 +29,25 @@ _EXECUTION_TOPOLOGY_CAPABILITY_IDS = {
 _BLOCKING_HEALTH_STATES = {"BLOCKED", "QUARANTINED"}
 
 
+def _runtime_eligibility_snapshot() -> dict[str, dict[str, Any]]:
+    """Facts proven on this runner; consumed by generic eligibility, never task IDs."""
+    import json
+    import os
+    raw = str(os.getenv("BR_RUNTIME_CAPABILITY_ELIGIBILITY_JSON") or "").strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _runtime_eligibility(capability_id: str) -> dict[str, Any] | None:
+    item = _runtime_eligibility_snapshot().get(str(capability_id))
+    return dict(item) if isinstance(item, dict) else None
+
+
 def _mutation_capable(record: Any) -> bool:
     side_effect_class = str(
         getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
@@ -160,8 +179,11 @@ def _evaluate_candidate(
     health_state = "NOT_EVALUATED"
     health_source = "NOT_EVALUATED"
     final_rejection_reason = "ACCEPTED"
+    runtime_eligibility = _runtime_eligibility(capability_id)
 
-    if capability_id in blocked_capability_ids:
+    if runtime_eligibility and not bool(runtime_eligibility.get("eligible", False)):
+        final_rejection_reason = "runtime-hard-ineligible:" + str(runtime_eligibility.get("reason") or "preflight")
+    elif capability_id in blocked_capability_ids:
         final_rejection_reason = "blocked-capability-id"
     elif capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
         final_rejection_reason = "execution-topology-not-task-capability"
@@ -184,9 +206,13 @@ def _evaluate_candidate(
     elif "harness" not in security_boundary.casefold():
         final_rejection_reason = "harness-authority-boundary-missing"
     else:
-        health = capability_health(capability_id)
-        health_state = str(health.state).upper()
-        health_source = str(getattr(health, "source", "UNKNOWN") or "UNKNOWN")
+        if runtime_eligibility and bool(runtime_eligibility.get("eligible", False)):
+            health_state = str(runtime_eligibility.get("health_state") or "HEALTHY").upper()
+            health_source = "RUNTIME_ELIGIBILITY_PREFLIGHT"
+        else:
+            health = capability_health(capability_id)
+            health_state = str(health.state).upper()
+            health_source = str(getattr(health, "source", "UNKNOWN") or "UNKNOWN")
         if health_state in _BLOCKING_HEALTH_STATES:
             final_rejection_reason = "health:" + health_state.casefold()
 
@@ -270,6 +296,7 @@ def _evaluate_candidate(
         "HEALTH_SOURCE": health_source,
         "CANDIDATE_REQUIREMENT": candidate_requirement,
         "CANDIDATE_ARTIFACT_CAPABLE": bool(candidate_artifact_capable),
+        "RUNTIME_ELIGIBILITY": runtime_eligibility,
         "FINAL_REJECTION_REASON": final_rejection_reason,
         "REJECTION_REASON": rejection_class,
     }
