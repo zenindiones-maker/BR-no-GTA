@@ -18,6 +18,7 @@ on:
       - "app/services/harness_internal_recovery_service.py"
       - "app/services/recovery_execution_service.py"
       - "app/services/semantic_tool_loop_service.py"
+      - "app/services/local_openweight_ai_provider.py"
       - "app/services/task_output_contract_service.py"
       - "app/services/global_capability_registry.py"
       - "tests/test_addy_harness_service.py"
