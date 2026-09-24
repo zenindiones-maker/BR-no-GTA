@@ -483,8 +483,18 @@ jobs:
           echo "PREEXISTING_ALTERNATE_ROUTE_PROVIDER=${{ steps.provider_recovery.outputs.alternate_route_provider }}"
           echo "MATERIALIZE_CANONICAL_LOCAL_PROVIDER=${{ steps.provider_recovery.outputs.prepare_alt_provider }}"
 
-      - name: Prove deterministic task-02 decomposition
+      - name: Preflight existing codex-readonly semantic agent
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
+        id: codex_semantic_preflight
+        run: |
+          set -euo pipefail
+          python scripts/task02_codex_semantic_preflight.py \
+            --output runtime/real-agent-self-improvement/task02-codex-semantic-preflight.json
+          test "$(python -c 'import json; print(json.load(open("runtime/real-agent-self-improvement/task02-codex-semantic-preflight.json"))["PREFLIGHT_STATUS"])')" = "PASS"
+          echo "semantic_preflight_passed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Prove deterministic task-02 decomposition
+        if: steps.codex_semantic_preflight.outputs.semantic_preflight_passed == 'true' && false
         id: deterministic_task02
         run: |
           set -euo pipefail
