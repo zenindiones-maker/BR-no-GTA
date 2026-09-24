@@ -418,7 +418,9 @@ jobs:
           # the canonical local zero-cost provider as an additional candidate;
           # Harness routing still selects the winner. This avoids trusting a
           # preflight result that can drift from the execution-time request.
-          need=provider_level_replan_required
+          need=provider_level_replan_required and not local_failed
+          if provider_level_replan_required and local_failed and not alternate_route_ready:
+              print("NEXT_RECOVERY_STRATEGY_SELECTED=EXTERNAL_PROVIDER_REQUIRED")
           print("prepare_alt_provider="+("true" if need else "false"))
           print("provider_level_replan_required="+(
               "true" if provider_level_replan_required else "false"
