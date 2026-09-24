@@ -494,6 +494,14 @@ jobs:
             --output-dir runtime/real-agent-self-improvement/deterministic-team
           echo "deterministic_team_closed=true" >> "$GITHUB_OUTPUT"
 
+      - name: Bootstrap pinned Hermes core for task-02 chain
+        if: steps.deterministic_task02.outputs.deterministic_team_closed == 'true'
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_hermes_agent.py --target "$RUNNER_TEMP/task02-hermes-agent" --output runtime/real-agent-self-improvement/hermes-upstream.json
+          test "$(git -C "$RUNNER_TEMP/task02-hermes-agent" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
+          echo "BR_TASK02_HERMES_UPSTREAM_ROOT=$RUNNER_TEMP/task02-hermes-agent" >> "$GITHUB_ENV"
+
       - name: Execute real Hermes Agent Office task-02 chain
         if: steps.deterministic_task02.outputs.deterministic_team_closed == 'true'
         id: task02_real_chain
