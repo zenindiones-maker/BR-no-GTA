@@ -189,7 +189,10 @@ def execute_editorial_process_task(
             domain="editorial",
             task_class="production-mission-editorial",
             goal_id=target_goal_id,
-            required_capability_id=EDITORIAL_PROCESS_CAPABILITY_ID,
+            # Provider construction is governed by the canonical AI
+            # capability. The parent task remains editorial.process; this
+            # nested route only selects the semantic provider/model.
+            required_capability_id="ai.reasoning.text",
             provider_required=True,
             provider_domain="ai",
             preferred_providers=_selected_zero_cost_providers(),
