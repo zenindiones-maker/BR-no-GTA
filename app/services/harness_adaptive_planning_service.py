@@ -970,6 +970,76 @@ def proposal_registry_errors(
     return tuple(errors)
 
 
+def _semantic_task_contract_rejection(
+    record: Any,
+    requirement: dict[str, Any],
+) -> str | None:
+    task_text = " ".join(
+        str(requirement.get(key) or "").strip().casefold()
+        for key in (
+            "task_class",
+            "objective",
+            "required_capability_description",
+            "expected_output",
+        )
+    )
+    record_text = " ".join([
+        str(getattr(record, "capability_id", "") or ""),
+        str(getattr(record, "implementation", "") or ""),
+        str(getattr(record, "input_contract", "") or ""),
+        str(getattr(record, "output_contract", "") or ""),
+        " ".join(str(item) for item in (getattr(record, "policy_tags", ()) or ())),
+    ]).casefold()
+
+    named_artifacts = {
+        "scriptspec": ("scriptspec", "script spec"),
+        "contentitem": ("contentitem", "content item"),
+        "productionplan": ("productionplan", "production plan"),
+    }
+    missing: list[str] = []
+    for label, aliases in named_artifacts.items():
+        if any(alias in task_text for alias in aliases) and not any(
+            alias in record_text for alias in aliases
+        ):
+            missing.append(label)
+    if missing:
+        return "semantic-output-contract-mismatch:missing=" + ",".join(missing)
+
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
+    if (
+        "review" in task_class
+        and "review" in task_text
+        and "review" not in record_text
+    ):
+        return "semantic-role-contract-mismatch:required=review"
+
+    freshness_markers = ("fresh", "current", "recent", "today", "latest")
+    collection_markers = (
+        "collection",
+        "fresh source",
+        "current gta6 collection",
+        "fresh-cloud",
+        "source-grounded research",
+    )
+    if (
+        task_class in {"evidence-collection", "fresh-evidence-collection"}
+        and any(marker in task_text for marker in freshness_markers)
+        and not any(marker in record_text for marker in collection_markers)
+    ):
+        return "semantic-source-contract-mismatch:required=fresh-collection"
+
+    if (
+        any(marker in task_text for marker in ("master_final", "master final"))
+        and not any(
+            marker in record_text
+            for marker in ("render", "mp4", "master")
+        )
+    ):
+        return "semantic-output-contract-mismatch:required=rendered-master"
+
+    return None
+
+
 def _candidate_hint_is_hard_compatible(
     task: Any,
     capability_id: str,
@@ -999,6 +1069,8 @@ def _candidate_hint_is_hard_compatible(
     if not _record_domain_compatible(record, task_requirement):
         return False
     if effective_action not in record.allowed_actions:
+        return False
+    if _semantic_task_contract_rejection(record, task_requirement):
         return False
     required_operations = derive_required_operations(task_requirement)
     if capability_execution_contract_rejection(record, required_operations):
@@ -1843,6 +1915,15 @@ def select_capability_for_requirement(
             )
             continue
         if not record.execution_enabled or effective_action not in record.allowed_actions:
+            continue
+        semantic_contract_rejection = _semantic_task_contract_rejection(
+            record,
+            requirement,
+        )
+        if semantic_contract_rejection:
+            avoided.append(
+                f"{capability_id}:{semantic_contract_rejection}"
+            )
             continue
         role_rejection = functional_role_rejection(
             record,

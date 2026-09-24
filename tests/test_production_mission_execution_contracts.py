@@ -572,3 +572,102 @@ def test_semantic_incident_tasks_require_semantic_reasoning_but_collection_does_
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }.issubset(set(diagnosis))
+
+def test_production_semantic_contract_rejects_planner_capability_swaps():
+    editorial = MissionTaskProposal(
+        task_id="editorial-script",
+        objective=(
+            "Produce a natural PT-BR script with ScriptSpec and ContentItem "
+            "for the verified topic"
+        ),
+        task_class="editorial",
+        required_capability_description=(
+            "PT-BR script + ScriptSpec + ContentItem ready for production planning"
+        ),
+        candidate_capability_ids=("youtube.department.script-review",),
+        dependencies=("fact-verification",),
+        expected_output="/artifacts/editorial_script.json",
+        acceptance_criteria=("script_complete",),
+        risk_side_effect_class="READ_ONLY",
+        action="EDITORIAL",
+    )
+    assert not adaptive_planning._candidate_hint_is_hard_compatible(
+        editorial,
+        "youtube.department.script-review",
+    )
+    assert adaptive_planning._candidate_hint_is_hard_compatible(
+        editorial,
+        "editorial.process",
+    )
+
+    current_research = MissionTaskProposal(
+        task_id="topic-selection",
+        objective=(
+            "Select a current high-relevance GTA 6 topic with verified fresh evidence"
+        ),
+        task_class="evidence-collection",
+        required_capability_description=(
+            "current GTA 6 topic with verified sources and novelty score"
+        ),
+        candidate_capability_ids=("gta6.knowledge.retrieve",),
+        dependencies=(),
+        expected_output="/artifacts/topic_selection.json",
+        acceptance_criteria=("fresh official evidence",),
+        risk_side_effect_class="READ_ONLY",
+        action="RESEARCH",
+    )
+    assert not adaptive_planning._candidate_hint_is_hard_compatible(
+        current_research,
+        "gta6.knowledge.retrieve",
+    )
+    assert adaptive_planning._candidate_hint_is_hard_compatible(
+        current_research,
+        "gta6.research",
+    )
+
+    script_review = MissionTaskProposal(
+        task_id="script-review",
+        objective="YouTube specialist review for retention, pacing, and policy compliance",
+        task_class="review",
+        required_capability_description=(
+            "YouTube specialist review with recommendations and limitations"
+        ),
+        candidate_capability_ids=("youtube.department.content-strategy",),
+        dependencies=("editorial-script",),
+        expected_output="/artifacts/script_review.json",
+        acceptance_criteria=("review_complete",),
+        risk_side_effect_class="READ_ONLY",
+        action="EDITORIAL",
+    )
+    assert not adaptive_planning._candidate_hint_is_hard_compatible(
+        script_review,
+        "youtube.department.content-strategy",
+    )
+    assert adaptive_planning._candidate_hint_is_hard_compatible(
+        script_review,
+        "youtube.department.script-review",
+    )
+
+    master = MissionTaskProposal(
+        task_id="master-production",
+        objective=(
+            "Execute audiovisual production to generate MASTER_FINAL "
+            "1920x1080 with QA"
+        ),
+        task_class="execution",
+        required_capability_description="MASTER_FINAL artifact with QA evidence",
+        candidate_capability_ids=("youtube.department.production-management",),
+        dependencies=("production-plan",),
+        expected_output="/artifacts/master_final.json",
+        acceptance_criteria=("master_qc",),
+        risk_side_effect_class="READ_ONLY",
+        action="EXECUTION",
+    )
+    assert not adaptive_planning._candidate_hint_is_hard_compatible(
+        master,
+        "youtube.department.production-management",
+    )
+    assert adaptive_planning._candidate_hint_is_hard_compatible(
+        master,
+        "production.render.execute",
+    )
