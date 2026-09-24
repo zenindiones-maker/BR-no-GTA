@@ -511,8 +511,8 @@ jobs:
             --checkpoint-root runtime/real-agent-self-improvement/checkpoint-source \
             --request .run/real-agent-self-improvement.request.json \
             --artifact-dir runtime/real-agent-self-improvement/task02-real-chain | tee runtime/real-agent-self-improvement/task02-real-chain.log
-          grep -q '"REAL_DETERMINISTIC_MULTI_AGENT_CHAIN": "PASS"' runtime/real-agent-self-improvement/task02-real-chain-report.json
-          grep -q '"SEMANTIC_REASONING_REQUIRED": "YES"' runtime/real-agent-self-improvement/task02-real-chain-report.json
+          grep -q '"REAL_DETERMINISTIC_MULTI_AGENT_CHAIN": "PASS"' runtime/real-agent-self-improvement/task02-real-chain/task02-real-chain-report.json
+          grep -q '"SEMANTIC_REASONING_REQUIRED": "YES"' runtime/real-agent-self-improvement/task02-real-chain/task02-real-chain-report.json
           echo "real_chain_closed=true" >> "$GITHUB_OUTPUT"
 
       - name: Close canonical route inventory
