@@ -495,6 +495,8 @@ jobs:
           set -euo pipefail
           export CODEX_HOME="$RUNNER_TEMP/br-codex-home"
           echo "CODEX_HOME=$CODEX_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$CODEX_HOME"
+          chmod 700 "$CODEX_HOME"
           bash scripts/agent-tooling/bootstrap.sh codex
           codex --version
 
