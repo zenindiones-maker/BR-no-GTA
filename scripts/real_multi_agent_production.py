@@ -57,6 +57,9 @@ from app.services.hermes_multiagent.contracts import (
 from app.services.hermes_multiagent.runtime import (
     execute_hermes_mission_capability,
 )
+from app.services.production_mission_capability_adapters import (
+    execute_fresh_research_task,
+)
 from app.services.script_spec_service import generate_script_spec
 
 
@@ -325,6 +328,233 @@ def _is_longform_underdelivery_failure(
     )
 
 
+def _fresh_research_candidates(
+    evidence: dict[str, Any],
+    *,
+    known_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Normalize only source-bound entries from the existing fresh-cloud packet."""
+    packet = evidence.get("packet")
+    if not isinstance(packet, dict):
+        return []
+
+    execution_ref = str(
+        evidence.get("artifact_ref")
+        or evidence.get("execution_ref")
+        or ""
+    ).strip()
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set(known_ids)
+
+    def add_source(row: dict[str, Any], *, official: bool) -> None:
+        source = str(
+            row.get("resolved_url")
+            or row.get("url")
+            or row.get("source_url")
+            or ""
+        ).strip()
+        if not source.startswith("https://"):
+            return
+        title = re.sub(r"\s+", " ", str(row.get("title") or "")).strip()
+        excerpt = re.sub(
+            r"\s+",
+            " ",
+            str(
+                row.get("content_excerpt")
+                or row.get("summary")
+                or row.get("description")
+                or ""
+            ),
+        ).strip()
+        if not title and not excerpt:
+            return
+        probe = (excerpt or title).lstrip().casefold()
+        if probe.startswith(("<!doctype", "<html", "<head", "<?xml")):
+            return
+
+        statement = excerpt or title
+        if title and excerpt and title.casefold() not in excerpt.casefold():
+            statement = f"{title}: {excerpt}"
+        statement = statement[:1600].strip()
+        key = hashlib.sha256(
+            (statement + "|" + source).encode("utf-8")
+        ).hexdigest()[:20]
+        claim_id = f"fresh-{'official' if official else 'secondary'}-{key}"
+        if claim_id in seen:
+            return
+        seen.add(claim_id)
+        refs = [item for item in (execution_ref, source) if item]
+        candidates.append({
+            "claim_id": claim_id,
+            "statement": statement,
+            "verification_status": "VERIFIED" if official else "PENDING",
+            "fact_check_result": (
+                "OFFICIAL_PRIMARY" if official else "PENDING_FACT_CHECK"
+            ),
+            "verification_basis": (
+                "OFFICIAL_PRIMARY" if official else "SOURCE_GROUNDED_SECONDARY"
+            ),
+            "source_type": (
+                "OFFICIAL_STATEMENT" if official else "SECONDARY_REPORT"
+            ),
+            "source": source,
+            "reference": source,
+            "timecode_or_section": None,
+            "confidence": 1.0 if official else 0.7,
+            "novelty": "FRESH_CLOUD_RESEARCH",
+            "how_used_in_video": "candidate longform editorial finding",
+            "evidence_refs": refs,
+        })
+
+    for item in packet.get("official_sources") or ():
+        if isinstance(item, dict):
+            add_source(item, official=True)
+    for item in packet.get("secondary_sources") or ():
+        if isinstance(item, dict):
+            add_source(item, official=False)
+    return candidates
+
+
+def _run_harness_fresh_longform_recovery(
+    *,
+    broker: HermesHarnessCapabilityBroker,
+    selected_topic: str,
+    human_goal: str,
+    round_index: int,
+    purpose: str,
+) -> dict[str, Any]:
+    """Use the existing fresh-cloud capability under explicit Harness authority."""
+    capability_id = "gta6.research.fresh-cloud"
+    routing = route_harness_request(
+        HarnessRoutingRequest(
+            intent=(
+                f"{purpose}: collect additional current GTA VI evidence for "
+                f"the selected topic '{selected_topic}'"
+            ),
+            authorized_action="RESEARCH",
+            domain="research",
+            task_class="longform-evidence-fresh-recovery",
+            goal_id=broker.spec.goal_id,
+            required_capability_id=capability_id,
+            required_policy_tags=(
+                "gta6", "research", "fresh", "cloud", "evidence",
+            ),
+            provider_required=False,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            learning_required=True,
+        )
+    )
+    if routing.selected_capability_id != capability_id:
+        raise RuntimeError("LONGFORM_FRESH_RESEARCH_ROUTE_MISMATCH")
+
+    execution_id = (
+        f"{broker.parent_authorization.execution_id}:"
+        f"fresh:{purpose}:{round_index}"
+    )
+    authorization = issue_harness_authorization(
+        authorized_action="RESEARCH",
+        subject=f"capability:{capability_id}",
+        harness_decision_id=broker.parent_authorization.harness_decision_id,
+        execution_id=execution_id,
+        lineage={
+            "parent_authorization_id": (
+                broker.parent_authorization.authorization_id
+            ),
+            "mission_id": broker.spec.mission_id,
+            "goal_id": broker.spec.goal_id,
+            "routing_id": routing.routing_id,
+            "capability_id": capability_id,
+            "selected_executor_binding": routing.selected_executor_binding,
+            "recovery": purpose,
+            "selected_topic": selected_topic,
+            "round": round_index,
+        },
+    )
+    query = (
+        f"{human_goal}\n\n"
+        f"{purpose}:\nSelected topic: {selected_topic}\n"
+        "Collect current source-grounded GTA VI evidence useful for a factual "
+        "20-minute analysis. Prefer direct Rockstar evidence; include current "
+        "secondary reporting only with explicit provenance. Do not invent facts "
+        "and do not add filler."
+    )
+    try:
+        return execute_fresh_research_task(
+            authorization=authorization,
+            routing_decision=routing,
+            payload={
+                "mission_id": broker.spec.mission_id,
+                "task_id": (
+                    f"fresh-research-recovery-{purpose.casefold()}-{round_index}"
+                ),
+                "goal_id": broker.spec.goal_id,
+                "objective": query,
+                "query": query,
+                "source_context": {
+                    "classification": "news",
+                    "input_kind": "text",
+                },
+            },
+        )
+    finally:
+        consume_harness_authorization(authorization)
+
+
+def _ensure_fact_check_source_claims(
+    *,
+    broker: HermesHarnessCapabilityBroker,
+    state: dict[str, Any],
+    human_goal: str,
+) -> dict[str, Any] | None:
+    if state.get("claims"):
+        return None
+    selected_topic = str(state.get("selected_topic") or "").strip()
+    if not selected_topic:
+        raise RuntimeError("FACT_CHECK_REQUIRES_RESEARCH_CLAIM")
+
+    fresh = _run_harness_fresh_longform_recovery(
+        broker=broker,
+        selected_topic=selected_topic,
+        human_goal=human_goal,
+        round_index=0,
+        purpose="FACT_CHECK_SOURCE_RECOVERY",
+    )
+    candidates = _fresh_research_candidates(fresh, known_ids=set())
+    # The fresh-cloud contract guarantees at least one official Rockstar
+    # source. Only direct official evidence is admitted before fact-check;
+    # secondary reporting remains pending until the bounded longform recovery
+    # explicitly fact-checks it.
+    official = [
+        item for item in candidates
+        if item.get("fact_check_result") == "OFFICIAL_PRIMARY"
+    ]
+    if not official:
+        raise RuntimeError("FACT_CHECK_REQUIRES_RESEARCH_CLAIM")
+    state.setdefault("claims", []).extend(
+        official[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
+    )
+    ref = str(
+        fresh.get("artifact_ref")
+        or fresh.get("execution_ref")
+        or ""
+    ).strip()
+    if ref:
+        state.setdefault("expansion_evidence_refs", [])
+        if ref not in state["expansion_evidence_refs"]:
+            state["expansion_evidence_refs"].append(ref)
+    report = {
+        "schema": "fact-check-source-recovery/v1",
+        "status": "PASS",
+        "selected_topic": selected_topic,
+        "official_claim_count": len(official),
+        "fresh_cloud_execution_ref": ref or None,
+        "artificial_padding": False,
+    }
+    state["fact_check_source_recovery"] = report
+    return report
+
+
 def _claim_dynamic_child(board, proposal: dict[str, Any]) -> int:
     task = dict(proposal.get("task") or {})
     task_id = str(task.get("task_id") or "").strip()
@@ -487,6 +717,22 @@ def _run_bounded_longform_evidence_expansion(
         for item in _normalize_research_claims(research_result)
         if str(item.get("claim_id") or "") not in known_ids
     ]
+    fresh_recovery: dict[str, Any] | None = None
+    if not candidates:
+        # A deterministic research replay can correctly yield zero delta after
+        # all current items are persisted. Escalate once to the existing
+        # fresh-cloud evidence collector under a Harness authorization.
+        fresh_recovery = _run_harness_fresh_longform_recovery(
+            broker=broker,
+            selected_topic=selected_topic,
+            human_goal=human_goal,
+            round_index=round_index,
+            purpose="INSUFFICIENT_EDITORIAL_EVIDENCE",
+        )
+        candidates = _fresh_research_candidates(
+            fresh_recovery,
+            known_ids=known_ids,
+        )
     candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
 
     verified: list[dict[str, Any]] = []
@@ -607,6 +853,11 @@ def _run_bounded_longform_evidence_expansion(
         state.setdefault("claims", []).extend(verified)
     expansion_refs = [
         str(research_execution.get("evidence_ref") or ""),
+        str(
+            (fresh_recovery or {}).get("artifact_ref")
+            or (fresh_recovery or {}).get("execution_ref")
+            or ""
+        ),
         *fact_check_refs,
     ]
     state.setdefault("expansion_evidence_refs", [])
@@ -621,6 +872,21 @@ def _run_bounded_longform_evidence_expansion(
         "selected_topic": selected_topic,
         "candidate_new_findings": len(candidates),
         "verified_new_findings": len(verified),
+        "fresh_cloud_escalated": fresh_recovery is not None,
+        "fresh_cloud_execution_ref": (
+            str(
+                (fresh_recovery or {}).get("artifact_ref")
+                or (fresh_recovery or {}).get("execution_ref")
+                or ""
+            )
+            or None
+        ),
+        "fresh_cloud_official_source_count": int(
+            (fresh_recovery or {}).get("official_source_count") or 0
+        ),
+        "fresh_cloud_secondary_source_count": int(
+            (fresh_recovery or {}).get("secondary_source_count") or 0
+        ),
         "verified_claim_ids": [
             str(item.get("claim_id") or "") for item in verified
         ],
@@ -1311,6 +1577,20 @@ def run(
                         "evidence_refs": list(task.input_refs),
                     }
                 )
+                if (
+                    task.capability_id == "gta6.fact-check"
+                    and not state.get("claims")
+                ):
+                    recovery = _ensure_fact_check_source_claims(
+                        broker=broker,
+                        state=state,
+                        human_goal=human_goal,
+                    )
+                    if recovery is not None:
+                        _write(
+                            artifact_dir / "fact-check-source-recovery.json",
+                            recovery,
+                        )
                 payload = _payload_for_task(
                     task=task,
                     parent_context=parent_context,

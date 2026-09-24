@@ -29,6 +29,7 @@ from scripts.real_multi_agent_production import (
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _fresh_research_candidates,
     _is_longform_underdelivery_failure,
     _novelty_gate,
     _payload_for_task,
@@ -838,3 +839,76 @@ def test_editorial_retry_payload_includes_verified_expansion_evidence():
     assert payload["editorial_context"]["verified_claims"][0][
         "fact_check_result"
     ] == "SUPPORTED"
+
+def test_fresh_research_candidates_keep_source_provenance_and_drop_html_shell():
+    evidence = {
+        "artifact_ref": "github-actions:999",
+        "packet": {
+            "official_sources": [
+                {
+                    "url": "https://www.rockstargames.com/VI",
+                    "resolved_url": "https://www.rockstargames.com/VI",
+                    "content_excerpt": (
+                        "Coming November 19, 2026. Jason and Lucia. "
+                        "Vice City, Leonida."
+                    ),
+                },
+                {
+                    "url": "https://www.rockstargames.com/newswire",
+                    "content_excerpt": "<!DOCTYPE html><html><head>shell</head></html>",
+                },
+            ],
+            "secondary_sources": [
+                {
+                    "url": "https://example.test/current-gta6-report",
+                    "title": "Current GTA VI report",
+                    "summary": "Source-grounded secondary detail.",
+                }
+            ],
+        },
+    }
+
+    candidates = _fresh_research_candidates(evidence, known_ids=set())
+
+    assert len(candidates) == 2
+    official = next(
+        item for item in candidates
+        if item["source"].startswith("https://www.rockstargames.com/")
+    )
+    secondary = next(
+        item for item in candidates
+        if item["source"].startswith("https://example.test/")
+    )
+    assert official["verification_status"] == "VERIFIED"
+    assert official["fact_check_result"] == "OFFICIAL_PRIMARY"
+    assert "github-actions:999" in official["evidence_refs"]
+    assert secondary["verification_status"] == "PENDING"
+    assert secondary["fact_check_result"] == "PENDING_FACT_CHECK"
+    assert all(
+        "<!doctype" not in item["statement"].casefold()
+        for item in candidates
+    )
+
+
+def test_fresh_research_candidates_deduplicate_known_claim_ids():
+    source = {
+        "url": "https://www.rockstargames.com/VI",
+        "content_excerpt": "Coming November 19, 2026.",
+    }
+    first = _fresh_research_candidates(
+        {
+            "artifact_ref": "github-actions:1",
+            "packet": {"official_sources": [source]},
+        },
+        known_ids=set(),
+    )
+    assert len(first) == 1
+    second = _fresh_research_candidates(
+        {
+            "artifact_ref": "github-actions:2",
+            "packet": {"official_sources": [source]},
+        },
+        known_ids={first[0]["claim_id"]},
+    )
+    assert second == []
+
