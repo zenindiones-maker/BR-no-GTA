@@ -347,12 +347,13 @@ jobs:
               and recovery_history and exhausted and not final_output_valid
           )
           provider_level_replan_required=bool(
-              selected and current_status=="FAILED" and exhausted
+              selected and current_status in {"FAILED","RUNNING"} and exhausted
               and not final_output_valid
               and (
                   current_failure=="RoutingPolicyError"
                   or budget_during_provider_recovery
                   or pending_recovery_strategy
+                  or recovery_history
               )
           )
           if recovery_history:
