@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timezone
 from hashlib import sha256
+from html import unescape
 import json
+import re
 import os
 from pathlib import Path
 from typing import Any
@@ -317,9 +319,37 @@ def _direct_fetch(url: str, timeout_seconds: float) -> tuple[bytes, str]:
         return raw, content_type
 
 
-def _decode_source(raw: bytes) -> str:
+def _decode_source(raw: bytes, *, content_type: str = "") -> str:
     text = raw.decode("utf-8", errors="replace")
-    return text[:MAX_SOURCE_CHARS]
+    prefix = text[:2048].casefold()
+    is_html = (
+        "html" in str(content_type or "").casefold()
+        or "<!doctype html" in prefix
+        or "<html" in prefix
+    )
+    if not is_html:
+        return text[:MAX_SOURCE_CHARS]
+
+    # Extract factual text from the full bounded response before applying the
+    # character ceiling. Large navigation/SVG/script shells must not consume
+    # the evidence budget before the article body is reached.
+    cleaned = re.sub(r"(?is)<!--.*?-->", " ", text)
+    cleaned = re.sub(
+        r"(?is)<(script|style|noscript|svg|template|iframe|nav|footer)\\b[^>]*>.*?</\\1>",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?is)</?(?:p|div|section|article|main|h[1-6]|li|br|tr|td|th)\\b[^>]*>",
+        "\\n",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
+    cleaned = unescape(cleaned)
+    cleaned = re.sub(r"[ \\t\\r\\f\\v]+", " ", cleaned)
+    cleaned = re.sub(r" *\\n *", "\\n", cleaned)
+    cleaned = re.sub(r"\\n{2,}", "\\n", cleaned).strip()
+    return cleaned[:MAX_SOURCE_CHARS]
 
 
 def execute_web_search_discover(
@@ -452,7 +482,7 @@ def execute_web_source_acquire(
     result = {
         "status": "EXECUTED",
         "source_url": source_url,
-        "content": _decode_source(raw),
+        "content": _decode_source(raw, content_type=content_type),
         "content_type": content_type,
         "size_bytes": len(raw),
         "content_truncated": len(raw) > MAX_SOURCE_CHARS,

@@ -176,3 +176,24 @@ def test_snapshot_requires_explicit_need_before_network(monkeypatch):
             routing_decision=route,
             payload={"source_url": "https://example.com/source"},
         )
+
+def test_html_decode_extracts_article_text_before_character_ceiling():
+    shell = "<nav><svg>" + ("navigation-noise " * 12000) + "</svg></nav>"
+    article = (
+        "<article><h1>GTA 6 collector set</h1>"
+        "<p>The $400 collector set does not include the game itself.</p>"
+        "<p>Rockstar lists the physical contents separately.</p></article>"
+    )
+    raw = (
+        "<!doctype html><html><body>" + shell + article + "</body></html>"
+    ).encode()
+
+    decoded = web._decode_source(
+        raw,
+        content_type="text/html; charset=utf-8",
+    )
+
+    assert "The $400 collector set does not include the game itself." in decoded
+    assert "Rockstar lists the physical contents separately." in decoded
+    assert "navigation-noise" not in decoded
+    assert len(decoded) < web.MAX_SOURCE_CHARS

@@ -1034,5 +1034,6 @@ def test_longform_fallback_prefers_new_independent_source_families():
     assert urls[0].startswith("https://me.ign.com/")
     assert urls[1].startswith("https://www.gamespot.com/")
     assert urls[2].startswith("https://www.reddit.com/")
-    assert "store.rockstargames.com" in urls[-1]
+    assert "store.rockstargames.com" in urls[3]
+    assert urls[-1].endswith("/second")
 
