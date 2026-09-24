@@ -724,6 +724,53 @@ def execute_authorized_addy_skill(
                 and isinstance(semantic.result, dict)
                 else "FAILED"
             )
+            if localized_replan_result == "FAILED":
+                # The alternate model was actually executed and also failed.
+                # Exhaust every failed pair observed in this task and perform
+                # one Harness-governed provider-level replan. Do not collapse
+                # this into AgentToolBudgetExceeded while another eligible
+                # zero-cost provider exists.
+                current_failed_pairs = tuple(
+                    (
+                        str(row.get("provider_id") or "").strip(),
+                        str(row.get("model_id") or "").strip(),
+                    )
+                    for row in provider_attempts
+                    if str(row.get("status") or "").strip().upper() == "FAILED"
+                    and str(row.get("provider_id") or "").strip()
+                    and str(row.get("model_id") or "").strip()
+                )
+                rerouted = _route_provider(
+                    preferred_provider=None,
+                    unavailable_providers=(original_provider,),
+                    exhausted_pairs=tuple(dict.fromkeys([
+                        *exhausted_pair_tuple,
+                        *current_failed_pairs,
+                    ])),
+                    failure_pattern="provider_model_set_exhausted",
+                )
+                rerouted_provider = str(
+                    rerouted.selected_provider or ""
+                ).strip()
+                if not rerouted_provider or rerouted_provider == original_provider:
+                    raise PermissionError(
+                        "PROVIDER_LEVEL_REPLAN_RESELECTED_EXHAUSTED_PROVIDER"
+                    )
+                provider_model_set_exhausted_classified = True
+                provider_level_replan_from = original_provider
+                provider_level_replan_harness_authorized = True
+                recovery_route_changed = True
+                semantic = _execute_provider(
+                    rerouted,
+                    phase="PROVIDER_LEVEL_REPLAN",
+                )
+                provider_routing = rerouted
+                localized_replan_result = (
+                    "RECOVERED_PROVIDER_LEVEL"
+                    if semantic.status == "EXECUTED"
+                    and isinstance(semantic.result, dict)
+                    else "FAILED_PROVIDER_LEVEL"
+                )
         except RoutingPolicyError as exc:
             provider_model_set_exhausted_classified = True
             provider_level_replan_from = original_provider
