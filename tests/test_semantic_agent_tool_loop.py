@@ -344,6 +344,19 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
             == calls[3]["task_id"]
             == "task-02"
         )
+        instance_ids = [
+            calls[index]["payload"]["agent_instance_id"]
+            for index in (0, 2, 3)
+        ]
+        assert len(set(instance_ids)) == 1
+        for index in (0, 2, 3):
+            projection = calls[index]["payload"]["context"][
+                "agent_session"
+            ]
+            assert projection["agent_instance_id"] == instance_ids[0]
+            assert projection["checkpoint_ref"].startswith(
+                "artifact:agent-sessions/"
+            )
 
         statuses = [
             row["status"]
@@ -371,6 +384,22 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
         assert "artifact:incident-evidence-packet.json" in (
             completed_task_result["evidence_refs"]
         )
+        session_files = list(
+            (tmp_path / "agent-sessions").glob("task-02-agent-*.json")
+        )
+        assert len(session_files) == 1
+        session = json.loads(session_files[0].read_text())
+        assert session["schema"] == "AgentSession/v1"
+        assert session["AGENT_INSTANCE_ID"] == instance_ids[0]
+        assert session["STATUS"] == "COMPLETED"
+        assert session["TURN_INDEX"] == 3
+        assert session["FINAL_OUTPUT_SCHEMA"] == (
+            "IncidentDiagnosisEvidence"
+        )
+        assert session["FINAL_OUTPUT_VALID"] is True
+        assert len(session["TOOL_REQUESTS"]) == 1
+        assert len(session["TOOL_EXECUTIONS"]) == 1
+        assert len(session["TOOL_RESULTS_CONSUMED"]) == 1
     finally:
         consume_harness_authorization(parent)
 
