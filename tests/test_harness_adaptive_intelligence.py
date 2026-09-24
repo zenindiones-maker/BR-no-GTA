@@ -1,3 +1,4 @@
+import app.services.harness_adaptive_planning_service as adaptive_service
 from app.services.harness_adaptive_planning_service import (
     _relevant_registry_summary,
     propose_validated_semantic_plan,
@@ -146,6 +147,30 @@ def test_semantic_proposal_with_invented_capability_is_rejected_then_replanned_o
         "known_bad_paths": [],
     }
     calls = []
+
+    class _HealthyCandidate:
+        def to_dict(self):
+            return {
+                "state": "AVAILABLE",
+                "reason": "unit normalization fixture",
+                "confidence": 1.0,
+                "sample_size": 1,
+                "evidence_refs": ["test:healthy-candidate"],
+            }
+
+    # This test isolates TaskEnvelope normalization. Runtime Codex health and
+    # the canonical external-auth blocker are covered by dedicated preplanning
+    # gates and must not determine whether this unit can normalize a candidate.
+    monkeypatch.setattr(
+        adaptive_service,
+        "_profiled_capability_health",
+        lambda capability_id: _HealthyCandidate(),
+    )
+    monkeypatch.setattr(
+        adaptive_service,
+        "_capability_failure_memory",
+        lambda capability_id, *, context: None,
+    )
 
     def inference(prompt, _context):
         calls.append(prompt)
@@ -538,7 +563,9 @@ def test_simple_high_confidence_system_goal_uses_zero_semantic_provider_calls():
     assert plan.authority == "DEEPSEEK_HARNESS"
 
 
-def test_mission_plan_normalizes_mutating_candidate_without_semantic_replan():
+def test_mission_plan_normalizes_mutating_candidate_without_semantic_replan(
+    monkeypatch,
+):
     goal = build_goal_envelope(
         human_goal=(
             "Descobre a causa do gargalo e, somente se houver evidência, "
