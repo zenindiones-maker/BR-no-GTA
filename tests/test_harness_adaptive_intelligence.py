@@ -543,13 +543,19 @@ def test_mission_plan_normalizes_mutating_candidate_without_semantic_replan(
     monkeypatch,
 ):
     class _HealthyCandidate:
+        state = "AVAILABLE"
+        reason = "unit normalization fixture"
+        confidence = 1.0
+        sample_size = 1
+        evidence_refs = ("test:healthy-candidate",)
+
         def to_dict(self):
             return {
-                "state": "AVAILABLE",
-                "reason": "unit normalization fixture",
-                "confidence": 1.0,
-                "sample_size": 1,
-                "evidence_refs": ["test:healthy-candidate"],
+                "state": self.state,
+                "reason": self.reason,
+                "confidence": self.confidence,
+                "sample_size": self.sample_size,
+                "evidence_refs": list(self.evidence_refs),
             }
 
     # Isolate TaskEnvelope normalization from live Codex auth/failure memory.
