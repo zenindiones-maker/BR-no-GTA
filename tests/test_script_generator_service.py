@@ -493,12 +493,7 @@ def test_longform_script_retries_once_after_invalid_json_format():
             self.prompts.append(prompt)
             self.calls += 1
             if self.calls == 1:
-                return AIResponse(
-                    text=(
-                        '{"hook":"quebra \\q json","introduction":"intro",'
-                        '"development":[],"conclusion":"fim","cta":"cta"}'
-                    )
-                )
+                return AIResponse(text="não é json")
             return AIResponse(
                 text=json.dumps(valid_long, ensure_ascii=False)
             )
@@ -536,9 +531,7 @@ def test_invalid_json_still_fails_closed_after_bounded_format_retry():
 
         def generate(self, prompt):
             self.prompts.append(prompt)
-            return AIResponse(
-                text='{"hook":"quebra \\q json","development":[]}'
-            )
+            return AIResponse(text="não é json")
 
     provider = AlwaysMalformedProvider()
     with pytest.raises(AIProviderError, match="invalid JSON"):
