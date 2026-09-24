@@ -21,6 +21,7 @@ from app.services.harness_authorization_service import (
     validate_harness_authorization,
 )
 from app.services.gta6_knowledge_retrieval_service import retrieve_gta6_knowledge
+from app.database.research_repository import get_research_item
 from app.services.gta6_source_registry_service import (
     classify_gta6_source,
     register_gta6_source,
@@ -127,6 +128,21 @@ def run_gta6_research(
         research_results,
     )
 
+    official_research_items: list[dict[str, Any]] = []
+    seen_official_ids: set[int] = set()
+    for row in rockstar_items:
+        research_item_id = row.get("research_item_id") if isinstance(row, dict) else None
+        if (
+            not isinstance(research_item_id, int)
+            or research_item_id <= 0
+            or research_item_id in seen_official_ids
+        ):
+            continue
+        resolved = get_research_item(research_item_id)
+        if isinstance(resolved, dict):
+            official_research_items.append(dict(resolved))
+            seen_official_ids.add(research_item_id)
+
     evidence_refs = list(dict.fromkeys(
         str(
             item.get("url")
@@ -152,6 +168,7 @@ def run_gta6_research(
         "KNOWLEDGE_RETRIEVED_BEFORE_RESEARCH": "PASS",
         "rockstar_monitor": rockstar_monitor,
         "rockstar_newswire": rockstar_items,
+        "official_research_items": official_research_items,
         "news_feeds": news_items,
         "total": len(rockstar_items) + len(news_items),
         "editorial": editorial,

@@ -54,3 +54,24 @@ def test_convert_rejects_invalid_article():
 def test_convert_rejects_invalid_list():
     with pytest.raises(ValueError):
         convert_rockstar_articles("invalid")
+
+def test_parse_current_newswire_listing_falls_back_to_gta6_article_links():
+    html = """
+    <html><body>
+      <a href="/newswire/article/abc123/pre-order-the-goodtime-state">
+        Pre-Order The Goodtime State – Vice City Collection Now
+      </a>
+      <a href="/newswire/article/other/gta-online-event">
+        GTA Online Weekly Event
+      </a>
+    </body></html>
+    """
+
+    result = parse_rockstar_newswire_html(html)
+
+    assert len(result) == 1
+    assert result[0].title.startswith("Pre-Order The Goodtime State")
+    assert result[0].url == (
+        "https://www.rockstargames.com/newswire/article/abc123/"
+        "pre-order-the-goodtime-state"
+    )

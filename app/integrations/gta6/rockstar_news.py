@@ -4,7 +4,10 @@ from urllib.request import Request, urlopen
 from app.integrations.gta6.source import GTA6SourceItem
 
 
-ROCKSTAR_NEWSWIRE_URL = "https://www.rockstargames.com/newswire"
+# The bare Newswire route currently returns only the SPA shell to the
+# bounded urllib collector.  The tagged listing exposes the current story
+# cards while remaining an official Rockstar surface.
+ROCKSTAR_NEWSWIRE_URL = "https://www.rockstargames.com/newswire?tag_id=191"
 
 
 class _RockstarLinkParser(HTMLParser):

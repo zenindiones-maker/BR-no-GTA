@@ -85,6 +85,16 @@ def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
         "process_gta6_research_results",
         fake_editorial_processing,
     )
+    monkeypatch.setattr(
+        module,
+        "get_research_item",
+        lambda item_id: {
+            "id": item_id,
+            "title": "Official GTA VI update",
+            "content": "Official Rockstar source details.",
+            "url": "https://www.rockstargames.com/newswire/article/test",
+        } if item_id in {1, 2} else None,
+    )
 
     result = module.run_gta6_research(_research_context())
 
@@ -93,6 +103,7 @@ def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
     assert result["rockstar_monitor"] == monitor_result
     assert result["rockstar_newswire"] == monitor_items + graph_items
     assert result["news_feeds"] == news_items
+    assert [item["id"] for item in result["official_research_items"]] == [1, 2]
     assert result["total"] == 3
 
     assert editorial_calls == [
@@ -149,6 +160,7 @@ def test_run_gta6_research_does_not_call_graph_without_query_hash(
         "process_gta6_research_results",
         lambda results: editorial_calls.append(results) or [],
     )
+    monkeypatch.setattr(module, "get_research_item", lambda _item_id: None)
 
     result = module.run_gta6_research(_research_context())
 

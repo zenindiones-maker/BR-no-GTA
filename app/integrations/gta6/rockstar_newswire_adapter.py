@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import json
 import re
+from urllib.parse import urljoin
 
 from app.integrations.gta6.rockstar_newswire_graph import (
     RockstarNewswireArticle,
@@ -36,6 +38,71 @@ def convert_rockstar_articles(
         convert_rockstar_article(article)
         for article in articles
     ]
+
+
+class _NewswireAnchorParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._href: str | None = None
+        self._text: list[str] = []
+        self.links: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.casefold() != "a":
+            return
+        href = dict(attrs).get("href")
+        if isinstance(href, str) and href.strip():
+            self._href = href.strip()
+            self._text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() != "a" or self._href is None:
+            return
+        title = " ".join(" ".join(self._text).split())
+        if title:
+            self.links.append((title, self._href))
+        self._href = None
+        self._text = []
+
+
+_GTA6_TITLE_MARKERS = (
+    "grand theft auto vi",
+    "grand theft auto 6",
+    "gta vi",
+    "gta 6",
+    "vice city",
+    "leonida",
+    "goodtime state",
+    "jason and lucia",
+)
+
+
+def _fallback_article_links(content: str) -> list[GTA6SourceItem]:
+    parser = _NewswireAnchorParser()
+    parser.feed(content)
+    items: list[GTA6SourceItem] = []
+    for title, href in parser.links:
+        url = urljoin("https://www.rockstargames.com", href)
+        if "/newswire/article/" not in url.casefold():
+            continue
+        normalized_title = title.casefold()
+        if not any(marker in normalized_title for marker in _GTA6_TITLE_MARKERS):
+            continue
+        items.append(
+            GTA6SourceItem(
+                title=title,
+                summary=title,
+                url=url,
+                source_name="Rockstar Newswire",
+                fact_type="news",
+                confidence="confirmed",
+            )
+        )
+    return items
 
 
 def parse_rockstar_newswire_html(
@@ -73,6 +140,9 @@ def parse_rockstar_newswire_html(
 
             if item is not None:
                 items.append(item)
+
+    if not items:
+        items.extend(_fallback_article_links(content))
 
     return _deduplicate_source_items(items)
 

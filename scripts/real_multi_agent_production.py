@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from app.database.gta6_goal_repository import (
     get_gta6_goal_artifacts,
@@ -60,6 +61,14 @@ from app.services.script_spec_service import generate_script_spec
 
 
 ROCKSTAR_PREFIX = "https://www.rockstargames.com/"
+
+
+def _is_rockstar_official_url(value: Any) -> bool:
+    try:
+        host = (urlparse(str(value or "")).hostname or "").casefold()
+    except ValueError:
+        return False
+    return host == "rockstargames.com" or host.endswith(".rockstargames.com")
 DELIVERY_CAPABILITIES = frozenset({
     "narration.generate.pt-BR",
     "production.brand-assets.bind",
@@ -137,7 +146,7 @@ def _result_payload(execution: dict[str, Any]) -> Any:
 def _official_url(row: dict[str, Any]) -> str:
     for key in ("url", "source_url", "canonical_url", "resolved_url"):
         value = str(row.get(key) or "").strip()
-        if value.startswith(ROCKSTAR_PREFIX):
+        if _is_rockstar_official_url(value):
             return value
     return ""
 
@@ -162,12 +171,14 @@ def _normalize_research_claims(result: Any) -> list[dict[str, Any]]:
         source_url = str(row.get("source_url") or row.get("url") or "").strip()
         evidence_ref = str(row.get("evidence_ref") or "").strip()
         if claim_text and (
-            source_url.startswith(ROCKSTAR_PREFIX)
-            or evidence_ref.startswith("url:https://www.rockstargames.com/")
+            _is_rockstar_official_url(source_url)
+            or _is_rockstar_official_url(
+                evidence_ref.split("#", 1)[0].removeprefix("url:")
+            )
         ):
             url = (
                 source_url
-                if source_url.startswith(ROCKSTAR_PREFIX)
+                if _is_rockstar_official_url(source_url)
                 else evidence_ref.split("#", 1)[0].removeprefix("url:")
             )
             key = hashlib.sha256((claim_text + "|" + url).encode("utf-8")).hexdigest()[:20]
@@ -192,8 +203,15 @@ def _normalize_research_claims(result: Any) -> list[dict[str, Any]]:
         url = _official_url(row)
         title = re.sub(r"\s+", " ", str(row.get("title") or "")).strip()
         excerpt = _evidence_excerpt(row)
-        if url and (title or excerpt):
-            statement = title or excerpt
+        # Raw monitored SPA shells carry an official URL but no article
+        # identity.  Only resolved official research items with a real title
+        # may become factual claims.
+        if url and title:
+            statement = (
+                f"{title}: {excerpt}"
+                if excerpt and excerpt.casefold() != title.casefold()
+                else title
+            )
             key = hashlib.sha256((statement + "|" + url).encode("utf-8")).hexdigest()[:20]
             if key not in seen:
                 seen.add(key)
@@ -256,9 +274,8 @@ def _approved_topic_from_research(result: dict[str, Any]) -> dict[str, Any] | No
             "topic_duplicate": duplicate,
             "topic_similarity": similarity,
             "topic_match": matched,
-            "official_source": bool(
-                str(research.get("url") or research.get("source_url") or "")
-                .startswith(ROCKSTAR_PREFIX)
+            "official_source": _is_rockstar_official_url(
+                research.get("url") or research.get("source_url") or ""
             ),
         })
     candidates.sort(
@@ -1060,7 +1077,7 @@ def _build_product(state: dict[str, Any], novelty: dict[str, Any]) -> dict[str, 
     claims = list(state.get("claims") or ())
     official = [
         item for item in claims
-        if str(item.get("source") or "").startswith(ROCKSTAR_PREFIX)
+        if _is_rockstar_official_url(item.get("source"))
     ]
     if not official:
         raise RuntimeError("REAL_EVIDENCE_ARTIFACT_REQUIRES_OFFICIAL_PRIMARY_SOURCE")
