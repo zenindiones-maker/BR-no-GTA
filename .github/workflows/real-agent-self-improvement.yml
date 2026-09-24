@@ -151,19 +151,68 @@ jobs:
           checkpoint=request.get("checkpoint_source") or {}
           agent_instance_id=str(checkpoint.get("agent_instance_id") or "")
           root=Path("runtime/real-agent-self-improvement/checkpoint-source")
-          sessions=sorted((root/"agent-sessions").glob("*.json"))
-          selected=None
+          # Artifact packaging may add one or more directory prefixes. Resolve
+          # the canonical AgentSession by identity, never by a fixed extraction
+          # prefix. Fail closed on missing or ambiguous identity matches.
+          sessions=sorted(
+              path for path in root.rglob("*.json")
+              if path.parent.name=="agent-sessions"
+          )
+          matches=[]
+          expected_task_id=str(
+              checkpoint.get("partial_task_id")
+              or checkpoint.get("resume_from_task_id")
+              or ""
+          )
           for path in sessions:
               try:
                   data=json.loads(path.read_text(encoding="utf-8"))
               except Exception:
                   continue
-              if (
-                  data.get("schema")=="AgentSession/v1"
-                  and str(data.get("AGENT_INSTANCE_ID") or "")==agent_instance_id
-              ):
-                  selected=data
-                  break
+              if data.get("schema")!="AgentSession/v1":
+                  continue
+              if str(data.get("AGENT_INSTANCE_ID") or "")!=agent_instance_id:
+                  continue
+              session_task_id=str(
+                  data.get("TASK_ID")
+                  or data.get("task_id")
+                  or ""
+              )
+              if expected_task_id and session_task_id and session_task_id!=expected_task_id:
+                  continue
+              matches.append((path,data))
+
+          if len(matches)!=1:
+              raise RuntimeError(
+                  "checkpoint AgentSession resolution must yield exactly one "
+                  f"identity match; agent_instance_id={agent_instance_id!r} "
+                  f"task_id={expected_task_id!r} matches="
+                  f"{[str(path) for path,_ in matches]!r}"
+              )
+          selected_path,selected=matches[0]
+          resolved_agent_id=str(selected.get("AGENT_INSTANCE_ID") or "")
+          resolved_task_id=str(
+              selected.get("TASK_ID")
+              or selected.get("task_id")
+              or expected_task_id
+          )
+          resolved_mission_id=str(
+              selected.get("MISSION_ID")
+              or selected.get("mission_id")
+              or ""
+          )
+          if resolved_agent_id!=agent_instance_id:
+              raise RuntimeError("checkpoint AgentSession identity mismatch")
+          if expected_task_id and resolved_task_id!=expected_task_id:
+              raise RuntimeError("checkpoint AgentSession task mismatch")
+          # Mission identity is intrinsic to the restored AgentSession. Require it
+          # to be present so a package collision cannot silently cross missions.
+          if not resolved_mission_id:
+              raise RuntimeError("checkpoint AgentSession missing mission identity")
+          print("CHECKPOINT_AGENT_SESSION_RESOLVED=PASS")
+          print("CHECKPOINT_AGENT_INSTANCE_ID_MATCH=PASS")
+          print("CHECKPOINT_MISSION_ID_MATCH=PASS")
+          print("CHECKPOINT_TASK_ID_MATCH=PASS")
 
           def walk(value):
               if isinstance(value,dict):
