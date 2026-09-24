@@ -151,6 +151,13 @@ def classify_internal_failure(
     ):
         failure_class = PROVIDER_TRANSIENT
     elif any(marker in folded for marker in (
+        "nvidia nim request timed out",
+        "semantic provider request timed out",
+        "provider request timed out",
+        "provider timeout",
+    )):
+        failure_class = PROVIDER_TRANSIENT
+    elif any(marker in folded for marker in (
         "transport_request",
         "provider_timeout",
         "upstream service failed",
