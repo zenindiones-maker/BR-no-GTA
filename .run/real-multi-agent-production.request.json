@@ -9,9 +9,11 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36036498296,
-    "reason": "resume after bounded semantic-context compaction for YouTube specialist review",
+    "retry_of_run": 36043838187,
+    "reason": "resume exact production mission after bounded provider-to-JSON recovery for malformed Invalid \\\\escape output",
     "preserve_human_goal": true,
+    "preserve_longform_recovery": true,
+    "preserve_professional_gates": true,
     "target": "YOUTUBE_PRIVATE_HD_REVIEW"
   }
 }
