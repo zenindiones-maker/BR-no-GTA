@@ -41,6 +41,7 @@ env:
   GH_TOKEN: ${{ github.token }}
   GITHUB_ACTIONS_REPOSITORY: ${{ github.repository }}
   GITHUB_ACTIONS_RENDER_REF: work/gate6f-analytics-learning
+  BR_FRESH_RESEARCH_REF: work/gate6f-analytics-learning
   BR_RENDER_EXECUTOR: github_actions
   BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/real-multi-agent-production/mission.db
   BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/artifacts/real-multi-agent-production/performance-trace.jsonl
