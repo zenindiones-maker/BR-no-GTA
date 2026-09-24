@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36029438336,
-    "reason": "resume after preserving direct dependency lineage under agent context compression",
+    "retry_of_run": 36034501991,
+    "reason": "resume after correcting nested editorial semantic provider route to ai.reasoning.text",
     "preserve_human_goal": true,
     "target": "YOUTUBE_PRIVATE_HD_REVIEW"
   }
