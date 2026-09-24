@@ -8,6 +8,7 @@ from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services import harness_adaptive_planning_service as adaptive_planning
 from scripts.real_agent_self_improvement_mission import (
     _is_independent_review_task,
+    checkpoint_resume_identity,
 )
 from scripts.dynamic_system_improvement_mission import (
     _artifact_content_budget_chars,
@@ -703,3 +704,35 @@ def test_functional_role_is_authoritative_for_proposal_even_without_keyword():
 
     assert found["proposal"]["task_id"] == "task-04"
     assert found["review"]["task_id"] == "task-05"
+
+
+
+def test_checkpoint_resume_identity_preserves_original_goal_and_mission(
+    tmp_path,
+):
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "first-plan.json").write_text(
+        """{
+  "goal": {"goal_id": "real-self-improvement-original"},
+  "plan": {"mission_id": "mission-original"}
+}
+""",
+        encoding="utf-8",
+    )
+    assert checkpoint_resume_identity(checkpoint) == {
+        "goal_id": "real-self-improvement-original",
+        "mission_id": "mission-original",
+    }
+
+
+def test_checkpoint_resume_identity_fails_closed_without_both_ids(
+    tmp_path,
+):
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "first-plan.json").write_text(
+        '{"goal":{"goal_id":"goal-only"},"plan":{}}',
+        encoding="utf-8",
+    )
+    assert checkpoint_resume_identity(checkpoint) is None

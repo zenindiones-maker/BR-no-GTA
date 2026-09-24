@@ -349,6 +349,38 @@ def _checkpoint_task_signature(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def checkpoint_resume_identity(
+    checkpoint_source_dir: Path | None,
+) -> dict[str, str] | None:
+    if checkpoint_source_dir is None or not checkpoint_source_dir.is_dir():
+        return None
+    source_plan_path = checkpoint_source_dir / "first-plan.json"
+    if not source_plan_path.is_file():
+        return None
+    try:
+        source_wrapper = json.loads(
+            source_plan_path.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    source_plan = dict(
+        source_wrapper.get("plan") or source_wrapper
+    )
+    goal = source_wrapper.get("goal")
+    goal_id = str(
+        (goal or {}).get("goal_id")
+        if isinstance(goal, dict)
+        else ""
+    ).strip()
+    mission_id = str(source_plan.get("mission_id") or "").strip()
+    if not goal_id or not mission_id:
+        return None
+    return {
+        "goal_id": goal_id,
+        "mission_id": mission_id,
+    }
+
+
 def restore_compatible_node_checkpoints(
     *,
     plan: dict[str, Any],
@@ -553,6 +585,8 @@ def restore_compatible_node_checkpoints(
                     continue
                 if (
                     source_session.get("schema") != "AgentSession/v1"
+                    or source_session.get("MISSION_ID")
+                    != str(plan.get("mission_id") or "")
                     or source_session.get("TASK_ID") != partial_task_id
                     or source_session.get("CAPABILITY_ID")
                     != current_partial.get("capability_id")
@@ -1578,8 +1612,16 @@ def run(
     if incident and not failure_episode_id:
         raise RuntimeError("REAL_PROVIDER_FAILURE_EPISODE_NOT_PERSISTED")
 
+    resume_identity = checkpoint_resume_identity(
+        checkpoint_source_dir
+    )
+    planning_goal_id = (
+        str(resume_identity["goal_id"])
+        if resume_identity is not None
+        else f"real-self-improvement-{os.getenv('GITHUB_RUN_ID') or 'local'}"
+    )
     first, route, planning_ms = plan_once(
-        f"real-self-improvement-{os.getenv('GITHUB_RUN_ID') or 'local'}",
+        planning_goal_id,
         output_dir / "first-plan.json",
         goal_text=goal_text,
         request=request,
@@ -1587,6 +1629,17 @@ def run(
         manifest=manifest,
         artifact_ref=incident_artifact_ref,
     )
+    if (
+        resume_identity is not None
+        and str(first.get("mission_id") or "")
+        != str(resume_identity["mission_id"])
+    ):
+        raise RuntimeError(
+            "CHECKPOINT_MISSION_ID_DRIFT:"
+            + str(first.get("mission_id") or "")
+            + "!="
+            + str(resume_identity["mission_id"])
+        )
     identity_text = selected_identity_text(first)
     if "codex" in identity_text:
         raise RuntimeError("MUTATION_STAGE=BLOCKED_BY_EXECUTOR_AUTH")
