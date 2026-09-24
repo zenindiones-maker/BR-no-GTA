@@ -458,7 +458,7 @@ def test_longform_script_fails_closed_after_bounded_short_responses():
             ai_provider=provider,
             target_duration_seconds=1200.0,
         )
-    assert len(provider.prompts) == 2
+    assert len(provider.prompts) == 3
 
 def test_longform_script_retries_once_after_invalid_json_format():
     import json
@@ -733,4 +733,7 @@ def test_longform_composes_distinct_bounded_passes_without_padding():
     assert "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA" in provider.prompts[1]
     assert "NÃO reescreva nem parafraseie" in provider.prompts[1]
     assert len(result["development"]) == 8
-    assert _structure_word_count(result) >= 2640
+    assert sum(
+        len(str(item.get("body") or "").split())
+        for item in result["development"]
+    ) >= 2640
