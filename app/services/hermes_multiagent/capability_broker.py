@@ -1404,6 +1404,11 @@ class HermesHarnessCapabilityBroker:
             max_wall_clock_seconds=float(task.time_budget_seconds),
             mandatory_tool_requirements=mandatory_tool_requirements,
         )
+        reclaimed_pre_provider_turn = (
+            session.reclaim_unexecuted_pre_provider_turn()
+            if session.restored
+            else False
+        )
         restored_tool_rows = (
             session.prior_tool_results()
             if session.restored
@@ -1500,6 +1505,11 @@ class HermesHarnessCapabilityBroker:
                 ),
                 "restored_provider_call_count": provider_calls,
                 "TASK_AGENT_SESSION_RESTORED": "PASS",
+                "PRE_PROVIDER_TURN_RECLAIMED": (
+                    "PASS"
+                    if reclaimed_pre_provider_turn
+                    else "NOT_APPLICABLE"
+                ),
                 "SAME_AGENT_AFTER_TOOL_RESULT": "PASS",
                 "PRIOR_TOOL_RESULT_CONSUMED": (
                     "PASS" if tool_results else "NOT_APPLICABLE"
@@ -1529,7 +1539,6 @@ class HermesHarnessCapabilityBroker:
             )
 
         for agent_turn in range(start_agent_turn, end_agent_turn + 1):
-            session.begin_turn(agent_turn)
             elapsed_wall = time.perf_counter() - task_started_perf
             if elapsed_wall > float(task.time_budget_seconds):
                 failure_result = {
@@ -1619,6 +1628,7 @@ class HermesHarnessCapabilityBroker:
                 result = adapted.result
                 last_result = result
                 last_elapsed = float(adapted.elapsed_seconds)
+                session.begin_turn(agent_turn)
                 session.record_provider_result(result)
             except Exception as exc:
                 retry_allowed = (
@@ -1628,9 +1638,13 @@ class HermesHarnessCapabilityBroker:
                 failure_evidence = dict(
                     getattr(exc, "failure_evidence", {}) or {}
                 )
+                turn_consumed = provider_call_count(failure_evidence) > 0
+                if turn_consumed:
+                    session.begin_turn(agent_turn)
                 session.fail(
                     failure_class=type(exc).__name__,
                     evidence=failure_evidence,
+                    turn_consumed=turn_consumed,
                 )
                 failure = DelegatedCapabilityFailure(
                     task_id=task_id,

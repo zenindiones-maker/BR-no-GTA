@@ -135,13 +135,17 @@ jobs:
             echo "NODE_CHECKPOINT_SOURCE_RESTORED=PASS"
           fi
 
-      - name: Detect provider model-set exhaustion from checkpoint
+      - name: Detect governed provider-level recovery need
         id: provider_recovery
         run: |
           set -euo pipefail
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
+
+          from app.services.provider_health_service import (
+              semantic_provider_health,
+          )
 
           request=json.load(open(".run/real-agent-self-improvement.request.json"))
           checkpoint=request.get("checkpoint_source") or {}
@@ -194,42 +198,66 @@ jobs:
                       if provider and model:
                           exhausted.add((provider,model))
 
-          health=json.load(open("config/nvidia_runtime_health.json"))
-          available={
-              str(model)
-              for model,item in (health.get("models") or {}).items()
-              if isinstance(item,dict)
-              and str(item.get("health") or "").upper()=="AVAILABLE"
-          }
-          exhausted_nvidia={
-              model for provider,model in exhausted
-              if provider=="nvidia_nim"
-          }
-          need=bool(available) and available.issubset(exhausted_nvidia)
+          preferred=str((selected or {}).get("PROVIDER_ID") or "").strip()
+          if not preferred and exhausted:
+              preferred=sorted(exhausted)[-1][0]
+          health=semantic_provider_health()
+          eligible=[
+              str(item).strip()
+              for item in health.get("eligible_zero_cost_provider_ids") or []
+              if str(item).strip()
+          ]
+          alternates=[item for item in eligible if item!=preferred]
+          provider_level_replan_required=bool(
+              selected
+              and str(selected.get("STATUS") or "").upper()=="FAILED"
+              and str(selected.get("FAILURE_CLASS") or "")=="RoutingPolicyError"
+              and exhausted
+          )
+          need=provider_level_replan_required and not alternates
           print("prepare_alt_provider="+("true" if need else "false"))
-          print("available_nvidia_count="+str(len(available)))
-          print("exhausted_nvidia_count="+str(len(exhausted_nvidia)))
+          print("provider_level_replan_required="+(
+              "true" if provider_level_replan_required else "false"
+          ))
+          print("preferred_provider="+preferred)
+          print("eligible_provider_count="+str(len(eligible)))
+          print("alternate_provider_count="+str(len(alternates)))
+          print("exhausted_pair_count="+str(len(exhausted)))
           PY
 
       - name: Prepare bounded local zero-cost alternate provider
         if: steps.provider_recovery.outputs.prepare_alt_provider == 'true'
         timeout-minutes: 10
         env:
-          OLLAMA_VERSION: "0.34.2"
-          OLLAMA_MODEL: "qwen3:4b-instruct"
-          OLLAMA_EXPECTED_DIGEST: "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0"
           OLLAMA_HOST: "127.0.0.1:11434"
           OLLAMA_NO_CLOUD: "1"
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: |
           set -euo pipefail
           test "$REPOSITORY_PRIVATE" = "false"
+          read -r OLLAMA_VERSION OLLAMA_MODEL OLLAMA_EXPECTED_DIGEST <<EOF
+          $(python - <<'PY'
+          from app.services.local_openweight_ai_provider import (
+              LOCAL_OPENWEIGHT_MODEL_DIGEST,
+              LOCAL_OPENWEIGHT_MODEL_ID,
+              LOCAL_OPENWEIGHT_OLLAMA_VERSION,
+          )
+          print(
+              LOCAL_OPENWEIGHT_OLLAMA_VERSION,
+              LOCAL_OPENWEIGHT_MODEL_ID,
+              LOCAL_OPENWEIGHT_MODEL_DIGEST,
+          )
+          PY
+          )
+          EOF
+          export OLLAMA_VERSION OLLAMA_MODEL OLLAMA_EXPECTED_DIGEST
+
           mkdir -p runtime/real-agent-self-improvement/local-provider
           command -v zstd >/dev/null || {
             sudo apt-get update -qq
             sudo apt-get install -y -qq zstd
           }
-          curl --fail --show-error --location             "https://raw.githubusercontent.com/ollama/ollama/v0.34.2/scripts/install.sh"             -o runtime/real-agent-self-improvement/local-provider/ollama-install.sh
+          curl --fail --show-error --location             "https://raw.githubusercontent.com/ollama/ollama/v$OLLAMA_VERSION/scripts/install.sh"             -o runtime/real-agent-self-improvement/local-provider/ollama-install.sh
           OLLAMA_VERSION="$OLLAMA_VERSION" OLLAMA_NO_START=1             sh runtime/real-agent-self-improvement/local-provider/ollama-install.sh
           ollama --version | grep -F "$OLLAMA_VERSION"
 
@@ -276,6 +304,7 @@ jobs:
           echo "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED=PASS"
           echo "ALTERNATE_PROVIDER_RUNTIME=ollama_local"
           echo "ALTERNATE_PROVIDER_ZERO_COST=PASS"
+          echo "ALTERNATE_PROVIDER_IDENTITY_SOURCE=CANONICAL_PROVIDER_MODULE"
 
       - name: Execute real natural-goal self-improvement mission
         env:

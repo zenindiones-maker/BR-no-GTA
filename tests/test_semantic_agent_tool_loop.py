@@ -25,6 +25,7 @@ from app.services.hermes_multiagent.capability_broker import (
     HermesHarnessCapabilityBroker,
 )
 from app.services.hermes_multiagent.contracts import DelegationEnvelope
+from app.services.harness_routing_policy_service import RoutingPolicyError
 from app.services.semantic_tool_loop_service import (
     TOOL_REQUEST_SCHEMA,
     build_tool_result_envelope,
@@ -1169,3 +1170,98 @@ def test_resume_segments_do_not_hide_remaining_absolute_turn_budget(
     assert window["end_turn"] == 8
     assert restored.state["MAX_AGENT_TURNS"] == 4
     assert restored.state["MAX_TOTAL_AGENT_TURNS"] == 8
+
+
+
+def test_legacy_pre_provider_routing_failure_reclaims_phantom_turn_once(
+    tmp_path,
+):
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-phantom-turn",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    session.state["TURN_INDEX"] = 8
+    session.state["RESUME_SEGMENTS_USED"] = 4
+    session.state["STATUS"] = "FAILED"
+    session.state["FAILURE_CLASS"] = "RoutingPolicyError"
+    session.state.pop("FAILURE_TURN_CONSUMED", None)
+    session._persist()
+
+    restored = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-phantom-turn",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    assert restored.reclaim_unexecuted_pre_provider_turn() is True
+    assert restored.state["TURN_INDEX"] == 7
+    assert restored.state["RESUME_SEGMENTS_USED"] == 3
+    assert restored.state["FAILURE_TURN_CONSUMED"] is False
+    assert restored.reclaim_unexecuted_pre_provider_turn() is False
+
+
+def test_pre_provider_routing_failure_does_not_consume_agent_turn(
+    monkeypatch,
+    tmp_path,
+):
+    parent, envelope, broker, context = _fixture(tmp_path)
+
+    def fail_before_provider(**kwargs):
+        raise RoutingPolicyError(
+            "Primary provider is unavailable and fallback is not permitted",
+            evidence={
+                "primary_provider": "nvidia_nim",
+                "fallback_allowed": False,
+            },
+        )
+
+    monkeypatch.setattr(broker.adapter, "execute", fail_before_provider)
+    try:
+        with pytest.raises(DelegatedCapabilityFailure) as raised:
+            broker.execute_delegated_capability(
+                task_id="task-02",
+                capability_id="addy:debugging-and-error-recovery",
+                payload={
+                    "mission_id": envelope.mission_id,
+                    "task_id": "task-02",
+                    "goal_id": envelope.goal_id,
+                    "task": "Resume diagnosis without a provider yet.",
+                    "context": context,
+                },
+                dependency_context=context,
+            )
+        assert raised.value.failure_mode == "RoutingPolicyError"
+        session_files = list(
+            (tmp_path / "agent-sessions").glob("task-02-agent-*.json")
+        )
+        assert len(session_files) == 1
+        state = json.loads(session_files[0].read_text(encoding="utf-8"))
+        assert state["TURN_INDEX"] == 0
+        assert state["FAILURE_CLASS"] == "RoutingPolicyError"
+        assert state["FAILURE_TURN_CONSUMED"] is False
+    finally:
+        consume_harness_authorization(parent)
