@@ -148,6 +148,43 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
     return "GENERAL"
 
 
+def _is_editorial_review_requirement(requirement: dict[str, Any]) -> bool:
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
+    action = str(
+        requirement.get("action")
+        or requirement.get("authorized_action")
+        or ""
+    ).strip().upper()
+    text = " ".join(
+        str(requirement.get(key) or "").strip().casefold()
+        for key in (
+            "task_class",
+            "objective",
+            "query",
+            "required_capability_description",
+            "expected_output",
+        )
+    )
+    return bool(
+        "review" in task_class
+        and (
+            action == "EDITORIAL"
+            or any(
+                marker in text
+                for marker in (
+                    "youtube",
+                    "script",
+                    "roteiro",
+                    "editorial",
+                    "content",
+                    "conteudo",
+                    "conteúdo",
+                )
+            )
+        )
+    )
+
+
 def infer_required_execution_kind(
     requirement: dict[str, Any],
 ) -> str | None:
@@ -167,6 +204,10 @@ def infer_required_execution_kind(
         "APPLY": EXECUTION_KIND_MUTATION_EXECUTOR,
         "VALIDATE": EXECUTION_KIND_VALIDATOR,
     }
+    if role == "REVIEW" and _is_editorial_review_requirement(requirement):
+        # Editorial/script review is a YouTube domain task, not the
+        # independent engineering reviewer role used by system-improvement.
+        role = "EDITORIAL_REVIEW"
     if role in role_map:
         return role_map[role]
 
@@ -250,6 +291,11 @@ def functional_role_required_operations(
     requirement: dict[str, Any],
 ) -> tuple[str, ...] | None:
     role = infer_functional_role(requirement)
+    if role == "REVIEW" and _is_editorial_review_requirement(requirement):
+        # Let the textual/editorial contract derive the least-privilege
+        # operations. In particular, do not inject CAN_REVIEW merely because
+        # the human-facing role label is REVIEW.
+        return None
     operations = _CANONICAL_ROLE_OPERATIONS.get(role)
     if operations is None:
         return None

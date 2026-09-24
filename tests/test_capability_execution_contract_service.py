@@ -476,3 +476,25 @@ def test_legacy_implement_role_normalizes_only_for_real_mutation_contracts():
     }
     assert infer_functional_role(readonly) == "IMPLEMENT"
 
+def test_editorial_script_review_does_not_require_engineering_independent_reviewer():
+    requirement = {
+        "task_id": "script-review",
+        "functional_role": "REVIEW",
+        "task_class": "youtube-script-review",
+        "action": "EDITORIAL",
+        "objective": "Review the YouTube script against editorial strategy evidence",
+        "query": "youtube script review quality evidence",
+        "required_capability_description": "independent editorial quality review",
+        "dependencies": ["content-strategy"],
+        "expected_output": "ScriptReview",
+        "acceptance_criteria": ["review references strategy evidence"],
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    ops = derive_required_operations(requirement)
+    assert CAN_REVIEW not in ops
+    assert CAN_SEMANTIC_REASONING in ops
+    assert infer_required_execution_kind({
+        **requirement,
+        "required_operations": list(ops),
+    }) is None
+
