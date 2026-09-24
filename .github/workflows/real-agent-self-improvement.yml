@@ -6,6 +6,8 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - "scripts/real_agent_self_improvement_mission.py"
+      - "scripts/zero_cost_route_inventory.py"
+      - "tests/test_zero_cost_route_inventory.py"
       - "scripts/dynamic_system_improvement_mission.py"
       - "app/services/execution_mission_envelope_service.py"
       - "app/services/harness_adaptive_planning_service.py"
@@ -85,7 +87,7 @@ jobs:
       - name: Focused real-execution contracts
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py             tests/test_harness_executor_availability_service.py             tests/test_harness_collaboration_service.py             tests/test_addy_harness_service.py             tests/test_semantic_agent_tool_loop.py             tests/test_task_input_contract_service.py             tests/test_harness_internal_recovery_service.py             tests/test_recovery_execution_service.py
+          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py             tests/test_harness_executor_availability_service.py             tests/test_harness_collaboration_service.py             tests/test_addy_harness_service.py             tests/test_semantic_agent_tool_loop.py             tests/test_task_input_contract_service.py             tests/test_harness_internal_recovery_service.py             tests/test_recovery_execution_service.py             tests/test_zero_cost_route_inventory.py
           python -m py_compile scripts/real_agent_self_improvement_mission.py
           echo "REAL_SELF_IMPROVEMENT_FOCUSED_CONTRACTS=PASS"
 
