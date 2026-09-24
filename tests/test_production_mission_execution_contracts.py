@@ -724,11 +724,13 @@ def test_youtube_semantic_context_is_bounded_without_losing_direct_lineage():
     assert context["script"]
 
 
-def test_sparse_current_evidence_uses_no_filler_duration_target():
-    assert _target_duration_seconds(1) == 300.0
-    assert _target_duration_seconds(2) == 300.0
-    assert _target_duration_seconds(3) == 600.0
-    assert _target_duration_seconds(5) == 900.0
+def test_professional_duration_target_never_drops_below_twenty_minutes():
+    for claim_count in (1, 2, 3, 5, 8):
+        assert _target_duration_seconds(claim_count) >= 1200.0
+    assert _target_duration_seconds(1) == 1200.0
+    assert _target_duration_seconds(2) == 1200.0
+    assert _target_duration_seconds(3) == 1200.0
+    assert _target_duration_seconds(5) == 1200.0
     assert _target_duration_seconds(8) == 1200.0
     assert _target_duration_seconds(12) == 1500.0
 
@@ -748,7 +750,7 @@ def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
         "selected_topic": "GTA VI pauta nova",
         "script": {"content": " ".join(["palavra"] * 615)},
         "script_id": 1,
-        "target_duration_seconds": 300.0,
+        "target_duration_seconds": 1200.0,
         "claims": [{"statement": "achado oficial"}],
         "topic_selection": {"research_item_id": 1},
     }
@@ -756,7 +758,6 @@ def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
     gate = _novelty_gate(state)
 
     assert gate["duration_estimator_wpm"] == 132.0
-    assert gate["duration_supported_without_filler"] is True
+    assert gate["duration_supported_without_filler"] is False
     assert gate["content_supported_duration_minutes"] > 4.6
-    assert gate["status"] == "PASS"
-
+    assert gate["status"] == "FAIL"

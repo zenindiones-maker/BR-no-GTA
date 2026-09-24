@@ -272,18 +272,15 @@ def _approved_topic_from_research(result: dict[str, Any]) -> dict[str, Any] | No
 
 
 def _target_duration_seconds(claim_count: int) -> float:
+    """Professional final-video target; never lower than the 20-minute contract.
+
+    Sparse evidence is handled by bounded research/editorial expansion and the
+    existing fail-closed content-duration/novelty gates. It is never converted
+    into a shorter final-review target or padded artificially.
+    """
     if claim_count >= 12:
         return 1500.0
-    if claim_count >= 8:
-        return 1200.0
-    if claim_count >= 5:
-        return 900.0
-    if claim_count >= 3:
-        return 600.0
-    # Sparse but valid current evidence should produce a tighter review cut
-    # instead of stretching a short script. Five minutes is the bounded floor
-    # for one or two findings; novelty/factual gates still fail closed.
-    return 300.0
+    return 1200.0
 
 
 def _parent_summaries(parent_context: dict[str, Any]) -> list[dict[str, Any]]:
