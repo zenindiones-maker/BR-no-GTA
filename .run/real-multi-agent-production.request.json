@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36043838187,
-    "reason": "resume exact production mission after bounded provider-to-JSON recovery for malformed Invalid \\\\escape output",
+    "retry_of_run": 36048501014,
+    "reason": "resume after targeted editorial queue claim recovery and fresh-cloud evidence expansion",
     "preserve_human_goal": true,
     "preserve_longform_recovery": true,
     "preserve_professional_gates": true,

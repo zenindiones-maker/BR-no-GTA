@@ -911,4 +911,3 @@ def test_fresh_research_candidates_deduplicate_known_claim_ids():
         known_ids={first[0]["claim_id"]},
     )
     assert second == []
-
