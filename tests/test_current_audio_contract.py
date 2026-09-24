@@ -16,11 +16,11 @@ def test_current_audio_contract_is_human_approved_voice_b():
     assert c["CLOSING_ASSET"]=="G-brand-mixed"
     assert c["APPROVED_G_SHA256"]=="9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
     assert c["DEFAULT_NARRATION_LOCALE"]=="pt-BR"
-    assert c["ONLY_FORCED_EN_US_TERM"]=="Vice City"
+    assert c["ONLY_FORCED_EN_US_TERM"] is None
     assert c["GTA_6_SYNTHESIS"]=="gê tê á seis"
-    assert c["VICE_CITY_LOCALE"]=="en-US"
+    assert c["VICE_CITY_LOCALE"]=="pt-BR"
     assert c["VICE_CITY_TARGET_IPA"]=="vaɪs ˈsɪti"
-    assert c["PRONUNCIATION_LEXICON_VERSION"]=="2026.09.20.3-human-lucia"
+    assert c["PRONUNCIATION_LEXICON_VERSION"]=="2026.09.20.5-all-ptbr-no-language-switch"
     assert c["LUCIA_SYNTHESIS_ALIAS"]=="Lucía"
     assert len(c["CURRENT_AUDIO_CONTRACT_FINGERPRINT"])==64
 

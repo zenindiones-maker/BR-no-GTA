@@ -13,6 +13,7 @@ on:
       - "app/services/harness_capability_adapter.py"
       - "app/services/youtube_department_service.py"
       - "app/services/script_generator_service.py"
+      - "app/services/current_audio_contract_service.py"
       - "app/services/global_capability_registry.py"
       - "app/services/capability_execution_contract_service.py"
       - "app/services/harness_adaptive_planning_service.py"
@@ -22,6 +23,7 @@ on:
       - "app/services/telegram_fresh_research_service.py"
       - "tests/test_production_mission_execution_contracts.py"
       - "tests/test_script_generator_service.py"
+      - "tests/test_current_audio_contract.py"
       - "tests/test_youtube_department_learning_boundary.py"
       - "tests/test_telegram_fresh_research.py"
 
@@ -109,7 +111,8 @@ jobs:
             tests/test_telegram_source_intelligence.py \
             tests/test_youtube_department_learning_boundary.py \
             tests/test_production_mission_execution_contracts.py \
-            tests/test_script_generator_service.py
+            tests/test_script_generator_service.py \
+            tests/test_current_audio_contract.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
           echo "ARTIFACT_CONSUMPTION_REAL=PASS"
           echo "ARTIFACT_PRODUCTION_REAL=PASS"

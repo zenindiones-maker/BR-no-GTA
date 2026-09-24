@@ -112,11 +112,11 @@ def current_audio_contract() -> dict[str, Any]:
         "CLOSING_ASSET": "G-brand-mixed",
         "CLOSING_ASSET_POLICY": "IMMUTABLE_HUMAN_APPROVED",
         "DEFAULT_NARRATION_LOCALE": "pt-BR",
-        "ONLY_FORCED_EN_US_TERM": "Vice City",
+        "ONLY_FORCED_EN_US_TERM": None,
         "GTA_6_SYNTHESIS": "gê tê á seis",
-        "VICE_CITY_LOCALE": "en-US",
+        "VICE_CITY_LOCALE": "pt-BR",
         "VICE_CITY_TARGET_IPA": "vaɪs ˈsɪti",
-        "PRONUNCIATION_LEXICON_VERSION": "2026.09.20.3-human-lucia",
+        "PRONUNCIATION_LEXICON_VERSION": "2026.09.20.5-all-ptbr-no-language-switch",
         "LUCIA_SYNTHESIS_ALIAS": "Lucía",
     }
     for key, value in expected.items():
