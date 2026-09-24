@@ -470,6 +470,8 @@ def _web_source_statement(
 
 
 def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
+    if len(candidates) >= MAX_LONGFORM_EXPANSION_FACT_CHECKS:
+        return 0
     pending_fact_checks = sum(
         1
         for item in candidates

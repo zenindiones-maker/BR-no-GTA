@@ -927,7 +927,7 @@ def test_longform_web_gap_budget_is_bounded_and_skips_when_research_is_full():
         for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
     ]
     # Existing bounded research already filled the evidence budget: no web call.
-    assert _web_acquisition_slots(full) == 2
+    assert _web_acquisition_slots(full) == 0
 
     pending = [
         {
