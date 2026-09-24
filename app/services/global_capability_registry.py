@@ -229,6 +229,8 @@ ARTIFACT_EVIDENCE_REUSE_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="DETERMINISTIC_WORKER",
+    functional_roles=("EVIDENCE",),
 )
 
 
@@ -295,6 +297,8 @@ AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
+    functional_roles=("ANALYSIS",),
 )
 
 AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
@@ -1438,6 +1442,8 @@ REPOSITORY_READ_SCOPED_RECORD = CapabilityRecord(
         CAN_READ_REPOSITORY,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="TOOL",
+    functional_roles=(),
 )
 
 RECOVERY_APPLY_LOCAL_RECORD = CapabilityRecord(
@@ -1520,6 +1526,8 @@ RECOVERY_APPLY_LOCAL_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="MUTATION_EXECUTOR",
+    functional_roles=("APPLY",),
 )
 
 RECOVERY_VALIDATE_LOCAL_RECORD = CapabilityRecord(
@@ -1590,6 +1598,8 @@ RECOVERY_VALIDATE_LOCAL_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="VALIDATOR",
+    functional_roles=("VALIDATE",),
 )
 
 for _recovery_record in (
