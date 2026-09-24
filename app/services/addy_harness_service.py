@@ -851,6 +851,9 @@ def execute_authorized_addy_skill(
             "BOUNDED_PROVIDER_ATTEMPTS": (
                 len(provider_attempts) <= 3
             ),
+            "agent_instance_id": str(
+                payload.get("agent_instance_id") or ""
+            ) or None,
             "receipt": failure_receipt.to_dict(),
         })
         failed_evidence = CapabilityEvidence(
@@ -983,6 +986,9 @@ def execute_authorized_addy_skill(
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
             "BOUNDED_PROVIDER_ATTEMPTS": len(provider_attempts) <= 3,
+            "agent_instance_id": str(
+                payload.get("agent_instance_id") or ""
+            ) or None,
             "receipt": receipt.to_dict(),
         },
         boundary=record.security_boundary,
