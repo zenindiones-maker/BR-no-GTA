@@ -95,6 +95,7 @@ PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
 MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
 MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
 MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS = 2
+MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS = 2
 MAX_LONGFORM_RECOVERY_CHILD_TASKS = 8
 
 
@@ -470,16 +471,17 @@ def _web_source_statement(
 
 
 def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
-    if len(candidates) >= MAX_LONGFORM_EXPANSION_FACT_CHECKS:
-        return 0
-    pending_fact_checks = sum(
-        1
-        for item in candidates
-        if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
+    pending_fact_checks = min(
+        MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS,
+        sum(
+            1
+            for item in candidates
+            if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
+        ),
     )
-    # One research child already exists. The governed web stage costs one
-    # discovery child plus two children per acquired source
-    # (source acquisition -> fact-check). Keep max_child_tasks unchanged.
+    # Reserve the unchanged eight-child recovery budget:
+    # research(1) + fresh fact-checks(<=2) + discovery(1)
+    # + source/fact-check pairs(2 each).
     remaining = (
         MAX_LONGFORM_RECOVERY_CHILD_TASKS
         - 1
@@ -490,6 +492,36 @@ def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
         MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
         max(0, remaining // 2),
     )
+
+
+def _longform_fallback_source_urls(
+    candidates: list[dict[str, Any]],
+    fresh_recovery: dict[str, Any] | None,
+) -> list[str]:
+    urls: list[str] = []
+    for item in candidates:
+        value = str(item.get("source") or "").strip()
+        if value.startswith(("https://", "http://")):
+            urls.append(value)
+    packet = (
+        fresh_recovery.get("packet")
+        if isinstance(fresh_recovery, dict)
+        else None
+    )
+    if isinstance(packet, dict):
+        for key in ("official_sources", "secondary_sources"):
+            for item in packet.get(key) or ():
+                if not isinstance(item, dict):
+                    continue
+                value = str(
+                    item.get("resolved_url")
+                    or item.get("url")
+                    or item.get("source_url")
+                    or ""
+                ).strip()
+                if value.startswith(("https://", "http://")):
+                    urls.append(value)
+    return list(dict.fromkeys(urls))
 
 
 def _web_transport_unavailable(exc: BaseException) -> bool:
@@ -540,6 +572,9 @@ def _run_governed_longform_web_acquisition(
     round_index: int,
     max_sources: int,
     known_ids: set[str],
+    fallback_source_urls: list[str] | tuple[str, ...] = (),
+    fallback_parent_task_id: str | None = None,
+    fallback_parent_evidence_ref: str | None = None,
 ) -> dict[str, Any]:
     """Use only generic Registry web capabilities for a remaining research gap."""
     if max_sources <= 0:
@@ -600,6 +635,8 @@ def _run_governed_longform_web_acquisition(
     search_run_id = _claim_dynamic_child(board, search_proposal)
     search_task = broker._task(search_id)
     search_context = broker.parent_context(task_id=search_id)
+    search_execution: dict[str, Any] | None = None
+    discovery_state = "PASS"
     try:
         search_execution = broker.execute_delegated_capability(
             task_id=search_id,
@@ -620,39 +657,37 @@ def _run_governed_longform_web_acquisition(
     except DelegatedCapabilityFailure as exc:
         if not _web_transport_unavailable(exc):
             raise
+        discovery_state = "BLOCKED_ZERO_COST_TRANSPORT"
         _finish_unavailable_recovery_child(
             board=board,
             proposal=search_proposal,
             run_id=search_run_id,
             reason=_exception_chain_text(exc),
         )
-        return {
-            "status": "TRANSPORT_UNAVAILABLE",
-            "candidates": [],
-            "evidence_refs": [],
-            "WEB_DISCOVERY_GOVERNED": "BLOCKED",
-            "WEB_SOURCE_ACQUISITION_GOVERNED": "NOT_RUN",
-            "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
-            "failure_class": "ZERO_COST_TRANSPORT_UNAVAILABLE",
-        }
-    _complete_dynamic_child(
-        board=board,
-        proposal=search_proposal,
-        execution=search_execution,
-        run_id=search_run_id,
-    )
+    else:
+        _complete_dynamic_child(
+            board=board,
+            proposal=search_proposal,
+            execution=search_execution,
+            run_id=search_run_id,
+        )
 
-    search_result = _result_payload(search_execution)
-    raw_results = (
-        list(search_result.get("results") or ())
-        if isinstance(search_result, dict)
-        else []
-    )
+    raw_results: list[dict[str, Any]] = []
+    if search_execution is not None:
+        search_result = _result_payload(search_execution)
+        if isinstance(search_result, dict):
+            raw_results = [
+                dict(item)
+                for item in (search_result.get("results") or ())
+                if isinstance(item, dict)
+            ]
+
     selected_results: list[dict[str, Any]] = []
     seen_sources = set(known_sources)
+    search_ref = str(
+        (search_execution or {}).get("evidence_ref") or ""
+    ).strip()
     for item in raw_results:
-        if not isinstance(item, dict):
-            continue
         source_url = str(item.get("url") or "").strip()
         source_key = _canonical_source_url(source_url)
         if (
@@ -662,27 +697,63 @@ def _run_governed_longform_web_acquisition(
         ):
             continue
         seen_sources.add(source_key)
-        selected_results.append(dict(item))
+        selected_results.append({
+            **dict(item),
+            "_origin": "web.search.discover",
+            "_parent_task_id": search_id,
+            "_parent_evidence_ref": search_ref,
+        })
         if len(selected_results) >= max_sources:
             break
 
-    refs = [str(search_execution.get("evidence_ref") or "").strip()]
-    refs = [item for item in refs if item]
+    fallback_parent_id = str(
+        fallback_parent_task_id or research_task_id
+    ).strip()
+    fallback_parent_ref = str(
+        fallback_parent_evidence_ref or ""
+    ).strip()
+    for source_url in fallback_source_urls:
+        if len(selected_results) >= max_sources:
+            break
+        value = str(source_url or "").strip()
+        source_key = _canonical_source_url(value)
+        if (
+            not value.startswith(("https://", "http://"))
+            or not source_key
+            or source_key in seen_sources
+        ):
+            continue
+        seen_sources.add(source_key)
+        selected_results.append({
+            "url": value,
+            "_origin": "existing-fresh-source",
+            "_parent_task_id": fallback_parent_id,
+            "_parent_evidence_ref": fallback_parent_ref,
+        })
+
+    refs = [item for item in (search_ref,) if item]
     candidates: list[dict[str, Any]] = []
     transports: list[str] = []
 
     for index, item in enumerate(selected_results, start=1):
         source_url = str(item.get("url") or "").strip()
+        acquire_parent_id = str(
+            item.get("_parent_task_id") or search_id
+        ).strip()
+        acquire_parent_ref = str(
+            item.get("_parent_evidence_ref") or ""
+        ).strip()
+        acquire_parent = broker._task(acquire_parent_id)
         acquire_id = f"{search_id}-source-{index}"
         acquire_proposal = broker.propose_child_task(
-            parent_task_id=search_id,
+            parent_task_id=acquire_parent_id,
             depth=2,
             child={
                 "task_id": acquire_id,
                 "capability_id": "web.source.acquire",
                 "action": "RESEARCH",
                 "objective": (
-                    f"{search_task.objective} Acquire candidate source {index} "
+                    f"{acquire_parent.objective} Acquire candidate source {index} "
                     "through the governed cache/direct-first source capability."
                 ),
                 "task_class": "research-gap-source-acquisition",
@@ -692,30 +763,30 @@ def _run_governed_longform_web_acquisition(
                     "direct fetch before APILayer fallback",
                     "original source provenance preserved",
                 ),
-                "read_scope": list(search_task.read_scope),
+                "read_scope": list(acquire_parent.read_scope),
                 "write_scope": (),
-                "allowed_tools": list(search_task.allowed_tools),
-                "allowed_side_effects": list(search_task.allowed_side_effects),
-                "time_budget_seconds": min(int(search_task.time_budget_seconds), 60),
+                "allowed_tools": list(acquire_parent.allowed_tools),
+                "allowed_side_effects": list(acquire_parent.allowed_side_effects),
+                "time_budget_seconds": min(int(acquire_parent.time_budget_seconds), 60),
                 "cost_budget": 0.0,
                 "context_budget_bytes": min(
-                    int(search_task.context_budget_bytes),
+                    int(acquire_parent.context_budget_bytes),
                     32768,
                 ),
-                "tool_budget": int(search_task.tool_budget),
+                "tool_budget": int(acquire_parent.tool_budget),
                 "retry_budget": 0,
                 "risk_side_effect_class": "READ_ONLY",
                 "evidence_contract": (
                     "source content hash + transport provenance + quota evidence"
                 ),
-                "review_policy": search_task.review_policy,
-                "human_gate_policy": search_task.human_gate_policy,
+                "review_policy": acquire_parent.review_policy,
+                "human_gate_policy": acquire_parent.human_gate_policy,
             },
         )
         broker.submit_handoff(
-            from_task_id=search_id,
+            from_task_id=acquire_parent_id,
             to_task_id=acquire_id,
-            evidence_refs=[search_execution["evidence_ref"]],
+            evidence_refs=[acquire_parent_ref],
             summary=(
                 "Governed discovery handed an original source URL to the "
                 "cache/direct-first acquisition capability."
@@ -812,7 +883,7 @@ def _run_governed_longform_web_acquisition(
         "status": "PASS" if candidates else "INSUFFICIENT",
         "candidates": candidates,
         "evidence_refs": list(dict.fromkeys(refs)),
-        "WEB_DISCOVERY_GOVERNED": "PASS",
+        "WEB_DISCOVERY_GOVERNED": discovery_state,
         "WEB_SOURCE_ACQUISITION_GOVERNED": (
             "PASS" if selected_results else "NO_NEW_URLS"
         ),
@@ -1133,7 +1204,20 @@ def _run_bounded_longform_evidence_expansion(
             known_ids=known_ids,
         )
     candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
+    original_candidates = list(candidates)
+    official_candidates = [
+        item for item in original_candidates
+        if str(item.get("fact_check_result") or "") == "OFFICIAL_PRIMARY"
+    ]
+    pending_candidates = [
+        item for item in original_candidates
+        if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
+    ][:MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS]
 
+    fallback_urls = _longform_fallback_source_urls(
+        original_candidates,
+        fresh_recovery,
+    )
     web_recovery = _run_governed_longform_web_acquisition(
         broker=broker,
         board=board,
@@ -1141,11 +1225,19 @@ def _run_bounded_longform_evidence_expansion(
         research_task_id=research_task_id,
         selected_topic=selected_topic,
         round_index=round_index,
-        max_sources=_web_acquisition_slots(candidates),
+        max_sources=_web_acquisition_slots(original_candidates),
         known_ids=known_ids,
+        fallback_source_urls=fallback_urls,
+        fallback_parent_task_id=research_child_id,
+        fallback_parent_evidence_ref=str(
+            research_execution.get("evidence_ref") or ""
+        ),
     )
-    candidates.extend(list(web_recovery.get("candidates") or ()))
-    candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
+    candidates = [
+        *official_candidates,
+        *pending_candidates,
+        *list(web_recovery.get("candidates") or ()),
+    ]
 
     verified: list[dict[str, Any]] = []
     fact_check_refs: list[str] = []

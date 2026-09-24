@@ -915,7 +915,7 @@ def test_fresh_research_candidates_deduplicate_known_claim_ids():
     )
     assert second == []
 
-def test_longform_web_gap_budget_is_bounded_and_skips_when_research_is_full():
+def test_longform_web_gap_budget_reserves_sources_without_expanding_child_budget():
     assert MAX_LONGFORM_RECOVERY_CHILD_TASKS == 8
     assert MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS == 2
 
@@ -926,8 +926,9 @@ def test_longform_web_gap_budget_is_bounded_and_skips_when_research_is_full():
         }
         for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
     ]
-    # Existing bounded research already filled the evidence budget: no web call.
-    assert _web_acquisition_slots(full) == 0
+    # A real long-form underdelivery already proved that the ordinary evidence
+    # base needs diversification; reserve two governed source acquisitions.
+    assert _web_acquisition_slots(full) == 2
 
     pending = [
         {
@@ -936,9 +937,9 @@ def test_longform_web_gap_budget_is_bounded_and_skips_when_research_is_full():
         }
         for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
     ]
-    # Six pending deterministic fact checks consume the unchanged child budget,
-    # so the web stage cannot inflate it.
-    assert _web_acquisition_slots(pending) == 0
+    # Only two fresh secondary checks are admitted, leaving exactly enough
+    # room for discovery + two source/fact-check pairs under the same 8-child cap.
+    assert _web_acquisition_slots(pending) == 2
 
 
 def test_longform_web_gap_allows_two_governed_sources_after_official_research():
