@@ -501,7 +501,14 @@ class AgentSessionRuntime:
         exhausted: list[dict[str, Any]] = []
         attempts: list[dict[str, Any]] = []
         for node in walk(self.state):
-            for item in node.get("provider_attempts") or ():
+            # AgentSession/v1 persists provider history canonically in
+            # PROVIDER_ATTEMPTS. Accept the legacy lowercase spelling only as
+            # backward compatibility; readers must not silently discard the
+            # canonical writer state.
+            provider_attempt_rows = node.get("PROVIDER_ATTEMPTS")
+            if provider_attempt_rows is None:
+                provider_attempt_rows = node.get("provider_attempts")
+            for item in provider_attempt_rows or ():
                 if isinstance(item, dict):
                     attempts.append(dict(item))
             for item in (
