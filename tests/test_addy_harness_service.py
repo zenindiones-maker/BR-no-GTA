@@ -726,3 +726,170 @@ def test_addy_first_semantic_turn_uses_agent_turn_schema(monkeypatch):
     assert len(schema["oneOf"]) == 2
     assert result.result["structured_output_enforced"] is True
     assert result.result["structured_output_schema"] == "AgentTurnEnvelope/v1"
+
+
+
+def test_external_localized_replan_excludes_exhausted_model(monkeypatch):
+    _patch_common(monkeypatch)
+    route_b = _route(routing_id="routing-b", model="model-b")
+    route_requests = []
+    generation_calls = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        return route_b
+
+    def fake_generation(**kwargs):
+        generation_calls.append(kwargs)
+        return _success("model-b", "routing-b")
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        fake_generation,
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "PREVIOUS_SELECTED_MODEL": "model-a",
+        "ATTEMPTED_ROUTING_IDS": ["routing-a"],
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+        }],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+        }],
+        "SAME_MODEL_FULL_TIMEOUT_RETRY": "FORBIDDEN",
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert len(route_requests) == 1
+    assert route_requests[0].preferred_providers == ("nvidia_nim",)
+    assert route_requests[0].unavailable_model_ids == ("model-a",)
+    assert route_requests[0].failure_pattern == (
+        "external_localized_provider_replan"
+    )
+    assert len(generation_calls) == 1
+    assert result.status == "EXECUTED"
+    assert result.result["SELECTED_RECOVERY_PROVIDER"] == "nvidia_nim"
+    assert result.result["SELECTED_RECOVERY_MODEL"] == "model-b"
+    assert result.result["RECOVERY_ROUTE_CHANGED"] is True
+    assert result.result["IDENTICAL_ROUTE_RETRY_COUNT"] == 0
+    assert result.result["BOUNDED_PROVIDER_ATTEMPTS"] is True
+    pairs = {
+        (item["provider_id"], item["model_id"])
+        for item in result.result["ATTEMPTED_PROVIDER_MODEL_PAIRS"]
+    }
+    assert pairs == {
+        ("nvidia_nim", "model-a"),
+        ("nvidia_nim", "model-b"),
+    }
+
+
+def test_external_localized_replan_rejects_identical_route(monkeypatch):
+    _patch_common(monkeypatch)
+    route_b_same_route = _route(
+        routing_id="routing-a",
+        model="model-b",
+    )
+    generation_calls = []
+    monkeypatch.setattr(
+        service,
+        "route_harness_request",
+        lambda request: route_b_same_route,
+    )
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: generation_calls.append(kwargs),
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "ATTEMPTED_ROUTING_IDS": ["routing-a"],
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+        }],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+        }],
+    }
+
+    with pytest.raises(
+        PermissionError,
+        match="IDENTICAL_ROUTE_AFTER_LOCALIZED_REPLAN_FORBIDDEN",
+    ):
+        service.execute_authorized_addy_skill(
+            authorization=_auth(
+                "capability:addy:debugging-and-error-recovery"
+            ),
+            routing_decision=_addy_route(),
+            payload=payload,
+        )
+    assert generation_calls == []
+
+
+def test_failed_provider_attempt_persists_failed_episode(monkeypatch):
+    _patch_common(monkeypatch)
+    route_a = _route(routing_id="routing-a", model="model-a")
+    route_b = _route(routing_id="routing-b", model="model-b")
+    routes = iter([route_a, route_b])
+    monkeypatch.setattr(
+        service,
+        "route_harness_request",
+        lambda request: next(routes),
+    )
+    calls = iter([
+        _timeout("model-a", "routing-a"),
+        _timeout("model-b", "routing-b"),
+    ])
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: next(calls),
+    )
+    episodes = []
+    monkeypatch.setattr(
+        service,
+        "capture_canonical_execution_episode",
+        lambda canonical, **kwargs: episodes.append(canonical) or {
+            "episode_id": "failed-episode"
+        },
+    )
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=_payload(),
+    )
+
+    assert result.status == "FAILED"
+    assert result.result["BOUNDED_PROVIDER_ATTEMPTS"] is True
+    assert len(result.result["EXHAUSTED_PROVIDER_MODEL_PAIRS"]) == 2
+    assert len(episodes) == 1
+    assert episodes[0].success is False
+    assert episodes[0].status == "FAILED"
