@@ -264,8 +264,22 @@ class AgentSessionRuntime:
             if current > 0:
                 self.state["TURN_INDEX"] = current - 1
                 changed = True
-
-        if self._release_unconsumed_resume_segment():
+            # Legacy checkpoints predate ACTIVE_RESUME_TURN_* but their
+            # RoutingPolicyError path incremented RESUME_SEGMENTS_USED before
+            # the provider boundary. Reclaim exactly one paired segment.
+            used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
+            if used > 0:
+                self.state["RESUME_SEGMENTS_USED"] = used - 1
+                self.state["PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"] = (
+                    int(
+                        self.state.get(
+                            "PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"
+                        ) or 0
+                    )
+                    + 1
+                )
+                changed = True
+        elif self._release_unconsumed_resume_segment():
             changed = True
 
         if not changed:
