@@ -1381,6 +1381,31 @@ for _capability_id, _reason in _LEGACY_SUPERSEDED_CAPABILITIES.items():
         )
     )
 
+# Cross-provider fallback eligibility. Runtime health, zero-cost policy and
+# current-run/profile proof still decide whether these providers may execute.
+for _capability_id in ("ai.provider.tuxevil", "ai.provider.opencode-free"):
+    _existing = _REGISTRY._by_id.get(_capability_id)
+    if _existing is None:
+        raise ValueError(
+            f"Missing zero-cost fallback Registry record: {_capability_id}"
+        )
+    _fallback_enabled = replace(
+        _existing,
+        fallback_eligibility=True,
+    )
+    _REGISTRY._by_id[_capability_id] = _fallback_enabled
+    _REGISTRY._records = tuple(
+        sorted(
+            (
+                _fallback_enabled
+                if record.capability_id == _capability_id
+                else record
+                for record in _REGISTRY._records
+            ),
+            key=lambda item: item.capability_id,
+        )
+    )
+
 # Real runtime proof: GitHub Actions run 35033861020 executed the explicit
 # OpenCode Free model through OmniRoute 3.8.50 on a standard public runner,
 # with no credentials, no fallback and cost_class FREE_NO_BILLING. Promotion
