@@ -124,9 +124,9 @@
     ]
   },
   "checkpoint_source": {
-    "run_id": 35991387722,
-    "artifact_id": 10804871956,
-    "artifact_name": "real-agent-self-improvement-35991387722",
+    "run_id": 35993026896,
+    "artifact_id": 10805495153,
+    "artifact_name": "real-agent-self-improvement-35993026896",
     "completed_task_ids": [
       "task-01"
     ],
