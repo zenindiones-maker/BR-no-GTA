@@ -1100,7 +1100,9 @@ def execute_authorized_addy_skill(
                 localized_replan_failure_pattern
             ),
             "recovery_strategy": (
-                "same-provider alternate-model Harness replan"
+                "provider-level Harness replan"
+                if provider_level_replan_harness_authorized
+                else "same-provider alternate-model Harness replan"
                 if localized_replan_attempted
                 else "initial-or-same-routing execution"
             ),
@@ -1124,6 +1126,25 @@ def execute_authorized_addy_skill(
                 provider_level_replan_harness_authorized
             ),
             "PROVIDER_LEVEL_REPLAN_FROM": provider_level_replan_from,
+            "EXHAUSTED_PAIR_FILTERED_PRE_SELECTION": bool(
+                (
+                    getattr(provider_routing, "policy_metadata", {}) or {}
+                ).get("EXHAUSTED_PAIR_FILTERED_PRE_SELECTION")
+            ),
+            "EXHAUSTED_PAIR_REUSED": sum(
+                1
+                for row in current_pairs
+                if (
+                    str(row.get("provider_id") or "").strip(),
+                    str(row.get("model_id") or "").strip(),
+                ) in {
+                    (
+                        str(item.get("provider_id") or "").strip(),
+                        str(item.get("model_id") or "").strip(),
+                    )
+                    for item in prior_exhausted_pairs
+                }
+            ),
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
