@@ -802,9 +802,38 @@ class HermesHarnessCapabilityBroker:
                 "evidence_refs",
                 "allowed_tools",
                 "memory_write",
+                "dependency_context_sha256",
             )
             if context.get(key) is not None
         }
+        direct_handoffs = []
+        for item in context.get("parent_handoffs") or ():
+            if not isinstance(item, dict) or item.get("direct_dependency") is not True:
+                continue
+            direct_handoffs.append({
+                key: item.get(key)
+                for key in (
+                    "task_id",
+                    "functional_role",
+                    "capability_id",
+                    "agent_id",
+                    "skill_id",
+                    "task_result_ref",
+                    "content_sha256",
+                    "result_summary",
+                    "output_artifact_refs",
+                    "evidence_refs",
+                    "metrics_refs",
+                    "source_task_ids",
+                    "direct_dependency",
+                )
+                if item.get(key) is not None
+            })
+        if direct_handoffs:
+            # Direct dependency lineage is an execution contract, not optional
+            # prompt context. Keep a refs-only projection even when semantic
+            # context is compressed to the hard agent limit.
+            minimal["parent_handoffs"] = direct_handoffs
         minimal["agent_turn"] = int(agent_turn)
         minimal["agent_tool_results"] = list(tool_results)
         if output_validation_feedback:

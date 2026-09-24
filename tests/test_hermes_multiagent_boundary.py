@@ -17,6 +17,7 @@ from app.services.hermes_multiagent.contracts import (
     HermesMissionExecutionSpec,
 )
 from app.services.hermes_multiagent.harness_tools import HermesHarnessTools
+from app.services.hermes_multiagent.capability_broker import HermesHarnessCapabilityBroker
 from app.services.hermes_multiagent.profile_factory import HermesProfileFactory
 
 
@@ -198,3 +199,52 @@ def test_hermes_has_no_publication_or_canonical_memory_authority():
     assert runtime is not None
     assert "PUBLICATION" not in runtime.allowed_actions
     assert "YOUTUBE" not in runtime.allowed_actions
+
+def test_agent_context_compression_preserves_direct_dependency_lineage():
+    broker = HermesHarnessCapabilityBroker.__new__(HermesHarnessCapabilityBroker)
+    direct = {
+        "task_id": "knowledge-enrich",
+        "functional_role": "GENERAL",
+        "capability_id": "gta6.research.semantic-synthesis",
+        "task_result_ref": "artifact:task-results/knowledge-enrich-1.json",
+        "content_sha256": "a" * 64,
+        "output_artifact_refs": ["research-semantic:mission:knowledge-enrich"],
+        "evidence_refs": ["artifact:source-evidence.json"],
+        "direct_dependency": True,
+        "result": {"large": "x" * 200000},
+    }
+    transitive = {
+        "task_id": "fact-verify",
+        "task_result_ref": "artifact:task-results/fact-verify-1.json",
+        "content_sha256": "b" * 64,
+        "direct_dependency": False,
+        "result": {"large": "y" * 200000},
+    }
+    context = {
+        "mission_id": "mission-context-budget",
+        "task_id": "editorial-script",
+        "goal_id": "goal-context-budget",
+        "task": {"objective": "produce editorial script"},
+        "parent_handoffs": [direct, transitive],
+        "evidence_refs": ["artifact:source-evidence.json"],
+        "relevant_memory": {"blob": "m" * 200000},
+        "dependency_context_sha256": "c" * 64,
+    }
+
+    compressed = broker._next_agent_context(
+        base_context=context,
+        tool_results=[],
+        previous_output="",
+        agent_turn=1,
+    )
+
+    handoffs = compressed.get("parent_handoffs") or []
+    assert len(handoffs) == 1
+    assert handoffs[0]["task_id"] == "knowledge-enrich"
+    assert handoffs[0]["direct_dependency"] is True
+    assert handoffs[0]["task_result_ref"] == (
+        "artifact:task-results/knowledge-enrich-1.json"
+    )
+    assert handoffs[0]["content_sha256"] == "a" * 64
+    assert "result" not in handoffs[0]
+    assert compressed["dependency_context_sha256"] == "c" * 64
