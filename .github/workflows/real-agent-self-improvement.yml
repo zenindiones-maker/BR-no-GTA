@@ -498,6 +498,7 @@ jobs:
           mkdir -p "$CODEX_HOME"
           chmod 700 "$CODEX_HOME"
           bash scripts/agent-tooling/bootstrap.sh codex
+          export PATH="$HOME/.local/share/br-agent-tooling/bin:$PATH"
           codex --version
 
       - name: Preflight existing codex-readonly semantic agent
