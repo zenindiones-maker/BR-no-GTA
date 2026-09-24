@@ -285,12 +285,20 @@ jobs:
                       if provider and model:
                           exhausted.add((provider,model))
                   provider_attempt_rows=node.get("PROVIDER_ATTEMPTS")
-              if provider_attempt_rows is None:
-                  provider_attempt_rows=node.get("provider_attempts")
-              for item in provider_attempt_rows or []:
+                  if provider_attempt_rows is None:
+                      provider_attempt_rows=node.get("provider_attempts")
+                  for item in provider_attempt_rows or []:
                       if not isinstance(item,dict):
                           continue
-                      if str(item.get("status") or "").upper()!="FAILED":
+                      performance=item.get("performance") or {}
+                      semantic_failure=bool(
+                          isinstance(performance,dict)
+                          and (
+                              performance.get("output_truncated")
+                              or str(performance.get("finish_reason") or "").lower()=="length"
+                          )
+                      )
+                      if str(item.get("status") or "").upper()!="FAILED" and not semantic_failure:
                           continue
                       provider=str(item.get("provider_id") or item.get("provider") or "")
                       model=str(item.get("model_id") or item.get("model") or "")
