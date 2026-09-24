@@ -333,7 +333,7 @@ class AgentSessionRuntime:
                 changed = True
         elif self._release_unconsumed_resume_segment():
             changed = True
-        elif consumed is False and causal_budget_exhaustion:
+        elif consumed is False and (causal_budget_exhaustion or interrupted_recovery):
             # The terminal budget check happened before a new provider call,
             # after the previous recovery turn had already persisted its
             # provider failure. Reclaim exactly that unconsumed recovery turn
