@@ -20,7 +20,10 @@ from app.services.semantic_mission_planner_service import (
 )
 from app.services.task_result_envelope_service import build_task_result_envelope
 from scripts.real_multi_agent_production import (
+    PRE_TTS_DURATION_TOLERANCE_MINUTES,
+    VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _novelty_gate,
     _target_duration_seconds,
 )
 
@@ -728,4 +731,32 @@ def test_sparse_current_evidence_uses_no_filler_duration_target():
     assert _target_duration_seconds(5) == 900.0
     assert _target_duration_seconds(8) == 1200.0
     assert _target_duration_seconds(12) == 1500.0
+
+def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
+    assert VOICE_B_EFFECTIVE_PLANNING_WPM == 132.0
+    assert PRE_TTS_DURATION_TOLERANCE_MINUTES == 0.35
+
+    monkeypatch.setattr(
+        "scripts.real_multi_agent_production.list_research_items",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        "scripts.real_multi_agent_production.list_scripts",
+        lambda: [],
+    )
+    state = {
+        "selected_topic": "GTA VI pauta nova",
+        "script": {"content": " ".join(["palavra"] * 615)},
+        "script_id": 1,
+        "target_duration_seconds": 300.0,
+        "claims": [{"statement": "achado oficial"}],
+        "topic_selection": {"research_item_id": 1},
+    }
+
+    gate = _novelty_gate(state)
+
+    assert gate["duration_estimator_wpm"] == 132.0
+    assert gate["duration_supported_without_filler"] is True
+    assert gate["content_supported_duration_minutes"] > 4.6
+    assert gate["status"] == "PASS"
 

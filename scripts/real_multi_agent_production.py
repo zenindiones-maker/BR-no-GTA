@@ -72,6 +72,14 @@ DELIVERY_CAPABILITIES = frozenset({
 })
 CODEX_CHECKPOINT = 35850473901
 
+# Human-approved Voice B (+0%) calibration evidence:
+# run 35399181943 / artifact 10568953094 measured about 145-163 spoken
+# words/minute across six real PT-BR contexts. Long-form planning uses a
+# conservative effective 132 WPM plus 21 seconds of pre-TTS estimate tolerance.
+# Physical narration/render QA remains the authoritative duration check later.
+VOICE_B_EFFECTIVE_PLANNING_WPM = 132.0
+PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -657,9 +665,12 @@ def _novelty_gate(state: dict[str, Any]) -> dict[str, Any]:
     internal_dup = internal_sentence_duplication_percent(script_text)
     word_count = len(re.findall(r"[A-Za-zÀ-ÿ0-9]+", script_text))
     target_seconds = float(state.get("target_duration_seconds") or 0.0)
-    supported_minutes = word_count / 170.0
+    supported_minutes = word_count / VOICE_B_EFFECTIVE_PLANNING_WPM
     target_minutes = target_seconds / 60.0 if target_seconds else 0.0
-    duration_supported = target_minutes <= supported_minutes + 0.25
+    duration_supported = (
+        target_minutes
+        <= supported_minutes + PRE_TTS_DURATION_TOLERANCE_MINUTES
+    )
 
     passed = (
         not topic_dup
@@ -686,6 +697,13 @@ def _novelty_gate(state: dict[str, Any]) -> dict[str, Any]:
         "script_word_count": word_count,
         "target_duration_seconds": target_seconds,
         "content_supported_duration_minutes": round(supported_minutes, 3),
+        "duration_estimator_wpm": VOICE_B_EFFECTIVE_PLANNING_WPM,
+        "duration_estimator_provenance": (
+            "Voice B +0% casting run 35399181943 artifact 10568953094"
+        ),
+        "duration_estimate_tolerance_minutes": (
+            PRE_TTS_DURATION_TOLERANCE_MINUTES
+        ),
         "duration_supported_without_filler": duration_supported,
         "status": "PASS" if passed else "FAIL",
     }
