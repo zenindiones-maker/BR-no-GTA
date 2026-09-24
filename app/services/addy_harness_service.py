@@ -525,7 +525,11 @@ def execute_authorized_addy_skill(
             "attempt_deadline_ms": attempt_deadline_ms,
             "health_evidence": list(
                 (
-                    provider_routing.policy_metadata or {}
+                    getattr(
+                        provider_routing,
+                        "policy_metadata",
+                        {},
+                    ) or {}
                 ).get("runtime_provider_evidence_refs") or ()
             ),
             "failure_evidence": observed_error,
