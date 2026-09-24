@@ -370,6 +370,8 @@ jobs:
 
           alternate_route_ready=False
           alternate_route_provider=""
+          alternate_route_model=""
+          route_rejections=[]
           if provider_level_replan_required:
               from app.services.harness_routing_policy_service import (
                   HarnessRoutingRequest,
@@ -391,9 +393,6 @@ jobs:
                           provider_required=True,
                           provider_domain="ai",
                           allowed_providers=tuple(eligible),
-                          unavailable_provider_ids=(
-                              (preferred,) if preferred else ()
-                          ),
                           exhausted_provider_model_pairs=tuple(
                               sorted(exhausted)
                           ),
@@ -401,26 +400,62 @@ jobs:
                           zero_cost_operation=True,
                           failure_pattern="provider_model_set_exhausted",
                           learning_required=False,
+                          required_model_capabilities=(
+                              "reasoning",
+                              "semantic_planning",
+                              "structured_output",
+                          ),
                           structured_output_required=True,
                       )
                   )
                   alternate_route_provider=str(
                       decision.selected_provider or ""
                   ).strip()
+                  alternate_route_model=str(
+                      decision.selected_model or ""
+                  ).strip()
                   alternate_route_ready=bool(
                       alternate_route_provider
-                      and alternate_route_provider!=preferred
+                      and alternate_route_model
+                      and (
+                          alternate_route_provider,
+                          alternate_route_model,
+                      ) not in exhausted
                   )
-              except RoutingPolicyError:
+                  route_rejections=[
+                      item.to_dict() if hasattr(item,"to_dict") else {
+                          "candidate_id":item.candidate_id,
+                          "stage":item.stage,
+                          "reasons":list(item.reasons),
+                      }
+                      for item in decision.rejected_candidates
+                  ]
+              except RoutingPolicyError as exc:
+                  route_rejections=list(
+                      exc.evidence.get("rejected_candidates") or []
+                  )
                   alternate_route_ready=False
+          print("MODEL_LEVEL_ELIGIBILITY_EVALUATED=PASS")
+          for rejection in route_rejections:
+              if str(rejection.get("stage") or "")!="provider":
+                  continue
+              print(
+                  "MODEL_ROUTE_REJECTED="
+                  + str(rejection.get("candidate_id") or "")
+                  + ":"
+                  + ",".join(str(x) for x in rejection.get("reasons") or [])
+              )
 
           # Provider-level recovery is a new governed planning stage. Materialize
           # the canonical local zero-cost provider as an additional candidate;
           # Harness routing still selects the winner. This avoids trusting a
           # preflight result that can drift from the execution-time request.
-          need=provider_level_replan_required and not local_failed
-          if provider_level_replan_required and local_failed and not alternate_route_ready:
-              print("NEXT_RECOVERY_STRATEGY_SELECTED=EXTERNAL_PROVIDER_REQUIRED")
+          need=False
+          if alternate_route_ready:
+              print("NEXT_RECOVERY_STRATEGY_SELECTED=HARNESS_MODEL_ROUTE")
+              print("RECOVERY_ROUTE_CHANGED=PASS")
+          elif provider_level_replan_required:
+              print("NEXT_RECOVERY_STRATEGY_SELECTED=MODEL_HEALTH_RECONCILIATION")
           print("prepare_alt_provider="+("true" if need else "false"))
           print("provider_level_replan_required="+(
               "true" if provider_level_replan_required else "false"
@@ -431,6 +466,7 @@ jobs:
               "true" if alternate_route_ready else "false"
           ))
           print("alternate_route_provider="+alternate_route_provider)
+          print("alternate_route_model="+alternate_route_model)
           print("exhausted_pair_count="+str(len(exhausted)))
           print(
               "provider_candidate_materialization="
