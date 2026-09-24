@@ -68,6 +68,7 @@ from app.services.task_input_contract_service import (
 from app.services.harness_internal_recovery_service import (
     HarnessInternalRecoveryState,
 )
+from app.services.agent_session_service import AgentSessionRuntime
 from app.services.task_dependency_precondition_service import (
     TaskDependencyPreconditionFailure,
     validate_task_dependency_preconditions,
@@ -822,6 +823,7 @@ class HermesHarnessCapabilityBroker:
         base_task_text: str,
         mission_id: str,
         agent_id: str,
+        agent_instance_id: str,
         agent_turn: int,
         allowed_tool_capability_ids: tuple[str, ...],
     ) -> str:
@@ -831,6 +833,7 @@ class HermesHarnessCapabilityBroker:
             "mission_id": mission_id,
             "task_id": task.task_id,
             "agent_id": agent_id,
+            "agent_instance_id": agent_instance_id,
             "capability_id": task.capability_id,
             "agent_turn": int(agent_turn),
             "final_output_contract": descriptor,
@@ -1357,6 +1360,47 @@ class HermesHarnessCapabilityBroker:
             if semantic_loop
             else ()
         )
+        mandatory_tool_requirements = (
+            ("ROOT_CAUSE_REQUIRES_REAL_TOOL_EVIDENCE",)
+            if (
+                str(task.functional_role or "").upper() == "ROOT_CAUSE"
+                and allowed_tool_ids
+            )
+            else ()
+        )
+        session = AgentSessionRuntime(
+            artifact_dir=self.artifact_dir,
+            mission_id=self.spec.mission_id,
+            task_id=task.task_id,
+            capability_id=task.capability_id,
+            agent_id=str(record.agent_id or capability_id),
+            skill_id=record.skill_id,
+            functional_role=task.functional_role,
+            execution_kind=str(
+                getattr(record, "resolved_execution_kind", "")
+                or getattr(record, "execution_kind", "")
+                or ""
+            ),
+            allowed_tools=tuple(allowed_tool_ids),
+            input_artifact_refs=tuple(dict.fromkeys([
+                *(
+                    str(item).strip()
+                    for item in tuple(task.input_refs or ())
+                    if str(item).strip()
+                ),
+                *(
+                    str(item).strip()
+                    for item in (base_context.get("evidence_refs") or ())
+                    if str(item).strip()
+                ),
+            ])),
+            max_agent_turns=max_agent_turns,
+            max_tool_calls=max_tool_calls,
+            max_provider_calls=MAX_PROVIDER_CALLS,
+            max_context_chars=MAX_AGENT_CONTEXT_CHARS,
+            max_wall_clock_seconds=float(task.time_budget_seconds),
+            mandatory_tool_requirements=mandatory_tool_requirements,
+        )
         tool_results: list[dict[str, Any]] = []
         tool_result_by_fingerprint: dict[str, dict[str, Any]] = {}
         seen_request_ids: set[str] = set()
@@ -1371,6 +1415,7 @@ class HermesHarnessCapabilityBroker:
         last_result: Any = None
 
         for agent_turn in range(1, max_agent_turns + 1):
+            session.begin_turn(agent_turn)
             elapsed_wall = time.perf_counter() - task_started_perf
             if elapsed_wall > float(task.time_budget_seconds):
                 failure_result = {
@@ -1410,8 +1455,19 @@ class HermesHarnessCapabilityBroker:
                 agent_turn=agent_turn,
                 output_validation_feedback=output_validation_feedback,
             )
+            turn_context["agent_session"] = {
+                "schema": "AgentSessionProjection/v1",
+                "agent_instance_id": session.agent_instance_id,
+                "turn_index": agent_turn,
+                "checkpoint_ref": session.artifact_ref,
+                "tools_available": list(allowed_tool_ids),
+                "mandatory_tool_requirements": list(
+                    mandatory_tool_requirements
+                ),
+            }
             turn_payload["context"] = turn_context
             turn_payload["agent_turn"] = agent_turn
+            turn_payload["agent_instance_id"] = session.agent_instance_id
             turn_payload["functional_role"] = task.functional_role
             turn_payload["agent_tool_capabilities"] = list(
                 allowed_tool_ids
@@ -1423,6 +1479,7 @@ class HermesHarnessCapabilityBroker:
                 base_task_text=base_task_text,
                 mission_id=self.spec.mission_id,
                 agent_id=str(record.agent_id or ""),
+                agent_instance_id=session.agent_instance_id,
                 agent_turn=agent_turn,
                 allowed_tool_capability_ids=allowed_tool_ids,
             )
@@ -1448,6 +1505,7 @@ class HermesHarnessCapabilityBroker:
                 result = adapted.result
                 last_result = result
                 last_elapsed = float(adapted.elapsed_seconds)
+                session.record_provider_result(result)
             except Exception as exc:
                 retry_allowed = (
                     bool(task.supports_retry)
@@ -1455,6 +1513,10 @@ class HermesHarnessCapabilityBroker:
                 )
                 failure_evidence = dict(
                     getattr(exc, "failure_evidence", {}) or {}
+                )
+                session.fail(
+                    failure_class=type(exc).__name__,
+                    evidence=failure_evidence,
                 )
                 failure = DelegatedCapabilityFailure(
                     task_id=task_id,
@@ -1758,6 +1820,13 @@ class HermesHarnessCapabilityBroker:
                     started_at=started_at,
                     completed_at=datetime.now(timezone.utc).isoformat(),
                 )
+                session.complete(
+                    final_output_schema=(
+                        output_validation.final_output_schema
+                    ),
+                    output_artifact_ref=result_row["evidence_ref"],
+                    tool_results=tool_results,
+                )
                 audit = {
                     "event": "TASK_COMPLETED",
                     "authority": "DEEPSEEK_HARNESS",
@@ -1767,6 +1836,8 @@ class HermesHarnessCapabilityBroker:
                     "functional_role": task.functional_role,
                     "capability_id": capability_id,
                     "agent_id": record.agent_id,
+                    "agent_instance_id": session.agent_instance_id,
+                    "agent_session_ref": session.artifact_ref,
                     "runtime": "hermes",
                     "routing_id": decision.routing_id,
                     "authorization_id": last_authorization_id,
@@ -1797,6 +1868,8 @@ class HermesHarnessCapabilityBroker:
                     "reused": False,
                     "capability_id": capability_id,
                     "agent_id": record.agent_id,
+                    "agent_instance_id": session.agent_instance_id,
+                    "agent_session_ref": session.artifact_ref,
                     "routing_id": decision.routing_id,
                     "authorization_id": last_authorization_id,
                     "executor_binding": record.executor_binding,
@@ -2087,6 +2160,7 @@ class HermesHarnessCapabilityBroker:
                     requires_harness_replan=True,
                 ) from violation
 
+            session.record_tool_request(request.to_dict())
             if request.request_id in seen_request_ids:
                 exc = AgentToolRequestError(
                     "DUPLICATE_TOOL_REQUEST_ID:"
@@ -2176,6 +2250,7 @@ class HermesHarnessCapabilityBroker:
                     payload=reused_envelope,
                 )
                 tool_results.append(reused_envelope)
+                session.record_tool_result(reused_envelope)
                 self._audit.append({
                     "event": "TOOL_RESULT_REUSED",
                     "authority": "DEEPSEEK_HARNESS",
@@ -2316,6 +2391,7 @@ class HermesHarnessCapabilityBroker:
 
             tool_calls += 1
             tool_results.append(tool_result)
+            session.record_tool_result(tool_result)
             tool_result_by_fingerprint[request_fingerprint] = tool_result
             output_validation_feedback = None
             previous_output = extract_agent_output_text(result)
