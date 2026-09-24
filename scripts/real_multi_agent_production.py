@@ -95,6 +95,7 @@ VOICE_B_EFFECTIVE_PLANNING_WPM = 132.0
 PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
 MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
 MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
+MAX_LONGFORM_EDITORIAL_CLAIMS = 24
 MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS = 2
 MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS = 2
 MAX_LONGFORM_RECOVERY_CHILD_TASKS = 8
@@ -450,6 +451,30 @@ def _fresh_research_candidates(
             add_source(item, official=False)
     return candidates
 
+
+
+
+def _partition_longform_fresh_candidates(
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate primary evidence from bounded secondary fact-check work.
+
+    Official-primary findings are already verified at the source boundary and
+    do not consume recovery child tasks. Secondary findings remain bounded by
+    the existing fact-check budget. The 24-item ceiling matches the existing
+    editorial payload contract and does not widen provider/tool budgets.
+    """
+    official = [
+        item
+        for item in candidates
+        if str(item.get("fact_check_result") or "") == "OFFICIAL_PRIMARY"
+    ][:MAX_LONGFORM_EDITORIAL_CLAIMS]
+    pending = [
+        item
+        for item in candidates
+        if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
+    ][:MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS]
+    return official, pending
 
 def _canonical_source_url(value: Any) -> str:
     raw = str(value or "").strip()
@@ -1078,15 +1103,10 @@ def _ensure_fact_check_source_claims(
     # source. Only direct official evidence is admitted before fact-check;
     # secondary reporting remains pending until the bounded longform recovery
     # explicitly fact-checks it.
-    official = [
-        item for item in candidates
-        if item.get("fact_check_result") == "OFFICIAL_PRIMARY"
-    ]
+    official, _pending = _partition_longform_fresh_candidates(candidates)
     if not official:
         raise RuntimeError("FACT_CHECK_REQUIRES_RESEARCH_CLAIM")
-    state.setdefault("claims", []).extend(
-        official[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
-    )
+    state.setdefault("claims", []).extend(official)
     ref = str(
         fresh.get("artifact_ref")
         or fresh.get("execution_ref")
@@ -1286,16 +1306,10 @@ def _run_bounded_longform_evidence_expansion(
             fresh_recovery,
             known_ids=known_ids,
         )
-    candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
     original_candidates = list(candidates)
-    official_candidates = [
-        item for item in original_candidates
-        if str(item.get("fact_check_result") or "") == "OFFICIAL_PRIMARY"
-    ]
-    pending_candidates = [
-        item for item in original_candidates
-        if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
-    ][:MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS]
+    official_candidates, pending_candidates = (
+        _partition_longform_fresh_candidates(original_candidates)
+    )
 
     selected_candidate_source_urls = [
         str(item.get("source") or "").strip()

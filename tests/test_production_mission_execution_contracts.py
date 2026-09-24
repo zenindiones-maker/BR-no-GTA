@@ -36,6 +36,7 @@ from scripts.real_multi_agent_production import (
     _longform_fallback_source_urls,
     _novelty_gate,
     _payload_for_task,
+    _partition_longform_fresh_candidates,
     _target_duration_seconds,
     _web_acquisition_slots,
     _web_source_statement,
@@ -1036,3 +1037,35 @@ def test_longform_fallback_prefers_new_independent_source_families():
     assert urls[2].startswith("https://www.reddit.com/")
     assert "store.rockstargames.com" in urls[3]
     assert urls[-1].endswith("/second")
+
+def test_official_longform_findings_do_not_consume_secondary_fact_check_budget():
+    official = [
+        {
+            "claim_id": f"official-{index}",
+            "fact_check_result": "OFFICIAL_PRIMARY",
+        }
+        for index in range(12)
+    ]
+    secondary = [
+        {
+            "claim_id": f"secondary-{index}",
+            "fact_check_result": "PENDING_FACT_CHECK",
+        }
+        for index in range(8)
+    ]
+
+    selected_official, selected_pending = _partition_longform_fresh_candidates(
+        [*official, *secondary]
+    )
+
+    assert len(selected_official) == 12
+    assert len(selected_pending) == 2
+    assert all(
+        item["fact_check_result"] == "OFFICIAL_PRIMARY"
+        for item in selected_official
+    )
+    assert all(
+        item["fact_check_result"] == "PENDING_FACT_CHECK"
+        for item in selected_pending
+    )
+
