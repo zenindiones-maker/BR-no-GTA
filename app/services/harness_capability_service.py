@@ -112,7 +112,11 @@ def _to_definition(record) -> CapabilityDefinition:
     return CapabilityDefinition(
         capability_id=record.capability_id,
         provider=record.provider,
-        execution_kind=record.execution_kind,
+        execution_kind=str(
+            getattr(record, "resolved_execution_kind", "")
+            or getattr(record, "execution_kind", "")
+            or ""
+        ),
         allowed_actions=record.allowed_actions,
         tags=record.tags,
         available=record.available,
