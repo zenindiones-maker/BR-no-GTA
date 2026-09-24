@@ -19,11 +19,19 @@ from app.services.semantic_mission_planner_service import (
     MissionTaskProposal,
 )
 from app.services.task_result_envelope_service import build_task_result_envelope
+from app.services.ai_provider import AIProviderError
+from app.services.hermes_multiagent.capability_broker import (
+    DelegatedCapabilityFailure,
+)
 from scripts.real_multi_agent_production import (
+    MAX_LONGFORM_EVIDENCE_EXPANSIONS,
+    MAX_LONGFORM_EXPANSION_FACT_CHECKS,
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _is_longform_underdelivery_failure,
     _novelty_gate,
+    _payload_for_task,
     _target_duration_seconds,
 )
 
@@ -761,3 +769,73 @@ def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
     assert gate["duration_supported_without_filler"] is False
     assert gate["content_supported_duration_minutes"] > 4.6
     assert gate["status"] == "FAIL"
+
+def test_longform_underdelivery_is_escalated_to_bounded_evidence_expansion():
+    failure = DelegatedCapabilityFailure(
+        task_id="editorial-script",
+        capability_id="editorial.process",
+        failure_mode="AIProviderError",
+        retry_attempt=0,
+        retry_allowed=True,
+        requires_harness_replan=False,
+    )
+    provider_error = AIProviderError(
+        "AI response cannot sustain requested long-form duration without padding."
+    )
+    failure.__cause__ = provider_error
+
+    assert _is_longform_underdelivery_failure(failure) is True
+    assert MAX_LONGFORM_EVIDENCE_EXPANSIONS == 1
+    assert 1 <= MAX_LONGFORM_EXPANSION_FACT_CHECKS <= 6
+
+
+def test_editorial_retry_payload_includes_verified_expansion_evidence():
+    task = SimpleNamespace(
+        mission_id="mission-longform-recovery",
+        task_id="editorial-script",
+        goal_id="goal-longform-recovery",
+        objective="produce a 20 minute factual script",
+        capability_id="editorial.process",
+        input_refs=(),
+    )
+    state = {
+        "target_goal_id": "goal-longform-recovery",
+        "target_duration_seconds": 1200.0,
+        "selected_topic": "GTA VI pauta atual",
+        "claims": [{
+            "claim_id": "new-1",
+            "statement": "Novo achado verificado",
+            "source": "https://www.rockstargames.com/newswire",
+            "fact_check_result": "SUPPORTED",
+        }],
+        "specialist_outputs": {},
+        "expansion_evidence_refs": [
+            "artifact:longform-expansion/research.json",
+            "artifact:longform-expansion/fact-check.json",
+        ],
+    }
+    parent_context = {
+        "evidence_refs": ["artifact:original-knowledge.json"],
+        "parent_handoffs": [],
+    }
+
+    payload = _payload_for_task(
+        task=task,
+        parent_context=parent_context,
+        state=state,
+        human_goal="produzir vídeo GTA 6 para revisão privada",
+    )
+
+    assert payload["target_duration_seconds"] == 1200.0
+    assert (
+        "artifact:longform-expansion/research.json"
+        in payload["evidence_refs"]
+    )
+    assert (
+        "artifact:longform-expansion/fact-check.json"
+        in payload["editorial_context"]["content_strategy_evidence_refs"]
+    )
+    assert payload["editorial_context"]["verified_claims"][0][
+        "fact_check_result"
+    ] == "SUPPORTED"
+

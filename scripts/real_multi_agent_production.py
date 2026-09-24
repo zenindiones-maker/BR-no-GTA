@@ -46,6 +46,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.hermes_multiagent.capability_broker import (
+    DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
 )
 from app.services.hermes_multiagent.contracts import (
@@ -79,6 +80,8 @@ CODEX_CHECKPOINT = 35850473901
 # Physical narration/render QA remains the authoritative duration check later.
 VOICE_B_EFFECTIVE_PLANNING_WPM = 132.0
 PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
+MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
+MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
 
 
 def _utcnow() -> str:
@@ -283,6 +286,337 @@ def _target_duration_seconds(claim_count: int) -> float:
     return 1200.0
 
 
+def _exception_chain_text(exc: BaseException) -> str:
+    parts: list[str] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        parts.append(f"{type(current).__name__}: {current}")
+        current = current.__cause__ or current.__context__
+    return " | ".join(parts)
+
+
+def _is_longform_underdelivery_failure(
+    failure: DelegatedCapabilityFailure,
+) -> bool:
+    return bool(
+        failure.capability_id == "editorial.process"
+        and failure.failure_mode == "AIProviderError"
+        and "cannot sustain requested long-form duration without padding"
+        in _exception_chain_text(failure).casefold()
+    )
+
+
+def _claim_dynamic_child(board, proposal: dict[str, Any]) -> int:
+    task = dict(proposal.get("task") or {})
+    task_id = str(task.get("task_id") or "").strip()
+    board_task_id = str(proposal.get("board_task_id") or "").strip()
+    if not task_id or not board_task_id:
+        raise RuntimeError("LONGFORM_EXPANSION_CHILD_PROPOSAL_INVALID")
+    claimer = str(
+        task.get("selected_agent_id")
+        or task.get("selected_skill_id")
+        or task.get("capability_id")
+        or task_id
+    )
+    board.claim(board_task_id, claimer=claimer)
+    row = board.get_task(board_task_id)
+    run_id = int(row.get("current_run_id") or 0)
+    if run_id <= 0:
+        raise RuntimeError(
+            f"LONGFORM_EXPANSION_CHILD_CLAIM_FAILED:{task_id}"
+        )
+    board.heartbeat(
+        board_task_id,
+        run_id=run_id,
+        note="bounded longform evidence expansion started",
+    )
+    return run_id
+
+
+def _complete_dynamic_child(
+    *,
+    board,
+    proposal: dict[str, Any],
+    execution: dict[str, Any],
+    run_id: int,
+) -> None:
+    task = dict(proposal.get("task") or {})
+    task_id = str(task.get("task_id") or "").strip()
+    board_task_id = str(proposal.get("board_task_id") or "").strip()
+    if not board.complete(
+        board_task_id,
+        summary=(
+            f"LONGFORM_RECOVERY_TASK_COMPLETED capability="
+            f"{task.get('capability_id')} evidence={execution.get('evidence_ref')}"
+        ),
+        run_id=run_id,
+        metadata={
+            "capability_id": task.get("capability_id"),
+            "evidence_ref": execution.get("evidence_ref"),
+            "recovery": "INSUFFICIENT_EDITORIAL_EVIDENCE",
+        },
+    ):
+        raise RuntimeError(
+            f"LONGFORM_EXPANSION_CHILD_COMPLETE_FAILED:{task_id}"
+        )
+
+
+def _run_bounded_longform_evidence_expansion(
+    *,
+    broker: HermesHarnessCapabilityBroker,
+    board,
+    state: dict[str, Any],
+    human_goal: str,
+    research_task_id: str,
+    round_index: int,
+) -> dict[str, Any]:
+    if round_index < 1 or round_index > MAX_LONGFORM_EVIDENCE_EXPANSIONS:
+        raise RuntimeError("LONGFORM_EVIDENCE_EXPANSION_BUDGET_EXHAUSTED")
+
+    root = broker._task(research_task_id)
+    selected_topic = str(state.get("selected_topic") or "").strip()
+    if not selected_topic:
+        raise RuntimeError("LONGFORM_EVIDENCE_EXPANSION_REQUIRES_TOPIC")
+
+    known_ids = {
+        str(item.get("claim_id") or "")
+        for item in (state.get("claims") or ())
+        if isinstance(item, dict)
+    }
+    research_child_id = f"{research_task_id}-longform-expansion-{round_index}"
+    research_proposal = broker.propose_child_task(
+        parent_task_id=research_task_id,
+        depth=1,
+        child={
+            "task_id": research_child_id,
+            "capability_id": "gta6.research",
+            "action": "RESEARCH",
+            "objective": (
+                f"{root.objective} Expand fresh source-grounded evidence for "
+                f"the already selected topic '{selected_topic}' with additional "
+                "non-duplicate facts and angles that can support a factual "
+                "20-minute BR no GTA 6 script without filler."
+            ),
+            "task_class": "fresh-evidence-collection",
+            "expected_output": (
+                "additional fresh source-grounded GTA6 research artifacts"
+            ),
+            "acceptance_criteria": (
+                "new verifiable findings",
+                "official primary sources preferred",
+                "no artificial editorial padding",
+            ),
+            "read_scope": list(root.read_scope),
+            "write_scope": list(root.write_scope),
+            "allowed_tools": list(root.allowed_tools),
+            "allowed_side_effects": list(root.allowed_side_effects),
+            "time_budget_seconds": min(
+                int(root.time_budget_seconds),
+                900,
+            ),
+            "cost_budget": float(root.cost_budget),
+            "context_budget_bytes": min(
+                int(root.context_budget_bytes),
+                65536,
+            ),
+            "tool_budget": int(root.tool_budget),
+            "retry_budget": 0,
+            "risk_side_effect_class": root.risk_side_effect_class,
+            "evidence_contract": root.evidence_contract,
+            "review_policy": root.review_policy,
+            "human_gate_policy": root.human_gate_policy,
+        },
+    )
+    research_run_id = _claim_dynamic_child(board, research_proposal)
+    research_task = broker._task(research_child_id)
+    research_context = broker.parent_context(task_id=research_child_id)
+    research_payload = {
+        "mission_id": research_task.mission_id,
+        "task_id": research_task.task_id,
+        "goal_id": research_task.goal_id,
+        "objective": research_task.objective,
+        "query": (
+            f"{human_goal}\n\nLONGFORM_EVIDENCE_EXPANSION:\n"
+            f"Selected topic: {selected_topic}\n"
+            "Collect additional current, source-grounded GTA VI facts, official "
+            "details, implications, contextual angles and independently useful "
+            "findings not already represented in the existing evidence. "
+            "Do not invent facts and do not add filler."
+        ),
+        "topic": selected_topic,
+        "subject": "GTA VI",
+        "evidence_refs": list(
+            research_context.get("evidence_refs") or ()
+        )[:24],
+    }
+    research_execution = broker.execute_delegated_capability(
+        task_id=research_child_id,
+        capability_id="gta6.research",
+        payload=research_payload,
+        dependency_context=research_context,
+    )
+    _complete_dynamic_child(
+        board=board,
+        proposal=research_proposal,
+        execution=research_execution,
+        run_id=research_run_id,
+    )
+
+    research_result = _result_payload(research_execution)
+    candidates = [
+        item
+        for item in _normalize_research_claims(research_result)
+        if str(item.get("claim_id") or "") not in known_ids
+    ]
+    candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
+
+    verified: list[dict[str, Any]] = []
+    fact_check_refs: list[str] = []
+    for index, candidate in enumerate(candidates, start=1):
+        fact_child_id = (
+            f"{research_child_id}-fact-check-{index}"
+        )
+        fact_proposal = broker.propose_child_task(
+            parent_task_id=research_child_id,
+            depth=2,
+            child={
+                "task_id": fact_child_id,
+                "capability_id": "gta6.fact-check",
+                "action": "RESEARCH",
+                "objective": (
+                    f"{research_task.objective} Fact-check the new source-grounded "
+                    f"finding {index} before it can enter the longform editorial base."
+                ),
+                "task_class": "fact-check",
+                "expected_output": "FactCheckResult with provenance",
+                "acceptance_criteria": (
+                    "provenance complete",
+                    "supported finding only enters editorial evidence",
+                ),
+                "read_scope": list(research_task.read_scope),
+                "write_scope": (),
+                "allowed_tools": list(research_task.allowed_tools),
+                "allowed_side_effects": (),
+                "time_budget_seconds": min(
+                    int(research_task.time_budget_seconds),
+                    180,
+                ),
+                "cost_budget": 0.0,
+                "context_budget_bytes": min(
+                    int(research_task.context_budget_bytes),
+                    32768,
+                ),
+                "tool_budget": int(research_task.tool_budget),
+                "retry_budget": 0,
+                "risk_side_effect_class": "READ_ONLY",
+                "evidence_contract": (
+                    "app.services.gta6_fact_check_service.FactCheckResult"
+                ),
+                "review_policy": research_task.review_policy,
+                "human_gate_policy": research_task.human_gate_policy,
+            },
+        )
+        broker.submit_handoff(
+            from_task_id=research_child_id,
+            to_task_id=fact_child_id,
+            evidence_refs=[research_execution["evidence_ref"]],
+            summary=(
+                "Fresh longform expansion evidence handed to deterministic "
+                "fact-check before editorial reuse."
+            ),
+        )
+        fact_run_id = _claim_dynamic_child(board, fact_proposal)
+        fact_task = broker._task(fact_child_id)
+        fact_context = broker.parent_context(task_id=fact_child_id)
+        source = str(candidate.get("source") or "").strip()
+        fact_payload = {
+            "mission_id": fact_task.mission_id,
+            "task_id": fact_task.task_id,
+            "goal_id": fact_task.goal_id,
+            "objective": fact_task.objective,
+            "claim": str(candidate.get("statement") or "").strip(),
+            "evidence": [{
+                "evidence_id": str(
+                    candidate.get("claim_id")
+                    or f"longform-expansion-{round_index}-{index}"
+                ),
+                "source_ref": source,
+                "stance": "supporting",
+                "weight": 1.0,
+                "provenance": {
+                    "artifact_ref": source,
+                    "observed_at": _utcnow(),
+                },
+                "excerpt": str(
+                    candidate.get("statement") or ""
+                )[:900],
+            }],
+            "evidence_refs": list(
+                fact_context.get("evidence_refs") or ()
+            )[:24],
+        }
+        fact_execution = broker.execute_delegated_capability(
+            task_id=fact_child_id,
+            capability_id="gta6.fact-check",
+            payload=fact_payload,
+            dependency_context=fact_context,
+        )
+        _complete_dynamic_child(
+            board=board,
+            proposal=fact_proposal,
+            execution=fact_execution,
+            run_id=fact_run_id,
+        )
+        fact_result = _result_payload(fact_execution)
+        if (
+            isinstance(fact_result, dict)
+            and str(fact_result.get("verdict") or "").upper() == "SUPPORTED"
+        ):
+            accepted = dict(candidate)
+            accepted["fact_check_result"] = "SUPPORTED"
+            accepted["verification_basis"] = "FACT_CHECK"
+            accepted["fact_check_evidence_ref"] = fact_execution.get(
+                "evidence_ref"
+            )
+            verified.append(accepted)
+            if str(fact_execution.get("evidence_ref") or "").strip():
+                fact_check_refs.append(
+                    str(fact_execution["evidence_ref"])
+                )
+
+    if verified:
+        state.setdefault("claims", []).extend(verified)
+    expansion_refs = [
+        str(research_execution.get("evidence_ref") or ""),
+        *fact_check_refs,
+    ]
+    state.setdefault("expansion_evidence_refs", [])
+    for ref in expansion_refs:
+        if ref and ref not in state["expansion_evidence_refs"]:
+            state["expansion_evidence_refs"].append(ref)
+
+    report = {
+        "schema": "longform-evidence-expansion/v1",
+        "classification": "INSUFFICIENT_EDITORIAL_EVIDENCE",
+        "round": round_index,
+        "selected_topic": selected_topic,
+        "candidate_new_findings": len(candidates),
+        "verified_new_findings": len(verified),
+        "verified_claim_ids": [
+            str(item.get("claim_id") or "") for item in verified
+        ],
+        "evidence_refs": list(
+            state.get("expansion_evidence_refs") or ()
+        ),
+        "status": "PASS" if verified else "INSUFFICIENT",
+        "artificial_padding": False,
+    }
+    state.setdefault("longform_evidence_expansions", []).append(report)
+    return report
+
+
 def _parent_summaries(parent_context: dict[str, Any]) -> list[dict[str, Any]]:
     summaries = []
     for row in parent_context.get("parent_handoffs") or ():
@@ -408,6 +742,7 @@ def _payload_for_task(
 ) -> dict[str, Any]:
     evidence_refs = list(dict.fromkeys([
         *[str(item) for item in (parent_context.get("evidence_refs") or ()) if str(item)],
+        *[str(item) for item in (state.get("expansion_evidence_refs") or ()) if str(item)],
         *[str(item) for item in task.input_refs if str(item)],
     ]))[:24]
     common = {
@@ -922,6 +1257,8 @@ def run(
             "operational learning episode",
         ),
         input_refs=(f"git:{base_sha}",),
+        max_child_depth=2,
+        max_child_tasks=8,
     )
 
     def hermes_runner(*, spec, board, task_mapping, profiles):
@@ -963,12 +1300,65 @@ def run(
                     state=state,
                     human_goal=human_goal,
                 )
-                execution = broker.execute_delegated_capability(
-                    task_id=task_id,
-                    capability_id=task.capability_id,
-                    payload=payload,
-                    dependency_context=parent_context if task.dependencies else None,
-                )
+                try:
+                    execution = broker.execute_delegated_capability(
+                        task_id=task_id,
+                        capability_id=task.capability_id,
+                        payload=payload,
+                        dependency_context=(
+                            parent_context if task.dependencies else None
+                        ),
+                    )
+                except DelegatedCapabilityFailure as failure:
+                    if not _is_longform_underdelivery_failure(failure):
+                        raise
+                    research_task = next(
+                        (
+                            candidate
+                            for candidate in preplan.tasks
+                            if candidate.capability_id == "gta6.research"
+                        ),
+                        None,
+                    )
+                    if research_task is None:
+                        raise RuntimeError(
+                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                        ) from failure
+                    expansion = _run_bounded_longform_evidence_expansion(
+                        broker=broker,
+                        board=board,
+                        state=state,
+                        human_goal=human_goal,
+                        research_task_id=research_task.task_id,
+                        round_index=1,
+                    )
+                    _write(
+                        artifact_dir / "longform-evidence-expansion.json",
+                        expansion,
+                    )
+                    if expansion.get("status") != "PASS":
+                        raise RuntimeError(
+                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                        ) from failure
+                    retry_payload = _payload_for_task(
+                        task=task,
+                        parent_context=parent_context,
+                        state=state,
+                        human_goal=human_goal,
+                    )
+                    try:
+                        execution = broker.retry_delegated_capability(
+                            failure=failure,
+                            payload=retry_payload,
+                        )
+                    except DelegatedCapabilityFailure as retry_failure:
+                        if _is_longform_underdelivery_failure(
+                            retry_failure
+                        ):
+                            raise RuntimeError(
+                                "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                            ) from retry_failure
+                        raise
                 _observe_execution(task=task, execution=execution, state=state)
                 if not board.complete(
                     task_mapping[task_id],
