@@ -501,6 +501,18 @@ jobs:
           export PATH="$HOME/.local/share/br-agent-tooling/bin:$PATH"
           codex --version
 
+      - name: Authenticate bounded Codex CLI
+        if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
+        timeout-minutes: 12
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_ID: ${{ vars.TELEGRAM_ALLOWED_USER_ID }}
+          CODEX_AUTH_DELIVERY_EVIDENCE_FILE: runtime/real-agent-self-improvement/codex-device-auth-delivery.json
+        run: |
+          set -euo pipefail
+          python scripts/codex_auth_bootstrap.py --allow-device-auth --timeout-seconds 600 --output runtime/real-agent-self-improvement/codex-auth-status.json
+          codex login status
+
       - name: Preflight existing codex-readonly semantic agent
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
         id: codex_semantic_preflight
