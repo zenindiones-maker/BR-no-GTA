@@ -371,6 +371,11 @@ def execute_authorized_addy_skill(
             return "MODEL_UNAVAILABLE"
         if error.get("code") in {"provider_unavailable"}:
             return "PROVIDER_UNAVAILABLE"
+        if (
+            error.get("code") == "upstream_error"
+            or int(error.get("status_code") or 0) >= 500
+        ):
+            return "TRANSIENT_PROVIDER_HTTP_5XX"
         if error.get("code") in {"authentication_failed", "forbidden"}:
             return "AUTHORIZATION_FAILURE"
         return "OTHER_PROVEN_CAUSE"
@@ -544,7 +549,11 @@ def execute_authorized_addy_skill(
     ).strip()
     recovery_unavailable_models = tuple(dict.fromkeys(
         str(item.get("model_id") or "").strip()
-        for item in prior_exhausted_pairs
+        for item in (
+            prior_attempted_pairs
+            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            else prior_exhausted_pairs
+        )
         if (
             str(item.get("model_id") or "").strip()
             and (
@@ -683,6 +692,7 @@ def execute_authorized_addy_skill(
             "routing_id": str(row.get("routing_id") or "").strip(),
             "attempt_id": str(row.get("attempt_id") or "").strip(),
             "failure_class": str(row.get("failure_class") or "").strip(),
+            "status": str(row.get("status") or "").strip().upper(),
         }
         for row in provider_attempts
         if str(row.get("provider_id") or "").strip()
@@ -707,8 +717,7 @@ def execute_authorized_addy_skill(
         *[
             row
             for row in current_pairs
-            if str(row.get("failure_class") or "")
-            == "TRANSIENT_PROVIDER_TIMEOUT"
+            if str(row.get("status") or "").upper() == "FAILED"
         ],
     ]:
         key = (
