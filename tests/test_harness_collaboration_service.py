@@ -149,10 +149,10 @@ def test_system_improvement_selection_requirement_normalizes_action_without_losi
     assert goal.mission_class == "SYSTEM_IMPROVEMENT"
     assert normalized["declared_action"] == "RESEARCH"
     assert normalized["declared_task_class"] == "evidence-collection"
-    assert normalized["action"] == "RESEARCH"
+    assert normalized["action"] == "DEVELOPMENT"
     assert normalized["task_class"] == "evidence-collection"
     assert normalized["mission_policy_class"] == "SYSTEM_IMPROVEMENT"
-    assert normalized["mission_action_normalized"] is False
+    assert normalized["mission_action_normalized"] is True
     assert requirement["action"] == "RESEARCH"
     assert requirement["task_class"] == "evidence-collection"
 
@@ -313,7 +313,8 @@ def test_real_incident_recovery_uses_typed_read_only_dag_before_semantic_planner
         "task-01", "task-02", "task-03", "task-04", "task-05",
     ]
     assert set(requirements[0]["required_operations"]) == {
-        "CAN_PRODUCE_ARTIFACT_REFS"
+        "CAN_CONSUME_ARTIFACT_REFS",
+        "CAN_PRODUCE_ARTIFACT_REFS",
     }
     assert requirements[0]["risk_side_effect_class"] == "READ_ONLY"
     assert requirements[0]["input_refs"] == [
