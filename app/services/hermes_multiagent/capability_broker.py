@@ -1638,6 +1638,16 @@ class HermesHarnessCapabilityBroker:
                 failure_evidence = dict(
                     getattr(exc, "failure_evidence", {}) or {}
                 )
+                routing_policy_evidence = getattr(exc, "evidence", None)
+                if isinstance(routing_policy_evidence, dict):
+                    failure_evidence = {
+                        **failure_evidence,
+                        "routing_policy_error": {
+                            "error_type": type(exc).__name__,
+                            "message": str(exc)[:1200],
+                            "evidence": dict(routing_policy_evidence),
+                        },
+                    }
                 turn_consumed = provider_call_count(failure_evidence) > 0
                 if turn_consumed:
                     session.begin_turn(agent_turn)

@@ -260,7 +260,11 @@ jobs:
               except RoutingPolicyError:
                   alternate_route_ready=False
 
-          need=provider_level_replan_required and not alternate_route_ready
+          # Provider-level recovery is a new governed planning stage. Materialize
+          # the canonical local zero-cost provider as an additional candidate;
+          # Harness routing still selects the winner. This avoids trusting a
+          # preflight result that can drift from the execution-time request.
+          need=provider_level_replan_required
           print("prepare_alt_provider="+("true" if need else "false"))
           print("provider_level_replan_required="+(
               "true" if provider_level_replan_required else "false"
@@ -272,7 +276,15 @@ jobs:
           ))
           print("alternate_route_provider="+alternate_route_provider)
           print("exhausted_pair_count="+str(len(exhausted)))
+          print(
+              "provider_candidate_materialization="
+              + ("required" if need else "not_required")
+          )
           PY
+          echo "PROVIDER_LEVEL_RECOVERY_REQUIRED=${{ steps.provider_recovery.outputs.provider_level_replan_required }}"
+          echo "PREEXISTING_ALTERNATE_ROUTE_READY=${{ steps.provider_recovery.outputs.alternate_route_ready }}"
+          echo "PREEXISTING_ALTERNATE_ROUTE_PROVIDER=${{ steps.provider_recovery.outputs.alternate_route_provider }}"
+          echo "MATERIALIZE_CANONICAL_LOCAL_PROVIDER=${{ steps.provider_recovery.outputs.prepare_alt_provider }}"
 
       - name: Prepare bounded local zero-cost alternate provider
         if: steps.provider_recovery.outputs.prepare_alt_provider == 'true'
