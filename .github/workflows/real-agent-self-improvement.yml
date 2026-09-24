@@ -181,6 +181,8 @@ jobs:
 
       - name: Detect governed provider-level recovery need
         id: provider_recovery
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python - <<'PY' | tee -a "$GITHUB_OUTPUT"
