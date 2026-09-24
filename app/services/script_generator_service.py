@@ -428,6 +428,7 @@ def _generate_ai_structure(
                     + "\n\nCORREÇÃO OBRIGATÓRIA DE FORMATO JSON\n"
                     + "- Reenvie o MESMO conteúdo factual/editorial.\n"
                     + "- Retorne SOMENTE JSON válido, sem markdown ou prosa externa.\n"
+                    + "- Escape barras invertidas e caracteres especiais conforme JSON.\n"
                     + "- Corrija apenas escaping/formatação JSON; não invente fatos.\n"
                 )
 
