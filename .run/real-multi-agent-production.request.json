@@ -9,11 +9,10 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36048501014,
-    "reason": "resume after targeted editorial queue claim recovery and fresh-cloud evidence expansion",
-    "preserve_human_goal": true,
+    "retry_of_run": 36066255741,
+    "reason": "resume after render handoff evidence accepted official Rockstar subdomains",
+    "preserve_completed_editorial_contract": true,
     "preserve_longform_recovery": true,
-    "preserve_professional_gates": true,
-    "target": "YOUTUBE_PRIVATE_HD_REVIEW"
+    "preserve_existing_professional_gates": true
   }
 }
