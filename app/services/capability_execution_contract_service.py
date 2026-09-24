@@ -94,16 +94,23 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
     ).strip().upper()
     if explicit and explicit != "GENERAL":
         return explicit
-    task_class = str(
-        requirement.get("task_class") or ""
-    ).strip().casefold()
-    if task_class in _CANONICAL_ROLE_BY_TASK_CLASS:
-        return _CANONICAL_ROLE_BY_TASK_CLASS[task_class]
     expected_output = str(
         requirement.get("expected_output") or ""
     ).strip()
     if expected_output in _CANONICAL_ROLE_BY_OUTPUT:
         return _CANONICAL_ROLE_BY_OUTPUT[expected_output]
+
+    task_class = str(
+        requirement.get("task_class") or ""
+    ).strip().casefold()
+    mission_policy_class = str(
+        requirement.get("mission_policy_class") or ""
+    ).strip().upper()
+    if (
+        mission_policy_class == "SYSTEM_IMPROVEMENT"
+        and task_class in _CANONICAL_ROLE_BY_TASK_CLASS
+    ):
+        return _CANONICAL_ROLE_BY_TASK_CLASS[task_class]
     return "GENERAL"
 
 
@@ -114,7 +121,18 @@ def functional_role_required_operations(
     operations = _CANONICAL_ROLE_OPERATIONS.get(role)
     if operations is None:
         return None
-    return tuple(sorted(operations))
+    effective = set(operations)
+    if role == "EVIDENCE":
+        effective.discard(CAN_CONSUME_ARTIFACT_REFS)
+        if (
+            tuple(requirement.get("input_refs") or ())
+            or tuple(requirement.get("dependencies") or ())
+            or str(
+                requirement.get("mission_policy_class") or ""
+            ).strip().upper() == "SYSTEM_IMPROVEMENT"
+        ):
+            effective.add(CAN_CONSUME_ARTIFACT_REFS)
+    return tuple(sorted(effective))
 
 def _blob(requirement: dict[str, Any]) -> str:
     parts = [
