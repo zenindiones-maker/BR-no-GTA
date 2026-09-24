@@ -1265,3 +1265,147 @@ def test_pre_provider_routing_failure_does_not_consume_agent_turn(
         assert state["FAILURE_TURN_CONSUMED"] is False
     finally:
         consume_harness_authorization(parent)
+
+
+
+def test_pre_provider_failure_releases_reserved_resume_segment(
+    tmp_path,
+):
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-pre-provider-segment",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    session.state["TURN_INDEX"] = 7
+    session.state["RESUME_SEGMENTS_USED"] = 3
+    session.state["STATUS"] = "FAILED"
+    session._persist()
+
+    restored = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-pre-provider-segment",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    window = restored.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=4,
+        max_total_agent_turns=8,
+    )
+    assert window["start_turn"] == 8
+    assert restored.state["RESUME_SEGMENTS_USED"] == 4
+
+    restored.fail(
+        failure_class="RoutingPolicyError",
+        turn_consumed=False,
+    )
+    assert restored.state["TURN_INDEX"] == 7
+    assert restored.state["RESUME_SEGMENTS_USED"] == 3
+    assert restored.state["ACTIVE_RESUME_TURN_START"] is None
+    assert restored.state["ACTIVE_RESUME_TURN_END"] is None
+    assert restored.state["FAILURE_TURN_CONSUMED"] is False
+
+    again = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-pre-provider-segment",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    next_window = again.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=4,
+        max_total_agent_turns=8,
+    )
+    assert next_window["exhausted"] is False
+    assert next_window["start_turn"] == 8
+    assert next_window["end_turn"] == 8
+
+
+def test_checkpoint_with_nonconsumed_pre_provider_failure_reclaims_segment_only(
+    tmp_path,
+):
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-checkpoint-segment",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    session.state.update({
+        "TURN_INDEX": 7,
+        "RESUME_SEGMENTS_USED": 4,
+        "ACTIVE_RESUME_TURN_START": 8,
+        "ACTIVE_RESUME_TURN_END": 8,
+        "STATUS": "FAILED",
+        "FAILURE_CLASS": "RoutingPolicyError",
+        "FAILURE_TURN_CONSUMED": False,
+    })
+    session._persist()
+
+    restored = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-checkpoint-segment",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    assert restored.reclaim_unexecuted_pre_provider_turn() is True
+    assert restored.state["TURN_INDEX"] == 7
+    assert restored.state["RESUME_SEGMENTS_USED"] == 3
+    assert restored.state["PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"] == 1

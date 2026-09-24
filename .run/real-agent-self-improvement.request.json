@@ -124,16 +124,16 @@
     ]
   },
   "checkpoint_source": {
-    "run_id": 35945973602,
-    "artifact_id": 10786562225,
-    "artifact_name": "real-agent-self-improvement-35945973602",
+    "run_id": 35946456736,
+    "artifact_id": 10787076965,
+    "artifact_name": "real-agent-self-improvement-35946456736",
     "completed_task_ids": [
       "task-01"
     ],
     "partial_task_id": "task-02",
     "agent_instance_id": "agent-507708c3195c67e9a38750d3",
     "resume_from_task_id": "task-02",
-    "validation": "schema+content_sha256+task_contract+input_lineage+agent_session+tool_result+provider_attempt_history+resume_budget+provider_level_replan+pre_provider_turn_accounting"
+    "validation": "schema+content_sha256+task_contract+input_lineage+agent_session+tool_result+provider_attempt_history+resume_budget+provider_level_replan+pre_provider_turn_and_segment_accounting"
   },
   "required_recovery_runtime": [
     "typed input contract before provider execution",

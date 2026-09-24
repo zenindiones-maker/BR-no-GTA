@@ -227,30 +227,55 @@ class AgentSessionRuntime:
             "exhausted": False,
         }
 
+    def _release_unconsumed_resume_segment(self) -> bool:
+        active_start = self.state.get("ACTIVE_RESUME_TURN_START")
+        active_end = self.state.get("ACTIVE_RESUME_TURN_END")
+        used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
+        if active_start is None or active_end is None or used <= 0:
+            return False
+        self.state["RESUME_SEGMENTS_USED"] = used - 1
+        self.state["ACTIVE_RESUME_TURN_START"] = None
+        self.state["ACTIVE_RESUME_TURN_END"] = None
+        self.state["PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"] = (
+            int(
+                self.state.get(
+                    "PRE_PROVIDER_SEGMENT_RECLAIMED_COUNT"
+                ) or 0
+            )
+            + 1
+        )
+        return True
+
     def reclaim_unexecuted_pre_provider_turn(self) -> bool:
         if not self.restored:
             return False
         if str(self.state.get("STATUS") or "").upper() != "FAILED":
             return False
-        if self.state.get("FAILURE_TURN_CONSUMED") is False:
-            return False
-        if self.state.get("FAILURE_TURN_CONSUMED") is True:
-            return False
         if str(self.state.get("FAILURE_CLASS") or "") != "RoutingPolicyError":
             return False
 
-        current = int(self.state.get("TURN_INDEX") or 0)
-        if current <= 0:
+        consumed = self.state.get("FAILURE_TURN_CONSUMED")
+        if consumed is True:
             return False
-        used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
-        self.state["TURN_INDEX"] = current - 1
-        if used > 0:
-            self.state["RESUME_SEGMENTS_USED"] = used - 1
+
+        changed = False
+        if consumed is None:
+            current = int(self.state.get("TURN_INDEX") or 0)
+            if current > 0:
+                self.state["TURN_INDEX"] = current - 1
+                changed = True
+
+        if self._release_unconsumed_resume_segment():
+            changed = True
+
+        if not changed:
+            return False
+
         self.state["FAILURE_TURN_CONSUMED"] = False
         self.state["PRE_PROVIDER_TURN_RECLAIMED"] = "PASS"
         self.state["PRE_PROVIDER_TURN_RECLAIMED_COUNT"] = (
             int(self.state.get("PRE_PROVIDER_TURN_RECLAIMED_COUNT") or 0)
-            + 1
+            + (1 if consumed is None else 0)
         )
         self._persist()
         return True
@@ -258,6 +283,8 @@ class AgentSessionRuntime:
     def begin_turn(self, turn_index: int) -> None:
         self.state["TURN_INDEX"] = int(turn_index)
         self.state["STATUS"] = "RUNNING"
+        self.state["ACTIVE_RESUME_TURN_START"] = None
+        self.state["ACTIVE_RESUME_TURN_END"] = None
         self._persist()
 
     def record_provider_result(self, result: Any) -> None:
@@ -371,6 +398,8 @@ class AgentSessionRuntime:
         self.state["FAILURE_CLASS"] = str(failure_class)
         if turn_consumed is not None:
             self.state["FAILURE_TURN_CONSUMED"] = bool(turn_consumed)
+            if turn_consumed is False:
+                self._release_unconsumed_resume_segment()
         if evidence:
             self.state["FAILURE_EVIDENCE"] = dict(evidence)
         self._persist()

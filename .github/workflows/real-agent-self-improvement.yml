@@ -207,21 +207,70 @@ jobs:
               for item in health.get("eligible_zero_cost_provider_ids") or []
               if str(item).strip()
           ]
-          alternates=[item for item in eligible if item!=preferred]
           provider_level_replan_required=bool(
               selected
               and str(selected.get("STATUS") or "").upper()=="FAILED"
               and str(selected.get("FAILURE_CLASS") or "")=="RoutingPolicyError"
               and exhausted
           )
-          need=provider_level_replan_required and not alternates
+
+          alternate_route_ready=False
+          alternate_route_provider=""
+          if provider_level_replan_required:
+              from app.services.harness_routing_policy_service import (
+                  HarnessRoutingRequest,
+                  RoutingPolicyError,
+                  route_harness_request,
+              )
+              try:
+                  decision=route_harness_request(
+                      HarnessRoutingRequest(
+                          intent=(
+                              "preflight governed Addy provider-level recovery"
+                          ),
+                          authorized_action="DEVELOPMENT",
+                          domain="ai",
+                          task_class=(
+                              "addy-semantic:debugging-and-error-recovery"
+                          ),
+                          required_capability_id="ai.reasoning.text",
+                          provider_required=True,
+                          provider_domain="ai",
+                          allowed_providers=tuple(eligible),
+                          unavailable_provider_ids=(
+                              (preferred,) if preferred else ()
+                          ),
+                          exhausted_provider_model_pairs=tuple(
+                              sorted(exhausted)
+                          ),
+                          fallback_allowed=False,
+                          zero_cost_operation=True,
+                          failure_pattern="provider_model_set_exhausted",
+                          learning_required=False,
+                          structured_output_required=True,
+                      )
+                  )
+                  alternate_route_provider=str(
+                      decision.selected_provider or ""
+                  ).strip()
+                  alternate_route_ready=bool(
+                      alternate_route_provider
+                      and alternate_route_provider!=preferred
+                  )
+              except RoutingPolicyError:
+                  alternate_route_ready=False
+
+          need=provider_level_replan_required and not alternate_route_ready
           print("prepare_alt_provider="+("true" if need else "false"))
           print("provider_level_replan_required="+(
               "true" if provider_level_replan_required else "false"
           ))
           print("preferred_provider="+preferred)
           print("eligible_provider_count="+str(len(eligible)))
-          print("alternate_provider_count="+str(len(alternates)))
+          print("alternate_route_ready="+(
+              "true" if alternate_route_ready else "false"
+          ))
+          print("alternate_route_provider="+alternate_route_provider)
           print("exhausted_pair_count="+str(len(exhausted)))
           PY
 
