@@ -57,8 +57,8 @@ from app.services.hermes_multiagent.contracts import (
 from app.services.hermes_multiagent.runtime import (
     execute_hermes_mission_capability,
 )
-from app.services.production_mission_capability_adapters import (
-    execute_fresh_research_task,
+from app.services.telegram_fresh_research_service import (
+    execute_fresh_gta6_research_capability,
 )
 from app.services.script_spec_service import generate_script_spec
 
@@ -480,23 +480,15 @@ def _run_harness_fresh_longform_recovery(
         "and do not add filler."
     )
     try:
-        return execute_fresh_research_task(
+        return execute_fresh_gta6_research_capability(
+            query=query,
             authorization=authorization,
             routing_decision=routing,
-            payload={
-                "mission_id": broker.spec.mission_id,
-                "task_id": (
-                    f"fresh-research-recovery-{purpose.casefold()}-{round_index}"
-                ),
-                "goal_id": broker.spec.goal_id,
-                "objective": query,
-                "query": query,
-                "source_context": {
-                    "classification": "news",
-                    "input_kind": "text",
-                },
+            source_context={
+                "classification": "news",
+                "input_kind": "text",
             },
-        )
+        ).to_dict()
     finally:
         consume_harness_authorization(authorization)
 
