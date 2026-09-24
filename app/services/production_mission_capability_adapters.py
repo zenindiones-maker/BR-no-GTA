@@ -6,8 +6,8 @@ from typing import Any
 from app.services.editorial_queue_consumer import process_next_editorial_queue_item
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_ai_provider_service import (
+    create_resilient_harness_ai_provider,
     execute_harness_ai_generation,
-    select_harness_ai_provider,
 )
 from app.services.harness_authorization_service import (
     authorization_to_context,
@@ -90,16 +90,21 @@ def _dependency_artifact_context(
     return parents, tuple(refs)
 
 
+SEMANTIC_PROVIDER_CHAIN = ("nvidia_nim", "tuxevil", "opencode")
+
+
 def _selected_zero_cost_providers() -> tuple[str, ...]:
+    # This tuple expresses preference only. The canonical Harness router still
+    # filters every provider/model by runtime health, proof and zero-cost policy.
     health = semantic_provider_health()
-    providers = tuple(
+    eligible = tuple(
         str(item)
         for item in (health.get("eligible_zero_cost_provider_ids") or ())
         if str(item).strip()
     )
-    if not providers:
+    if not eligible:
         raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-    return providers
+    return SEMANTIC_PROVIDER_CHAIN
 
 
 def execute_fresh_research_task(
@@ -182,8 +187,7 @@ def execute_editorial_process_task(
     if editorial_context is not None and not isinstance(editorial_context, dict):
         raise ValueError("editorial_context must be an object")
 
-    provider_routing = route_harness_request(
-        HarnessRoutingRequest(
+    provider_request = HarnessRoutingRequest(
             intent=(
                 "produce the evidence-grounded GTA6 editorial script for the "
                 "Harness-selected Goal"
@@ -205,31 +209,14 @@ def execute_editorial_process_task(
             required_model_capabilities=("reasoning",),
             structured_output_required=True,
             prefer_low_latency=True,
-            fallback_allowed=False,
+            fallback_allowed=True,
             zero_cost_operation=True,
             learning_required=True,
         )
-    )
+    provider_routing = route_harness_request(provider_request)
     if not provider_routing.selected_provider:
         raise RuntimeError("Harness did not select an editorial semantic provider")
 
-    provider_authorization = issue_harness_authorization(
-        authorized_action="EDITORIAL",
-        subject=f"provider:{provider_routing.selected_provider}",
-        harness_decision_id=auth.harness_decision_id,
-        execution_id=auth.execution_id,
-        lineage={
-            "parent_authorization_id": auth.authorization_id,
-            "routing_id": provider_routing.routing_id,
-            "capability_id": provider_routing.selected_capability_id,
-            "selected_provider": provider_routing.selected_provider,
-            "selected_model": provider_routing.selected_model,
-            "selected_executor_binding": (
-                provider_routing.selected_provider_executor_binding
-            ),
-            "goal_id": target_goal_id,
-        },
-    )
     action_authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
         subject="action:EDITORIAL",
@@ -237,7 +224,6 @@ def execute_editorial_process_task(
         execution_id=auth.execution_id,
         lineage={
             "parent_authorization_id": auth.authorization_id,
-            "provider_authorization_id": provider_authorization.authorization_id,
             "routing_id": provider_routing.routing_id,
             "selected_capability_id": EDITORIAL_PROCESS_CAPABILITY_ID,
             "selected_provider": provider_routing.selected_provider,
@@ -248,9 +234,9 @@ def execute_editorial_process_task(
         },
     )
     try:
-        _, provider = select_harness_ai_provider(
-            routing_decision=provider_routing,
-            authorization=provider_authorization,
+        provider = create_resilient_harness_ai_provider(
+            authorization=action_authorization,
+            routing_request=provider_request,
             structured_output_schema=EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA,
         )
         result = process_next_editorial_queue_item(
@@ -261,7 +247,6 @@ def execute_editorial_process_task(
         )
     finally:
         consume_harness_authorization(action_authorization)
-        consume_harness_authorization(provider_authorization)
 
     if result is None:
         raise RuntimeError(
@@ -280,6 +265,12 @@ def execute_editorial_process_task(
     normalized["task_adapter"] = "production-mission/v1"
     normalized["parent_authorization_id"] = auth.authorization_id
     normalized["provider_routing"] = provider_routing.to_dict()
+    normalized["provider_attempts"] = list(
+        getattr(provider, "last_attempts", ()) or ()
+    )
+    normalized["provider_failover_count"] = max(
+        0, len(normalized["provider_attempts"]) - 1
+    )
     normalized["input_refs"] = list(dependency_refs)
     normalized["artifact_refs"] = [
         f"script:{script_id}",
