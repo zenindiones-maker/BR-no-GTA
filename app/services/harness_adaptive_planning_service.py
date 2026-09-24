@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 from math import log1p, sqrt
+import inspect
 import re
 from typing import Any, Callable
 
@@ -1100,6 +1101,18 @@ def discard_incompatible_registered_candidate_hints(
     return replace(proposal, tasks=tuple(tasks)), tuple(discarded)
 
 
+def _proposal_registry_errors_with_context(
+    proposal: MissionPlanProposal,
+    *,
+    mission_class: Any,
+) -> tuple[str, ...]:
+    function = proposal_registry_errors
+    parameters = inspect.signature(function).parameters
+    if "mission_class" in parameters:
+        return function(proposal, mission_class=mission_class)
+    return function(proposal)
+
+
 def propose_validated_semantic_plan(
     context: dict[str, Any],
     *,
@@ -1154,7 +1167,7 @@ def propose_validated_semantic_plan(
                 result.proposal,
                 mission_class=context.get("mission_class"),
             ),
-            *proposal_registry_errors(
+            *_proposal_registry_errors_with_context(
                 result.proposal,
                 mission_class=context.get("mission_class"),
             ),
@@ -1174,7 +1187,7 @@ def propose_validated_semantic_plan(
                 sanitized,
                 mission_class=context.get("mission_class"),
             ),
-            *proposal_registry_errors(
+            *_proposal_registry_errors_with_context(
                 sanitized,
                 mission_class=context.get("mission_class"),
             ),
