@@ -1123,7 +1123,14 @@ def execute_authorized_addy_skill(
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
-            "BOUNDED_PROVIDER_ATTEMPTS": len(provider_attempts) <= 3,
+            "BOUNDED_PROVIDER_ATTEMPTS": (
+                len([
+                    row for row in provider_attempts
+                    if str(row.get("phase") or "")
+                    != "HEALTH_REVALIDATION"
+                ]) <= 3
+                and len(provider_health_revalidations) <= 1
+            ),
             "agent_instance_id": str(
                 payload.get("agent_instance_id") or ""
             ) or None,
