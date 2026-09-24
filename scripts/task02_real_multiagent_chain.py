@@ -4,7 +4,6 @@ from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from app.services.harness_collaboration_service import CollaborationTask,build_collaboration_plan
 from app.database.schema import initialize_schema
-from app.database import harness_learning_repository
 from app.services.harness_routing_policy_service import HarnessRoutingRequest,route_harness_request
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.hermes_multiagent.contracts import HERMES_RUNTIME_CAPABILITY_ID,HermesMissionExecutionSpec
@@ -28,7 +27,6 @@ def main():
  # Routing is fail-closed on operational-learning reads. The real chain owns a
  # fresh CI database, so initialize the canonical Learning Plane schema before
  # asking Harness to route Hermes; this is infrastructure bootstrap, not fake evidence.
- harness_learning_repository.initialize_schema()
  req=json.loads(x.request.read_text()); base=os.environ.get("GITHUB_SHA") or ""; mission="TASK02_DETERMINISTIC_REAL_CHAIN"; goal="goal-task02-deterministic-real-chain"
  scopes={"agent-session-inspection":("runtime/real-agent-self-improvement/checkpoint-source",),"routing-history-inspection":("app/services/harness_routing_policy_service.py","app/services/provider_health_service.py"),"contract-inspection":("app/services/task_output_contract_service.py","app/services/task_result_envelope_service.py"),"code-path-inspection":("app/services/addy_harness_service.py","app/services/semantic_agent_tool_loop_service.py")}
  tasks=[]
