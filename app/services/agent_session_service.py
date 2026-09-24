@@ -185,6 +185,36 @@ class AgentSessionRuntime:
             }
 
         used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
+
+        # A restored session may have reached the global turn bound only
+        # because its latest provider attempt failed before producing a valid
+        # AgentTurn/final output. Preserve that failed attempt as exhausted
+        # routing evidence, but do not let the terminal budget state masquerade
+        # as a completed agent interaction. Reclaim exactly one failed terminal
+        # provider turn; the total bound itself remains unchanged.
+        if (
+            current >= int(max_total_agent_turns)
+            and str(self.state.get("STATUS") or "").upper() == "FAILED"
+            and self.state.get("FINAL_OUTPUT_VALID") is not True
+            and self.state.get("FAILURE_TURN_CONSUMED") is True
+        ):
+            current -= 1
+            self.state["TURN_INDEX"] = current
+            self.state["FAILURE_TURN_CONSUMED"] = False
+            if used > 0:
+                used -= 1
+                self.state["RESUME_SEGMENTS_USED"] = used
+            self.state["FAILED_TERMINAL_PROVIDER_TURN_RECLAIMED"] = "PASS"
+            self.state["FAILED_TERMINAL_PROVIDER_TURN_RECLAIMED_COUNT"] = (
+                int(
+                    self.state.get(
+                        "FAILED_TERMINAL_PROVIDER_TURN_RECLAIMED_COUNT"
+                    ) or 0
+                )
+                + 1
+            )
+            self._persist()
+
         if used >= int(max_resume_segments) or current >= int(
             max_total_agent_turns
         ):
