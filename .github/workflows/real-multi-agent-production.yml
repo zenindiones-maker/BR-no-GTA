@@ -130,6 +130,7 @@ jobs:
       - name: Execute natural goal through Harness-selected agents
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          APILAYER_API_KEY: ${{ secrets.APILAYER_API_KEY }}
         run: |
           set -euo pipefail
           python scripts/real_multi_agent_production.py \

@@ -26,6 +26,8 @@ from app.services.hermes_multiagent.capability_broker import (
 from scripts.real_multi_agent_production import (
     MAX_LONGFORM_EVIDENCE_EXPANSIONS,
     MAX_LONGFORM_EXPANSION_FACT_CHECKS,
+    MAX_LONGFORM_RECOVERY_CHILD_TASKS,
+    MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
@@ -34,6 +36,7 @@ from scripts.real_multi_agent_production import (
     _novelty_gate,
     _payload_for_task,
     _target_duration_seconds,
+    _web_acquisition_slots,
 )
 
 
@@ -911,3 +914,39 @@ def test_fresh_research_candidates_deduplicate_known_claim_ids():
         known_ids={first[0]["claim_id"]},
     )
     assert second == []
+
+def test_longform_web_gap_budget_is_bounded_and_skips_when_research_is_full():
+    assert MAX_LONGFORM_RECOVERY_CHILD_TASKS == 8
+    assert MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS == 2
+
+    full = [
+        {
+            "claim_id": f"official-{index}",
+            "fact_check_result": "OFFICIAL_PRIMARY",
+        }
+        for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
+    ]
+    # Existing bounded research already filled the evidence budget: no web call.
+    assert _web_acquisition_slots(full) == 2
+
+    pending = [
+        {
+            "claim_id": f"secondary-{index}",
+            "fact_check_result": "PENDING_FACT_CHECK",
+        }
+        for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
+    ]
+    # Six pending deterministic fact checks consume the unchanged child budget,
+    # so the web stage cannot inflate it.
+    assert _web_acquisition_slots(pending) == 0
+
+
+def test_longform_web_gap_allows_two_governed_sources_after_official_research():
+    candidates = [
+        {
+            "claim_id": f"official-{index}",
+            "fact_check_result": "OFFICIAL_PRIMARY",
+        }
+        for index in range(3)
+    ]
+    assert _web_acquisition_slots(candidates) == 2

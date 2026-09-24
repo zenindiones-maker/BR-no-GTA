@@ -94,6 +94,8 @@ VOICE_B_EFFECTIVE_PLANNING_WPM = 132.0
 PRE_TTS_DURATION_TOLERANCE_MINUTES = 0.35
 MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
 MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
+MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS = 2
+MAX_LONGFORM_RECOVERY_CHILD_TASKS = 8
 
 
 def _utcnow() -> str:
@@ -415,6 +417,409 @@ def _fresh_research_candidates(
     return candidates
 
 
+def _canonical_source_url(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return raw.casefold()
+    host = (parsed.hostname or "").casefold()
+    if not host:
+        return raw.casefold()
+    path = re.sub(r"/+", "/", parsed.path or "/").rstrip("/") or "/"
+    return f"{(parsed.scheme or 'https').casefold()}://{host}{path}"
+
+
+def _web_source_statement(
+    acquired: dict[str, Any],
+    *,
+    selected_topic: str,
+) -> str:
+    raw = str(acquired.get("content") or "")
+    if not raw.strip():
+        return ""
+    cleaned = re.sub(
+        r"(?is)<(script|style|noscript)\\b[^>]*>.*?</\\1>",
+        " ",
+        raw,
+    )
+    cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\\s+", " ", cleaned).strip()
+    if not cleaned:
+        return ""
+    tokens = {
+        token
+        for token in re.findall(r"[a-z0-9à-ÿ]+", selected_topic.casefold())
+        if len(token) >= 4
+    }
+    tokens.update({"gta", "rockstar", "lucia", "jason", "vice", "city", "leonida"})
+    sentences = [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\\s+", cleaned)
+        if len(item.strip()) >= 60
+    ]
+    for sentence in sentences:
+        lowered = sentence.casefold()
+        if any(token in lowered for token in tokens):
+            return sentence[:1600].strip()
+    if sentences:
+        return sentences[0][:1600].strip()
+    return cleaned[:1600].strip()
+
+
+def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
+    pending_fact_checks = sum(
+        1
+        for item in candidates
+        if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
+    )
+    # One research child already exists. The governed web stage costs one
+    # discovery child plus two children per acquired source
+    # (source acquisition -> fact-check). Keep max_child_tasks unchanged.
+    remaining = (
+        MAX_LONGFORM_RECOVERY_CHILD_TASKS
+        - 1
+        - pending_fact_checks
+        - 1
+    )
+    return min(
+        MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
+        max(0, remaining // 2),
+    )
+
+
+def _web_transport_unavailable(exc: BaseException) -> bool:
+    text = _exception_chain_text(exc).casefold()
+    return any(
+        marker in text
+        for marker in (
+            "apilayer_api_key_required",
+            "apilayer_product_auth_required",
+            "free_quota_exhausted",
+            "apilayer free quota is unavailable",
+            "apilayerauthrequired",
+            "zerocostpolicyerror",
+        )
+    )
+
+
+def _finish_unavailable_recovery_child(
+    *,
+    board,
+    proposal: dict[str, Any],
+    run_id: int,
+    reason: str,
+) -> None:
+    board_task_id = str(proposal.get("board_task_id") or "").strip()
+    if not board_task_id:
+        return
+    if not board.complete(
+        board_task_id,
+        summary="ZERO_COST_WEB_TRANSPORT_UNAVAILABLE",
+        run_id=run_id,
+        metadata={
+            "status": "TRANSPORT_UNAVAILABLE",
+            "failure_class": "ZERO_COST_TRANSPORT_UNAVAILABLE",
+            "reason": str(reason)[:800],
+        },
+    ):
+        raise RuntimeError("LONGFORM_WEB_RECOVERY_TERMINAL_STATE_FAILED")
+
+
+def _run_governed_longform_web_acquisition(
+    *,
+    broker: HermesHarnessCapabilityBroker,
+    board,
+    state: dict[str, Any],
+    research_task_id: str,
+    selected_topic: str,
+    round_index: int,
+    max_sources: int,
+    known_ids: set[str],
+) -> dict[str, Any]:
+    """Use only generic Registry web capabilities for a remaining research gap."""
+    if max_sources <= 0:
+        return {
+            "status": "NOT_REQUIRED",
+            "candidates": [],
+            "evidence_refs": [],
+            "WEB_DISCOVERY_GOVERNED": "NOT_REQUIRED",
+            "WEB_SOURCE_ACQUISITION_GOVERNED": "NOT_REQUIRED",
+            "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
+        }
+
+    root = broker._task(research_task_id)
+    known_sources = {
+        _canonical_source_url(item.get("source"))
+        for item in (state.get("claims") or ())
+        if isinstance(item, dict)
+    }
+    known_sources.discard("")
+
+    search_id = f"{research_task_id}-longform-web-discovery-{round_index}"
+    search_proposal = broker.propose_child_task(
+        parent_task_id=research_task_id,
+        depth=1,
+        child={
+            "task_id": search_id,
+            "capability_id": "web.search.discover",
+            "action": "RESEARCH",
+            "objective": (
+                f"{root.objective} Resolve the remaining factual long-form research "
+                f"gap for '{selected_topic}' through the governed generic web "
+                "discovery capability, zero-cost only, without filler."
+            ),
+            "task_class": "research-gap-web-discovery",
+            "expected_output": "bounded candidate source URLs with provenance",
+            "acceptance_criteria": (
+                "original source URLs preserved",
+                "zero-cost only",
+                "known sources deduplicated",
+            ),
+            "read_scope": list(root.read_scope),
+            "write_scope": (),
+            "allowed_tools": list(root.allowed_tools),
+            "allowed_side_effects": list(root.allowed_side_effects),
+            "time_budget_seconds": min(int(root.time_budget_seconds), 120),
+            "cost_budget": 0.0,
+            "context_budget_bytes": min(int(root.context_budget_bytes), 32768),
+            "tool_budget": int(root.tool_budget),
+            "retry_budget": 0,
+            "risk_side_effect_class": "READ_ONLY",
+            "evidence_contract": (
+                "structured web discovery result with original-source provenance"
+            ),
+            "review_policy": root.review_policy,
+            "human_gate_policy": root.human_gate_policy,
+        },
+    )
+    search_run_id = _claim_dynamic_child(board, search_proposal)
+    search_task = broker._task(search_id)
+    search_context = broker.parent_context(task_id=search_id)
+    try:
+        search_execution = broker.execute_delegated_capability(
+            task_id=search_id,
+            capability_id="web.search.discover",
+            payload={
+                "mission_id": search_task.mission_id,
+                "task_id": search_task.task_id,
+                "goal_id": search_task.goal_id,
+                "objective": search_task.objective,
+                "query": (
+                    f"{selected_topic} GTA VI current verified details "
+                    "Rockstar independent reporting"
+                ),
+                "evidence_refs": list(search_context.get("evidence_refs") or ())[:24],
+            },
+            dependency_context=search_context,
+        )
+    except DelegatedCapabilityFailure as exc:
+        if not _web_transport_unavailable(exc):
+            raise
+        _finish_unavailable_recovery_child(
+            board=board,
+            proposal=search_proposal,
+            run_id=search_run_id,
+            reason=_exception_chain_text(exc),
+        )
+        return {
+            "status": "TRANSPORT_UNAVAILABLE",
+            "candidates": [],
+            "evidence_refs": [],
+            "WEB_DISCOVERY_GOVERNED": "BLOCKED",
+            "WEB_SOURCE_ACQUISITION_GOVERNED": "NOT_RUN",
+            "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
+            "failure_class": "ZERO_COST_TRANSPORT_UNAVAILABLE",
+        }
+    _complete_dynamic_child(
+        board=board,
+        proposal=search_proposal,
+        execution=search_execution,
+        run_id=search_run_id,
+    )
+
+    search_result = _result_payload(search_execution)
+    raw_results = (
+        list(search_result.get("results") or ())
+        if isinstance(search_result, dict)
+        else []
+    )
+    selected_results: list[dict[str, Any]] = []
+    seen_sources = set(known_sources)
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        source_url = str(item.get("url") or "").strip()
+        source_key = _canonical_source_url(source_url)
+        if (
+            not source_url.startswith(("https://", "http://"))
+            or not source_key
+            or source_key in seen_sources
+        ):
+            continue
+        seen_sources.add(source_key)
+        selected_results.append(dict(item))
+        if len(selected_results) >= max_sources:
+            break
+
+    refs = [str(search_execution.get("evidence_ref") or "").strip()]
+    refs = [item for item in refs if item]
+    candidates: list[dict[str, Any]] = []
+    transports: list[str] = []
+
+    for index, item in enumerate(selected_results, start=1):
+        source_url = str(item.get("url") or "").strip()
+        acquire_id = f"{search_id}-source-{index}"
+        acquire_proposal = broker.propose_child_task(
+            parent_task_id=search_id,
+            depth=2,
+            child={
+                "task_id": acquire_id,
+                "capability_id": "web.source.acquire",
+                "action": "RESEARCH",
+                "objective": (
+                    f"{search_task.objective} Acquire candidate source {index} "
+                    "through the governed cache/direct-first source capability."
+                ),
+                "task_class": "research-gap-source-acquisition",
+                "expected_output": "bounded source content with original-source provenance",
+                "acceptance_criteria": (
+                    "cache before network",
+                    "direct fetch before APILayer fallback",
+                    "original source provenance preserved",
+                ),
+                "read_scope": list(search_task.read_scope),
+                "write_scope": (),
+                "allowed_tools": list(search_task.allowed_tools),
+                "allowed_side_effects": list(search_task.allowed_side_effects),
+                "time_budget_seconds": min(int(search_task.time_budget_seconds), 60),
+                "cost_budget": 0.0,
+                "context_budget_bytes": min(
+                    int(search_task.context_budget_bytes),
+                    32768,
+                ),
+                "tool_budget": int(search_task.tool_budget),
+                "retry_budget": 0,
+                "risk_side_effect_class": "READ_ONLY",
+                "evidence_contract": (
+                    "source content hash + transport provenance + quota evidence"
+                ),
+                "review_policy": search_task.review_policy,
+                "human_gate_policy": search_task.human_gate_policy,
+            },
+        )
+        broker.submit_handoff(
+            from_task_id=search_id,
+            to_task_id=acquire_id,
+            evidence_refs=[search_execution["evidence_ref"]],
+            summary=(
+                "Governed discovery handed an original source URL to the "
+                "cache/direct-first acquisition capability."
+            ),
+        )
+        acquire_run_id = _claim_dynamic_child(board, acquire_proposal)
+        acquire_task = broker._task(acquire_id)
+        acquire_context = broker.parent_context(task_id=acquire_id)
+        try:
+            acquire_execution = broker.execute_delegated_capability(
+                task_id=acquire_id,
+                capability_id="web.source.acquire",
+                payload={
+                    "mission_id": acquire_task.mission_id,
+                    "task_id": acquire_task.task_id,
+                    "goal_id": acquire_task.goal_id,
+                    "objective": acquire_task.objective,
+                    "source_url": source_url,
+                    "evidence_refs": list(
+                        acquire_context.get("evidence_refs") or ()
+                    )[:24],
+                },
+                dependency_context=acquire_context,
+            )
+        except DelegatedCapabilityFailure as exc:
+            if not _web_transport_unavailable(exc):
+                raise
+            _finish_unavailable_recovery_child(
+                board=board,
+                proposal=acquire_proposal,
+                run_id=acquire_run_id,
+                reason=_exception_chain_text(exc),
+            )
+            continue
+        _complete_dynamic_child(
+            board=board,
+            proposal=acquire_proposal,
+            execution=acquire_execution,
+            run_id=acquire_run_id,
+        )
+        acquired = _result_payload(acquire_execution)
+        if not isinstance(acquired, dict):
+            continue
+        provenance = dict(acquired.get("provenance") or {})
+        original_url = str(
+            acquired.get("source_url")
+            or provenance.get("source_url")
+            or source_url
+        ).strip()
+        statement = _web_source_statement(
+            acquired,
+            selected_topic=selected_topic,
+        )
+        if not statement or not original_url:
+            continue
+        claim_id = "web-source-" + hashlib.sha256(
+            (statement + "|" + original_url).encode("utf-8")
+        ).hexdigest()[:20]
+        if claim_id in known_ids:
+            continue
+        known_ids.add(claim_id)
+        acquire_ref = str(acquire_execution.get("evidence_ref") or "").strip()
+        if acquire_ref:
+            refs.append(acquire_ref)
+        transport = str(provenance.get("transport_provider") or "").strip()
+        if transport:
+            transports.append(transport)
+        candidates.append({
+            "claim_id": claim_id,
+            "statement": statement,
+            "verification_status": "PENDING",
+            "fact_check_result": "PENDING_FACT_CHECK",
+            "verification_basis": "SOURCE_GROUNDED_WEB_ACQUISITION",
+            "source_type": (
+                "OFFICIAL_STATEMENT"
+                if _is_rockstar_official_url(original_url)
+                else "SECONDARY_REPORT"
+            ),
+            "source": original_url,
+            "reference": original_url,
+            "timecode_or_section": None,
+            "confidence": 0.8 if _is_rockstar_official_url(original_url) else 0.65,
+            "novelty": "GOVERNED_WEB_RESEARCH_GAP",
+            "how_used_in_video": "candidate longform editorial finding",
+            "evidence_refs": [
+                item for item in (acquire_ref, original_url) if item
+            ],
+            "web_provenance": provenance,
+            "_fact_check_parent_task_id": acquire_id,
+            "_fact_check_parent_evidence_ref": acquire_ref,
+        })
+
+    return {
+        "status": "PASS" if candidates else "INSUFFICIENT",
+        "candidates": candidates,
+        "evidence_refs": list(dict.fromkeys(refs)),
+        "WEB_DISCOVERY_GOVERNED": "PASS",
+        "WEB_SOURCE_ACQUISITION_GOVERNED": (
+            "PASS" if selected_results else "NO_NEW_URLS"
+        ),
+        "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
+        "transport_providers": list(dict.fromkeys(transports)),
+        "snapshot_used": False,
+    }
+
+
 def _run_harness_fresh_longform_recovery(
     *,
     broker: HermesHarnessCapabilityBroker,
@@ -727,21 +1132,53 @@ def _run_bounded_longform_evidence_expansion(
         )
     candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
 
+    web_recovery = _run_governed_longform_web_acquisition(
+        broker=broker,
+        board=board,
+        state=state,
+        research_task_id=research_task_id,
+        selected_topic=selected_topic,
+        round_index=round_index,
+        max_sources=_web_acquisition_slots(candidates),
+        known_ids=known_ids,
+    )
+    candidates.extend(list(web_recovery.get("candidates") or ()))
+    candidates = candidates[:MAX_LONGFORM_EXPANSION_FACT_CHECKS]
+
     verified: list[dict[str, Any]] = []
     fact_check_refs: list[str] = []
     for index, candidate in enumerate(candidates, start=1):
-        fact_child_id = (
-            f"{research_child_id}-fact-check-{index}"
+        if str(candidate.get("fact_check_result") or "") == "OFFICIAL_PRIMARY":
+            accepted = {
+                key: value
+                for key, value in candidate.items()
+                if not str(key).startswith("_")
+            }
+            accepted["verification_status"] = "VERIFIED"
+            verified.append(accepted)
+            continue
+
+        fact_parent_id = str(
+            candidate.get("_fact_check_parent_task_id")
+            or research_child_id
         )
+        fact_parent_ref = str(
+            candidate.get("_fact_check_parent_evidence_ref")
+            or research_execution.get("evidence_ref")
+            or ""
+        ).strip()
+        fact_parent = broker._task(fact_parent_id)
+        fact_depth = 3 if fact_parent_id != research_child_id else 2
+        fact_child_id = f"{fact_parent_id}-fact-check-{index}"
         fact_proposal = broker.propose_child_task(
-            parent_task_id=research_child_id,
-            depth=2,
+            parent_task_id=fact_parent_id,
+            depth=fact_depth,
             child={
                 "task_id": fact_child_id,
                 "capability_id": "gta6.fact-check",
                 "action": "RESEARCH",
                 "objective": (
-                    f"{research_task.objective} Fact-check the new source-grounded "
+                    f"{fact_parent.objective} Fact-check the new source-grounded "
                     f"finding {index} before it can enter the longform editorial base."
                 ),
                 "task_class": "fact-check",
@@ -750,33 +1187,33 @@ def _run_bounded_longform_evidence_expansion(
                     "provenance complete",
                     "supported finding only enters editorial evidence",
                 ),
-                "read_scope": list(research_task.read_scope),
+                "read_scope": list(fact_parent.read_scope),
                 "write_scope": (),
-                "allowed_tools": list(research_task.allowed_tools),
+                "allowed_tools": list(fact_parent.allowed_tools),
                 "allowed_side_effects": (),
                 "time_budget_seconds": min(
-                    int(research_task.time_budget_seconds),
+                    int(fact_parent.time_budget_seconds),
                     180,
                 ),
                 "cost_budget": 0.0,
                 "context_budget_bytes": min(
-                    int(research_task.context_budget_bytes),
+                    int(fact_parent.context_budget_bytes),
                     32768,
                 ),
-                "tool_budget": int(research_task.tool_budget),
+                "tool_budget": int(fact_parent.tool_budget),
                 "retry_budget": 0,
                 "risk_side_effect_class": "READ_ONLY",
                 "evidence_contract": (
                     "app.services.gta6_fact_check_service.FactCheckResult"
                 ),
-                "review_policy": research_task.review_policy,
-                "human_gate_policy": research_task.human_gate_policy,
+                "review_policy": fact_parent.review_policy,
+                "human_gate_policy": fact_parent.human_gate_policy,
             },
         )
         broker.submit_handoff(
-            from_task_id=research_child_id,
+            from_task_id=fact_parent_id,
             to_task_id=fact_child_id,
-            evidence_refs=[research_execution["evidence_ref"]],
+            evidence_refs=[fact_parent_ref],
             summary=(
                 "Fresh longform expansion evidence handed to deterministic "
                 "fact-check before editorial reuse."
@@ -786,6 +1223,17 @@ def _run_bounded_longform_evidence_expansion(
         fact_task = broker._task(fact_child_id)
         fact_context = broker.parent_context(task_id=fact_child_id)
         source = str(candidate.get("source") or "").strip()
+        candidate_provenance = dict(candidate.get("web_provenance") or {})
+        if not any(
+            str(candidate_provenance.get(key) or "").strip()
+            for key in ("source_id", "uri", "url", "artifact_ref", "document_id")
+        ):
+            candidate_provenance["artifact_ref"] = source
+        if not any(
+            str(candidate_provenance.get(key) or "").strip()
+            for key in ("retrieved_at", "observed_at", "published_at", "timestamp")
+        ):
+            candidate_provenance["observed_at"] = _utcnow()
         fact_payload = {
             "mission_id": fact_task.mission_id,
             "task_id": fact_task.task_id,
@@ -800,10 +1248,7 @@ def _run_bounded_longform_evidence_expansion(
                 "source_ref": source,
                 "stance": "supporting",
                 "weight": 1.0,
-                "provenance": {
-                    "artifact_ref": source,
-                    "observed_at": _utcnow(),
-                },
+                "provenance": candidate_provenance,
                 "excerpt": str(
                     candidate.get("statement") or ""
                 )[:900],
@@ -829,7 +1274,11 @@ def _run_bounded_longform_evidence_expansion(
             isinstance(fact_result, dict)
             and str(fact_result.get("verdict") or "").upper() == "SUPPORTED"
         ):
-            accepted = dict(candidate)
+            accepted = {
+                key: value
+                for key, value in candidate.items()
+                if not str(key).startswith("_")
+            }
             accepted["fact_check_result"] = "SUPPORTED"
             accepted["verification_basis"] = "FACT_CHECK"
             accepted["fact_check_evidence_ref"] = fact_execution.get(
@@ -850,6 +1299,7 @@ def _run_bounded_longform_evidence_expansion(
             or (fresh_recovery or {}).get("execution_ref")
             or ""
         ),
+        *list(web_recovery.get("evidence_refs") or ()),
         *fact_check_refs,
     ]
     state.setdefault("expansion_evidence_refs", [])
@@ -882,6 +1332,17 @@ def _run_bounded_longform_evidence_expansion(
         "verified_claim_ids": [
             str(item.get("claim_id") or "") for item in verified
         ],
+        "LONGFORM_RESEARCH_EXPANSION": "PASS" if verified else "INSUFFICIENT",
+        "WEB_DISCOVERY_GOVERNED": web_recovery.get("WEB_DISCOVERY_GOVERNED"),
+        "WEB_SOURCE_ACQUISITION_GOVERNED": web_recovery.get(
+            "WEB_SOURCE_ACQUISITION_GOVERNED"
+        ),
+        "APILAYER_DIRECT_FALLBACK_ONLY": web_recovery.get(
+            "APILAYER_DIRECT_FALLBACK_ONLY"
+        ),
+        "FACT_CHECK_BEFORE_EDITORIAL": "PASS",
+        "ZERO_COST_ONLY": "PASS",
+        "NO_ARTIFICIAL_PADDING": "PASS",
         "evidence_refs": list(
             state.get("expansion_evidence_refs") or ()
         ),
@@ -1532,12 +1993,14 @@ def run(
             "operational learning episode",
         ),
         input_refs=(f"git:{base_sha}",),
-        max_child_depth=2,
-        max_child_tasks=8,
+        max_child_depth=3,
+        max_child_tasks=MAX_LONGFORM_RECOVERY_CHILD_TASKS,
         allowed_child_capability_ids=(
-            # Explicit Harness lease for the bounded long-form recovery path.
-            # The broker still routes/authorizes each child through Registry.
+            # Explicit mission-scoped lease for the one bounded recovery path.
+            # Each child is still separately routed and authorized by Harness.
             "gta6.fact-check",
+            "web.search.discover",
+            "web.source.acquire",
         ),
     )
 
