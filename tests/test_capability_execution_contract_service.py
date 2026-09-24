@@ -497,3 +497,21 @@ def test_editorial_script_review_does_not_require_engineering_independent_review
         **requirement,
         "required_operations": list(ops),
     }) is None
+
+def test_fact_check_dependency_does_not_inflate_native_executor_to_artifact_io():
+    requirement = {
+        "task_id": "fact-verify",
+        "task_class": "fact-check",
+        "action": "RESEARCH",
+        "objective": "Verify one selected GTA 6 claim against supplied provenance evidence",
+        "query": "fact check verified claim evidence",
+        "required_capability_description": "deterministic GTA 6 fact check",
+        "dependencies": ["topic-research"],
+        "expected_output": "FactCheckResult",
+        "acceptance_criteria": ["provenance complete"],
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    assert derive_required_operations(requirement) == ()
+    record = GLOBAL_CAPABILITY_REGISTRY.get("gta6.fact-check")
+    assert record is not None
+    assert capability_execution_contract_rejection(record, ()) is None

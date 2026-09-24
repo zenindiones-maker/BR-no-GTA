@@ -329,6 +329,15 @@ def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
     if role_operations is not None:
         return role_operations
 
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
+    if task_class in {"fact-check", "source-verification"}:
+        # These are bounded deterministic evidence assessors. Their executor
+        # consumes caller-supplied claim/evidence values while the Harness/
+        # Hermes layer preserves TaskResultEnvelope lineage around the call.
+        # Do not falsely require the capability itself to read/write artifact
+        # refs merely because the mission task has dependencies.
+        return ()
+
     text = _blob(requirement)
     normalized_text = text.replace("-", " ").replace("_", " ")
     operations: set[str] = {CAN_PRODUCE_ARTIFACT_REFS}
