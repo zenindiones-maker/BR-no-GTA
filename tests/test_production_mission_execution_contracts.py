@@ -19,7 +19,10 @@ from app.services.semantic_mission_planner_service import (
     MissionTaskProposal,
 )
 from app.services.task_result_envelope_service import build_task_result_envelope
-from scripts.real_multi_agent_production import _bounded_youtube_semantic_context
+from scripts.real_multi_agent_production import (
+    _bounded_youtube_semantic_context,
+    _target_duration_seconds,
+)
 
 
 def _ops(capability_id: str) -> set[str]:
@@ -716,3 +719,13 @@ def test_youtube_semantic_context_is_bounded_without_losing_direct_lineage():
     assert context["parent_summaries"][0]["task_result_ref"].startswith("artifact:")
     assert context["evidence_map"]
     assert context["script"]
+
+
+def test_sparse_current_evidence_uses_no_filler_duration_target():
+    assert _target_duration_seconds(1) == 420.0
+    assert _target_duration_seconds(2) == 420.0
+    assert _target_duration_seconds(3) == 600.0
+    assert _target_duration_seconds(5) == 900.0
+    assert _target_duration_seconds(8) == 1200.0
+    assert _target_duration_seconds(12) == 1500.0
+

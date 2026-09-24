@@ -270,7 +270,12 @@ def _target_duration_seconds(claim_count: int) -> float:
         return 1200.0
     if claim_count >= 5:
         return 900.0
-    return 600.0
+    if claim_count >= 3:
+        return 600.0
+    # Sparse but valid current evidence should produce a tighter video instead
+    # of stretching a short script to ten minutes. The novelty gate still
+    # rejects filler/reuse and the render plan must match this bounded target.
+    return 420.0
 
 
 def _parent_summaries(parent_context: dict[str, Any]) -> list[dict[str, Any]]:
