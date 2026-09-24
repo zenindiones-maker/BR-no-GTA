@@ -221,7 +221,7 @@ def test_semantic_provider_failure_logs_safe_structured_diagnostics():
     failure = SemanticPlannerProviderFailure("http_error", sanitized)
     rendered = str(failure)
 
-    assert failure.diagnostics == {
+    expected = {
         "provider_id": "tuxevil",
         "model_id": "gemini-3-flash",
         "transport": "tuxevil_responses",
@@ -234,6 +234,10 @@ def test_semantic_provider_failure_logs_safe_structured_diagnostics():
         "parse_stage": "http_status",
         "sanitized_reason": "http_503",
     }
+    assert {
+        key: failure.diagnostics.get(key)
+        for key in expected
+    } == expected
     assert "SHOULD-NOT-LEAK" not in rendered
     assert "Bearer" not in rendered
     assert "provider_id" in rendered

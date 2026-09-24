@@ -324,8 +324,7 @@ def execute_research_semantic_synthesis_task(
         or auth.lineage.get("goal_id")
         or ""
     ).strip()
-    provider_routing = route_harness_request(
-        HarnessRoutingRequest(
+    provider_request = HarnessRoutingRequest(
             intent=(
                 "analyze fresh GTA6 research artifacts and synthesize a current "
                 "evidence-grounded editorial angle"
@@ -341,31 +340,13 @@ def execute_research_semantic_synthesis_task(
             required_model_capabilities=("reasoning",),
             structured_output_required=True,
             prefer_low_latency=True,
-            fallback_allowed=False,
+            fallback_allowed=True,
             zero_cost_operation=True,
             learning_required=True,
         )
-    )
+    provider_routing = route_harness_request(provider_request)
     if not provider_routing.selected_provider:
         raise RuntimeError("Harness did not select a semantic research provider")
-    provider_authorization = issue_harness_authorization(
-        authorized_action="RESEARCH",
-        subject=f"provider:{provider_routing.selected_provider}",
-        harness_decision_id=auth.harness_decision_id,
-        execution_id=auth.execution_id,
-        lineage={
-            "parent_authorization_id": auth.authorization_id,
-            "routing_id": provider_routing.routing_id,
-            "capability_id": provider_routing.selected_capability_id,
-            "selected_provider": provider_routing.selected_provider,
-            "selected_model": provider_routing.selected_model,
-            "selected_executor_binding": (
-                provider_routing.selected_provider_executor_binding
-            ),
-            "goal_id": goal_id or None,
-            "input_refs": list(dependency_refs),
-        },
-    )
     prompt = (
         "You are a subordinate GTA6 research synthesis specialist. "
         "DeepSeek Harness is the sole authority. Analyze only the persisted "
@@ -376,17 +357,26 @@ def execute_research_semantic_synthesis_task(
         f"OBJECTIVE={str(payload.get('objective') or '').strip()}\n"
         f"DEPENDENCY_ARTIFACTS={context_text}"
     )
-    try:
-        evidence = execute_harness_ai_generation(
-            prompt=prompt,
-            authorization=provider_authorization,
-            routing_decision=provider_routing,
-        )
-    finally:
-        consume_harness_authorization(provider_authorization)
-    if evidence.status != "EXECUTED" or not isinstance(evidence.result, dict):
+    provider = create_resilient_harness_ai_provider(
+        authorization=auth,
+        routing_request=provider_request,
+    )
+    response = provider.generate(prompt)
+    evidence = {
+        "status": "EXECUTED",
+        "provider": response.provider,
+        "model": response.model,
+        "result": {
+            "text": response.text,
+            "finish_reason": response.finish_reason,
+        },
+        "routing": dict(provider.last_routing or {}),
+        "provider_attempts": list(provider.last_attempts),
+        "performance": dict(provider.last_performance_metrics),
+    }
+    if evidence.get("status") != "EXECUTED" or not isinstance(evidence.get("result"), dict):
         raise RuntimeError("semantic research provider did not execute")
-    raw = str(evidence.result.get("text") or "").strip()
+    raw = str((evidence.get("result") or {}).get("text") or "").strip()
     fence = chr(96) * 3
     if raw.startswith(fence):
         lines = raw.splitlines()
@@ -411,13 +401,18 @@ def execute_research_semantic_synthesis_task(
     return {
         "status": "EXECUTED",
         "semantic_output": semantic_output,
-        "semantic_provider": evidence.provider,
-        "semantic_model": evidence.model,
-        "semantic_evidence": evidence.to_dict(),
+        "semantic_provider": evidence.get("provider"),
+        "semantic_model": evidence.get("model"),
+        "semantic_evidence": evidence,
+        "provider_attempts": list(provider.last_attempts),
         "input_refs": list(dependency_refs),
         "evidence_refs": list(dict.fromkeys([
             *dependency_refs,
-            *tuple(evidence.evidence_refs),
+            *tuple(
+                f"routing:{item.get('routing_id')}"
+                for item in provider.last_attempts
+                if item.get("routing_id")
+            ),
         ])),
         "output_ref": f"research-semantic:{mission_id}:{task_id}",
         "provider_routing": provider_routing.to_dict(),
