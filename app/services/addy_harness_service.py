@@ -23,10 +23,13 @@ from app.services.harness_episode_capture_service import capture_canonical_execu
 from app.services.harness_routing_policy_service import (
     HarnessRoutingDecision,
     HarnessRoutingRequest,
+    RoutingPolicyError,
     route_harness_request,
+    select_provider_model_revalidation_candidate,
 )
 from app.services.provider_health_service import (
     nvidia_semantic_planner_latency_budget,
+    revalidate_nvidia_model_runtime_health,
     semantic_provider_health,
 )
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
@@ -321,6 +324,7 @@ def execute_authorized_addy_skill(
         raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
 
     provider_attempts: list[dict[str, Any]] = []
+    provider_health_revalidations: list[dict[str, Any]] = []
     nvidia_latency_budget: dict[str, Any] | None = None
 
     def _full_timeout_or_read_stall(evidence) -> bool:
@@ -380,6 +384,38 @@ def execute_authorized_addy_skill(
             return "AUTHORIZATION_FAILURE"
         return "OTHER_PROVEN_CAUSE"
 
+    def _provider_request(
+        *,
+        preferred_provider: str | None = None,
+        unavailable_models: tuple[str, ...] = (),
+        failure_pattern: str | None = None,
+    ) -> HarnessRoutingRequest:
+        return HarnessRoutingRequest(
+            intent=(
+                f"execute pinned Addy skill {skill_name} with governed "
+                "semantic reasoning and structured output"
+            ),
+            authorized_action="DEVELOPMENT",
+            domain="ai",
+            task_class=f"addy-semantic:{skill_name}",
+            goal_id=goal_id,
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            provider_domain="ai",
+            preferred_providers=(
+                (preferred_provider,) if preferred_provider else ()
+            ),
+            allowed_providers=eligible_providers,
+            unavailable_model_ids=unavailable_models,
+            fallback_allowed=False,
+            zero_cost_operation=True,
+            failure_pattern=failure_pattern,
+            learning_required=True,
+            structured_output_required=(
+                structured_output_schema is not None
+            ),
+        )
+
     def _route_provider(
         *,
         preferred_provider: str | None = None,
@@ -387,30 +423,10 @@ def execute_authorized_addy_skill(
         failure_pattern: str | None = None,
     ):
         return route_harness_request(
-            HarnessRoutingRequest(
-                intent=(
-                    f"execute pinned Addy skill {skill_name} with governed "
-                    "semantic reasoning and structured output"
-                ),
-                authorized_action="DEVELOPMENT",
-                domain="ai",
-                task_class=f"addy-semantic:{skill_name}",
-                goal_id=goal_id,
-                required_capability_id="ai.reasoning.text",
-                provider_required=True,
-                provider_domain="ai",
-                preferred_providers=(
-                    (preferred_provider,) if preferred_provider else ()
-                ),
-                allowed_providers=eligible_providers,
-                unavailable_model_ids=unavailable_models,
-                fallback_allowed=False,
-                zero_cost_operation=True,
+            _provider_request(
+                preferred_provider=preferred_provider,
+                unavailable_models=unavailable_models,
                 failure_pattern=failure_pattern,
-                learning_required=True,
-                structured_output_required=(
-                    structured_output_schema is not None
-                ),
             )
         )
 
@@ -563,7 +579,7 @@ def execute_authorized_addy_skill(
             )
         )
     ))
-    provider_routing = _route_provider(
+    initial_request = _provider_request(
         preferred_provider=(
             recovery_preferred_provider
             if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
@@ -580,6 +596,103 @@ def execute_authorized_addy_skill(
             else None
         ),
     )
+    try:
+        provider_routing = route_harness_request(initial_request)
+    except RoutingPolicyError:
+        can_revalidate = (
+            recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            and recovery_preferred_provider == "nvidia_nim"
+        )
+        candidate = (
+            select_provider_model_revalidation_candidate(initial_request)
+            if can_revalidate
+            else None
+        )
+        if candidate is None:
+            raise
+        if nvidia_latency_budget is None:
+            nvidia_latency_budget = nvidia_semantic_planner_latency_budget()
+        health_probe = revalidate_nvidia_model_runtime_health(
+            str(candidate.model_id or ""),
+            timeout_seconds=(
+                float(
+                    nvidia_latency_budget[
+                        "MODEL_ATTEMPT_DEADLINE_MS"
+                    ]
+                )
+                / 1000.0
+            ),
+        )
+        provider_health_revalidations.append(dict(health_probe))
+        provider_attempts.append({
+            "attempt": len(provider_attempts) + 1,
+            "attempt_id": sha256(
+                (
+                    mission_id
+                    + "|"
+                    + task_id
+                    + "|health-revalidation|"
+                    + str(candidate.model_id or "")
+                ).encode("utf-8")
+            ).hexdigest()[:24],
+            "phase": "HEALTH_REVALIDATION",
+            "routing_id": (
+                "health-revalidation:"
+                + sha256(
+                    str(candidate.model_id or "").encode("utf-8")
+                ).hexdigest()[:16]
+            ),
+            "provider": "nvidia_nim",
+            "provider_id": "nvidia_nim",
+            "model": str(candidate.model_id or ""),
+            "model_id": str(candidate.model_id or ""),
+            "status": (
+                "EXECUTED"
+                if health_probe.get("health_probe_passed")
+                else "FAILED"
+            ),
+            "failure_class": (
+                None
+                if health_probe.get("health_probe_passed")
+                else health_probe.get("failure_class")
+            ),
+            "retry_count": 0,
+            "latency_seconds": (
+                float(health_probe.get("latency_ms") or 0.0)
+                / 1000.0
+            ),
+            "attempt_deadline_ms": int(
+                nvidia_latency_budget["MODEL_ATTEMPT_DEADLINE_MS"]
+            ),
+            "health_evidence": list(
+                health_probe.get("evidence_refs") or ()
+            ),
+            "failure_evidence": (
+                {}
+                if health_probe.get("health_probe_passed")
+                else {
+                    "failure_class": health_probe.get("failure_class"),
+                    "http_status": health_probe.get("http_status"),
+                }
+            ),
+            "error": (
+                {}
+                if health_probe.get("health_probe_passed")
+                else {
+                    "code": (
+                        health_probe.get("failure_class")
+                        or "health_revalidation_failed"
+                    )
+                }
+            ),
+            "performance": {
+                "total_attempt_latency_ms": health_probe.get("latency_ms"),
+                "health_revalidation": True,
+            },
+        })
+        if not health_probe.get("health_probe_passed"):
+            raise
+        provider_routing = route_harness_request(initial_request)
     if (
         recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
         and prior_routing_ids
@@ -695,7 +808,8 @@ def execute_authorized_addy_skill(
             "status": str(row.get("status") or "").strip().upper(),
         }
         for row in provider_attempts
-        if str(row.get("provider_id") or "").strip()
+        if str(row.get("phase") or "") != "HEALTH_REVALIDATION"
+        and str(row.get("provider_id") or "").strip()
         and str(row.get("model_id") or "").strip()
     ]
     attempted_provider_model_pairs = []
@@ -862,7 +976,15 @@ def execute_authorized_addy_skill(
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
             "BOUNDED_PROVIDER_ATTEMPTS": (
-                len(provider_attempts) <= 3
+                len([
+                    row for row in provider_attempts
+                    if str(row.get("phase") or "")
+                    != "HEALTH_REVALIDATION"
+                ]) <= 3
+                and len(provider_health_revalidations) <= 1
+            ),
+            "PROVIDER_HEALTH_REVALIDATIONS": (
+                provider_health_revalidations
             ),
             "agent_instance_id": str(
                 payload.get("agent_instance_id") or ""
@@ -956,6 +1078,9 @@ def execute_authorized_addy_skill(
             "provider_profile_version": semantic.provider_profile_version,
             "provider_evidence": semantic.to_dict(),
             "provider_attempts": provider_attempts,
+            "provider_health_revalidations": (
+                provider_health_revalidations
+            ),
             "structured_output_enforced": (
                 structured_output_schema is not None
             ),
