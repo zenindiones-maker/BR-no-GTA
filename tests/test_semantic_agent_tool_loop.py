@@ -1000,3 +1000,115 @@ def test_restored_session_resumes_after_real_tool_result_without_reexecution(
         assert len(final_session["TOOL_RESULTS_CONSUMED"]) == 1
     finally:
         consume_harness_authorization(parent)
+
+
+
+def test_resume_budget_extends_session_without_resetting_turn_history(
+    tmp_path,
+):
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    for turn in range(1, 5):
+        session.begin_turn(turn)
+    session.fail(failure_class="PROVIDER_TRANSIENT")
+
+    restored = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    first = restored.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=2,
+        max_total_agent_turns=8,
+    )
+    assert first["start_turn"] == 5
+    assert first["end_turn"] == 6
+    assert first["historical_turns"] == 4
+    assert first["AGENT_RESUME_BUDGET_BOUNDED"] is True
+    assert first["AGENT_RESUME_BUDGET_NOT_RESET_BLINDLY"] is True
+    restored.begin_turn(6)
+    restored.fail(failure_class="PROVIDER_TRANSIENT")
+
+    again = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    second = again.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=2,
+        max_total_agent_turns=8,
+    )
+    assert second["start_turn"] == 7
+    assert second["end_turn"] == 8
+    again.begin_turn(8)
+    again.fail(failure_class="PROVIDER_TRANSIENT")
+
+    exhausted = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    third = exhausted.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=2,
+        max_total_agent_turns=8,
+    )
+    assert third["exhausted"] is True
+    assert exhausted.state["TURN_INDEX"] == 8
+    assert exhausted.state["MAX_AGENT_TURNS"] == 4

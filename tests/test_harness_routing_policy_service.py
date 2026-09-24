@@ -550,3 +550,31 @@ def test_youtube_semantic_reasoning_routes_without_publication_authority():
     assert "PUBLICATION" not in provider.allowed_actions
     assert capability.side_effects == ()
     assert provider.side_effects == ()
+
+
+
+def test_exhausted_provider_model_pair_is_filtered_before_selection():
+    registry = _provider_registry()
+    decision = route_harness_request(
+        _request(
+            provider_required=True,
+            allowed_providers=("nvidia_nim",),
+            preferred_providers=("nvidia_nim",),
+            exhausted_provider_model_pairs=(
+                ("nvidia_nim", "z-ai/glm-5.3"),
+            ),
+        ),
+        registry=registry,
+    )
+    assert not (
+        decision.selected_provider == "nvidia_nim"
+        and decision.selected_model == "z-ai/glm-5.3"
+    )
+    assert decision.policy_metadata[
+        "EXHAUSTED_PAIR_FILTERED_PRE_SELECTION"
+    ] is True
+    assert any(
+        rejection.stage == "provider"
+        and "provider_model_pair_exhausted" in rejection.reasons
+        for rejection in decision.rejected_candidates
+    )

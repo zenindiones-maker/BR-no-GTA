@@ -164,6 +164,69 @@ class AgentSessionRuntime:
         )
         tmp.replace(self.path)
 
+    def reserve_turn_window(
+        self,
+        *,
+        default_max_agent_turns: int,
+        max_resume_agent_turns: int,
+        max_resume_segments: int,
+        max_total_agent_turns: int,
+    ) -> dict[str, Any]:
+        current = int(self.state.get("TURN_INDEX") or 0)
+        if not self.restored:
+            return {
+                "start_turn": 1,
+                "end_turn": int(default_max_agent_turns),
+                "resume": False,
+                "resume_segment": 0,
+                "historical_turns": current,
+                "AGENT_RESUME_BUDGET_BOUNDED": True,
+                "AGENT_RESUME_BUDGET_NOT_RESET_BLINDLY": True,
+            }
+
+        used = int(self.state.get("RESUME_SEGMENTS_USED") or 0)
+        if used >= int(max_resume_segments) or current >= int(
+            max_total_agent_turns
+        ):
+            return {
+                "start_turn": current + 1,
+                "end_turn": current,
+                "resume": True,
+                "resume_segment": used,
+                "historical_turns": current,
+                "AGENT_RESUME_BUDGET_BOUNDED": True,
+                "AGENT_RESUME_BUDGET_NOT_RESET_BLINDLY": True,
+                "exhausted": True,
+            }
+
+        used += 1
+        start_turn = current + 1
+        end_turn = min(
+            current + int(max_resume_agent_turns),
+            int(max_total_agent_turns),
+        )
+        self.state["RESUME_SEGMENTS_USED"] = used
+        self.state["MAX_RESUME_SEGMENTS"] = int(max_resume_segments)
+        self.state["MAX_RESUME_AGENT_TURNS"] = int(
+            max_resume_agent_turns
+        )
+        self.state["MAX_TOTAL_AGENT_TURNS"] = int(
+            max_total_agent_turns
+        )
+        self.state["ACTIVE_RESUME_TURN_START"] = start_turn
+        self.state["ACTIVE_RESUME_TURN_END"] = end_turn
+        self._persist()
+        return {
+            "start_turn": start_turn,
+            "end_turn": end_turn,
+            "resume": True,
+            "resume_segment": used,
+            "historical_turns": current,
+            "AGENT_RESUME_BUDGET_BOUNDED": True,
+            "AGENT_RESUME_BUDGET_NOT_RESET_BLINDLY": True,
+            "exhausted": False,
+        }
+
     def begin_turn(self, turn_index: int) -> None:
         self.state["TURN_INDEX"] = int(turn_index)
         self.state["STATUS"] = "RUNNING"

@@ -783,6 +783,9 @@ def test_external_localized_replan_excludes_exhausted_model(monkeypatch):
     assert len(route_requests) == 1
     assert route_requests[0].preferred_providers == ("nvidia_nim",)
     assert route_requests[0].unavailable_model_ids == ("model-a",)
+    assert route_requests[0].exhausted_provider_model_pairs == (
+        ("nvidia_nim", "model-a"),
+    )
     assert route_requests[0].failure_pattern == (
         "external_localized_provider_replan"
     )

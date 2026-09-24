@@ -62,6 +62,7 @@ class HarnessRoutingRequest:
     preferred_models: tuple[str, ...] = ()
     unavailable_provider_ids: tuple[str, ...] = ()
     unavailable_model_ids: tuple[str, ...] = ()
+    exhausted_provider_model_pairs: tuple[tuple[str, str], ...] = ()
     prefer_low_latency: bool = False
     quality_requirement: str | None = None
     latency_constraint: str | None = None
@@ -340,6 +341,14 @@ def _provider_records(
         for model_id in request.unavailable_model_ids
         if str(model_id).strip()
     }
+    exhausted_pairs = {
+        (
+            normalize_provider_id(str(provider_id)),
+            str(model_id).strip(),
+        )
+        for provider_id, model_id in request.exhausted_provider_model_pairs
+        if str(provider_id).strip() and str(model_id).strip()
+    }
     exhausted_free_quota = {
         normalize_provider_id(provider_id)
         for provider_id in request.exhausted_free_quota_provider_ids
@@ -376,6 +385,11 @@ def _provider_records(
             reasons.append("model_not_allowed_by_request")
         if model_id and model_id in unavailable_models:
             reasons.append("model_runtime_unavailable")
+        if (
+            model_id
+            and (provider_id, model_id) in exhausted_pairs
+        ):
+            reasons.append("provider_model_pair_exhausted")
         if required_caps and not required_caps.issubset(capabilities):
             reasons.append("required_model_capabilities_missing")
         if request.tool_use_required and not (
@@ -1033,6 +1047,15 @@ def route_harness_request(
         ),
         "exhausted_free_quota_provider_ids": list(request.exhausted_free_quota_provider_ids),
         "unavailable_model_ids": list(request.unavailable_model_ids),
+        "exhausted_provider_model_pairs": [
+            [provider_id, model_id]
+            for provider_id, model_id
+            in request.exhausted_provider_model_pairs
+        ],
+        "EXHAUSTED_PAIR_FILTERED_PRE_SELECTION": any(
+            "provider_model_pair_exhausted" in item.reasons
+            for item in rejected
+        ),
         "prefer_low_latency": bool(request.prefer_low_latency),
         "structured_output_required": bool(
             request.structured_output_required

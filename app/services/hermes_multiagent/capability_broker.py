@@ -34,6 +34,9 @@ from app.services.semantic_tool_loop_service import (
     AgentToolRequestError,
     MAX_AGENT_CONTEXT_CHARS,
     MAX_AGENT_TURNS,
+    MAX_RESUME_AGENT_TURNS,
+    MAX_RESUME_SEGMENTS,
+    MAX_TOTAL_AGENT_TURNS,
     MAX_PROVIDER_CALLS,
     MAX_TOOL_CALLS,
     TOOL_REQUEST_SCHEMA,
@@ -1456,7 +1459,14 @@ class HermesHarnessCapabilityBroker:
             if session.restored
             else 0
         )
-        start_agent_turn = max(1, restored_turn_index + 1)
+        turn_window = session.reserve_turn_window(
+            default_max_agent_turns=max_agent_turns,
+            max_resume_agent_turns=MAX_RESUME_AGENT_TURNS,
+            max_resume_segments=MAX_RESUME_SEGMENTS,
+            max_total_agent_turns=MAX_TOTAL_AGENT_TURNS,
+        )
+        start_agent_turn = int(turn_window["start_turn"])
+        end_agent_turn = int(turn_window["end_turn"])
         previous_output = ""
         output_validation_feedback: dict[str, Any] | None = None
         provider_calls = int(
@@ -1479,7 +1489,15 @@ class HermesHarnessCapabilityBroker:
                 "checkpoint_ref": session.artifact_ref,
                 "restored_turn_index": restored_turn_index,
                 "next_turn_index": start_agent_turn,
+                "resume_turn_end": end_agent_turn,
+                "resume_segment": turn_window.get("resume_segment"),
+                "historical_turns": turn_window.get("historical_turns"),
+                "AGENT_RESUME_BUDGET_BOUNDED": "PASS",
+                "AGENT_RESUME_BUDGET_NOT_RESET_BLINDLY": "PASS",
                 "restored_tool_result_count": len(tool_results),
+                "PRIOR_TOOL_RESULT_AVAILABLE": (
+                    "PASS" if tool_results else "NOT_APPLICABLE"
+                ),
                 "restored_provider_call_count": provider_calls,
                 "TASK_AGENT_SESSION_RESTORED": "PASS",
                 "SAME_AGENT_AFTER_TOOL_RESULT": "PASS",
@@ -1500,7 +1518,7 @@ class HermesHarnessCapabilityBroker:
         last_elapsed = 0.0
         last_result: Any = None
 
-        if start_agent_turn > max_agent_turns:
+        if start_agent_turn > end_agent_turn:
             raise DelegatedCapabilityFailure(
                 task_id=task_id,
                 capability_id=capability_id,
@@ -1510,7 +1528,7 @@ class HermesHarnessCapabilityBroker:
                 requires_harness_replan=True,
             )
 
-        for agent_turn in range(start_agent_turn, max_agent_turns + 1):
+        for agent_turn in range(start_agent_turn, end_agent_turn + 1):
             session.begin_turn(agent_turn)
             elapsed_wall = time.perf_counter() - task_started_perf
             if elapsed_wall > float(task.time_budget_seconds):

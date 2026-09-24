@@ -384,6 +384,7 @@ def execute_authorized_addy_skill(
         *,
         preferred_provider: str | None = None,
         unavailable_models: tuple[str, ...] = (),
+        exhausted_pairs: tuple[tuple[str, str], ...] = (),
         failure_pattern: str | None = None,
     ):
         return route_harness_request(
@@ -404,6 +405,7 @@ def execute_authorized_addy_skill(
                 ),
                 allowed_providers=eligible_providers,
                 unavailable_model_ids=unavailable_models,
+                exhausted_provider_model_pairs=exhausted_pairs,
                 fallback_allowed=False,
                 zero_cost_operation=True,
                 failure_pattern=failure_pattern,
@@ -571,6 +573,19 @@ def execute_authorized_addy_skill(
         ),
         unavailable_models=(
             recovery_unavailable_models
+            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            else ()
+        ),
+        exhausted_pairs=(
+            tuple(
+                (
+                    str(item.get("provider_id") or "").strip(),
+                    str(item.get("model_id") or "").strip(),
+                )
+                for item in prior_exhausted_pairs
+                if str(item.get("provider_id") or "").strip()
+                and str(item.get("model_id") or "").strip()
+            )
             if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
             else ()
         ),
@@ -858,6 +873,25 @@ def execute_authorized_addy_skill(
                 or ""
             ),
             "RECOVERY_ROUTE_CHANGED": recovery_route_changed,
+            "EXHAUSTED_PAIR_FILTERED_PRE_SELECTION": bool(
+                (
+                    getattr(provider_routing, "policy_metadata", {}) or {}
+                ).get("EXHAUSTED_PAIR_FILTERED_PRE_SELECTION")
+            ),
+            "EXHAUSTED_PAIR_REUSED": sum(
+                1
+                for row in current_pairs
+                if (
+                    str(row.get("provider_id") or "").strip(),
+                    str(row.get("model_id") or "").strip(),
+                ) in {
+                    (
+                        str(item.get("provider_id") or "").strip(),
+                        str(item.get("model_id") or "").strip(),
+                    )
+                    for item in prior_exhausted_pairs
+                }
+            ),
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
