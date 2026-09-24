@@ -478,65 +478,18 @@ jobs:
           echo "PREEXISTING_ALTERNATE_ROUTE_PROVIDER=${{ steps.provider_recovery.outputs.alternate_route_provider }}"
           echo "MATERIALIZE_CANONICAL_LOCAL_PROVIDER=${{ steps.provider_recovery.outputs.prepare_alt_provider }}"
 
-      - name: Refresh bounded Kimi-K3 route health
+      - name: Close canonical route inventory
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
-        timeout-minutes: 2
+        id: route_inventory
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          python - <<'PY' >> "$GITHUB_ENV"
-          import json, os
-          from datetime import datetime, timezone
-          from app.services.nvidia_nim_provider import NvidiaNimProviderAdapter
-
-          model="moonshotai/kimi-k3"
-          run_id=str(os.getenv("GITHUB_RUN_ID") or "")
-          now=datetime.now(timezone.utc).isoformat()
-          provider=NvidiaNimProviderAdapter(
-              model=model,
-              api_key=os.getenv("NVIDIA_API_KEY"),
-              max_retries=0,
-              timeout_seconds=90,
-          )
-          try:
-              result=provider.probe_capabilities()
-              available=bool(
-                  result.get("HEALTH")=="AVAILABLE"
-                  and result.get("RESPONSE_VALID") is True
-                  and result.get("STRUCTURED_OUTPUT_RESULT")=="PASS"
-              )
-              failure_class=None if available else "structured_probe_failed"
-          except Exception as exc:
-              safe=exc.to_dict() if callable(getattr(exc,"to_dict",None)) else {}
-              result={}
-              available=False
-              failure_class=str(safe.get("code") or type(exc).__name__)
-          item={
-              "availability":"AVAILABLE" if available else "DEGRADED",
-              "last_success":now if available else None,
-              "last_failure":None if available else now,
-              "failure_class":failure_class,
-              "latency_ms":float(
-                  result.get("LATENCY_MS")
-                  or provider.last_performance_metrics.get("latency_seconds",0)*1000
-              ),
-              "confidence":1.0,
-              "sample_size":1,
-              "rate_limit_state":"CLEAR",
-              "circuit_breaker_state":"CLOSED",
-              "quota_state":"AVAILABLE_UNMEASURED",
-              "live_status":"PASS" if available else "FAIL",
-              "http_status":result.get("HTTP_STATUS"),
-              "last_verified_at":now,
-              "github_run_id":run_id,
-              "evidence_refs":[f"github:run:{run_id}:nvidia-model:kimi-k3-health-refresh"],
-          }
-          print("KIMI_K3_HEALTH_REFRESH="+("PASS" if available else "FAIL"))
-          print("BR_RUNTIME_MODEL_HEALTH_JSON="+json.dumps(
-              {"nvidia_nim":{model:item}},separators=(",",":")
-          ))
-          PY
+          python scripts/zero_cost_route_inventory.py \
+            --checkpoint-root runtime/real-agent-self-improvement/checkpoint-source \
+            --request .run/real-agent-self-improvement.request.json \
+            --output runtime/real-agent-self-improvement/zero-cost-route-inventory.json
+          echo "route_inventory_closed=true" >> "$GITHUB_OUTPUT"
 
       - name: Prepare bounded local zero-cost alternate provider
         if: steps.provider_recovery.outputs.prepare_alt_provider == 'true'
@@ -620,6 +573,7 @@ jobs:
           echo "ALTERNATE_PROVIDER_IDENTITY_SOURCE=CANONICAL_PROVIDER_MODULE"
 
       - name: Execute real natural-goal self-improvement mission
+        if: steps.route_inventory.outputs.route_inventory_closed != 'true'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
