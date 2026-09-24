@@ -1030,7 +1030,14 @@ def _deterministic_incident_recovery_requirements(
     if not isinstance(incident, dict) or not incident:
         return []
     mutation_policy = str(state.get("mutation_policy") or "").strip().upper()
-    if mutation_policy and not mutation_policy.startswith("NO_MUTATION_BEFORE_"):
+    safe_mutation_policies = {
+        "ALLOW_SANDBOXED_MUTATION_ONLY_AFTER_ACCEPT_REVIEW_AND_HARNESS_AUTHORIZATION",
+    }
+    if (
+        mutation_policy
+        and not mutation_policy.startswith("NO_MUTATION_BEFORE_")
+        and mutation_policy not in safe_mutation_policies
+    ):
         return []
 
     observed_error = str(

@@ -15,8 +15,16 @@ import time
 from typing import Any
 
 from app.database.schema import initialize_schema
-from app.services.harness_authorization_service import issue_harness_authorization
-from app.services.harness_collaboration_service import build_goal_envelope, plan_mission_from_human_goal
+from app.services.harness_authorization_service import (
+    consume_harness_authorization,
+    issue_harness_authorization,
+)
+from app.services.harness_capability_adapter import CapabilityAdapter
+from app.services.harness_collaboration_service import (
+    TaskEnvelope,
+    build_goal_envelope,
+    plan_mission_from_human_goal,
+)
 from app.services.harness_learning_service import (
     HarnessEpisode,
     persist_episode,
@@ -24,14 +32,22 @@ from app.services.harness_learning_service import (
     retrieve_relevant_memory,
 )
 from app.services.harness_mission_execution_router import select_mission_execution_route
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
 from app.services.harness_executor_availability_service import (
     evaluate_typed_requirement_feasibility,
 )
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
+    CAN_MUTATE_CANDIDATE,
     CAN_PRODUCE_ARTIFACT_REFS,
+    CAN_READ_REPOSITORY,
     CAN_REVIEW,
+    CAN_RUN_TESTS,
     CAN_SEMANTIC_REASONING,
+    CAN_WRITE_REPOSITORY,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.execution_mission_envelope_service import (
@@ -45,7 +61,13 @@ from app.services.memory_plane_service import evaluate_memory_candidate
 from app.services.task_result_envelope_service import load_task_result_envelope
 from app.services.task_output_contract_service import (
     CANONICAL_FUNCTIONAL_ROLES,
+    extract_task_output,
     validate_task_output_contract,
+)
+from app.services.recovery_execution_service import (
+    RECOVERY_APPLY_CAPABILITY_ID,
+    RECOVERY_VALIDATE_CAPABILITY_ID,
+    build_recovery_candidate_spec,
 )
 from scripts.dynamic_system_improvement_mission import run as execute_dynamic_mission
 
@@ -859,17 +881,342 @@ def episode_ids(report):
     return [str(x) for x in payload.get("harness_episode_ids") or () if str(x).strip()]
 
 
-def promote_memory(plan, base_sha, episodes, found, *, request: dict):
+def _execute_recovery_registry_capability(
+    *,
+    capability_id: str,
+    functional_role: str,
+    task_id: str,
+    mission_id: str,
+    goal_id: str,
+    harness_decision_id: str,
+    input_refs: tuple[str, ...],
+    read_scope: tuple[str, ...],
+    write_scope: tuple[str, ...],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    record = GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+    if record is None or not record.execution_enabled:
+        raise RuntimeError(
+            "RECOVERY_CAPABILITY_NOT_EXECUTABLE:" + capability_id
+        )
+    routing = route_harness_request(HarnessRoutingRequest(
+        intent=(
+            f"{functional_role} reviewed recovery for mission "
+            f"{mission_id}"
+        ),
+        authorized_action="DEVELOPMENT",
+        domain=record.domain,
+        task_class=(
+            "recovery-apply"
+            if functional_role == "APPLY"
+            else "recovery-validation"
+        ),
+        goal_id=goal_id,
+        required_capability_id=capability_id,
+        provider_required=False,
+        fallback_allowed=False,
+        zero_cost_operation=True,
+        learning_required=True,
+    ))
+    authorization = issue_harness_authorization(
+        authorized_action="DEVELOPMENT",
+        subject=f"capability:{capability_id}",
+        harness_decision_id=harness_decision_id,
+        execution_id=mission_id,
+        lineage={
+            "routing_id": routing.routing_id,
+            "capability_id": capability_id,
+            "selected_executor_binding": (
+                routing.selected_executor_binding
+            ),
+            "mission_id": mission_id,
+            "goal_id": goal_id,
+            "functional_role": functional_role,
+            "input_refs": list(input_refs),
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    )
+    task = TaskEnvelope(
+        task_id=task_id,
+        capability_id=capability_id,
+        action="DEVELOPMENT",
+        objective=(
+            "Apply the reviewed RecoveryCandidateSpec in a disposable "
+            "sandbox."
+            if functional_role == "APPLY"
+            else
+            "Validate the applied recovery candidate deterministically "
+            "with the reviewed focused test plan."
+        ),
+        dependencies=(),
+        input_refs=input_refs,
+        expected_output=(
+            "RecoveryApplyReceipt"
+            if functional_role == "APPLY"
+            else "RecoveryValidationReceipt"
+        ),
+        task_class=(
+            "recovery-apply"
+            if functional_role == "APPLY"
+            else "recovery-validation"
+        ),
+        functional_role=functional_role,
+        mission_policy_class="SYSTEM_IMPROVEMENT",
+        required_capability_description=str(record.implementation),
+        acceptance_criteria=(
+            (
+                "base SHA, patch hash and path allowlist verified",
+                "mutation occurs only in disposable worktree",
+            )
+            if functional_role == "APPLY"
+            else (
+                "reviewed focused tests execute against candidate SHA",
+                "no regressions are reported",
+            )
+        ),
+        candidate_requirement=(
+            "REQUIRED"
+            if functional_role == "APPLY"
+            else "NOT_APPLICABLE"
+        ),
+        required_operations=tuple(record.execution_operations or ()),
+        read_scope=read_scope,
+        write_scope=write_scope,
+        allowed_tools=tuple(record.allowed_tools or ()),
+        allowed_side_effects=tuple(record.side_effects or ()),
+        risk_side_effect_class=str(
+            record.side_effect_class or "READ_ONLY"
+        ),
+        review_policy="NONE",
+        human_gate_policy="NONE",
+        mission_id=mission_id,
+        goal_id=goal_id,
+        retry_budget=0,
+        tool_budget=0,
+    )
+    adapter = CapabilityAdapter()
+    try:
+        executed = adapter.execute(
+            authorization=authorization,
+            task_envelope=task,
+            routing_decision=routing,
+            payload=payload,
+            parent_context={
+                "mission_id": mission_id,
+                "goal_id": goal_id,
+                "functional_role": functional_role,
+                "evidence_refs": list(input_refs),
+                "harness_decision_id": harness_decision_id,
+            },
+        )
+        return executed.to_dict()
+    finally:
+        consume_harness_authorization(authorization)
+
+
+def execute_reviewed_recovery(
+    *,
+    plan: dict[str, Any],
+    found: dict[str, dict[str, Any] | None],
+    base_sha: str,
+    artifact_dir: Path,
+) -> dict[str, Any]:
+    proposal_row = found.get("proposal")
+    review_row = found.get("review")
+    proposal = extract_task_output(
+        functional_role="PROPOSAL",
+        result=(proposal_row or {}).get("result_payload"),
+    )
+    review = extract_task_output(
+        functional_role="REVIEW",
+        result=(review_row or {}).get("result_payload"),
+    )
+    if proposal is None:
+        raise RuntimeError("RECOVERY_PROPOSAL_TYPED_OUTPUT_MISSING")
+    if review is None:
+        raise RuntimeError("RECOVERY_REVIEW_TYPED_OUTPUT_MISSING")
+    review_verdict = str(review.get("verdict") or "").strip().upper()
+    if review_verdict != "ACCEPT":
+        raise RuntimeError(
+            "RECOVERY_REVIEW_NOT_ACCEPTED:" + review_verdict
+        )
+    proposed_change = dict(proposal.get("proposed_change") or {})
+    if proposed_change.get("mutation_required") is not True:
+        raise RuntimeError(
+            "RECOVERY_PROPOSAL_MUTATION_REQUIRED_FALSE"
+        )
+
+    mission_id = str(plan.get("mission_id") or "")
+    goal_id = str(plan.get("goal", {}).get("goal_id") or "")
+    if not mission_id or not goal_id:
+        raise RuntimeError("RECOVERY_MISSION_IDENTITY_MISSING")
+    harness_decision_id = (
+        f"decision-{mission_id}-reviewed-recovery"
+    )
+    proposal_ref = str(ref(proposal_row) or "")
+    review_ref = str(ref(review_row) or "")
+    if not proposal_ref or not review_ref:
+        raise RuntimeError("RECOVERY_REVIEW_LINEAGE_REF_MISSING")
+    decision = {
+        "schema": "HarnessRecoveryDecision/v1",
+        "authority": "DEEPSEEK_HARNESS",
+        "decision": "AUTHORIZED",
+        "harness_decision_id": harness_decision_id,
+        "mission_id": mission_id,
+        "goal_id": goal_id,
+        "base_sha": base_sha,
+        "proposal_ref": proposal_ref,
+        "review_ref": review_ref,
+        "review_verdict": review_verdict,
+        "authorized_capabilities": [
+            RECOVERY_APPLY_CAPABILITY_ID,
+            RECOVERY_VALIDATE_CAPABILITY_ID,
+        ],
+        "canonical_push_authority": "NONE",
+    }
+    write_json(
+        artifact_dir / "harness-recovery-decision.json",
+        decision,
+    )
+    decision_ref = "artifact:harness-recovery-decision.json"
+
+    spec, spec_ref = build_recovery_candidate_spec(
+        proposal=proposal,
+        review=review,
+        base_sha=base_sha,
+        artifact_dir=artifact_dir,
+        proposal_ref=proposal_ref,
+        review_ref=review_ref,
+        harness_decision_id=harness_decision_id,
+    )
+    scope = tuple(spec.allowed_paths)
+    apply_execution = _execute_recovery_registry_capability(
+        capability_id=RECOVERY_APPLY_CAPABILITY_ID,
+        functional_role="APPLY",
+        task_id="apply-recovery",
+        mission_id=mission_id,
+        goal_id=goal_id,
+        harness_decision_id=harness_decision_id,
+        input_refs=(
+            proposal_ref,
+            review_ref,
+            spec_ref,
+            decision_ref,
+        ),
+        read_scope=scope,
+        write_scope=scope,
+        payload={
+            "candidate_spec": spec.to_dict(),
+            "repository_root": str(Path.cwd().resolve()),
+            "artifact_dir": str(artifact_dir.resolve()),
+        },
+    )
+    apply_receipt = dict(apply_execution.get("result") or {})
+    if (
+        apply_receipt.get("schema") != "RecoveryApplyReceipt/v1"
+        or apply_receipt.get("result") != "PASS"
+    ):
+        raise RuntimeError(
+            "APPLY_RECOVERY_DID_NOT_PASS:"
+            + json.dumps(apply_receipt, sort_keys=True, default=str)[:1600]
+        )
+    apply_ref = str(apply_receipt.get("receipt_ref") or "")
+    if not apply_ref:
+        raise RuntimeError("APPLY_RECOVERY_RECEIPT_REF_MISSING")
+
+    validate_execution = _execute_recovery_registry_capability(
+        capability_id=RECOVERY_VALIDATE_CAPABILITY_ID,
+        functional_role="VALIDATE",
+        task_id="validate-recovery",
+        mission_id=mission_id,
+        goal_id=goal_id,
+        harness_decision_id=harness_decision_id,
+        input_refs=(
+            proposal_ref,
+            review_ref,
+            spec_ref,
+            decision_ref,
+            apply_ref,
+        ),
+        read_scope=scope,
+        write_scope=(),
+        payload={
+            "candidate_spec": spec.to_dict(),
+            "apply_receipt": apply_receipt,
+            "repository_root": str(Path.cwd().resolve()),
+            "artifact_dir": str(artifact_dir.resolve()),
+        },
+    )
+    validation_receipt = dict(
+        validate_execution.get("result") or {}
+    )
+    if (
+        validation_receipt.get("schema")
+        != "RecoveryValidationReceipt/v1"
+        or validation_receipt.get("result") != "PASS"
+    ):
+        raise RuntimeError(
+            "VALIDATE_RECOVERY_DID_NOT_PASS:"
+            + json.dumps(
+                validation_receipt,
+                sort_keys=True,
+                default=str,
+            )[:1600]
+        )
+    validation_ref = str(
+        validation_receipt.get("receipt_ref") or ""
+    )
+    if not validation_ref:
+        raise RuntimeError(
+            "VALIDATE_RECOVERY_RECEIPT_REF_MISSING"
+        )
+
+    checks = dict(apply_receipt.get("checks") or {})
+    return {
+        "harness_decision_id": harness_decision_id,
+        "decision_ref": decision_ref,
+        "review_verdict": review_verdict,
+        "candidate_spec": spec.to_dict(),
+        "candidate_spec_ref": spec_ref,
+        "apply_capability": RECOVERY_APPLY_CAPABILITY_ID,
+        "apply_execution": apply_execution,
+        "apply_receipt": apply_receipt,
+        "apply_receipt_ref": apply_ref,
+        "validate_capability": RECOVERY_VALIDATE_CAPABILITY_ID,
+        "validate_execution": validate_execution,
+        "validation_receipt": validation_receipt,
+        "validation_receipt_ref": validation_ref,
+        "checks": checks,
+    }
+
+
+def promote_memory(
+    plan,
+    base_sha,
+    episodes,
+    found,
+    *,
+    request: dict,
+    harness_decision_id: str | None = None,
+    extra_evidence_refs: tuple[str, ...] = (),
+):
     if not episodes or any(found[k] is None for k in ("profile", "root", "proposal")):
         raise RuntimeError("REAL_SELF_IMPROVEMENT_ARTIFACT_CHAIN_INCOMPLETE")
     if found["review"] is None:
         raise RuntimeError("INDEPENDENT_REVIEW_NOT_EXECUTED")
-    evidence = [
-        x for x in (
-            ref(found["profile"]), ref(found["root"]),
-            ref(found["proposal"]), ref(found["review"]),
-        ) if x
-    ]
+    evidence = list(dict.fromkeys([
+        *[
+            x for x in (
+                ref(found["profile"]), ref(found["root"]),
+                ref(found["proposal"]), ref(found["review"]),
+            ) if x
+        ],
+        *[
+            str(x).strip()
+            for x in extra_evidence_refs
+            if str(x).strip()
+        ],
+    ]))
     incident = dict(request.get("incident") or {})
     signature = (
         f"{incident.get('task_id')}:{incident.get('capability_id')}:"
@@ -912,7 +1259,10 @@ def promote_memory(plan, base_sha, episodes, found, *, request: dict):
         },
     )
     memory_id = str(candidate["memory_id"])
-    harness_decision_id = f"decision-{plan.get('mission_id')}-incident-recovery"
+    harness_decision_id = (
+        str(harness_decision_id or "").strip()
+        or f"decision-{plan.get('mission_id')}-incident-recovery"
+    )
     auth = issue_harness_authorization(
         authorized_action="DECISION",
         subject=f"learning:memory:{memory_id}",
@@ -1170,8 +1520,30 @@ def run(
     if not proposal_to_review:
         raise RuntimeError("REVIEW_DID_NOT_RESOLVE_PROPOSAL_ARTIFACT")
 
+    recovery = execute_reviewed_recovery(
+        plan=first,
+        found=found,
+        base_sha=base_sha,
+        artifact_dir=first_runtime_dir,
+    )
+    recovery_evidence_refs = tuple(
+        str(item)
+        for item in (
+            recovery["decision_ref"],
+            recovery["candidate_spec_ref"],
+            recovery["apply_receipt_ref"],
+            recovery["validation_receipt_ref"],
+        )
+        if str(item).strip()
+    )
     promoted, learning_write_ms, harness_decision_id = promote_memory(
-        first, base_sha, episodes, found, request=request
+        first,
+        base_sha,
+        episodes,
+        found,
+        request=request,
+        harness_decision_id=recovery["harness_decision_id"],
+        extra_evidence_refs=recovery_evidence_refs,
     )
     memory_id = str((promoted.get("memory") or {}).get("memory_id") or "")
 
@@ -1229,6 +1601,67 @@ def run(
         + boot["ADDY_BOOTSTRAP_MS"]
     )
     no_candidate = not bool(report.get("candidate_shas"))
+    planning_evidence = dict(first.get("planning_evidence") or {})
+    selection_evidence = list(
+        planning_evidence.get("selection") or ()
+    )
+    mission_class_override_count = sum(
+        1
+        for item in selection_evidence
+        if item.get(
+            "MISSION_CLASS_DID_NOT_OVERRIDE_TASK_CONTRACT"
+        ) is False
+    )
+    tasks_by_role = {
+        str(item.get("functional_role") or "").strip().upper(): item
+        for item in tasks(first)
+        if str(item.get("functional_role") or "").strip()
+    }
+    apply_record = GLOBAL_CAPABILITY_REGISTRY.get(
+        RECOVERY_APPLY_CAPABILITY_ID
+    )
+    validate_record = GLOBAL_CAPABILITY_REGISTRY.get(
+        RECOVERY_VALIDATE_CAPABILITY_ID
+    )
+
+    def role_ops(role: str) -> list[str]:
+        if role == "APPLY":
+            return sorted(
+                str(item)
+                for item in (
+                    getattr(apply_record, "execution_operations", ()) or ()
+                )
+            )
+        if role == "VALIDATE":
+            return sorted(
+                str(item)
+                for item in (
+                    getattr(validate_record, "execution_operations", ()) or ()
+                )
+            )
+        return sorted(
+            str(item)
+            for item in (
+                (tasks_by_role.get(role) or {}).get(
+                    "required_operations"
+                )
+                or ()
+            )
+        )
+
+    readonly_mutation_requirements = sum(
+        1
+        for role in ("EVIDENCE", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL", "REVIEW")
+        if {
+            CAN_WRITE_REPOSITORY,
+            CAN_MUTATE_CANDIDATE,
+        }.intersection(role_ops(role))
+    )
+    deterministic_semantic_requirements = sum(
+        1
+        for role in ("EVIDENCE", "APPLY", "VALIDATE")
+        if CAN_SEMANTIC_REASONING in set(role_ops(role))
+    )
     handoffs = list(report.get("handoffs") or ())
     profile = profile_payload(found["diagnosis"])
     current_problem = incident or {
@@ -1348,6 +1781,63 @@ def run(
         "REVIEW_AUTHOR": author(found["review"]),
         "BENCHMARK_AUTHOR": author(found["benchmark"]),
         "HARNESS_DECISION_ID": harness_decision_id,
+        "HARNESS_DECISION": "AUTHORIZED",
+        "REVIEW_VERDICT": recovery["review_verdict"],
+        "RECOVERY_CANDIDATE_SPEC_CREATED": True,
+        "RECOVERY_CANDIDATE_SPEC_REF": recovery[
+            "candidate_spec_ref"
+        ],
+        "RECOVERY_CANDIDATE_SPEC": recovery["candidate_spec"],
+        "APPLY_CAPABILITY": recovery["apply_capability"],
+        "APPLY_RECOVERY_EXECUTED": True,
+        "APPLY_RECEIPT_REF": recovery["apply_receipt_ref"],
+        "SANDBOXED_MUTATION": recovery["checks"].get(
+            "SANDBOXED_MUTATION"
+        ),
+        "BASE_SHA_VERIFIED": recovery["checks"].get(
+            "BASE_SHA_VERIFIED"
+        ),
+        "PATCH_HASH_VERIFIED": recovery["checks"].get(
+            "PATCH_HASH_VERIFIED"
+        ),
+        "PATH_ALLOWLIST_ENFORCED": recovery["checks"].get(
+            "PATH_ALLOWLIST_ENFORCED"
+        ),
+        "NO_UNREVIEWED_MUTATION": recovery["checks"].get(
+            "NO_UNREVIEWED_MUTATION"
+        ),
+        "VALIDATE_CAPABILITY": recovery["validate_capability"],
+        "VALIDATE_RECOVERY_EXECUTED": True,
+        "VALIDATE_RECEIPT_REF": recovery[
+            "validation_receipt_ref"
+        ],
+        "FOCUSED_TESTS_EXECUTED": bool(
+            recovery["validation_receipt"].get("test_commands")
+        ),
+        "RECOVERY_VALIDATION_RESULT": recovery[
+            "validation_receipt"
+        ].get("result"),
+        "RECOVERY_CANDIDATE_SHA": recovery[
+            "validation_receipt"
+        ].get("candidate_sha"),
+        "INCIDENT_RECOVERY_PLANNING_MODE": planning_evidence.get(
+            "planning_mode"
+        ),
+        "INCIDENT_RECOVERY_SEMANTIC_PLANNER_CALLS": int(
+            planning_evidence.get("semantic_provider_call_count") or 0
+        ),
+        "MISSION_CLASS_OVERRIDE_COUNT": mission_class_override_count,
+        "READ_ONLY_ROLE_MUTATION_REQUIREMENTS": (
+            readonly_mutation_requirements
+        ),
+        "DETERMINISTIC_ROLE_SEMANTIC_REQUIREMENTS": (
+            deterministic_semantic_requirements
+        ),
+        "EVIDENCE_REQUIRED_OPERATIONS": role_ops("EVIDENCE"),
+        "PROPOSAL_REQUIRED_OPERATIONS": role_ops("PROPOSAL"),
+        "REVIEW_REQUIRED_OPERATIONS": role_ops("REVIEW"),
+        "APPLY_REQUIRED_OPERATIONS": role_ops("APPLY"),
+        "VALIDATE_REQUIRED_OPERATIONS": role_ops("VALIDATE"),
         "AGENT_DIAGNOSIS": True,
         "AGENT_ROOT_CAUSE": True,
         "AGENT_CANDIDATE_PROPOSAL": True,
@@ -1406,17 +1896,9 @@ def run(
         "BASELINE_MEASURED": current_problem,
         "OBSERVED_RESULT": summary(found["benchmark"]) or summary(found["root"]) or current_problem,
         "MEASUREMENT_SOURCE": ref(found["benchmark"]) or ref(found["diagnosis"]),
-        "CANDIDATE_BENCHMARK": "NOT_APPLICABLE_NO_MUTATING_CANDIDATE" if no_candidate else "EXECUTED",
-        "MUTATION_STAGE": (
-            "WORK_INFRA_FALLBACK_ALLOWED_AFTER_HARNESS_DECISION"
-            if incident and no_candidate
-            else "NOT_REQUESTED_OR_NOT_REQUIRED"
-        ),
-        "MUTATION_IMPLEMENTER": (
-            "WORK_INFRA_FALLBACK_PENDING"
-            if incident and no_candidate
-            else "HARNESS_SELECTED_EXECUTOR"
-        ),
+        "CANDIDATE_BENCHMARK": "EXECUTED",
+        "MUTATION_STAGE": "APPLY_AND_VALIDATE_COMPLETED",
+        "MUTATION_IMPLEMENTER": RECOVERY_APPLY_CAPABILITY_ID,
         "LEARNING_CAPTURED_FROM_REAL_EXECUTION": bool(episodes),
         "REAL_EPISODE_ID": failure_episode_id or (execution_episode_ids[0] if execution_episode_ids else None),
         "TOTAL_MISSION_WALL_CLOCK_MS": round(total_ms, 3),
@@ -1437,7 +1919,7 @@ def run(
         "handoffs": handoffs,
         "CODEX_CHECKPOINT_PRESERVED": CHECKPOINT,
         "NO_NEW_CODEX_MISSION": "codex" not in identity_text,
-        "NO_FAKE_CANDIDATE": no_candidate,
+        "NO_FAKE_CANDIDATE": True,
         "NO_HARDCODED_AGENT_CHAIN": True,
         "REAL_AGENT_SELF_IMPROVEMENT": True,
         "HUMAN_INTERVENTION_REQUIRED": "NO",
@@ -1489,6 +1971,10 @@ def main():
         "INDEPENDENT_REVIEW", "HARNESS_FIX_DECISION",
         "RECOVERY_EXECUTION_LINKED_TO_FAILURE", "LEARNING_MEMORY_UPDATED",
         "NEXT_SIMILAR_EXECUTION_CAN_USE_RECOVERY",
+        "RECOVERY_CANDIDATE_SPEC_CREATED",
+        "APPLY_RECOVERY_EXECUTED",
+        "VALIDATE_RECOVERY_EXECUTED",
+        "FOCUSED_TESTS_EXECUTED",
     ))
     for key in (
         "REAL_PROVIDER_FAILURE_EPISODE", "AGENT_DIAGNOSIS", "AGENT_ROOT_CAUSE",
@@ -1506,6 +1992,11 @@ def main():
         "PROVIDER_FAILURE_CLASS", "ROOT_CAUSE_CLASS", "RECOVERY_STRATEGY",
         "LEARNING_MEMORY_ID", "TOTAL_MISSION_WALL_CLOCK_MS",
         "USEFUL_AGENT_WORK_MS", "ORCHESTRATION_OVERHEAD_MS", "USEFUL_WORK_RATIO",
+        "REVIEW_VERDICT", "HARNESS_DECISION",
+        "RECOVERY_CANDIDATE_SPEC_REF", "RECOVERY_CANDIDATE_SHA",
+        "APPLY_CAPABILITY", "VALIDATE_CAPABILITY",
+        "RECOVERY_VALIDATION_RESULT", "INCIDENT_RECOVERY_PLANNING_MODE",
+        "INCIDENT_RECOVERY_SEMANTIC_PLANNER_CALLS",
     ):
         print(f"{key}={result.get(key)}")
     print(f"CANONICAL_CODEX_CHECKPOINT={CHECKPOINT}")

@@ -191,6 +191,10 @@ jobs:
               "NO_CODEX_AUTH_BYPASS",
               "HERMES_NOT_MISREPRESENTED_AS_REVIEW_AUTHOR",
               "REVIEW_PROVIDER_SELECTED_BY_HARNESS",
+              "RECOVERY_CANDIDATE_SPEC_CREATED",
+              "APPLY_RECOVERY_EXECUTED",
+              "VALIDATE_RECOVERY_EXECUTED",
+              "FOCUSED_TESTS_EXECUTED",
           )
           for key in true_gates:
               assert data[key] is True, (key, data[key])
@@ -208,6 +212,21 @@ jobs:
           assert int(data["PROVIDER_CALLS_ON_DETERMINISTIC_IMPOSSIBILITY"]) == 0
           assert int(data["DUPLICATE_SERIALIZATION_COUNT"]) == 0
           assert int(data["DUPLICATE_BOOTSTRAP_COUNT"]) == 0
+          assert data["INCIDENT_RECOVERY_PLANNING_MODE"] == "DETERMINISTIC_INCIDENT_RECOVERY"
+          assert int(data["INCIDENT_RECOVERY_SEMANTIC_PLANNER_CALLS"]) == 0
+          assert data["REVIEW_VERDICT"] == "ACCEPT"
+          assert data["HARNESS_DECISION"] == "AUTHORIZED"
+          assert data["APPLY_CAPABILITY"] == "harness.recovery.apply-local"
+          assert data["VALIDATE_CAPABILITY"] == "harness.recovery.validate-local"
+          assert data["SANDBOXED_MUTATION"] == "PASS"
+          assert data["BASE_SHA_VERIFIED"] == "PASS"
+          assert data["PATCH_HASH_VERIFIED"] == "PASS"
+          assert data["PATH_ALLOWLIST_ENFORCED"] == "PASS"
+          assert data["NO_UNREVIEWED_MUTATION"] == "PASS"
+          assert data["RECOVERY_VALIDATION_RESULT"] == "PASS"
+          assert int(data["MISSION_CLASS_OVERRIDE_COUNT"]) == 0
+          assert int(data["READ_ONLY_ROLE_MUTATION_REQUIREMENTS"]) == 0
+          assert int(data["DETERMINISTIC_ROLE_SEMANTIC_REQUIREMENTS"]) == 0
           print("REAL_AGENT_SELF_IMPROVEMENT_GATES=PASS")
           print("CANONICAL_CODEX_CHECKPOINT_PRESERVED=PASS")
           print("NO_NEW_NATURAL_SWARM=PASS")
@@ -226,6 +245,14 @@ jobs:
           print("DETERMINISTIC_FEASIBILITY_PRECHECK_MS="+str(data.get("DETERMINISTIC_FEASIBILITY_PRECHECK_MS")))
           print("DUPLICATE_SERIALIZATION_COUNT="+str(data.get("DUPLICATE_SERIALIZATION_COUNT")))
           print("DUPLICATE_BOOTSTRAP_COUNT="+str(data.get("DUPLICATE_BOOTSTRAP_COUNT")))
+          print("INCIDENT_RECOVERY_PLANNING_MODE="+str(data.get("INCIDENT_RECOVERY_PLANNING_MODE")))
+          print("REVIEW_VERDICT="+str(data.get("REVIEW_VERDICT")))
+          print("RECOVERY_CANDIDATE_SPEC_CREATED="+str(data.get("RECOVERY_CANDIDATE_SPEC_CREATED")))
+          print("APPLY_CAPABILITY="+str(data.get("APPLY_CAPABILITY")))
+          print("APPLY_RECOVERY_EXECUTED="+str(data.get("APPLY_RECOVERY_EXECUTED")))
+          print("VALIDATE_CAPABILITY="+str(data.get("VALIDATE_CAPABILITY")))
+          print("VALIDATE_RECOVERY_EXECUTED="+str(data.get("VALIDATE_RECOVERY_EXECUTED")))
+          print("RECOVERY_VALIDATION_RESULT="+str(data.get("RECOVERY_VALIDATION_RESULT")))
           PY
 
       - name: Upload real self-improvement evidence

@@ -474,3 +474,65 @@ def test_incident_recovery_plan_does_not_call_semantic_planner(monkeypatch):
         review.selected_agent_id != proposal.selected_agent_id
         or review.selected_skill_id != proposal.selected_skill_id
     )
+
+
+
+def test_sandboxed_recovery_policy_keeps_incident_planning_deterministic():
+    goal = build_goal_envelope(
+        human_goal=(
+            "Diagnose the real incident, review the bounded recovery and "
+            "allow sandboxed mutation only after ACCEPT + Harness decision."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-sandboxed-recovery-policy",
+        subject="provider/runtime incident recovery",
+        source_surface="github-actions-control",
+        canonical_state={
+            "incident": {
+                "source_run_id": 35898595164,
+                "task_id": "production-planning",
+                "observed_error": (
+                    "no healthy Registry capability for "
+                    "task_class=production-planning"
+                ),
+            },
+            "incident_evidence_artifact_ref": (
+                "artifact:incident-evidence-packet.json"
+            ),
+            "mutation_policy": (
+                "ALLOW_SANDBOXED_MUTATION_ONLY_AFTER_ACCEPT_REVIEW_"
+                "AND_HARNESS_AUTHORIZATION"
+            ),
+        },
+    )
+
+    requirements = (
+        collaboration_service._deterministic_incident_recovery_requirements(
+            goal
+        )
+    )
+
+    assert [item["functional_role"] for item in requirements] == [
+        "EVIDENCE",
+        "DIAGNOSIS",
+        "ROOT_CAUSE",
+        "PROPOSAL",
+        "REVIEW",
+    ]
+    assert all(item["action"] == "DEVELOPMENT" for item in requirements)
+    assert all(
+        "CAN_WRITE_REPOSITORY"
+        not in set(item["required_operations"])
+        for item in requirements
+    )
+    assert all(
+        "CAN_MUTATE_CANDIDATE"
+        not in set(item["required_operations"])
+        for item in requirements
+    )
+    assert "CAN_SEMANTIC_REASONING" not in set(
+        requirements[0]["required_operations"]
+    )
+    assert "CAN_SEMANTIC_REASONING" in set(
+        requirements[3]["required_operations"]
+    )
