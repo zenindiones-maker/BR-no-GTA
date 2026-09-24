@@ -116,6 +116,25 @@ def capture_canonical_execution_episode(
         raise ValueError("observed execution requires evidence refs")
 
     routing = routing_decision.to_dict()
+    result_payload = (
+        dict(canonical.result)
+        if isinstance(canonical.result, Mapping)
+        else {}
+    )
+    provider_attempts = [
+        dict(item)
+        for item in (result_payload.get("provider_attempts") or ())
+        if isinstance(item, Mapping)
+    ]
+    failure_class = str(
+        result_payload.get("FAILURE_CLASS")
+        or result_payload.get("failure_class")
+        or ((canonical.error or {}).get("error_type") if canonical.error else "")
+        or ""
+    ).strip() or None
+    agent_instance_id = str(
+        result_payload.get("agent_instance_id") or ""
+    ).strip() or None
     learning_context = dict(routing_decision.policy_metadata.get("learning_context") or {})
     evidence = tuple(dict.fromkeys([
         *evidence_refs,
@@ -150,6 +169,14 @@ def capture_canonical_execution_episode(
             "receipt_status": receipt_status,
             "exit_code": exit_code,
             "returned_to_harness": True,
+            "AGENT_INSTANCE_ID": agent_instance_id,
+            "PROVIDER_ID": str(
+                receipt.get("provider") or canonical.provider or ""
+            ) or None,
+            "MODEL_ID": str(canonical.model or "") or None,
+            "FAILURE_CLASS": failure_class,
+            "ROUTING_ID": str(canonical.routing_id or "") or None,
+            "PROVIDER_ATTEMPTS": provider_attempts,
         },
         outcome_evidence=evidence,
         skill_id=str(receipt.get("skill_id") or "") or None,
@@ -177,6 +204,7 @@ def capture_canonical_execution_episode(
         source_versions=dict(source_versions or {}),
         lineage={
             "mission_id": str(receipt["mission_id"]),
+            "agent_instance_id": agent_instance_id,
             "authorization_id": str(canonical.authorization_id),
             "routing_id": str(canonical.routing_id),
             "harness_decision_id": str(canonical.harness_decision_id),
