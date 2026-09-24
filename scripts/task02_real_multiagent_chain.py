@@ -42,14 +42,13 @@ def main():
  def runner(*,spec,board,task_mapping,profiles):
   broker=HermesHarnessCapabilityBroker(spec=spec,parent_authorization=auth,board=board,task_mapping=task_mapping,artifact_dir=x.artifact_dir);holder["broker"]=broker
   receipts={}
-  # Agent Office itself provides real parallelism only within one execution; Hermes level nodes are coordinated concurrently here.
-  import concurrent.futures
-  def execute(tid):
+  # Hermes Kanban board mutation is serialized: its SQLite adapter is the canonical
+  # durable coordinator and is not declared thread-safe. Do not fabricate parallelism.
+  for tid in scopes:
    rid=_claim(board,task_mapping,profiles,tid)
    row=broker.execute_delegated_capability(task_id=tid,capability_id=CAP,payload={"goal_id":goal,"mission_id":mission,"task_id":tid,"task_class":"task02-deterministic-evidence","task":spec.task(tid).objective,"base_sha":base,"branch":"work/gate6f-analytics-learning","read_set":list(spec.task(tid).read_scope),"write_set":[],"allowed_tools":["git"],"input_artifact_refs":[]})
-   _done(board,task_mapping,tid,rid,"real Agent Office deterministic worker completed",{"evidence_ref":row["evidence_ref"]});return tid,row
-  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-   for tid,row in [f.result() for f in [pool.submit(execute,t) for t in scopes]]: receipts[tid]=_artifact_receipt(row,tid)
+   _done(board,task_mapping,tid,rid,"real Agent Office deterministic worker completed",{"evidence_ref":row["evidence_ref"]})
+   receipts[tid]=_artifact_receipt(row,tid)
   for src in scopes: broker.submit_handoff(from_task_id=src,to_task_id="failure-fingerprint",evidence_refs=[receipts[src]["task_result_ref"]],summary="Exact producer TaskResultEnvelope handed to failure-fingerprint.")
   rid=_claim(board,task_mapping,profiles,"failure-fingerprint"); ctx=broker.parent_context(task_id="failure-fingerprint")
   row=broker.execute_delegated_capability(task_id="failure-fingerprint",capability_id=CAP,payload={"goal_id":goal,"mission_id":mission,"task_id":"failure-fingerprint","task_class":"task02-fingerprint","task":spec.task("failure-fingerprint").objective,"base_sha":base,"branch":"work/gate6f-analytics-learning","read_set":["app/services"],"write_set":[],"allowed_tools":["git"],"input_artifact_refs":[p["task_result_ref"] for p in ctx["parents"]]});_done(board,task_mapping,"failure-fingerprint",rid,"consumed four exact upstream TaskResultEnvelope refs");receipts["failure-fingerprint"]=_artifact_receipt(row,"failure-fingerprint")
