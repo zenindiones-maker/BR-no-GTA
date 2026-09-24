@@ -271,9 +271,19 @@ def _generate_ai_structure(
         target_duration_seconds
     )
     previous_structure: dict[str, Any] | None = None
+    previous_format_error: AIProviderError | None = None
 
     for attempt in range(1, MAX_EDITORIAL_GENERATION_ATTEMPTS + 1):
         attempt_prompt = prompt
+        if attempt > 1 and previous_format_error is not None:
+            attempt_prompt += (
+                "\n\nCORREÇÃO OBRIGATÓRIA DE FORMATO JSON\n"
+                "- A resposta anterior não pôde ser validada como JSON estrito.\n"
+                "- Retorne SOMENTE um objeto JSON válido, sem markdown, cercas ou prosa.\n"
+                "- Use aspas duplas válidas em todas as strings e chaves.\n"
+                "- Escape barras invertidas e caracteres especiais conforme JSON.\n"
+                "- Preserve exatamente as restrições factuais, editoriais e de duração.\n"
+            )
         if (
             attempt > 1
             and previous_structure is not None
@@ -296,13 +306,20 @@ def _generate_ai_structure(
 
         response = ai_provider.generate(attempt_prompt)
 
-        if not response.text or not response.text.strip():
-            raise AIProviderError(
-                "AI provider returned an empty response."
-            )
+        try:
+            if not response.text or not response.text.strip():
+                raise AIProviderError(
+                    "AI provider returned an empty response."
+                )
+            parsed = _parse_ai_json_response(response.text)
+            structure = _validate_ai_structure(parsed)
+        except AIProviderError as exc:
+            previous_format_error = exc
+            if attempt >= MAX_EDITORIAL_GENERATION_ATTEMPTS:
+                raise
+            continue
 
-        parsed = _parse_ai_json_response(response.text)
-        structure = _validate_ai_structure(parsed)
+        previous_format_error = None
         previous_structure = structure
 
         if target_words is None:

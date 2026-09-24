@@ -459,3 +459,97 @@ def test_longform_script_fails_closed_after_bounded_short_responses():
             target_duration_seconds=1200.0,
         )
     assert len(provider.prompts) == 2
+
+def test_longform_script_retries_once_after_invalid_json_format():
+    import json
+
+    from app.services.ai_provider import AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - longform formato json",
+        description="Pauta factual com material suficiente para análise detalhada.",
+        status="approved",
+        score=9.5,
+    )
+    long_body = " ".join(["evidencia"] * 335)
+    valid_long = {
+        "hook": " ".join(["evidencia"] * 80),
+        "introduction": " ".join(["evidencia"] * 120),
+        "development": [
+            {"heading": f"Bloco {index}", "body": long_body}
+            for index in range(8)
+        ],
+        "conclusion": " ".join(["evidencia"] * 120),
+        "cta": " ".join(["evidencia"] * 40),
+    }
+
+    class MalformedThenValidProvider:
+        def __init__(self):
+            self.prompts = []
+            self.calls = 0
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            self.calls += 1
+            if self.calls == 1:
+                return AIResponse(
+                    text=(
+                        '{"hook":"quebra \\q json","introduction":"intro",'
+                        '"development":[],"conclusion":"fim","cta":"cta"}'
+                    )
+                )
+            return AIResponse(
+                text=json.dumps(valid_long, ensure_ascii=False)
+            )
+
+    provider = MalformedThenValidProvider()
+    structure = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        target_duration_seconds=1200.0,
+    )
+
+    assert provider.calls == 2
+    assert (
+        "CORREÇÃO OBRIGATÓRIA DE FORMATO JSON"
+        in provider.prompts[1]
+    )
+    assert "Escape barras invertidas" in provider.prompts[1]
+    assert len(structure["development"]) == 8
+
+
+def test_invalid_json_still_fails_closed_after_bounded_format_retry():
+    from app.services.ai_provider import AIProviderError, AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - json inválido bounded",
+        description="Descrição factual válida.",
+        status="approved",
+        score=9.0,
+    )
+
+    class AlwaysMalformedProvider:
+        def __init__(self):
+            self.prompts = []
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text='{"hook":"quebra \\q json","development":[]}'
+            )
+
+    provider = AlwaysMalformedProvider()
+    with pytest.raises(AIProviderError, match="invalid JSON"):
+        generate_script_structure(
+            idea_id,
+            ai_provider=provider,
+            target_duration_seconds=1200.0,
+        )
+
+    assert len(provider.prompts) == 2
+    assert (
+        "CORREÇÃO OBRIGATÓRIA DE FORMATO JSON"
+        in provider.prompts[1]
+    )
