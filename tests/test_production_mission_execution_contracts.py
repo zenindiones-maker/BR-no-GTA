@@ -1036,4 +1036,3 @@ def test_longform_fallback_prefers_new_independent_source_families():
     assert urls[2].startswith("https://www.reddit.com/")
     assert "store.rockstargames.com" in urls[3]
     assert urls[-1].endswith("/second")
-
