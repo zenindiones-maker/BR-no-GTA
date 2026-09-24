@@ -409,7 +409,7 @@ def test_longform_script_retries_once_until_voice_b_duration_is_supported():
     assert "pelo menos 2640 palavras" in provider.prompts[0]
     assert "pelo menos 8 blocos" in provider.prompts[0]
     assert (
-        "CORREÇÃO OBRIGATÓRIA DE SUFICIÊNCIA EDITORIAL"
+        "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA"
         in provider.prompts[1]
     )
     assert len(structure["development"]) == 8
@@ -697,8 +697,8 @@ def test_longform_composes_distinct_bounded_passes_without_padding():
             "cta": " ".join(["cta"] * 20),
         }
 
-    first = structure("A", 300)
-    second = structure("B", 300)
+    first = structure("A", 330)
+    second = structure("B", 330)
 
     class ComplementaryProvider:
         def __init__(self):
