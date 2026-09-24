@@ -14,6 +14,7 @@ from app.database.queue_repository import (
     claim_queue_item_by_id,
     get_active_queue_item_by_idea,
     mark_queue_item_completed,
+    requeue_processing_queue_item_by_id,
 )
 from app.database.scripts_repository import get_script
 from app.services.ai_provider import AIProvider
@@ -178,29 +179,46 @@ def process_next_editorial_queue_item(
     if targeted_artifacts is not None and idea_id != targeted_artifacts.get("idea_id"):
         raise PermissionError("Targeted editorial claim resolved a different Idea")
 
-    if ai_provider is None:
-        if target_duration_seconds is None:
-            script_id = generate_and_save_script(idea_id)
+    try:
+        if ai_provider is None:
+            if target_duration_seconds is None:
+                script_id = generate_and_save_script(idea_id)
+            else:
+                script_id = generate_and_save_script(
+                    idea_id,
+                    editorial_context=editorial_context,
+                    target_duration_seconds=target_duration_seconds,
+                )
         else:
-            script_id = generate_and_save_script(
-                idea_id,
-                editorial_context=editorial_context,
-                target_duration_seconds=target_duration_seconds,
-            )
-    else:
-        if target_duration_seconds is None:
-            script_id = generate_and_save_script(
-                idea_id,
-                ai_provider=ai_provider,
-                editorial_context=editorial_context,
-            )
-        else:
-            script_id = generate_and_save_script(
-                idea_id,
-                ai_provider=ai_provider,
-                editorial_context=editorial_context,
-                target_duration_seconds=target_duration_seconds,
-            )
+            if target_duration_seconds is None:
+                script_id = generate_and_save_script(
+                    idea_id,
+                    ai_provider=ai_provider,
+                    editorial_context=editorial_context,
+                )
+            else:
+                script_id = generate_and_save_script(
+                    idea_id,
+                    ai_provider=ai_provider,
+                    editorial_context=editorial_context,
+                    target_duration_seconds=target_duration_seconds,
+                )
+    except Exception:
+        # A targeted longform generation may fail before any Script/ContentItem
+        # is persisted (for example, insufficient factual evidence). Release
+        # only this known processing claim so the same Harness-authorized Goal
+        # can be retried after bounded evidence recovery. Never requeue after
+        # downstream editorial persistence has started.
+        if targeted_artifacts is not None:
+            if not requeue_processing_queue_item_by_id(
+                queue_id,
+                expected_idea_id=idea_id,
+            ):
+                raise RuntimeError(
+                    "Targeted editorial queue claim could not be safely "
+                    "requeued after script generation failure"
+                )
+        raise
 
     if not _positive_int(script_id):
         raise RuntimeError(

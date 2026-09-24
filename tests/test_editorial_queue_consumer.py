@@ -391,3 +391,56 @@ def test_editorial_rejection_has_no_persistent_mutation():
     finally:
         for x in reversed(patches): x.stop()
     assert all(x.call_count == 0 for x in mocks)
+
+def test_targeted_script_generation_failure_requeues_exact_processing_claim():
+    authorization = issue_harness_authorization(
+        authorized_action="EDITORIAL",
+        subject="action:EDITORIAL",
+        lineage={
+            "goal_id": "goal-targeted-retry",
+            "target_duration_seconds": 1200.0,
+        },
+    )
+    context = authorization_to_context(authorization)
+    queue_item = {
+        "id": 101,
+        "idea_id": 202,
+        "status": "processing",
+    }
+
+    with (
+        patch(
+            "app.services.editorial_queue_consumer._resolve_targeted_editorial_state",
+            return_value=({"idea_id": 202}, None),
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.get_active_queue_item_by_idea",
+            return_value={"id": 101, "idea_id": 202, "status": "queued"},
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.claim_queue_item_by_id",
+            return_value=queue_item,
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.generate_and_save_script",
+            side_effect=RuntimeError(
+                "AI response cannot sustain requested long-form duration without padding."
+            ),
+        ),
+        patch(
+            "app.services.editorial_queue_consumer.requeue_processing_queue_item_by_id",
+            return_value=True,
+        ) as requeue,
+        patch(
+            "app.services.editorial_queue_consumer.mark_queue_item_completed",
+        ) as complete,
+    ):
+        with pytest.raises(RuntimeError, match="cannot sustain requested long-form"):
+            _process_next_editorial_queue_item(
+                execution_context=context,
+                goal_id="goal-targeted-retry",
+                target_duration_seconds=None,
+            )
+
+    requeue.assert_called_once_with(101, expected_idea_id=202)
+    complete.assert_not_called()
