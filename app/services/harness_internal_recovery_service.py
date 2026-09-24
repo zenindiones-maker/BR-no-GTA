@@ -157,6 +157,23 @@ def classify_internal_failure(
     )):
         failure_class = PROVIDER_TRANSIENT
     elif (
+        any(marker in folded for marker in (
+            "nvidia nim",
+            "semantic provider",
+            "provider",
+            "model",
+        ))
+        and any(marker in folded for marker in (
+            "timeout",
+            "timed out",
+            "temporar",
+            "rate limit",
+            "http 429",
+            "http 5",
+        ))
+    ):
+        failure_class = PROVIDER_TRANSIENT
+    elif (
         "agenttool" in folded
         and any(marker in folded for marker in ("timeout", "transient"))
     ):
