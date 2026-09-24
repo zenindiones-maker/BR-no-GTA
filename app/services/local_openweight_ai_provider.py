@@ -127,15 +127,18 @@ class OllamaLocalAIProvider:
                 num_predict=num_predict,
             )
         elif bounded_agent_turn:
-            # The typed AgentTurn envelope is intentionally compact. Use the
-            # smallest existing profiled output budget that can carry the
-            # diagnosis/tool request, and size KV context from the actual prompt.
-            # This changes work, not the execution timeout or agent-turn budget.
-            num_predict = 512
-            num_ctx, prompt_token_estimate = _semantic_context_window(
-                value,
-                num_predict=num_predict,
-            )
+            # Typed recovery envelopes are compact and the pinned Qwen tokenizer
+            # was observed to fit this prompt below the conservative planner
+            # estimator. Keep this recovery profile inside the existing profiled
+            # output budgets and the smallest bounded KV bucket.
+            num_predict = 256
+            prompt_token_estimate = max(1, (len(value) + 3) // 4)
+            required = prompt_token_estimate + num_predict + 512
+            if required > 8192:
+                raise AIProviderError(
+                    "Typed agent-turn prompt exceeds bounded local recovery context."
+                )
+            num_ctx = 8192
         else:
             # Preserve established behavior for other Harness callers.
             num_predict = 1800
