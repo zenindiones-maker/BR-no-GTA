@@ -179,6 +179,7 @@ class HermesMissionExecutionSpec:
     max_child_tasks: int = 8
     profile_roles: dict[str, str] = field(default_factory=dict)
     input_refs: tuple[str, ...] = ()
+    allowed_child_capability_ids: tuple[str, ...] = ()
     authority: str = HERMES_AUTHORITY
 
     def __post_init__(self) -> None:
@@ -259,6 +260,17 @@ class HermesMissionExecutionSpec:
         elif not set(plan_side_effects) <= set(self.allowed_side_effects):
             raise PermissionError("DelegationEnvelope side effects exclude planned task effects")
 
+        child_caps = tuple(dict.fromkeys(
+            str(item).strip()
+            for item in self.allowed_child_capability_ids
+            if str(item).strip()
+        ))
+        object.__setattr__(
+            self,
+            "allowed_child_capability_ids",
+            child_caps,
+        )
+
         unknown_role_tasks = set(self.profile_roles) - allowed_tasks
         if unknown_role_tasks:
             raise PermissionError(f"profile role assigned outside allowed task scope: {sorted(unknown_role_tasks)}")
@@ -280,6 +292,7 @@ class HermesMissionExecutionSpec:
         human_gates: tuple[str, ...] | list[str] = (),
         max_child_depth: int = 1,
         max_child_tasks: int | None = None,
+        allowed_child_capability_ids: tuple[str, ...] | list[str] = (),
     ) -> "HermesMissionExecutionSpec":
         task_ids = tuple(task.task_id for task in collaboration_plan.tasks)
         capability_ids = tuple(dict.fromkeys(task.capability_id for task in collaboration_plan.tasks))
@@ -335,6 +348,11 @@ class HermesMissionExecutionSpec:
             ),
             profile_roles=dict(profile_roles or {}),
             input_refs=_string_tuple(input_refs, "input_refs", allow_empty=True),
+            allowed_child_capability_ids=_string_tuple(
+                allowed_child_capability_ids,
+                "allowed_child_capability_ids",
+                allow_empty=True,
+            ),
         )
 
     def task(self, task_id: str):
@@ -365,7 +383,10 @@ class HermesMissionExecutionSpec:
         if existing_child_count >= self.max_child_tasks:
             raise PermissionError("Hermes child task count exceeds DelegationEnvelope")
         capability_id = _required(child.get("capability_id"), "child.capability_id")
-        if capability_id not in self.allowed_capability_ids:
+        if capability_id not in {
+            *self.allowed_capability_ids,
+            *self.allowed_child_capability_ids,
+        }:
             raise PermissionError("Hermes child capability is outside allowlist")
         action = _required(
             child.get("authorized_action") or child.get("action"),

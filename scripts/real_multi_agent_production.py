@@ -1534,6 +1534,11 @@ def run(
         input_refs=(f"git:{base_sha}",),
         max_child_depth=2,
         max_child_tasks=8,
+        allowed_child_capability_ids=(
+            # Explicit Harness lease for the bounded long-form recovery path.
+            # The broker still routes/authorizes each child through Registry.
+            "gta6.fact-check",
+        ),
     )
 
     def hermes_runner(*, spec, board, task_mapping, profiles):

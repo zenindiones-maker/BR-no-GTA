@@ -248,3 +248,84 @@ def test_agent_context_compression_preserves_direct_dependency_lineage():
     assert handoffs[0]["content_sha256"] == "a" * 64
     assert "result" not in handoffs[0]
     assert compressed["dependency_context_sha256"] == "c" * 64
+
+def test_explicit_child_capability_lease_preserves_harness_authority():
+    initialize_schema()
+    plan = _plan()
+    decision = route_harness_request(
+        HarnessRoutingRequest(
+            intent="execute pinned Hermes collaboration runtime",
+            authorized_action="EXECUTION",
+            domain="collaboration",
+            required_capability_id=HERMES_RUNTIME_CAPABILITY_ID,
+            fallback_allowed=False,
+            learning_required=False,
+        )
+    )
+    auth = issue_harness_authorization(
+        authorized_action="EXECUTION",
+        subject=f"capability:{HERMES_RUNTIME_CAPABILITY_ID}",
+        harness_decision_id="decision-hermes-child-test",
+        execution_id="execution-hermes-child-test",
+        lineage={
+            "routing_id": decision.routing_id,
+            "capability_id": HERMES_RUNTIME_CAPABILITY_ID,
+            "selected_executor_binding": decision.selected_executor_binding,
+        },
+    )
+    spec = HermesMissionExecutionSpec.from_plan(
+        collaboration_plan=plan,
+        harness_decision_id=auth.harness_decision_id,
+        authorization_id=auth.authorization_id,
+        base_sha="b" * 40,
+        expires_at="2099-01-01T00:00:00+00:00",
+        allowed_child_capability_ids=("gta6.research",),
+        max_child_depth=2,
+    )
+    assert spec.allowed_child_capability_ids == ("gta6.research",)
+    parent = plan.tasks[0]
+    child = spec.validate_child_task(
+        parent_task_id=parent.task_id,
+        parent_envelope=parent,
+        depth=1,
+        existing_child_count=0,
+        child={
+            "task_id": "verify-child",
+            "capability_id": "gta6.research",
+            "action": parent.action,
+            "objective": parent.objective + " with additional bounded evidence",
+            "task_class": parent.task_class,
+            "expected_output": "bounded research evidence",
+            "acceptance_criteria": ("no authority expansion",),
+            "read_scope": list(parent.read_scope),
+            "write_scope": list(parent.write_scope),
+            "allowed_side_effects": list(parent.allowed_side_effects),
+            "time_budget_seconds": parent.time_budget_seconds,
+            "cost_budget": parent.cost_budget,
+            "context_budget_bytes": parent.context_budget_bytes,
+            "tool_budget": parent.tool_budget,
+            "retry_budget": 0,
+            "risk_side_effect_class": parent.risk_side_effect_class,
+            "evidence_contract": parent.evidence_contract,
+            "review_policy": parent.review_policy,
+        },
+    )
+    assert child.capability_id == "gta6.research"
+
+    with pytest.raises(PermissionError, match="outside allowlist"):
+        spec.validate_child_task(
+            parent_task_id=parent.task_id,
+            parent_envelope=parent,
+            depth=1,
+            existing_child_count=0,
+            child={
+                "task_id": "bad-child",
+                "capability_id": "youtube.upload-private",
+                "action": parent.action,
+                "objective": parent.objective + " unauthorized publication",
+                "task_class": parent.task_class,
+                "read_scope": [],
+                "write_scope": [],
+                "allowed_side_effects": [],
+            },
+        )
