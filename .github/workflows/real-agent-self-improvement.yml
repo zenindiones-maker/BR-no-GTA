@@ -483,6 +483,21 @@ jobs:
           echo "PREEXISTING_ALTERNATE_ROUTE_PROVIDER=${{ steps.provider_recovery.outputs.alternate_route_provider }}"
           echo "MATERIALIZE_CANONICAL_LOCAL_PROVIDER=${{ steps.provider_recovery.outputs.prepare_alt_provider }}"
 
+      - name: Set up Node 24 for bounded Codex CLI
+        if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Materialize bounded Codex CLI
+        if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
+        run: |
+          set -euo pipefail
+          export CODEX_HOME="$RUNNER_TEMP/br-codex-home"
+          echo "CODEX_HOME=$CODEX_HOME" >> "$GITHUB_ENV"
+          bash scripts/agent-tooling/bootstrap.sh codex
+          codex --version
+
       - name: Preflight existing codex-readonly semantic agent
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
         id: codex_semantic_preflight
