@@ -216,11 +216,21 @@ class OllamaLocalAIProvider:
                 f"Local Ollama provider is unavailable: {exc.reason}"
             ) from exc
         except (TimeoutError, OSError) as exc:
-            self.last_performance_metrics["latency_seconds"] = (
-                time.perf_counter() - started
-            )
+            latency = time.perf_counter() - started
+            self.last_performance_metrics["latency_seconds"] = latency
+            # A loopback Ollama socket timeout is an observed provider latency
+            # contract failure, not an opaque provider_error. Preserve it as
+            # structured retry/replan evidence so Harness can exhaust this
+            # provider/model pair and select another eligible zero-cost route.
             raise AIProviderError(
-                f"Local Ollama provider execution failed: {exc}"
+                f"Local Ollama provider execution failed: {exc}",
+                code="timeout",
+                retryable=True,
+                failure_pattern="local_inference_latency_contract_exceeded",
+                failure_stage="response_read",
+                transport="loopback_http",
+                response_present=False,
+                sanitized_reason="local_inference_latency_contract_exceeded",
             ) from exc
 
         try:
