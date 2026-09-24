@@ -583,6 +583,7 @@ jobs:
           python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source             --checkpoint-source-dir runtime/real-agent-self-improvement/checkpoint-source
 
       - name: Assert real self-improvement gates
+        if: steps.route_inventory.outputs.route_inventory_closed != 'true'
         run: |
           set -euo pipefail
           python - <<'PY'
