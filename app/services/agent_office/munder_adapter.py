@@ -88,10 +88,45 @@ def deterministic_read_only_worker(
     task: AgentOfficeTask,
     workspace: Path,
     timeout_seconds: float,
+    lease: DelegatedTaskLease | None = None,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     if timeout_seconds <= 0:
         raise TimeoutError("Agent Office time budget exhausted")
     started = time.perf_counter()
+    consumed_inputs: list[dict[str, Any]] = []
+    if task.input_artifact_refs:
+        if repository_root is None:
+            raise ValueError("deterministic worker requires repository_root to consume input artifacts")
+        root = repository_root.resolve()
+        for ref in task.input_artifact_refs:
+            normalized = str(ref).replace("\\", "/").strip()
+            if not normalized or normalized.startswith("artifact:") or normalized.startswith("/"):
+                raise ValueError(f"input artifact is not a materialized repository-relative ref: {normalized}")
+            target = (root / normalized).resolve()
+            try:
+                target.relative_to(root)
+            except ValueError as exc:
+                raise PermissionError("input artifact escaped repository root") from exc
+            if not target.is_file():
+                raise ValueError(f"input artifact is not materialized: {normalized}")
+            raw = target.read_bytes()
+            digest = sha256(raw).hexdigest()
+            parsed: Any = None
+            try:
+                parsed = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                parsed = None
+            consumed_inputs.append({
+                "artifact_ref": normalized,
+                "content_sha256": digest,
+                "bytes_read": len(raw),
+                "schema": parsed.get("schema") if isinstance(parsed, dict) else None,
+                "producer_task_id": parsed.get("task_id") if isinstance(parsed, dict) else None,
+            })
+    input_artifact_digest = sha256(
+        json.dumps(consumed_inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest() if consumed_inputs else None
     tracked = _git(workspace, "ls-files").stdout.splitlines()
     scopes = tuple(task.read_set or task.allowed_paths or (
         "app", "scripts", "tests", ".github/workflows", "config", "integrations"
@@ -182,7 +217,10 @@ def deterministic_read_only_worker(
             {"name": "write-scope-empty", "status": "PASS" if not task.write_set else "FAIL"},
         ],
         "usage": {"cost": 0.0, "tool_calls": 1},
+        "input_artifact_consumption": consumed_inputs,
         "analysis": {
+            "input_artifact_digest": input_artifact_digest,
+            "input_artifact_count": len(consumed_inputs),
             "metric_schema": "agent-office-repository-profile/v1",
             "tracked_file_count": len(tracked),
             "scoped_file_count": len(rows),
@@ -652,7 +690,10 @@ class MunderAdapter:
                             "runner_name": getattr(runner, "__name__", type(runner).__name__),
                         },
                     ) as attempt_span:
-                        if len(inspect.signature(runner).parameters) >= 4:
+                        parameter_count = len(inspect.signature(runner).parameters)
+                        if parameter_count >= 5:
+                            raw = runner(task, workspace, timeout_seconds, lease, repository_root)
+                        elif parameter_count >= 4:
                             raw = runner(task, workspace, timeout_seconds, lease)
                         else:
                             raw = runner(task, workspace, timeout_seconds)
