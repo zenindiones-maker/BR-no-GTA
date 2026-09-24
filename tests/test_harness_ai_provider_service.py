@@ -675,4 +675,3 @@ def test_resilient_provider_does_not_failover_on_malformed_structured_output(
         provider.generate("Teste")
     assert len(route_calls) == 1
     assert provider.last_attempts[0]["recoverable"] is False
-
