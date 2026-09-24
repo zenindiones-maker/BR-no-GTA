@@ -82,6 +82,7 @@ def youtube_department_records() -> tuple[CapabilityRecord, ...]:
                     CAN_CONSUME_ARTIFACT_REFS,
                     CAN_PRODUCE_ARTIFACT_REFS,
                 ),
+                execution_kind="SEMANTIC_REASONER",
             )
         )
     return tuple(records)

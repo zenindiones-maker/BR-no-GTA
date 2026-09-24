@@ -671,3 +671,9 @@ def test_production_semantic_contract_rejects_planner_capability_swaps():
         master,
         "production.render.execute",
     )
+
+def test_youtube_script_review_is_registered_as_semantic_reasoner():
+    record = GLOBAL_CAPABILITY_REGISTRY.get("youtube.department.script-review")
+    assert record is not None
+    assert record.resolved_execution_kind == "SEMANTIC_REASONER"
+    assert CAN_SEMANTIC_REASONING in set(record.execution_operations)
