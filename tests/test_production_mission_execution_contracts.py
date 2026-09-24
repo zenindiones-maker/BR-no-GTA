@@ -33,6 +33,7 @@ from scripts.real_multi_agent_production import (
     _bounded_youtube_semantic_context,
     _fresh_research_candidates,
     _is_longform_underdelivery_failure,
+    _longform_fallback_source_urls,
     _novelty_gate,
     _payload_for_task,
     _target_duration_seconds,
@@ -976,4 +977,62 @@ def test_web_source_statement_strips_script_shell_and_returns_grounded_sentence(
     assert "body{display:none}" not in lowered
     assert "costs $400" in lowered
     assert "does not include the game" in lowered
+
+def test_fresh_official_source_expands_into_distinct_atomic_findings():
+    evidence = {
+        "artifact_ref": "github-actions:official-longform",
+        "packet": {
+            "official_sources": [{
+                "resolved_url": "https://www.rockstargames.com/VI",
+                "content_excerpt": (
+                    "Coming November 19, 2026. "
+                    "An Extended Look is now playing with new GTA VI material. "
+                    "The Vintage Vice City Pack is a pre-order bonus inspired by classic Vice City. "
+                    "The Vice City Collection is a limited-edition collectible set inspired by Macca the Gator. "
+                    "Jason and Lucia are caught in a criminal conspiracy across Leonida. "
+                    "Grand Theft Auto VI: The Album features 34 original tracks for Vice City and Leonida."
+                ),
+            }],
+            "secondary_sources": [],
+        },
+    }
+
+    candidates = _fresh_research_candidates(evidence, known_ids=set())
+
+    assert len(candidates) >= 5
+    assert len({item["claim_id"] for item in candidates}) == len(candidates)
+    assert all(item["fact_check_result"] == "OFFICIAL_PRIMARY" for item in candidates)
+    assert any("34 original tracks" in item["statement"] for item in candidates)
+    assert any("criminal conspiracy" in item["statement"] for item in candidates)
+
+
+def test_longform_fallback_prefers_new_independent_source_families():
+    selected = [{
+        "source": "https://www.rockstargames.com/VI",
+        "fact_check_result": "OFFICIAL_PRIMARY",
+    }]
+    fresh = {
+        "packet": {
+            "official_sources": [
+                {"resolved_url": "https://store.rockstargames.com/game/buy-gta-vi"},
+            ],
+            "secondary_sources": [
+                {"url": "https://me.ign.com/ar/grand-theft-auto-vi/first"},
+                {"url": "https://me.ign.com/ar/grand-theft-auto-vi/second"},
+                {"url": "https://www.gamespot.com/articles/gta-6-current-report/"},
+                {"url": "https://www.reddit.com/r/GTA6/comments/current/"},
+            ],
+        }
+    }
+
+    urls = _longform_fallback_source_urls(
+        selected,
+        fresh,
+        excluded_source_urls=["https://www.rockstargames.com/VI"],
+    )
+
+    assert urls[0].startswith("https://me.ign.com/")
+    assert urls[1].startswith("https://www.gamespot.com/")
+    assert urls[2].startswith("https://www.reddit.com/")
+    assert "store.rockstargames.com" in urls[-1]
 

@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -362,11 +363,13 @@ def _fresh_research_candidates(
         excerpt = re.sub(
             r"\s+",
             " ",
-            str(
-                row.get("content_excerpt")
-                or row.get("summary")
-                or row.get("description")
-                or ""
+            html.unescape(
+                str(
+                    row.get("content_excerpt")
+                    or row.get("summary")
+                    or row.get("description")
+                    or ""
+                )
             ),
         ).strip()
         if not title and not excerpt:
@@ -375,39 +378,69 @@ def _fresh_research_candidates(
         if probe.startswith(("<!doctype", "<html", "<head", "<?xml")):
             return
 
-        statement = excerpt or title
-        if title and excerpt and title.casefold() not in excerpt.casefold():
-            statement = f"{title}: {excerpt}"
-        statement = statement[:1600].strip()
-        key = hashlib.sha256(
-            (statement + "|" + source).encode("utf-8")
-        ).hexdigest()[:20]
-        claim_id = f"fresh-{'official' if official else 'secondary'}-{key}"
-        if claim_id in seen:
-            return
-        seen.add(claim_id)
+        statements: list[str] = []
+        if official and excerpt:
+            official_text = re.sub(
+                r"(?is)<(script|style|noscript)\b[^>]*>.*?</\1>",
+                " ",
+                excerpt,
+            )
+            official_text = re.sub(r"(?s)<[^>]+>", " ", official_text)
+            official_text = re.sub(r"\s+", " ", official_text).strip()
+            for sentence in re.split(r"(?<=[.!?])\s+", official_text):
+                sentence = sentence.strip()
+                lowered = sentence.casefold()
+                if len(sentence) < 45:
+                    continue
+                if any(
+                    marker in lowered
+                    for marker in (
+                        "privacy cookie settings",
+                        "do not sell or share",
+                        "corporate privacy",
+                    )
+                ):
+                    continue
+                statements.append(sentence[:900].strip())
+                if len(statements) >= 8:
+                    break
+
+        if not statements:
+            statement = excerpt or title
+            if title and excerpt and title.casefold() not in excerpt.casefold():
+                statement = f"{title}: {excerpt}"
+            statements = [statement[:1600].strip()]
+
         refs = [item for item in (execution_ref, source) if item]
-        candidates.append({
-            "claim_id": claim_id,
-            "statement": statement,
-            "verification_status": "VERIFIED" if official else "PENDING",
-            "fact_check_result": (
-                "OFFICIAL_PRIMARY" if official else "PENDING_FACT_CHECK"
-            ),
-            "verification_basis": (
-                "OFFICIAL_PRIMARY" if official else "SOURCE_GROUNDED_SECONDARY"
-            ),
-            "source_type": (
-                "OFFICIAL_STATEMENT" if official else "SECONDARY_REPORT"
-            ),
-            "source": source,
-            "reference": source,
-            "timecode_or_section": None,
-            "confidence": 1.0 if official else 0.7,
-            "novelty": "FRESH_CLOUD_RESEARCH",
-            "how_used_in_video": "candidate longform editorial finding",
-            "evidence_refs": refs,
-        })
+        for statement in statements:
+            key = hashlib.sha256(
+                (statement + "|" + source).encode("utf-8")
+            ).hexdigest()[:20]
+            claim_id = f"fresh-{'official' if official else 'secondary'}-{key}"
+            if claim_id in seen:
+                continue
+            seen.add(claim_id)
+            candidates.append({
+                "claim_id": claim_id,
+                "statement": statement,
+                "verification_status": "VERIFIED" if official else "PENDING",
+                "fact_check_result": (
+                    "OFFICIAL_PRIMARY" if official else "PENDING_FACT_CHECK"
+                ),
+                "verification_basis": (
+                    "OFFICIAL_PRIMARY" if official else "SOURCE_GROUNDED_SECONDARY"
+                ),
+                "source_type": (
+                    "OFFICIAL_STATEMENT" if official else "SECONDARY_REPORT"
+                ),
+                "source": source,
+                "reference": source,
+                "timecode_or_section": None,
+                "confidence": 1.0 if official else 0.7,
+                "novelty": "FRESH_CLOUD_RESEARCH",
+                "how_used_in_video": "candidate longform editorial finding",
+                "evidence_refs": refs,
+            })
 
     for item in packet.get("official_sources") or ():
         if isinstance(item, dict):
@@ -494,15 +527,45 @@ def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
     )
 
 
+def _source_host_family(value: Any) -> str:
+    try:
+        host = (urlparse(str(value or "")).hostname or "").casefold()
+    except ValueError:
+        return ""
+    labels = [part for part in host.split(".") if part]
+    if len(labels) < 2:
+        return host
+    if (
+        len(labels) >= 3
+        and len(labels[-1]) == 2
+        and labels[-2] in {"co", "com", "org", "net"}
+    ):
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
 def _longform_fallback_source_urls(
     candidates: list[dict[str, Any]],
     fresh_recovery: dict[str, Any] | None,
+    *,
+    excluded_source_urls: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
-    urls: list[str] = []
+    excluded = {
+        _canonical_source_url(value)
+        for value in excluded_source_urls
+        if _canonical_source_url(value)
+    }
+    represented_families = {
+        _source_host_family(value)
+        for value in excluded_source_urls
+        if _source_host_family(value)
+    }
+
+    pool: list[str] = []
     for item in candidates:
         value = str(item.get("source") or "").strip()
         if value.startswith(("https://", "http://")):
-            urls.append(value)
+            pool.append(value)
     packet = (
         fresh_recovery.get("packet")
         if isinstance(fresh_recovery, dict)
@@ -520,8 +583,28 @@ def _longform_fallback_source_urls(
                     or ""
                 ).strip()
                 if value.startswith(("https://", "http://")):
-                    urls.append(value)
-    return list(dict.fromkeys(urls))
+                    pool.append(value)
+
+    unique: list[str] = []
+    seen_urls: set[str] = set()
+    for value in pool:
+        canonical = _canonical_source_url(value)
+        if not canonical or canonical in excluded or canonical in seen_urls:
+            continue
+        seen_urls.add(canonical)
+        unique.append(value)
+
+    diverse: list[str] = []
+    deferred: list[str] = []
+    seen_families = set(represented_families)
+    for value in unique:
+        family = _source_host_family(value)
+        if family and family not in seen_families:
+            diverse.append(value)
+            seen_families.add(family)
+        else:
+            deferred.append(value)
+    return [*diverse, *deferred]
 
 
 def _web_transport_unavailable(exc: BaseException) -> bool:
@@ -1214,9 +1297,15 @@ def _run_bounded_longform_evidence_expansion(
         if str(item.get("fact_check_result") or "") != "OFFICIAL_PRIMARY"
     ][:MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS]
 
+    selected_candidate_source_urls = [
+        str(item.get("source") or "").strip()
+        for item in [*official_candidates, *pending_candidates]
+        if str(item.get("source") or "").strip()
+    ]
     fallback_urls = _longform_fallback_source_urls(
         original_candidates,
         fresh_recovery,
+        excluded_source_urls=selected_candidate_source_urls,
     )
     web_recovery = _run_governed_longform_web_acquisition(
         broker=broker,
