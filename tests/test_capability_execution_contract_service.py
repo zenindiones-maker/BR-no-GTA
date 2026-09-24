@@ -12,7 +12,9 @@ from app.services.capability_execution_contract_service import (
     derive_required_operations,
     effective_candidate_requirement,
     effective_side_effect_class,
+    execution_kind_rejection,
     infer_functional_role,
+    infer_required_execution_kind,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 
@@ -352,3 +354,106 @@ def test_proposal_role_text_cannot_inflate_to_apply_authority():
     assert CAN_WRITE_REPOSITORY not in operations
     assert CAN_MUTATE_CANDIDATE not in operations
     assert CAN_RUN_TESTS not in operations
+
+
+
+def test_analysis_agent_required_rejects_repository_tool_owner():
+    requirement = {
+        "task_id": "readonly-analysis",
+        "task_class": "real-read-only-repository-analysis",
+        "action": "DEVELOPMENT",
+        "query": "measure repository structure with read-only evidence",
+        "objective": "deterministic repository analysis",
+        "required_capability_description": "analysis agent",
+        "dependencies": [],
+        "expected_output": "agent-office-repository-profile/v1",
+        "acceptance_criteria": ["measured evidence"],
+        "required_operations": [
+            CAN_READ_REPOSITORY,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    required_kind = infer_required_execution_kind(requirement)
+    assert required_kind == "DETERMINISTIC_ANALYSIS_AGENT"
+
+    analysis_agent = GLOBAL_CAPABILITY_REGISTRY.get(
+        "agent-office.deterministic-analysis"
+    )
+    repository_tool = GLOBAL_CAPABILITY_REGISTRY.get(
+        "repository.read-scoped"
+    )
+    assert analysis_agent is not None
+    assert repository_tool is not None
+    assert analysis_agent.resolved_execution_kind == (
+        "DETERMINISTIC_ANALYSIS_AGENT"
+    )
+    assert repository_tool.resolved_execution_kind == "TOOL"
+    assert execution_kind_rejection(
+        analysis_agent,
+        required_kind,
+    ) is None
+    assert "execution-kind-incompatible" in execution_kind_rejection(
+        repository_tool,
+        required_kind,
+    )
+
+
+def test_selector_filters_tool_before_analysis_agent_ranking():
+    from app.services.harness_adaptive_planning_service import (
+        select_capability_for_requirement,
+    )
+
+    requirement = {
+        "task_id": "readonly-analysis",
+        "task_class": "real-read-only-repository-analysis",
+        "action": "DEVELOPMENT",
+        "query": (
+            "measure repository structure with deterministic read-only "
+            "inspection"
+        ),
+        "objective": "deterministic repository analysis",
+        "required_capability_description": (
+            "task-owner repository analysis agent"
+        ),
+        "candidate_capability_ids": [
+            "repository.read-scoped",
+            "agent-office.deterministic-analysis",
+        ],
+        "dependencies": [],
+        "expected_output": "agent-office-repository-profile/v1",
+        "acceptance_criteria": ["measured repository evidence"],
+        "required_operations": [
+            CAN_READ_REPOSITORY,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+    }
+    selected, _competence, avoided, evidence = (
+        select_capability_for_requirement(
+            requirement,
+            context={
+                "mission_class": "OPEN_SEMANTIC",
+                "goal_id": "goal-analysis-kind",
+                "domain": "development",
+                "task_class": requirement["task_class"],
+                "relevant_failure_memories": [],
+                "competence_evidence": [],
+            },
+            used=set(),
+        )
+    )
+    assert selected == "agent-office.deterministic-analysis"
+    assert evidence["required_execution_kind"] == (
+        "DETERMINISTIC_ANALYSIS_AGENT"
+    )
+    assert evidence["selected_execution_kind"] == (
+        "DETERMINISTIC_ANALYSIS_AGENT"
+    )
+    assert any(
+        item.startswith(
+            "repository.read-scoped:execution-kind-incompatible"
+        )
+        for item in avoided
+    )
