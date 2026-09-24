@@ -261,6 +261,54 @@ def execute_authorized_addy_skill(
                     "Addy correction schema does not match Harness validation feedback"
                 )
 
+    internal_recovery = (
+        dict(context.get("internal_recovery") or {})
+        if isinstance(context, dict)
+        else {}
+    )
+    recovery_strategy = str(
+        internal_recovery.get("RECOVERY_STRATEGY") or ""
+    ).strip().upper()
+    prior_attempted_pairs = [
+        dict(item)
+        for item in (
+            internal_recovery.get("ATTEMPTED_PROVIDER_MODEL_PAIRS") or ()
+        )
+        if isinstance(item, dict)
+    ]
+    prior_exhausted_pairs = [
+        dict(item)
+        for item in (
+            internal_recovery.get("EXHAUSTED_PROVIDER_MODEL_PAIRS") or ()
+        )
+        if isinstance(item, dict)
+    ]
+    prior_routing_ids = {
+        str(item).strip()
+        for item in (
+            internal_recovery.get("ATTEMPTED_ROUTING_IDS") or ()
+        )
+        if str(item).strip()
+    }
+    prior_attempted_pair_keys = {
+        (
+            str(item.get("provider_id") or "").strip(),
+            str(item.get("model_id") or "").strip(),
+        )
+        for item in prior_attempted_pairs
+        if str(item.get("provider_id") or "").strip()
+        and str(item.get("model_id") or "").strip()
+    }
+    prior_exhausted_pair_keys = {
+        (
+            str(item.get("provider_id") or "").strip(),
+            str(item.get("model_id") or "").strip(),
+        )
+        for item in prior_exhausted_pairs
+        if str(item.get("provider_id") or "").strip()
+        and str(item.get("model_id") or "").strip()
+    }
+
     provider_health = semantic_provider_health()
     eligible_providers = tuple(
         str(item).strip()
@@ -366,8 +414,34 @@ def execute_authorized_addy_skill(
         selected_provider = str(
             provider_routing.selected_provider or ""
         ).strip()
+        selected_model = str(
+            provider_routing.selected_model or ""
+        ).strip()
         if not selected_provider:
             raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
+        if not selected_model:
+            raise RuntimeError("ADDY_SEMANTIC_MODEL_UNAVAILABLE")
+        pair_key = (selected_provider, selected_model)
+        if (
+            phase in {"INITIAL", "LOCALIZED_MODEL_REPLAN"}
+            and pair_key in prior_attempted_pair_keys
+        ):
+            raise PermissionError(
+                "ATTEMPTED_PROVIDER_MODEL_PAIR_REUSED:"
+                + selected_provider
+                + ":"
+                + selected_model
+            )
+        if (
+            phase == "SAME_ROUTING_RETRY"
+            and pair_key in prior_exhausted_pair_keys
+        ):
+            raise PermissionError(
+                "SAME_MODEL_FULL_TIMEOUT_RETRY_FORBIDDEN:"
+                + selected_provider
+                + ":"
+                + selected_model
+            )
         request_timeout_seconds = None
         attempt_deadline_ms = None
         if selected_provider == "nvidia_nim":
@@ -411,26 +485,96 @@ def execute_authorized_addy_skill(
             )
         finally:
             consume_harness_authorization(provider_auth)
+        observed_provider = str(
+            semantic_evidence.provider or selected_provider
+        ).strip()
+        observed_model = str(
+            semantic_evidence.model or selected_model
+        ).strip()
+        observed_error = dict(semantic_evidence.error or {})
+        observed_failure_class = _failure_class(semantic_evidence)
+        attempt_number = len(provider_attempts) + 1
+        attempt_id = sha256(
+            (
+                mission_id
+                + "|"
+                + task_id
+                + "|"
+                + str(attempt_number)
+                + "|"
+                + str(provider_routing.routing_id)
+                + "|"
+                + observed_provider
+                + "|"
+                + observed_model
+            ).encode("utf-8")
+        ).hexdigest()[:24]
         provider_attempts.append({
-            "attempt": len(provider_attempts) + 1,
+            "attempt": attempt_number,
+            "attempt_id": attempt_id,
             "phase": phase,
             "routing_id": provider_routing.routing_id,
-            "provider": semantic_evidence.provider,
-            "model": (
-                semantic_evidence.model
-                or provider_routing.selected_model
-            ),
+            "provider": observed_provider,
+            "provider_id": observed_provider,
+            "model": observed_model,
+            "model_id": observed_model,
             "status": semantic_evidence.status,
+            "failure_class": observed_failure_class,
             "retry_count": int(semantic_evidence.retry_count or 0),
             "latency_seconds": semantic_evidence.latency_seconds,
             "attempt_deadline_ms": attempt_deadline_ms,
-            "error": dict(semantic_evidence.error or {}),
+            "health_evidence": list(
+                (
+                    provider_routing.policy_metadata or {}
+                ).get("runtime_provider_evidence_refs") or ()
+            ),
+            "failure_evidence": observed_error,
+            "error": observed_error,
             "performance": dict(semantic_evidence.performance or {}),
         })
         return semantic_evidence
 
     started_at = datetime.now(timezone.utc).isoformat()
-    provider_routing = _route_provider()
+    recovery_preferred_provider = str(
+        internal_recovery.get("PREVIOUS_SELECTED_PROVIDER") or ""
+    ).strip()
+    recovery_unavailable_models = tuple(dict.fromkeys(
+        str(item.get("model_id") or "").strip()
+        for item in prior_exhausted_pairs
+        if (
+            str(item.get("model_id") or "").strip()
+            and (
+                not recovery_preferred_provider
+                or str(item.get("provider_id") or "").strip()
+                == recovery_preferred_provider
+            )
+        )
+    ))
+    provider_routing = _route_provider(
+        preferred_provider=(
+            recovery_preferred_provider
+            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            else None
+        ),
+        unavailable_models=(
+            recovery_unavailable_models
+            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            else ()
+        ),
+        failure_pattern=(
+            "external_localized_provider_replan"
+            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+            else None
+        ),
+    )
+    if (
+        recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+        and prior_routing_ids
+        and str(provider_routing.routing_id) in prior_routing_ids
+    ):
+        raise PermissionError(
+            "IDENTICAL_ROUTE_AFTER_LOCALIZED_REPLAN_FORBIDDEN"
+        )
     semantic = _execute_provider(provider_routing, phase="INITIAL")
 
     same_routing_retry_count = 0
@@ -441,6 +585,13 @@ def execute_authorized_addy_skill(
     localized_replan_result = "NOT_APPLICABLE"
     localized_replan_error = None
     localized_replan_failure_pattern = None
+    recovery_route_changed = bool(
+        recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+        and (
+            not prior_routing_ids
+            or str(provider_routing.routing_id) not in prior_routing_ids
+        )
+    )
     original_provider = str(
         semantic.provider or provider_routing.selected_provider or ""
     ).strip()
@@ -498,6 +649,11 @@ def execute_authorized_addy_skill(
                 raise PermissionError(
                     "localized Addy model replan did not select an alternate model"
                 )
+            if str(rerouted.routing_id) == str(provider_routing.routing_id):
+                raise PermissionError(
+                    "IDENTICAL_ROUTE_AFTER_LOCALIZED_REPLAN_FORBIDDEN"
+                )
+            recovery_route_changed = True
             semantic = _execute_provider(
                 rerouted,
                 phase="LOCALIZED_MODEL_REPLAN",
@@ -516,6 +672,60 @@ def execute_authorized_addy_skill(
             )
 
     finished_at = datetime.now(timezone.utc).isoformat()
+    current_pairs = [
+        {
+            "provider_id": str(row.get("provider_id") or "").strip(),
+            "model_id": str(row.get("model_id") or "").strip(),
+            "routing_id": str(row.get("routing_id") or "").strip(),
+            "attempt_id": str(row.get("attempt_id") or "").strip(),
+            "failure_class": str(row.get("failure_class") or "").strip(),
+        }
+        for row in provider_attempts
+        if str(row.get("provider_id") or "").strip()
+        and str(row.get("model_id") or "").strip()
+    ]
+    attempted_provider_model_pairs = []
+    seen_pairs = set()
+    for item in [*prior_attempted_pairs, *current_pairs]:
+        key = (
+            str(item.get("provider_id") or "").strip(),
+            str(item.get("model_id") or "").strip(),
+            str(item.get("routing_id") or "").strip(),
+        )
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
+        attempted_provider_model_pairs.append(dict(item))
+    exhausted_provider_model_pairs = []
+    seen_exhausted = set()
+    for item in [
+        *prior_exhausted_pairs,
+        *[
+            row
+            for row in current_pairs
+            if str(row.get("failure_class") or "")
+            == "TRANSIENT_PROVIDER_TIMEOUT"
+        ],
+    ]:
+        key = (
+            str(item.get("provider_id") or "").strip(),
+            str(item.get("model_id") or "").strip(),
+            str(item.get("routing_id") or "").strip(),
+        )
+        if key in seen_exhausted:
+            continue
+        seen_exhausted.add(key)
+        exhausted_provider_model_pairs.append(dict(item))
+
+    input_refs = tuple(dict.fromkeys([
+        *(
+            str(item).strip()
+            for item in (payload.get("evidence_refs") or ())
+            if str(item).strip()
+        ),
+        f"addy-source:{source_sha}",
+        f"addy-skill-sha256:{skill_sha}",
+    ]))
 
     if semantic.status != "EXECUTED" or not isinstance(semantic.result, dict):
         error = semantic.error if isinstance(semantic.error, dict) else {}
@@ -530,7 +740,40 @@ def execute_authorized_addy_skill(
                 float(semantic.latency_seconds or 0.0) * 1000.0
             )
         )
-        return CapabilityEvidence(
+        failure_evidence_refs = tuple(dict.fromkeys([
+            *input_refs,
+            *tuple(semantic.evidence_refs or ()),
+            f"routing:{provider_routing.routing_id}",
+        ]))
+        failure_receipt = AgentInvocationReceipt(
+            mission_id=mission_id,
+            task_id=task_id,
+            goal_id=goal_id,
+            decision_id=auth.harness_decision_id,
+            authorization_id=auth.authorization_id,
+            agent_id="addy-agent-skills",
+            capability=capability_id,
+            executor=ADDY_EXECUTOR_BINDING,
+            provider=semantic.provider,
+            input_refs=input_refs,
+            output_refs=(),
+            evidence_refs=failure_evidence_refs,
+            started_at=started_at,
+            finished_at=finished_at,
+            status="FAILED",
+            validation_level="LIVE",
+            skill_id=skill_name,
+            external_call_performed=True,
+            exit_code=1,
+            latency_seconds=semantic.latency_seconds,
+            returned_to_harness=True,
+            error=str(
+                error.get("message")
+                or error.get("error_type")
+                or "provider failure"
+            )[:800],
+        )
+        failed_evidence = CapabilityEvidence(
             capability_id=capability_id,
             provider=semantic.provider,
             status="FAILED",
@@ -587,20 +830,67 @@ def execute_authorized_addy_skill(
             },
             boundary=record.security_boundary,
         )
+        failed_result = dict(failed_evidence.result or {})
+        failed_result.update({
+            "ATTEMPTED_PROVIDER_MODEL_PAIRS": attempted_provider_model_pairs,
+            "EXHAUSTED_PROVIDER_MODEL_PAIRS": exhausted_provider_model_pairs,
+            "SELECTED_RECOVERY_PROVIDER": str(
+                semantic.provider
+                or provider_routing.selected_provider
+                or ""
+            ),
+            "SELECTED_RECOVERY_MODEL": str(
+                semantic.model
+                or provider_routing.selected_model
+                or ""
+            ),
+            "RECOVERY_ROUTE_CHANGED": recovery_route_changed,
+            "IDENTICAL_ROUTE_RETRY_COUNT": 0
+            if same_model_full_timeout_retry_avoided
+            else same_routing_retry_count,
+            "BOUNDED_PROVIDER_ATTEMPTS": (
+                len(provider_attempts) <= 3
+            ),
+            "receipt": failure_receipt.to_dict(),
+        })
+        failed_evidence = CapabilityEvidence(
+            **{
+                **failed_evidence.to_dict(),
+                "result": failed_result,
+            }
+        )
+        failed_canonical = failed_evidence.to_canonical_result(
+            authorization_id=auth.authorization_id,
+            routing_id=routing_decision.routing_id,
+            tool="addy-agent-skills",
+            operation=skill_name,
+            model=(
+                semantic.model or provider_routing.selected_model
+            ),
+            executor=ADDY_EXECUTOR_BINDING,
+        )
+        capture_canonical_execution_episode(
+            failed_canonical,
+            routing_decision=routing_decision,
+            domain=record.domain,
+            task_class=str(
+                payload.get("task_class")
+                or f"addy-semantic:{skill_name}"
+            ),
+            skill_version=source_sha,
+            source_versions={
+                f"skill:{skill_name}": source_sha,
+                "provider-profile": str(
+                    semantic.provider_profile_version or "unknown"
+                ),
+            },
+        )
+        return failed_evidence
 
     output = str(semantic.result.get("text") or "").strip()[:MAX_OUTPUT_CHARS]
     if not output:
         raise RuntimeError("Addy semantic provider returned empty output")
 
-    input_refs = tuple(dict.fromkeys([
-        *(
-            str(item).strip()
-            for item in (payload.get("evidence_refs") or ())
-            if str(item).strip()
-        ),
-        f"addy-source:{source_sha}",
-        f"addy-skill-sha256:{skill_sha}",
-    ]))
     output_ref = f"addy-output:{mission_id}:{task_id}"
     evidence_refs = tuple(dict.fromkeys([
         *input_refs,
@@ -676,6 +966,23 @@ def execute_authorized_addy_skill(
                 if localized_replan_attempted
                 else "initial-or-same-routing execution"
             ),
+            "ATTEMPTED_PROVIDER_MODEL_PAIRS": attempted_provider_model_pairs,
+            "EXHAUSTED_PROVIDER_MODEL_PAIRS": exhausted_provider_model_pairs,
+            "SELECTED_RECOVERY_PROVIDER": str(
+                semantic.provider
+                or provider_routing.selected_provider
+                or ""
+            ),
+            "SELECTED_RECOVERY_MODEL": str(
+                semantic.model
+                or provider_routing.selected_model
+                or ""
+            ),
+            "RECOVERY_ROUTE_CHANGED": recovery_route_changed,
+            "IDENTICAL_ROUTE_RETRY_COUNT": 0
+            if same_model_full_timeout_retry_avoided
+            else same_routing_retry_count,
+            "BOUNDED_PROVIDER_ATTEMPTS": len(provider_attempts) <= 3,
             "receipt": receipt.to_dict(),
         },
         boundary=record.security_boundary,
