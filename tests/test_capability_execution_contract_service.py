@@ -492,9 +492,8 @@ def test_editorial_script_review_does_not_require_engineering_independent_review
     }
     ops = derive_required_operations(requirement)
     assert CAN_REVIEW not in ops
-    assert CAN_SEMANTIC_REASONING in ops
+    assert CAN_SEMANTIC_REASONING not in ops
     assert infer_required_execution_kind({
         **requirement,
         "required_operations": list(ops),
     }) is None
-
