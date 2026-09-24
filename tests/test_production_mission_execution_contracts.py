@@ -838,4 +838,3 @@ def test_editorial_retry_payload_includes_verified_expansion_evidence():
     assert payload["editorial_context"]["verified_claims"][0][
         "fact_check_result"
     ] == "SUPPORTED"
-

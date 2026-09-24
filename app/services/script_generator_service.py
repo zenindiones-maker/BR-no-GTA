@@ -18,6 +18,32 @@ from app.services.ai_provider import AIProvider, AIProviderError
 VOICE_B_SCRIPT_PLANNING_WPM = 132.0
 LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
 MAX_EDITORIAL_GENERATION_ATTEMPTS = 2
+MAX_MALFORMED_PROVIDER_RETRIES = 1
+
+EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hook": {"type": "string", "minLength": 1},
+        "introduction": {"type": "string", "minLength": 1},
+        "development": {
+            "type": "array",
+            "minItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string", "minLength": 1},
+                    "body": {"type": "string", "minLength": 1},
+                },
+                "required": ["heading", "body"],
+                "additionalProperties": False,
+            },
+        },
+        "conclusion": {"type": "string", "minLength": 1},
+        "cta": {"type": "string", "minLength": 1},
+    },
+    "required": ["hook", "introduction", "development", "conclusion", "cta"],
+    "additionalProperties": False,
+}
 
 
 def _requested_word_count(target_duration_seconds: float | None) -> int | None:
@@ -222,8 +248,79 @@ def _validate_ai_structure(
 
 
 
+def _repair_invalid_json_string_escapes(text: str) -> str:
+    """Escape only invalid backslashes inside JSON string literals."""
+    valid_simple = {'"', "\\", "/", "b", "f", "n", "r", "t"}
+    out: list[str] = []
+    in_string = False
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+
+        if not in_string:
+            out.append(char)
+            if char == '"':
+                in_string = True
+            index += 1
+            continue
+
+        if char == '"':
+            out.append(char)
+            in_string = False
+            index += 1
+            continue
+
+        if char != "\\":
+            out.append(char)
+            index += 1
+            continue
+
+        if index + 1 >= len(text):
+            out.append("\\\\")
+            index += 1
+            continue
+
+        following = text[index + 1]
+        if following in valid_simple:
+            out.extend(("\\", following))
+            index += 2
+            continue
+
+        if following == "u":
+            hex_part = text[index + 2:index + 6]
+            if (
+                len(hex_part) == 4
+                and all(ch in "0123456789abcdefABCDEF" for ch in hex_part)
+            ):
+                out.extend(("\\", "u", *hex_part))
+                index += 6
+                continue
+
+        # Preserve literal provider text: only quote the backslash itself.
+        out.append("\\\\")
+        index += 1
+
+    return "".join(out)
+
+
+def _malformed_provider_json_error(exc: Exception) -> AIProviderError:
+    return AIProviderError(
+        "AI provider returned invalid JSON.",
+        code="malformed_structured_output",
+        retryable=True,
+        failure_pattern="editorial_provider_malformed_json",
+        failure_stage="response_decode",
+        response_present=True,
+        structured_output_present=True,
+        parse_stage="json_decode",
+        exception_class=type(exc).__name__,
+        sanitized_reason="malformed_structured_output",
+    )
+
+
 def _parse_ai_json_response(text: str) -> dict[str, Any]:
-    """Normalize only harmless JSON wrappers, then fail closed on extra prose."""
+    """Normalize wrappers, minimally repair escaping, then fail closed."""
     normalized = str(text or "").lstrip("\ufeff").strip()
     if not normalized:
         raise AIProviderError("AI provider returned an empty response.")
@@ -232,9 +329,13 @@ def _parse_ai_json_response(text: str) -> dict[str, Any]:
     if normalized.startswith(fence):
         lines = normalized.splitlines()
         if not lines or not lines[0].strip().casefold() in {fence, fence + "json"}:
-            raise AIProviderError("AI provider returned invalid JSON.")
+            raise _malformed_provider_json_error(
+                json.JSONDecodeError("invalid JSON fence", normalized, 0)
+            )
         if len(lines) < 3 or lines[-1].strip() != fence:
-            raise AIProviderError("AI provider returned invalid JSON.")
+            raise _malformed_provider_json_error(
+                json.JSONDecodeError("unterminated JSON fence", normalized, 0)
+            )
         normalized = "\n".join(lines[1:-1]).strip()
 
     if normalized.casefold().startswith("json\n"):
@@ -242,8 +343,16 @@ def _parse_ai_json_response(text: str) -> dict[str, Any]:
 
     try:
         parsed = json.loads(normalized)
-    except json.JSONDecodeError as exc:
-        raise AIProviderError("AI provider returned invalid JSON.") from exc
+    except json.JSONDecodeError as first_exc:
+        repaired = _repair_invalid_json_string_escapes(normalized)
+        if repaired == normalized:
+            raise _malformed_provider_json_error(first_exc) from first_exc
+        try:
+            parsed = json.loads(repaired)
+        except json.JSONDecodeError as repaired_exc:
+            raise _malformed_provider_json_error(
+                repaired_exc
+            ) from repaired_exc
 
     if not isinstance(parsed, dict):
         raise AIProviderError("AI response must contain a JSON object.")
@@ -271,19 +380,9 @@ def _generate_ai_structure(
         target_duration_seconds
     )
     previous_structure: dict[str, Any] | None = None
-    previous_format_error: AIProviderError | None = None
 
     for attempt in range(1, MAX_EDITORIAL_GENERATION_ATTEMPTS + 1):
         attempt_prompt = prompt
-        if attempt > 1 and previous_format_error is not None:
-            attempt_prompt += (
-                "\n\nCORREÇÃO OBRIGATÓRIA DE FORMATO JSON\n"
-                "- A resposta anterior não pôde ser validada como JSON estrito.\n"
-                "- Retorne SOMENTE um objeto JSON válido, sem markdown, cercas ou prosa.\n"
-                "- Use aspas duplas válidas em todas as strings e chaves.\n"
-                "- Escape barras invertidas e caracteres especiais conforme JSON.\n"
-                "- Preserve exatamente as restrições factuais, editoriais e de duração.\n"
-            )
         if (
             attempt > 1
             and previous_structure is not None
@@ -304,22 +403,42 @@ def _generate_ai_structure(
                 "- Não use filler, repetição ou paráfrase vazia para bater duração.\n"
             )
 
-        response = ai_provider.generate(attempt_prompt)
+        malformed_prompt = attempt_prompt
+        parsed: dict[str, Any] | None = None
+        for malformed_retry in range(MAX_MALFORMED_PROVIDER_RETRIES + 1):
+            response = ai_provider.generate(malformed_prompt)
 
-        try:
             if not response.text or not response.text.strip():
                 raise AIProviderError(
                     "AI provider returned an empty response."
                 )
-            parsed = _parse_ai_json_response(response.text)
-            structure = _validate_ai_structure(parsed)
-        except AIProviderError as exc:
-            previous_format_error = exc
-            if attempt >= MAX_EDITORIAL_GENERATION_ATTEMPTS:
-                raise
-            continue
 
-        previous_format_error = None
+            try:
+                parsed = _parse_ai_json_response(response.text)
+                break
+            except AIProviderError as exc:
+                if (
+                    exc.code != "malformed_structured_output"
+                    or not exc.retryable
+                    or malformed_retry >= MAX_MALFORMED_PROVIDER_RETRIES
+                ):
+                    raise
+                malformed_prompt = (
+                    attempt_prompt
+                    + "\n\nCORREÇÃO OBRIGATÓRIA DE FORMATO JSON\n"
+                    + "- Reenvie o MESMO conteúdo factual/editorial.\n"
+                    + "- Retorne SOMENTE JSON válido, sem markdown ou prosa externa.\n"
+                    + "- Corrija apenas escaping/formatação JSON; não invente fatos.\n"
+                )
+
+        if parsed is None:
+            raise AIProviderError(
+                "AI provider returned invalid JSON.",
+                code="malformed_structured_output",
+                retryable=False,
+            )
+
+        structure = _validate_ai_structure(parsed)
         previous_structure = structure
 
         if target_words is None:

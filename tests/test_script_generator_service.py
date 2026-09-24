@@ -553,3 +553,122 @@ def test_invalid_json_still_fails_closed_after_bounded_format_retry():
         "CORREÇÃO OBRIGATÓRIA DE FORMATO JSON"
         in provider.prompts[1]
     )
+
+def test_longform_parser_repairs_invalid_backslash_escape_without_retry():
+    import json
+
+    from app.services.ai_provider import AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - invalid escape reparável",
+        description="Pauta factual suficiente.",
+        status="approved",
+        score=9.5,
+    )
+    long_body = " ".join(["evidencia"] * 335)
+    valid_long = {
+        "hook": " ".join(["evidencia"] * 80),
+        "introduction": " ".join(["evidencia"] * 120),
+        "development": [
+            {"heading": f"Bloco {index}", "body": long_body}
+            for index in range(8)
+        ],
+        "conclusion": " ".join(["evidencia"] * 120),
+        "cta": " ".join(["evidencia"] * 40),
+    }
+    malformed = json.dumps(valid_long, ensure_ascii=False).replace(
+        "evidencia evidencia",
+        "evidencia \\q evidencia",
+        1,
+    )
+
+    class InvalidEscapeProvider:
+        def __init__(self):
+            self.prompts = []
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(text=malformed)
+
+    provider = InvalidEscapeProvider()
+    structure = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(provider.prompts) == 1
+    assert "\\q" in structure["hook"]
+
+
+def test_malformed_json_retry_is_bounded_and_format_only():
+    import json
+
+    from app.services.ai_provider import AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - malformed retry específico",
+        description="Pauta factual suficiente.",
+        status="approved",
+        score=9.5,
+    )
+    long_body = " ".join(["evidencia"] * 335)
+    valid_long = {
+        "hook": " ".join(["evidencia"] * 80),
+        "introduction": " ".join(["evidencia"] * 120),
+        "development": [
+            {"heading": f"Bloco {index}", "body": long_body}
+            for index in range(8)
+        ],
+        "conclusion": " ".join(["evidencia"] * 120),
+        "cta": " ".join(["evidencia"] * 40),
+    }
+
+    class MalformedThenValidProvider:
+        def __init__(self):
+            self.prompts = []
+            self.responses = ["não é json", json.dumps(valid_long, ensure_ascii=False)]
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(text=self.responses.pop(0))
+
+    provider = MalformedThenValidProvider()
+    structure = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(provider.prompts) == 2
+    assert "CORREÇÃO OBRIGATÓRIA DE FORMATO JSON" in provider.prompts[1]
+    assert len(structure["development"]) == 8
+
+
+def test_semantic_validation_failure_does_not_use_json_format_retry():
+    from app.services.ai_provider import AIProviderError, AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - JSON semanticamente inválido",
+        description="Descrição válida.",
+        status="approved",
+        score=9.0,
+    )
+
+    class SemanticInvalidProvider:
+        def __init__(self):
+            self.prompts = []
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text='{"hook":"x","introduction":"y","development":[],"conclusion":"z","cta":"w"}'
+            )
+
+    provider = SemanticInvalidProvider()
+    with pytest.raises(AIProviderError, match="development"):
+        generate_script_structure(idea_id, ai_provider=provider)
+    assert len(provider.prompts) == 1

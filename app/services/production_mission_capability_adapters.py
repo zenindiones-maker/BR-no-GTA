@@ -21,6 +21,9 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.provider_health_service import semantic_provider_health
+from app.services.script_generator_service import (
+    EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA,
+)
 from app.services.telegram_fresh_research_service import (
     execute_fresh_gta6_research_capability,
 )
@@ -200,6 +203,7 @@ def execute_editorial_process_task(
             provider_domain="ai",
             preferred_providers=_selected_zero_cost_providers(),
             required_model_capabilities=("reasoning",),
+            structured_output_required=True,
             prefer_low_latency=True,
             fallback_allowed=False,
             zero_cost_operation=True,
@@ -247,6 +251,7 @@ def execute_editorial_process_task(
         _, provider = select_harness_ai_provider(
             routing_decision=provider_routing,
             authorization=provider_authorization,
+            structured_output_schema=EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA,
         )
         result = process_next_editorial_queue_item(
             ai_provider=provider,
