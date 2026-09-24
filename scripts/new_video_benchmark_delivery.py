@@ -7,6 +7,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 os.environ.setdefault("ZERO_COST_OPERATION", "TRUE")
@@ -105,6 +106,24 @@ def _chunk_text(text: str, *, min_words: int = 45, target_words: int = 58) -> li
     return chunks
 
 
+def _is_official_rockstar_url(value: Any) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").casefold()
+    return bool(
+        parsed.scheme.casefold() == "https"
+        and (
+            host == "rockstargames.com"
+            or host.endswith(".rockstargames.com")
+        )
+    )
+
+
 def _research_evidence(product: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     evidence: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
@@ -119,8 +138,9 @@ def _research_evidence(product: dict[str, Any]) -> tuple[list[dict[str, Any]], d
         ):
             raise RuntimeError(f"claim is not verified/supported: {claim_id}")
         urls = [
-            str(ref) for ref in item.get("evidence_refs") or []
-            if isinstance(ref, str) and ref.startswith("https://www.rockstargames.com/")
+            str(ref)
+            for ref in item.get("evidence_refs") or []
+            if isinstance(ref, str) and _is_official_rockstar_url(ref)
         ]
         if not urls:
             raise RuntimeError(f"verified claim lacks official Rockstar URL: {claim_id}")
@@ -143,7 +163,7 @@ def _research_evidence(product: dict[str, Any]) -> tuple[list[dict[str, Any]], d
     for url in context_urls:
         if len(evidence) >= 3:
             break
-        if url.startswith("https://www.rockstargames.com/") and url not in seen_urls:
+        if _is_official_rockstar_url(url) and url not in seen_urls:
             evidence.append({
                 "evidence_id": f"context:{len(evidence)+1}",
                 "url": url,
