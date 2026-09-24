@@ -439,7 +439,6 @@ def test_targeted_script_generation_failure_requeues_exact_processing_claim():
             _process_next_editorial_queue_item(
                 execution_context=context,
                 goal_id="goal-targeted-retry",
-                target_duration_seconds=None,
             )
 
     requeue.assert_called_once_with(101, expected_idea_id=202)
