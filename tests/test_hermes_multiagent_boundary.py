@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -329,3 +330,33 @@ def test_explicit_child_capability_lease_preserves_harness_authority():
                 "allowed_side_effects": [],
             },
         )
+
+def test_child_execution_lease_accepts_only_explicit_child_capabilities():
+    broker = HermesHarnessCapabilityBroker.__new__(HermesHarnessCapabilityBroker)
+    broker.spec = SimpleNamespace(
+        allowed_capability_ids=("gta6.research", "editorial.process"),
+        allowed_child_capability_ids=(
+            "gta6.fact-check",
+            "web.search.discover",
+            "web.source.acquire",
+        ),
+    )
+    broker._child_tasks = {"research-longform-web-discovery-1": object()}
+
+    assert broker._capability_within_mission_lease(
+        task_id="research-longform-web-discovery-1",
+        capability_id="web.search.discover",
+    )
+    assert broker._capability_within_mission_lease(
+        task_id="research-longform-web-discovery-1",
+        capability_id="web.source.acquire",
+    )
+    assert not broker._capability_within_mission_lease(
+        task_id="research-longform-web-discovery-1",
+        capability_id="web.evidence.snapshot",
+    )
+    assert not broker._capability_within_mission_lease(
+        task_id="verify",
+        capability_id="web.search.discover",
+    )
+

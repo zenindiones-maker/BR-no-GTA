@@ -1257,6 +1257,20 @@ class HermesHarnessCapabilityBroker:
             "evidence_ref": result_row["evidence_ref"],
         })
 
+    def _capability_within_mission_lease(
+        self,
+        *,
+        task_id: str,
+        capability_id: str,
+    ) -> bool:
+        root_allowed = set(self.spec.allowed_capability_ids)
+        if task_id not in self._child_tasks:
+            return capability_id in root_allowed
+        return capability_id in {
+            *root_allowed,
+            *set(self.spec.allowed_child_capability_ids),
+        }
+
     def execute_delegated_capability(
         self,
         *,
@@ -1276,7 +1290,10 @@ class HermesHarnessCapabilityBroker:
             raise PermissionError(
                 "Hermes payload attempted to override authority or routing"
             )
-        if capability_id not in self.spec.allowed_capability_ids:
+        if not self._capability_within_mission_lease(
+            task_id=task_id,
+            capability_id=capability_id,
+        ):
             raise PermissionError("Hermes capability is outside mission lease")
 
         existing = self._existing_result(task)
