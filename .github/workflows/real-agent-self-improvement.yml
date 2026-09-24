@@ -324,8 +324,12 @@ jobs:
           for node in walk(selected or {}):
               if str(node.get("RECOVERY_STRATEGY") or "").strip():
                   pending_recovery_strategy=True
-              for item in node.get("provider_attempts") or []:
-                  if not isinstance(item,dict) or str(item.get("status") or "").upper()!="FAILED":
+              for item in (node.get("PROVIDER_ATTEMPTS") or node.get("provider_attempts") or []):
+                  if not isinstance(item,dict):
+                      continue
+                  performance=item.get("performance") or {}
+                  failed_contract=bool(isinstance(performance,dict) and performance.get("output_truncated"))
+                  if str(item.get("status") or "").upper()!="FAILED" and not failed_contract:
                       continue
                   recovery_history=True
                   if str(item.get("provider_id") or item.get("provider") or "")=="ollama_local":
