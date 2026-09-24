@@ -157,12 +157,18 @@ class OllamaLocalAIProvider:
             and str(os.getenv("BR_LOCAL_SEMANTIC_SCHEMA") or "").strip()
             in {"1", "true", "TRUE", "yes", "YES"}
         )
+        if bounded_agent_turn:
+            # Qwen3's optional reasoning mode is wasted work for a strict typed
+            # envelope and can consume the whole runner window before emitting
+            # the JSON answer. Keep reasoning in the Harness prompt/contract,
+            # but request the bounded model's direct structured response.
+            request_body["think"] = False
         if schema_mode:
             from app.services.semantic_mission_planner_service import (
                 mission_plan_json_schema,
             )
             request_body["format"] = mission_plan_json_schema(max_tasks=8)
-        elif structured_planner:
+        elif structured_planner or bounded_agent_turn:
             # JSON mode remains the safe fallback until schema support is
             # operationally proven on the pinned Ollama runtime.
             request_body["format"] = "json"
