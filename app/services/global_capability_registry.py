@@ -1238,12 +1238,129 @@ OBSIDIAN_EXPORT_RECORD = CapabilityRecord(
     publication_authority="NONE",
 )
 
+WEB_SEARCH_DISCOVER_RECORD = CapabilityRecord(
+    capability_id="web.search.discover",
+    capability_type="CAPABILITY",
+    domain="web-acquisition",
+    implementation=(
+        "Harness-governed generic web discovery capability; initial transport "
+        "binding is APILayer Google Search Results API"
+    ),
+    input_contract="bounded search query under Harness authorization",
+    output_contract="normalized URL/title/snippet results + source provenance",
+    requirements=("APILAYER_API_KEY for initial transport", "FREE_QUOTA_LIMITED"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH", "EDITORIAL", "DEVELOPMENT", "DECISION"),
+    policy_tags=("web", "search", "research-tool", "apilayer", "zero-cost"),
+    security_boundary=(
+        "DeepSeek Harness selects and authorizes the generic capability; agents "
+        "never receive APILAYER_API_KEY or choose transport credentials."
+    ),
+    cost_class="FREE_QUOTA_LIMITED",
+    quota_class="APILAYER_PRODUCT_FREE_QUOTA",
+    latency_class="EXTERNAL_NETWORK",
+    quality_class="TRANSPORT_ONLY_SOURCE_AUTHORITY_UNCHANGED",
+    evidence_contract="structured web discovery result with original-source provenance",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.web_acquisition_capability_service."
+        "execute_web_search_discover"
+    ),
+    version="1",
+    provider_id="apilayer_google_search",
+    side_effects=("external network read",),
+    side_effect_class="READ_ONLY",
+    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
+    execution_kind="TOOL",
+    functional_roles=("TOOL",),
+)
+
+WEB_SOURCE_ACQUIRE_RECORD = CapabilityRecord(
+    capability_id="web.source.acquire",
+    capability_type="CAPABILITY",
+    domain="web-acquisition",
+    implementation=(
+        "Harness-governed cache/direct-first source acquisition with APILayer "
+        "Scraper API Lite only as bounded transport fallback"
+    ),
+    input_contract="original http(s) source URL",
+    output_contract="bounded normalized content + original-source provenance",
+    requirements=("direct acquisition first", "APILAYER_API_KEY only for fallback"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH", "EDITORIAL", "DEVELOPMENT", "DECISION"),
+    policy_tags=("web", "source", "acquire", "research-tool", "apilayer", "zero-cost"),
+    security_boundary=(
+        "Canonical cache and direct fetch run before APILayer; secret remains at "
+        "executor boundary and APILayer is transport, never factual authority."
+    ),
+    cost_class="FREE_QUOTA_LIMITED",
+    quota_class="APILAYER_PRODUCT_FREE_QUOTA",
+    latency_class="CACHE_DIRECT_THEN_EXTERNAL",
+    quality_class="ORIGINAL_SOURCE_PROVENANCE_FAIL_CLOSED",
+    evidence_contract="source content hash + transport provenance + quota evidence",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.web_acquisition_capability_service."
+        "execute_web_source_acquire"
+    ),
+    version="1",
+    provider_id="apilayer_scraper",
+    side_effects=("external network read", "bounded local cache write"),
+    side_effect_class="READ_ONLY",
+    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
+    execution_kind="TOOL",
+    functional_roles=("TOOL",),
+)
+
+WEB_EVIDENCE_SNAPSHOT_RECORD = CapabilityRecord(
+    capability_id="web.evidence.snapshot",
+    capability_type="CAPABILITY",
+    domain="web-acquisition",
+    implementation=(
+        "Harness-governed explicit evidence snapshot; initial transport binding "
+        "is APILayer URL-to-PDF"
+    ),
+    input_contract="original http(s) source URL + snapshot_required=true",
+    output_contract="bounded PDF snapshot bytes + original-source provenance",
+    requirements=("APILAYER_API_KEY", "FREE_QUOTA_LIMITED", "explicit snapshot need"),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("RESEARCH", "EDITORIAL", "DEVELOPMENT", "DECISION"),
+    policy_tags=("web", "snapshot", "evidence", "research-tool", "apilayer", "zero-cost"),
+    security_boundary=(
+        "Explicit bounded snapshot only; agents never receive transport secret; "
+        "original source URL remains factual provenance."
+    ),
+    cost_class="FREE_QUOTA_LIMITED",
+    quota_class="APILAYER_PRODUCT_FREE_QUOTA",
+    latency_class="EXTERNAL_NETWORK",
+    quality_class="BOUNDED_PDF_EVIDENCE_SNAPSHOT",
+    evidence_contract="PDF sha256 + original-source provenance + quota evidence",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.web_acquisition_capability_service."
+        "execute_web_evidence_snapshot"
+    ),
+    version="1",
+    provider_id="apilayer_url_to_pdf",
+    side_effects=("external network read",),
+    side_effect_class="READ_ONLY",
+    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
+    execution_kind="TOOL",
+    functional_roles=("TOOL",),
+)
+
 _YOUTUBE_DEPARTMENT_RECORDS = youtube_department_records()
 
 for _record in (
     AGENT_OFFICE_RECORD,
     HERMES_MULTIAGENT_RUNTIME_RECORD,
     ARTIFACT_EVIDENCE_REUSE_RECORD,
+    WEB_SEARCH_DISCOVER_RECORD,
+    WEB_SOURCE_ACQUIRE_RECORD,
+    WEB_EVIDENCE_SNAPSHOT_RECORD,
     AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD,
     AGENT_OFFICE_CODEX_READONLY_RECORD,
     AGENT_OFFICE_CODEX_INDEPENDENT_REVIEW_RECORD,

@@ -508,6 +508,19 @@ class HermesHarnessCapabilityBroker:
         if role in {"ROOT_CAUSE", "PROPOSAL"}:
             if self.registry.get("repository.read-scoped") is not None:
                 allowed.append("repository.read-scoped")
+        if str(task.action or "").upper() in {
+            "RESEARCH",
+            "EDITORIAL",
+            "DEVELOPMENT",
+            "DECISION",
+        }:
+            for capability_id in (
+                "web.search.discover",
+                "web.source.acquire",
+                "web.evidence.snapshot",
+            ):
+                if self.registry.get(capability_id) is not None:
+                    allowed.append(capability_id)
         for item in tuple(task.allowed_tools or ()):
             candidate = str(item or "").strip()
             if candidate and self.registry.get(candidate) is not None:
