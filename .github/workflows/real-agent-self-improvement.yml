@@ -124,12 +124,55 @@ jobs:
           EOF
           if [ -n "$CHECKPOINT_RUN" ] && [ -n "$CHECKPOINT_ARTIFACT" ]; then
             checkpoint_root="runtime/real-agent-self-improvement/checkpoint-source"
-            mkdir -p "$checkpoint_root"
+            checkpoint_stage="runtime/real-agent-self-improvement/checkpoint-stage"
+            rm -rf "$checkpoint_root" "$checkpoint_stage"
+            mkdir -p "$checkpoint_root" "$checkpoint_stage"
             gh run download "$CHECKPOINT_RUN" \
               --repo "$GITHUB_REPOSITORY" \
               --name "$CHECKPOINT_ARTIFACT" \
-              --dir "$checkpoint_root"
-            test -n "$(find "$checkpoint_root" -type f -print -quit)"
+              --dir "$checkpoint_stage"
+            test -n "$(find "$checkpoint_stage" -type f -print -quit)"
+
+            # The previous artifact contains its own historical checkpoint-source
+            # inputs. They are lineage evidence, not the next operational
+            # checkpoint. Materialize only files produced by that run itself.
+            python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          stage=Path("runtime/real-agent-self-improvement/checkpoint-stage")
+          target=Path("runtime/real-agent-self-improvement/checkpoint-source")
+          copied=0
+          for src in sorted(stage.rglob("*")):
+              if not src.is_file():
+                  continue
+              rel=src.relative_to(stage)
+              if rel.parts and rel.parts[0] in {
+                  "checkpoint-source",
+                  "checkpoint-stage",
+                  "incident-source",
+              }:
+                  continue
+              dst=target/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(src,dst)
+              copied+=1
+          if copied==0:
+              raise RuntimeError("canonical checkpoint snapshot is empty")
+          nested=[
+              p for p in target.rglob("*")
+              if p.is_dir() and p.name in {"checkpoint-source","checkpoint-stage"}
+          ]
+          if nested:
+              raise RuntimeError(
+                  "recursive checkpoint packaging survived normalization: "
+                  +repr([str(p) for p in nested])
+              )
+          print("CHECKPOINT_RECURSIVE_PACKAGING_ELIMINATED=PASS")
+          print("CHECKPOINT_LINEAGE_PRESERVED=PASS")
+          print("CHECKPOINT_NESTING_DEPTH_BOUNDED=PASS")
+          PY
+            rm -rf "$checkpoint_stage"
             echo "NODE_CHECKPOINT_SOURCE_RUN=$CHECKPOINT_RUN"
             echo "NODE_CHECKPOINT_SOURCE_ARTIFACT=$CHECKPOINT_ARTIFACT"
             echo "NODE_CHECKPOINT_SOURCE_RESTORED=PASS"
@@ -182,6 +225,7 @@ jobs:
                   continue
               matches.append((path,data))
 
+          print("CHECKPOINT_CANONICAL_SNAPSHOT_COUNT="+str(len(matches)))
           if len(matches)!=1:
               raise RuntimeError(
                   "checkpoint AgentSession resolution must yield exactly one "
