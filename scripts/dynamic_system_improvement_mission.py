@@ -63,6 +63,24 @@ def _provider_failure_attempt_state(
         for item in (result.get("provider_attempts") or ())
         if isinstance(item, dict)
     ]
+    explicit_attempted = [
+        dict(item)
+        for item in (
+            result.get("ATTEMPTED_PROVIDER_MODEL_PAIRS")
+            or result.get("attempted_provider_model_pairs")
+            or ()
+        )
+        if isinstance(item, dict)
+    ]
+    explicit_exhausted = [
+        dict(item)
+        for item in (
+            result.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
+            or result.get("exhausted_provider_model_pairs")
+            or ()
+        )
+        if isinstance(item, dict)
+    ]
     pairs: list[dict[str, Any]] = []
     exhausted: list[dict[str, Any]] = []
     route_ids: list[str] = []
@@ -113,8 +131,14 @@ def _provider_failure_attempt_state(
             out.append(item)
         return out
 
+    pairs = [*explicit_attempted, *pairs]
+    exhausted = [*explicit_exhausted, *exhausted]
     full_timeout = bool(
-        exhausted
+        any(
+            str(item.get("failure_class") or "")
+            == "TRANSIENT_PROVIDER_TIMEOUT"
+            for item in exhausted
+        )
         or result.get("SAME_MODEL_FULL_TIMEOUT_RETRY_AVOIDED") is True
         or result.get("same_model_full_timeout_retry_avoided") is True
         or str(result.get("FAILURE_CLASS") or "")
