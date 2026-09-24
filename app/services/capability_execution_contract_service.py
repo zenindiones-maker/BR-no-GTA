@@ -24,6 +24,18 @@ ALL_EXECUTION_OPERATIONS = frozenset({
 })
 
 
+EXECUTION_KIND_ORCHESTRATOR = "ORCHESTRATOR"
+EXECUTION_KIND_SEMANTIC_REASONER = "SEMANTIC_REASONER"
+EXECUTION_KIND_DETERMINISTIC_ANALYSIS_AGENT = "DETERMINISTIC_ANALYSIS_AGENT"
+EXECUTION_KIND_TOOL = "TOOL"
+EXECUTION_KIND_DETERMINISTIC_WORKER = "DETERMINISTIC_WORKER"
+EXECUTION_KIND_INDEPENDENT_REVIEWER = "INDEPENDENT_REVIEWER"
+EXECUTION_KIND_MUTATION_EXECUTOR = "MUTATION_EXECUTOR"
+EXECUTION_KIND_VALIDATOR = "VALIDATOR"
+EXECUTION_KIND_PROVIDER = "PROVIDER"
+EXECUTION_KIND_PRESENTATION = "PRESENTATION"
+
+
 _CANONICAL_ROLE_BY_TASK_CLASS = {
     "evidence-collection": "EVIDENCE",
     "incident-diagnosis": "DIAGNOSIS",
@@ -112,6 +124,104 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
     ):
         return _CANONICAL_ROLE_BY_TASK_CLASS[task_class]
     return "GENERAL"
+
+
+def infer_required_execution_kind(
+    requirement: dict[str, Any],
+) -> str | None:
+    explicit = str(
+        requirement.get("required_execution_kind") or ""
+    ).strip().upper()
+    if explicit:
+        return explicit
+
+    role = infer_functional_role(requirement)
+    role_map = {
+        "EVIDENCE": EXECUTION_KIND_DETERMINISTIC_WORKER,
+        "DIAGNOSIS": EXECUTION_KIND_SEMANTIC_REASONER,
+        "ROOT_CAUSE": EXECUTION_KIND_SEMANTIC_REASONER,
+        "PROPOSAL": EXECUTION_KIND_SEMANTIC_REASONER,
+        "REVIEW": EXECUTION_KIND_INDEPENDENT_REVIEWER,
+        "APPLY": EXECUTION_KIND_MUTATION_EXECUTOR,
+        "VALIDATE": EXECUTION_KIND_VALIDATOR,
+    }
+    if role in role_map:
+        return role_map[role]
+
+    task_class = str(
+        requirement.get("task_class") or ""
+    ).strip().casefold()
+    operations = {
+        str(item).strip()
+        for item in (requirement.get("required_operations") or ())
+        if str(item).strip()
+    }
+    deterministic_analysis_markers = (
+        "repository-analysis",
+        "repository-profile",
+        "deterministic-analysis",
+        "read-only-repository-analysis",
+        "readonly-repository-analysis",
+    )
+    if any(marker in task_class for marker in deterministic_analysis_markers):
+        return EXECUTION_KIND_DETERMINISTIC_ANALYSIS_AGENT
+    if CAN_REVIEW in operations:
+        return EXECUTION_KIND_INDEPENDENT_REVIEWER
+    if CAN_SEMANTIC_REASONING in operations:
+        return EXECUTION_KIND_SEMANTIC_REASONER
+    if (
+        CAN_MUTATE_CANDIDATE in operations
+        or CAN_WRITE_REPOSITORY in operations
+    ):
+        return EXECUTION_KIND_MUTATION_EXECUTOR
+    if CAN_RUN_TESTS in operations:
+        return EXECUTION_KIND_VALIDATOR
+    return None
+
+
+def record_execution_kind(record: Any) -> str:
+    resolved = str(
+        getattr(record, "resolved_execution_kind", "")
+        or getattr(record, "execution_kind", "")
+        or ""
+    ).strip().upper()
+    return resolved or "DETERMINISTIC_WORKER"
+
+
+def execution_kind_rejection(
+    record: Any,
+    required_execution_kind: str | None,
+) -> str | None:
+    required = str(required_execution_kind or "").strip().upper()
+    if not required:
+        return None
+    observed = record_execution_kind(record)
+    if observed != required:
+        return (
+            "execution-kind-incompatible:"
+            f"required={required}:observed={observed}"
+        )
+    return None
+
+
+def functional_role_rejection(
+    record: Any,
+    required_functional_role: str | None,
+) -> str | None:
+    required = str(required_functional_role or "").strip().upper()
+    if not required or required == "GENERAL":
+        return None
+    supported = {
+        str(item).strip().upper()
+        for item in (getattr(record, "functional_roles", ()) or ())
+        if str(item).strip()
+    }
+    if supported and required not in supported:
+        return (
+            "functional-role-incompatible:"
+            f"required={required}:supported={','.join(sorted(supported))}"
+        )
+    return None
 
 
 def functional_role_required_operations(
