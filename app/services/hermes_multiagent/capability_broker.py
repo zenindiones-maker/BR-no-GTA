@@ -124,6 +124,7 @@ class DelegatedCapabilityFailure(RuntimeError):
         retry_attempt: int,
         retry_allowed: bool,
         requires_harness_replan: bool,
+        failure_evidence: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             f"{failure_mode}: task={task_id} capability={capability_id}"
@@ -134,6 +135,7 @@ class DelegatedCapabilityFailure(RuntimeError):
         self.retry_attempt = retry_attempt
         self.retry_allowed = retry_allowed
         self.requires_harness_replan = requires_harness_replan
+        self.failure_evidence = dict(failure_evidence or {})
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -143,6 +145,7 @@ class DelegatedCapabilityFailure(RuntimeError):
             "retry_attempt": self.retry_attempt,
             "retry_allowed": self.retry_allowed,
             "requires_harness_replan": self.requires_harness_replan,
+            "failure_evidence": dict(self.failure_evidence),
             "authority": "DEEPSEEK_HARNESS",
         }
 
@@ -1450,6 +1453,9 @@ class HermesHarnessCapabilityBroker:
                     bool(task.supports_retry)
                     and retry_attempt < int(task.retry_budget)
                 )
+                failure_evidence = dict(
+                    getattr(exc, "failure_evidence", {}) or {}
+                )
                 failure = DelegatedCapabilityFailure(
                     task_id=task_id,
                     capability_id=capability_id,
@@ -1457,6 +1463,7 @@ class HermesHarnessCapabilityBroker:
                     retry_attempt=retry_attempt,
                     retry_allowed=retry_allowed,
                     requires_harness_replan=not retry_allowed,
+                    failure_evidence=failure_evidence,
                 )
                 self._audit.append({
                     "event": "TASK_FAILED",
@@ -1473,6 +1480,7 @@ class HermesHarnessCapabilityBroker:
                     "retry_allowed": retry_allowed,
                     "requires_harness_replan": not retry_allowed,
                     "failure_mode": type(exc).__name__,
+                    "failure_evidence": failure_evidence,
                     "evidence_refs": [],
                 })
                 raise failure from exc
