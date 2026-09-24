@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 35880207811,
-    "reason": "resume after redundant clarification guard focused validation",
+    "retry_of_run": 36027825445,
+    "reason": "resume after editorial script-review execution-contract fix and focused regression correction",
     "preserve_human_goal": true
   }
 }
