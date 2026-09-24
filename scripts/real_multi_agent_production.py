@@ -442,12 +442,12 @@ def _web_source_statement(
     if not raw.strip():
         return ""
     cleaned = re.sub(
-        r"(?is)<(script|style|noscript)\\b[^>]*>.*?</\\1>",
+        r"(?is)<(script|style|noscript)\b[^>]*>.*?</\1>",
         " ",
         raw,
     )
     cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
-    cleaned = re.sub(r"\\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
         return ""
     tokens = {
@@ -458,7 +458,7 @@ def _web_source_statement(
     tokens.update({"gta", "rockstar", "lucia", "jason", "vice", "city", "leonida"})
     sentences = [
         item.strip()
-        for item in re.split(r"(?<=[.!?])\\s+", cleaned)
+        for item in re.split(r"(?<=[.!?])\s+", cleaned)
         if len(item.strip()) >= 60
     ]
     for sentence in sentences:

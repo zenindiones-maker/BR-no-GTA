@@ -37,6 +37,7 @@ from scripts.real_multi_agent_production import (
     _payload_for_task,
     _target_duration_seconds,
     _web_acquisition_slots,
+    _web_source_statement,
 )
 
 
@@ -951,3 +952,28 @@ def test_longform_web_gap_allows_two_governed_sources_after_official_research():
         for index in range(3)
     ]
     assert _web_acquisition_slots(candidates) == 2
+
+def test_web_source_statement_strips_script_shell_and_returns_grounded_sentence():
+    acquired = {
+        "content": (
+            "<!doctype html><html><head><style>body{display:none}</style>"
+            "<script>window.noise = 'GTA 6 fake shell';</script></head><body>"
+            "<nav>Navigation noise</nav>"
+            "<article><h1>GTA 6 collector set details</h1>"
+            "<p>The GTA 6 collector set costs $400 and does not include the game itself.</p>"
+            "<p>Rockstar says Grand Theft Auto VI launches separately.</p>"
+            "</article></body></html>"
+        )
+    }
+
+    statement = _web_source_statement(
+        acquired,
+        selected_topic="GTA 6 $400 Collector's Edition",
+    )
+
+    lowered = statement.casefold()
+    assert "window.noise" not in lowered
+    assert "body{display:none}" not in lowered
+    assert "costs $400" in lowered
+    assert "does not include the game" in lowered
+
