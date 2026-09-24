@@ -116,3 +116,28 @@ def test_capability_timeout_wording_is_provider_transient():
     assert classification.failure_class == PROVIDER_TRANSIENT
     assert classification.recoverable is True
     assert classification.human_intervention_required is False
+
+
+
+def test_full_timeout_can_skip_same_task_retry_strategy(tmp_path):
+    failure = RuntimeError("NVIDIA NIM request timed out")
+    classification = classify_internal_failure(
+        failure,
+        task=_task(),
+        context={"dependency_context_sha256": "timeout-lineage"},
+    )
+    state = HarnessInternalRecoveryState(
+        mission_id="mission-c",
+        goal_id="goal-c",
+        artifact_dir=tmp_path,
+    )
+    observed = state.observe_failure(
+        task=_task(),
+        exc=failure,
+        context={"dependency_context_sha256": "timeout-lineage"},
+    )
+    decision = state.select_recovery(
+        observed,
+        disallowed_strategies=("RETRY_SAME_TASK",),
+    )
+    assert decision.strategy == "LOCALIZED_PROVIDER_REPLAN"
