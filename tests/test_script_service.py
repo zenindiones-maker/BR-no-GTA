@@ -181,4 +181,3 @@ def test_longform_prompt_uses_voice_b_planning_rate():
     )
     assert "20.0 minutos" in prompt
     assert "2640 palavras" in prompt
-
