@@ -24,6 +24,20 @@ CAPABILITY_TYPES = {"CAPABILITY", "AGENT", "SKILL", "PRESENTATION", "PROVIDER", 
 AVAILABILITY_STATES = {AVAILABLE, BLOCKED, UNKNOWN}
 MATURITY_STATES = {PROVEN, FUNCTIONAL, PARTIAL, UNPROVEN}
 
+EXECUTION_KINDS = {
+    "ORCHESTRATOR",
+    "SEMANTIC_REASONER",
+    "DETERMINISTIC_ANALYSIS_AGENT",
+    "TOOL",
+    "DETERMINISTIC_WORKER",
+    "INDEPENDENT_REVIEWER",
+    "MUTATION_EXECUTOR",
+    "VALIDATOR",
+    "PROVIDER",
+    "PRESENTATION",
+    "AUTO",
+}
+
 
 @dataclass(frozen=True)
 class CapabilityRecord:
@@ -69,6 +83,8 @@ class CapabilityRecord:
     allowed_tools: tuple[str, ...] = ()
     health_policy: str = "DEFAULT"
     execution_operations: tuple[str, ...] = ()
+    execution_kind: str = "AUTO"
+    functional_roles: tuple[str, ...] = ()
 
     @property
     def provider(self) -> str:
@@ -77,12 +93,27 @@ class CapabilityRecord:
         return self.provider_id or self.agent_id or "native"
 
     @property
-    def execution_kind(self) -> str:
-        if self.executor_binding and "codex_addy_capability_executor" in self.executor_binding:
-            return "codex_native_skill"
-        if self.provider_id == "higgsfield":
-            return "higgsfield_cli"
-        return "registered_executor"
+    def resolved_execution_kind(self) -> str:
+        declared = str(self.execution_kind or "").strip().upper()
+        if declared and declared != "AUTO":
+            return declared
+        if self.capability_type == "PROVIDER":
+            return "PROVIDER"
+        if self.capability_type == "PRESENTATION":
+            return "PRESENTATION"
+        if self.capability_type == "TOOL":
+            return "TOOL"
+        if self.capability_type == "SKILL":
+            return (
+                "INDEPENDENT_REVIEWER"
+                if self.supports_review
+                else "SEMANTIC_REASONER"
+            )
+        if self.capability_type == "AGENT":
+            return "DETERMINISTIC_ANALYSIS_AGENT"
+        if self.capability_type == "EXECUTOR":
+            return "DETERMINISTIC_WORKER"
+        return "DETERMINISTIC_WORKER"
 
     @property
     def tags(self) -> tuple[str, ...]:
@@ -289,6 +320,8 @@ def _record(
     allowed_tools: tuple[str, ...] = (),
     health_policy: str = "DEFAULT",
     execution_operations: tuple[str, ...] = (),
+    execution_kind: str = "AUTO",
+    functional_roles: tuple[str, ...] = (),
 ) -> CapabilityRecord:
     return CapabilityRecord(
         capability_id=capability_id,
@@ -328,6 +361,8 @@ def _record(
         allowed_tools=allowed_tools,
         health_policy=health_policy,
         execution_operations=execution_operations,
+        execution_kind=execution_kind,
+        functional_roles=functional_roles,
     )
 
 
@@ -430,6 +465,16 @@ def _addy_records() -> tuple[CapabilityRecord, ...]:
             supports_review=(name == "code-review-and-quality"),
             execution_operations=_ADDY_EXECUTION_OPERATION_OVERRIDES.get(
                 name, _ADDY_BASE_EXECUTION_OPERATIONS
+            ),
+            execution_kind=(
+                "INDEPENDENT_REVIEWER"
+                if name == "code-review-and-quality"
+                else "SEMANTIC_REASONER"
+            ),
+            functional_roles=(
+                ("REVIEW",)
+                if name == "code-review-and-quality"
+                else ("DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL", "ANALYSIS")
             ),
         )
         for name in ADDY_SKILLS
