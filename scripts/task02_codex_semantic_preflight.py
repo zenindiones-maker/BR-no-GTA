@@ -6,6 +6,7 @@ from app.services.agent_office_harness_service import (
  AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING,build_agent_office_specialist_contract,
 )
 from app.services.harness_authorization_service import issue_harness_authorization,validate_harness_authorization
+from app.database.schema import initialize_schema
 
 CAP="agent-office.codex.readonly-analysis"
 def main():
@@ -14,6 +15,7 @@ def main():
  cli=shutil.which("codex")
  auth_ok=False; lease_ok=False; registry_ok=False; existing_auth=False
  blockers=[]
+ initialize_schema()
  registry_ok=bool(record and record.agent_id=="codex-readonly" and record.execution_kind=="SEMANTIC_REASONER" and record.executor_binding==AGENT_OFFICE_SPECIALIST_EXECUTOR_BINDING and record.execution_enabled)
  if not registry_ok:blockers.append("CODEX_READONLY_REGISTRY_BINDING_INVALID")
  if cli:
