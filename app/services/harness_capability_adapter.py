@@ -53,10 +53,18 @@ def _jsonable(value: Any) -> Any:
 class CapabilityReturnedFailure(RuntimeError):
     """Fail-closed executor result that completed transport but not capability work."""
 
-    def __init__(self, capability_id: str, status: str, safe_reason: str) -> None:
+    def __init__(
+        self,
+        capability_id: str,
+        status: str,
+        safe_reason: str,
+        *,
+        failure_evidence: dict[str, Any] | None = None,
+    ) -> None:
         self.capability_id = str(capability_id)
         self.status = str(status)
         self.safe_reason = str(safe_reason)[:240]
+        self.failure_evidence = dict(failure_evidence or {})
         super().__init__(
             f"capability returned non-executed evidence: "
             f"{self.capability_id} status={self.status} reason={self.safe_reason}"
@@ -242,6 +250,14 @@ class CapabilityAdapter:
                 record.capability_id,
                 result.status,
                 _failed_capability_reason(result),
+                failure_evidence={
+                    "capability_id": result.capability_id,
+                    "provider": result.provider,
+                    "status": result.status,
+                    "active": result.active,
+                    "result": _jsonable(result.result),
+                    "boundary": result.boundary,
+                },
             )
         elapsed = time.perf_counter() - started
         return CapabilityExecutionResult(
