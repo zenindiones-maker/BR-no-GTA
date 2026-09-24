@@ -331,7 +331,7 @@ def test_tool_result_returns_to_same_agent_task_and_final_schema_completes(
             dependency_context=context,
         )
         assert result["executed"] is True
-        assert result["agent_loop"]["agent_turns"] == 3
+        assert result["agent_loop"]["agent_turns"] == 2
         assert result["agent_loop"]["tool_calls"] == 1
         assert result["agent_loop"]["provider_calls"] == 3
         assert result["agent_loop"]["final_output_valid"] is True
@@ -948,7 +948,7 @@ def test_restored_session_resumes_after_real_tool_result_without_reexecution(
             "addy:debugging-and-error-recovery"
         )
         payload = kwargs["payload"]
-        assert payload["agent_turn"] == 3
+        assert payload["agent_turn"] == 2
         assert payload["agent_instance_id"] == session.agent_instance_id
         assert len(
             payload["context"]["agent_tool_results"]
@@ -991,10 +991,14 @@ def test_restored_session_resumes_after_real_tool_result_without_reexecution(
         ]
         assert len(restored) == 1
         assert restored[0]["restored_turn_index"] == 2
+        assert restored[0]["next_turn_index"] == 2
+        assert restored[0][
+            "PROVIDER_FAILURE_DID_NOT_CONSUME_AGENT_TURN"
+        ] == "PASS"
         assert restored[0]["restored_tool_result_count"] == 1
         assert restored[0]["TASK_AGENT_SESSION_RESTORED"] == "PASS"
         final_session = json.loads(session.path.read_text())
-        assert final_session["TURN_INDEX"] == 3
+        assert final_session["TURN_INDEX"] == 2
         assert final_session["STATUS"] == "COMPLETED"
         assert len(final_session["TOOL_EXECUTIONS"]) == 1
         assert len(final_session["TOOL_RESULTS_CONSUMED"]) == 1
