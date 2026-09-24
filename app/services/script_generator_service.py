@@ -17,7 +17,7 @@ from app.services.ai_provider import AIProvider, AIProviderError
 # 132 WPM is the conservative planning baseline after long-form pause allowance.
 VOICE_B_SCRIPT_PLANNING_WPM = 132.0
 LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
-MAX_EDITORIAL_GENERATION_ATTEMPTS = 2
+MAX_EDITORIAL_GENERATION_ATTEMPTS = 3
 MAX_MALFORMED_PROVIDER_RETRIES = 1
 
 EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA = {
@@ -82,6 +82,56 @@ def _structure_word_count(structure: dict[str, Any]) -> int:
         str(structure.get("cta") or ""),
     ]
     return len(re.findall(r"[A-Za-zÀ-ÿ0-9]+", " ".join(parts)))
+
+
+def _normalized_section_signature(section: dict[str, Any]) -> tuple[str, str]:
+    heading = re.sub(
+        r"[^a-z0-9à-ÿ]+",
+        " ",
+        str(section.get("heading") or "").casefold(),
+    ).strip()
+    body = re.sub(
+        r"[^a-z0-9à-ÿ]+",
+        " ",
+        str(section.get("body") or "").casefold(),
+    ).strip()
+    return heading, body
+
+
+def _merge_complementary_longform_structure(
+    base: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge only distinct development blocks from bounded provider passes.
+
+    The merge never manufactures prose. Every retained block is provider output
+    generated from the same verified evidence context; downstream duration,
+    novelty, duplication and human-review gates remain authoritative.
+    """
+    merged = {
+        "hook": str(base.get("hook") or ""),
+        "introduction": str(base.get("introduction") or ""),
+        "development": [
+            dict(item)
+            for item in (base.get("development") or ())
+            if isinstance(item, dict)
+        ],
+        "conclusion": str(base.get("conclusion") or ""),
+        "cta": str(base.get("cta") or ""),
+    }
+    seen = {
+        _normalized_section_signature(item)
+        for item in merged["development"]
+    }
+    for item in candidate.get("development") or ():
+        if not isinstance(item, dict):
+            continue
+        signature = _normalized_section_signature(item)
+        if not all(signature) or signature in seen:
+            continue
+        merged["development"].append(dict(item))
+        seen.add(signature)
+    return merged
 
 
 def _build_ai_prompt(
@@ -392,15 +442,29 @@ def _generate_ai_structure(
             prior_sections = len(
                 previous_structure.get("development") or ()
             )
+            remaining_words = max(300, target_words - prior_words)
+            prior_headings = [
+                str(item.get("heading") or "").strip()
+                for item in previous_structure.get("development") or ()
+                if isinstance(item, dict)
+                and str(item.get("heading") or "").strip()
+            ]
             attempt_prompt += (
-                "\n\nCORREÇÃO OBRIGATÓRIA DE SUFICIÊNCIA EDITORIAL\n"
-                f"- A tentativa anterior teve {prior_words} palavras e "
+                "\n\nEXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA\n"
+                f"- A composição validada até aqui possui {prior_words} palavras e "
                 f"{prior_sections} blocos de desenvolvimento.\n"
-                f"- Reescreva do zero com pelo menos {target_words} palavras úteis e "
-                f"{minimum_sections} blocos distintos.\n"
+                f"- Ainda faltam aproximadamente {remaining_words} palavras úteis "
+                "para o contrato de duração.\n"
+                "- Produza SOMENTE ângulos/blocos de desenvolvimento complementares "
+                "sustentados pelas MESMAS evidências verificadas.\n"
+                "- NÃO reescreva nem parafraseie os blocos já produzidos.\n"
+                f"- Evite repetir estes headings: {json.dumps(prior_headings, ensure_ascii=False)}\n"
                 "- Preserve estritamente os fatos e evidências fornecidos.\n"
-                "- Aumente profundidade explicativa e análise; não invente fatos.\n"
+                "- Aprofunde contexto, consequências, comparações e implicações "
+                "somente quando sustentados pelas evidências.\n"
                 "- Não use filler, repetição ou paráfrase vazia para bater duração.\n"
+                "- Mantenha o mesmo JSON obrigatório; hook/introduction/conclusion/cta "
+                "podem ser concisos porque somente development será agregado.\n"
             )
 
         malformed_prompt = attempt_prompt
@@ -440,7 +504,6 @@ def _generate_ai_structure(
             )
 
         structure = _validate_ai_structure(parsed)
-        previous_structure = structure
 
         if target_words is None:
             return structure
@@ -451,6 +514,21 @@ def _generate_ai_structure(
             >= minimum_sections
         ):
             return structure
+
+        if previous_structure is None:
+            previous_structure = structure
+        else:
+            previous_structure = _merge_complementary_longform_structure(
+                previous_structure,
+                structure,
+            )
+
+        if (
+            _structure_word_count(previous_structure) >= target_words
+            and len(previous_structure.get("development") or ())
+            >= minimum_sections
+        ):
+            return previous_structure
 
     raise AIProviderError(
         "AI response cannot sustain requested long-form duration without padding."

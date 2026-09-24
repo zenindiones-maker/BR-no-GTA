@@ -665,3 +665,72 @@ def test_semantic_validation_failure_does_not_use_json_format_retry():
     with pytest.raises(AIProviderError, match="development"):
         generate_script_structure(idea_id, ai_provider=provider)
     assert len(provider.prompts) == 1
+
+def test_longform_composes_distinct_bounded_passes_without_padding():
+    import json
+
+    from app.services.ai_provider import AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - longform complementar",
+        description="Pauta factual com várias evidências verificadas.",
+        status="approved",
+        score=9.5,
+    )
+
+    def structure(prefix, words_per_block):
+        body = " ".join(
+            f"{prefix}{index}" for index in range(words_per_block)
+        )
+        return {
+            "hook": " ".join(["evidencia"] * 50),
+            "introduction": " ".join(["contexto"] * 80),
+            "development": [
+                {
+                    "heading": f"{prefix} Bloco {block}",
+                    "body": body,
+                }
+                for block in range(4)
+            ],
+            "conclusion": " ".join(["conclusao"] * 50),
+            "cta": " ".join(["cta"] * 20),
+        }
+
+    first = structure("A", 300)
+    second = structure("B", 300)
+
+    class ComplementaryProvider:
+        def __init__(self):
+            self.prompts = []
+            self.responses = [first, second]
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text=json.dumps(
+                    self.responses.pop(0),
+                    ensure_ascii=False,
+                )
+            )
+
+    provider = ComplementaryProvider()
+    result = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        editorial_context={
+            "verified_claims": [
+                {
+                    "statement": "fato verificado",
+                    "source": "https://www.rockstargames.com/",
+                }
+            ]
+        },
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(provider.prompts) == 2
+    assert "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA" in provider.prompts[1]
+    assert "NÃO reescreva nem parafraseie" in provider.prompts[1]
+    assert len(result["development"]) == 8
+    assert _structure_word_count(result) >= 2640
