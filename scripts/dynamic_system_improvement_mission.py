@@ -52,6 +52,93 @@ from scripts.run_system_improvement_review import build_snapshot
 UPSTREAM_SHA = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
 
 
+def _provider_failure_attempt_state(
+    failure_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    evidence = dict(failure_evidence or {})
+    result = evidence.get("result")
+    result = dict(result) if isinstance(result, dict) else {}
+    rows = [
+        dict(item)
+        for item in (result.get("provider_attempts") or ())
+        if isinstance(item, dict)
+    ]
+    pairs: list[dict[str, Any]] = []
+    exhausted: list[dict[str, Any]] = []
+    route_ids: list[str] = []
+    for row in rows:
+        provider_id = str(
+            row.get("provider_id") or row.get("provider") or ""
+        ).strip()
+        model_id = str(
+            row.get("model_id") or row.get("model") or ""
+        ).strip()
+        routing_id = str(row.get("routing_id") or "").strip()
+        if routing_id:
+            route_ids.append(routing_id)
+        if not provider_id or not model_id:
+            continue
+        item = {
+            "provider_id": provider_id,
+            "model_id": model_id,
+            "routing_id": routing_id,
+            "attempt_id": str(row.get("attempt_id") or "").strip(),
+            "failure_class": str(
+                row.get("failure_class") or ""
+            ).strip(),
+        }
+        pairs.append(item)
+        error = row.get("failure_evidence") or row.get("error")
+        error = dict(error) if isinstance(error, dict) else {}
+        if (
+            str(error.get("code") or "").casefold() == "timeout"
+            and bool(error.get("retryable"))
+            and str(error.get("failure_stage") or "")
+            in {"transport_request", "response_read"}
+        ):
+            exhausted.append(item)
+
+    def _unique(items):
+        seen = set()
+        out = []
+        for item in items:
+            key = (
+                str(item.get("provider_id") or ""),
+                str(item.get("model_id") or ""),
+                str(item.get("routing_id") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
+
+    full_timeout = bool(
+        exhausted
+        or result.get("SAME_MODEL_FULL_TIMEOUT_RETRY_AVOIDED") is True
+        or result.get("same_model_full_timeout_retry_avoided") is True
+        or str(result.get("FAILURE_CLASS") or "")
+        == "TRANSIENT_PROVIDER_TIMEOUT"
+    )
+    return {
+        "attempted_provider_model_pairs": _unique(pairs),
+        "exhausted_provider_model_pairs": _unique(exhausted),
+        "attempted_routing_ids": list(dict.fromkeys(route_ids)),
+        "full_timeout": full_timeout,
+        "selected_provider": str(
+            result.get("SELECTED_PROVIDER")
+            or result.get("semantic_provider")
+            or evidence.get("provider")
+            or ""
+        ).strip(),
+        "selected_model": str(
+            result.get("SELECTED_MODEL")
+            or result.get("semantic_model")
+            or ""
+        ).strip(),
+    }
+
+
 def _decode_plan(value: str) -> dict[str, Any]:
     raw = base64.b64decode(value.encode("ascii"), validate=True)
     if not raw or len(raw) > 96 * 1024:
@@ -1491,8 +1578,21 @@ def run(
                                 task.capability_version or "1"
                             ),
                         )
+                        provider_failure = _provider_failure_attempt_state(
+                            getattr(exc, "failure_evidence", None)
+                        )
+                        disallowed_strategies = (
+                            ("RETRY_SAME_TASK",)
+                            if (
+                                classification.failure_class
+                                == "PROVIDER_TRANSIENT"
+                                and provider_failure["full_timeout"]
+                            )
+                            else ()
+                        )
                         decision = broker.recovery.select_recovery(
-                            classification
+                            classification,
+                            disallowed_strategies=disallowed_strategies,
                         )
                         allowed_local = {
                             "RETRY_SAME_TASK",
@@ -1522,7 +1622,55 @@ def run(
                             or parent_context
                             or {}
                         )
+                        prior_internal = dict(
+                            retry_context.get("internal_recovery") or {}
+                        )
+                        prior_pairs = [
+                            dict(item)
+                            for item in (
+                                prior_internal.get(
+                                    "ATTEMPTED_PROVIDER_MODEL_PAIRS"
+                                ) or ()
+                            )
+                            if isinstance(item, dict)
+                        ]
+                        prior_exhausted = [
+                            dict(item)
+                            for item in (
+                                prior_internal.get(
+                                    "EXHAUSTED_PROVIDER_MODEL_PAIRS"
+                                ) or ()
+                            )
+                            if isinstance(item, dict)
+                        ]
+                        prior_routes = [
+                            str(item)
+                            for item in (
+                                prior_internal.get(
+                                    "ATTEMPTED_ROUTING_IDS"
+                                ) or ()
+                            )
+                            if str(item)
+                        ]
+
+                        def _merge_attempts(*groups):
+                            seen = set()
+                            merged = []
+                            for group in groups:
+                                for item in group:
+                                    key = (
+                                        str(item.get("provider_id") or ""),
+                                        str(item.get("model_id") or ""),
+                                        str(item.get("routing_id") or ""),
+                                    )
+                                    if key in seen:
+                                        continue
+                                    seen.add(key)
+                                    merged.append(dict(item))
+                            return merged
+
                         retry_context["internal_recovery"] = {
+                            **prior_internal,
                             "ORIGINAL_MISSION_ID": spec.mission_id,
                             "ORIGINAL_GOAL_ID": spec.goal_id,
                             "FAILED_TASK_ID": task_id,
@@ -1537,6 +1685,43 @@ def run(
                                 classification.failure_signature
                             ),
                             "RECOVERY_STRATEGY": decision.strategy,
+                            "ATTEMPTED_PROVIDER_MODEL_PAIRS": _merge_attempts(
+                                prior_pairs,
+                                provider_failure[
+                                    "attempted_provider_model_pairs"
+                                ],
+                            ),
+                            "EXHAUSTED_PROVIDER_MODEL_PAIRS": _merge_attempts(
+                                prior_exhausted,
+                                provider_failure[
+                                    "exhausted_provider_model_pairs"
+                                ],
+                            ),
+                            "ATTEMPTED_ROUTING_IDS": list(dict.fromkeys([
+                                *prior_routes,
+                                *provider_failure[
+                                    "attempted_routing_ids"
+                                ],
+                            ])),
+                            "PREVIOUS_SELECTED_PROVIDER": (
+                                provider_failure["selected_provider"]
+                                or prior_internal.get(
+                                    "PREVIOUS_SELECTED_PROVIDER"
+                                )
+                            ),
+                            "PREVIOUS_SELECTED_MODEL": (
+                                provider_failure["selected_model"]
+                                or prior_internal.get(
+                                    "PREVIOUS_SELECTED_MODEL"
+                                )
+                            ),
+                            "SAME_MODEL_FULL_TIMEOUT_RETRY": (
+                                "FORBIDDEN"
+                                if provider_failure["full_timeout"]
+                                else prior_internal.get(
+                                    "SAME_MODEL_FULL_TIMEOUT_RETRY"
+                                )
+                            ),
                         }
                         payload["context"] = retry_context
 
