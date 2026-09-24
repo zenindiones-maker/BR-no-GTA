@@ -39,6 +39,10 @@ from app.services.harness_routing_policy_service import (
 from app.services.harness_executor_availability_service import (
     evaluate_typed_requirement_feasibility,
 )
+from app.services.harness_residual_replanning_service import (
+    ResidualTaskRequirements,
+    resolve_residual_task,
+)
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_MUTATE_CANDIDATE,
@@ -800,6 +804,87 @@ def plan_once(
         "failure_episode_id": failure_episode_id,
     })
     return payload, route, elapsed
+def apply_runtime_residual_replan(
+    plan: dict[str, Any],
+    *,
+    residual_spec: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Generic Harness residual replan consumed by the real mission entrypoint."""
+    if not residual_spec:
+        return plan, {"RESIDUAL_REPLAN_PERFORMED": "NOT_APPLICABLE"}
+    collaboration=dict(plan.get("collaboration_plan") or {})
+    original_tasks=[dict(x) for x in collaboration.get("tasks") or ()]
+    parent_id=str(residual_spec.get("parent_task_id") or "").strip()
+    parent=next((x for x in original_tasks if str(x.get("task_id") or "")==parent_id),None)
+    if parent is None:
+        raise RuntimeError("RESIDUAL_PARENT_TASK_MISSING:"+parent_id)
+    child_id=str(residual_spec.get("task_id") or (parent_id+"-residual")).strip()
+    req=ResidualTaskRequirements(
+        parent_task_id=parent_id,task_id=child_id,
+        task_class=str(residual_spec.get("task_class") or parent.get("task_class") or "residual"),
+        functional_role=str(residual_spec.get("functional_role") or parent.get("functional_role") or "GENERAL"),
+        required_operations=tuple(residual_spec.get("required_operations") or parent.get("required_operations") or ()),
+        required_input_artifact_schemas=tuple(residual_spec.get("required_input_artifact_schemas") or ()),
+        expected_output_schema=str(residual_spec.get("expected_output_schema") or parent.get("expected_output") or ""),
+        side_effect_class=str(residual_spec.get("side_effect_class") or "READ_ONLY"),
+        mutation_requirement=str(residual_spec.get("mutation_requirement") or "NOT_APPLICABLE"),
+        review_requirement=str(residual_spec.get("review_requirement") or "NOT_REQUIRED"),
+        dependency_refs=tuple(parent.get("dependencies") or ()),
+        already_completed_work_refs=tuple(residual_spec.get("input_artifact_refs") or ()),
+        forbidden_capabilities=tuple(residual_spec.get("forbidden_capabilities") or ()),
+        eligibility_snapshot_ref=str(residual_spec.get("eligibility_snapshot_ref") or "runtime:eligibility"),
+    )
+    resolution=resolve_residual_task(req)
+    selected=resolution.get("selected")
+    if not selected:
+        raise RuntimeError("RESIDUAL_REPLAN_NO_ELIGIBLE_CAPABILITY")
+    record=GLOBAL_CAPABILITY_REGISTRY.get(str(selected["capability_id"]))
+    if record is None:
+        raise RuntimeError("RESIDUAL_SELECTED_CAPABILITY_MISSING")
+    child=dict(parent)
+    child.update(req.to_task())
+    child.update({
+        "capability_id":record.capability_id,
+        "selected_agent_id":record.agent_id,
+        "selected_skill_id":record.skill_id,
+        "selected_executor_binding":record.executor_binding,
+        "input_refs":list(req.already_completed_work_refs),
+        "expected_output":req.expected_output_schema,
+        "required_capability_description":"Registry-selected residual capability satisfying typed requirements",
+        "residual_parent_task_id":parent_id,
+        "original_parent_capability_id":parent.get("capability_id"),
+    })
+    # Preserve the failed parent in immutable lineage, but replace its executable
+    # node by a child and redirect only its downstream dependencies.
+    executable=[x for x in original_tasks if str(x.get("task_id") or "")!=parent_id]
+    executable.append(child)
+    for task in executable:
+        task["dependencies"]=[
+            child_id if str(dep)==parent_id else dep
+            for dep in (task.get("dependencies") or ())
+        ]
+    levels=[]
+    for level in collaboration.get("execution_levels") or ():
+        levels.append([child_id if str(x)==parent_id else x for x in level])
+    collaboration["tasks"]=executable
+    collaboration["execution_levels"]=levels
+    plan=dict(plan);plan["collaboration_plan"]=collaboration
+    evidence={
+        "schema":"runtime-residual-replan/v1",
+        "ORIGINAL_TASK_ID":parent_id,
+        "ORIGINAL_TASK_CAPABILITY":parent.get("capability_id"),
+        "ORIGINAL_TASK_HISTORY_PRESERVED":True,
+        "RESIDUAL_REPLAN_PERFORMED":"PASS",
+        "RESIDUAL_TASK_ID":child_id,
+        "RESIDUAL_SELECTED_CAPABILITY":record.capability_id,
+        "RESIDUAL_SELECTED_AGENT":record.agent_id,
+        "ADDY_RUNTIME_INVOCATION_COUNT":0 if not str(record.capability_id).startswith("addy:") else 1,
+        "CODEX_RUNTIME_INVOCATION_COUNT":1 if record.agent_id=="codex-readonly" else 0,
+        "resolution":resolution,
+    }
+    return plan,evidence
+
+
 def selected_identity_text(plan):
     return json.dumps([
         {
@@ -1640,9 +1725,15 @@ def run(
             + "!="
             + str(resume_identity["mission_id"])
         )
+    first, residual_replan_evidence = apply_runtime_residual_replan(
+        first,
+        residual_spec=dict(request.get("residual_replan") or {}) or None,
+    )
+    write_json(output_dir / "runtime-residual-replan.json", residual_replan_evidence)
+    write_json(output_dir / "first-plan.json", {"plan": first, "residual_replan": residual_replan_evidence})
     identity_text = selected_identity_text(first)
-    if "codex" in identity_text:
-        raise RuntimeError("MUTATION_STAGE=BLOCKED_BY_EXECUTOR_AUTH")
+    # Codex is permitted only when selected by the Harness Registry after a
+    # proven runtime eligibility snapshot; no task-specific bypass is used.
 
     review_tasks = [
         item

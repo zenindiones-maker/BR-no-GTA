@@ -142,5 +142,38 @@
     "sandboxed APPLY_RECOVERY",
     "deterministic VALIDATE_RECOVERY",
     "no remote push or canonical promotion by actuator"
-  ]
+  ],
+  "residual_evidence_source": {
+    "run_id": 36004913460,
+    "artifact_name": "real-agent-self-improvement-36004913460",
+    "artifact_path": "deterministic-team/incident-evidence-pack.json"
+  },
+  "residual_replan": {
+    "parent_task_id": "task-02",
+    "task_id": "task-02-semantic-diagnosis",
+    "task_class": "incident-diagnosis",
+    "functional_role": "DIAGNOSIS",
+    "required_operations": [
+      "CAN_SEMANTIC_REASONING",
+      "CAN_CONSUME_ARTIFACT_REFS",
+      "CAN_PRODUCE_ARTIFACT_REFS"
+    ],
+    "required_input_artifact_schemas": [
+      "IncidentEvidencePack/v1"
+    ],
+    "expected_output_schema": "IncidentDiagnosisEvidence/v1",
+    "side_effect_class": "READ_ONLY",
+    "mutation_requirement": "NOT_APPLICABLE",
+    "review_requirement": "NOT_REQUIRED",
+    "input_artifact_refs": [
+      "runtime/real-agent-self-improvement/residual-input/incident-evidence-pack.json"
+    ],
+    "forbidden_capabilities": [
+      {
+        "capability_id": "addy:debugging-and-error-recovery",
+        "reason": "semantic provider unavailable"
+      }
+    ],
+    "eligibility_snapshot_ref": "runtime:BR_RUNTIME_CAPABILITY_ELIGIBILITY_JSON"
+  }
 }

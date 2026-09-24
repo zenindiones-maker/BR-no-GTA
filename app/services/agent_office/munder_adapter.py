@@ -225,6 +225,8 @@ def deterministic_read_only_worker(
         ),
         "commands": ["git ls-files"],
         "artifacts": [],
+        "input_artifact_consumption": consumed_inputs,
+        "domain_evidence": domain_evidence,
         "tests": [
             {"name": "repository-profile-non-empty", "status": "PASS" if rows else "FAIL"},
             {"name": "write-scope-empty", "status": "PASS" if not task.write_set else "FAIL"},
@@ -393,6 +395,8 @@ def codex_readonly_worker(
     task: AgentOfficeTask,
     workspace: Path,
     timeout_seconds: float,
+    lease: DelegatedTaskLease | None = None,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Bounded internal Codex worker; canonical Addy skills never route here."""
     if task.capability.startswith("addy:"):
@@ -419,15 +423,32 @@ def codex_readonly_worker(
         if auth.returncode != 0:
             raise RuntimeError("Codex authentication prerequisite is unavailable")
 
+    consumed_inputs=[]
+    artifact_context=[]
+    if task.input_artifact_refs:
+        if repository_root is None:
+            raise ValueError("Codex read-only worker requires repository_root for artifact inputs")
+        root=repository_root.resolve()
+        for ref in task.input_artifact_refs:
+            target=(root/str(ref)).resolve()
+            try: target.relative_to(root)
+            except ValueError as exc: raise PermissionError("Codex input artifact escaped repository root") from exc
+            raw=target.read_bytes()
+            parsed=json.loads(raw.decode("utf-8"))
+            consumed_inputs.append({"artifact_ref":str(ref),"content_sha256":sha256(raw).hexdigest(),"bytes_read":len(raw),"schema":parsed.get("schema"),"producer_task_id":parsed.get("producer_task_id") or parsed.get("task_id"),"producer_agent_id":parsed.get("producer_agent_id") or "deterministic-analysis"})
+            artifact_context.append(parsed)
     prompt = (
         "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
         "Inspect only the provided disposable git worktree. Do not mutate files, commit, publish, "
         "deploy, authenticate to other services, invoke Addy skills, or claim authority. "
-        "You MUST use shell inspection tooling to read at least one file from READ_SET before "
-        "claiming success. If the sandbox or filesystem prevents inspection, report the block "
-        "and do not claim completion. Return concise analysis evidence to the Agent Office "
-        "coordinator.\n\n"
+        "When INPUT_ARTIFACTS are supplied, reason only from those typed artifacts and the task question; "
+        "do not inspect unrelated repository files. Return exactly one JSON object with schema "
+        "IncidentDiagnosisEvidence/v1 and fields task_id, agent_id, claims, causal_explanation, "
+        "supporting_evidence_refs, supporting_evidence_hashes, alternatives_considered, rejected_alternatives, "
+        "rejection_reasons, uncertainty, known_limitations, transport_failure_distinguished_from_root_cause. "
+        "Do not make unsupported claims.\n\n"
         f"READ_SET={json.dumps(task.read_set or task.allowed_paths)}\n"
+        f"INPUT_ARTIFACTS={json.dumps(artifact_context,ensure_ascii=False)}\n"
         f"Task:\n{task.objective}"
     )
     command = [
@@ -471,7 +492,7 @@ def codex_readonly_worker(
             "retryability": "DETERMINISTIC_NO_RETRY",
             "recoverable": False,
         }
-    if not inspected_paths:
+    if not inspected_paths and not consumed_inputs:
         return {
             "status": "FAILED",
             "error": "Codex read-only inspection evidence missing",
@@ -483,6 +504,17 @@ def codex_readonly_worker(
             "recoverable": False,
         }
     inherited_grounding = _grounded_context_from_objective(task.objective)
+    domain_evidence=None
+    if consumed_inputs:
+        try:
+            domain_evidence=json.loads(output)
+        except json.JSONDecodeError:
+            return {"status":"FAILED","error":"Codex semantic output is not valid JSON","failure_stage":"readonly_result_validation","stderr_class":"INVALID_TYPED_OUTPUT","retryability":"DETERMINISTIC_NO_RETRY","recoverable":False}
+        required={"schema","task_id","agent_id","claims","causal_explanation","supporting_evidence_refs","supporting_evidence_hashes","alternatives_considered","rejected_alternatives","rejection_reasons","uncertainty","known_limitations","transport_failure_distinguished_from_root_cause"}
+        if domain_evidence.get("schema")!="IncidentDiagnosisEvidence/v1" or not required.issubset(domain_evidence):
+            return {"status":"FAILED","error":"Codex semantic output failed IncidentDiagnosisEvidence/v1 contract","failure_stage":"readonly_result_validation","stderr_class":"INVALID_TYPED_OUTPUT","retryability":"DETERMINISTIC_NO_RETRY","recoverable":False}
+        domain_evidence["input_artifact_digest"]=sha256(json.dumps(consumed_inputs,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        domain_evidence["output_sha256"]=sha256(json.dumps(domain_evidence,sort_keys=True,separators=(",",":")).encode()).hexdigest()
     return {
         "status": "SUCCEEDED",
         "summary": output,

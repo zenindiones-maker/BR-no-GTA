@@ -10,7 +10,7 @@ on:
       - "scripts/task02_deterministic_team.py"
       - "scripts/task02_real_multiagent_chain.py"
       - "tests/test_task02_deterministic_team.py"
-      - "tests/test_zero_cost_route_inventory.py"
+      - "tests/test_zero_cost_route_inventory.py             tests/test_harness_residual_replanning_service.py             tests/test_real_agent_self_improvement_residual_replan.py"
       - "scripts/dynamic_system_improvement_mission.py"
       - "app/services/execution_mission_envelope_service.py"
       - "app/services/harness_adaptive_planning_service.py"
@@ -118,6 +118,32 @@ jobs:
           echo "INCIDENT_SOURCE_RUN=$SOURCE_RUN"
           echo "INCIDENT_SOURCE_ARTIFACT=$SOURCE_ARTIFACT"
           echo "REAL_INCIDENT_EVIDENCE_RESTORED=PASS"
+
+          read -r RESIDUAL_RUN RESIDUAL_ARTIFACT RESIDUAL_PATH <<EOF
+          $(python - <<'PY'
+          import json
+          d=json.load(open(".run/real-agent-self-improvement.request.json"))
+          s=d.get("residual_evidence_source") or {}
+          print(s.get("run_id") or "",s.get("artifact_name") or "",s.get("artifact_path") or "")
+          PY
+          )
+          EOF
+          if [ -n "$RESIDUAL_RUN" ]; then
+            stage="$RUNNER_TEMP/residual-evidence-source"
+            rm -rf "$stage"; mkdir -p "$stage"
+            gh run download "$RESIDUAL_RUN" --repo "$GITHUB_REPOSITORY" --name "$RESIDUAL_ARTIFACT" --dir "$stage"
+            mkdir -p runtime/real-agent-self-improvement/residual-input
+            cp "$stage/$RESIDUAL_PATH" runtime/real-agent-self-improvement/residual-input/incident-evidence-pack.json
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime/real-agent-self-improvement/residual-input/incident-evidence-pack.json")
+          d=json.loads(p.read_text())
+          assert d.get("schema")=="IncidentEvidencePack/v1"
+          assert d.get("sha256")
+          print("RESIDUAL_TYPED_EVIDENCE_RESTORED=PASS")
+          PY
+          fi
 
           read -r CHECKPOINT_RUN CHECKPOINT_ARTIFACT <<EOF
           $(python - <<'PY'
@@ -522,6 +548,18 @@ jobs:
             --output runtime/real-agent-self-improvement/task02-codex-semantic-preflight.json
           test "$(python -c 'import json; print(json.load(open("runtime/real-agent-self-improvement/task02-codex-semantic-preflight.json"))["PREFLIGHT_STATUS"])')" = "PASS"
           echo "semantic_preflight_passed=true" >> "$GITHUB_OUTPUT"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+          from app.services.capability_health_service import capability_health
+          snapshot={}
+          for record in GLOBAL_CAPABILITY_REGISTRY.all():
+              health=capability_health(record.capability_id)
+              if str(record.health_policy or "")=="SEMANTIC_PROVIDER_REQUIRED" and health.state in {"BLOCKED","QUARANTINED"}:
+                  snapshot[record.capability_id]={"eligible":False,"health_state":health.state,"reason":health.reason,"evidence_refs":list(health.evidence_refs)}
+          snapshot["agent-office.codex.readonly-analysis"]={"eligible":True,"health_state":"HEALTHY","reason":"authenticated Codex semantic preflight","evidence_refs":["artifact:task02-codex-semantic-preflight.json"]}
+          print("BR_RUNTIME_CAPABILITY_ELIGIBILITY_JSON="+json.dumps(snapshot,separators=(",",":")))
+          PY
 
       - name: Prove deterministic task-02 decomposition
         if: steps.codex_semantic_preflight.outputs.semantic_preflight_passed == 'true' && false
