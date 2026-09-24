@@ -183,7 +183,7 @@ jobs:
         id: provider_recovery
         run: |
           set -euo pipefail
-          python - <<'PY' >> "$GITHUB_OUTPUT"
+          python - <<'PY' | tee -a "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
 
