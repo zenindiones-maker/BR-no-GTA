@@ -1112,3 +1112,60 @@ def test_resume_budget_extends_session_without_resetting_turn_history(
     assert third["exhausted"] is True
     assert exhausted.state["TURN_INDEX"] == 8
     assert exhausted.state["MAX_AGENT_TURNS"] == 4
+
+
+
+def test_resume_segments_do_not_hide_remaining_absolute_turn_budget(
+    tmp_path,
+):
+    session = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-segment-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    session.state["TURN_INDEX"] = 6
+    session.state["RESUME_SEGMENTS_USED"] = 2
+    session._persist()
+
+    restored = AgentSessionRuntime(
+        artifact_dir=tmp_path,
+        mission_id="mission-resume-segment-budget",
+        task_id="task-02",
+        capability_id="addy:debugging-and-error-recovery",
+        agent_id="addy-agent-skills",
+        skill_id="debugging-and-error-recovery",
+        functional_role="DIAGNOSIS",
+        execution_kind="SEMANTIC_REASONER",
+        allowed_tools=("artifact.evidence.reuse",),
+        input_artifact_refs=("artifact:incident.json",),
+        max_agent_turns=4,
+        max_tool_calls=2,
+        max_provider_calls=8,
+        max_context_chars=15000,
+        max_wall_clock_seconds=120,
+    )
+    window = restored.reserve_turn_window(
+        default_max_agent_turns=4,
+        max_resume_agent_turns=2,
+        max_resume_segments=4,
+        max_total_agent_turns=8,
+    )
+    assert window["exhausted"] is False
+    assert window["resume_segment"] == 3
+    assert window["historical_turns"] == 6
+    assert window["start_turn"] == 7
+    assert window["end_turn"] == 8
+    assert restored.state["MAX_AGENT_TURNS"] == 4
+    assert restored.state["MAX_TOTAL_AGENT_TURNS"] == 8
