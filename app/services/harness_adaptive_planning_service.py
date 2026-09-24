@@ -2060,9 +2060,16 @@ def select_capability_for_requirement(
         ))
 
     if not ranked:
+        bounded_avoided = list(dict.fromkeys(avoided))[:12]
         raise RuntimeError(
             "no healthy Registry capability for task_class="
             + str(requirement.get("task_class") or "")
+            + "; required_functional_role="
+            + str(required_functional_role or "GENERAL")
+            + "; required_execution_kind="
+            + str(required_execution_kind or "UNSPECIFIED")
+            + "; avoided="
+            + "|".join(bounded_avoided)
         )
     ranked.sort(key=lambda item: (-item[0], item[1]))
     (
