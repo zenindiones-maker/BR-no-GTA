@@ -296,6 +296,15 @@ jobs:
           if not preferred and exhausted:
               preferred=sorted(exhausted)[-1][0]
           health=semantic_provider_health()
+          for provider_health_row in health.get("providers") or []:
+              print(
+                  "PROVIDER_HEALTH="
+                  + str(provider_health_row.get("provider_id") or "")
+                  + ":"
+                  + str(provider_health_row.get("state") or "")
+                  + ":zero_cost="
+                  + str(bool(provider_health_row.get("zero_cost_eligible"))).lower()
+              )
           eligible=[
               str(item).strip()
               for item in health.get("eligible_zero_cost_provider_ids") or []
