@@ -12,6 +12,7 @@ from app.services.capability_execution_contract_service import (
     derive_required_operations,
     effective_candidate_requirement,
     effective_side_effect_class,
+    infer_functional_role,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 
@@ -195,3 +196,159 @@ def test_benchmark_semantic_medium_risk_remains_readonly_execution():
     assert CAN_MUTATE_CANDIDATE not in ops
     assert effective_candidate_requirement("CONDITIONAL", ops) == "NOT_APPLICABLE"
     assert effective_side_effect_class("MEDIUM", ops) == "READ_ONLY"
+
+
+
+def test_system_improvement_roles_have_exact_least_privilege_contracts():
+    cases = {
+        "EVIDENCE": {
+            "task_class": "evidence-collection",
+            "expected_output": "IncidentEvidenceBundle",
+            "capability_id": "artifact.evidence.reuse",
+            "operations": {
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "DIAGNOSIS": {
+            "task_class": "incident-diagnosis",
+            "expected_output": "IncidentDiagnosisEvidence",
+            "capability_id": "addy:debugging-and-error-recovery",
+            "operations": {
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "ROOT_CAUSE": {
+            "task_class": "root-cause-analysis",
+            "expected_output": "RootCauseEvidence",
+            "capability_id": "addy:debugging-and-error-recovery",
+            "operations": {
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "PROPOSAL": {
+            "task_class": "recovery-proposal",
+            "expected_output": "RecoveryProposalEvidence",
+            "capability_id": "addy:debugging-and-error-recovery",
+            "operations": {
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "REVIEW": {
+            "task_class": "independent-review",
+            "expected_output": "IndependentReviewEvidence",
+            "capability_id": "addy:code-review-and-quality",
+            "operations": {
+                CAN_REVIEW,
+                CAN_SEMANTIC_REASONING,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "APPLY": {
+            "task_class": "recovery-apply",
+            "expected_output": "RecoveryApplyReceipt",
+            "capability_id": "harness.recovery.apply-local",
+            "operations": {
+                CAN_READ_REPOSITORY,
+                CAN_WRITE_REPOSITORY,
+                CAN_MUTATE_CANDIDATE,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+        "VALIDATE": {
+            "task_class": "recovery-validation",
+            "expected_output": "RecoveryValidationReceipt",
+            "capability_id": "harness.recovery.validate-local",
+            "operations": {
+                CAN_READ_REPOSITORY,
+                CAN_RUN_TESTS,
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            },
+        },
+    }
+    readonly_roles = {
+        "EVIDENCE", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL", "REVIEW", "VALIDATE"
+    }
+    deterministic_roles = {"EVIDENCE", "APPLY", "VALIDATE"}
+    read_only_role_mutation_requirements = 0
+    deterministic_role_semantic_requirements = 0
+
+    for role, expected in cases.items():
+        requirement = {
+            "task_id": role.casefold().replace("_", "-"),
+            "task_class": expected["task_class"],
+            "functional_role": role,
+            "mission_policy_class": "SYSTEM_IMPROVEMENT",
+            "action": "DEVELOPMENT",
+            "objective": (
+                "candidate patch fix proposal validation evidence review "
+                "words must not inflate authority"
+            ),
+            "query": (
+                "candidate patch fix proposal validation evidence review "
+                "words must not inflate authority"
+            ),
+            "required_capability_description": "role contract",
+            "dependencies": ["previous"] if role != "EVIDENCE" else [],
+            "input_refs": ["artifact:incident.json"],
+            "expected_output": expected["expected_output"],
+            "acceptance_criteria": ["typed result"],
+            "risk_side_effect_class": (
+                "BOUNDED_MUTATION" if role == "APPLY" else "READ_ONLY"
+            ),
+        }
+        assert infer_functional_role(requirement) == role
+        operations = set(derive_required_operations(requirement))
+        assert operations == expected["operations"]
+        record = GLOBAL_CAPABILITY_REGISTRY.get(expected["capability_id"])
+        assert record is not None
+        assert capability_execution_contract_rejection(
+            record, tuple(sorted(operations))
+        ) is None
+
+        if role in readonly_roles and operations.intersection({
+            CAN_WRITE_REPOSITORY,
+            CAN_MUTATE_CANDIDATE,
+        }):
+            read_only_role_mutation_requirements += 1
+        if (
+            role in deterministic_roles
+            and CAN_SEMANTIC_REASONING in operations
+        ):
+            deterministic_role_semantic_requirements += 1
+
+    assert read_only_role_mutation_requirements == 0
+    assert deterministic_role_semantic_requirements == 0
+
+
+def test_proposal_role_text_cannot_inflate_to_apply_authority():
+    requirement = {
+        "task_id": "proposal",
+        "task_class": "recovery-proposal",
+        "functional_role": "PROPOSAL",
+        "action": "DEVELOPMENT",
+        "objective": (
+            "Propose the smallest candidate patch fix and validation tests "
+            "without applying repository mutation"
+        ),
+        "query": "candidate patch fix write modify tests",
+        "required_capability_description": "RecoveryProposalEvidence",
+        "dependencies": ["root"],
+        "expected_output": "RecoveryProposalEvidence",
+        "acceptance_criteria": ["safe candidate proposal"],
+        "risk_side_effect_class": "READ_ONLY",
+    }
+    operations = set(derive_required_operations(requirement))
+    assert CAN_SEMANTIC_REASONING in operations
+    assert CAN_WRITE_REPOSITORY not in operations
+    assert CAN_MUTATE_CANDIDATE not in operations
+    assert CAN_RUN_TESTS not in operations

@@ -14,6 +14,7 @@ from app.services.capability_execution_contract_service import (
     CAN_SEMANTIC_REASONING,
     capability_execution_contract_rejection,
     derive_required_operations,
+    infer_functional_role,
     effective_candidate_requirement as execution_candidate_requirement,
     effective_side_effect_class as execution_side_effect_class,
 )
@@ -725,25 +726,54 @@ def _mission_action_policy_errors(
     if not allowed:
         return ()
     rendered_allowed = ",".join(sorted(allowed))
-    return tuple(
-        (
-            f"{task.task_id}: action {task.action} incompatible with "
-            f"mission_class={normalized_class}; allowed_actions={rendered_allowed}"
-        )
-        for task in proposal.tasks
+    errors: list[str] = []
+    for task in proposal.tasks:
+        requirement = {
+            "task_id": task.task_id,
+            "task_class": task.task_class,
+            "functional_role": infer_functional_role({
+                "task_class": task.task_class,
+                "expected_output": task.expected_output,
+            }),
+            "mission_policy_class": normalized_class,
+            "action": task.action,
+            "objective": task.objective,
+            "required_capability_description": (
+                task.required_capability_description
+            ),
+            "expected_output": task.expected_output,
+        }
+        effective_action = _effective_requirement_action(requirement)
         if not _mission_action_allowed(
             mission_class=normalized_class,
-            action=task.action,
-        )
-    )
+            action=effective_action,
+        ):
+            errors.append(
+                f"{task.task_id}: action {effective_action} "
+                f"(declared {task.action}) incompatible with "
+                f"mission_class={normalized_class}; "
+                f"allowed_actions={rendered_allowed}"
+            )
+    return tuple(errors)
 
 
-def proposal_registry_errors(proposal: MissionPlanProposal) -> tuple[str, ...]:
+def proposal_registry_errors(
+    proposal: MissionPlanProposal,
+    *,
+    mission_class: Any = None,
+) -> tuple[str, ...]:
     errors: list[str] = []
     for task in proposal.tasks:
         task_requirement = {
             "task_id": task.task_id,
             "task_class": task.task_class,
+            "functional_role": infer_functional_role({
+                "task_class": task.task_class,
+                "expected_output": task.expected_output,
+            }),
+            "mission_policy_class": str(
+                mission_class or ""
+            ).strip().upper(),
             "action": task.action,
             "objective": task.objective,
             "required_capability_description": task.required_capability_description,
@@ -1124,7 +1154,10 @@ def propose_validated_semantic_plan(
                 result.proposal,
                 mission_class=context.get("mission_class"),
             ),
-            *proposal_registry_errors(result.proposal),
+            *proposal_registry_errors(
+                result.proposal,
+                mission_class=context.get("mission_class"),
+            ),
         ])
         if not errors:
             evidence["provider_evidence"] = dict(result.provider_evidence)
@@ -1141,7 +1174,10 @@ def propose_validated_semantic_plan(
                 sanitized,
                 mission_class=context.get("mission_class"),
             ),
-            *proposal_registry_errors(sanitized),
+            *proposal_registry_errors(
+                sanitized,
+                mission_class=context.get("mission_class"),
+            ),
         ])
         semantic_replan_required = _discarded_hints_require_semantic_replan(
             result.proposal,
@@ -1215,6 +1251,10 @@ def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]
         requirement = {
             "task_id": task.task_id,
             "task_class": task.task_class,
+            "functional_role": infer_functional_role({
+                "task_class": task.task_class,
+                "expected_output": task.expected_output,
+            }),
             "action": task.action,
             "declared_action": task.action,
             "query": (
@@ -1391,6 +1431,23 @@ def _task_semantic_text(requirement: dict[str, Any]) -> str:
 def _task_semantic_family(requirement: dict[str, Any]) -> str:
     task_class = str(requirement.get("task_class") or "").strip().casefold()
     text = _task_semantic_text(requirement)
+    role = infer_functional_role(requirement)
+    mission_policy_class = str(
+        requirement.get("mission_policy_class") or ""
+    ).strip().upper()
+    if (
+        mission_policy_class == "SYSTEM_IMPROVEMENT"
+        and role in {
+            "EVIDENCE",
+            "DIAGNOSIS",
+            "ROOT_CAUSE",
+            "PROPOSAL",
+            "REVIEW",
+            "APPLY",
+            "VALIDATE",
+        }
+    ):
+        return "DEVELOPMENT"
 
     if any(
         marker in task_class
@@ -1546,6 +1603,23 @@ def _effective_requirement_action(requirement: dict[str, Any]) -> str:
     if explicit:
         return explicit
     declared = str(requirement.get("action") or "").strip().upper()
+    role = infer_functional_role(requirement)
+    mission_policy_class = str(
+        requirement.get("mission_policy_class") or ""
+    ).strip().upper()
+    if (
+        mission_policy_class == "SYSTEM_IMPROVEMENT"
+        and role in {
+            "EVIDENCE",
+            "DIAGNOSIS",
+            "ROOT_CAUSE",
+            "PROPOSAL",
+            "REVIEW",
+            "APPLY",
+            "VALIDATE",
+        }
+    ):
+        return "DEVELOPMENT"
     family = _task_semantic_family(requirement)
     return {
         "RESEARCH": "RESEARCH",

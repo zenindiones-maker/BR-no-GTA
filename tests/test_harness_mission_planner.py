@@ -385,3 +385,66 @@ def test_system_improvement_rejects_research_fact_check_before_registry_executio
         for reason in row
     )
     assert "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT" in attempts[1]
+
+
+
+def test_system_improvement_policy_normalizes_role_action_not_operations():
+    from app.services.capability_execution_contract_service import (
+        derive_required_operations,
+    )
+    from app.services.harness_collaboration_service import (
+        GoalEnvelope,
+        _selection_requirement_for_mission,
+    )
+
+    goal = GoalEnvelope(
+        human_goal="recover observed internal failure",
+        project="BR-no-GTA",
+        goal_id="goal-role-contract",
+        subject="system recovery",
+        mission_class="SYSTEM_IMPROVEMENT",
+        canonical_state={},
+    )
+    rows = [
+        ("EVIDENCE", "evidence-collection", "IncidentEvidenceBundle"),
+        ("DIAGNOSIS", "incident-diagnosis", "IncidentDiagnosisEvidence"),
+        ("ROOT_CAUSE", "root-cause-analysis", "RootCauseEvidence"),
+        ("PROPOSAL", "recovery-proposal", "RecoveryProposalEvidence"),
+        ("REVIEW", "independent-review", "IndependentReviewEvidence"),
+        ("APPLY", "recovery-apply", "RecoveryApplyReceipt"),
+        ("VALIDATE", "recovery-validation", "RecoveryValidationReceipt"),
+    ]
+    override_count = 0
+    for role, task_class, expected_output in rows:
+        requirement = {
+            "task_id": role.casefold(),
+            "task_class": task_class,
+            "functional_role": role,
+            "action": "RESEARCH",
+            "objective": "bounded system improvement task",
+            "required_capability_description": "typed role contract",
+            "dependencies": [],
+            "expected_output": expected_output,
+            "acceptance_criteria": ["typed result"],
+            "risk_side_effect_class": (
+                "BOUNDED_MUTATION" if role == "APPLY" else "READ_ONLY"
+            ),
+        }
+        requirement["required_operations"] = list(
+            derive_required_operations(requirement)
+        )
+        before = tuple(requirement["required_operations"])
+        normalized = _selection_requirement_for_mission(
+            goal,
+            requirement,
+        )
+        after = tuple(normalized["required_operations"])
+        override_count += int(before != after)
+        assert normalized["action"] == "DEVELOPMENT"
+        assert normalized[
+            "MISSION_CLASS_DID_NOT_OVERRIDE_TASK_CONTRACT"
+            if "MISSION_CLASS_DID_NOT_OVERRIDE_TASK_CONTRACT" in normalized
+            else "mission_class_did_not_override_task_contract"
+        ] is True
+
+    assert override_count == 0

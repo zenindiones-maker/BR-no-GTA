@@ -23,6 +23,99 @@ ALL_EXECUTION_OPERATIONS = frozenset({
     CAN_PRODUCE_ARTIFACT_REFS,
 })
 
+
+_CANONICAL_ROLE_BY_TASK_CLASS = {
+    "evidence-collection": "EVIDENCE",
+    "incident-diagnosis": "DIAGNOSIS",
+    "root-cause-analysis": "ROOT_CAUSE",
+    "recovery-proposal": "PROPOSAL",
+    "independent-review": "REVIEW",
+    "recovery-apply": "APPLY",
+    "apply-recovery": "APPLY",
+    "recovery-validation": "VALIDATE",
+    "validate-recovery": "VALIDATE",
+}
+
+_CANONICAL_ROLE_BY_OUTPUT = {
+    "IncidentEvidenceBundle": "EVIDENCE",
+    "IncidentDiagnosisEvidence": "DIAGNOSIS",
+    "RootCauseEvidence": "ROOT_CAUSE",
+    "RecoveryProposalEvidence": "PROPOSAL",
+    "IndependentReviewEvidence": "REVIEW",
+    "RecoveryApplyReceipt": "APPLY",
+    "RecoveryValidationReceipt": "VALIDATE",
+}
+
+_CANONICAL_ROLE_OPERATIONS = {
+    "EVIDENCE": frozenset({
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "DIAGNOSIS": frozenset({
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "ROOT_CAUSE": frozenset({
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "PROPOSAL": frozenset({
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "REVIEW": frozenset({
+        CAN_REVIEW,
+        CAN_SEMANTIC_REASONING,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "APPLY": frozenset({
+        CAN_READ_REPOSITORY,
+        CAN_WRITE_REPOSITORY,
+        CAN_MUTATE_CANDIDATE,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "VALIDATE": frozenset({
+        CAN_READ_REPOSITORY,
+        CAN_RUN_TESTS,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+}
+
+
+def infer_functional_role(requirement: dict[str, Any]) -> str:
+    explicit = str(
+        requirement.get("functional_role") or ""
+    ).strip().upper()
+    if explicit and explicit != "GENERAL":
+        return explicit
+    task_class = str(
+        requirement.get("task_class") or ""
+    ).strip().casefold()
+    if task_class in _CANONICAL_ROLE_BY_TASK_CLASS:
+        return _CANONICAL_ROLE_BY_TASK_CLASS[task_class]
+    expected_output = str(
+        requirement.get("expected_output") or ""
+    ).strip()
+    if expected_output in _CANONICAL_ROLE_BY_OUTPUT:
+        return _CANONICAL_ROLE_BY_OUTPUT[expected_output]
+    return "GENERAL"
+
+
+def functional_role_required_operations(
+    requirement: dict[str, Any],
+) -> tuple[str, ...] | None:
+    role = infer_functional_role(requirement)
+    operations = _CANONICAL_ROLE_OPERATIONS.get(role)
+    if operations is None:
+        return None
+    return tuple(sorted(operations))
+
 def _blob(requirement: dict[str, Any]) -> str:
     parts = [
         requirement.get("task_id"),
@@ -36,6 +129,10 @@ def _blob(requirement: dict[str, Any]) -> str:
     return " ".join(str(x or "") for x in parts).casefold()
 
 def derive_required_operations(requirement: dict[str, Any]) -> tuple[str, ...]:
+    role_operations = functional_role_required_operations(requirement)
+    if role_operations is not None:
+        return role_operations
+
     text = _blob(requirement)
     normalized_text = text.replace("-", " ").replace("_", " ")
     operations: set[str] = {CAN_PRODUCE_ARTIFACT_REFS}

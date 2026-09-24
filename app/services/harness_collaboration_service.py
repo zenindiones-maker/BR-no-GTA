@@ -32,6 +32,7 @@ from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
     CAN_WRITE_REPOSITORY,
     capability_execution_contract_rejection,
+    infer_functional_role,
 )
 
 
@@ -624,6 +625,26 @@ def _selection_requirement_for_mission(
         requirement.get("task_class") or ""
     ).strip()
     normalized["mission_policy_class"] = goal.mission_class
+    normalized["functional_role"] = infer_functional_role(normalized)
+    original_action = str(
+        normalized.get("action")
+        or normalized.get("authorized_action")
+        or ""
+    ).strip().upper()
+    if (
+        goal.mission_class == "SYSTEM_IMPROVEMENT"
+        and normalized["functional_role"] in {
+            "EVIDENCE",
+            "DIAGNOSIS",
+            "ROOT_CAUSE",
+            "PROPOSAL",
+            "REVIEW",
+            "APPLY",
+            "VALIDATE",
+        }
+    ):
+        normalized["action"] = "DEVELOPMENT"
+        normalized["authorized_action"] = "DEVELOPMENT"
     normalized["mission_constraints"] = {
         key: value
         for key, value in dict(goal.canonical_state or {}).items()
@@ -688,9 +709,16 @@ def _selection_requirement_for_mission(
             + normalized["declared_task_class"]
         )
 
-    # Mission policy constrains the action later through _mission_action_allowed;
-    # it does not rewrite the task-specific action, class, role, or operations.
-    normalized["mission_action_normalized"] = False
+    # Mission policy may normalize the authorized action, but never task
+    # operations/side effects. Those are derived from functional_role.
+    normalized["mission_action_normalized"] = (
+        str(normalized.get("action") or "").strip().upper()
+        != original_action
+    )
+    normalized["mission_class_did_not_override_task_contract"] = (
+        tuple(normalized.get("required_operations") or ())
+        == tuple(requirement.get("required_operations") or ())
+    )
     return normalized
 
 def _clarification_is_resolved_by_explicit_goal(
@@ -1036,7 +1064,10 @@ def _deterministic_incident_recovery_requirements(
                 "no semantic provider is called",
                 "no repository mutation is performed",
             ),
-            "operations": (CAN_PRODUCE_ARTIFACT_REFS,),
+            "operations": (
+                CAN_CONSUME_ARTIFACT_REFS,
+                CAN_PRODUCE_ARTIFACT_REFS,
+            ),
         },
         {
             "role": "DIAGNOSIS",
@@ -1407,6 +1438,11 @@ def plan_mission_from_human_goal(
             ),
             "review_contract_enriched": bool(
                 selection_requirement.get("review_contract_enriched")
+            ),
+            "MISSION_CLASS_DID_NOT_OVERRIDE_TASK_CONTRACT": bool(
+                selection_requirement.get(
+                    "mission_class_did_not_override_task_contract"
+                )
             ),
         }
         planning_evidence["selection"].append(selection)
