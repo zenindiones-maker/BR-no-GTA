@@ -108,7 +108,14 @@ def main() -> None:
             "maturity": record.maturity == FUNCTIONAL,
             "execution_enabled": record.execution_enabled,
             "provider": record.provider == "addy-agent-skills",
-            "execution_kind": record.execution_kind == "registered_executor",
+            "execution_kind": (
+                record.resolved_execution_kind
+                == (
+                    "INDEPENDENT_REVIEWER"
+                    if name == "code-review-and-quality"
+                    else "SEMANTIC_REASONER"
+                )
+            ),
             "allowed_action": record.allowed_actions == ("DEVELOPMENT",),
             "agent_id": record.agent_id == "addy-agent-skills",
             "skill_id": record.skill_id == name,
@@ -138,6 +145,7 @@ def main() -> None:
                 "registry_functional": True,
                 "execution_enabled": True,
                 "executor": "deepseek-harness-semantic-provider",
+                "execution_kind": record.resolved_execution_kind,
                 "agent_id": "addy-agent-skills",
                 "authorized_actions": ["DEVELOPMENT"],
             }
