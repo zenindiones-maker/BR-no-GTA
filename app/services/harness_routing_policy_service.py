@@ -564,6 +564,107 @@ def _provider_records(
     return eligible, rejected
 
 
+def select_provider_model_revalidation_candidate(
+    request: HarnessRoutingRequest,
+    *,
+    registry: GlobalCapabilityRegistry = GLOBAL_CAPABILITY_REGISTRY,
+) -> CapabilityRecord | None:
+    """Select one model for live health revalidation, never for direct use."""
+    if not request.provider_required:
+        return None
+    from app.services.provider_health_service import model_health
+
+    preferred = tuple(
+        normalize_provider_id(item)
+        for item in request.preferred_providers
+        if str(item).strip()
+    )
+    allowed = {
+        normalize_provider_id(item)
+        for item in request.allowed_providers
+        if str(item).strip()
+    }
+    target_provider = preferred[0] if preferred else None
+    if target_provider != "nvidia_nim":
+        return None
+    if allowed and target_provider not in allowed:
+        return None
+
+    excluded = {
+        str(item).strip()
+        for item in request.unavailable_model_ids
+        if str(item).strip()
+    }
+    required_caps = {
+        str(item).strip().lower()
+        for item in request.required_model_capabilities
+        if str(item).strip()
+    }
+    if request.tool_use_required:
+        required_caps.add("tool_use")
+    if request.structured_output_required:
+        required_caps.add("structured_output")
+
+    candidates: list[tuple[tuple[Any, ...], CapabilityRecord]] = []
+    for record in registry.all():
+        if (
+            record.capability_type != "PROVIDER"
+            or normalize_provider_id(record.provider_id or "")
+            != target_provider
+            or not record.available
+            or record.executor_binding is None
+            or request.authorized_action not in record.allowed_actions
+        ):
+            continue
+        model_id = str(getattr(record, "model_id", None) or "").strip()
+        if not model_id or model_id in excluded:
+            continue
+        capabilities = _model_capabilities(record)
+        if required_caps and not required_caps.issubset(capabilities):
+            continue
+        if not _record_matches_security(record, request):
+            continue
+        assessment = assess_zero_cost(record.cost_class, quota_available=True)
+        if request.zero_cost_operation and not assessment.eligible:
+            continue
+        health = model_health(
+            target_provider,
+            model_id,
+            registry=registry,
+        )
+        if health.availability not in {"DEGRADED", "UNKNOWN/UNPROVEN"}:
+            continue
+        if health.circuit_breaker_state == "OPEN":
+            continue
+        if health.quota_state in {"EXHAUSTED", "BLOCKED"}:
+            continue
+        if health.rate_limit_state in {
+            "RATE_LIMITED", "THROTTLED", "EXHAUSTED", "BLOCKED"
+        }:
+            continue
+        latency = (
+            float(health.latency_ms)
+            if health.latency_ms is not None
+            else 1e12
+        )
+        timeout_penalty = (
+            1
+            if str(health.failure_class or "").casefold() == "timeout"
+            else 0
+        )
+        candidates.append((
+            (
+                0 if health.availability == "DEGRADED" else 1,
+                timeout_penalty,
+                latency,
+                record.capability_id,
+            ),
+            record,
+        ))
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1] if candidates else None
+
+
 def _select_provider(
     request: HarnessRoutingRequest,
     registry: GlobalCapabilityRegistry,
