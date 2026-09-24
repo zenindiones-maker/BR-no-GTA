@@ -269,11 +269,52 @@ class AgentSessionRuntime:
         failure_class: str,
         evidence: dict[str, Any] | None = None,
     ) -> None:
+        if evidence:
+            self.record_provider_result(evidence)
         self.state["STATUS"] = "FAILED"
         self.state["FAILURE_CLASS"] = str(failure_class)
         if evidence:
             self.state["FAILURE_EVIDENCE"] = dict(evidence)
         self._persist()
+
+    def prior_tool_results(self) -> list[dict[str, Any]]:
+        requests = {
+            str(item.get("request_id") or ""): dict(item)
+            for item in (self.state.get("TOOL_REQUESTS") or ())
+            if isinstance(item, dict)
+            and str(item.get("request_id") or "")
+        }
+        rows: list[dict[str, Any]] = []
+        root = self.root.resolve()
+        for execution in self.state.get("TOOL_EXECUTIONS") or ():
+            if not isinstance(execution, dict):
+                continue
+            request_id = str(execution.get("request_id") or "")
+            request = requests.get(request_id)
+            if request is None:
+                continue
+            for ref in execution.get("output_refs") or ():
+                value = str(ref or "").strip()
+                if not value.startswith("artifact:"):
+                    continue
+                path = (self.root / value.split(":", 1)[1].lstrip("/")).resolve()
+                if path != root and root not in path.parents:
+                    continue
+                if not path.is_file():
+                    continue
+                try:
+                    envelope = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(envelope, dict):
+                    continue
+                if envelope.get("schema") != "ToolResultEnvelope/v1":
+                    continue
+                rows.append({
+                    "request": request,
+                    "result": envelope,
+                })
+        return rows
 
     def snapshot(self) -> dict[str, Any]:
         return json.loads(json.dumps(self.state, default=str))
