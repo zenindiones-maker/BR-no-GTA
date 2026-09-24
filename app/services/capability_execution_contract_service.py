@@ -165,15 +165,15 @@ def infer_required_execution_kind(
     )
     if any(marker in task_class for marker in deterministic_analysis_markers):
         return EXECUTION_KIND_DETERMINISTIC_ANALYSIS_AGENT
-    if CAN_REVIEW in operations:
-        return EXECUTION_KIND_INDEPENDENT_REVIEWER
-    if CAN_SEMANTIC_REASONING in operations:
-        return EXECUTION_KIND_SEMANTIC_REASONER
     if (
         CAN_MUTATE_CANDIDATE in operations
         or CAN_WRITE_REPOSITORY in operations
     ):
         return EXECUTION_KIND_MUTATION_EXECUTOR
+    if CAN_REVIEW in operations:
+        return EXECUTION_KIND_INDEPENDENT_REVIEWER
+    if CAN_SEMANTIC_REASONING in operations:
+        return EXECUTION_KIND_SEMANTIC_REASONER
     if CAN_RUN_TESTS in operations:
         return EXECUTION_KIND_VALIDATOR
     return None
