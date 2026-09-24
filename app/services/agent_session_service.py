@@ -279,9 +279,21 @@ class AgentSessionRuntime:
     def reclaim_unexecuted_pre_provider_turn(self) -> bool:
         if not self.restored:
             return False
-        if str(self.state.get("STATUS") or "").upper() != "FAILED":
-            return False
+        status = str(self.state.get("STATUS") or "").upper()
         failure_class = str(self.state.get("FAILURE_CLASS") or "")
+        # A provider-routing exception can occur after begin_turn() persisted
+        # RUNNING but before the broker persisted a terminal FAILED state.
+        # Treat that checkpoint as interrupted recovery only when it still
+        # carries a typed failure, no valid final output, and an explicitly
+        # unconsumed provider turn.
+        interrupted_recovery = bool(
+            status == "RUNNING"
+            and failure_class
+            and not bool(self.state.get("FINAL_OUTPUT_VALID"))
+            and self.state.get("FAILURE_TURN_CONSUMED") is False
+        )
+        if status != "FAILED" and not interrupted_recovery:
+            return False
         provider_recovery = self.provider_recovery_state()
         has_failed_provider_history = bool(
             provider_recovery.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
