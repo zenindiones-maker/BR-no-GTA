@@ -19,6 +19,7 @@ from app.services.semantic_mission_planner_service import (
     MissionTaskProposal,
 )
 from app.services.task_result_envelope_service import build_task_result_envelope
+from scripts.real_multi_agent_production import _bounded_youtube_semantic_context
 
 
 def _ops(capability_id: str) -> set[str]:
@@ -677,3 +678,41 @@ def test_youtube_script_review_is_registered_as_semantic_reasoner():
     assert record is not None
     assert record.resolved_execution_kind == "SEMANTIC_REASONER"
     assert CAN_SEMANTIC_REASONING in set(record.execution_operations)
+
+def test_youtube_semantic_context_is_bounded_without_losing_direct_lineage():
+    context = _bounded_youtube_semantic_context(
+        human_goal="produce a current GTA 6 private review video " + ("goal " * 1000),
+        selected_topic={"title": "topic " * 1000, "score": 9.1},
+        claims=[
+            {
+                "claim_id": f"claim-{index}",
+                "statement": "verified statement " * 500,
+                "source": "https://example.test/source/" + ("x" * 1200),
+                "evidence_ref": f"artifact:claim-{index}.json",
+            }
+            for index in range(16)
+        ],
+        parent_context={
+            "parent_handoffs": [
+                {
+                    "task_id": f"parent-{index}",
+                    "capability_id": "editorial.process",
+                    "task_result_ref": f"artifact:task-results/parent-{index}.json",
+                    "content_sha256": "a" * 64,
+                    "result_summary": "summary " * 1000,
+                    "evidence_refs": [f"artifact:evidence-{index}.json"],
+                    "direct_dependency": True,
+                }
+                for index in range(10)
+            ]
+        },
+        script_text="script " * 6000,
+    )
+    encoded = __import__("json").dumps(
+        context, ensure_ascii=False, sort_keys=True, default=str
+    )
+    assert len(encoded) <= 20_000
+    assert context["parent_summaries"]
+    assert context["parent_summaries"][0]["task_result_ref"].startswith("artifact:")
+    assert context["evidence_map"]
+    assert context["script"]

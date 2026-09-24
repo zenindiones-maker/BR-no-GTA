@@ -289,6 +289,106 @@ def _parent_summaries(parent_context: dict[str, Any]) -> list[dict[str, Any]]:
     return summaries[:10]
 
 
+def _bounded_youtube_semantic_context(
+    *,
+    human_goal: str,
+    selected_topic: Any,
+    claims: list[dict[str, Any]],
+    parent_context: dict[str, Any],
+    script_text: str | None,
+) -> dict[str, Any]:
+    def clip(value: Any, limit: int) -> str:
+        return str(value or "").strip()[:limit]
+
+    evidence_map: list[dict[str, Any]] = []
+    for item in claims[:10]:
+        if not isinstance(item, dict):
+            continue
+        evidence_map.append({
+            key: value
+            for key, value in {
+                "claim_id": clip(item.get("claim_id"), 180),
+                "statement": clip(item.get("statement"), 700),
+                "source": clip(item.get("source"), 700),
+                "source_type": clip(item.get("source_type"), 120),
+                "authority": clip(
+                    item.get("authority") or item.get("source_authority"), 120
+                ),
+                "confidence": item.get("confidence"),
+                "evidence_ref": clip(item.get("evidence_ref"), 500),
+            }.items()
+            if value not in ("", None)
+        })
+
+    parent_summaries: list[dict[str, Any]] = []
+    for item in _parent_summaries(parent_context)[:8]:
+        parent_summaries.append({
+            key: value
+            for key, value in {
+                "task_id": item.get("task_id"),
+                "capability_id": item.get("capability_id"),
+                "task_result_ref": item.get("task_result_ref"),
+                "content_sha256": item.get("content_sha256"),
+                "result_summary": clip(item.get("result_summary"), 700),
+                "evidence_refs": list(item.get("evidence_refs") or ())[:6],
+            }.items()
+            if value not in ("", None, [])
+        })
+
+    context = {
+        "human_goal": clip(human_goal, 2400),
+        "selected_topic": selected_topic,
+        "evidence_map": evidence_map,
+        "parent_summaries": parent_summaries,
+        "script": clip(script_text, 8000) if script_text else None,
+        "constraints": {
+            "language": "pt-BR",
+            "verified_facts_only": True,
+            "no_public_youtube_release": True,
+            "no_unlisted_youtube_release": True,
+            "private_hd_review_allowed": True,
+            "burned_subtitles": False,
+        },
+    }
+
+    def size() -> int:
+        return len(json.dumps(
+            context,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ))
+
+    # Leave headroom below the specialist's 24k hard input ceiling so runtime
+    # metadata cannot turn a valid handoff into a terminal blocker.
+    target = 20_000
+    while size() > target:
+        script = str(context.get("script") or "")
+        if len(script) > 3000:
+            context["script"] = script[:max(3000, len(script) - 1500)]
+            continue
+        if len(context["evidence_map"]) > 4:
+            context["evidence_map"] = context["evidence_map"][:-1]
+            continue
+        if len(context["parent_summaries"]) > 3:
+            context["parent_summaries"] = context["parent_summaries"][:-1]
+            continue
+        goal = str(context.get("human_goal") or "")
+        if len(goal) > 1000:
+            context["human_goal"] = goal[:1000]
+            continue
+        topic = context.get("selected_topic")
+        if not isinstance(topic, str):
+            context["selected_topic"] = clip(topic, 1200)
+            continue
+        if len(topic) > 600:
+            context["selected_topic"] = topic[:600]
+            continue
+        raise RuntimeError("YOUTUBE_SEMANTIC_CONTEXT_CANNOT_BE_BOUNDED")
+
+    return context
+
+
 def _payload_for_task(
     *,
     task,
@@ -379,25 +479,17 @@ def _payload_for_task(
     if capability_id.startswith("youtube.department."):
         return {
             **common,
-            "semantic_context": {
-                "human_goal": human_goal,
-                "selected_topic": state.get("selected_topic"),
-                "evidence_map": list(state.get("claims") or ())[:16],
-                "parent_summaries": _parent_summaries(parent_context),
-                "script": (
-                    str((state.get("script") or {}).get("content") or "")[:9000]
+            "semantic_context": _bounded_youtube_semantic_context(
+                human_goal=human_goal,
+                selected_topic=state.get("selected_topic"),
+                claims=list(state.get("claims") or ()),
+                parent_context=parent_context,
+                script_text=(
+                    str((state.get("script") or {}).get("content") or "")
                     if state.get("script")
                     else None
                 ),
-                "constraints": {
-                    "language": "pt-BR",
-                    "verified_facts_only": True,
-                    "no_public_youtube_release": True,
-                    "no_unlisted_youtube_release": True,
-                    "private_hd_review_allowed": True,
-                    "burned_subtitles": False,
-                },
-            },
+            ),
         }
     if capability_id == "editorial.process":
         target_goal = str(state.get("target_goal_id") or "").strip()

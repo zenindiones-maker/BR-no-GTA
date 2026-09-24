@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36036020407,
-    "reason": "resume after aligning YouTube script-review Registry execution kind with its real semantic provider-backed implementation",
+    "retry_of_run": 36036498296,
+    "reason": "resume after bounded semantic-context compaction for YouTube specialist review",
     "preserve_human_goal": true,
     "target": "YOUTUBE_PRIVATE_HD_REVIEW"
   }
