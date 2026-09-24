@@ -9,6 +9,13 @@ from app.services import script_service
 from app.services.ai_provider import AIProvider, AIProviderError
 
 
+# Keep long-form script planning aligned with the human-approved Voice B
+# narration calibration used by the production novelty gate. Run 35399181943 /
+# artifact 10568953094 measured +0% Voice B in the 145-163 spoken-WPM range;
+# 132 WPM is the conservative planning baseline after long-form pause allowance.
+VOICE_B_SCRIPT_PLANNING_WPM = 132.0
+
+
 def _build_ai_prompt(
     *,
     title: str,
@@ -36,8 +43,11 @@ def _build_ai_prompt(
 
     duration_instruction = ""
     if target_duration_seconds is not None:
-        target_words = max(300, int(round(float(target_duration_seconds) * 2.0)))
         target_minutes = float(target_duration_seconds) / 60.0
+        target_words = max(
+            300,
+            int(round(target_minutes * VOICE_B_SCRIPT_PLANNING_WPM)),
+        )
         duration_instruction = (
             "\nDURAÇÃO ALVO\n"
             f"- Aproximadamente {target_minutes:.1f} minutos de narração.\n"

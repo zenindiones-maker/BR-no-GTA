@@ -12,6 +12,7 @@ on:
       - "app/services/production_mission_capability_adapters.py"
       - "app/services/harness_capability_adapter.py"
       - "app/services/youtube_department_service.py"
+      - "app/services/script_generator_service.py"
       - "app/services/global_capability_registry.py"
       - "app/services/capability_execution_contract_service.py"
       - "app/services/harness_adaptive_planning_service.py"
@@ -42,6 +43,9 @@ env:
   BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/artifacts/real-multi-agent-production/performance-trace.jsonl
   BR_PERFORMANCE_TRACE_ID: "real-production:${{ github.run_id }}:${{ github.run_attempt }}"
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
+  # The production editorial provider needs enough bounded output budget to
+  # satisfy the 20-minute professional script contract (~2640 PT-BR words).
+  NVIDIA_NIM_MAX_TOKENS: "8192"
 
 jobs:
   production:

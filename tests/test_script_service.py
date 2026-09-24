@@ -169,3 +169,16 @@ def test_list_scripts():
     scripts = list_scripts()
 
     assert any(script["id"] == script_id for script in scripts)
+
+def test_longform_prompt_uses_voice_b_planning_rate():
+    assert VOICE_B_SCRIPT_PLANNING_WPM == 132.0
+    prompt = _build_ai_prompt(
+        title="Pauta GTA VI",
+        description="Descrição factual",
+        research_context=None,
+        editorial_context=None,
+        target_duration_seconds=1200.0,
+    )
+    assert "20.0 minutos" in prompt
+    assert "2640 palavras" in prompt
+
