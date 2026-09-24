@@ -350,6 +350,8 @@ class HarnessInternalRecoveryState:
     def select_recovery(
         self,
         classification: FailureClassification,
+        *,
+        disallowed_strategies: tuple[str, ...] = (),
     ) -> RecoveryDecision:
         if classification.human_intervention_required:
             return RecoveryDecision(
@@ -366,8 +368,13 @@ class HarnessInternalRecoveryState:
                 (),
             )
         )
+        disallowed = {str(item) for item in disallowed_strategies}
         strategy = next(
-            (item for item in sequence if item not in used),
+            (
+                item
+                for item in sequence
+                if item not in used and item not in disallowed
+            ),
             None,
         )
         decision = RecoveryDecision(
