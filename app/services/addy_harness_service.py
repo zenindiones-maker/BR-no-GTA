@@ -23,6 +23,7 @@ from app.services.harness_episode_capture_service import capture_canonical_execu
 from app.services.harness_routing_policy_service import (
     HarnessRoutingDecision,
     HarnessRoutingRequest,
+    RoutingPolicyError,
     route_harness_request,
 )
 from app.services.provider_health_service import (
@@ -383,6 +384,7 @@ def execute_authorized_addy_skill(
     def _route_provider(
         *,
         preferred_provider: str | None = None,
+        unavailable_providers: tuple[str, ...] = (),
         unavailable_models: tuple[str, ...] = (),
         exhausted_pairs: tuple[tuple[str, str], ...] = (),
         failure_pattern: str | None = None,
@@ -404,6 +406,7 @@ def execute_authorized_addy_skill(
                     (preferred_provider,) if preferred_provider else ()
                 ),
                 allowed_providers=eligible_providers,
+                unavailable_provider_ids=unavailable_providers,
                 unavailable_model_ids=unavailable_models,
                 exhausted_provider_model_pairs=exhausted_pairs,
                 fallback_allowed=False,
@@ -565,36 +568,64 @@ def execute_authorized_addy_skill(
             )
         )
     ))
-    provider_routing = _route_provider(
-        preferred_provider=(
-            recovery_preferred_provider
-            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
-            else None
-        ),
-        unavailable_models=(
-            recovery_unavailable_models
-            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
-            else ()
-        ),
-        exhausted_pairs=(
-            tuple(
-                (
-                    str(item.get("provider_id") or "").strip(),
-                    str(item.get("model_id") or "").strip(),
-                )
-                for item in prior_exhausted_pairs
-                if str(item.get("provider_id") or "").strip()
-                and str(item.get("model_id") or "").strip()
-            )
-            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
-            else ()
-        ),
-        failure_pattern=(
-            "external_localized_provider_replan"
-            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
-            else None
-        ),
+    exhausted_pair_tuple = tuple(
+        (
+            str(item.get("provider_id") or "").strip(),
+            str(item.get("model_id") or "").strip(),
+        )
+        for item in prior_exhausted_pairs
+        if str(item.get("provider_id") or "").strip()
+        and str(item.get("model_id") or "").strip()
     )
+    provider_model_set_exhausted_classified = False
+    provider_level_replan_harness_authorized = False
+    provider_level_replan_from = None
+    try:
+        provider_routing = _route_provider(
+            preferred_provider=(
+                recovery_preferred_provider
+                if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+                else None
+            ),
+            unavailable_models=(
+                recovery_unavailable_models
+                if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+                else ()
+            ),
+            exhausted_pairs=(
+                exhausted_pair_tuple
+                if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+                else ()
+            ),
+            failure_pattern=(
+                "external_localized_provider_replan"
+                if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+                else None
+            ),
+        )
+    except RoutingPolicyError:
+        if (
+            recovery_strategy != "LOCALIZED_PROVIDER_REPLAN"
+            or not recovery_preferred_provider
+        ):
+            raise
+        provider_model_set_exhausted_classified = True
+        provider_level_replan_from = recovery_preferred_provider
+        provider_routing = _route_provider(
+            preferred_provider=None,
+            unavailable_providers=(recovery_preferred_provider,),
+            unavailable_models=(),
+            exhausted_pairs=exhausted_pair_tuple,
+            failure_pattern="provider_model_set_exhausted",
+        )
+        if (
+            str(provider_routing.selected_provider or "").strip()
+            == recovery_preferred_provider
+        ):
+            raise PermissionError(
+                "PROVIDER_LEVEL_REPLAN_RESELECTED_EXHAUSTED_PROVIDER"
+            )
+        provider_level_replan_harness_authorized = True
     if (
         recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
         and prior_routing_ids
@@ -692,6 +723,56 @@ def execute_authorized_addy_skill(
                 if semantic.status == "EXECUTED"
                 and isinstance(semantic.result, dict)
                 else "FAILED"
+            )
+        except RoutingPolicyError as exc:
+            provider_model_set_exhausted_classified = True
+            provider_level_replan_from = original_provider
+            localized_replan_result = "PROVIDER_MODEL_SET_EXHAUSTED"
+            localized_replan_error = (
+                f"{type(exc).__name__}: {str(exc)[:800]}"
+            )
+            current_failed_pairs = tuple(
+                (
+                    str(row.get("provider_id") or "").strip(),
+                    str(row.get("model_id") or "").strip(),
+                )
+                for row in provider_attempts
+                if str(row.get("status") or "").strip().upper() == "FAILED"
+                and str(row.get("provider_id") or "").strip()
+                and str(row.get("model_id") or "").strip()
+            )
+            rerouted = _route_provider(
+                preferred_provider=None,
+                unavailable_providers=(original_provider,),
+                exhausted_pairs=tuple(dict.fromkeys([
+                    *exhausted_pair_tuple,
+                    *current_failed_pairs,
+                ])),
+                failure_pattern="provider_model_set_exhausted",
+            )
+            rerouted_provider = str(
+                rerouted.selected_provider or ""
+            ).strip()
+            if not rerouted_provider or rerouted_provider == original_provider:
+                raise PermissionError(
+                    "PROVIDER_LEVEL_REPLAN_RESELECTED_EXHAUSTED_PROVIDER"
+                )
+            if str(rerouted.routing_id) == str(provider_routing.routing_id):
+                raise PermissionError(
+                    "IDENTICAL_ROUTE_AFTER_PROVIDER_LEVEL_REPLAN_FORBIDDEN"
+                )
+            provider_level_replan_harness_authorized = True
+            recovery_route_changed = True
+            semantic = _execute_provider(
+                rerouted,
+                phase="PROVIDER_LEVEL_REPLAN",
+            )
+            provider_routing = rerouted
+            localized_replan_result = (
+                "RECOVERED_PROVIDER_LEVEL"
+                if semantic.status == "EXECUTED"
+                and isinstance(semantic.result, dict)
+                else "FAILED_PROVIDER_LEVEL"
             )
         except Exception as exc:
             localized_replan_result = "UNAVAILABLE"
@@ -873,6 +954,13 @@ def execute_authorized_addy_skill(
                 or ""
             ),
             "RECOVERY_ROUTE_CHANGED": recovery_route_changed,
+            "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED": (
+                provider_model_set_exhausted_classified
+            ),
+            "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED": (
+                provider_level_replan_harness_authorized
+            ),
+            "PROVIDER_LEVEL_REPLAN_FROM": provider_level_replan_from,
             "EXHAUSTED_PAIR_FILTERED_PRE_SELECTION": bool(
                 (
                     getattr(provider_routing, "policy_metadata", {}) or {}
@@ -1029,6 +1117,13 @@ def execute_authorized_addy_skill(
                 or ""
             ),
             "RECOVERY_ROUTE_CHANGED": recovery_route_changed,
+            "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED": (
+                provider_model_set_exhausted_classified
+            ),
+            "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED": (
+                provider_level_replan_harness_authorized
+            ),
+            "PROVIDER_LEVEL_REPLAN_FROM": provider_level_replan_from,
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,

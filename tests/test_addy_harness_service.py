@@ -9,7 +9,10 @@ import pytest
 import app.services.addy_harness_service as service
 from app.services.harness_ai_provider_service import HarnessAIProviderEvidence
 from app.services.harness_authorization_service import HarnessAuthorization
-from app.services.harness_routing_policy_service import HarnessRoutingDecision
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingDecision,
+    RoutingPolicyError,
+)
 
 
 def _auth(subject: str) -> HarnessAuthorization:
@@ -896,3 +899,123 @@ def test_failed_provider_attempt_persists_failed_episode(monkeypatch):
     assert len(episodes) == 1
     assert episodes[0].success is False
     assert episodes[0].status == "FAILED"
+
+
+
+def test_external_localized_replan_escalates_to_new_provider_when_model_set_exhausted(
+    monkeypatch,
+):
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "semantic_provider_health",
+        lambda: {
+            "eligible_zero_cost_provider_ids": [
+                "nvidia_nim",
+                "ollama_local",
+            ]
+        },
+    )
+    alternate = _route(
+        routing_id="routing-ollama",
+        provider="ollama_local",
+        model="qwen3:4b-instruct",
+    )
+    route_requests = []
+    generation_calls = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        if len(route_requests) == 1:
+            raise RoutingPolicyError(
+                "Primary provider is unavailable and fallback is not permitted",
+                evidence={
+                    "primary_provider": "nvidia_nim",
+                    "fallback_allowed": False,
+                },
+            )
+        return alternate
+
+    def fake_generation(**kwargs):
+        generation_calls.append(kwargs)
+        return HarnessAIProviderEvidence(
+            provider="ollama_local",
+            status="EXECUTED",
+            active=True,
+            authority="deepseek_harness",
+            authorized_action="DEVELOPMENT",
+            harness_decision_id="decision-test",
+            execution_id="execution-test",
+            authorization_id="provider-auth",
+            result={"text": "diagnosis complete"},
+            routing={"routing_id": "routing-ollama"},
+            model="qwen3:4b-instruct",
+            executor_binding=(
+                "app.services.local_openweight_ai_provider."
+                "OllamaLocalAIProvider"
+            ),
+            latency_seconds=1.0,
+            retry_count=0,
+            evidence_refs=("routing:routing-ollama",),
+            performance={"total_attempt_latency_ms": 1000.0},
+        )
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        fake_generation,
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "PREVIOUS_SELECTED_MODEL": "model-a",
+        "ATTEMPTED_ROUTING_IDS": ["routing-a"],
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+            "status": "FAILED",
+        }],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+            "status": "FAILED",
+        }],
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert len(route_requests) == 2
+    assert route_requests[0].preferred_providers == ("nvidia_nim",)
+    assert route_requests[0].fallback_allowed is False
+    assert route_requests[1].preferred_providers == ()
+    assert route_requests[1].unavailable_provider_ids == ("nvidia_nim",)
+    assert route_requests[1].fallback_allowed is False
+    assert route_requests[1].failure_pattern == "provider_model_set_exhausted"
+    assert route_requests[1].zero_cost_operation is True
+    assert len(generation_calls) == 1
+    assert result.status == "EXECUTED"
+    assert result.result[
+        "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED"
+    ] is True
+    assert result.result[
+        "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED"
+    ] is True
+    assert result.result["PROVIDER_LEVEL_REPLAN_FROM"] == "nvidia_nim"
+    assert result.result["SELECTED_RECOVERY_PROVIDER"] == "ollama_local"
+    assert result.result["SELECTED_RECOVERY_MODEL"] == "qwen3:4b-instruct"
+    assert result.result["RECOVERY_ROUTE_CHANGED"] is True
+    assert result.result["EXHAUSTED_PAIR_REUSED"] == 0

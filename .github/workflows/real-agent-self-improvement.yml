@@ -135,6 +135,148 @@ jobs:
             echo "NODE_CHECKPOINT_SOURCE_RESTORED=PASS"
           fi
 
+      - name: Detect provider model-set exhaustion from checkpoint
+        id: provider_recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          request=json.load(open(".run/real-agent-self-improvement.request.json"))
+          checkpoint=request.get("checkpoint_source") or {}
+          agent_instance_id=str(checkpoint.get("agent_instance_id") or "")
+          root=Path("runtime/real-agent-self-improvement/checkpoint-source")
+          sessions=sorted((root/"agent-sessions").glob("*.json"))
+          selected=None
+          for path in sessions:
+              try:
+                  data=json.loads(path.read_text(encoding="utf-8"))
+              except Exception:
+                  continue
+              if (
+                  data.get("schema")=="AgentSession/v1"
+                  and str(data.get("AGENT_INSTANCE_ID") or "")==agent_instance_id
+              ):
+                  selected=data
+                  break
+
+          def walk(value):
+              if isinstance(value,dict):
+                  yield value
+                  for child in value.values():
+                      yield from walk(child)
+              elif isinstance(value,list):
+                  for child in value:
+                      yield from walk(child)
+
+          exhausted=set()
+          if selected is not None:
+              for node in walk(selected):
+                  for item in (
+                      node.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
+                      or node.get("exhausted_provider_model_pairs")
+                      or []
+                  ):
+                      if not isinstance(item,dict):
+                          continue
+                      provider=str(item.get("provider_id") or item.get("provider") or "")
+                      model=str(item.get("model_id") or item.get("model") or "")
+                      if provider and model:
+                          exhausted.add((provider,model))
+                  for item in node.get("provider_attempts") or []:
+                      if not isinstance(item,dict):
+                          continue
+                      if str(item.get("status") or "").upper()!="FAILED":
+                          continue
+                      provider=str(item.get("provider_id") or item.get("provider") or "")
+                      model=str(item.get("model_id") or item.get("model") or "")
+                      if provider and model:
+                          exhausted.add((provider,model))
+
+          health=json.load(open("config/nvidia_runtime_health.json"))
+          available={
+              str(model)
+              for model,item in (health.get("models") or {}).items()
+              if isinstance(item,dict)
+              and str(item.get("health") or "").upper()=="AVAILABLE"
+          }
+          exhausted_nvidia={
+              model for provider,model in exhausted
+              if provider=="nvidia_nim"
+          }
+          need=bool(available) and available.issubset(exhausted_nvidia)
+          print("prepare_alt_provider="+("true" if need else "false"))
+          print("available_nvidia_count="+str(len(available)))
+          print("exhausted_nvidia_count="+str(len(exhausted_nvidia)))
+          PY
+
+      - name: Prepare bounded local zero-cost alternate provider
+        if: steps.provider_recovery.outputs.prepare_alt_provider == 'true'
+        timeout-minutes: 10
+        env:
+          OLLAMA_VERSION: "0.34.2"
+          OLLAMA_MODEL: "qwen3:4b-instruct"
+          OLLAMA_EXPECTED_DIGEST: "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0"
+          OLLAMA_HOST: "127.0.0.1:11434"
+          OLLAMA_NO_CLOUD: "1"
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY_PRIVATE" = "false"
+          mkdir -p runtime/real-agent-self-improvement/local-provider
+          command -v zstd >/dev/null || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq zstd
+          }
+          curl --fail --show-error --location             "https://raw.githubusercontent.com/ollama/ollama/v0.34.2/scripts/install.sh"             -o runtime/real-agent-self-improvement/local-provider/ollama-install.sh
+          OLLAMA_VERSION="$OLLAMA_VERSION" OLLAMA_NO_START=1             sh runtime/real-agent-self-improvement/local-provider/ollama-install.sh
+          ollama --version | grep -F "$OLLAMA_VERSION"
+
+          nohup env             OLLAMA_HOST="$OLLAMA_HOST"             OLLAMA_NO_CLOUD="$OLLAMA_NO_CLOUD"             ollama serve             > runtime/real-agent-self-improvement/local-provider/ollama.log 2>&1 &
+          echo "$!" > runtime/real-agent-self-improvement/local-provider/ollama.pid
+
+          READY=0
+          for i in {1..60}; do
+            if ! kill -0 "$(cat runtime/real-agent-self-improvement/local-provider/ollama.pid)" 2>/dev/null; then
+              break
+            fi
+            if curl --connect-timeout 1 --max-time 2 -fsS               http://127.0.0.1:11434/api/tags               > runtime/real-agent-self-improvement/local-provider/tags-before.json 2>/dev/null; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          test "$READY" = "1"
+
+          ollama pull "$OLLAMA_MODEL"             | tee runtime/real-agent-self-improvement/local-provider/model-pull.txt
+          curl --fail --show-error --silent             http://127.0.0.1:11434/api/tags             > runtime/real-agent-self-improvement/local-provider/tags-after.json
+
+          python - <<'PY'
+          import json, os
+          data=json.load(open(
+              "runtime/real-agent-self-improvement/local-provider/tags-after.json"
+          ))
+          expected_model=os.environ["OLLAMA_MODEL"]
+          expected_digest=os.environ["OLLAMA_EXPECTED_DIGEST"]
+          rows=[
+              item for item in data.get("models",[])
+              if item.get("name")==expected_model or item.get("model")==expected_model
+          ]
+          assert len(rows)==1, rows
+          digest=str(rows[0].get("digest") or "").removeprefix("sha256:")
+          assert digest==expected_digest, (digest,expected_digest)
+          print("ALTERNATE_PROVIDER_MODEL_IDENTITY=PASS")
+          PY
+
+          {
+            echo "BR_LOCAL_OPENWEIGHT_ENABLED=1"
+            echo "BR_LOCAL_OPENWEIGHT_URL=http://127.0.0.1:11434"
+          } >> "$GITHUB_ENV"
+          echo "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED=PASS"
+          echo "ALTERNATE_PROVIDER_RUNTIME=ollama_local"
+          echo "ALTERNATE_PROVIDER_ZERO_COST=PASS"
+
       - name: Execute real natural-goal self-improvement mission
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
