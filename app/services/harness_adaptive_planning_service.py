@@ -15,7 +15,10 @@ from app.services.capability_execution_contract_service import (
     CAN_SEMANTIC_REASONING,
     capability_execution_contract_rejection,
     derive_required_operations,
+    execution_kind_rejection,
+    functional_role_rejection,
     infer_functional_role,
+    infer_required_execution_kind,
     effective_candidate_requirement as execution_candidate_requirement,
     effective_side_effect_class as execution_side_effect_class,
 )
@@ -1797,6 +1800,15 @@ def select_capability_for_requirement(
         for item in (requirement.get("required_operations") or ())
         if str(item).strip()
     )
+    required_functional_role = str(
+        requirement.get("required_functional_role")
+        or infer_functional_role(requirement)
+        or ""
+    ).strip().upper()
+    required_execution_kind = infer_required_execution_kind({
+        **dict(requirement),
+        "required_operations": list(required_operations),
+    })
 
     for ordinal, capability_id in enumerate(ordered_ids):
         if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
@@ -1826,6 +1838,24 @@ def select_capability_for_requirement(
             )
             continue
         if not record.execution_enabled or effective_action not in record.allowed_actions:
+            continue
+        role_rejection = functional_role_rejection(
+            record,
+            required_functional_role,
+        )
+        if role_rejection:
+            avoided.append(
+                f"{capability_id}:{role_rejection}"
+            )
+            continue
+        kind_rejection = execution_kind_rejection(
+            record,
+            required_execution_kind,
+        )
+        if kind_rejection:
+            avoided.append(
+                f"{capability_id}:{kind_rejection}"
+            )
             continue
         if not registry_executor_is_task_adapter_compatible(
             record.executor_binding
@@ -2036,6 +2066,8 @@ def select_capability_for_requirement(
         "task_id": requirement.get("task_id"),
         "task_class": requirement.get("task_class"),
         "functional_role": requirement.get("functional_role"),
+        "required_functional_role": required_functional_role,
+        "required_execution_kind": required_execution_kind,
         "mission_policy_class": requirement.get("mission_policy_class"),
         "required_operations": list(required_operations),
         "risk_side_effect_class": requirement.get("risk_side_effect_class"),
@@ -2045,6 +2077,14 @@ def select_capability_for_requirement(
         "task_family": requirement.get("task_family"),
         "selected_domain": str(
             getattr(_profiled_registry_get(capability_id), "domain", "") or ""
+        ),
+        "selected_execution_kind": str(
+            getattr(
+                _profiled_registry_get(capability_id),
+                "resolved_execution_kind",
+                "",
+            )
+            or ""
         ),
         "score": best_score,
         "competence_used": competence_used,
