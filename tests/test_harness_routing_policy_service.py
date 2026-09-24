@@ -476,6 +476,7 @@ def test_paid_fallback_is_forbidden_even_when_fallback_is_allowed():
         route_harness_request(
             _request(
                 preferred_providers=("nvidia_nim", "tuxevil"),
+                allowed_providers=("nvidia_nim", "tuxevil"),
                 unavailable_provider_ids=("nvidia_nim",),
                 fallback_allowed=True,
             ),
@@ -496,6 +497,7 @@ def test_unknown_cost_fallback_is_forbidden_even_when_fallback_is_allowed():
         route_harness_request(
             _request(
                 preferred_providers=("nvidia_nim", "tuxevil"),
+                allowed_providers=("nvidia_nim", "tuxevil"),
                 unavailable_provider_ids=("nvidia_nim",),
                 fallback_allowed=True,
             ),

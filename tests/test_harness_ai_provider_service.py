@@ -3,14 +3,18 @@ import json
 import pytest
 from dataclasses import replace
 
-from app.services.ai_provider import AIResponse, AIUsage
+from app.services.ai_provider import AIProviderError, AIResponse, AIUsage
 from app.services.global_capability_registry import (
     AVAILABLE,
     FUNCTIONAL,
     GLOBAL_CAPABILITY_REGISTRY,
     GlobalCapabilityRegistry,
 )
-from app.services.harness_ai_provider_service import execute_harness_ai_generation, select_harness_ai_provider
+from app.services.harness_ai_provider_service import (
+    ResilientHarnessAIProvider,
+    execute_harness_ai_generation,
+    select_harness_ai_provider,
+)
 from app.services.harness_routing_policy_service import (
     HarnessRoutingDecision,
     HarnessRoutingRequest,
@@ -503,3 +507,172 @@ def test_provider_constructor_integrity_error_is_captured_as_evidence(monkeypatc
     assert evidence.error["failure_pattern"] == "opencode_profile_integrity_mismatch"
     assert evidence.error["retryable"] is False
     assert "checksum does not match executable code" in evidence.error["message"]
+
+def _decision(provider, model, *, fallback=False):
+    return HarnessRoutingDecision(
+        routing_id=f"route-{provider}-{model}",
+        intent="bounded semantic failover",
+        authorized_action="EDITORIAL",
+        candidate_capability_ids=("ai.reasoning.text",),
+        selected_capability_id="ai.reasoning.text",
+        selected_provider=provider,
+        selected_model=model,
+        selected_executor_binding=(
+            "app.services.harness_ai_provider_service."
+            "execute_harness_ai_generation"
+        ),
+        selected_provider_executor_binding=(
+            "app.services.harness_ai_provider_service."
+            "execute_harness_ai_generation"
+            if provider == "nvidia_nim"
+            else "app.services.ai_provider_factory.create_ai_provider"
+            if provider == "tuxevil"
+            else (
+                "app.services.opencode_executor_profile_service."
+                "create_opencode_provider_for_active_profile"
+            )
+        ),
+        primary_provider="nvidia_nim",
+        fallback_allowed=True,
+        fallback_candidates=("tuxevil", "opencode"),
+        fallback_occurred=fallback,
+        evidence_expectations=("HarnessAIProviderEvidence",),
+        rationale=("test fixture",),
+        rejected_candidates=(),
+        policy_metadata={"structured_output_required": True},
+    )
+
+
+def test_resilient_provider_replans_after_nvidia_timeout_to_another_nvidia_model(
+    monkeypatch,
+):
+    import app.services.harness_ai_provider_service as service
+
+    decisions = [
+        _decision("nvidia_nim", "model-a"),
+        _decision("nvidia_nim", "model-b"),
+    ]
+    requests = []
+
+    def route(request):
+        requests.append(request)
+        return decisions[len(requests) - 1]
+
+    class TimeoutProvider:
+        def generate(self, _prompt):
+            raise AIProviderError(
+                "timeout",
+                code="timeout",
+                retryable=True,
+            )
+
+    class SuccessProvider:
+        def generate(self, prompt):
+            assert prompt == "Teste"
+            return AIResponse(
+                text='{"ok":true}',
+                provider="nvidia_nim",
+                model="model-b",
+            )
+
+    providers = [TimeoutProvider(), SuccessProvider()]
+    monkeypatch.setattr(service, "route_harness_request", route)
+    monkeypatch.setattr(
+        service,
+        "select_harness_ai_provider",
+        lambda **_kwargs: (
+            "nvidia_nim",
+            providers.pop(0),
+        ),
+    )
+    parent = issue_harness_authorization(
+        authorized_action="EDITORIAL",
+        subject="action:EDITORIAL",
+        harness_decision_id="decision-resilient",
+        execution_id="execution-resilient",
+    )
+    provider = ResilientHarnessAIProvider(
+        parent_authorization=parent,
+        routing_request=HarnessRoutingRequest(
+            intent="structured editorial reasoning",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            provider_domain="ai",
+            preferred_providers=("nvidia_nim", "tuxevil", "opencode"),
+            fallback_allowed=True,
+            zero_cost_operation=True,
+            structured_output_required=True,
+            learning_required=False,
+        ),
+        structured_output_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+        },
+    )
+    response = provider.generate("Teste")
+    assert response.model == "model-b"
+    assert len(provider.last_attempts) == 2
+    assert provider.last_attempts[0]["failure_code"] == "timeout"
+    assert requests[1].exhausted_provider_model_pairs == (
+        ("nvidia_nim", "model-a"),
+    )
+
+
+def test_resilient_provider_does_not_failover_on_malformed_structured_output(
+    monkeypatch,
+):
+    import app.services.harness_ai_provider_service as service
+
+    route_calls = []
+    monkeypatch.setattr(
+        service,
+        "route_harness_request",
+        lambda request: (
+            route_calls.append(request)
+            or _decision("nvidia_nim", "model-a")
+        ),
+    )
+
+    class MalformedProvider:
+        def generate(self, _prompt):
+            raise AIProviderError(
+                "malformed JSON",
+                code="malformed_structured_output",
+                retryable=True,
+            )
+
+    monkeypatch.setattr(
+        service,
+        "select_harness_ai_provider",
+        lambda **_kwargs: ("nvidia_nim", MalformedProvider()),
+    )
+    parent = issue_harness_authorization(
+        authorized_action="EDITORIAL",
+        subject="action:EDITORIAL",
+        harness_decision_id="decision-malformed",
+        execution_id="execution-malformed",
+    )
+    provider = ResilientHarnessAIProvider(
+        parent_authorization=parent,
+        routing_request=HarnessRoutingRequest(
+            intent="structured editorial reasoning",
+            authorized_action="EDITORIAL",
+            required_capability_id="ai.reasoning.text",
+            provider_required=True,
+            preferred_providers=("nvidia_nim", "tuxevil", "opencode"),
+            fallback_allowed=True,
+            zero_cost_operation=True,
+            structured_output_required=True,
+            learning_required=False,
+        ),
+    )
+    with pytest.raises(
+        AIProviderError,
+        match="malformed JSON",
+    ):
+        provider.generate("Teste")
+    assert len(route_calls) == 1
+    assert provider.last_attempts[0]["recoverable"] is False
+

@@ -228,10 +228,20 @@ def test_registry_is_deterministic_for_same_query():
     )
 
 
-def test_registry_does_not_offer_silent_fallback():
-    assert all(
-        record.fallback_eligibility is False
+def test_registry_fallback_is_explicitly_bounded_to_governed_zero_cost_providers():
+    enabled = {
+        record.capability_id
         for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.fallback_eligibility
+    }
+    assert enabled == {
+        "ai.provider.tuxevil",
+        "ai.provider.opencode-free",
+    }
+    assert all(
+        record.capability_type == "PROVIDER"
+        for record in GLOBAL_CAPABILITY_REGISTRY.all()
+        if record.fallback_eligibility
     )
 
 
