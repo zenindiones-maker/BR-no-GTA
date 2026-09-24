@@ -1809,6 +1809,11 @@ def select_capability_for_requirement(
         **dict(requirement),
         "required_operations": list(required_operations),
     })
+    legacy_untyped_requirement = bool(
+        not required_operations
+        and required_functional_role in {"", "GENERAL"}
+        and not required_execution_kind
+    )
 
     for ordinal, capability_id in enumerate(ordered_ids):
         if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
@@ -1969,7 +1974,14 @@ def select_capability_for_requirement(
         overlap = len(query_tokens & _tokens(metadata_text))
         lexical = min(5.0, float(overlap) * 0.55)
         discovery_bonus = 0.0
-        proposal_bonus = 0.35 if capability_id in proposal_bonus_ids else 0.0
+        proposal_bonus = (
+            6.0
+            if legacy_untyped_requirement
+            and capability_id in proposal_bonus_ids
+            else 0.35
+            if capability_id in proposal_bonus_ids
+            else 0.0
+        )
         competence_score, competence_used, competence = _competence_score(
             record,
             requirement=requirement,
@@ -2068,6 +2080,7 @@ def select_capability_for_requirement(
         "functional_role": requirement.get("functional_role"),
         "required_functional_role": required_functional_role,
         "required_execution_kind": required_execution_kind,
+        "legacy_untyped_requirement": legacy_untyped_requirement,
         "mission_policy_class": requirement.get("mission_policy_class"),
         "required_operations": list(required_operations),
         "risk_side_effect_class": requirement.get("risk_side_effect_class"),
