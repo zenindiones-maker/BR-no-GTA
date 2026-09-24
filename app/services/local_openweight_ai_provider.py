@@ -58,6 +58,20 @@ def _is_structured_semantic_planner_prompt(value: str) -> bool:
     )
 
 
+def _is_bounded_agent_turn_prompt(value: str) -> bool:
+    # Recovery turns already carry a strict Harness output contract. The local
+    # provider does not need the generic 1800-token/32k profile used by
+    # unconstrained callers; that profile exceeded the bounded runner window on
+    # the first governed provider-level replan.
+    return (
+        "AgentTurnEnvelope/v1" in value
+        and (
+            "IncidentDiagnosisEvidence" in value
+            or "ToolRequestEnvelope/v1" in value
+        )
+    )
+
+
 def _semantic_context_window(value: str, *, num_predict: int) -> tuple[int, int]:
     # Deliberately conservative estimate. JSON-heavy prompts are usually better
     # than three characters/token; using three prevents a too-small KV context.
@@ -105,8 +119,19 @@ class OllamaLocalAIProvider:
             raise AIProviderError("Prompt must not be empty.")
 
         structured_planner = _is_structured_semantic_planner_prompt(value)
+        bounded_agent_turn = _is_bounded_agent_turn_prompt(value)
         if structured_planner:
             num_predict = semantic_planner_num_predict()
+            num_ctx, prompt_token_estimate = _semantic_context_window(
+                value,
+                num_predict=num_predict,
+            )
+        elif bounded_agent_turn:
+            # The typed AgentTurn envelope is intentionally compact. Use the
+            # smallest existing profiled output budget that can carry the
+            # diagnosis/tool request, and size KV context from the actual prompt.
+            # This changes work, not the execution timeout or agent-turn budget.
+            num_predict = 512
             num_ctx, prompt_token_estimate = _semantic_context_window(
                 value,
                 num_predict=num_predict,
@@ -158,7 +183,8 @@ class OllamaLocalAIProvider:
             "prompt_token_estimate": prompt_token_estimate,
             "requested_output_tokens": num_predict,
             "num_ctx": num_ctx,
-            "structured_json_mode": structured_planner,
+            "structured_json_mode": structured_planner or bounded_agent_turn,
+            "bounded_agent_turn_profile": bounded_agent_turn,
             "structured_json_schema_mode": schema_mode,
             "timeout_seconds": self.timeout,
         }
