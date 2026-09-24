@@ -341,7 +341,7 @@ jobs:
               print("FAILED_LOCAL_PROVIDER_NOT_REUSED=PASS")
           print("SAME_AGENT_SESSION_PRESERVED=PASS")
 
-                    alternate_route_ready=False
+          alternate_route_ready=False
           alternate_route_provider=""
           if provider_level_replan_required:
               from app.services.harness_routing_policy_service import (
