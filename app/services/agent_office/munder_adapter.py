@@ -204,6 +204,19 @@ def deterministic_read_only_worker(
         })
 
     elapsed_ms = round((time.perf_counter() - started) * 1000.0, 3)
+    expected_schema = next(
+        (str(item).strip() for item in task.expected_outputs if str(item).strip().endswith("/v1")),
+        "",
+    )
+    domain_evidence = {
+        "schema": expected_schema or "AgentOfficeDeterministicEvidence/v1",
+        "task_id": task.task_id,
+        "producer_agent_id": task.agent,
+        "input_artifact_digest": input_artifact_digest,
+        "consumed_input_artifacts": consumed_inputs,
+        "repository_inventory_sha256": inventory_sha,
+        "read_scope": list(scopes),
+    }
     return {
         "status": "SUCCEEDED",
         "summary": (
@@ -218,6 +231,7 @@ def deterministic_read_only_worker(
         ],
         "usage": {"cost": 0.0, "tool_calls": 1},
         "input_artifact_consumption": consumed_inputs,
+        "domain_evidence": domain_evidence,
         "analysis": {
             "input_artifact_digest": input_artifact_digest,
             "input_artifact_count": len(consumed_inputs),
