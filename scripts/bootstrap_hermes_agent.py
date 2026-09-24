@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,52 @@ def _run(*args: str, cwd: Path | None = None) -> str:
     )
     return completed.stdout.strip()
 
+
+
+
+_TRANSIENT_GIT_FETCH_MARKERS = (
+    "rpc failed",
+    "remote end hung up unexpectedly",
+    "early eof",
+    "connection reset",
+    "connection timed out",
+    "could not resolve host",
+    "temporary failure in name resolution",
+    "tls",
+    "http 429",
+    "http 500",
+    "http 502",
+    "http 503",
+    "http 504",
+    "the requested url returned error: 429",
+    "the requested url returned error: 500",
+    "the requested url returned error: 502",
+    "the requested url returned error: 503",
+    "the requested url returned error: 504",
+)
+
+
+def _fetch_pinned_commit(target: Path, expected_sha: str) -> None:
+    attempts = 2
+    for attempt in range(1, attempts + 1):
+        try:
+            _run("git", "fetch", "--depth=1", "origin", expected_sha, cwd=target)
+            return
+        except subprocess.CalledProcessError as exc:
+            stderr = str(exc.stderr or "").strip()
+            normalized = stderr.casefold()
+            transient = any(
+                marker in normalized
+                for marker in _TRANSIENT_GIT_FETCH_MARKERS
+            )
+            if not transient or attempt >= attempts:
+                detail = stderr[-1200:] if stderr else "no git stderr captured"
+                raise RuntimeError(
+                    "HERMES_UPSTREAM_FETCH_FAILED:"
+                    f"attempt={attempt}:transient={str(transient).upper()}:"
+                    + detail
+                ) from exc
+            time.sleep(2.0)
 
 def bootstrap(target: Path) -> dict:
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
@@ -57,7 +104,7 @@ def bootstrap(target: Path) -> dict:
             ]) + "\n",
             encoding="utf-8",
         )
-        _run("git", "fetch", "--depth=1", "origin", expected_sha, cwd=target)
+        _fetch_pinned_commit(target, expected_sha)
         _run("git", "checkout", "--detach", "FETCH_HEAD", cwd=target)
 
     observed_sha = _run("git", "rev-parse", "HEAD", cwd=target).lower()
