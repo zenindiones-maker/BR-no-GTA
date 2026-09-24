@@ -722,8 +722,8 @@ def test_youtube_semantic_context_is_bounded_without_losing_direct_lineage():
 
 
 def test_sparse_current_evidence_uses_no_filler_duration_target():
-    assert _target_duration_seconds(1) == 420.0
-    assert _target_duration_seconds(2) == 420.0
+    assert _target_duration_seconds(1) == 300.0
+    assert _target_duration_seconds(2) == 300.0
     assert _target_duration_seconds(3) == 600.0
     assert _target_duration_seconds(5) == 900.0
     assert _target_duration_seconds(8) == 1200.0
