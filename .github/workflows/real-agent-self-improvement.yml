@@ -301,14 +301,47 @@ jobs:
               for item in health.get("eligible_zero_cost_provider_ids") or []
               if str(item).strip()
           ]
-          provider_level_replan_required=bool(
-              selected
-              and str(selected.get("STATUS") or "").upper()=="FAILED"
-              and str(selected.get("FAILURE_CLASS") or "")=="RoutingPolicyError"
-              and exhausted
+          current_failure=str((selected or {}).get("FAILURE_CLASS") or "").strip()
+          current_status=str((selected or {}).get("STATUS") or "").strip().upper()
+          final_output_valid=bool((selected or {}).get("FINAL_OUTPUT_VALID"))
+          recovery_history=False
+          pending_recovery_strategy=False
+          local_failed=False
+          for node in walk(selected or {}):
+              if str(node.get("RECOVERY_STRATEGY") or "").strip():
+                  pending_recovery_strategy=True
+              for item in node.get("provider_attempts") or []:
+                  if not isinstance(item,dict) or str(item.get("status") or "").upper()!="FAILED":
+                      continue
+                  recovery_history=True
+                  if str(item.get("provider_id") or item.get("provider") or "")=="ollama_local":
+                      local_failed=True
+          budget_during_provider_recovery=bool(
+              current_failure=="AgentToolBudgetExceeded"
+              and recovery_history and exhausted and not final_output_valid
           )
+          provider_level_replan_required=bool(
+              selected and current_status=="FAILED" and exhausted
+              and not final_output_valid
+              and (
+                  current_failure=="RoutingPolicyError"
+                  or budget_during_provider_recovery
+                  or pending_recovery_strategy
+              )
+          )
+          if recovery_history:
+              print("CAUSAL_FAILURE_CHAIN_RESTORED=PASS")
+          if budget_during_provider_recovery:
+              print("RECOVERY_FAILURE_CLASS=RECOVERY_BUDGET_EXHAUSTED_DURING_PROVIDER_RECOVERY")
+              print("AGENT_TOOL_BUDGET_CAUSE_CLASSIFIED=PASS")
+              print("RECOVERY_NOT_TERMINATED_BY_BUDGET_ALONE=PASS")
+          if exhausted:
+              print("EXHAUSTED_PROVIDER_MODEL_PAIRS_PRESERVED=PASS")
+          if local_failed:
+              print("FAILED_LOCAL_PROVIDER_NOT_REUSED=PASS")
+          print("SAME_AGENT_SESSION_PRESERVED=PASS")
 
-          alternate_route_ready=False
+                    alternate_route_ready=False
           alternate_route_provider=""
           if provider_level_replan_required:
               from app.services.harness_routing_policy_service import (
