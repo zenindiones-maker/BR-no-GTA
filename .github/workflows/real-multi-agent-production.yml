@@ -21,6 +21,7 @@ on:
       - "app/services/task_result_envelope_service.py"
       - "app/services/telegram_fresh_research_service.py"
       - "tests/test_production_mission_execution_contracts.py"
+      - "tests/test_script_generator_service.py"
       - "tests/test_youtube_department_learning_boundary.py"
       - "tests/test_telegram_fresh_research.py"
 
@@ -107,7 +108,8 @@ jobs:
             tests/test_telegram_fresh_research.py \
             tests/test_telegram_source_intelligence.py \
             tests/test_youtube_department_learning_boundary.py \
-            tests/test_production_mission_execution_contracts.py
+            tests/test_production_mission_execution_contracts.py \
+            tests/test_script_generator_service.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
           echo "ARTIFACT_CONSUMPTION_REAL=PASS"
           echo "ARTIFACT_PRODUCTION_REAL=PASS"

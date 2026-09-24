@@ -348,3 +348,114 @@ def test_generate_script_structure_rejects_prose_around_json():
     provider = FakeAIProvider(response="Aqui está o JSON:\n" + payload)
     with pytest.raises(AIProviderError, match="invalid JSON"):
         generate_script_structure(idea_id, ai_provider=provider)
+
+def test_longform_script_retries_once_until_voice_b_duration_is_supported():
+    import json
+
+    from app.services.ai_provider import AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - longform profissional",
+        description="Pauta factual com material suficiente para análise detalhada.",
+        status="approved",
+        score=9.5,
+    )
+
+    short = {
+        "hook": "hook curto",
+        "introduction": "intro curta",
+        "development": [
+            {"heading": f"Bloco {index}", "body": "conteudo curto"}
+            for index in range(8)
+        ],
+        "conclusion": "conclusao curta",
+        "cta": "cta curta",
+    }
+    long_body = " ".join(["evidencia"] * 335)
+    long = {
+        "hook": " ".join(["evidencia"] * 80),
+        "introduction": " ".join(["evidencia"] * 120),
+        "development": [
+            {"heading": f"Bloco {index}", "body": long_body}
+            for index in range(8)
+        ],
+        "conclusion": " ".join(["evidencia"] * 120),
+        "cta": " ".join(["evidencia"] * 40),
+    }
+
+    class SequencedProvider:
+        def __init__(self):
+            self.prompts = []
+            self.responses = [short, long]
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text=json.dumps(
+                    self.responses.pop(0),
+                    ensure_ascii=False,
+                )
+            )
+
+    provider = SequencedProvider()
+    structure = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(provider.prompts) == 2
+    assert "pelo menos 2640 palavras" in provider.prompts[0]
+    assert "pelo menos 8 blocos" in provider.prompts[0]
+    assert (
+        "CORREÇÃO OBRIGATÓRIA DE SUFICIÊNCIA EDITORIAL"
+        in provider.prompts[1]
+    )
+    assert len(structure["development"]) == 8
+
+
+def test_longform_script_fails_closed_after_bounded_short_responses():
+    import json
+
+    from app.services.ai_provider import AIProviderError, AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - longform insuficiente",
+        description="Pauta factual curta.",
+        status="approved",
+        score=9.5,
+    )
+    payload = {
+        "hook": "hook curto",
+        "introduction": "intro curta",
+        "development": [
+            {"heading": f"Bloco {index}", "body": "conteudo curto"}
+            for index in range(8)
+        ],
+        "conclusion": "conclusao curta",
+        "cta": "cta curta",
+    }
+
+    class AlwaysShortProvider:
+        def __init__(self):
+            self.prompts = []
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text=json.dumps(payload, ensure_ascii=False)
+            )
+
+    provider = AlwaysShortProvider()
+    with pytest.raises(
+        AIProviderError,
+        match="cannot sustain requested long-form duration",
+    ):
+        generate_script_structure(
+            idea_id,
+            ai_provider=provider,
+            target_duration_seconds=1200.0,
+        )
+    assert len(provider.prompts) == 2

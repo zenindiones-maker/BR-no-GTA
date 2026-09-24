@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from typing import Any
 
 from app.database import ideas_repository
@@ -14,6 +16,46 @@ from app.services.ai_provider import AIProvider, AIProviderError
 # artifact 10568953094 measured +0% Voice B in the 145-163 spoken-WPM range;
 # 132 WPM is the conservative planning baseline after long-form pause allowance.
 VOICE_B_SCRIPT_PLANNING_WPM = 132.0
+LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
+MAX_EDITORIAL_GENERATION_ATTEMPTS = 2
+
+
+def _requested_word_count(target_duration_seconds: float | None) -> int | None:
+    if target_duration_seconds is None:
+        return None
+    target_minutes = float(target_duration_seconds) / 60.0
+    return max(
+        300,
+        int(math.ceil(target_minutes * VOICE_B_SCRIPT_PLANNING_WPM)),
+    )
+
+
+def _minimum_development_sections(
+    target_duration_seconds: float | None,
+) -> int:
+    if (
+        target_duration_seconds is not None
+        and float(target_duration_seconds) >= 1200.0
+    ):
+        # Hook + intro + 8 development blocks + conclusion + CTA = 12
+        # semantic sections for the existing professional handoff.
+        return LONGFORM_MIN_DEVELOPMENT_SECTIONS
+    return 3
+
+
+def _structure_word_count(structure: dict[str, Any]) -> int:
+    parts = [
+        str(structure.get("hook") or ""),
+        str(structure.get("introduction") or ""),
+        *[
+            str(item.get("body") or "")
+            for item in (structure.get("development") or ())
+            if isinstance(item, dict)
+        ],
+        str(structure.get("conclusion") or ""),
+        str(structure.get("cta") or ""),
+    ]
+    return len(re.findall(r"[A-Za-zÀ-ÿ0-9]+", " ".join(parts)))
 
 
 def _build_ai_prompt(
@@ -42,18 +84,19 @@ def _build_ai_prompt(
         )
 
     duration_instruction = ""
-    if target_duration_seconds is not None:
+    target_words = _requested_word_count(target_duration_seconds)
+    minimum_sections = _minimum_development_sections(
+        target_duration_seconds
+    )
+    if target_duration_seconds is not None and target_words is not None:
         target_minutes = float(target_duration_seconds) / 60.0
-        target_words = max(
-            300,
-            int(round(target_minutes * VOICE_B_SCRIPT_PLANNING_WPM)),
-        )
         duration_instruction = (
             "\nDURAÇÃO ALVO\n"
             f"- Aproximadamente {target_minutes:.1f} minutos de narração.\n"
-            f"- Mire aproximadamente {target_words} palavras no roteiro completo.\n"
-            "- Distribua o desenvolvimento em blocos suficientes para sustentar a duração "
-            "sem repetição artificial de frases.\n"
+            f"- O roteiro completo DEVE ter pelo menos {target_words} palavras úteis.\n"
+            f"- O desenvolvimento DEVE conter pelo menos {minimum_sections} blocos distintos.\n"
+            "- Expanda apenas com contexto, análise e implicações sustentados pelas evidências fornecidas.\n"
+            "- Não use repetição, paráfrase vazia ou filler para alcançar a duração.\n"
         )
 
     return f"""
@@ -80,7 +123,7 @@ REGRAS
 - Escreva em português brasileiro.
 - O roteiro deve ser adequado para narração em vídeo.
 - O hook deve despertar curiosidade sem usar clickbait enganoso.
-- O desenvolvimento deve possuir pelo menos 3 blocos.
+- O desenvolvimento deve possuir pelo menos {minimum_sections} blocos.
 - Cada bloco deve possuir "heading" e "body".
 - A resposta deve ser SOMENTE JSON válido.
 - Não use markdown.
@@ -223,15 +266,58 @@ def _generate_ai_structure(
         target_duration_seconds=target_duration_seconds,
     )
 
-    response = ai_provider.generate(prompt)
+    target_words = _requested_word_count(target_duration_seconds)
+    minimum_sections = _minimum_development_sections(
+        target_duration_seconds
+    )
+    previous_structure: dict[str, Any] | None = None
 
-    if not response.text or not response.text.strip():
-        raise AIProviderError(
-            "AI provider returned an empty response."
-        )
+    for attempt in range(1, MAX_EDITORIAL_GENERATION_ATTEMPTS + 1):
+        attempt_prompt = prompt
+        if (
+            attempt > 1
+            and previous_structure is not None
+            and target_words is not None
+        ):
+            prior_words = _structure_word_count(previous_structure)
+            prior_sections = len(
+                previous_structure.get("development") or ()
+            )
+            attempt_prompt += (
+                "\n\nCORREÇÃO OBRIGATÓRIA DE SUFICIÊNCIA EDITORIAL\n"
+                f"- A tentativa anterior teve {prior_words} palavras e "
+                f"{prior_sections} blocos de desenvolvimento.\n"
+                f"- Reescreva do zero com pelo menos {target_words} palavras úteis e "
+                f"{minimum_sections} blocos distintos.\n"
+                "- Preserve estritamente os fatos e evidências fornecidos.\n"
+                "- Aumente profundidade explicativa e análise; não invente fatos.\n"
+                "- Não use filler, repetição ou paráfrase vazia para bater duração.\n"
+            )
 
-    parsed = _parse_ai_json_response(response.text)
-    return _validate_ai_structure(parsed)
+        response = ai_provider.generate(attempt_prompt)
+
+        if not response.text or not response.text.strip():
+            raise AIProviderError(
+                "AI provider returned an empty response."
+            )
+
+        parsed = _parse_ai_json_response(response.text)
+        structure = _validate_ai_structure(parsed)
+        previous_structure = structure
+
+        if target_words is None:
+            return structure
+
+        if (
+            _structure_word_count(structure) >= target_words
+            and len(structure.get("development") or ())
+            >= minimum_sections
+        ):
+            return structure
+
+    raise AIProviderError(
+        "AI response cannot sustain requested long-form duration without padding."
+    )
 
 
 def generate_script_structure(
