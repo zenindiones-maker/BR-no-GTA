@@ -557,7 +557,14 @@ jobs:
               health=capability_health(record.capability_id)
               if str(record.health_policy or "")=="SEMANTIC_PROVIDER_REQUIRED" and health.state in {"BLOCKED","QUARANTINED"}:
                   snapshot[record.capability_id]={"eligible":False,"health_state":health.state,"reason":health.reason,"evidence_refs":list(health.evidence_refs)}
-          snapshot["agent-office.codex.readonly-analysis"]={"eligible":True,"health_state":"HEALTHY","reason":"authenticated Codex semantic preflight","evidence_refs":["artifact:task02-codex-semantic-preflight.json"]}
+          for record in GLOBAL_CAPABILITY_REGISTRY.all():
+              if str(record.health_policy or "")=="CODEX_AUTH_REQUIRED":
+                  snapshot[record.capability_id]={
+                      "eligible":True,
+                      "health_state":"HEALTHY",
+                      "reason":"authenticated Codex runtime preflight",
+                      "evidence_refs":["artifact:task02-codex-semantic-preflight.json"],
+                  }
           print("BR_RUNTIME_CAPABILITY_ELIGIBILITY_JSON="+json.dumps(snapshot,separators=(",",":")))
           PY
 

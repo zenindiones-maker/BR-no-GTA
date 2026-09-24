@@ -141,8 +141,9 @@ def _nonempty(value: Any) -> bool:
 
 
 def _candidate_for_schema(value: Any, expected_schema: str) -> dict[str, Any] | None:
+    accepted = {expected_schema, f"{expected_schema}/v1"}
     for item in _iter_dicts(value):
-        if str(item.get("schema") or "").strip() == expected_schema:
+        if str(item.get("schema") or "").strip() in accepted:
             return item
     return None
 

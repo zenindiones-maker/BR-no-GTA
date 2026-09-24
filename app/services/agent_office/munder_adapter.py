@@ -39,6 +39,10 @@ from app.services.performance_telemetry_service import (
     PerformanceSpan,
     emit_performance_event,
 )
+from app.services.task_output_contract_service import (
+    task_output_contract_descriptor,
+    validate_task_output_contract,
+)
 
 
 WorkerRunner = Callable[..., dict[str, Any]]
@@ -257,6 +261,11 @@ def deterministic_read_only_worker(
 
 
 CODEX_READONLY_CAPABILITY = "agent-office.codex.readonly-analysis"
+CODEX_INDEPENDENT_REVIEW_CAPABILITY = "agent-office.codex.independent-review"
+CODEX_READONLY_CAPABILITIES = {
+    CODEX_READONLY_CAPABILITY,
+    CODEX_INDEPENDENT_REVIEW_CAPABILITY,
+}
 
 
 def _codex_process(
@@ -403,7 +412,7 @@ def codex_readonly_worker(
         raise PermissionError(
             "Canonical Addy capabilities must execute through the Harness Addy boundary"
         )
-    if task.capability != CODEX_READONLY_CAPABILITY:
+    if task.capability not in CODEX_READONLY_CAPABILITIES:
         raise PermissionError("Codex worker received an unsupported internal capability")
     deadline = time.monotonic() + timeout_seconds
 
@@ -437,16 +446,51 @@ def codex_readonly_worker(
             parsed=json.loads(raw.decode("utf-8"))
             consumed_inputs.append({"artifact_ref":str(ref),"content_sha256":sha256(raw).hexdigest(),"bytes_read":len(raw),"schema":parsed.get("schema"),"producer_task_id":parsed.get("producer_task_id") or parsed.get("task_id"),"producer_agent_id":parsed.get("producer_agent_id") or "deterministic-analysis"})
             artifact_context.append(parsed)
+    output_contract = task_output_contract_descriptor(task.role)
+    expected_schema = str(output_contract.get("schema") or "").strip()
+    required_fields = [
+        str(item) for item in (output_contract.get("required_fields") or ())
+        if str(item).strip()
+    ]
+    if (
+        str(task.role or "").upper() == "DIAGNOSIS"
+        and any(str(item).strip() == "IncidentDiagnosisEvidence/v1" for item in task.expected_outputs)
+    ):
+        expected_schema = "IncidentDiagnosisEvidence/v1"
+    extra_diagnosis_fields = (
+        [
+            "task_id", "agent_id", "claims", "causal_explanation",
+            "supporting_evidence_refs", "supporting_evidence_hashes",
+            "alternatives_considered", "rejected_alternatives",
+            "rejection_reasons", "uncertainty", "known_limitations",
+            "transport_failure_distinguished_from_root_cause",
+        ]
+        if str(task.role or "").upper() == "DIAGNOSIS"
+        else []
+    )
+    requested_fields = list(dict.fromkeys([*required_fields, *extra_diagnosis_fields]))
+    schema_instruction = (
+        f"Return exactly one JSON object with schema {expected_schema} and fields "
+        + ", ".join(requested_fields)
+        + ". "
+        if expected_schema and requested_fields
+        else "Return exactly one bounded JSON object grounded in the task evidence. "
+    )
+    review_instruction = (
+        "For REVIEW, verdict must be ACCEPT, REVISE, or REJECT. Review independently from "
+        "persisted artifacts only; do not assume the proposal is correct. "
+        if str(task.role or "").upper() == "REVIEW"
+        else ""
+    )
     prompt = (
         "You are a subordinate read-only Agent Office worker under DeepSeek Harness authority. "
         "Inspect only the provided disposable git worktree. Do not mutate files, commit, publish, "
         "deploy, authenticate to other services, invoke Addy skills, or claim authority. "
         "When INPUT_ARTIFACTS are supplied, reason only from those typed artifacts and the task question; "
-        "do not inspect unrelated repository files. Return exactly one JSON object with schema "
-        "IncidentDiagnosisEvidence/v1 and fields task_id, agent_id, claims, causal_explanation, "
-        "supporting_evidence_refs, supporting_evidence_hashes, alternatives_considered, rejected_alternatives, "
-        "rejection_reasons, uncertainty, known_limitations, transport_failure_distinguished_from_root_cause. "
-        "Do not make unsupported claims.\n\n"
+        "do not inspect unrelated repository files. "
+        + schema_instruction
+        + review_instruction
+        + "Do not make unsupported claims.\n\n"
         f"READ_SET={json.dumps(task.read_set or task.allowed_paths)}\n"
         f"INPUT_ARTIFACTS={json.dumps(artifact_context,ensure_ascii=False)}\n"
         f"Task:\n{task.objective}"
@@ -510,9 +554,19 @@ def codex_readonly_worker(
             domain_evidence=json.loads(output)
         except json.JSONDecodeError:
             return {"status":"FAILED","error":"Codex semantic output is not valid JSON","failure_stage":"readonly_result_validation","stderr_class":"INVALID_TYPED_OUTPUT","retryability":"DETERMINISTIC_NO_RETRY","recoverable":False}
-        required={"schema","task_id","agent_id","claims","causal_explanation","supporting_evidence_refs","supporting_evidence_hashes","alternatives_considered","rejected_alternatives","rejection_reasons","uncertainty","known_limitations","transport_failure_distinguished_from_root_cause"}
-        if domain_evidence.get("schema")!="IncidentDiagnosisEvidence/v1" or not required.issubset(domain_evidence):
-            return {"status":"FAILED","error":"Codex semantic output failed IncidentDiagnosisEvidence/v1 contract","failure_stage":"readonly_result_validation","stderr_class":"INVALID_TYPED_OUTPUT","retryability":"DETERMINISTIC_NO_RETRY","recoverable":False}
+        validation = validate_task_output_contract(
+            functional_role=task.role,
+            result=domain_evidence,
+        )
+        if validation.required and not validation.final_output_valid:
+            return {
+                "status":"FAILED",
+                "error":"Codex semantic output failed typed task output contract: " + ",".join(validation.errors),
+                "failure_stage":"readonly_result_validation",
+                "stderr_class":"INVALID_TYPED_OUTPUT",
+                "retryability":"DETERMINISTIC_NO_RETRY",
+                "recoverable":False,
+            }
         domain_evidence["input_artifact_digest"]=sha256(json.dumps(consumed_inputs,sort_keys=True,separators=(",",":")).encode()).hexdigest()
         domain_evidence["output_sha256"]=sha256(json.dumps(domain_evidence,sort_keys=True,separators=(",",":")).encode()).hexdigest()
     return {
@@ -548,6 +602,7 @@ def registered_worker_runners() -> dict[str, WorkerRunner]:
     return {
         "deterministic-analysis": deterministic_read_only_worker,
         "codex-readonly": codex_readonly_worker,
+        "codex-independent-reviewer": codex_readonly_worker,
         "codex-development": codex_bounded_development_worker,
         "addy-specialist": addy_specialist_task_owner_worker,
     }
@@ -714,7 +769,7 @@ class MunderAdapter:
                         category="AGENT_ATTEMPT_TIME",
                         provider=(
                             "codex"
-                            if task.agent in {"codex-readonly", "codex-development"}
+                            if task.agent in {"codex-readonly", "codex-independent-reviewer", "codex-development"}
                             else None
                         ),
                         input_size=len(task.objective.encode("utf-8")),
@@ -801,7 +856,7 @@ class MunderAdapter:
                         }
                         break
                     if (
-                        task.agent in {"codex-readonly", "codex-development"}
+                        task.agent in {"codex-readonly", "codex-independent-reviewer", "codex-development"}
                         and is_codex_sandbox_host_policy_failure(str(exc))
                     ):
                         result = {
@@ -922,7 +977,7 @@ class MunderAdapter:
             input_size=len(task.objective.encode("utf-8")),
             output_size=len(json.dumps(result, default=str).encode("utf-8")),
             provider=specialist.get("semantic_provider") or (
-                "codex" if task.agent in {"codex-readonly", "codex-development"} else None
+                "codex" if task.agent in {"codex-readonly", "codex-independent-reviewer", "codex-development"} else None
             ),
             model=specialist.get("semantic_model"),
             success=result.get("status") == "SUCCEEDED",

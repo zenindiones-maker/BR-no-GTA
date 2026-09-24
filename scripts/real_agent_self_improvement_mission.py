@@ -1731,7 +1731,6 @@ def run(
     )
     write_json(output_dir / "runtime-residual-replan.json", residual_replan_evidence)
     write_json(output_dir / "first-plan.json", {"plan": first, "residual_replan": residual_replan_evidence})
-    identity_text = selected_identity_text(first)
     # Codex is permitted only when selected by the Harness Registry after a
     # proven runtime eligibility snapshot; no task-specific bypass is used.
 
@@ -1743,31 +1742,79 @@ def run(
     if not review_tasks:
         raise RuntimeError("INDEPENDENT_REVIEW_TASK_MISSING")
     review_task = review_tasks[-1]
-    review_capability_id = str(review_task.get("capability_id") or "")
-    review_record = GLOBAL_CAPABILITY_REGISTRY.get(review_capability_id)
-    if review_record is None:
-        raise RuntimeError("INDEPENDENT_REVIEW_CAPABILITY_MISSING")
-    review_ops = set(review_record.execution_operations or ())
     required_review_ops = {
         CAN_REVIEW,
         CAN_SEMANTIC_REASONING,
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }
+    proposal_agent_ids = {
+        str(item.get("selected_agent_id") or "")
+        for item in tasks(first)
+        if str(item.get("functional_role") or "").upper() == "PROPOSAL"
+        and str(item.get("selected_agent_id") or "").strip()
+    }
+    accepted_review_candidates = [
+        dict(item)
+        for item in review_precheck.get("compatible_candidates") or ()
+        if str(item.get("agent_id") or "") not in proposal_agent_ids
+    ]
     accepted_review_ids = {
         str(item.get("capability_id") or "")
-        for item in review_precheck.get("compatible_candidates") or ()
+        for item in accepted_review_candidates
     }
-    if (
-        review_capability_id not in accepted_review_ids
-        or not bool(review_record.supports_review)
-        or not required_review_ops.issubset(review_ops)
-        or review_capability_id == "collaboration.hermes.execute"
-        or review_capability_id.startswith("agent-office.codex.")
-    ):
-        raise RuntimeError(
-            "INDEPENDENT_REVIEWER_CONTRACT_INVALID:" + review_capability_id
+    review_capability_id = str(review_task.get("capability_id") or "")
+    review_record = GLOBAL_CAPABILITY_REGISTRY.get(review_capability_id)
+    review_ops = set(review_record.execution_operations or ()) if review_record else set()
+    current_review_valid = bool(
+        review_record
+        and review_capability_id in accepted_review_ids
+        and bool(review_record.supports_review)
+        and required_review_ops.issubset(review_ops)
+        and review_capability_id != "collaboration.hermes.execute"
+        and str(review_record.agent_id or "") not in proposal_agent_ids
+    )
+    reviewer_replan = {
+        "schema": "runtime-reviewer-replan/v1",
+        "ORIGINAL_REVIEW_CAPABILITY": review_capability_id,
+        "REVIEWER_REPLAN_PERFORMED": "NOT_REQUIRED",
+    }
+    if not current_review_valid:
+        replacement = accepted_review_candidates[0] if accepted_review_candidates else None
+        if replacement is None:
+            raise RuntimeError(
+                "NO_HEALTHY_INDEPENDENT_REVIEWER:"
+                + json.dumps(
+                    review_precheck.get("candidate_matrix") or (),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        replacement_record = GLOBAL_CAPABILITY_REGISTRY.get(
+            str(replacement.get("capability_id") or "")
         )
+        if replacement_record is None:
+            raise RuntimeError("INDEPENDENT_REVIEW_REPLAN_CAPABILITY_MISSING")
+        review_task.update({
+            "capability_id": replacement_record.capability_id,
+            "selected_agent_id": replacement_record.agent_id,
+            "selected_skill_id": replacement_record.skill_id,
+            "selected_executor_binding": replacement_record.executor_binding,
+            "required_capability_description": (
+                "Registry-selected independent reviewer satisfying current runtime eligibility"
+            ),
+        })
+        review_capability_id = replacement_record.capability_id
+        review_record = replacement_record
+        review_ops = set(review_record.execution_operations or ())
+        reviewer_replan.update({
+            "REVIEWER_REPLAN_PERFORMED": "PASS",
+            "REPLACEMENT_REVIEW_CAPABILITY": review_capability_id,
+            "REPLACEMENT_REVIEW_AGENT": review_record.agent_id,
+            "PROPOSAL_AGENT_IDS": sorted(proposal_agent_ids),
+        })
+    write_json(output_dir / "runtime-reviewer-replan.json", reviewer_replan)
+    identity_text = selected_identity_text(first)
     reviewer_diagnostic = next(
         (
             item

@@ -360,6 +360,70 @@ AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
     functional_roles=("ANALYSIS", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL"),
 )
 
+AGENT_OFFICE_CODEX_INDEPENDENT_REVIEW_RECORD = CapabilityRecord(
+    capability_id="agent-office.codex.independent-review",
+    capability_type="AGENT",
+    domain="development",
+    implementation=(
+        "Agent Office independent Codex review task-owner in a separate read-only "
+        "AgentSession over the same authenticated Codex backend"
+    ),
+    input_contract=(
+        "DelegatedTaskLease + persisted proposal/root-cause/evidence artifact refs + exact base SHA"
+    ),
+    output_contract="IndependentReviewEvidence + AgentOfficeExecutionResult",
+    requirements=(
+        "DeepSeek Harness DEVELOPMENT authorization",
+        "Agent Office delegated lease",
+        "Codex CLI authenticated",
+        "separate reviewer AgentSession",
+        "disposable git worktree",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "agent-office", "codex", "independent-review", "readonly",
+        "review", "task-owner", "delegated-autonomy",
+    ),
+    security_boundary=(
+        "DeepSeek Harness sole authority; reviewer is read-only, receives only persisted "
+        "artifact inputs, cannot mutate repository, push, merge, publish, access secrets "
+        "or approve its own proposal."
+    ),
+    cost_class="BOUNDED_BY_LEASE",
+    quota_class="CODEX_ACCOUNT",
+    latency_class="MODEL_DEPENDENT",
+    quality_class="INDEPENDENT_STRUCTURED_REVIEW_WITH_EVIDENCE",
+    evidence_contract="app.services.agent_office.contracts.AgentOfficeExecutionResult",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.agent_office_harness_service.execute_authorized_agent_office_specialist"
+    ),
+    version="1",
+    provider_id="codex",
+    agent_id="codex-independent-reviewer",
+    side_effects=("ephemeral worktree", "structured runtime artifact"),
+    supports_parallelism=True,
+    supports_retry=True,
+    supports_resume=True,
+    supports_review=True,
+    side_effect_class="READ_ONLY",
+    default_read_scope=("app", "scripts", "tests", ".github/workflows", "config", "integrations"),
+    default_write_scope=(),
+    allowed_tools=("git", "python", "pytest", "codex", "rg", "cat"),
+    health_policy="CODEX_AUTH_REQUIRED",
+    execution_operations=(
+        CAN_SEMANTIC_REASONING,
+        CAN_READ_REPOSITORY,
+        CAN_REVIEW,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+    execution_kind="INDEPENDENT_REVIEWER",
+    functional_roles=("REVIEW",),
+)
+
 AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
     capability_id="agent-office.codex.bounded-development",
     capability_type="AGENT",
@@ -1182,6 +1246,7 @@ for _record in (
     ARTIFACT_EVIDENCE_REUSE_RECORD,
     AGENT_OFFICE_DETERMINISTIC_READONLY_RECORD,
     AGENT_OFFICE_CODEX_READONLY_RECORD,
+    AGENT_OFFICE_CODEX_INDEPENDENT_REVIEW_RECORD,
     AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD,
     PHONE_CONTROL_RECORD,
     PRODUCTION_MEDIA_SELECTION_RECORD,
