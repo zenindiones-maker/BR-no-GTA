@@ -281,6 +281,32 @@ class AgentSessionRuntime:
             self.state["FAILURE_EVIDENCE"] = dict(evidence)
         self._persist()
 
+    def resume_agent_turn_index(self) -> int:
+        current = max(0, int(self.state.get("TURN_INDEX") or 0))
+        if not self.restored:
+            return 1
+        recovery = self.provider_recovery_state()
+        provider_failure = bool(
+            recovery.get("FAILED_PROVIDER_ATTEMPTS_PERSISTED")
+        )
+        failure_class = str(
+            self.state.get("FAILURE_CLASS") or ""
+        ).strip()
+        if (
+            str(self.state.get("STATUS") or "").upper() == "FAILED"
+            and (
+                provider_failure
+                or failure_class
+                in {
+                    "CapabilityReturnedFailure",
+                    "RoutingPolicyError",
+                }
+            )
+        ):
+            return max(1, current)
+        return current + 1
+
+
     def provider_recovery_state(self) -> dict[str, Any]:
         def walk(value: Any):
             if isinstance(value, dict):
