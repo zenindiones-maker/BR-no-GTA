@@ -356,8 +356,8 @@ AGENT_OFFICE_CODEX_READONLY_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
-    execution_kind="DETERMINISTIC_ANALYSIS_AGENT",
-    functional_roles=("ANALYSIS", "REVIEW"),
+    execution_kind="SEMANTIC_REASONER",
+    functional_roles=("ANALYSIS", "DIAGNOSIS", "ROOT_CAUSE", "PROPOSAL"),
 )
 
 AGENT_OFFICE_CODEX_BOUNDED_DEVELOPMENT_RECORD = CapabilityRecord(
