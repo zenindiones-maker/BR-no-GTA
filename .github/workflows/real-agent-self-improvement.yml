@@ -7,6 +7,8 @@ on:
     paths:
       - "scripts/real_agent_self_improvement_mission.py"
       - "scripts/zero_cost_route_inventory.py"
+      - "scripts/task02_deterministic_team.py"
+      - "tests/test_task02_deterministic_team.py"
       - "tests/test_zero_cost_route_inventory.py"
       - "scripts/dynamic_system_improvement_mission.py"
       - "app/services/execution_mission_envelope_service.py"
@@ -480,8 +482,19 @@ jobs:
           echo "PREEXISTING_ALTERNATE_ROUTE_PROVIDER=${{ steps.provider_recovery.outputs.alternate_route_provider }}"
           echo "MATERIALIZE_CANONICAL_LOCAL_PROVIDER=${{ steps.provider_recovery.outputs.prepare_alt_provider }}"
 
-      - name: Close canonical route inventory
+      - name: Prove deterministic task-02 decomposition
         if: steps.provider_recovery.outputs.provider_level_replan_required == 'true' && steps.provider_recovery.outputs.alternate_route_ready != 'true'
+        id: deterministic_task02
+        run: |
+          set -euo pipefail
+          python scripts/task02_deterministic_team.py \
+            --checkpoint-root runtime/real-agent-self-improvement/checkpoint-source \
+            --request .run/real-agent-self-improvement.request.json \
+            --output-dir runtime/real-agent-self-improvement/deterministic-team
+          echo "deterministic_team_closed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Close canonical route inventory
+        if: steps.deterministic_task02.outputs.deterministic_team_closed == 'true'
         id: route_inventory
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
