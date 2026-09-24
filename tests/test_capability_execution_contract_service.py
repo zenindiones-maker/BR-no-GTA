@@ -457,3 +457,22 @@ def test_selector_filters_tool_before_analysis_agent_ranking():
         )
         for item in avoided
     )
+
+def test_legacy_implement_role_normalizes_only_for_real_mutation_contracts():
+    mutating = {
+        "functional_role": "IMPLEMENT",
+        "task_class": "bounded-development",
+        "required_operations": [
+            CAN_WRITE_REPOSITORY,
+            CAN_MUTATE_CANDIDATE,
+        ],
+    }
+    assert infer_functional_role(mutating) == "APPLY"
+
+    readonly = {
+        "functional_role": "IMPLEMENT",
+        "task_class": "readonly-analysis",
+        "required_operations": [CAN_READ_REPOSITORY],
+    }
+    assert infer_functional_role(readonly) == "IMPLEMENT"
+

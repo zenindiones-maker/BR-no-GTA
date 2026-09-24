@@ -104,6 +104,28 @@ def infer_functional_role(requirement: dict[str, Any]) -> str:
     explicit = str(
         requirement.get("functional_role") or ""
     ).strip().upper()
+    if explicit == "IMPLEMENT":
+        task_class = str(
+            requirement.get("task_class") or ""
+        ).strip().casefold()
+        required_operations = {
+            str(item).strip()
+            for item in (requirement.get("required_operations") or ())
+            if str(item).strip()
+        }
+        if (
+            task_class in {
+                "bounded-development",
+                "adaptive-code-change",
+                "recovery-apply",
+                "apply-recovery",
+            }
+            or CAN_MUTATE_CANDIDATE in required_operations
+            or CAN_WRITE_REPOSITORY in required_operations
+        ):
+            # IMPLEMENT is a legacy planner label. Canonical mutating work is
+            # APPLY; keep the alias bounded to contracts that really mutate.
+            return "APPLY"
     if explicit and explicit != "GENERAL":
         return explicit
     expected_output = str(
