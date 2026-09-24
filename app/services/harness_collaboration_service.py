@@ -841,7 +841,7 @@ def _deterministic_capability_requirements(
         if wants_change:
             functions.extend([
                 {
-                    "function": "IMPLEMENT",
+                    "function": "APPLY",
                     "task_class": "bounded-development",
                     "action": "DEVELOPMENT",
                     "query": (
