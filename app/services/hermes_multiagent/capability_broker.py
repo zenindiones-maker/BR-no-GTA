@@ -1456,7 +1456,12 @@ class HermesHarnessCapabilityBroker:
             if session.restored
             else 0
         )
-        start_agent_turn = max(1, restored_turn_index + 1)
+        start_agent_turn = session.resume_agent_turn_index()
+        provider_failure_turn_reused = bool(
+            session.restored
+            and start_agent_turn == restored_turn_index
+            and str(session.state.get("STATUS") or "").upper() == "FAILED"
+        )
         previous_output = ""
         output_validation_feedback: dict[str, Any] | None = None
         provider_calls = int(
@@ -1479,6 +1484,14 @@ class HermesHarnessCapabilityBroker:
                 "checkpoint_ref": session.artifact_ref,
                 "restored_turn_index": restored_turn_index,
                 "next_turn_index": start_agent_turn,
+                "provider_failure_turn_reused": (
+                    provider_failure_turn_reused
+                ),
+                "PROVIDER_FAILURE_DID_NOT_CONSUME_AGENT_TURN": (
+                    "PASS"
+                    if provider_failure_turn_reused
+                    else "NOT_APPLICABLE"
+                ),
                 "restored_tool_result_count": len(tool_results),
                 "restored_provider_call_count": provider_calls,
                 "TASK_AGENT_SESSION_RESTORED": "PASS",
