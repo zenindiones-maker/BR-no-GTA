@@ -186,7 +186,10 @@ def execute_editorial_process_task(
                 "Harness-selected Goal"
             ),
             authorized_action="EDITORIAL",
-            domain="editorial",
+            # This is the nested semantic-provider route. Keep the outer
+            # task/domain editorial.process, but route provider selection in
+            # the canonical AI domain just like research synthesis.
+            domain="ai",
             task_class="production-mission-editorial",
             goal_id=target_goal_id,
             # Provider construction is governed by the canonical AI
