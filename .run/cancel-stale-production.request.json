@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36193654463,
-  "expected_head_sha": "b7885b378fb0e712eafa91047782ede726f33a2f",
-  "reason": "known defective continuation successor from false-resume storm; containment before Durable Execution V3",
+  "run_id": 36193937482,
+  "expected_head_sha": "e51e75219ea41a97e7648bb74d45cc0237676e0c",
+  "reason": "late-dispatched known defective continuation from false-resume storm; drain before Durable Execution V3",
   "requested_by": "durable-execution-v3-containment"
 }
