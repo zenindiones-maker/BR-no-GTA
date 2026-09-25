@@ -1389,3 +1389,11 @@ def test_editorial_retry_preserves_all_verified_reinjected_claims():
     editorial_claims = payload["editorial_context"]["verified_claims"]
     assert len(editorial_claims) == 30
     assert editorial_claims[-1]["claim_id"] == "claim-29"
+
+def test_editorial_retry_payload_carries_partial_structure_after_recovery():
+    source = Path("scripts/real_multi_agent_production.py").read_text(encoding="utf-8")
+
+    assert 'state["editorial_recovery_seed_structure"] = dict(' in source
+    assert '"recovery_seed_structure": state.get(' in source
+    assert '"editorial_recovery_seed_structure"' in source
+

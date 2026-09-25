@@ -1063,7 +1063,22 @@ def _generate_ai_structure(
     )
     target_words = _requested_word_count(target_duration_seconds)
     minimum_sections = _minimum_development_sections(target_duration_seconds)
-    initial = _generate_provider_structure(ai_provider=ai_provider, prompt=prompt)
+    recovery_seed = (
+        editorial_context.get("recovery_seed_structure")
+        if isinstance(editorial_context, dict)
+        else None
+    )
+    if isinstance(recovery_seed, dict) and all(
+        key in recovery_seed
+        for key in ("hook", "introduction", "development", "conclusion", "cta")
+    ):
+        initial = {
+            key: value
+            for key, value in recovery_seed.items()
+            if key != "_internal_editorial_structure"
+        }
+    else:
+        initial = _generate_provider_structure(ai_provider=ai_provider, prompt=prompt)
 
     if target_words is None:
         return initial
@@ -1282,12 +1297,21 @@ def _generate_ai_structure(
 
     final_words = _structure_word_count(previous_structure)
     final_sections = len(previous_structure.get("development") or ())
-    raise AIProviderError(
+    failure = AIProviderError(
         "AI response cannot sustain requested long-form duration without padding. "
         f"observed_words={final_words} target_words={target_words} "
         f"observed_development_sections={final_sections} "
         f"required_development_sections={minimum_sections}"
     )
+    failure.failure_evidence = {
+        "schema": "EditorialUnderDeliveryFailure/v1",
+        "partial_structure": previous_structure,
+        "observed_words": final_words,
+        "observed_development_sections": final_sections,
+        "target_words": target_words,
+        "artificial_padding": False,
+    }
+    raise failure
 
 def generate_script_structure(
     idea_id: int,

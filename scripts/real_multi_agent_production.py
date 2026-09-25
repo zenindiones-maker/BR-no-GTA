@@ -2312,6 +2312,12 @@ def _payload_for_task(
                 "content_strategy_evidence_refs": evidence_refs,
                 "novelty_gate": state.get("topic_selection"),
                 "research_semantic": state.get("research_semantic"),
+                # A failed long-form draft is evidence-bearing work, not disposable
+                # provider output. Recovery adds verified claims and continues from
+                # this bounded structure instead of regenerating from zero.
+                "recovery_seed_structure": state.get(
+                    "editorial_recovery_seed_structure"
+                ),
             },
         }
     if capability_id == "script.generate":
@@ -2811,10 +2817,18 @@ def run(
                         raise RuntimeError(
                             "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
                         ) from failure
-                    sequence_gaps = _normalized_sequence_evidence_gaps(
-                        dict(failure.failure_evidence or {}).get(
-                            "sequence_evidence_gaps"
+                    failure_evidence = dict(
+                        failure.failure_evidence or {}
+                    )
+                    partial_structure = failure_evidence.get(
+                        "partial_structure"
+                    )
+                    if isinstance(partial_structure, dict):
+                        state["editorial_recovery_seed_structure"] = dict(
+                            partial_structure
                         )
+                    sequence_gaps = _normalized_sequence_evidence_gaps(
+                        failure_evidence.get("sequence_evidence_gaps")
                     )
                     if sequence_gaps:
                         _write(

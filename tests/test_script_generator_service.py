@@ -1023,3 +1023,34 @@ def test_sequence_batch_prompt_preserves_its_duration_contract():
     assert "Aproximadamente 6.0 minutos de narração." in prompt
     assert "pelo menos 792 palavras úteis" in prompt
     assert "alvo adicional agregado: cerca de 6.00 minutos" in prompt
+
+def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch):
+    from app.services import script_generator_service as generator
+
+    seed = {
+        "hook": "Hook inicial",
+        "introduction": "Introdução inicial",
+        "development": [
+            {"heading": f"Bloco {index}", "body": " ".join(["evidência"] * 260)}
+            for index in range(8)
+        ],
+        "conclusion": "Conclusão inicial",
+        "cta": "CTA inicial",
+    }
+
+    def fail_if_regenerated(*args, **kwargs):
+        raise AssertionError("recovery seed must replace a fresh initial generation")
+
+    monkeypatch.setattr(generator, "_generate_provider_structure", fail_if_regenerated)
+    result = generator._generate_ai_structure(
+        title="Pauta",
+        description="Descrição",
+        research_context=None,
+        ai_provider=object(),
+        editorial_context={"recovery_seed_structure": seed},
+        target_duration_seconds=1200.0,
+    )
+
+    assert result["development"] == seed["development"]
+    assert generator._structure_word_count(result) >= 2080
+
