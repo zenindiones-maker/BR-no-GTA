@@ -157,3 +157,32 @@ def test_collect_rockstar_newswire_items_passes_timeout(monkeypatch):
     assert captured["timeout"] == 42.0
     assert isinstance(captured["monitor"], FakeMonitor)
     assert captured["url"] == module.ROCKSTAR_NEWSWIRE_URL
+
+
+def test_collect_rockstar_newswire_items_reuses_governed_monitor_result(monkeypatch):
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "NewsArticle",
+      "headline": "GTA VI Governed Recovery",
+      "description": "Recovered through governed acquisition.",
+      "url": "https://www.rockstargames.com/newswire/gta-vi-governed"
+    }
+    </script>
+    """
+    monitored = type("Result", (), {"content": html})()
+
+    monkeypatch.setattr(
+        module,
+        "monitor_gta6_page_persisted",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("direct monitor transport must not run twice")
+        ),
+    )
+
+    result = module.collect_rockstar_newswire_items(
+        monitored_result=monitored,
+    )
+
+    assert len(result) == 1
+    assert result[0].title == "GTA VI Governed Recovery"

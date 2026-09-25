@@ -51,7 +51,11 @@ def test_run_gta6_research_ingests_rockstar_monitor_and_graph(
     monkeypatch.setattr(
         module,
         "ingest_rockstar_newswire_from_monitor",
-        lambda: monitor_items.copy(),
+        lambda **kwargs: (
+            monitor_items.copy()
+            if kwargs.get("monitored_result") is monitor_result
+            else (_ for _ in ()).throw(AssertionError("monitor result not reused"))
+        ),
     )
 
     monkeypatch.setattr(
@@ -129,7 +133,7 @@ def test_run_gta6_research_does_not_call_graph_without_query_hash(
     monkeypatch.setattr(
         module,
         "ingest_rockstar_newswire_from_monitor",
-        lambda: monitor_items,
+        lambda **_kwargs: monitor_items,
     )
 
     monkeypatch.setattr(
@@ -225,7 +229,14 @@ def test_run_gta6_research_routes_monitor_transport_failure_through_governed_acq
             },
         },
     )
-    monkeypatch.setattr(module, "ingest_rockstar_newswire_from_monitor", lambda: [])
+    monkeypatch.setattr(
+        module,
+        "ingest_rockstar_newswire_from_monitor",
+        lambda **kwargs: (
+            calls.append(("ingest", kwargs))
+            or []
+        ),
+    )
     monkeypatch.setattr(module.settings, "ROCKSTAR_QUERY_HASH", None)
     monkeypatch.setattr(module, "run_gta6_news_pipeline", lambda: [])
     monkeypatch.setattr(module, "process_gta6_research_results", lambda _results: [])
@@ -233,8 +244,9 @@ def test_run_gta6_research_routes_monitor_transport_failure_through_governed_acq
 
     result = module.run_gta6_research(_research_context())
 
-    assert [name for name, _ in calls] == ["monitor", "acquire", "monitor"]
+    assert [name for name, _ in calls] == ["monitor", "acquire", "monitor", "ingest"]
     acquisition = calls[1][1]
     assert acquisition["payload"]["source_url"] == module.ROCKSTAR_NEWSWIRE_URL
     assert acquisition["routing_decision"].selected_capability_id == module.WEB_SOURCE_ACQUIRE
+    assert calls[3][1]["monitored_result"] == {"changed": False}
     assert result["rockstar_monitor"] == {"changed": False}

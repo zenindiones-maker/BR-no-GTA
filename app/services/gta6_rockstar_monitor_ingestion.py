@@ -29,6 +29,7 @@ def _meta_description(content: str) -> str:
 def collect_rockstar_newswire_items(
     *,
     timeout: float = 15.0,
+    monitored_result: Any | None = None,
 ) -> list[GTA6SourceItem]:
     """Collect current official GTA VI Newswire stories with bounded enrichment."""
 
@@ -41,10 +42,12 @@ def collect_rockstar_newswire_items(
         max_retries=2,
     )
 
-    result = monitor_gta6_page_persisted(
-        monitor,
-        ROCKSTAR_NEWSWIRE_URL,
-    )
+    result = monitored_result
+    if result is None:
+        result = monitor_gta6_page_persisted(
+            monitor,
+            ROCKSTAR_NEWSWIRE_URL,
+        )
     items = parse_rockstar_newswire_html(result.content)
 
     enriched: list[GTA6SourceItem] = []
@@ -93,11 +96,13 @@ def collect_rockstar_newswire_items(
 def ingest_rockstar_newswire_from_monitor(
     *,
     timeout: float = 15.0,
+    monitored_result: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Captura o Newswire e persiste os artigos no Knowledge Core."""
 
     items = collect_rockstar_newswire_items(
         timeout=timeout,
+        monitored_result=monitored_result,
     )
 
     if not items:

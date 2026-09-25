@@ -114,7 +114,9 @@ def run_gta6_research(
             acquired_source=acquired
         )
 
-    rockstar_items = ingest_rockstar_newswire_from_monitor()
+    rockstar_items = ingest_rockstar_newswire_from_monitor(
+        monitored_result=rockstar_monitor,
+    )
 
     if settings.ROCKSTAR_QUERY_HASH:
         rockstar_items.extend(
