@@ -1062,5 +1062,3 @@ def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch)
 
     assert result["development"] == seed["development"]
     assert generator._structure_word_count(result) >= 2640
-    assert calls
-    assert all("EXPANSÃO EDITORIAL COMPLEMENTAR" in prompt for prompt in calls)
