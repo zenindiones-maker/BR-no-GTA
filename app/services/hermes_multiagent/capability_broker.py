@@ -2707,35 +2707,123 @@ class HermesHarnessCapabilityBroker:
                 ).encode("utf-8")
             ).hexdigest()[:12]
         )
-        proposal = self.propose_child_task(
-            parent_task_id=causal_task_id,
-            child={
-                "task_id": task_id,
-                "capability_id": selected_capability_id,
-                "action": action,
-                "objective": semantic_requirement,
-                "task_class": "harness-semantic-need",
-                "required_capability_description": semantic_requirement,
-                "expected_output": str(record.output_contract or "TaskResult"),
-                "input_refs": list(dict.fromkeys([
-                    need_ref,
-                    *input_artifact_refs,
-                ])),
-                "read_scope": list(parent.read_scope),
-                "write_scope": (),
-                "allowed_tools": list(parent.allowed_tools),
-                "allowed_side_effects": (),
-                "time_budget_seconds": parent.time_budget_seconds,
-                "cost_budget": 0.0,
-                "context_budget_bytes": parent.context_budget_bytes,
-                "tool_budget": parent.tool_budget,
-                "retry_budget": 0,
-                "risk_side_effect_class": "READ_ONLY",
-                "evidence_contract": str(record.evidence_contract or ""),
-                "review_policy": parent.review_policy,
-                "human_gate_policy": parent.human_gate_policy,
+        # This node is materialized by Harness REPLAN authority, not proposed
+        # by Hermes as a child of the failed executor task.  A semantic replan
+        # may legitimately change action/capability (for example EDITORIAL ->
+        # RESEARCH), so applying Hermes' same-action child constraint here would
+        # incorrectly turn least-privilege authority separation into a blocker.
+        decision = route_harness_request(
+            HarnessRoutingRequest(
+                intent=(
+                    "Harness-resolved semantic need for "
+                    + causal_task_id
+                    + ": "
+                    + semantic_requirement
+                ),
+                authorized_action=action,
+                domain=record.domain,
+                task_class="harness-semantic-need",
+                goal_id=self.spec.goal_id,
+                required_capability_id=selected_capability_id,
+                fallback_allowed=False,
+                provider_required=False,
+                learning_required=True,
+            )
+        )
+        if decision.selected_capability_id != selected_capability_id:
+            raise PermissionError("Harness resolved-node routing changed capability")
+        if decision.selected_executor_binding != record.executor_binding:
+            raise PermissionError("Harness resolved-node executor drifted from Registry")
+        selected = dict(
+            decision.policy_metadata.get("selected_implementation") or {}
+        )
+        idempotency_key = "harness-need:" + sha256(
+            (
+                self.spec.mission_id
+                + "|"
+                + task_id
+                + "|"
+                + selected_capability_id
+                + "|"
+                + need_ref
+            ).encode("utf-8")
+        ).hexdigest()
+        routed = RoutedCollaborationTask(
+            task_id=task_id,
+            capability_id=selected_capability_id,
+            action=action,
+            objective=semantic_requirement,
+            dependencies=(causal_task_id,),
+            input_refs=tuple(dict.fromkeys([need_ref, *input_artifact_refs])),
+            expected_output=str(record.output_contract or "TaskResult"),
+            routing_id=decision.routing_id,
+            candidate_capability_ids=decision.candidate_capability_ids,
+            selected_executor_binding=str(record.executor_binding),
+            selected_agent_id=selected.get("agent_id"),
+            selected_skill_id=selected.get("skill_id"),
+            evidence_expectations=decision.evidence_expectations,
+            task_class="harness-semantic-need",
+            required_capability_description=semantic_requirement,
+            acceptance_criteria=(str(record.output_contract or "TaskResult"),),
+            read_scope=parent.read_scope,
+            write_scope=(),
+            allowed_tools=parent.allowed_tools,
+            allowed_side_effects=(),
+            forbidden_side_effects=parent.forbidden_side_effects,
+            time_budget_seconds=parent.time_budget_seconds,
+            cost_budget=0.0,
+            context_budget_bytes=parent.context_budget_bytes,
+            tool_budget=parent.tool_budget,
+            retry_budget=0,
+            evidence_contract=str(record.evidence_contract or ""),
+            review_policy=parent.review_policy,
+            risk_side_effect_class="READ_ONLY",
+            idempotency_key=idempotency_key,
+            expires_at=parent.expires_at or self.spec.expires_at,
+            human_gate_policy=parent.human_gate_policy,
+            mission_id=self.spec.mission_id,
+            goal_id=self.spec.goal_id,
+            capability_version=str(record.version or "1"),
+            supports_parallelism=bool(record.supports_parallelism),
+            supports_retry=bool(record.supports_retry),
+            supports_resume=bool(record.supports_resume),
+            supports_review=bool(record.supports_review),
+            selection_evidence={
+                "routing_id": decision.routing_id,
+                "selected_implementation": selected,
+                "materialized_by": "DEEPSEEK_HARNESS_REPLAN",
+                "causal_task_id": causal_task_id,
+                "need_ref": need_ref,
             },
         )
+        if task_id not in self._child_tasks:
+            assignee = str(
+                routed.selected_agent_id
+                or routed.selected_skill_id
+                or routed.capability_id
+            )
+            board_task_id = self.board.create_task(
+                title=routed.objective[:160],
+                body=json.dumps(routed.to_dict(), ensure_ascii=False, default=str),
+                assignee=assignee,
+                parents=(self.task_mapping[causal_task_id],),
+                idempotency_key=idempotency_key,
+            )
+            self._child_tasks[task_id] = routed
+            self._child_parent[task_id] = causal_task_id
+            self._child_depth[task_id] = self._child_depth.get(causal_task_id, 0) + 1
+            self.task_mapping[task_id] = board_task_id
+            self._audit.append({
+                "event": "HARNESS_RESOLVED_NODE_MATERIALIZED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "causal_task_id": causal_task_id,
+                "task_id": task_id,
+                "capability_id": selected_capability_id,
+                "routing_id": decision.routing_id,
+                "need_ref": need_ref,
+                "producer_selected_resolver": False,
+            })
         child = self._task(task_id)
         context = self.parent_context(task_id=task_id)
         payload = {
