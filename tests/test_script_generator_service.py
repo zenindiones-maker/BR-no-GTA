@@ -1038,10 +1038,19 @@ def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch)
         "cta": "CTA inicial",
     }
 
-    def fail_if_regenerated(*args, **kwargs):
-        raise AssertionError("recovery seed must replace a fresh initial generation")
+    calls = []
 
-    monkeypatch.setattr(generator, "_generate_provider_structure", fail_if_regenerated)
+    def generated_expansion(*args, **kwargs):
+        calls.append(kwargs.get("prompt", ""))
+        return {
+            "hook": "Complemento",
+            "introduction": "Complemento",
+            "development": [],
+            "conclusion": "Complemento",
+            "cta": "Complemento",
+        }
+
+    monkeypatch.setattr(generator, "_generate_provider_structure", generated_expansion)
     result = generator._generate_ai_structure(
         title="Pauta",
         description="Descrição",
@@ -1053,4 +1062,6 @@ def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch)
 
     assert result["development"] == seed["development"]
     assert generator._structure_word_count(result) >= 2080
+    assert calls
+    assert all("EXPANSÃO EDITORIAL COMPLEMENTAR" in prompt for prompt in calls)
 

@@ -1391,6 +1391,8 @@ def test_editorial_retry_preserves_all_verified_reinjected_claims():
     assert editorial_claims[-1]["claim_id"] == "claim-29"
 
 def test_editorial_retry_payload_carries_partial_structure_after_recovery():
+    from pathlib import Path
+
     source = Path("scripts/real_multi_agent_production.py").read_text(encoding="utf-8")
 
     assert 'state["editorial_recovery_seed_structure"] = dict(' in source
