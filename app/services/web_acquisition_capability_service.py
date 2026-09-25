@@ -375,6 +375,33 @@ def execute_web_search_discover(
     query = str(payload.get("query") or "").strip()
     if not query:
         raise ValueError("web.search.discover requires query")
+
+    candidate_sources = [
+        str(value).strip()
+        for value in (payload.get("candidate_sources") or ())
+        if str(value).strip().startswith(("http://", "https://"))
+    ]
+    if candidate_sources:
+        results = [
+            {"url": url, "title": "", "snippet": ""}
+            for url in list(dict.fromkeys(candidate_sources))[:10]
+        ]
+        digest = sha256(json.dumps(results, sort_keys=True).encode("utf-8")).hexdigest()
+        return {
+            "status": "EXECUTED",
+            "query": query,
+            "results": results,
+            "result_count": len(results),
+            "provenance": _provenance(
+                source_url="search-query:" + query,
+                transport_provider="governed_candidate_sources",
+                auth=auth,
+                content_hash=digest,
+                cache_hit=False,
+            ),
+            "discovery_mode": "GOVERNED_SEEDED_DISCOVERY",
+        }
+
     raw, quota = _apilayer_request(
         transport="apilayer_google_search",
         endpoint=_endpoint(
