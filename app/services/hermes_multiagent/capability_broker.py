@@ -140,6 +140,57 @@ class DelegatedCapabilityFailure(RuntimeError):
         self.retry_allowed = retry_allowed
         self.requires_harness_replan = requires_harness_replan
         self.failure_evidence = dict(failure_evidence or {})
+        self.need = self._typed_need()
+
+    def _typed_need(self) -> dict[str, Any]:
+        """Project executor failure into a semantic need; never select the resolver."""
+        evidence = dict(self.failure_evidence)
+        gaps = evidence.get("sequence_evidence_gaps")
+        missing = []
+        if isinstance(gaps, list):
+            for gap in gaps[:12]:
+                if not isinstance(gap, dict):
+                    continue
+                missing.extend(
+                    str(item).strip()
+                    for item in (gap.get("missing_questions") or ())
+                    if str(item).strip()
+                )
+                missing.extend(
+                    str(item).strip()
+                    for item in (gap.get("missing_claim_types") or ())
+                    if str(item).strip()
+                )
+        insufficient = bool(gaps) or "insufficient" in self.failure_mode.casefold()
+        failure_class = "INSUFFICIENT_EVIDENCE" if insufficient else self.failure_mode
+        status = "NEEDS_CAPABILITY" if self.requires_harness_replan else "BLOCKED"
+        semantic_requirement = (
+            "additional verified evidence satisfying the reported missing requirements"
+            if insufficient
+            else "a capability able to resolve the typed execution failure"
+        )
+        partial_refs = [
+            str(value).strip()
+            for key, value in evidence.items()
+            if key.endswith("_ref") and str(value or "").strip()
+        ]
+        return {
+            "schema": "HarnessExecutionNeed/v1",
+            "status": status,
+            "failure_class": failure_class,
+            "semantic_requirement": semantic_requirement,
+            "missing_requirements": list(dict.fromkeys(missing))[:24],
+            "produced_artifact_refs": list(dict.fromkeys(partial_refs))[:24],
+            "usable_partial_result_ref": str(
+                evidence.get("partial_result_ref")
+                or evidence.get("partial_structure_ref")
+                or ""
+            ),
+            "retryability": "RETRYABLE" if self.retry_allowed else "REPLAN_REQUIRED",
+            "replan_required": bool(self.requires_harness_replan or insufficient),
+            "causal_task_id": self.task_id,
+            "producer_selected_resolver": False,
+        }
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,6 +201,7 @@ class DelegatedCapabilityFailure(RuntimeError):
             "retry_allowed": self.retry_allowed,
             "requires_harness_replan": self.requires_harness_replan,
             "failure_evidence": dict(self.failure_evidence),
+            "need": dict(self.need),
             "authority": "DEEPSEEK_HARNESS",
         }
 
