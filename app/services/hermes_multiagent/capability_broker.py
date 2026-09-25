@@ -2675,6 +2675,97 @@ class HermesHarnessCapabilityBroker:
             requires_harness_replan=True,
         )
 
+    def execute_harness_resolved_need(
+        self,
+        *,
+        causal_task_id: str,
+        selected_capability_id: str,
+        semantic_requirement: str,
+        need_ref: str,
+        input_artifact_refs: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """Execute only a capability already selected by DeepSeek Harness."""
+        parent = self._task(causal_task_id)
+        record = self.registry.get(selected_capability_id)
+        if record is None or not record.execution_enabled:
+            raise PermissionError("Harness-selected need capability is not executable")
+        allowed_actions = tuple(record.allowed_actions or ())
+        action = parent.action if parent.action in allowed_actions else (
+            allowed_actions[0] if allowed_actions else ""
+        )
+        if not action:
+            raise PermissionError("Harness-selected need capability has no allowed action")
+        task_id = (
+            f"{causal_task_id}-harness-need-"
+            + sha256(
+                (
+                    selected_capability_id
+                    + "|"
+                    + semantic_requirement
+                    + "|"
+                    + need_ref
+                ).encode("utf-8")
+            ).hexdigest()[:12]
+        )
+        proposal = self.propose_child_task(
+            parent_task_id=causal_task_id,
+            child={
+                "task_id": task_id,
+                "capability_id": selected_capability_id,
+                "action": action,
+                "objective": semantic_requirement,
+                "task_class": "harness-semantic-need",
+                "required_capability_description": semantic_requirement,
+                "expected_output": str(record.output_contract or "TaskResult"),
+                "input_refs": list(dict.fromkeys([
+                    need_ref,
+                    *input_artifact_refs,
+                ])),
+                "read_scope": list(parent.read_scope),
+                "write_scope": (),
+                "allowed_tools": list(parent.allowed_tools),
+                "allowed_side_effects": (),
+                "time_budget_seconds": parent.time_budget_seconds,
+                "cost_budget": 0.0,
+                "context_budget_bytes": parent.context_budget_bytes,
+                "tool_budget": parent.tool_budget,
+                "retry_budget": 0,
+                "risk_side_effect_class": "READ_ONLY",
+                "evidence_contract": str(record.evidence_contract or ""),
+                "review_policy": parent.review_policy,
+                "human_gate_policy": parent.human_gate_policy,
+            },
+        )
+        child = self._task(task_id)
+        context = self.parent_context(task_id=task_id)
+        payload = {
+            "mission_id": child.mission_id,
+            "task_id": child.task_id,
+            "goal_id": child.goal_id,
+            "objective": child.objective,
+            "query": semantic_requirement,
+            "evidence_refs": list(context.get("evidence_refs") or ()),
+            "harness_execution_need_ref": need_ref,
+        }
+        result = self.execute_delegated_capability(
+            task_id=task_id,
+            capability_id=selected_capability_id,
+            payload=payload,
+            dependency_context=context,
+        )
+        self._audit.append({
+            "event": "HARNESS_RESOLVED_NEED_EXECUTED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "causal_task_id": causal_task_id,
+            "task_id": task_id,
+            "capability_id": selected_capability_id,
+            "need_ref": need_ref,
+            "task_result_ref": result.get("task_result_ref"),
+            "producer_selected_resolver": False,
+        })
+        return result
+
     def retry_delegated_capability(
         self,
         *,
