@@ -80,7 +80,7 @@ class OperationRecord:
     claim_id:str; fencing_epoch:int; status:str; external_receipt:Any=None
     schema:str="OperationRecord/v1"
 
-def authorize(*,current:ExecutionOutcome,previous:ExecutionOutcome|None,
+def authorize(*,current:ExecutionOutcome,previous:ExecutionOutcome|None,basis_state_version:int,
               active_plan_ref:str,active_plan_hash:str,authority_generation:int,
               kind:DispatchKind,reason:str,created_from_outcome_ref:str)->AuthorizationGrant:
     if kind=="EXECUTE" and current.transition=="REPLAN_REQUIRED":
@@ -90,7 +90,7 @@ def authorize(*,current:ExecutionOutcome,previous:ExecutionOutcome|None,
     if kind=="EXECUTE" and same_failure and same_strategy and not current.useful_progress:
         raise PermissionError("SAME_ROUTE_FORBIDDEN")
     return AuthorizationGrant.create(mission_id=current.mission_id,human_goal_id=current.human_goal_id,
-      basis_state_version=current.source_state_version,authority_generation=authority_generation,
+      basis_state_version=basis_state_version,authority_generation=authority_generation,
       active_plan_ref=active_plan_ref,active_plan_hash=active_plan_hash,kind=kind,
       runtime_revision=current.runtime_revision,orchestration_version=current.orchestration_version,
       reason=reason,created_from_outcome_ref=created_from_outcome_ref)
@@ -126,7 +126,8 @@ class DurableExecutionV3:
         if not h: raise PermissionError("MISSION_MISSING")
         generation=int(h.get("authority_generation",0))+1
         oref,_=immutable_ref("outcomes",current.to_dict())
-        grant=authorize(current=current,previous=previous,active_plan_ref=h["active_plan_ref"],
+        grant=authorize(current=current,previous=previous,basis_state_version=int(h["state_version"]),
+          active_plan_ref=h["active_plan_ref"],
           active_plan_hash=h["active_plan_hash"],authority_generation=generation,kind=kind,
           reason=reason,created_from_outcome_ref=oref)
         gdict=asdict(grant); gref,_=immutable_ref("authorizations",gdict)
@@ -192,7 +193,8 @@ class DurableExecutionV3:
              "latest_outcome_ref":oref,"mission_status":outcome.transition}
         if next_kind is not None:
             generation=int(h["authority_generation"])+1
-            grant=authorize(current=outcome,previous=None,active_plan_ref=h["active_plan_ref"],
+            grant=authorize(current=outcome,previous=None,basis_state_version=int(h["state_version"]),
+              active_plan_ref=h["active_plan_ref"],
               active_plan_hash=h["active_plan_hash"],authority_generation=generation,kind=next_kind,
               reason=next_reason,created_from_outcome_ref=oref)
             gd=asdict(grant); gr,_=immutable_ref("authorizations",gd)
