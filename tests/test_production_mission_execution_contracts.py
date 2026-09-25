@@ -1068,3 +1068,35 @@ def test_official_longform_findings_do_not_consume_secondary_fact_check_budget()
         item["fact_check_result"] == "PENDING_FACT_CHECK"
         for item in selected_pending
     )
+
+def test_knowledge_retrieval_without_candidate_hint_discovers_canonical_gta6_retriever():
+    requirement = {
+        "task_id": "knowledge-context",
+        "task_class": "knowledge-retrieval",
+        "functional_role": "GENERAL",
+        "action": "RESEARCH",
+        "query": "bounded contextual background for the selected GTA VI topic",
+        "objective": "retrieve bounded canonical context for the selected topic",
+        "required_capability_description": "bounded canonical context",
+        "candidate_capability_ids": [],
+        "dependencies": [],
+        "expected_output": "bounded knowledge context with provenance",
+        "acceptance_criteria": ["bounded context", "preserve provenance"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+    }
+
+    selected, _, avoided, evidence = select_capability_for_requirement(
+        requirement,
+        context={"mission_class": "GTA6_INTELLIGENCE"},
+        used=set(),
+    )
+
+    assert selected == "gta6.knowledge.retrieve"
+    assert evidence["effective_action"] == "RESEARCH"
+    assert evidence["task_family"] == "RESEARCH"
+    assert any(
+        item.startswith("knowledge.retrieve:task-adapter-incompatible")
+        or item.startswith("knowledge.retrieve:missing-")
+        for item in avoided
+    )

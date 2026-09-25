@@ -1834,8 +1834,20 @@ def select_capability_for_requirement(
             f"action={effective_action}:"
             f"allowed_actions={allowed}"
         )
+    discovery_intent = " ".join(
+        str(value or "").strip()
+        for value in (
+            requirement.get("query"),
+            requirement.get("task_class"),
+            requirement.get("task_family"),
+            requirement.get("expected_output"),
+            required_functional_role,
+        )
+        if str(value or "").strip()
+    )
+    discovery_intent = re.sub(r"[._:/\\-]+", " ", discovery_intent)
     discovered = _profiled_registry_discover(
-        intent=str(requirement["query"]),
+        intent=discovery_intent,
         authorized_action=effective_action,
         limit=40,
     )
