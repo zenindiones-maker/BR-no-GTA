@@ -297,11 +297,23 @@ class DurableExecutionV3:
         nxt={**h,"state_version":int(h["state_version"])+1,"side_effect_ledger_refs":refs}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:settled})
 
-    def abandon(self,*,snapshot:Any,claim_id:str,claimant_run_conclusion:str)->str:
+    def persist_run_observation(self,*,snapshot:Any,observation:ClaimantRunObservation)->tuple[str,str]:
+        payload=asdict(observation); ref,_=immutable_ref("run-observations",payload)
+        h=snapshot.mission_head
+        commit=self.commit(snapshot=snapshot,next_head={**h,"state_version":int(h["state_version"])+1},
+                           objects={ref:payload})
+        return commit,ref
+
+    def abandon(self,*,snapshot:Any,claim_id:str,observation_ref:str)->str:
         h=snapshot.mission_head; record=self._read(snapshot,h.get("active_continuation_ref"))
+        observation=self._read(snapshot,observation_ref)
         if not record or record.get("status")!="CLAIMED" or record.get("claim_id")!=claim_id:
             raise PermissionError("NO_ACTIVE_CLAIM")
-        if claimant_run_conclusion not in {"failure","cancelled","timed_out","action_required"}:
+        if not observation or observation.get("schema")!="ClaimantRunObservation/v1":
+            raise PermissionError("CANONICAL_RUN_OBSERVATION_REQUIRED")
+        if observation.get("claimant_identity")!=record.get("claimant_identity"):
+            raise PermissionError("OBSERVATION_CLAIMANT_MISMATCH")
+        if observation.get("observed_status")!="completed":
             raise PermissionError("CLAIMANT_NOT_TERMINAL")
         abandoned={**record,"status":"ABANDONED"}
         aref,_=immutable_ref("continuations",abandoned)
