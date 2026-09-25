@@ -649,3 +649,26 @@ def test_mission_plan_normalizes_mutating_candidate_without_semantic_replan(
     assert plan.planning_evidence["semantic_provider_call_count"] == 1
     assert int(plan.planning_evidence.get("replan_count") or 0) == 0
     assert plan.authority == "DEEPSEEK_HARNESS"
+
+def test_presentation_task_that_outputs_production_plan_is_normalized_before_selection():
+    canonical = _proposal(candidate_id="")
+    canonical["tasks"][0].update({
+        "task_id": "production-plan",
+        "objective": "prepare the audiovisual production plan",
+        "task_class": "presentation",
+        "required_capability_description": "prepare a production plan",
+        "candidate_capability_ids": [],
+        "expected_output": "ProductionPlan",
+        "acceptance_criteria": ["typed production plan"],
+        "action": "EXECUTE",
+    })
+    proposal = MissionPlanProposal.from_mapping(canonical, max_tasks=8)
+
+    normalized, task_ids = adaptive_service._normalize_production_plan_output_contract(
+        proposal
+    )
+
+    assert task_ids == ("production-plan",)
+    assert normalized.tasks[0].task_class == "production-planning"
+    assert normalized.tasks[0].expected_output == "ProductionPlan"
+

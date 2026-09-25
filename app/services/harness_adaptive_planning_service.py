@@ -1271,6 +1271,27 @@ def _normalize_editorial_review_output_contract(
     return replace(proposal, tasks=tuple(tasks)), tuple(normalized_task_ids)
 
 
+
+
+def _normalize_production_plan_output_contract(
+    proposal: MissionPlanProposal,
+) -> tuple[MissionPlanProposal, tuple[str, ...]]:
+    """Repair a presentation task whose typed output is actually ProductionPlan."""
+    normalized_task_ids: list[str] = []
+    tasks = []
+    for task in proposal.tasks:
+        task_class = str(task.task_class or "").strip().casefold()
+        expected = str(task.expected_output or "").strip().casefold()
+        if task_class == "presentation" and expected.replace(" ", "") == "productionplan":
+            tasks.append(replace(task, task_class="production-planning"))
+            normalized_task_ids.append(task.task_id)
+        else:
+            tasks.append(task)
+    if not normalized_task_ids:
+        return proposal, ()
+    return replace(proposal, tasks=tuple(tasks)), tuple(normalized_task_ids)
+
+
 def propose_validated_semantic_plan(
     context: dict[str, Any],
     *,
@@ -1329,6 +1350,15 @@ def propose_validated_semantic_plan(
                 "output_contract_normalizations",
                 [],
             ).extend(normalized_review_tasks)
+        normalized_proposal, normalized_production_tasks = (
+            _normalize_production_plan_output_contract(result.proposal)
+        )
+        if normalized_production_tasks:
+            result = replace(result, proposal=normalized_proposal)
+            evidence.setdefault(
+                "output_contract_normalizations",
+                [],
+            ).extend(normalized_production_tasks)
 
         errors = tuple([
             *_mission_action_policy_errors(
