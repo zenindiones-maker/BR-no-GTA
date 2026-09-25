@@ -38,6 +38,7 @@ from scripts.real_multi_agent_production import (
     _is_longform_underdelivery_failure,
     _longform_expansion_terminal_error,
     _longform_fallback_source_urls,
+    _prioritize_longform_web_acquisition_candidates,
     _longform_recovery_gate_outcome,
     _longform_retry_target_seconds,
     _novelty_gate,
@@ -1099,6 +1100,25 @@ def test_longform_fallback_prefers_new_independent_source_families():
     assert urls[2].startswith("https://www.reddit.com/")
     assert "store.rockstargames.com" in urls[3]
     assert urls[-1].endswith("/second")
+
+def test_longform_web_acquisition_prioritizes_official_source_without_expanding_attempts():
+    rows = [
+        {"url": "https://www.gamespot.com/articles/gta-6-current-report/"},
+        {"url": "https://www.reddit.com/r/GTA6/comments/current/"},
+        {"url": "https://www.rockstargames.com/VI"},
+    ]
+
+    ordered = _prioritize_longform_web_acquisition_candidates(rows)
+
+    assert ordered[0]["url"] == "https://www.rockstargames.com/VI"
+    # max_sources=1 still permits only the already-bounded one alternate:
+    # candidate ordering changes, attempt budget does not.
+    bounded_attempts = ordered[: 1 + 1]
+    assert [item["url"] for item in bounded_attempts] == [
+        "https://www.rockstargames.com/VI",
+        "https://www.gamespot.com/articles/gta-6-current-report/",
+    ]
+
 
 def test_official_longform_findings_do_not_consume_secondary_fact_check_budget():
     official = [

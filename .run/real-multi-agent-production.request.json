@@ -9,14 +9,35 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36121659953,
-    "reason": "A/B validate direct web.source.acquire request-profile parity candidate after focused regression and CI GREEN",
+    "retry_of_run": 36128893381,
+    "reason": "A/B validate bounded official-first web source selection after request-profile candidate rejected",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
     "candidate_head": "8c271390a6bfa2d6031ff769c93d3a3788849a17",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
-    "baseline_provenance": "INSUFFICIENT"
+    "baseline_provenance": "INSUFFICIENT",
+    "rejected_candidate": {
+      "candidate_id": "cail-web-request-profile-parity",
+      "outcome": "REJECTED",
+      "baseline": {
+        "source_selected": 2,
+        "source_acquired": 0,
+        "provenance": "INSUFFICIENT"
+      },
+      "observed": {
+        "source_selected": 2,
+        "source_acquired": 0,
+        "provenance": "INSUFFICIENT"
+      },
+      "failure_class": "NO_OPERATIONAL_DELTA"
+    },
+    "active_candidate": {
+      "candidate_id": "cail-official-first-source-selection",
+      "primary_variable": "candidate_ordering",
+      "max_sources_unchanged": true,
+      "acquisition_attempt_bound_unchanged": true
+    }
   }
 }

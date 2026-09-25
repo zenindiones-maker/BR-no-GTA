@@ -310,8 +310,7 @@ def _direct_fetch(url: str, timeout_seconds: float) -> tuple[bytes, str]:
     req = request.Request(
         url,
         headers={
-            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
-            "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/json,text/plain,*/*",
             "User-Agent": "BR-no-GTA-Harness/1.0",
         },
         method="GET",

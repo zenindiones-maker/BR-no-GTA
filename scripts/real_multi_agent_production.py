@@ -665,6 +665,23 @@ def _longform_fallback_source_urls(
     return [*diverse, *deferred]
 
 
+def _prioritize_longform_web_acquisition_candidates(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Prefer directly verifiable official sources without expanding attempts.
+
+    The governed discovery order is preserved within each authority class.
+    This changes candidate selection only; max_sources and the bounded
+    alternate-attempt ceiling remain unchanged.
+    """
+    return sorted(
+        (dict(row) for row in rows),
+        key=lambda row: (
+            0 if _is_rockstar_official_url(row.get("url")) else 1
+        ),
+    )
+
+
 def _classify_web_failure(exc: BaseException) -> str:
     text = _exception_chain_text(exc).casefold()
     if any(marker in text for marker in (
@@ -939,7 +956,7 @@ def _run_governed_longform_web_acquisition(
     search_ref = str(
         (search_execution or {}).get("evidence_ref") or ""
     ).strip()
-    for item in raw_results:
+    for item in _prioritize_longform_web_acquisition_candidates(raw_results):
         source_url = str(item.get("url") or "").strip()
         source_key = _canonical_source_url(source_url)
         if (
