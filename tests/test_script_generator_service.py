@@ -741,3 +741,133 @@ def test_longform_composes_distinct_bounded_passes_without_padding():
         len(str(item.get("body") or "").split())
         for item in result["development"]
     ) >= 2640
+
+def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metadata_is_not_audience_copy():
+    import json
+
+    from app.services.ai_provider import AIResponse
+    from app.services import script_generator_service as generator
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - story first evidence bounded",
+        description="Como as evidências oficiais e verificadas mudam a leitura da pauta?",
+        status="approved",
+        score=9.5,
+    )
+
+    def structure(prefix, words_per_block):
+        body = " ".join(f"{prefix}{index}" for index in range(words_per_block))
+        return {
+            "hook": " ".join(["abertura"] * 50),
+            "introduction": " ".join(["contexto"] * 80),
+            "development": [
+                {"heading": "Lançamento e plataformas", "body": body},
+                {"heading": "Jason e Lucia", "body": body},
+                {"heading": "Vice City e Leonida", "body": body},
+                {"heading": "Música e mundo", "body": body},
+            ],
+            "conclusion": " ".join(["conclusao"] * 50),
+            "cta": " ".join(["cta"] * 20),
+        }
+
+    first = structure("base", 80)
+    seq_a = structure("aprofundamentoA", 390)
+    seq_b = structure("aprofundamentoB", 390)
+
+    class SequenceProvider:
+        def __init__(self):
+            self.prompts = []
+            self.responses = [first, seq_a, seq_b]
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(text=json.dumps(self.responses.pop(0), ensure_ascii=False))
+
+    claims = [
+        {
+            "claim_id": "release",
+            "statement": "GTA VI chega em 19 de novembro de 2026 para PlayStation 5 e Xbox Series X|S.",
+            "source": "https://www.rockstargames.com/VI",
+            "evidence_refs": ["artifact:release"],
+            "fact_check_result": "SUPPORTED",
+        },
+        {
+            "claim_id": "duo",
+            "statement": "Jason e Lucia dependem um do outro após um golpe dar errado.",
+            "source": "https://www.rockstargames.com/VI",
+            "evidence_refs": ["artifact:duo"],
+            "fact_check_result": "SUPPORTED",
+        },
+        {
+            "claim_id": "leonida",
+            "statement": "A história atravessa Vice City e o estado de Leonida.",
+            "source": "https://www.rockstargames.com/VI",
+            "evidence_refs": ["artifact:leonida"],
+            "fact_check_result": "SUPPORTED",
+        },
+        {
+            "claim_id": "album",
+            "statement": "O álbum oficial possui 34 faixas originais ligadas à energia de Vice City e Leonida.",
+            "source": "https://www.rockstargames.com/VI",
+            "evidence_refs": ["artifact:album"],
+            "fact_check_result": "SUPPORTED",
+        },
+    ]
+    provider = SequenceProvider()
+    result = generate_script_structure(
+        idea_id,
+        ai_provider=provider,
+        editorial_context={"verified_claims": claims},
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(provider.prompts) == 3
+    assert "EVIDENCE-BOUNDED EDITORIAL SEQUENCE" in provider.prompts[1]
+    assert "claims SUPPORTED desta sequence" in provider.prompts[1]
+    assert "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA" not in provider.prompts[1]
+    internal = result["_internal_editorial_structure"]
+    assert internal["video_plan"]["schema"] == "video-plan/v1"
+    assert internal["story_assembly"]["schema"] == "story-assembly/v1"
+    assert len(internal["video_plan"]["sequences"]) == 4
+    assert internal["global_editorial_qa"]["TOTAL_SUPPORTED_DURATION"] == "PASS"
+    assert internal["global_editorial_qa"]["ARTIFICIAL_PADDING"] == "OFF"
+    audience = generator._structure_to_content(result)
+    assert "sequence-001" not in audience
+    assert "EVIDENCE-BOUNDED" not in audience
+    assert "artifact:release" not in audience
+
+
+def test_story_plan_marks_uncovered_beat_as_sequence_evidence_gap_without_padding():
+    from app.services import script_generator_service as generator
+
+    initial = {
+        "hook": "abertura",
+        "introduction": "introducao",
+        "development": [
+            {"heading": "Lançamento", "body": "Data e plataformas confirmadas."},
+            {"heading": "Economia interna", "body": "Pergunta editorial ainda sem base factual."},
+            {"heading": "Protagonistas", "body": "Jason e Lucia conduzem a história."},
+        ],
+        "conclusion": "conclusao",
+        "cta": "cta",
+    }
+    plan, gaps = generator._build_longform_video_plan(
+        title="Pauta",
+        description="O que as evidências realmente sustentam?",
+        initial_structure=initial,
+        editorial_context={
+            "verified_claims": [
+                {"statement": "A data de lançamento é 19 de novembro de 2026.", "source": "https://www.rockstargames.com/VI"},
+                {"statement": "Jason e Lucia são os protagonistas.", "source": "https://www.rockstargames.com/VI"},
+            ]
+        },
+        target_duration_seconds=1200.0,
+    )
+
+    assert plan["schema"] == "video-plan/v1"
+    assert all("target_duration" in item for item in plan["sequences"])
+    assert all("evidence_refs" in item for item in plan["sequences"])
+    assert gaps
+    assert gaps[0]["estimated_missing_supported_duration"] >= 0.0
+
