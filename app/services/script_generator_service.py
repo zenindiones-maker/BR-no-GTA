@@ -626,7 +626,10 @@ def _build_longform_video_plan(
             "sequence_id": str(row["sequence_id"]),
             "story_beat": str(row["heading"]),
             "editorial_purpose": str(row["body"])[:500],
-            "central_question": f"Como este beat ajuda a responder: {description.strip()}",
+            "central_question": (
+                f"Quais evidências verificadas sustentam o beat '{str(row['heading']).strip()}' "
+                "e quais fatos ou implicações não duplicados permitem desenvolvê-lo?"
+            ),
             "target_duration": round(target_seconds, 3),
             "estimated_spoken_duration": round(estimated_seconds, 3),
             "evidence_refs": evidence_refs[:24],
