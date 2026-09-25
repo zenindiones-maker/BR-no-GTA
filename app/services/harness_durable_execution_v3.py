@@ -210,7 +210,9 @@ class DurableExecutionV3:
              "latest_outcome_ref":oref,"mission_status":outcome.transition}
         if next_kind is not None:
             generation=int(h["authority_generation"])+1
-            grant=authorize(current=outcome,previous=None,basis_state_version=int(h["state_version"]),
+            previous_payload=self._read(snapshot,h.get("latest_outcome_ref"))
+            previous=ExecutionOutcome(**previous_payload) if previous_payload else None
+            grant=authorize(current=outcome,previous=previous,basis_state_version=int(h["state_version"]),
               active_plan_ref=h["active_plan_ref"],
               active_plan_hash=h["active_plan_hash"],authority_generation=generation,kind=next_kind,
               reason=next_reason,created_from_outcome_ref=oref)
