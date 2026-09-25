@@ -2840,6 +2840,90 @@ class HermesHarnessCapabilityBroker:
             "bounded_memory_context": True,
         }
 
+    def record_dependency_handoff(
+        self,
+        *,
+        from_task_id: str,
+        to_task_id: str,
+        evidence_refs: list[str] | tuple[str, ...],
+        summary: str,
+    ) -> dict[str, Any]:
+        """Record a Harness-resolved dependency handoff without agent addressing.
+
+        The MissionPlan owns the dependency edge and the target capability.
+        Producer agents only produce typed results; they never select the next
+        agent, provider, model, or executor.
+        """
+        source = self._task(from_task_id)
+        target = self._task(to_task_id)
+        if from_task_id not in set(target.dependencies):
+            raise PermissionError(
+                "dependency handoff must follow the Harness MissionPlan"
+            )
+        refs = tuple(dict.fromkeys(
+            str(ref).strip()
+            for ref in evidence_refs
+            if str(ref).strip()
+        ))
+        rows = self._task_results.get(from_task_id, ())
+        known_refs = {
+            str(ref)
+            for row in rows
+            for ref in (row.get("evidence_ref"), row.get("task_result_ref"))
+            if str(ref or "").strip()
+        }
+        if not refs or not set(refs).issubset(known_refs):
+            raise PermissionError(
+                "dependency handoff may reference only persisted producer evidence"
+            )
+        latest = rows[-1]
+        source_record = self.registry.get(source.capability_id)
+        if source_record is None:
+            raise PermissionError(
+                "dependency handoff producer capability disappeared from Registry"
+            )
+        typed = TypedHandoff(
+            from_task_id=from_task_id,
+            to_task_id=to_task_id,
+            evidence_refs=refs,
+            result_ref=str(
+                latest.get("task_result_ref") or latest["evidence_ref"]
+            ),
+            output_contract=str(source_record.output_contract or ""),
+            summary=str(summary).strip()[:1600],
+            acceptance_state="HARNESS_DEPENDENCY_AVAILABLE",
+            artifact_lineage={
+                "evidence_ref": latest["evidence_ref"],
+                "sha256": latest["sha256"],
+                "authorization_id": latest["authorization_id"],
+                "routing_id": latest["routing_id"],
+            },
+            producer_capability_id=source.capability_id,
+            producer_agent_id=source.selected_agent_id,
+            producer_skill_id=source.selected_skill_id,
+            producer_version=str(source_record.version or "1"),
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        item = {
+            **typed.to_dict(),
+            "resolution_authority": "DEEPSEEK_HARNESS",
+            "required_capability": target.capability_id,
+            "consumer_agent_preselected_by_producer": False,
+            "consumer_executor_preselected_by_producer": False,
+        }
+        self._handoffs.append(item)
+        self._audit.append({
+            "event": "HANDOFF_REQUESTED",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_id": self.spec.mission_id,
+            "from_task_id": from_task_id,
+            "to_task_id": to_task_id,
+            "required_capability": target.capability_id,
+            "result_ref": item["result_ref"],
+            "consumer_agent_preselected_by_producer": False,
+        })
+        return item
+
     def submit_handoff(
         self,
         *,
