@@ -2623,7 +2623,12 @@ def run(
     initialize_schema()
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    goal_id = f"goal-real-production-{os.getenv('GITHUB_RUN_ID') or base_sha[:12]}"
+    durable_mission_key = str(os.getenv("BR_DURABLE_MISSION_KEY") or "").strip()
+    goal_id = (
+        f"goal-real-production-{durable_mission_key}"
+        if durable_mission_key
+        else f"goal-real-production-{os.getenv('GITHUB_RUN_ID') or base_sha[:12]}"
+    )
     goal = build_goal_envelope(
         human_goal=human_goal,
         project="BR-no-GTA",
