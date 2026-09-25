@@ -1398,4 +1398,3 @@ def test_editorial_retry_payload_carries_partial_structure_after_recovery():
     assert 'state["editorial_recovery_seed_structure"] = dict(' in source
     assert '"recovery_seed_structure": state.get(' in source
     assert '"editorial_recovery_seed_structure"' in source
-

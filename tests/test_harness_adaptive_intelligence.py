@@ -671,4 +671,3 @@ def test_presentation_task_that_outputs_production_plan_is_normalized_before_sel
     assert task_ids == ("production-plan",)
     assert normalized.tasks[0].task_class == "production-planning"
     assert normalized.tasks[0].expected_output == "ProductionPlan"
-
