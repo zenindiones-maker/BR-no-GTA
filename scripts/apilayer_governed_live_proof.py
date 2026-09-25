@@ -58,28 +58,82 @@ def _root_cause(exc: Exception) -> Exception:
     return current
 
 
+def _exception_chain_text(exc: Exception) -> str:
+    rows: list[str] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    for _ in range(8):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        rows.append(f"{type(current).__name__}:{current}")
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException):
+            current = cause
+            continue
+        if getattr(current, "__suppress_context__", False):
+            break
+        context = getattr(current, "__context__", None)
+        current = context if isinstance(context, BaseException) else None
+    return " | ".join(rows)
+
+
 def _classify(exc: Exception) -> str:
-    exc = _root_cause(exc)
-    message = str(exc)
-    if isinstance(exc, APILayerAuthRequired):
-        if "PRODUCT_AUTH_REQUIRED" in message:
-            return "API_SUBSCRIPTION_REQUIRED"
+    text = _exception_chain_text(exc).casefold()
+    if any(marker in text for marker in (
+        "apilayer_subscription_required",
+        "apilayer_product_auth_required",
+        "http error 403",
+    )):
+        return "API_SUBSCRIPTION_REQUIRED"
+    if any(marker in text for marker in (
+        "apilayer_api_key_required",
+        "apilayer_authentication_failed",
+        "http error 401",
+    )):
         return "AUTHENTICATION"
-    if isinstance(exc, ZeroCostPolicyError):
-        if "FREE_QUOTA_EXHAUSTED" in message or "free quota" in message.casefold():
-            return "FREE_QUOTA_EXHAUSTED"
-        return "ZERO_COST_POLICY"
-    if isinstance(exc, APILayerTransportError):
-        if "INVALID_JSON" in message or "NOT_PDF" in message:
-            return "NORMALIZATION"
-        if "HTTP_4" in message:
-            return "ENDPOINT/REQUEST_CONTRACT"
-        return "TRANSPORT"
-    if isinstance(exc, PermissionError):
-        return "HARNESS_AUTHORIZATION"
-    if isinstance(exc, ValueError):
+    if any(marker in text for marker in (
+        "free_quota_exhausted",
+        "apilayer free quota is unavailable",
+        "zerocostpolicyerror",
+        "http error 402",
+        "http error 429",
+    )):
+        return "FREE_QUOTA_EXHAUSTED"
+    if any(marker in text for marker in (
+        "endpoint_request_contract",
+        "http error 400",
+        "http error 404",
+        "http error 405",
+        "http error 422",
+    )):
+        return "ENDPOINT_REQUEST_CONTRACT"
+    if any(marker in text for marker in (
+        "normalization_failed",
+        "invalid_json",
+        "not_pdf",
+        "exceeds_bounded_limit",
+    )):
         return "NORMALIZATION"
-    return type(exc).__name__.upper()
+    if any(marker in text for marker in (
+        "permissionerror",
+        "routing mismatch",
+        "authorization mismatch",
+    )):
+        return "HARNESS_AUTHORIZATION"
+    if "provenance" in text:
+        return "PROVENANCE"
+    if any(marker in text for marker in (
+        "apilayertransporterror",
+        "transport_failed",
+        "urlerror",
+        "timeout",
+        "httperror",
+    )):
+        return "TRANSPORT"
+    if isinstance(exc, ValueError):
+        return "ENDPOINT_REQUEST_CONTRACT"
+    return "TRANSPORT"
 
 
 def _safe_host(url: str) -> str:
@@ -333,7 +387,7 @@ def main() -> int:
         root = _root_cause(exc)
         report["status"] = "FAIL"
         report["FAILURE_CLASS"] = _classify(exc)
-        report["FAILURE_DETAIL"] = str(root)[:800]
+        report["FAILURE_DETAIL"] = _exception_chain_text(exc)[:800]
         report["FAILURE_WRAPPER"] = type(exc).__name__
         report["FAILURE_ROOT_TYPE"] = type(root).__name__
         report["SECRET_LEAKAGE"] = int(

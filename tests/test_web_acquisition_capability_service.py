@@ -5,6 +5,7 @@ from urllib import error
 
 import pytest
 
+from scripts.apilayer_governed_live_proof import _classify as classify_live_proof_failure
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_routing_policy_service import (
@@ -233,3 +234,42 @@ def test_html_decode_extracts_article_text_before_character_ceiling():
     assert "Rockstar lists the physical contents separately." in decoded
     assert "navigation-noise" not in decoded
     assert len(decoded) < web.MAX_SOURCE_CHARS
+
+
+def test_live_proof_preserves_apilayer_subscription_class_when_http_context_is_hidden():
+    try:
+        try:
+            raise error.HTTPError(
+                "https://api.apilayer.com/google_search",
+                403,
+                "Forbidden",
+                {},
+                None,
+            )
+        except error.HTTPError:
+            raise web.APILayerAuthRequired(
+                "APILAYER_SUBSCRIPTION_REQUIRED"
+            ) from None
+    except Exception as exc:
+        observed = classify_live_proof_failure(exc)
+
+    assert observed == "API_SUBSCRIPTION_REQUIRED"
+
+
+def test_live_proof_failure_taxonomy_uses_contract_names():
+    assert classify_live_proof_failure(
+        web.APILayerTransportError(
+            "APILAYER_ENDPOINT_REQUEST_CONTRACT_FAILED"
+        )
+    ) == "ENDPOINT_REQUEST_CONTRACT"
+    assert classify_live_proof_failure(
+        web.APILayerTransportError(
+            "APILAYER_SEARCH_NORMALIZATION_FAILED"
+        )
+    ) == "NORMALIZATION"
+    assert classify_live_proof_failure(
+        PermissionError("web acquisition capability routing mismatch")
+    ) == "HARNESS_AUTHORIZATION"
+    assert classify_live_proof_failure(
+        RuntimeError("WEB_PROVENANCE_INVALID")
+    ) == "PROVENANCE"
