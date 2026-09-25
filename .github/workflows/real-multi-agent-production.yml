@@ -16,6 +16,14 @@ on:
         description: "Bounded autonomous continuation generation"
         required: false
         default: "0"
+      continuation_id:
+        description: "Idempotency key issued by HarnessMissionSupervisor"
+        required: false
+        default: ""
+      expected_state_version:
+        description: "CAS state_version expected by the continuation request"
+        required: false
+        default: ""
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -66,7 +74,9 @@ env:
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
   BR_DURABLE_MISSION_KEY: ${{ inputs.durable_mission_key || format('production-{0}', github.sha) }}
   BR_RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
-  BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}\n  BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}\n  BR_EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version || '' }}
+  BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
+  BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}
+  BR_EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version || '' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
