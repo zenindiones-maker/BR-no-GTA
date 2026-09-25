@@ -72,7 +72,7 @@ env:
   BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/artifacts/real-multi-agent-production/performance-trace.jsonl
   BR_PERFORMANCE_TRACE_ID: "real-production:${{ github.run_id }}:${{ github.run_attempt }}"
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
-  BR_DURABLE_MISSION_KEY: ${{ inputs.durable_mission_key || format('production-{0}', github.sha) }}
+  BR_MISSION_ID: ${{ inputs.durable_mission_key || '' }}
   BR_RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
   BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
   BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}
@@ -112,21 +112,84 @@ jobs:
 
       - name: Rehydrate durable mission checkpoint
         if: ${{ env.BR_RESUME_RUN_ID != '' }}
+        env:
+          BR_CHECKPOINT_ARTIFACT_NAME: real-multi-agent-production-${{ env.BR_RESUME_RUN_ID }}
         run: |
           set -euo pipefail
-          mkdir -p .resume-checkpoint
-          gh run download "$BR_RESUME_RUN_ID" \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --name "real-multi-agent-production-$BR_RESUME_RUN_ID" \\
-            --dir .resume-checkpoint
-          if [ -d .resume-checkpoint/artifacts/real-multi-agent-production ]; then
-            mkdir -p artifacts/real-multi-agent-production
-            cp -a .resume-checkpoint/artifacts/real-multi-agent-production/. artifacts/real-multi-agent-production/
-          fi
-          if [ -f artifacts/real-multi-agent-production/harness-mission-state.json ]; then
-            cp artifacts/real-multi-agent-production/harness-mission-state.json \\
-              artifacts/real-multi-agent-production/previous-harness-mission-state.json
-          fi
+          test -n "$BR_MISSION_ID"
+          test -n "$BR_EXPECTED_STATE_VERSION"
+          test -n "$BR_CONTINUATION_ID"
+          STAGE=".resume-checkpoint/$BR_CONTINUATION_ID"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          python - <<'PY'
+          import json, os, subprocess
+          run=os.environ["BR_RESUME_RUN_ID"]
+          name=os.environ["BR_CHECKPOINT_ARTIFACT_NAME"]
+          repo=os.environ["GITHUB_REPOSITORY"]
+          raw=subprocess.check_output(["gh","api",f"repos/{repo}/actions/runs/{run}/artifacts","--paginate"],text=True)
+          data=json.loads(raw)
+          matches=[a for a in data.get("artifacts",[]) if a.get("name")==name]
+          if len(matches)!=1:
+              raise SystemExit(f"CHECKPOINT_ARTIFACT_CARDINALITY:{len(matches)}")
+          a=matches[0]
+          if a.get("expired"):
+              raise SystemExit("CHECKPOINT_ARTIFACT_EXPIRED")
+          if str((a.get("workflow_run") or {}).get("id")) != run:
+              raise SystemExit("CHECKPOINT_PREDECESSOR_MISMATCH")
+          print("CHECKPOINT_ARTIFACT_FOUND=PASS")
+          print("CHECKPOINT_ARTIFACT_UNIQUE=PASS")
+          open(os.environ["GITHUB_ENV"],"a").write(
+              f"BR_CHECKPOINT_ARTIFACT_ID={a['id']}\n"
+              f"BR_CHECKPOINT_ARTIFACT_DIGEST={a.get('digest','')}\n"
+          )
+          PY
+          gh run download "$BR_RESUME_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            -n "$BR_CHECKPOINT_ARTIFACT_NAME" \
+            -D "$STAGE"
+          echo "CHECKPOINT_ARTIFACT_DOWNLOADED=PASS"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          stage=Path(".resume-checkpoint")/os.environ["BR_CONTINUATION_ID"]
+          candidates=list(stage.rglob("harness-mission-state.json"))
+          if len(candidates)!=1:
+              raise SystemExit(f"CHECKPOINT_STATE_CARDINALITY:{len(candidates)}")
+          d=json.loads(candidates[0].read_text())
+          if d.get("schema")!="HarnessMissionState/v2":
+              raise SystemExit("CHECKPOINT_SCHEMA_INVALID")
+          print("CHECKPOINT_SCHEMA_VALID=PASS")
+          mission=os.environ["BR_MISSION_ID"]
+          if str(d.get("mission_id") or "") != mission:
+              raise SystemExit(f"MISSION_ID_MISMATCH:{d.get('mission_id')}!={mission}")
+          print("SAME_MISSION_ID=PASS")
+          loaded=int(d.get("state_version") or 0)
+          expected=int(os.environ["BR_EXPECTED_STATE_VERSION"])
+          if expected < loaded:
+              print("STALE_WORKER=NOOP")
+              raise SystemExit(78)
+          if expected > loaded:
+              raise SystemExit(f"STATE_GAP:{loaded}!={expected}")
+          print("STATE_VERSION_CONTINUITY=PASS")
+          cid=os.environ["BR_CONTINUATION_ID"]
+          predecessor=os.environ["BR_RESUME_RUN_ID"]
+          expected_prefix=f"{mission}:{expected}:{predecessor}"
+          if cid != expected_prefix:
+              raise SystemExit("CONTINUATION_ID_INVALID")
+          print("CONTINUATION_ID_VALID=PASS")
+          active=Path("artifacts/real-multi-agent-production")
+          active.mkdir(parents=True,exist_ok=True)
+          source=candidates[0].parent
+          import shutil
+          for child in source.iterdir():
+              dst=active/child.name
+              if child.is_dir():
+                  if dst.exists(): shutil.rmtree(dst)
+                  shutil.copytree(child,dst)
+              else: shutil.copy2(child,dst)
+          shutil.copy2(active/"harness-mission-state.json",active/"previous-harness-mission-state.json")
+          PY
           echo "CHECKPOINT_REHYDRATION=PASS"
           echo "COMPLETED_WORK_NOT_REEXECUTED=ENFORCED_BY_TASK_RESULT_IDEMPOTENCY"
 
