@@ -18,6 +18,7 @@ on:
       - "app/services/capability_execution_contract_service.py"
       - "app/services/harness_adaptive_planning_service.py"
       - "app/services/harness_mission_execution_router.py"
+      - "app/services/hermes_multiagent/capability_broker.py"
       - "app/services/semantic_mission_planner_service.py"
       - "app/services/native_capability_adapters.py"
       - "app/services/task_result_envelope_service.py"
