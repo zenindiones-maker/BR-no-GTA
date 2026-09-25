@@ -1990,9 +1990,18 @@ def _payload_for_task(
             "verified_claims": list(state.get("claims") or ())[:24],
         }
     if capability_id in {"gta6.knowledge.retrieve", "knowledge.retrieve"}:
+        knowledge_query = " ".join(
+            item
+            for item in (
+                str(state.get("selected_topic") or "").strip(),
+                str(task.objective or "").strip(),
+                human_goal,
+            )
+            if item
+        )
         return {
             **common,
-            "query": human_goal,
+            "query": knowledge_query,
             "limit": 12,
             "max_context_bytes": 24576,
             "include_history": True,

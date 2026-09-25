@@ -694,7 +694,10 @@ GTA6_KNOWLEDGE_RETRIEVE_RECORD = CapabilityRecord(
     routing_authority="NONE",
     editorial_authority="NONE",
     publication_authority="NONE",
-    execution_operations=(CAN_PRODUCE_ARTIFACT_REFS,),
+    execution_operations=(
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
 )
 
 GTA6_DELTA_RESEARCH_RECORD = CapabilityRecord(

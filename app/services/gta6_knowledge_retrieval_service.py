@@ -325,22 +325,60 @@ def execute_gta6_knowledge_retrieval_capability(
     record = GLOBAL_CAPABILITY_REGISTRY.get(KNOWLEDGE_RETRIEVE_CAPABILITY_ID)
     if record is None or not record.execution_enabled:
         raise PermissionError("gta6.knowledge.retrieve is not executable")
+    context = payload.get("context")
+    dependency_refs: list[str] = []
+    dependency_summaries: list[str] = []
+    if isinstance(context, dict):
+        for item in context.get("parent_handoffs") or ():
+            if not isinstance(item, dict):
+                continue
+            for raw_ref in (
+                item.get("task_result_ref"),
+                *(item.get("output_artifact_refs") or ()),
+                *(item.get("evidence_refs") or ()),
+            ):
+                value = str(raw_ref or "").strip()
+                if value and value not in dependency_refs:
+                    dependency_refs.append(value)
+            summary = str(item.get("result_summary") or "").strip()
+            if summary:
+                dependency_summaries.append(summary[:1800])
+
+    explicit_refs = [
+        str(item).strip()
+        for item in (payload.get("evidence_refs") or ())
+        if str(item).strip()
+    ]
+    for value in explicit_refs:
+        if value not in dependency_refs:
+            dependency_refs.append(value)
+
+    query_parts = [str(payload.get("query") or "").strip()]
+    if dependency_summaries:
+        query_parts.append(
+            "DEPENDENCY_CONTEXT=" + " | ".join(dependency_summaries[:3])
+        )
     result = retrieve_gta6_knowledge(
-        query=str(payload.get("query") or ""),
+        query="\n".join(item for item in query_parts if item)[:6000],
         limit=int(payload.get("limit") or 10),
         max_context_bytes=int(
             payload.get("max_context_bytes") or DEFAULT_CONTEXT_BYTES
         ),
         include_history=bool(payload.get("include_history", False)),
     )
-    evidence_refs = list(dict.fromkeys(
-        str(item.get("evidence_ref") or "").strip()
-        for item in (result.get("knowledge_units") or ())
-        if str(item.get("evidence_ref") or "").strip()
-    ))
+    evidence_refs = list(dict.fromkeys([
+        *dependency_refs,
+        *[
+            str(item.get("evidence_ref") or "").strip()
+            for item in (result.get("knowledge_units") or ())
+            if str(item.get("evidence_ref") or "").strip()
+        ],
+    ]))
     return {
         "status": "PASS",
         "artifact_ref": f"knowledge-retrieval:{auth.execution_id}",
+        "input_refs": dependency_refs,
+        "dependency_artifact_count": len(dependency_refs),
         "evidence_refs": evidence_refs,
         "authority": auth.authority,
         "authorized_action": auth.authorized_action,

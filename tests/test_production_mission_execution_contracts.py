@@ -80,7 +80,10 @@ def _task(
 def test_truthful_research_and_production_execution_operations():
     assert _ops("gta6.research") == {CAN_PRODUCE_ARTIFACT_REFS}
     assert CAN_SEMANTIC_REASONING not in _ops("gta6.knowledge.retrieve")
-    assert _ops("gta6.knowledge.retrieve") == {CAN_PRODUCE_ARTIFACT_REFS}
+    assert _ops("gta6.knowledge.retrieve") == {
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }
 
     # The current fact-check binding is deterministic caller-supplied evidence
     # assessment. It must not masquerade as semantic reasoning or TaskResult IO.
@@ -1125,6 +1128,43 @@ def test_official_longform_findings_do_not_consume_secondary_fact_check_budget()
         item["fact_check_result"] == "PENDING_FACT_CHECK"
         for item in selected_pending
     )
+
+def test_dependent_knowledge_retrieval_keeps_deterministic_candidate_eligible():
+    requirement = {
+        "task_id": "knowledge-context-after-research",
+        "task_class": "knowledge-retrieval",
+        "functional_role": "GENERAL",
+        "action": "RESEARCH",
+        "query": "bounded contextual background from persisted research",
+        "objective": "retrieve bounded canonical context from the selected topic",
+        "required_capability_description": "bounded canonical context",
+        "candidate_capability_ids": ["gta6.knowledge.retrieve"],
+        "dependencies": ["research-topic"],
+        "required_operations": [
+            CAN_CONSUME_ARTIFACT_REFS,
+            CAN_PRODUCE_ARTIFACT_REFS,
+        ],
+        "expected_output": "bounded knowledge context with provenance",
+        "acceptance_criteria": ["bounded context", "preserve provenance"],
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "OPTIONAL_HINTS",
+    }
+
+    selected, _, avoided, evidence = select_capability_for_requirement(
+        requirement,
+        context={"mission_class": "GTA6_INTELLIGENCE"},
+        used=set(),
+    )
+
+    assert selected == "gta6.knowledge.retrieve"
+    assert evidence["effective_action"] == "RESEARCH"
+    assert not any(
+        item.startswith(
+            "gta6.knowledge.retrieve:execution-contract-insufficient"
+        )
+        for item in avoided
+    )
+
 
 def test_knowledge_retrieval_without_candidate_hint_discovers_canonical_gta6_retriever():
     requirement = {
