@@ -1841,7 +1841,7 @@ def select_capability_for_requirement(
             requirement.get("task_class"),
             requirement.get("task_family"),
             requirement.get("expected_output"),
-            required_functional_role,
+            infer_functional_role(requirement),
         )
         if str(value or "").strip()
     )
