@@ -570,7 +570,7 @@ jobs:
               try: row=json.loads(path.read_text())
               except Exception: continue
               if row.get("status") != "PARTIAL_FAILED": continue
-              result=row.get("result") or {}
+              result=(row.get("result_payload") or row.get("result") or {})
               evidence=result.get("failure_evidence") or {}
               qa=evidence.get("global_editorial_qa") or {}
               minutes=qa.get("content_supported_duration_minutes")
@@ -581,7 +581,15 @@ jobs:
                   minutes=float(m.group(1)) if m else None
               partials.append({"task_id":row.get("task_id"),"task_result_ref":f"artifact:task-results/{path.name}","minutes":minutes,"failure_class":"INSUFFICIENT_EVIDENCE"})
           latest=partials[-1] if partials else {}
-          mission_id=str(pre.get("MISSION_ID") or os.environ.get("BR_DURABLE_MISSION_KEY") or f"production-{os.environ.get('GITHUB_SHA','unknown')}")
+          task_mission_ids=[]
+          for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
+              try: row=json.loads(path.read_text())
+              except Exception: continue
+              observed=str(row.get("mission_id") or "").strip()
+              if observed:
+                  task_mission_ids.append(observed)
+          observed_mission_id=task_mission_ids[-1] if task_mission_ids else ""
+          mission_id=str(pre.get("MISSION_ID") or observed_mission_id or os.environ.get("BR_DURABLE_MISSION_KEY") or f"production-{os.environ.get('GITHUB_SHA','unknown')}")
           goal_id=str(product.get("goal_id") or pre.get("GOAL_ID") or mission_id)
           goal_contract={
               "objective":"MASTER_FINAL>=20min -> FINAL_QA PASS -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING",
