@@ -1353,4 +1353,3 @@ def test_sequence_evidence_gap_focus_preserves_missing_questions_without_padding
     assert "consequência policial" in focus
     assert "185.0" in focus
     assert "lançamento" in focus
-
