@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36069085181,
-    "reason": "resume exact longform web-acquisition blocker after mission-scoped child lease execution fix",
+    "retry_of_run": 36084091352,
+    "reason": "resume exact production after redundant internal DAG approval gate fix",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true
