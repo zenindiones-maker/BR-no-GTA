@@ -991,13 +991,18 @@ def _semantic_task_contract_rejection(
         " ".join(str(item) for item in (getattr(record, "policy_tags", ()) or ())),
     ]).casefold()
 
-    # Named primary artifacts are output constraints only when the task
-    # explicitly declares them as expected_output. A review objective may
-    # legitimately mention ScriptSpec/ContentItem/ProductionPlan as INPUTS;
-    # treating those mentions as outputs incorrectly rejects real reviewers.
+    # Named primary artifacts in a review objective describe INPUTS, while
+    # the same markers on generation/planning tasks are part of the semantic
+    # output contract. Keep both cases distinct: reviewers may consume a
+    # ScriptSpec without producing one, but a script-generation task cannot be
+    # silently routed to a review-only capability.
+    task_class = str(requirement.get("task_class") or "").strip().casefold()
     expected_output_text = str(
         requirement.get("expected_output") or ""
     ).strip().casefold()
+    artifact_contract_text = (
+        expected_output_text if "review" in task_class else task_text
+    )
     named_artifacts = {
         "scriptspec": ("scriptspec", "script spec"),
         "contentitem": ("contentitem", "content item"),
@@ -1005,14 +1010,13 @@ def _semantic_task_contract_rejection(
     }
     missing: list[str] = []
     for label, aliases in named_artifacts.items():
-        if any(alias in expected_output_text for alias in aliases) and not any(
+        if any(alias in artifact_contract_text for alias in aliases) and not any(
             alias in record_text for alias in aliases
         ):
             missing.append(label)
     if missing:
         return "semantic-output-contract-mismatch:missing=" + ",".join(missing)
 
-    task_class = str(requirement.get("task_class") or "").strip().casefold()
     if (
         "review" in task_class
         and "review" in task_text
