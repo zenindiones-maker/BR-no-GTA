@@ -1518,6 +1518,11 @@ def _task_semantic_text(requirement: dict[str, Any]) -> str:
 
 def _task_semantic_family(requirement: dict[str, Any]) -> str:
     task_class = str(requirement.get("task_class") or "").strip().casefold()
+    expected_output = re.sub(
+        r"[^a-z0-9]+",
+        "",
+        str(requirement.get("expected_output") or "").strip().casefold(),
+    )
     text = _task_semantic_text(requirement)
     role = infer_functional_role(requirement)
     mission_policy_class = str(
@@ -1548,7 +1553,12 @@ def _task_semantic_family(requirement: dict[str, Any]) -> str:
         )
     ):
         return "RESEARCH"
-    if "production-plan" in task_class or "production_plan" in task_class:
+    # Output identity is stronger than a free-form semantic task label.
+    if (
+        expected_output == "productionplan"
+        or "production-plan" in task_class
+        or "production_plan" in task_class
+    ):
         return "PRODUCTION"
     if "editorial" in task_class:
         return "EDITORIAL"
