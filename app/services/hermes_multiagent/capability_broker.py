@@ -465,15 +465,19 @@ class HermesHarnessCapabilityBroker:
             artifact_dir=self.artifact_dir,
             task_result_ref=str(task_result_ref),
         )
-        if envelope.mission_id != self.spec.mission_id:
+        if str(envelope.get("mission_id") or "") != self.spec.mission_id:
             raise PermissionError("partial TaskResult mission mismatch")
-        payload = dict(envelope.result_payload or {})
+        payload = dict(envelope.get("result_payload") or {})
         if not bool(payload.get("usable_partial_result")):
             raise PermissionError("TaskResult is not marked as reusable partial work")
         return {
             "task_result_ref": str(task_result_ref),
-            "task_id": envelope.task_id,
-            "execution_status": str(payload.get("execution_status") or envelope.status),
+            "task_id": str(envelope.get("task_id") or ""),
+            "execution_status": str(
+                payload.get("execution_status")
+                or envelope.get("status")
+                or ""
+            ),
             "partial_result": payload.get("partial_result"),
         }
 
