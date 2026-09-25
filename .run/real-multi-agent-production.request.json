@@ -9,10 +9,14 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36084091352,
-    "reason": "resume exact production after redundant internal DAG approval gate fix",
+    "retry_of_run": 36121659953,
+    "reason": "A/B validate direct web.source.acquire request-profile parity candidate after focused regression and CI GREEN",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
-    "preserve_audiovisual_contracts": true
+    "preserve_audiovisual_contracts": true,
+    "candidate_head": "8c271390a6bfa2d6031ff769c93d3a3788849a17",
+    "baseline_source_selected": 2,
+    "baseline_source_acquired": 0,
+    "baseline_provenance": "INSUFFICIENT"
   }
 }
