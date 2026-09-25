@@ -109,7 +109,7 @@ class DurableExecutionV3:
           "fencing_epoch":fencing_epoch,"authority_generation":authority_generation,
           "mission_status":mission_status,"active_authorization_ref":None,
           "active_continuation_ref":None,"active_claim_ref":None,"latest_outcome_ref":None,
-          "latest_progress_ref":None,"pending_outbox_refs":[],"side_effect_ledger_refs":[]}
+          "latest_progress_ref":None,"active_outbox_ref":None,"pending_outbox_refs":[],"side_effect_ledger_refs":[]}
 
     def commit(self,*,snapshot:Any,next_head:dict[str,Any],objects:dict[str,dict[str,Any]])->str:
         prior=snapshot.mission_head; expected=None if prior is None else int(prior["state_version"])
@@ -141,7 +141,8 @@ class DurableExecutionV3:
         iref,_=immutable_ref("outbox",intent)
         nxt={**h,"state_version":int(h["state_version"])+1,"authority_generation":generation,
           "active_authorization_ref":gref,"active_continuation_ref":rref,
-          "latest_outcome_ref":oref,"pending_outbox_refs":[*h.get("pending_outbox_refs",[]),iref]}
+          "latest_outcome_ref":oref,"active_outbox_ref":iref,
+          "pending_outbox_refs":[*h.get("pending_outbox_refs",[]),iref]}
         commit=self.commit(snapshot=snapshot,next_head=nxt,objects={oref:current.to_dict(),
           gref:gdict,rref:rdict,iref:intent})
         return commit,grant,record
@@ -156,9 +157,10 @@ class DurableExecutionV3:
           "dispatch_attempts":int(record.get("dispatch_attempts",0))+1,
           "dispatch_receipt":dispatch_receipt}
         dref,_=immutable_ref("continuations",dispatched)
-        pending=[x for x in h.get("pending_outbox_refs",[]) if x]
+        active_outbox=h.get("active_outbox_ref")
+        pending=[x for x in h.get("pending_outbox_refs",[]) if x!=active_outbox]
         nxt={**h,"state_version":int(h["state_version"])+1,"active_continuation_ref":dref,
-             "pending_outbox_refs":pending}
+             "active_outbox_ref":None,"pending_outbox_refs":pending}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={dref:dispatched})
 
     def claim(self,*,snapshot:Any,mission_id:str,continuation_id:str,
@@ -220,7 +222,7 @@ class DurableExecutionV3:
             intent=asdict(OutboxIntent(cid,gr,grant.authorization_id,h["mission_id"],generation,
               next_kind,grant.runtime_revision,grant.orchestration_version)); ir,_=immutable_ref("outbox",intent)
             objects.update({gr:gd,rr:rd,ir:intent}); nxt.update({"authority_generation":generation,
-              "active_authorization_ref":gr,"active_continuation_ref":rr,
+              "active_authorization_ref":gr,"active_continuation_ref":rr,"active_outbox_ref":ir,
               "pending_outbox_refs":[*h.get("pending_outbox_refs",[]),ir]})
         return self.commit(snapshot=snapshot,next_head=nxt,objects=objects)
 
