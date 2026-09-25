@@ -991,6 +991,13 @@ def _semantic_task_contract_rejection(
         " ".join(str(item) for item in (getattr(record, "policy_tags", ()) or ())),
     ]).casefold()
 
+    # Named primary artifacts are output constraints only when the task
+    # explicitly declares them as expected_output. A review objective may
+    # legitimately mention ScriptSpec/ContentItem/ProductionPlan as INPUTS;
+    # treating those mentions as outputs incorrectly rejects real reviewers.
+    expected_output_text = str(
+        requirement.get("expected_output") or ""
+    ).strip().casefold()
     named_artifacts = {
         "scriptspec": ("scriptspec", "script spec"),
         "contentitem": ("contentitem", "content item"),
@@ -998,7 +1005,7 @@ def _semantic_task_contract_rejection(
     }
     missing: list[str] = []
     for label, aliases in named_artifacts.items():
-        if any(alias in task_text for alias in aliases) and not any(
+        if any(alias in expected_output_text for alias in aliases) and not any(
             alias in record_text for alias in aliases
         ):
             missing.append(label)
