@@ -560,10 +560,35 @@ def _build_longform_video_plan(
     if not sections:
         raise AIProviderError("Long-form story plan contains no development beats.")
 
+    # Provider recovery can legitimately return many short development
+    # blocks. Treating every short block as an independent evidence sequence
+    # multiplies evidence obligations without adding narrative value. Collapse
+    # only the internal plan into the professional long-form sequence floor;
+    # audience-facing provider prose remains untouched.
+    sequence_sections: list[list[dict[str, Any]]] = []
+    if len(sections) <= LONGFORM_MIN_DEVELOPMENT_SECTIONS:
+        sequence_sections = [[section] for section in sections]
+    else:
+        group_count = LONGFORM_MIN_DEVELOPMENT_SECTIONS
+        for group_index in range(group_count):
+            start = int(math.floor(group_index * len(sections) / group_count))
+            end = int(math.floor((group_index + 1) * len(sections) / group_count))
+            sequence_sections.append(sections[start:end])
+
     rows: list[dict[str, Any]] = []
-    for index, section in enumerate(sections, start=1):
-        heading = str(section.get("heading") or "").strip()
-        body = str(section.get("body") or "").strip()
+    for index, group in enumerate(sequence_sections, start=1):
+        headings = [
+            str(section.get("heading") or "").strip()
+            for section in group
+            if str(section.get("heading") or "").strip()
+        ]
+        bodies = [
+            str(section.get("body") or "").strip()
+            for section in group
+            if str(section.get("body") or "").strip()
+        ]
+        heading = " → ".join(headings)
+        body = "\n".join(bodies)
         rows.append({
             "sequence_id": f"sequence-{index:03d}",
             "heading": heading,

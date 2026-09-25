@@ -1114,3 +1114,39 @@ def test_single_verified_claim_localizes_longform_gaps_without_changing_generati
     assert evidence["partial_structure"]["development"]
     assert evidence["video_plan"]["schema"] == "video-plan/v1"
     assert evidence["sequence_evidence_gaps"]
+
+
+def test_story_plan_consolidates_fragmented_recovery_seed_without_changing_audience_blocks():
+    from app.services import script_generator_service as generator
+
+    initial = {
+        "hook": "abertura",
+        "introduction": "introducao",
+        "development": [
+            {"heading": f"Bloco {index}", "body": f"Fato contextual {index} confirmado."}
+            for index in range(24)
+        ],
+        "conclusion": "conclusao",
+        "cta": "cta",
+    }
+    claims = [
+        {
+            "claim_id": f"claim-{index}",
+            "statement": f"Fato contextual {index} confirmado.",
+            "source": f"https://example.com/{index}",
+            "fact_check_result": "SUPPORTED",
+        }
+        for index in range(8)
+    ]
+
+    plan, _gaps = generator._build_longform_video_plan(
+        title="Pauta",
+        description="Pergunta central",
+        initial_structure=initial,
+        editorial_context={"verified_claims": claims},
+        target_duration_seconds=1200.0,
+    )
+
+    assert len(initial["development"]) == 24
+    assert len(plan["sequences"]) == generator.LONGFORM_MIN_DEVELOPMENT_SECTIONS
+    assert all(sequence["story_beat"] for sequence in plan["sequences"])
