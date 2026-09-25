@@ -1,0 +1,55 @@
+name: Cancel Stale Production
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/cancel-stale-production.request.json"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout request
+        uses: actions/checkout@v4
+
+      - name: Validate and cancel only the exact stale run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          request=".run/cancel-stale-production.request.json"
+          run_id="$(jq -r '.run_id' "$request")"
+          expected_head="$(jq -r '.expected_head_sha' "$request")"
+          reason="$(jq -r '.reason' "$request")"
+
+          test "$run_id" != "null"
+          test -n "$expected_head"
+          test "$expected_head" != "null"
+          test -n "$reason"
+          test "$reason" != "null"
+
+          actual_head="$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.head_sha')"
+          status="$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.status')"
+
+          if [ "$actual_head" != "$expected_head" ]; then
+            echo "STALE_CANCEL_REFUSED=head_mismatch"
+            exit 2
+          fi
+
+          if [ "$status" = "completed" ]; then
+            echo "STALE_CANCEL_NOT_REQUIRED=already_completed"
+            exit 0
+          fi
+
+          gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/cancel"
+          echo "STALE_CANCEL_REQUESTED=PASS"
+          echo "TARGET_RUN_ID=$run_id"
+          echo "TARGET_HEAD_SHA=$expected_head"

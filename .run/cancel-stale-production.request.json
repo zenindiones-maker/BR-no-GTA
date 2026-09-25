@@ -1,0 +1,7 @@
+{
+  "schema": "cancel-stale-production/v1",
+  "run_id": 36086007576,
+  "expected_head_sha": "08d5d886244c467c7001ef197eb5a38c08cdad52",
+  "reason": "stale production predates mandatory governed web preflight and must not render after external API_SUBSCRIPTION_REQUIRED was proven",
+  "requested_by": "bounded-night-mission"
+}
