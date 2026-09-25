@@ -2865,6 +2865,20 @@ def run(
                         state=state,
                         human_goal=human_goal,
                     )
+                    resolved_result = dict(lifecycle.get("execution") or {})
+                    resolved_ref = str(
+                        resolved_result.get("task_result_ref")
+                        or resolved_result.get("evidence_ref")
+                        or ""
+                    ).strip()
+                    if resolved_ref:
+                        payload["evidence_refs"] = list(dict.fromkeys([
+                            *list(payload.get("evidence_refs") or ()),
+                            resolved_ref,
+                        ]))
+                        payload["harness_resolved_need_ref"] = str(
+                            lifecycle["persisted_need"]["need_ref"]
+                        )
                     execution = broker.execute_delegated_capability(
                         task_id=task_id,
                         capability_id=task.capability_id,
