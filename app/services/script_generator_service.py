@@ -1122,10 +1122,17 @@ def _generate_ai_structure(
                 0,
                 _structure_word_count(assembly) - before_words,
             )
-            realized_gaps = _realized_sequence_duration_gaps(
-                batch=batch,
-                added_words=added_words,
-                video_plan=video_plan,
+            aggregate_supported_seconds = _spoken_seconds_for_words(
+                _structure_word_count(assembly)
+            )
+            realized_gaps = (
+                []
+                if aggregate_supported_seconds >= float(target_duration_seconds)
+                else _realized_sequence_duration_gaps(
+                    batch=batch,
+                    added_words=added_words,
+                    video_plan=video_plan,
+                )
             )
             evidence_gaps.extend(realized_gaps)
             added_supported_seconds = _spoken_seconds_for_words(
