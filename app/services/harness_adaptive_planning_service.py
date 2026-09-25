@@ -1188,6 +1188,78 @@ def _proposal_registry_errors_with_context(
     return function(proposal)
 
 
+_REVIEWED_PRIMARY_ARTIFACT_MARKERS = (
+    "scriptspec",
+    "script spec",
+    "contentitem",
+    "content item",
+    "productionplan",
+    "production plan",
+)
+
+
+def _normalize_editorial_review_output_contract(
+    proposal: MissionPlanProposal,
+) -> tuple[MissionPlanProposal, tuple[str, ...]]:
+    """Repair one invalid planner contract without changing execution authority.
+
+    Editorial review consumes primary production artifacts and returns a review
+    verdict. A semantic planner may accidentally repeat the reviewed artifact
+    (for example ScriptSpec) as expected_output. Normalize only that narrow
+    contradiction so Registry selection can choose an actual review capability;
+    never pretend the reviewer produces the artifact it reviews.
+    """
+    normalized_task_ids: list[str] = []
+    tasks = []
+    for task in proposal.tasks:
+        task_class = str(task.task_class or "").strip().casefold()
+        action = str(task.action or "").strip().upper()
+        review_text = " ".join(
+            (
+                task_class,
+                str(task.objective or "").strip().casefold(),
+                str(task.required_capability_description or "").strip().casefold(),
+            )
+        )
+        expected = str(task.expected_output or "").strip()
+        expected_folded = expected.casefold()
+        editorial_review = (
+            "review" in task_class
+            and (
+                action == "EDITORIAL"
+                or any(
+                    marker in review_text
+                    for marker in (
+                        "youtube",
+                        "script",
+                        "roteiro",
+                        "editorial",
+                        "content",
+                        "conteudo",
+                        "conteúdo",
+                    )
+                )
+            )
+        )
+        reviewed_artifact_as_output = any(
+            marker in expected_folded
+            for marker in _REVIEWED_PRIMARY_ARTIFACT_MARKERS
+        )
+        if editorial_review and reviewed_artifact_as_output:
+            tasks.append(
+                replace(
+                    task,
+                    expected_output="StructuredEditorialReviewVerdict",
+                )
+            )
+            normalized_task_ids.append(task.task_id)
+        else:
+            tasks.append(task)
+    if not normalized_task_ids:
+        return proposal, ()
+    return replace(proposal, tasks=tuple(tasks)), tuple(normalized_task_ids)
+
+
 def propose_validated_semantic_plan(
     context: dict[str, Any],
     *,
@@ -1236,6 +1308,16 @@ def propose_validated_semantic_plan(
             )
             evidence["replan_count"] += 1
             continue
+
+        normalized_proposal, normalized_review_tasks = (
+            _normalize_editorial_review_output_contract(result.proposal)
+        )
+        if normalized_review_tasks:
+            result = replace(result, proposal=normalized_proposal)
+            evidence.setdefault(
+                "output_contract_normalizations",
+                [],
+            ).extend(normalized_review_tasks)
 
         errors = tuple([
             *_mission_action_policy_errors(

@@ -481,3 +481,49 @@ def test_system_improvement_policy_normalizes_role_action_not_operations():
         ] is True
 
     assert override_count == 0
+
+def test_editorial_review_normalizes_reviewed_artifact_output_before_registry_selection():
+    goal = _authorized_private_review_goal()
+
+    proposal = {
+        "interpreted_goal": "Revisar o roteiro antes da produção privada.",
+        "assumptions": [],
+        "required_outcomes": ["parecer editorial estruturado"],
+        "tasks": [
+            {
+                "task_id": "review-script-contract",
+                "objective": "Review the generated GTA VI ScriptSpec for editorial quality and factual risk.",
+                "task_class": "review",
+                "required_capability_description": "youtube editorial script review",
+                "candidate_capability_ids": ["youtube.department.script-review"],
+                "dependencies": [],
+                "expected_output": "ScriptSpec",
+                "acceptance_criteria": ["structured editorial review verdict"],
+                "risk_side_effect_class": "READ_ONLY",
+                "action": "EDITORIAL",
+            }
+        ],
+        "rationale": "Review consumes the ScriptSpec; it does not regenerate it.",
+        "context_usage_notes": [],
+        "uncertainty": 0.1,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+
+    plan = plan_mission_from_human_goal(
+        goal,
+        semantic_inference=lambda _prompt, _context: proposal,
+    )
+
+    task = plan.collaboration_plan.tasks[0]
+    assert task.capability_id == "youtube.department.script-review"
+    assert task.action == "EDITORIAL"
+    assert task.expected_output == "StructuredEditorialReviewVerdict"
+    assert "CAN_REVIEW" not in set(task.required_operations)
+    assert plan.planning_evidence["output_contract_normalizations"] == [
+        "review-script-contract"
+    ]
+
