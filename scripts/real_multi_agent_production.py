@@ -2799,112 +2799,17 @@ def run(
                     state=state,
                     human_goal=human_goal,
                 )
-                try:
-                    execution = broker.execute_delegated_capability(
-                        task_id=task_id,
-                        capability_id=task.capability_id,
-                        payload=payload,
-                        dependency_context=(
-                            parent_context if task.dependencies else None
-                        ),
-                    )
-                except DelegatedCapabilityFailure as failure:
-                    if not _is_longform_underdelivery_failure(failure):
-                        raise
-                    if state.get("governed_web_preflight_attempted"):
-                        # The one bounded evidence-gap recovery has already run.
-                        # Never repeat it without a new causal variable.
-                        raise RuntimeError(
-                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
-                        ) from failure
-                    failure_evidence = dict(
-                        failure.failure_evidence or {}
-                    )
-                    partial_structure = failure_evidence.get(
-                        "partial_structure"
-                    )
-                    if isinstance(partial_structure, dict):
-                        state["editorial_recovery_seed_structure"] = dict(
-                            partial_structure
-                        )
-                    sequence_gaps = _normalized_sequence_evidence_gaps(
-                        failure_evidence.get("sequence_evidence_gaps")
-                    )
-                    if sequence_gaps:
-                        _write(
-                            artifact_dir / "sequence-evidence-gaps.json",
-                            {
-                                "schema": "SequenceEvidenceGapSet/v1",
-                                "mission_id": spec.mission_id,
-                                "task_id": task.task_id,
-                                "gaps": sequence_gaps,
-                            },
-                        )
-                    research_task = next(
-                        (
-                            candidate
-                            for candidate in preplan.tasks
-                            if candidate.capability_id == "gta6.research"
-                        ),
-                        None,
-                    )
-                    if research_task is None:
-                        raise RuntimeError(
-                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
-                        ) from failure
-                    state["governed_web_preflight_attempted"] = True
-                    expansion = _run_bounded_longform_evidence_expansion(
-                        broker=broker,
-                        board=board,
-                        state=state,
-                        human_goal=human_goal,
-                        research_task_id=research_task.task_id,
-                        round_index=1,
-                        sequence_evidence_gaps=sequence_gaps,
-                    )
-                    if expansion.get("status") != "PASS":
-                        _write(
-                            artifact_dir / "longform-evidence-expansion.json",
-                            expansion,
-                        )
-                        raise RuntimeError(
-                            _longform_expansion_terminal_error(expansion)
-                        ) from failure
-
-                    initial_target = float(
-                        state.get("target_duration_seconds") or 1200.0
-                    )
-                    retry_target = _longform_retry_target_seconds(initial_target)
-                    state["target_duration_seconds"] = retry_target
-                    expansion["initial_editorial_target_seconds"] = initial_target
-                    expansion["editorial_retry_target_seconds"] = retry_target
-                    expansion["PROFESSIONAL_20_MINIMUM_PRESERVED"] = "PASS"
-                    expansion["PREFERRED_TARGET_RECONCILED_FROM_RUNTIME_EVIDENCE"] = (
-                        "PASS" if retry_target < initial_target else "NOT_REQUIRED"
-                    )
-                    _write(
-                        artifact_dir / "longform-evidence-expansion.json",
-                        expansion,
-                    )
-                    retry_payload = _payload_for_task(
-                        task=task,
-                        parent_context=parent_context,
-                        state=state,
-                        human_goal=human_goal,
-                    )
-                    try:
-                        execution = broker.retry_delegated_capability(
-                            failure=failure,
-                            payload=retry_payload,
-                        )
-                    except DelegatedCapabilityFailure as retry_failure:
-                        if _is_longform_underdelivery_failure(
-                            retry_failure
-                        ):
-                            raise RuntimeError(
-                                "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
-                            ) from retry_failure
-                        raise
+                # Generic executor boundary: execute only the capability selected
+                # by DeepSeek Harness. Failures carry a typed semantic need back to
+                # Harness; this runner never chooses the recovery capability or route.
+                execution = broker.execute_delegated_capability(
+                    task_id=task_id,
+                    capability_id=task.capability_id,
+                    payload=payload,
+                    dependency_context=(
+                        parent_context if task.dependencies else None
+                    ),
+                )
                 _observe_execution(task=task, execution=execution, state=state)
                 if not board.complete(
                     task_mapping[task_id],
