@@ -732,6 +732,10 @@ def test_longform_composes_distinct_bounded_passes_without_padding():
     assert len(provider.prompts) == 2
     assert "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA" in provider.prompts[1]
     assert "NÃO reescreva nem parafraseie" in provider.prompts[1]
+    assert "Planeje cada body de development" in provider.prompts[0]
+    assert "claims verificadas" in provider.prompts[0]
+    assert "novos blocos de development" in provider.prompts[1]
+    assert "palavras úteis restantes sem filler" in provider.prompts[1]
     assert len(result["development"]) == 8
     assert sum(
         len(str(item.get("body") or "").split())

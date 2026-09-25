@@ -164,13 +164,34 @@ def _build_ai_prompt(
     minimum_sections = _minimum_development_sections(
         target_duration_seconds
     )
+    verified_claim_count = 0
+    if isinstance(editorial_context, dict):
+        verified_claims = editorial_context.get("verified_claims")
+        if isinstance(verified_claims, list):
+            verified_claim_count = sum(
+                1 for item in verified_claims if isinstance(item, dict)
+            )
     if target_duration_seconds is not None and target_words is not None:
         target_minutes = float(target_duration_seconds) / 60.0
+        # Put most of the long-form budget in evidence-bearing development
+        # blocks. This is a generation contract only: the downstream duration
+        # and no-padding gates remain authoritative.
+        development_word_floor = max(
+            180,
+            int(math.ceil((target_words * 0.78) / minimum_sections)),
+        )
         duration_instruction = (
             "\nDURAÇÃO ALVO\n"
             f"- Aproximadamente {target_minutes:.1f} minutos de narração.\n"
             f"- O roteiro completo DEVE ter pelo menos {target_words} palavras úteis.\n"
             f"- O desenvolvimento DEVE conter pelo menos {minimum_sections} blocos distintos.\n"
+            f"- Planeje cada body de development com aproximadamente {development_word_floor} "
+            "palavras úteis ou mais, sem repetir informação.\n"
+            f"- Há {verified_claim_count} claims verificadas no contexto editorial; distribua-as "
+            "entre ângulos factuais distintos e aprofunde contexto/implicações somente quando "
+            "a relação estiver sustentada.\n"
+            "- Não fique preso a repetir o título da pauta: use as claims verificadas relacionadas "
+            "para construir contexto GTA VI mais amplo quando isso for factual e pertinente.\n"
             "- Expanda apenas com contexto, análise e implicações sustentados pelas evidências fornecidas.\n"
             "- Não use repetição, paráfrase vazia ou filler para alcançar a duração.\n"
         )
@@ -443,6 +464,14 @@ def _generate_ai_structure(
                 previous_structure.get("development") or ()
             )
             remaining_words = max(300, target_words - prior_words)
+            complementary_block_floor = max(
+                180,
+                int(math.ceil(remaining_words / 4.0)),
+            )
+            required_new_blocks = max(
+                3,
+                min(6, int(math.ceil(remaining_words / complementary_block_floor))),
+            )
             prior_headings = [
                 str(item.get("heading") or "").strip()
                 for item in previous_structure.get("development") or ()
@@ -455,6 +484,11 @@ def _generate_ai_structure(
                 f"{prior_sections} blocos de desenvolvimento.\n"
                 f"- Ainda faltam aproximadamente {remaining_words} palavras úteis "
                 "para o contrato de duração.\n"
+                f"- Produza pelo menos {required_new_blocks} novos blocos de development, "
+                f"planejando cada body com cerca de {complementary_block_floor} palavras úteis "
+                "ou mais quando as evidências sustentarem.\n"
+                f"- Os novos blocos, em conjunto, devem buscar cobrir as {remaining_words} "
+                "palavras úteis restantes sem filler.\n"
                 "- Produza SOMENTE ângulos/blocos de desenvolvimento complementares "
                 "sustentados pelas MESMAS evidências verificadas.\n"
                 "- NÃO reescreva nem parafraseie os blocos já produzidos.\n"
@@ -530,8 +564,21 @@ def _generate_ai_structure(
         ):
             return previous_structure
 
+    final_words = (
+        _structure_word_count(previous_structure)
+        if previous_structure is not None
+        else 0
+    )
+    final_sections = (
+        len(previous_structure.get("development") or ())
+        if previous_structure is not None
+        else 0
+    )
     raise AIProviderError(
-        "AI response cannot sustain requested long-form duration without padding."
+        "AI response cannot sustain requested long-form duration without padding. "
+        f"observed_words={final_words} target_words={target_words} "
+        f"observed_development_sections={final_sections} "
+        f"required_development_sections={minimum_sections}"
     )
 
 
