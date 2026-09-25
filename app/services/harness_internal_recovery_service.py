@@ -409,7 +409,7 @@ class HarnessInternalRecoveryState:
             human_intervention_required=False,
         )
         self.state["NEXT_TRANSITION"] = (
-            "RECOVERY_START" if strategy else "FAILED_TERMINAL"
+            "RECOVERY_START" if strategy else "REPLAN_REQUIRED"
         )
         self._event(
             "RECOVERY_SELECTED",
@@ -420,8 +420,20 @@ class HarnessInternalRecoveryState:
             exhausted=decision.exhausted,
         )
         if strategy is None:
-            self.state["MISSION_STATUS"] = "FAILED_TERMINAL"
-            self.state["RECOVERY_STATE"] = "EXHAUSTED"
+            # Exhausting bounded local strategies is not evidence that the
+            # human mission is terminal. Return authority to the Harness
+            # mission router so it can evaluate the remaining goal, progress,
+            # eligible capabilities, authorization and budget and then make a
+            # governed RETRY/REPLAN/BLOCK decision.
+            self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
+            self.state["RECOVERY_STATE"] = "LOCAL_RECOVERY_EXHAUSTED"
+            self._event(
+                "LOCAL_RECOVERY_EXHAUSTED",
+                task_id=self.state.get("FAILED_TASK"),
+                failure_class=classification.failure_class,
+                failure_signature=classification.failure_signature,
+                next_transition="REPLAN_REQUIRED",
+            )
         self._persist()
         return decision
 
