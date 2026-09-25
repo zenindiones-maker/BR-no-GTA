@@ -2753,7 +2753,11 @@ class HermesHarnessCapabilityBroker:
             capability_id=selected_capability_id,
             action=action,
             objective=semantic_requirement,
-            dependencies=(causal_task_id,),
+            # The failed causal task has no successful TaskResultEnvelope.
+            # The persisted HarnessExecutionNeed is the recovery node's durable
+            # input lineage; causal_task_id remains explicit in selection
+            # evidence/audit rather than masquerading as a completed dependency.
+            dependencies=(),
             input_refs=tuple(dict.fromkeys([need_ref, *input_artifact_refs])),
             expected_output=str(record.output_contract or "TaskResult"),
             routing_id=decision.routing_id,
