@@ -892,6 +892,7 @@ def _run_governed_longform_web_acquisition(
                     f"{selected_topic} GTA VI current verified details "
                     "Rockstar independent reporting"
                 ),
+                "candidate_sources": list(fallback_source_urls)[:10],
                 "evidence_refs": list(search_context.get("evidence_refs") or ())[:24],
             },
             dependency_context=search_context,
