@@ -1068,4 +1068,3 @@ def test_official_longform_findings_do_not_consume_secondary_fact_check_budget()
         item["fact_check_result"] == "PENDING_FACT_CHECK"
         for item in selected_pending
     )
-
