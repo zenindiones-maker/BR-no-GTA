@@ -2302,7 +2302,10 @@ def _payload_for_task(
             "target_goal_id": target_goal,
             "target_duration_seconds": state.get("target_duration_seconds"),
             "editorial_context": {
-                "verified_claims": list(state.get("claims") or ())[:24],
+                # Editorial recovery must see every bounded verified claim admitted
+                # by the governed research/fact-check path. Truncating to the oldest
+                # 24 claims silently discarded newly reinjected gap-specific evidence.
+                "verified_claims": list(state.get("claims") or ()),
                 "youtube_strategy": state.get("specialist_outputs", {}).get(
                     "youtube.department.content-strategy"
                 ),
