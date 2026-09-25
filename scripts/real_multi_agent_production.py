@@ -718,6 +718,67 @@ def _web_transport_unavailable(exc: BaseException) -> bool:
     }
 
 
+def _longform_recovery_gate_outcome(
+    *,
+    verified_count: int,
+    web_recovery: dict[str, Any],
+) -> dict[str, Any]:
+    required_gates = {
+        "WEB_DISCOVERY_GOVERNED": str(
+            web_recovery.get("WEB_DISCOVERY_GOVERNED") or ""
+        ),
+        "WEB_SOURCE_ACQUISITION_GOVERNED": str(
+            web_recovery.get("WEB_SOURCE_ACQUISITION_GOVERNED") or ""
+        ),
+        "PROVENANCE": str(web_recovery.get("PROVENANCE") or ""),
+        "FACT_CHECK_BEFORE_EDITORIAL": "PASS",
+    }
+    failed_gates = [
+        key for key, value in required_gates.items()
+        if value != "PASS"
+    ]
+    discovery_failure_class = str(
+        web_recovery.get("web_discovery_failure_class") or ""
+    ).strip()
+    external_blocker = (
+        discovery_failure_class
+        if discovery_failure_class in {
+            "AUTHENTICATION",
+            "API_SUBSCRIPTION_REQUIRED",
+            "FREE_QUOTA_EXHAUSTED",
+        }
+        else None
+    )
+    if failed_gates:
+        status = "BLOCKED"
+        failure_class = discovery_failure_class or "WEB_GATE_INCOMPLETE"
+    elif int(verified_count) <= 0:
+        status = "INSUFFICIENT"
+        failure_class = "INSUFFICIENT_EDITORIAL_EVIDENCE"
+    else:
+        status = "PASS"
+        failure_class = None
+    return {
+        "status": status,
+        "required_gates": required_gates,
+        "failed_gates": failed_gates,
+        "failure_class": failure_class,
+        "external_blocker": external_blocker,
+    }
+
+
+def _longform_expansion_terminal_error(expansion: dict[str, Any]) -> str:
+    external = str(expansion.get("external_blocker") or "").strip()
+    if external:
+        return f"{external}:WEB_DISCOVERY_GOVERNED"
+    if str(expansion.get("status") or "").upper() == "BLOCKED":
+        failure_class = str(
+            expansion.get("failure_class") or "WEB_GATE_INCOMPLETE"
+        ).strip()
+        return f"LONGFORM_WEB_RECOVERY_BLOCKED:{failure_class}"
+    return "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+
+
 def _finish_unavailable_recovery_child(
     *,
     board,
@@ -817,6 +878,7 @@ def _run_governed_longform_web_acquisition(
     search_context = broker.parent_context(task_id=search_id)
     search_execution: dict[str, Any] | None = None
     discovery_state = "PASS"
+    discovery_failure_class: str | None = None
     try:
         search_execution = broker.execute_delegated_capability(
             task_id=search_id,
@@ -838,6 +900,7 @@ def _run_governed_longform_web_acquisition(
         failure_class = _classify_web_failure(exc)
         if not _web_transport_unavailable(exc):
             raise
+        discovery_failure_class = failure_class
         discovery_state = f"BLOCKED_{failure_class}"
         _finish_unavailable_recovery_child(
             board=board,
@@ -1226,6 +1289,7 @@ def _run_governed_longform_web_acquisition(
         "candidates": candidates,
         "evidence_refs": list(dict.fromkeys(refs)),
         "WEB_DISCOVERY_GOVERNED": discovery_state,
+        "web_discovery_failure_class": discovery_failure_class,
         "WEB_SOURCE_ACQUISITION_GOVERNED": _governed_web_acquisition_status(
             selected_count=len(selected_results),
             successful_count=successful_acquisitions,
@@ -1751,6 +1815,10 @@ def _run_bounded_longform_evidence_expansion(
         if ref and ref not in state["expansion_evidence_refs"]:
             state["expansion_evidence_refs"].append(ref)
 
+    gate_outcome = _longform_recovery_gate_outcome(
+        verified_count=len(verified),
+        web_recovery=web_recovery,
+    )
     report = {
         "schema": "longform-evidence-expansion/v1",
         "classification": "INSUFFICIENT_EDITORIAL_EVIDENCE",
@@ -1776,8 +1844,11 @@ def _run_bounded_longform_evidence_expansion(
         "verified_claim_ids": [
             str(item.get("claim_id") or "") for item in verified
         ],
-        "LONGFORM_RESEARCH_EXPANSION": "PASS" if verified else "INSUFFICIENT",
+        "LONGFORM_RESEARCH_EXPANSION": gate_outcome["status"],
         "WEB_DISCOVERY_GOVERNED": web_recovery.get("WEB_DISCOVERY_GOVERNED"),
+        "web_discovery_failure_class": web_recovery.get(
+            "web_discovery_failure_class"
+        ),
         "WEB_SOURCE_ACQUISITION_GOVERNED": web_recovery.get(
             "WEB_SOURCE_ACQUISITION_GOVERNED"
         ),
@@ -1817,7 +1888,11 @@ def _run_bounded_longform_evidence_expansion(
         "evidence_refs": list(
             state.get("expansion_evidence_refs") or ()
         ),
-        "status": "PASS" if verified else "INSUFFICIENT",
+        "required_gate_status": dict(gate_outcome["required_gates"]),
+        "failed_required_gates": list(gate_outcome["failed_gates"]),
+        "failure_class": gate_outcome["failure_class"],
+        "external_blocker": gate_outcome["external_blocker"],
+        "status": gate_outcome["status"],
         "artificial_padding": False,
     }
     state.setdefault("longform_evidence_expansions", []).append(report)
@@ -2395,6 +2470,7 @@ def run(
                 "PREPRODUCTION_THROUGH_PRODUCTION_PLAN"
             ),
             "downstream_execution_orchestrated_by_workflow": True,
+            "governed_web_fabric_preflight_required": True,
         },
     )
 
@@ -2536,6 +2612,45 @@ def run(
                             artifact_dir / "fact-check-source-recovery.json",
                             recovery,
                         )
+
+                if (
+                    task.capability_id == "editorial.process"
+                    and goal.canonical_state.get(
+                        "governed_web_fabric_preflight_required"
+                    ) is True
+                    and not state.get("governed_web_preflight_attempted")
+                ):
+                    research_task = next(
+                        (
+                            candidate
+                            for candidate in preplan.tasks
+                            if candidate.capability_id == "gta6.research"
+                        ),
+                        None,
+                    )
+                    if research_task is None:
+                        raise RuntimeError(
+                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                        )
+                    state["governed_web_preflight_attempted"] = True
+                    expansion = _run_bounded_longform_evidence_expansion(
+                        broker=broker,
+                        board=board,
+                        state=state,
+                        human_goal=human_goal,
+                        research_task_id=research_task.task_id,
+                        round_index=1,
+                    )
+                    state["governed_web_preflight"] = dict(expansion)
+                    _write(
+                        artifact_dir / "longform-evidence-expansion.json",
+                        expansion,
+                    )
+                    if expansion.get("status") != "PASS":
+                        raise RuntimeError(
+                            _longform_expansion_terminal_error(expansion)
+                        )
+
                 payload = _payload_for_task(
                     task=task,
                     parent_context=parent_context,
@@ -2554,6 +2669,13 @@ def run(
                 except DelegatedCapabilityFailure as failure:
                     if not _is_longform_underdelivery_failure(failure):
                         raise
+                    if state.get("governed_web_preflight_attempted"):
+                        # The one bounded evidence expansion already ran before
+                        # editorial. Do not burn compute retrying the identical
+                        # research path after it still underdelivers.
+                        raise RuntimeError(
+                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                        ) from failure
                     research_task = next(
                         (
                             candidate
@@ -2580,7 +2702,7 @@ def run(
                             expansion,
                         )
                         raise RuntimeError(
-                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                            _longform_expansion_terminal_error(expansion)
                         ) from failure
 
                     initial_target = float(

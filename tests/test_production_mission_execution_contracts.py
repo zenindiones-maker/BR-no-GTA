@@ -36,7 +36,9 @@ from scripts.real_multi_agent_production import (
     _fresh_research_candidates,
     _governed_web_acquisition_status,
     _is_longform_underdelivery_failure,
+    _longform_expansion_terminal_error,
     _longform_fallback_source_urls,
+    _longform_recovery_gate_outcome,
     _longform_retry_target_seconds,
     _novelty_gate,
     _payload_for_task,
@@ -1197,3 +1199,44 @@ def test_knowledge_retrieval_without_candidate_hint_discovers_canonical_gta6_ret
         or item.startswith("knowledge.retrieve:missing-")
         for item in avoided
     )
+
+
+def test_longform_recovery_cannot_pass_with_blocked_required_web_discovery():
+    outcome = _longform_recovery_gate_outcome(
+        verified_count=7,
+        web_recovery={
+            "WEB_DISCOVERY_GOVERNED": "BLOCKED_API_SUBSCRIPTION_REQUIRED",
+            "web_discovery_failure_class": "API_SUBSCRIPTION_REQUIRED",
+            "WEB_SOURCE_ACQUISITION_GOVERNED": "PASS",
+            "PROVENANCE": "PASS",
+        },
+    )
+
+    assert outcome["status"] == "BLOCKED"
+    assert outcome["external_blocker"] == "API_SUBSCRIPTION_REQUIRED"
+    assert outcome["failed_gates"] == ["WEB_DISCOVERY_GOVERNED"]
+
+
+def test_longform_recovery_requires_every_phase2_gate_before_pass():
+    outcome = _longform_recovery_gate_outcome(
+        verified_count=4,
+        web_recovery={
+            "WEB_DISCOVERY_GOVERNED": "PASS",
+            "WEB_SOURCE_ACQUISITION_GOVERNED": "PASS",
+            "PROVENANCE": "PASS",
+        },
+    )
+
+    assert outcome["status"] == "PASS"
+    assert outcome["failed_gates"] == []
+    assert outcome["external_blocker"] is None
+
+
+def test_longform_external_web_blocker_is_reported_without_masking_as_insufficient():
+    error = _longform_expansion_terminal_error({
+        "status": "BLOCKED",
+        "failure_class": "API_SUBSCRIPTION_REQUIRED",
+        "external_blocker": "API_SUBSCRIPTION_REQUIRED",
+    })
+
+    assert error == "API_SUBSCRIPTION_REQUIRED:WEB_DISCOVERY_GOVERNED"
