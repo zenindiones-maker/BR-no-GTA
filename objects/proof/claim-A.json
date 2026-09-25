@@ -1,0 +1,1 @@
+{"schema":"ClaimRecord/v1","claim_id":"CLAIM-A","continuation_id":"CONT-PROOF-1","claimant_identity":{"schema":"ClaimantIdentity/v1","run_id":"proof-run","run_attempt":1,"workflow_ref":"proof","workflow_sha":"1a7d407dc8c3c6a11854e586c34b4fc482ecc176","job_key":"A"},"authority_generation":1,"fencing_epoch":1}
