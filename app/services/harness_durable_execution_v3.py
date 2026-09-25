@@ -263,38 +263,58 @@ class DurableExecutionV3:
         return self.commit(snapshot=snapshot,next_head=nxt,objects=objects)
 
     def plan_operation(self,*,snapshot:Any,claim_id:str,fencing_epoch:int,
-                       logical_operation:str,artifact_hash:str)->tuple[str,OperationRecord]:
+                       logical_operation:str,artifact_hash:str,target_identity:str,
+                       semantic_request_hash:str)->tuple[str,OperationRecord]:
         self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
         h=snapshot.mission_head
         operation_id=digest({"mission_id":h["mission_id"],"logical_operation":logical_operation,
-                             "artifact_hash":artifact_hash})
+          "artifact_hash":artifact_hash,"target_identity":target_identity,
+          "semantic_request_hash":semantic_request_hash})
+        existing_ref=h.get("operation_index",{}).get(operation_id)
+        existing=self._read(snapshot,existing_ref)
+        if existing:
+            if existing["status"]=="SUCCEEDED": return snapshot.head_sha,OperationRecord(**existing)
+            if existing["status"] in {"STARTED","UNKNOWN_RECONCILIATION_REQUIRED"}:
+                raise PermissionError("OPERATION_RECONCILIATION_REQUIRED")
+            if existing["status"]=="PLANNED": return snapshot.head_sha,OperationRecord(**existing)
         record=OperationRecord(operation_id,h["mission_id"],logical_operation,artifact_hash,
-          claim_id,fencing_epoch,"PLANNED")
+          target_identity,semantic_request_hash,claim_id,fencing_epoch,"PLANNED")
         payload=asdict(record); ref,_=immutable_ref("operations",payload)
-        nxt={**h,"state_version":int(h["state_version"])+1,
+        index={**h.get("operation_index",{}),operation_id:ref}
+        nxt={**h,"state_version":int(h["state_version"])+1,"operation_index":index,
              "side_effect_ledger_refs":[*h.get("side_effect_ledger_refs",[]),ref]}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:payload}),record
 
-    def start_operation(self,*,snapshot:Any,operation_ref:str,claim_id:str,fencing_epoch:int)->str:
+    def start_operation(self,*,snapshot:Any,operation_id:str,claim_id:str,fencing_epoch:int)->str:
         self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
-        h=snapshot.mission_head; record=self._read(snapshot,operation_ref)
+        h=snapshot.mission_head; operation_ref=h.get("operation_index",{}).get(operation_id)
+        record=self._read(snapshot,operation_ref)
         if not record or record.get("status")!="PLANNED": raise PermissionError("OPERATION_NOT_PLANNED")
-        started={**record,"status":"STARTED"}; ref,_=immutable_ref("operations",started)
-        refs=[ref if x==operation_ref else x for x in h.get("side_effect_ledger_refs",[])]
-        nxt={**h,"state_version":int(h["state_version"])+1,"side_effect_ledger_refs":refs}
+        started={**record,"status":"STARTED","claim_id":claim_id,"fencing_epoch":fencing_epoch}
+        ref,_=immutable_ref("operations",started); index={**h["operation_index"],operation_id:ref}
+        nxt={**h,"state_version":int(h["state_version"])+1,"operation_index":index}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:started})
 
-    def settle_operation(self,*,snapshot:Any,operation_ref:str,claim_id:str,fencing_epoch:int,
+    def authorize_external_call(self,*,snapshot:Any,operation_id:str,claim_id:str,fencing_epoch:int)->dict[str,Any]:
+        # Must be called immediately before the external POST.
+        self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
+        h=snapshot.mission_head; record=self._read(snapshot,h.get("operation_index",{}).get(operation_id))
+        if not record or record.get("status")!="STARTED": raise PermissionError("OPERATION_NOT_STARTED")
+        if record.get("claim_id")!=claim_id or int(record.get("fencing_epoch",-1))!=int(fencing_epoch):
+            raise PermissionError("STALE_FENCING_TOKEN")
+        return record
+
+    def settle_operation(self,*,snapshot:Any,operation_id:str,claim_id:str,fencing_epoch:int,
                          status:str,external_receipt:Any=None)->str:
         self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
         if status not in {"SUCCEEDED","FAILED_TYPED","UNKNOWN_RECONCILIATION_REQUIRED"}:
             raise ValueError("OPERATION_SETTLEMENT_STATUS_INVALID")
-        h=snapshot.mission_head; record=self._read(snapshot,operation_ref)
+        h=snapshot.mission_head; operation_ref=h.get("operation_index",{}).get(operation_id)
+        record=self._read(snapshot,operation_ref)
         if not record or record.get("status")!="STARTED": raise PermissionError("OPERATION_NOT_STARTED")
         settled={**record,"status":status,"external_receipt":external_receipt}
-        ref,_=immutable_ref("operations",settled)
-        refs=[ref if x==operation_ref else x for x in h.get("side_effect_ledger_refs",[])]
-        nxt={**h,"state_version":int(h["state_version"])+1,"side_effect_ledger_refs":refs}
+        ref,_=immutable_ref("operations",settled); index={**h["operation_index"],operation_id:ref}
+        nxt={**h,"state_version":int(h["state_version"])+1,"operation_index":index}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:settled})
 
     def persist_run_observation(self,*,snapshot:Any,observation:ClaimantRunObservation)->tuple[str,str]:
