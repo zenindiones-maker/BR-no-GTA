@@ -758,6 +758,92 @@ def _select_sequence_expansion_batches(
     return batches
 
 
+def _realized_sequence_duration_gaps(
+    *,
+    batch: EditorialSequenceBatch,
+    added_words: int,
+    video_plan: VideoPlan,
+) -> list[SequenceEvidenceGap]:
+    """Translate real batch underdelivery into localized evidence gaps.
+
+    A sequence is not fully covered merely because it owns one SUPPORTED claim.
+    If the evidence-bounded batch cannot realize its planned supported duration,
+    the missing duration becomes a typed research gap. This creates no prose,
+    does not add provider calls, and never pads audience-facing content.
+    """
+    target_seconds = max(0.0, float(batch.get("target_duration") or 0.0))
+    realized_seconds = _spoken_seconds_for_words(max(0, int(added_words)))
+    missing_seconds = max(0.0, target_seconds - realized_seconds)
+    if missing_seconds <= 0.0:
+        return []
+
+    sequences = [
+        dict(item)
+        for item in (batch.get("sequences") or ())
+        if isinstance(item, dict)
+    ]
+    if not sequences:
+        return []
+
+    weights = [
+        max(1.0, float(item.get("target_duration") or 0.0))
+        for item in sequences
+    ]
+    weight_total = float(sum(weights) or 1.0)
+    all_beats = [
+        str(item.get("story_beat") or "").strip()
+        for item in video_plan.get("sequences") or ()
+        if isinstance(item, dict)
+        and str(item.get("story_beat") or "").strip()
+    ]
+    plan_by_id = {
+        str(item.get("sequence_id") or ""): item
+        for item in video_plan.get("sequences") or ()
+        if isinstance(item, dict)
+    }
+
+    gaps: list[SequenceEvidenceGap] = []
+    for sequence, weight in zip(sequences, weights):
+        sequence_id = str(sequence.get("sequence_id") or "").strip()
+        if not sequence_id:
+            continue
+        missing_share = missing_seconds * weight / weight_total
+        if missing_share <= 0.0:
+            continue
+        planned = plan_by_id.get(sequence_id)
+        if isinstance(planned, dict):
+            planned["status"] = "EVIDENCE_GAP"
+        beat = str(sequence.get("story_beat") or "").strip()
+        gaps.append({
+            "sequence_id": sequence_id,
+            "missing_questions": [
+                str(sequence.get("central_question") or "").strip()
+            ],
+            "missing_claim_types": [
+                "additional non-duplicate source-grounded facts or implications supporting this beat"
+            ],
+            "existing_evidence": [
+                str(item)
+                for item in (sequence.get("evidence_refs") or ())
+                if str(item).strip()
+            ][:24],
+            "duplicate_topics_to_avoid": [
+                item for item in all_beats
+                if item and item != beat
+            ][:24],
+            "required_novelty": [
+                str(item)
+                for item in (sequence.get("novelty_requirements") or ())
+                if str(item).strip()
+            ][:12],
+            "estimated_missing_supported_duration": round(
+                missing_share,
+                3,
+            ),
+        })
+    return gaps
+
+
 def _sequence_batch_editorial_context(
     editorial_context: dict[str, Any] | None,
     batch: EditorialSequenceBatch,
@@ -1032,6 +1118,19 @@ def _generate_ai_structure(
                 assembly,
                 generated,
             )
+            added_words = max(
+                0,
+                _structure_word_count(assembly) - before_words,
+            )
+            realized_gaps = _realized_sequence_duration_gaps(
+                batch=batch,
+                added_words=added_words,
+                video_plan=video_plan,
+            )
+            evidence_gaps.extend(realized_gaps)
+            added_supported_seconds = _spoken_seconds_for_words(
+                added_words
+            )
             generated_batches.append({
                 "batch_id": batch["batch_id"],
                 "sequence_ids": list(batch["sequence_ids"]),
@@ -1040,9 +1139,23 @@ def _generate_ai_structure(
                     batch["supported_claims"]
                 ),
                 "expansion_target_duration": batch["target_duration"],
-                "added_words": max(
-                    0,
-                    _structure_word_count(assembly) - before_words,
+                "actual_added_supported_duration": round(
+                    added_supported_seconds,
+                    3,
+                ),
+                "duration_gap_seconds": round(
+                    max(
+                        0.0,
+                        float(batch["target_duration"])
+                        - added_supported_seconds,
+                    ),
+                    3,
+                ),
+                "added_words": added_words,
+                "status": (
+                    "PASS"
+                    if not realized_gaps
+                    else "EVIDENCE_GAP"
                 ),
             })
             if (
@@ -1069,11 +1182,12 @@ def _generate_ai_structure(
         }
         if (
             global_qa["TOTAL_SUPPORTED_DURATION"] == "PASS"
+            and global_qa["EVIDENCE_COVERAGE"] == "PASS"
             and len(assembly.get("development") or ()) >= minimum_sections
         ):
             return assembly
 
-        raise AIProviderError(
+        failure = AIProviderError(
             "AI response cannot sustain requested long-form duration without padding. "
             "story_assembly_mode=evidence_bounded_sequences "
             f"content_supported_duration_minutes={global_qa['content_supported_duration_minutes']} "
@@ -1085,6 +1199,16 @@ def _generate_ai_structure(
             f"observed_development_sections={len(assembly.get('development') or ())} "
             f"required_development_sections={minimum_sections}"
         )
+        failure.failure_evidence = {
+            "schema": "EditorialEvidenceGapFailure/v1",
+            "video_plan": video_plan,
+            "sequence_evidence_gaps": evidence_gaps,
+            "story_assembly": story_assembly,
+            "global_editorial_qa": global_qa,
+            "editorial_sequence_batches_generated": generated_batches,
+            "artificial_padding": False,
+        }
+        raise failure
 
     previous_structure = initial
     for attempt in range(2, MAX_EDITORIAL_GENERATION_ATTEMPTS + 1):

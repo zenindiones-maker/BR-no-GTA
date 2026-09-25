@@ -1324,3 +1324,33 @@ def test_longform_external_web_blocker_is_reported_without_masking_as_insufficie
     })
 
     assert error == "API_SUBSCRIPTION_REQUIRED:WEB_DISCOVERY_GOVERNED"
+
+def test_sequence_evidence_gap_focus_preserves_missing_questions_without_padding():
+    from scripts.real_multi_agent_production import (
+        _normalized_sequence_evidence_gaps,
+        _sequence_evidence_gap_focus,
+    )
+
+    gaps = _normalized_sequence_evidence_gaps([
+        {
+            "sequence_id": "sequence-004",
+            "missing_questions": [
+                "Que evidência nova explica a consequência policial?"
+            ],
+            "missing_claim_types": [
+                "official or independently corroborated consequence"
+            ],
+            "existing_evidence": ["artifact:known"],
+            "duplicate_topics_to_avoid": ["lançamento", "protagonistas"],
+            "required_novelty": ["new consequence"],
+            "estimated_missing_supported_duration": 185.0,
+        }
+    ])
+    focus = _sequence_evidence_gap_focus(gaps)
+
+    assert len(gaps) == 1
+    assert "sequence-004" in focus
+    assert "consequência policial" in focus
+    assert "185.0" in focus
+    assert "lançamento" in focus
+

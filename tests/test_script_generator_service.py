@@ -850,6 +850,103 @@ def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metada
     assert "artifact:release" not in audience
 
 
+def test_story_assembly_marks_duration_undercoverage_as_typed_sequence_evidence_gap():
+    import json
+
+    from app.services.ai_provider import AIProviderError, AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - gap por duração suportada",
+        description="Quais evidências sustentam cada parte da pauta?",
+        status="approved",
+        score=9.5,
+    )
+
+    def structure(prefix, words_per_block):
+        body = " ".join(
+            f"{prefix}{index}" for index in range(words_per_block)
+        )
+        return {
+            "hook": " ".join(["abertura"] * 30),
+            "introduction": " ".join(["contexto"] * 40),
+            "development": [
+                {"heading": "Lançamento", "body": body},
+                {"heading": "Protagonistas", "body": body},
+                {"heading": "Leonida", "body": body},
+                {"heading": "Mundo", "body": body},
+            ],
+            "conclusion": " ".join(["conclusao"] * 30),
+            "cta": " ".join(["cta"] * 10),
+        }
+
+    class ShortSequenceProvider:
+        def __init__(self):
+            self.prompts = []
+            self.responses = [
+                structure("base", 60),
+                structure("curtoA", 25),
+                structure("curtoB", 25),
+            ]
+
+        def generate(self, prompt):
+            self.prompts.append(prompt)
+            return AIResponse(
+                text=json.dumps(
+                    self.responses.pop(0),
+                    ensure_ascii=False,
+                )
+            )
+
+    claims = [
+        {
+            "claim_id": f"claim-{index}",
+            "statement": statement,
+            "source": "https://www.rockstargames.com/VI",
+            "evidence_refs": [f"artifact:claim-{index}"],
+            "fact_check_result": "SUPPORTED",
+        }
+        for index, statement in enumerate(
+            (
+                "GTA VI tem lançamento confirmado para consoles atuais.",
+                "Jason e Lucia são protagonistas ligados pela história.",
+                "Vice City integra o estado de Leonida.",
+                "O mundo oficial apresenta diferentes regiões e atividades.",
+            ),
+            start=1,
+        )
+    ]
+    provider = ShortSequenceProvider()
+
+    with pytest.raises(
+        AIProviderError,
+        match="cannot sustain requested long-form duration",
+    ) as captured:
+        generate_script_structure(
+            idea_id,
+            ai_provider=provider,
+            editorial_context={"verified_claims": claims},
+            target_duration_seconds=1200.0,
+        )
+
+    evidence = getattr(captured.value, "failure_evidence", {})
+    assert evidence["schema"] == "EditorialEvidenceGapFailure/v1"
+    assert evidence["sequence_evidence_gaps"]
+    assert (
+        evidence["global_editorial_qa"]["EVIDENCE_COVERAGE"]
+        == "GAPS_PRESENT"
+    )
+    assert any(
+        float(item["estimated_missing_supported_duration"]) > 0.0
+        for item in evidence["sequence_evidence_gaps"]
+    )
+    assert all(
+        batch["actual_added_supported_duration"]
+        < batch["expansion_target_duration"]
+        for batch in evidence["editorial_sequence_batches_generated"]
+    )
+
+
 def test_story_plan_marks_uncovered_beat_as_sequence_evidence_gap_without_padding():
     from app.services import script_generator_service as generator
 

@@ -851,6 +851,7 @@ def _run_governed_longform_web_acquisition(
     fallback_source_urls: list[str] | tuple[str, ...] = (),
     fallback_parent_task_id: str | None = None,
     fallback_parent_evidence_ref: str | None = None,
+    search_focus: str = "",
 ) -> dict[str, Any]:
     """Use only generic Registry web capabilities for a remaining research gap."""
     if max_sources <= 0:
@@ -919,8 +920,11 @@ def _run_governed_longform_web_acquisition(
                 "goal_id": search_task.goal_id,
                 "objective": search_task.objective,
                 "query": (
-                    f"{selected_topic} GTA VI current verified details "
-                    "Rockstar independent reporting"
+                    str(search_focus or "").strip()[:1800]
+                    or (
+                        f"{selected_topic} GTA VI current verified details "
+                        "Rockstar independent reporting"
+                    )
                 ),
                 "candidate_sources": list(fallback_source_urls)[:10],
                 "evidence_refs": list(search_context.get("evidence_refs") or ())[:24],
@@ -1533,6 +1537,82 @@ def _complete_dynamic_child(
         )
 
 
+def _normalized_sequence_evidence_gaps(
+    value: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        sequence_id = str(item.get("sequence_id") or "").strip()
+        if not sequence_id or sequence_id in seen:
+            continue
+        seen.add(sequence_id)
+        normalized.append({
+            "sequence_id": sequence_id,
+            "missing_questions": [
+                str(entry).strip()
+                for entry in (item.get("missing_questions") or ())
+                if str(entry).strip()
+            ][:6],
+            "missing_claim_types": [
+                str(entry).strip()
+                for entry in (item.get("missing_claim_types") or ())
+                if str(entry).strip()
+            ][:6],
+            "existing_evidence": [
+                str(entry).strip()
+                for entry in (item.get("existing_evidence") or ())
+                if str(entry).strip()
+            ][:24],
+            "duplicate_topics_to_avoid": [
+                str(entry).strip()
+                for entry in (item.get("duplicate_topics_to_avoid") or ())
+                if str(entry).strip()
+            ][:16],
+            "required_novelty": [
+                str(entry).strip()
+                for entry in (item.get("required_novelty") or ())
+                if str(entry).strip()
+            ][:12],
+            "estimated_missing_supported_duration": max(
+                0.0,
+                float(
+                    item.get("estimated_missing_supported_duration")
+                    or 0.0
+                ),
+            ),
+        })
+    return sorted(
+        normalized,
+        key=lambda item: (
+            -float(item["estimated_missing_supported_duration"]),
+            item["sequence_id"],
+        ),
+    )
+
+
+def _sequence_evidence_gap_focus(
+    gaps: list[dict[str, Any]],
+) -> str:
+    lines: list[str] = []
+    for gap in _normalized_sequence_evidence_gaps(gaps)[:8]:
+        questions = "; ".join(gap["missing_questions"])
+        claim_types = "; ".join(gap["missing_claim_types"])
+        avoid = "; ".join(gap["duplicate_topics_to_avoid"][:6])
+        lines.append(
+            f"{gap['sequence_id']}: missing_questions={questions or 'unspecified'}; "
+            f"missing_claim_types={claim_types or 'source-grounded support'}; "
+            f"missing_supported_seconds="
+            f"{float(gap['estimated_missing_supported_duration']):.1f}; "
+            f"avoid_duplicates={avoid or 'none'}"
+        )
+    return "\n".join(lines)[:6000]
+
+
 def _run_bounded_longform_evidence_expansion(
     *,
     broker: HermesHarnessCapabilityBroker,
@@ -1541,6 +1621,7 @@ def _run_bounded_longform_evidence_expansion(
     human_goal: str,
     research_task_id: str,
     round_index: int,
+    sequence_evidence_gaps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if round_index < 1 or round_index > MAX_LONGFORM_EVIDENCE_EXPANSIONS:
         raise RuntimeError("LONGFORM_EVIDENCE_EXPANSION_BUDGET_EXHAUSTED")
@@ -1549,6 +1630,18 @@ def _run_bounded_longform_evidence_expansion(
     selected_topic = str(state.get("selected_topic") or "").strip()
     if not selected_topic:
         raise RuntimeError("LONGFORM_EVIDENCE_EXPANSION_REQUIRES_TOPIC")
+
+    targeted_gaps = _normalized_sequence_evidence_gaps(
+        sequence_evidence_gaps or []
+    )
+    gap_focus = _sequence_evidence_gap_focus(targeted_gaps)
+    targeted_human_goal = human_goal
+    if gap_focus:
+        targeted_human_goal = (
+            human_goal
+            + "\n\nSEQUENCE_EVIDENCE_GAPS_TO_RESOLVE:\n"
+            + gap_focus
+        )
 
     known_ids = {
         str(item.get("claim_id") or "")
@@ -1567,7 +1660,13 @@ def _run_bounded_longform_evidence_expansion(
                 f"{root.objective} Expand fresh source-grounded evidence for "
                 f"the already selected topic '{selected_topic}' with additional "
                 "non-duplicate facts and angles that can support a factual "
-                "20-minute BR no GTA 6 script without filler."
+                "20-minute BR no GTA 6 script without filler. "
+                + (
+                    "Resolve the typed sequence evidence gaps supplied by the "
+                    "failed StoryAssembly."
+                    if targeted_gaps
+                    else ""
+                )
             ),
             "task_class": "fresh-evidence-collection",
             "expected_output": (
@@ -1608,11 +1707,12 @@ def _run_bounded_longform_evidence_expansion(
         "goal_id": research_task.goal_id,
         "objective": research_task.objective,
         "query": (
-            f"{human_goal}\n\nLONGFORM_EVIDENCE_EXPANSION:\n"
+            f"{targeted_human_goal}\n\nLONGFORM_EVIDENCE_EXPANSION:\n"
             f"Selected topic: {selected_topic}\n"
             "Collect additional current, source-grounded GTA VI facts, official "
             "details, implications, contextual angles and independently useful "
             "findings not already represented in the existing evidence. "
+            "Prioritize the supplied sequence evidence gaps when present. "
             "Do not invent facts and do not add filler."
         ),
         "topic": selected_topic,
@@ -1648,9 +1748,13 @@ def _run_bounded_longform_evidence_expansion(
         fresh_recovery = _run_harness_fresh_longform_recovery(
             broker=broker,
             selected_topic=selected_topic,
-            human_goal=human_goal,
+            human_goal=targeted_human_goal,
             round_index=round_index,
-            purpose="INSUFFICIENT_EDITORIAL_EVIDENCE",
+            purpose=(
+                "SEQUENCE_EVIDENCE_GAP"
+                if targeted_gaps
+                else "INSUFFICIENT_EDITORIAL_EVIDENCE"
+            ),
         )
         candidates = _fresh_research_candidates(
             fresh_recovery,
@@ -1684,6 +1788,14 @@ def _run_bounded_longform_evidence_expansion(
         fallback_parent_task_id=research_child_id,
         fallback_parent_evidence_ref=str(
             research_execution.get("evidence_ref") or ""
+        ),
+        search_focus=(
+            (
+                f"{selected_topic} GTA VI verified evidence "
+                + gap_focus
+            )
+            if gap_focus
+            else ""
         ),
     )
     candidates = [
@@ -1860,8 +1972,23 @@ def _run_bounded_longform_evidence_expansion(
     )
     report = {
         "schema": "longform-evidence-expansion/v1",
-        "classification": "INSUFFICIENT_EDITORIAL_EVIDENCE",
+        "classification": (
+            "SEQUENCE_EVIDENCE_GAP"
+            if targeted_gaps
+            else "INSUFFICIENT_EDITORIAL_EVIDENCE"
+        ),
         "round": round_index,
+        "targeted_sequence_gap_count": len(targeted_gaps),
+        "targeted_sequence_ids": [
+            item["sequence_id"] for item in targeted_gaps
+        ],
+        "estimated_missing_supported_duration_seconds": round(
+            sum(
+                float(item["estimated_missing_supported_duration"])
+                for item in targeted_gaps
+            ),
+            3,
+        ),
         "selected_topic": selected_topic,
         "candidate_new_findings": len(candidates),
         "verified_new_findings": len(verified),
@@ -2652,44 +2779,11 @@ def run(
                             recovery,
                         )
 
-                if (
-                    task.capability_id == "editorial.process"
-                    and goal.canonical_state.get(
-                        "governed_web_fabric_preflight_required"
-                    ) is True
-                    and not state.get("governed_web_preflight_attempted")
-                ):
-                    research_task = next(
-                        (
-                            candidate
-                            for candidate in preplan.tasks
-                            if candidate.capability_id == "gta6.research"
-                        ),
-                        None,
-                    )
-                    if research_task is None:
-                        raise RuntimeError(
-                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
-                        )
-                    state["governed_web_preflight_attempted"] = True
-                    expansion = _run_bounded_longform_evidence_expansion(
-                        broker=broker,
-                        board=board,
-                        state=state,
-                        human_goal=human_goal,
-                        research_task_id=research_task.task_id,
-                        round_index=1,
-                    )
-                    state["governed_web_preflight"] = dict(expansion)
-                    _write(
-                        artifact_dir / "longform-evidence-expansion.json",
-                        expansion,
-                    )
-                    if expansion.get("status") != "PASS":
-                        raise RuntimeError(
-                            _longform_expansion_terminal_error(expansion)
-                        )
-
+                # The governed web recovery remains mandatory for any
+                # underdelivered long-form attempt, but it is deferred until the
+                # StoryAssembly exposes typed SequenceEvidenceGap data. This
+                # avoids spending the single bounded recovery budget on generic
+                # research before the missing evidence is known.
                 payload = _payload_for_task(
                     task=task,
                     parent_context=parent_context,
@@ -2709,12 +2803,26 @@ def run(
                     if not _is_longform_underdelivery_failure(failure):
                         raise
                     if state.get("governed_web_preflight_attempted"):
-                        # The one bounded evidence expansion already ran before
-                        # editorial. Do not burn compute retrying the identical
-                        # research path after it still underdelivers.
+                        # The one bounded evidence-gap recovery has already run.
+                        # Never repeat it without a new causal variable.
                         raise RuntimeError(
                             "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
                         ) from failure
+                    sequence_gaps = _normalized_sequence_evidence_gaps(
+                        dict(failure.failure_evidence or {}).get(
+                            "sequence_evidence_gaps"
+                        )
+                    )
+                    if sequence_gaps:
+                        _write(
+                            artifact_dir / "sequence-evidence-gaps.json",
+                            {
+                                "schema": "SequenceEvidenceGapSet/v1",
+                                "mission_id": spec.mission_id,
+                                "task_id": task.task_id,
+                                "gaps": sequence_gaps,
+                            },
+                        )
                     research_task = next(
                         (
                             candidate
@@ -2727,6 +2835,7 @@ def run(
                         raise RuntimeError(
                             "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
                         ) from failure
+                    state["governed_web_preflight_attempted"] = True
                     expansion = _run_bounded_longform_evidence_expansion(
                         broker=broker,
                         board=board,
@@ -2734,6 +2843,7 @@ def run(
                         human_goal=human_goal,
                         research_task_id=research_task.task_id,
                         round_index=1,
+                        sequence_evidence_gaps=sequence_gaps,
                     )
                     if expansion.get("status") != "PASS":
                         _write(
