@@ -146,6 +146,21 @@ class DurableExecutionV3:
           gref:gdict,rref:rdict,iref:intent})
         return commit,grant,record
 
+    def record_dispatch(self,*,snapshot:Any,continuation_id:str,dispatch_receipt:Any)->str:
+        h=snapshot.mission_head; record=self._read(snapshot,h.get("active_continuation_ref") if h else None)
+        if not h or not record or record.get("continuation_id")!=continuation_id:
+            raise PermissionError("STALE_CONTINUATION_NOOP:NOT_CURRENT")
+        if record.get("status") not in {"ISSUED","DISPATCHED"}:
+            raise PermissionError("STALE_CONTINUATION_NOOP:NOT_DISPATCHABLE")
+        dispatched={**record,"status":"DISPATCHED",
+          "dispatch_attempts":int(record.get("dispatch_attempts",0))+1,
+          "dispatch_receipt":dispatch_receipt}
+        dref,_=immutable_ref("continuations",dispatched)
+        pending=[x for x in h.get("pending_outbox_refs",[]) if x]
+        nxt={**h,"state_version":int(h["state_version"])+1,"active_continuation_ref":dref,
+             "pending_outbox_refs":pending}
+        return self.commit(snapshot=snapshot,next_head=nxt,objects={dref:dispatched})
+
     def claim(self,*,snapshot:Any,mission_id:str,continuation_id:str,
               authorization_id:str,claimant_run_id:str)->tuple[str,str,int]:
         h=snapshot.mission_head
