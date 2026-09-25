@@ -428,10 +428,14 @@ def resolve_harness_execution_need(
         raise ValueError("REPLAN requires semantic_requirement")
     requirement = {
         "task_id": f"need-{persisted['sha256'][:12]}",
-        "action": "READ",
-        "authorized_action": "READ",
-        "task_class": "evidence-recovery",
-        "functional_role": "EVIDENCE",
+        # Evidence insufficiency is a semantic research requirement, not the
+        # SYSTEM_IMPROVEMENT EVIDENCE role.  Using that role would incorrectly
+        # force a deterministic-worker execution kind and exclude healthy
+        # Registry research capabilities before ranking.
+        "action": "RESEARCH",
+        "authorized_action": "RESEARCH",
+        "task_class": "fresh-evidence-collection",
+        "functional_role": "GENERAL",
         "required_capability_description": semantic_requirement,
         "objective": semantic_requirement,
         "query": " ".join([
