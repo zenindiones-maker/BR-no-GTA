@@ -983,6 +983,11 @@ def _generate_ai_structure(
             "- Mantenha o mesmo JSON obrigatório; hook/introduction/conclusion/cta podem ser concisos porque somente development será agregado.\n"
         )
         structure = _generate_provider_structure(ai_provider=ai_provider, prompt=attempt_prompt)
+        if (
+            _structure_word_count(structure) >= target_words
+            and len(structure.get("development") or ()) >= minimum_sections
+        ):
+            return structure
         previous_structure = _merge_complementary_longform_structure(previous_structure, structure)
         if (
             _structure_word_count(previous_structure) >= target_words

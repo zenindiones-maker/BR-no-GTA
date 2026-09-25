@@ -870,4 +870,3 @@ def test_story_plan_marks_uncovered_beat_as_sequence_evidence_gap_without_paddin
     assert all("evidence_refs" in item for item in plan["sequences"])
     assert gaps
     assert gaps[0]["estimated_missing_supported_duration"] >= 0.0
-
