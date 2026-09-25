@@ -228,6 +228,41 @@ class DurableExecutionV3:
               "pending_outbox_refs":[*h.get("pending_outbox_refs",[]),ir]})
         return self.commit(snapshot=snapshot,next_head=nxt,objects=objects)
 
+    def plan_operation(self,*,snapshot:Any,claim_id:str,fencing_epoch:int,
+                       logical_operation:str,artifact_hash:str)->tuple[str,OperationRecord]:
+        self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
+        h=snapshot.mission_head
+        operation_id=digest({"mission_id":h["mission_id"],"logical_operation":logical_operation,
+                             "artifact_hash":artifact_hash})
+        record=OperationRecord(operation_id,h["mission_id"],logical_operation,artifact_hash,
+          claim_id,fencing_epoch,"PLANNED")
+        payload=asdict(record); ref,_=immutable_ref("operations",payload)
+        nxt={**h,"state_version":int(h["state_version"])+1,
+             "side_effect_ledger_refs":[*h.get("side_effect_ledger_refs",[]),ref]}
+        return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:payload}),record
+
+    def start_operation(self,*,snapshot:Any,operation_ref:str,claim_id:str,fencing_epoch:int)->str:
+        self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
+        h=snapshot.mission_head; record=self._read(snapshot,operation_ref)
+        if not record or record.get("status")!="PLANNED": raise PermissionError("OPERATION_NOT_PLANNED")
+        started={**record,"status":"STARTED"}; ref,_=immutable_ref("operations",started)
+        refs=[ref if x==operation_ref else x for x in h.get("side_effect_ledger_refs",[])]
+        nxt={**h,"state_version":int(h["state_version"])+1,"side_effect_ledger_refs":refs}
+        return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:started})
+
+    def settle_operation(self,*,snapshot:Any,operation_ref:str,claim_id:str,fencing_epoch:int,
+                         status:str,external_receipt:Any=None)->str:
+        self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
+        if status not in {"SUCCEEDED","FAILED_TYPED","UNKNOWN_RECONCILIATION_REQUIRED"}:
+            raise ValueError("OPERATION_SETTLEMENT_STATUS_INVALID")
+        h=snapshot.mission_head; record=self._read(snapshot,operation_ref)
+        if not record or record.get("status")!="STARTED": raise PermissionError("OPERATION_NOT_STARTED")
+        settled={**record,"status":status,"external_receipt":external_receipt}
+        ref,_=immutable_ref("operations",settled)
+        refs=[ref if x==operation_ref else x for x in h.get("side_effect_ledger_refs",[])]
+        nxt={**h,"state_version":int(h["state_version"])+1,"side_effect_ledger_refs":refs}
+        return self.commit(snapshot=snapshot,next_head=nxt,objects={ref:settled})
+
     def abandon(self,*,snapshot:Any,claim_id:str,claimant_run_conclusion:str)->str:
         h=snapshot.mission_head; record=self._read(snapshot,h.get("active_continuation_ref"))
         if not record or record.get("status")!="CLAIMED" or record.get("claim_id")!=claim_id:
