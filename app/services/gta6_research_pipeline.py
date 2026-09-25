@@ -26,6 +26,16 @@ from app.services.gta6_source_registry_service import (
     classify_gta6_source,
     register_gta6_source,
 )
+from app.integrations.gta6.rockstar_news import ROCKSTAR_NEWSWIRE_URL
+from app.services.harness_authorization_service import issue_harness_authorization
+from app.services.harness_routing_policy_service import (
+    HarnessRoutingRequest,
+    route_harness_request,
+)
+from app.services.web_acquisition_capability_service import (
+    WEB_SOURCE_ACQUIRE,
+    execute_web_source_acquire,
+)
 
 
 def run_gta6_research(
@@ -65,7 +75,44 @@ def run_gta6_research(
         "research_required": True,
     }
 
-    rockstar_monitor = monitor_rockstar_newswire()
+    try:
+        rockstar_monitor = monitor_rockstar_newswire()
+    except RuntimeError:
+        route = route_harness_request(
+            HarnessRoutingRequest(
+                intent="Acquire official Rockstar Newswire after direct monitor transport failure",
+                authorized_action="RESEARCH",
+                domain="web-acquisition",
+                task_class="agent-tool:gta6-rockstar-monitor-recovery",
+                required_capability_id=WEB_SOURCE_ACQUIRE,
+                provider_required=False,
+                fallback_allowed=False,
+                zero_cost_operation=True,
+                learning_required=False,
+            )
+        )
+        web_auth = issue_harness_authorization(
+            authorized_action=route.authorized_action,
+            subject=f"capability:{route.selected_capability_id}",
+            harness_decision_id=route.routing_id,
+            execution_id=execution_id,
+            lineage={
+                "parent_authorization_id": authorization.authorization_id,
+                "parent_subject": authorization.subject,
+                "routing_id": route.routing_id,
+                "capability_id": route.selected_capability_id,
+                "selected_executor_binding": route.selected_executor_binding,
+                "recovery_reason": "ROCKSTAR_DIRECT_MONITOR_TRANSPORT_FAILURE",
+            },
+        )
+        acquired = execute_web_source_acquire(
+            authorization=web_auth,
+            routing_decision=route,
+            payload={"source_url": ROCKSTAR_NEWSWIRE_URL},
+        )
+        rockstar_monitor = monitor_rockstar_newswire(
+            acquired_source=acquired
+        )
 
     rockstar_items = ingest_rockstar_newswire_from_monitor()
 

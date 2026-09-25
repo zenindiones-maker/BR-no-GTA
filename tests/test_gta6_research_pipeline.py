@@ -199,3 +199,42 @@ def test_run_gta6_research_rejects_execution_id_mismatch():
 
     with pytest.raises(PermissionError, match="execution_id mismatch"):
         module.run_gta6_research(context)
+
+def test_run_gta6_research_routes_monitor_transport_failure_through_governed_acquisition(
+    monkeypatch,
+):
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "monitor_rockstar_newswire",
+        lambda **kwargs: (
+            calls.append(("monitor", kwargs))
+            or ({"changed": False} if kwargs else (_ for _ in ()).throw(RuntimeError("302 loop")))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "execute_web_source_acquire",
+        lambda **kwargs: calls.append(("acquire", kwargs)) or {
+            "status": "EXECUTED",
+            "source_url": module.ROCKSTAR_NEWSWIRE_URL,
+            "content": "<html>official</html>",
+            "provenance": {
+                "source_url": module.ROCKSTAR_NEWSWIRE_URL,
+                "transport_provider": "apilayer_scraper",
+            },
+        },
+    )
+    monkeypatch.setattr(module, "ingest_rockstar_newswire_from_monitor", lambda: [])
+    monkeypatch.setattr(module.settings, "ROCKSTAR_QUERY_HASH", None)
+    monkeypatch.setattr(module, "run_gta6_news_pipeline", lambda: [])
+    monkeypatch.setattr(module, "process_gta6_research_results", lambda _results: [])
+    monkeypatch.setattr(module, "get_research_item", lambda _item_id: None)
+
+    result = module.run_gta6_research(_research_context())
+
+    assert [name for name, _ in calls] == ["monitor", "acquire", "monitor"]
+    acquisition = calls[1][1]
+    assert acquisition["payload"]["source_url"] == module.ROCKSTAR_NEWSWIRE_URL
+    assert acquisition["routing_decision"].selected_capability_id == module.WEB_SOURCE_ACQUIRE
+    assert result["rockstar_monitor"] == {"changed": False}
