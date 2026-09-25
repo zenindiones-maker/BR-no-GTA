@@ -1,6 +1,0 @@
-{
-  "source_run_id": 35807059121,
-  "expected_canonical_bytes": 101694,
-  "natural_swarm_live_allowed": false,
-  "purpose": "prove generic bounded ExecutionMissionEnvelope against captured canonical MissionPlan"
-}

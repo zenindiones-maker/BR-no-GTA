@@ -1,5 +1,0 @@
-{
-  "request": "codex-cloud-auth-continuity-focused",
-  "source_head": "eaa9e30b6c7492f3d408d03afa44924c4f9431aa",
-  "scope": "local-vs-cloud-auth-context-and-no-ephemeral-loop"
-}

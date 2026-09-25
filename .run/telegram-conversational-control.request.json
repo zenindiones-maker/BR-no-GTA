@@ -1,7 +1,0 @@
-{
-  "request": "telegram-conversational-control-validation",
-  "source_head": "0bafb8456350ba2661e6be6d02a2225642d3607f",
-  "scope": "exact-query-intelligence-plus-goal-planned-hermes-human-ux",
-  "prerequisite_live_query_run": 35619206864,
-  "prerequisite_live_query_artifact": 10647174236
-}

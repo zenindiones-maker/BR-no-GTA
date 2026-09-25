@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "requested_at": "2026-09-19T04:25:00Z",
-  "base_head": "c22dd45efe4a0ba3722dd2779e138ea81fd3bb09",
-  "purpose": "Re-run full system agent inventory after exact Addy Registry executor test fix.",
-  "job18_unchanged": true,
-  "publication": false
-}

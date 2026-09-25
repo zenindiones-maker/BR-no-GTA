@@ -1,6 +1,0 @@
-schema=br-no-gta-canonical-test-environment-cache/v2
-python=3.12
-base_manifest=requirements.txt
-test_runtime=pytest
-bootstrap=python -m venv .venv; .venv/bin/python -m pip install --upgrade pip; .venv/bin/python -m pip install -r requirements.txt pytest
-verification=.venv/bin/python -m pip check; .venv/bin/python -c import pytest

@@ -1,6 +1,0 @@
-{
-  "request": "DELEGATION_PLANE_LEGACY_BENCHMARK_002",
-  "purpose": "measure legacy roster versus V1 planning after canonical TaskEnvelope fix",
-  "execution_metrics": "DEFER_TO_OPERATIONAL_PROOF",
-  "telegram_egress": 0
-}

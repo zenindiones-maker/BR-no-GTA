@@ -1,7 +1,0 @@
-{
-  "request": "continuous-operation-focused",
-  "source_head": "ce03310e35f9950bb0319fb99b7c5e4576d34013",
-  "scope": "strict-boolean-next-execution-gate",
-  "observed_proof_run": 35590101622,
-  "expected": "CONTINUOUS_FOCUSED_TESTS=PASS"
-}

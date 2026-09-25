@@ -1,0 +1,1 @@
+{"schema":"HarnessStateBranch/v1","purpose":"durable-state-only","allowed_namespaces":["missions/","objects/","metadata/"],"code_workflows_present":false}
