@@ -97,6 +97,7 @@ MAX_LONGFORM_EVIDENCE_EXPANSIONS = 1
 MAX_LONGFORM_EXPANSION_FACT_CHECKS = 6
 MAX_LONGFORM_EDITORIAL_CLAIMS = 24
 MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS = 2
+MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS = 1
 MAX_LONGFORM_FRESH_SECONDARY_FACT_CHECKS = 2
 MAX_LONGFORM_RECOVERY_CHILD_TASKS = 8
 
@@ -569,12 +570,14 @@ def _web_acquisition_slots(candidates: list[dict[str, Any]]) -> int:
     )
     # Reserve the unchanged eight-child recovery budget:
     # research(1) + fresh fact-checks(<=2) + discovery(1)
-    # + source/fact-check pairs(2 each).
+    # + one explicit evidence snapshot + source/fact-check pairs.
+    snapshot_reserve = min(1, MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS)
     remaining = (
         MAX_LONGFORM_RECOVERY_CHILD_TASKS
         - 1
         - pending_fact_checks
         - 1
+        - snapshot_reserve
     )
     return min(
         MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
@@ -662,19 +665,57 @@ def _longform_fallback_source_urls(
     return [*diverse, *deferred]
 
 
-def _web_transport_unavailable(exc: BaseException) -> bool:
+def _classify_web_failure(exc: BaseException) -> str:
     text = _exception_chain_text(exc).casefold()
-    return any(
-        marker in text
-        for marker in (
-            "apilayer_api_key_required",
-            "apilayer_product_auth_required",
-            "free_quota_exhausted",
-            "apilayer free quota is unavailable",
-            "apilayerauthrequired",
-            "zerocostpolicyerror",
-        )
-    )
+    if any(marker in text for marker in (
+        "apilayer_subscription_required",
+        "apilayer_product_auth_required",
+    )):
+        return "API_SUBSCRIPTION_REQUIRED"
+    if any(marker in text for marker in (
+        "apilayer_api_key_required",
+        "apilayer_authentication_failed",
+    )):
+        return "AUTHENTICATION"
+    if any(marker in text for marker in (
+        "free_quota_exhausted",
+        "apilayer free quota is unavailable",
+        "zerocostpolicyerror",
+    )):
+        return "FREE_QUOTA_EXHAUSTED"
+    if any(marker in text for marker in (
+        "endpoint_request_contract",
+        "requires query",
+        "requires http(s)",
+        "snapshot_required=true",
+    )):
+        return "ENDPOINT_REQUEST_CONTRACT"
+    if any(marker in text for marker in (
+        "normalization_failed",
+        "invalid_json",
+        "not_pdf",
+        "exceeds_bounded_limit",
+    )):
+        return "NORMALIZATION"
+    if any(marker in text for marker in (
+        "routing mismatch",
+        "executor routing mismatch",
+        "authorization mismatch",
+        "permissionerror",
+    )):
+        return "HARNESS_AUTHORIZATION"
+    if "provenance" in text:
+        return "PROVENANCE"
+    return "TRANSPORT"
+
+
+def _web_transport_unavailable(exc: BaseException) -> bool:
+    return _classify_web_failure(exc) in {
+        "AUTHENTICATION",
+        "API_SUBSCRIPTION_REQUIRED",
+        "FREE_QUOTA_EXHAUSTED",
+        "TRANSPORT",
+    }
 
 
 def _finish_unavailable_recovery_child(
@@ -683,17 +724,18 @@ def _finish_unavailable_recovery_child(
     proposal: dict[str, Any],
     run_id: int,
     reason: str,
+    failure_class: str,
 ) -> None:
     board_task_id = str(proposal.get("board_task_id") or "").strip()
     if not board_task_id:
         return
     if not board.complete(
         board_task_id,
-        summary="ZERO_COST_WEB_TRANSPORT_UNAVAILABLE",
+        summary=f"ZERO_COST_WEB_CAPABILITY_BLOCKED:{failure_class}",
         run_id=run_id,
         metadata={
-            "status": "TRANSPORT_UNAVAILABLE",
-            "failure_class": "ZERO_COST_TRANSPORT_UNAVAILABLE",
+            "status": "WEB_CAPABILITY_BLOCKED",
+            "failure_class": failure_class,
             "reason": str(reason)[:800],
         },
     ):
@@ -793,14 +835,16 @@ def _run_governed_longform_web_acquisition(
             dependency_context=search_context,
         )
     except DelegatedCapabilityFailure as exc:
+        failure_class = _classify_web_failure(exc)
         if not _web_transport_unavailable(exc):
             raise
-        discovery_state = "BLOCKED_ZERO_COST_TRANSPORT"
+        discovery_state = f"BLOCKED_{failure_class}"
         _finish_unavailable_recovery_child(
             board=board,
             proposal=search_proposal,
             run_id=search_run_id,
             reason=_exception_chain_text(exc),
+            failure_class=failure_class,
         )
     else:
         _complete_dynamic_child(
@@ -874,6 +918,10 @@ def _run_governed_longform_web_acquisition(
     transports: list[str] = []
     successful_acquisitions = 0
     blocked_acquisitions = 0
+    snapshot_attempt_count = 0
+    snapshot_success_count = 0
+    snapshot_refs: list[str] = []
+    snapshot_failure_classes: list[str] = []
 
     for index, item in enumerate(selected_results, start=1):
         source_url = str(item.get("url") or "").strip()
@@ -952,6 +1000,7 @@ def _run_governed_longform_web_acquisition(
                 dependency_context=acquire_context,
             )
         except DelegatedCapabilityFailure as exc:
+            failure_class = _classify_web_failure(exc)
             if not _web_transport_unavailable(exc):
                 raise
             _finish_unavailable_recovery_child(
@@ -959,6 +1008,7 @@ def _run_governed_longform_web_acquisition(
                 proposal=acquire_proposal,
                 run_id=acquire_run_id,
                 reason=_exception_chain_text(exc),
+                failure_class=failure_class,
             )
             blocked_acquisitions += 1
             continue
@@ -978,6 +1028,149 @@ def _run_governed_longform_web_acquisition(
             or provenance.get("source_url")
             or source_url
         ).strip()
+        required_provenance = (
+            "source_url",
+            "retrieved_at",
+            "content_hash",
+            "execution_id",
+            "authorization_id",
+        )
+        if any(
+            not str(provenance.get(key) or "").strip()
+            for key in required_provenance
+        ):
+            raise RuntimeError(
+                "WEB_PROVENANCE_INVALID:source_acquisition"
+            )
+        acquire_ref = str(acquire_execution.get("evidence_ref") or "").strip()
+        if acquire_ref:
+            refs.append(acquire_ref)
+
+        snapshot_ref = ""
+        snapshot_provenance: dict[str, Any] = {}
+        if snapshot_attempt_count < MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS:
+            snapshot_attempt_count += 1
+            snapshot_parent = broker._task(acquire_id)
+            snapshot_id = f"{acquire_id}-snapshot"
+            snapshot_proposal = broker.propose_child_task(
+                parent_task_id=acquire_id,
+                depth=3,
+                child={
+                    "task_id": snapshot_id,
+                    "capability_id": "web.evidence.snapshot",
+                    "action": "RESEARCH",
+                    "objective": (
+                        f"{snapshot_parent.objective} Capture one explicit bounded "
+                        "evidence snapshot for the acquired original source."
+                    ),
+                    "task_class": "research-gap-evidence-snapshot",
+                    "expected_output": (
+                        "bounded PDF evidence snapshot with original-source provenance"
+                    ),
+                    "acceptance_criteria": (
+                        "snapshot_required=true",
+                        "original source URL preserved",
+                        "zero-cost quota respected",
+                    ),
+                    "read_scope": list(snapshot_parent.read_scope),
+                    "write_scope": (),
+                    "allowed_tools": list(snapshot_parent.allowed_tools),
+                    "allowed_side_effects": list(snapshot_parent.allowed_side_effects),
+                    "time_budget_seconds": min(
+                        int(snapshot_parent.time_budget_seconds),
+                        60,
+                    ),
+                    "cost_budget": 0.0,
+                    "context_budget_bytes": min(
+                        int(snapshot_parent.context_budget_bytes),
+                        32768,
+                    ),
+                    "tool_budget": int(snapshot_parent.tool_budget),
+                    "retry_budget": 0,
+                    "risk_side_effect_class": "READ_ONLY",
+                    "evidence_contract": (
+                        "PDF sha256 + original-source provenance + quota evidence"
+                    ),
+                    "review_policy": snapshot_parent.review_policy,
+                    "human_gate_policy": snapshot_parent.human_gate_policy,
+                },
+            )
+            broker.submit_handoff(
+                from_task_id=acquire_id,
+                to_task_id=snapshot_id,
+                evidence_refs=[acquire_ref],
+                summary=(
+                    "Governed source acquisition handed the original URL to one "
+                    "explicit bounded evidence snapshot."
+                ),
+            )
+            snapshot_run_id = _claim_dynamic_child(board, snapshot_proposal)
+            snapshot_task = broker._task(snapshot_id)
+            snapshot_context = broker.parent_context(task_id=snapshot_id)
+            try:
+                snapshot_execution = broker.execute_delegated_capability(
+                    task_id=snapshot_id,
+                    capability_id="web.evidence.snapshot",
+                    payload={
+                        "mission_id": snapshot_task.mission_id,
+                        "task_id": snapshot_task.task_id,
+                        "goal_id": snapshot_task.goal_id,
+                        "objective": snapshot_task.objective,
+                        "source_url": original_url,
+                        "snapshot_required": True,
+                        "evidence_refs": list(
+                            snapshot_context.get("evidence_refs") or ()
+                        )[:24],
+                    },
+                    dependency_context=snapshot_context,
+                )
+            except DelegatedCapabilityFailure as exc:
+                failure_class = _classify_web_failure(exc)
+                if not _web_transport_unavailable(exc):
+                    raise
+                snapshot_failure_classes.append(failure_class)
+                _finish_unavailable_recovery_child(
+                    board=board,
+                    proposal=snapshot_proposal,
+                    run_id=snapshot_run_id,
+                    reason=_exception_chain_text(exc),
+                    failure_class=failure_class,
+                )
+            else:
+                _complete_dynamic_child(
+                    board=board,
+                    proposal=snapshot_proposal,
+                    execution=snapshot_execution,
+                    run_id=snapshot_run_id,
+                )
+                snapshot_result = _result_payload(snapshot_execution)
+                if not isinstance(snapshot_result, dict):
+                    raise RuntimeError(
+                        "WEB_PROVENANCE_INVALID:evidence_snapshot"
+                    )
+                snapshot_provenance = dict(
+                    snapshot_result.get("provenance") or {}
+                )
+                if any(
+                    not str(snapshot_provenance.get(key) or "").strip()
+                    for key in required_provenance
+                ):
+                    raise RuntimeError(
+                        "WEB_PROVENANCE_INVALID:evidence_snapshot"
+                    )
+                snapshot_ref = str(
+                    snapshot_execution.get("evidence_ref") or ""
+                ).strip()
+                if snapshot_ref:
+                    snapshot_refs.append(snapshot_ref)
+                    refs.append(snapshot_ref)
+                snapshot_success_count += 1
+                snapshot_transport = str(
+                    snapshot_provenance.get("transport_provider") or ""
+                ).strip()
+                if snapshot_transport:
+                    transports.append(snapshot_transport)
+
         statement = _web_source_statement(
             acquired,
             selected_topic=selected_topic,
@@ -990,9 +1183,6 @@ def _run_governed_longform_web_acquisition(
         if claim_id in known_ids:
             continue
         known_ids.add(claim_id)
-        acquire_ref = str(acquire_execution.get("evidence_ref") or "").strip()
-        if acquire_ref:
-            refs.append(acquire_ref)
         transport = str(provenance.get("transport_provider") or "").strip()
         if transport:
             transports.append(transport)
@@ -1014,13 +1204,23 @@ def _run_governed_longform_web_acquisition(
             "novelty": "GOVERNED_WEB_RESEARCH_GAP",
             "how_used_in_video": "candidate longform editorial finding",
             "evidence_refs": [
-                item for item in (acquire_ref, original_url) if item
+                item for item in (acquire_ref, snapshot_ref, original_url) if item
             ],
             "web_provenance": provenance,
+            "web_snapshot_provenance": snapshot_provenance or None,
             "_fact_check_parent_task_id": acquire_id,
             "_fact_check_parent_evidence_ref": acquire_ref,
         })
 
+    snapshot_status = (
+        "PASS"
+        if snapshot_success_count > 0
+        else (
+            f"BLOCKED_{snapshot_failure_classes[0]}"
+            if snapshot_failure_classes
+            else "NOT_REQUIRED"
+        )
+    )
     return {
         "status": "PASS" if candidates else "INSUFFICIENT",
         "candidates": candidates,
@@ -1031,12 +1231,20 @@ def _run_governed_longform_web_acquisition(
             successful_count=successful_acquisitions,
             blocked_count=blocked_acquisitions,
         ),
+        "WEB_EVIDENCE_SNAPSHOT_GOVERNED": snapshot_status,
+        "PROVENANCE": "PASS" if candidates else "INSUFFICIENT",
         "web_source_selected_count": len(selected_results),
         "web_source_successful_acquisition_count": successful_acquisitions,
         "web_source_blocked_acquisition_count": blocked_acquisitions,
+        "web_snapshot_attempt_count": snapshot_attempt_count,
+        "web_snapshot_success_count": snapshot_success_count,
+        "web_snapshot_failure_classes": list(
+            dict.fromkeys(snapshot_failure_classes)
+        ),
         "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
         "transport_providers": list(dict.fromkeys(transports)),
-        "snapshot_used": False,
+        "snapshot_used": snapshot_success_count > 0,
+        "snapshot_evidence_refs": list(dict.fromkeys(snapshot_refs)),
     }
 
 
@@ -1573,6 +1781,33 @@ def _run_bounded_longform_evidence_expansion(
         "WEB_SOURCE_ACQUISITION_GOVERNED": web_recovery.get(
             "WEB_SOURCE_ACQUISITION_GOVERNED"
         ),
+        "WEB_EVIDENCE_SNAPSHOT_GOVERNED": web_recovery.get(
+            "WEB_EVIDENCE_SNAPSHOT_GOVERNED"
+        ),
+        "PROVENANCE": web_recovery.get("PROVENANCE"),
+        "web_source_selected_count": int(
+            web_recovery.get("web_source_selected_count") or 0
+        ),
+        "web_source_successful_acquisition_count": int(
+            web_recovery.get("web_source_successful_acquisition_count") or 0
+        ),
+        "web_snapshot_attempt_count": int(
+            web_recovery.get("web_snapshot_attempt_count") or 0
+        ),
+        "web_snapshot_success_count": int(
+            web_recovery.get("web_snapshot_success_count") or 0
+        ),
+        "web_snapshot_failure_classes": list(
+            web_recovery.get("web_snapshot_failure_classes") or ()
+        ),
+        "new_source_count": len({
+            str(item.get("source") or "").strip()
+            for item in candidates
+            if str(item.get("source") or "").strip()
+        }),
+        "rejected_new_findings": max(0, len(candidates) - len(verified)),
+        "supported_new_findings": len(verified),
+        "evidence_added_to_editorial": len(verified),
         "APILAYER_DIRECT_FALLBACK_ONLY": web_recovery.get(
             "APILAYER_DIRECT_FALLBACK_ONLY"
         ),
@@ -2237,6 +2472,7 @@ def run(
             "gta6.fact-check",
             "web.search.discover",
             "web.source.acquire",
+            "web.evidence.snapshot",
         ),
     )
 

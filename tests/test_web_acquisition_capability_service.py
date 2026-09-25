@@ -149,6 +149,42 @@ def test_search_missing_secret_is_product_scoped_auth_required(monkeypatch):
         )
 
 
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, "APILAYER_AUTHENTICATION_FAILED"),
+        (403, "APILAYER_SUBSCRIPTION_REQUIRED"),
+    ],
+)
+def test_apilayer_http_auth_and_subscription_failures_are_distinct(
+    monkeypatch,
+    status,
+    expected,
+):
+    web._QUOTA_STATE.clear()
+    monkeypatch.setenv("APILAYER_API_KEY", "fixture-key")
+    monkeypatch.setattr(
+        web.request,
+        "urlopen",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            error.HTTPError(
+                "https://api.apilayer.com/google_search",
+                status,
+                "fixture",
+                {},
+                None,
+            )
+        ),
+    )
+    route = _route(web.WEB_SEARCH_DISCOVER)
+    with pytest.raises(web.APILayerAuthRequired, match=expected):
+        web.execute_web_search_discover(
+            authorization=_auth(route),
+            routing_decision=route,
+            payload={"query": "GTA 6"},
+        )
+
+
 def test_quota_exhaustion_blocks_apilayer_without_paid_upgrade(monkeypatch):
     web._QUOTA_STATE.clear()
     monkeypatch.setenv("APILAYER_API_KEY", "fixture-key")

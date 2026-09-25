@@ -204,9 +204,17 @@ def _apilayer_request(
                 ZeroCostFailureReason.FREE_QUOTA_EXHAUSTED,
                 "APILayer free quota is unavailable",
             ) from None
-        if int(exc.code) in {401, 403}:
+        if int(exc.code) == 401:
             raise APILayerAuthRequired(
-                "APILAYER_PRODUCT_AUTH_REQUIRED"
+                "APILAYER_AUTHENTICATION_FAILED"
+            ) from None
+        if int(exc.code) == 403:
+            raise APILayerAuthRequired(
+                "APILAYER_SUBSCRIPTION_REQUIRED"
+            ) from None
+        if int(exc.code) in {400, 404, 405, 422}:
+            raise APILayerTransportError(
+                "APILAYER_ENDPOINT_REQUEST_CONTRACT_FAILED"
             ) from None
         raise APILayerTransportError(
             f"APILAYER_HTTP_{int(exc.code)}"
@@ -379,7 +387,7 @@ def execute_web_search_discover(
         decoded = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise APILayerTransportError(
-            "APILAYER_SEARCH_INVALID_JSON"
+            "APILAYER_SEARCH_NORMALIZATION_FAILED"
         ) from None
     candidates = []
     if isinstance(decoded, dict):
@@ -529,7 +537,7 @@ def execute_web_evidence_snapshot(
     )
     if not raw.startswith(b"%PDF"):
         raise APILayerTransportError(
-            "APILAYER_SNAPSHOT_NOT_PDF"
+            "APILAYER_SNAPSHOT_NORMALIZATION_FAILED"
         )
     if len(raw) > MAX_SNAPSHOT_BYTES:
         raise APILayerTransportError(

@@ -27,10 +27,12 @@ from scripts.real_multi_agent_production import (
     MAX_LONGFORM_EVIDENCE_EXPANSIONS,
     MAX_LONGFORM_EXPANSION_FACT_CHECKS,
     MAX_LONGFORM_RECOVERY_CHILD_TASKS,
+    MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS,
     MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS,
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _classify_web_failure,
     _fresh_research_candidates,
     _governed_web_acquisition_status,
     _is_longform_underdelivery_failure,
@@ -948,6 +950,7 @@ def test_fresh_research_candidates_deduplicate_known_claim_ids():
 def test_longform_web_gap_budget_reserves_sources_without_expanding_child_budget():
     assert MAX_LONGFORM_RECOVERY_CHILD_TASKS == 8
     assert MAX_LONGFORM_WEB_SOURCE_ACQUISITIONS == 2
+    assert MAX_LONGFORM_WEB_EVIDENCE_SNAPSHOTS == 1
 
     full = [
         {
@@ -967,9 +970,36 @@ def test_longform_web_gap_budget_reserves_sources_without_expanding_child_budget
         }
         for index in range(MAX_LONGFORM_EXPANSION_FACT_CHECKS)
     ]
-    # Only two fresh secondary checks are admitted, leaving exactly enough
-    # room for discovery + two source/fact-check pairs under the same 8-child cap.
-    assert _web_acquisition_slots(pending) == 2
+    # With two fresh secondary checks, reserve one explicit snapshot and keep
+    # the unchanged eight-child ceiling. One source/fact-check pair still fits.
+    assert _web_acquisition_slots(pending) == 1
+
+
+def test_web_failure_taxonomy_matches_nightly_recovery_contract():
+    assert _classify_web_failure(
+        RuntimeError("APILAYER_API_KEY_REQUIRED")
+    ) == "AUTHENTICATION"
+    assert _classify_web_failure(
+        RuntimeError("APILAYER_SUBSCRIPTION_REQUIRED")
+    ) == "API_SUBSCRIPTION_REQUIRED"
+    assert _classify_web_failure(
+        RuntimeError("FREE_QUOTA_EXHAUSTED")
+    ) == "FREE_QUOTA_EXHAUSTED"
+    assert _classify_web_failure(
+        RuntimeError("APILAYER_ENDPOINT_REQUEST_CONTRACT_FAILED")
+    ) == "ENDPOINT_REQUEST_CONTRACT"
+    assert _classify_web_failure(
+        RuntimeError("APILAYER_TRANSPORT_FAILED")
+    ) == "TRANSPORT"
+    assert _classify_web_failure(
+        RuntimeError("APILAYER_SEARCH_NORMALIZATION_FAILED")
+    ) == "NORMALIZATION"
+    assert _classify_web_failure(
+        PermissionError("web acquisition capability routing mismatch")
+    ) == "HARNESS_AUTHORIZATION"
+    assert _classify_web_failure(
+        RuntimeError("WEB_PROVENANCE_INVALID:source_acquisition")
+    ) == "PROVENANCE"
 
 
 def test_longform_web_gap_allows_two_governed_sources_after_official_research():
