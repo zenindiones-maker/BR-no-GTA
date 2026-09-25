@@ -2895,18 +2895,131 @@ def run(
                         payload["harness_resolved_need_ref"] = str(
                             lifecycle["persisted_need"]["need_ref"]
                         )
-                    execution = broker.execute_delegated_capability(
-                        task_id=task_id,
-                        capability_id=task.capability_id,
-                        payload=payload,
-                        retry_attempt=min(
-                            failure.retry_attempt + 1,
-                            int(task.retry_budget),
-                        ),
-                        dependency_context=(
-                            parent_context if task.dependencies else None
-                        ),
-                    )
+                    # The preferred 25-minute target is not a license to
+                    # discard valid work when the evidence-bounded composition
+                    # proves underdelivery. After a real long-form evidence
+                    # replan, retain the canonical product floor (20 minutes)
+                    # as the fail-closed acceptance target and extend the
+                    # persisted partial result toward only the residual gap.
+                    if _is_longform_underdelivery_failure(failure):
+                        state["target_duration_seconds"] = (
+                            _longform_retry_target_seconds(
+                                state.get("target_duration_seconds")
+                            )
+                        )
+                        payload["target_duration_seconds"] = state[
+                            "target_duration_seconds"
+                        ]
+                    try:
+                        execution = broker.execute_delegated_capability(
+                            task_id=task_id,
+                            capability_id=task.capability_id,
+                            payload=payload,
+                            retry_attempt=min(
+                                failure.retry_attempt + 1,
+                                int(task.retry_budget),
+                            ),
+                            dependency_context=(
+                                parent_context if task.dependencies else None
+                            ),
+                        )
+                    except DelegatedCapabilityFailure as residual_failure:
+                        # A valid resumed partial may still be slightly below
+                        # the 20-minute product floor. Preserve that newer
+                        # partial and allow one more Harness-owned semantic
+                        # replan/resume cycle; never regenerate from zero.
+                        if (
+                            not _is_longform_underdelivery_failure(
+                                residual_failure
+                            )
+                            or not residual_failure.need.get(
+                                "usable_partial_result_ref"
+                            )
+                        ):
+                            raise
+                        residual_lifecycle = execute_harness_execution_need(
+                            mission_plan={
+                                "mission_id": spec.mission_id,
+                                "plan_id": plan.plan_id,
+                                "goal": goal.to_dict(),
+                            },
+                            need=residual_failure.need,
+                            planning_context=planning_context,
+                            artifact_dir=artifact_dir / "harness",
+                            used_capability_ids={
+                                item.capability_id for item in preplan.tasks
+                            },
+                            execute_resolved_capability=lambda **resolved: (
+                                broker.execute_harness_resolved_need(
+                                    causal_task_id=task_id,
+                                    selected_capability_id=resolved[
+                                        "selected_capability_id"
+                                    ],
+                                    semantic_requirement=resolved[
+                                        "semantic_requirement"
+                                    ],
+                                    need_ref=resolved["need_ref"],
+                                    input_artifact_refs=resolved[
+                                        "input_artifact_refs"
+                                    ],
+                                )
+                            ),
+                        )
+                        if residual_lifecycle.get("execution") is None:
+                            raise
+                        residual_partial_ref = str(
+                            residual_lifecycle["persisted_need"]["need"].get(
+                                "usable_partial_result_ref"
+                            )
+                            or ""
+                        ).strip()
+                        if not residual_partial_ref:
+                            raise
+                        residual_partial = broker.load_persisted_partial_result(
+                            task_result_ref=residual_partial_ref
+                        )
+                        residual_resolved = dict(
+                            residual_lifecycle.get("execution") or {}
+                        )
+                        residual_resolved_ref = str(
+                            residual_resolved.get("task_result_ref")
+                            or residual_resolved.get("evidence_ref")
+                            or ""
+                        ).strip()
+                        payload["partial_result_ref"] = residual_partial_ref
+                        payload["partial_result"] = residual_partial[
+                            "partial_result"
+                        ]
+                        payload["resume_mode"] = "EXTEND_VALID_PARTIAL"
+                        payload["target_duration_seconds"] = (
+                            _longform_retry_target_seconds(
+                                state.get("target_duration_seconds")
+                            )
+                        )
+                        payload["evidence_refs"] = list(dict.fromkeys([
+                            *list(payload.get("evidence_refs") or ()),
+                            residual_partial_ref,
+                            *(
+                                [residual_resolved_ref]
+                                if residual_resolved_ref
+                                else []
+                            ),
+                        ]))
+                        payload["harness_resolved_need_ref"] = str(
+                            residual_lifecycle["persisted_need"]["need_ref"]
+                        )
+                        execution = broker.execute_delegated_capability(
+                            task_id=task_id,
+                            capability_id=task.capability_id,
+                            payload=payload,
+                            retry_attempt=min(
+                                residual_failure.retry_attempt + 1,
+                                int(task.retry_budget),
+                            ),
+                            dependency_context=(
+                                parent_context if task.dependencies else None
+                            ),
+                        )
                 _observe_execution(task=task, execution=execution, state=state)
                 if not board.complete(
                     task_mapping[task_id],
