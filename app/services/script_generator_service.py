@@ -898,7 +898,7 @@ def _build_sequence_batch_prompt(
         description=description,
         research_context=research_context,
         editorial_context=bounded_context,
-        target_duration_seconds=None,
+        target_duration_seconds=float(batch["target_duration"]),
     )
     target_minutes = float(batch["target_duration"]) / 60.0
     sequence_lines: list[str] = []
