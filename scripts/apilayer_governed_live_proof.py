@@ -179,6 +179,8 @@ def main() -> int:
                 intent="bounded APILayer live proof through canonical web fabric",
                 authorized_action="EXECUTION",
                 domain="collaboration",
+                task_class="apilayer-governed-live-proof",
+                goal_id="goal-apilayer-live-proof",
                 required_capability_id=HERMES_RUNTIME_CAPABILITY_ID,
                 fallback_allowed=False,
                 provider_required=False,
