@@ -113,9 +113,9 @@ jobs:
             mkdir -p artifacts/real-multi-agent-production
             cp -a .resume-checkpoint/artifacts/real-multi-agent-production/. artifacts/real-multi-agent-production/
           fi
-          if [ -f artifacts/real-multi-agent-production/durable-mission-state.json ]; then
-            cp artifacts/real-multi-agent-production/durable-mission-state.json \\
-              artifacts/real-multi-agent-production/previous-durable-mission-state.json
+          if [ -f artifacts/real-multi-agent-production/harness-mission-state.json ]; then
+            cp artifacts/real-multi-agent-production/harness-mission-state.json \\
+              artifacts/real-multi-agent-production/previous-harness-mission-state.json
           fi
           echo "CHECKPOINT_REHYDRATION=PASS"
           echo "COMPLETED_WORK_NOT_REEXECUTED=ENFORCED_BY_TASK_RESULT_IDEMPOTENCY"
@@ -558,8 +558,13 @@ jobs:
               "YOUTUBE_REVIEW_VIDEO_ID":final.get("YOUTUBE_REVIEW_VIDEO_ID"),
           }
           (root/"final-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
-          # Durable mission state is the cross-run source of continuation truth.
-          # A workflow process ending is not equivalent to the human mission ending.
+          # HarnessMissionState/v2 is the single canonical cross-run mission state.
+          # The workflow only reconciles observed worker outputs; terminality and
+          # continuation authority remain in HarnessMissionSupervisor.
+          from app.services.harness_mission_supervisor_service import (
+              HarnessMissionState,
+              HarnessMissionSupervisor,
+          )
           partials=[]
           for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
               try: row=json.loads(path.read_text())
@@ -576,39 +581,64 @@ jobs:
                   minutes=float(m.group(1)) if m else None
               partials.append({"task_id":row.get("task_id"),"task_result_ref":f"artifact:task-results/{path.name}","minutes":minutes,"failure_class":"INSUFFICIENT_EVIDENCE"})
           latest=partials[-1] if partials else {}
-          previous={}
-          previous_path=root/"previous-durable-mission-state.json"
-          if previous_path.is_file():
-              try: previous=json.loads(previous_path.read_text())
-              except Exception: previous={}
-          current_minutes=float(latest.get("minutes") or 0.0)
-          previous_minutes=float(previous.get("mission_progress",{}).get("content_supported_duration_minutes") or 0.0)
-          progress=current_minutes > previous_minutes + 0.001
-          failure_signature=(f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}" if latest else "")
-          repeated=(failure_signature and failure_signature==previous.get("failure_signature"))
-          terminal=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING"
-          correctable=bool(latest) and not terminal and not repeated
-          durable={
-              "schema":"DurableMissionState/v1",
-              "mission_key":os.environ.get("BR_DURABLE_MISSION_KEY"),
+          mission_id=str(pre.get("MISSION_ID") or os.environ.get("BR_DURABLE_MISSION_KEY") or f"production-{os.environ.get('GITHUB_SHA','unknown')}")
+          goal_id=str(product.get("goal_id") or pre.get("GOAL_ID") or mission_id)
+          goal_contract={
               "objective":"MASTER_FINAL>=20min -> FINAL_QA PASS -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING",
-              "source_run_id":int(os.environ["GITHUB_RUN_ID"]),
-              "source_run_attempt":int(os.environ.get("GITHUB_RUN_ATTEMPT","1")),
-              "continuation_count":int(os.environ.get("BR_CONTINUATION_COUNT","0")),
-              "terminal":terminal,
-              "mission_state":"HUMAN_REVIEW_PENDING" if terminal else "MISSION_NOT_TERMINAL",
-              "current_blocker":latest or None,
-              "failure_signature":failure_signature or None,
-              "repeated_failure_signature":bool(repeated),
-              "correctable_failure":bool(correctable),
-              "next_action_required":bool(correctable),
-              "resume_scope":"MINIMAL_AFFECTED_SUBGRAPH",
-              "valid_artifacts_preserved":True,
-              "partial_results":partials[-8:],
-              "mission_progress":{"content_supported_duration_minutes":current_minutes,"improved_from_previous_checkpoint":progress},
-              "loop_guard":{"blind_retry_forbidden":True,"same_signature_requires_different_replan":True,"max_autonomous_continuations":6},
+              "youtube_visibility":"private",
+              "human_terminal":"HUMAN_REVIEW_PENDING",
           }
-          (root/"durable-mission-state.json").write_text(json.dumps(durable,ensure_ascii=False,indent=2),encoding="utf-8")
+          mission=HarnessMissionState(
+              mission_id=mission_id,
+              goal_id=goal_id,
+              goal_contract=goal_contract,
+              artifact_dir=root,
+          )
+          previous_ledger=list(mission.state.get("progress_ledger") or ())
+          previous_minutes=float((previous_ledger[-1].get("mission_metric_after") if previous_ledger else 0.0) or 0.0)
+          current_minutes=float(latest.get("minutes") or previous_minutes or 0.0)
+          failure_signature=(f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}" if latest else None)
+          mission.state["partial_results"]=partials[-8:]
+          mission.state["artifact_lineage"].update({
+              "product":"artifact:product.json" if product else None,
+              "master_qa":"artifact:master-qa.json" if master else None,
+              "final":"artifact:delivery/final.json" if final else None,
+          })
+          mission.record_progress(
+              objective_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
+              new_information=current_minutes > previous_minutes + 0.001,
+              artifact_created=(latest.get("task_result_ref") if latest else None),
+              artifact_consumed=None,
+              mission_metric_before=previous_minutes,
+              mission_metric_after=current_minutes,
+              remaining_requirements=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["CONTINUE_ORIGINAL_PRODUCTION"]),
+              failure_signature=failure_signature,
+              duplicate_work=False,
+              discarded_output=False,
+              strategy="MINIMAL_AFFECTED_SUBGRAPH",
+          )
+          supervisor=HarnessMissionSupervisor(mission)
+          decision=supervisor.evaluate(
+              goal_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
+              remaining_requirements=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["CONTINUE_ORIGINAL_PRODUCTION"]),
+              eligible_capability_ids=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["harness.semantic.requirement.resolve"]),
+              budget_available=int(os.environ.get("BR_CONTINUATION_COUNT","0") or 0) < 6,
+              authorized_action_available=True,
+              failure_signature=failure_signature,
+              strategy="MINIMAL_AFFECTED_SUBGRAPH",
+          )
+          mission.state["source_run_id"]=int(os.environ["GITHUB_RUN_ID"])
+          mission.state["source_run_attempt"]=int(os.environ.get("GITHUB_RUN_ATTEMPT","1"))
+          mission.state["continuation_count"]=int(os.environ.get("BR_CONTINUATION_COUNT","0") or 0)
+          mission.state["supervisor_decision"]={
+              "action":decision.action,
+              "reason":decision.reason,
+              "next_transition":decision.next_transition,
+              "same_route_forbidden":decision.same_route_forbidden,
+          }
+          mission._persist()
+          print("SINGLE_CANONICAL_MISSION_STATE=PASS")
+          print("HARNESS_SUPERVISOR=PASS")
           print("FINAL_PRODUCTION_STATE="+str(report["FINAL_PRODUCTION_STATE"]))
           print("YOUTUBE_PUBLICATION="+str(report["YOUTUBE_PUBLICATION"]))
           print("CODEX_CHECKPOINT_PRESERVED=PASS")
@@ -631,15 +661,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          STATE=artifacts/real-multi-agent-production/durable-mission-state.json
+          STATE=artifacts/real-multi-agent-production/harness-mission-state.json
           test -f "$STATE" || { echo "DURABLE_MISSION_STATE_MISSING"; exit 0; }
           eval "$(python - <<'PY'
           import json,shlex
-          d=json.load(open('artifacts/real-multi-agent-production/durable-mission-state.json'))
-          print('NEXT='+shlex.quote('1' if d.get('next_action_required') else '0'))
+          d=json.load(open('artifacts/real-multi-agent-production/harness-mission-state.json'))
+          decision=d.get('supervisor_decision') or {}
+          transition=str(decision.get('next_transition') or '')
+          status=str(d.get('mission_status') or '')
+          next_required=bool(transition) and status not in {'DELIVERABLE_READY','COMPLETED','FAILED_TERMINAL','WAITING_HUMAN','WAITING_EXTERNAL'}
+          print('NEXT='+shlex.quote('1' if next_required else '0'))
           print('COUNT='+shlex.quote(str(int(d.get('continuation_count') or 0))))
-          print('KEY='+shlex.quote(str(d.get('mission_key') or '')))
-          print('REPEATED='+shlex.quote('1' if d.get('repeated_failure_signature') else '0'))
+          print('KEY='+shlex.quote(str(d.get('mission_id') or '')))
+          print('REPEATED='+shlex.quote('1' if decision.get('same_route_forbidden') else '0'))
           PY
           )"
           if [ "$NEXT" != 1 ]; then
