@@ -24,33 +24,10 @@ on:
         description: "CAS state_version expected by the continuation request"
         required: false
         default: ""
-  push:
-    branches:
-      - work/gate6f-analytics-learning
-    paths:
-      - ".run/real-multi-agent-production.request.json"
-      - ".github/workflows/real-multi-agent-production.yml"
-      - "scripts/real_multi_agent_production.py"
-      - "app/services/production_mission_capability_adapters.py"
-      - "app/services/harness_capability_adapter.py"
-      - "app/services/youtube_department_service.py"
-      - "app/services/script_generator_service.py"
-      - "app/services/current_audio_contract_service.py"
-      - "app/services/global_capability_registry.py"
-      - "app/services/capability_execution_contract_service.py"
-      - "app/services/harness_adaptive_planning_service.py"
-      - "app/services/harness_mission_execution_router.py"
-      - "app/services/harness_mission_supervisor_service.py"
-      - "app/services/hermes_multiagent/capability_broker.py"
-      - "app/services/semantic_mission_planner_service.py"
-      - "app/services/native_capability_adapters.py"
-      - "app/services/task_result_envelope_service.py"
-      - "app/services/telegram_fresh_research_service.py"
-      - "tests/test_production_mission_execution_contracts.py"
-      - "tests/test_script_generator_service.py"
-      - "tests/test_current_audio_contract.py"
-      - "tests/test_youtube_department_learning_boundary.py"
-      - "tests/test_telegram_fresh_research.py"
+      continuation_authority_schema:
+        description: "Typed authorization schema required for governed continuation execution"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -77,6 +54,7 @@ env:
   BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
   BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}
   BR_EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version || '' }}
+  BR_CONTINUATION_AUTHORITY_SCHEMA: ${{ inputs.continuation_authority_schema || '' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
@@ -99,6 +77,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Reject legacy continuation without typed authority
+        if: ${{ env.BR_CONTINUATION_ID != '' && env.BR_CONTINUATION_AUTHORITY_SCHEMA != 'ContinuationAuthorization/v1' }}
+        run: |
+          echo "LEGACY_CONTINUATION_REJECTED=PASS"
+          echo "SEMANTIC_EXECUTION_STARTED=NO"
+          echo "PROVIDER_CALLS=0"
+          echo "AGENT_CALLS=0"
+          echo "TASKRESULT_WRITES=0"
+          exit 78
 
       - uses: actions/setup-python@v5
         with:
@@ -573,7 +561,7 @@ jobs:
           echo "TELEGRAM_REMAINS_PRIMARY_HUMAN_INTERFACE=PASS"
 
       - name: Build final operational production report
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           python scripts/summarize_performance_trace.py \
@@ -740,7 +728,7 @@ jobs:
           retention-days: 30
 
       - name: Continue non-terminal durable mission
-        if: always()
+        if: ${{ !cancelled() && success() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -767,6 +755,8 @@ jobs:
           if [ "$REPEATED" = 1 ]; then
             echo "SAME_ROUTE_FORBIDDEN=PASS"
             echo "REPLAN_REQUIRED=PASS"
+            echo "NORMAL_EXECUTE_DISPATCH=FORBIDDEN"
+            exit 0
           fi
           NEXT_COUNT=$((COUNT+1))
           STATE_VERSION="$(python -c 'import json; print(json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))["state_version"])')"
