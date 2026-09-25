@@ -1,30 +1,32 @@
 {
-  "request": "semantic-planner-self-improvement-preplanning-codex-health",
-  "natural_goal": "Analise o semantic planner do BR-no-GTA, cujo baseline comparável é 14105.371 ms. Descubra causalmente a maior fonte de latência evitável, contexto redundante, chamadas duplicadas ou trabalho serial desnecessário. Escolha dinamicamente a equipe mínima adequada, produza candidate isolado quando justificado, revise independentemente e compare baseline vs candidate sem reduzir qualidade, segurança, evidence, authorization lineage ou autoridade do DeepSeek Harness.",
-  "source_head": "2fc8af22567563b8a4cdfd26c1bc0dcd4c03d646",
-  "resume_context": {
-    "previous_parent_run": 35850351490,
-    "previous_child_run": 35850473901,
-    "handoff_replay_run": 35850213347,
-    "inventory_run": 35849850393,
-    "local_profile_run": 35849850500,
-    "routing_normalization_ci": 35851426505,
-    "codex_external_human_blocker": "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION",
-    "missing_external_config": [
-      "OPENAI_FEDERATION_RULE_ID",
-      "OPENAI_FEDERATION_AUDIENCE"
-    ],
-    "typed_execution_risk_normalized": true,
-    "codex_health_exposed_before_planning": true,
-    "work_direct_system_analysis": "STOP_WHEN_SPECIALIST_EXECUTION_STARTS",
-    "agent_mission_resumed": true
+  "request": "cail-independent-review-official-source-transport-eligibility",
+  "natural_goal": "Faça uma revisão independente READ_ONLY do Candidate C já aplicado no BR-no-GTA. Não crie patch novo e não proponha promoção por atividade intermediária. Objeto da revisão: commit 1a3ab463d360832d0568d8d27862a80478e9fc62, que separa dedupe editorial de elegibilidade de fonte oficial para prova do generic web.source.acquire. Use evidência operacional observada, não apenas testes. Baseline real: Production 36129479953, WEB_DISCOVERY_GOVERNED=PASS, web_source_selected_count=2, web_source_successful_acquisition_count=0, WEB_SOURCE_ACQUISITION_GOVERNED=BLOCKED_ZERO_COST_TRANSPORT, PROVENANCE=INSUFFICIENT. Candidate real: Production 36130135840, CI 36130136147=SUCCESS, WEB_DISCOVERY_GOVERNED=PASS, web_source_selected_count=2, web_source_successful_acquisition_count=1, WEB_SOURCE_ACQUISITION_GOVERNED=PASS, PROVENANCE=PASS, FACT_CHECK_BEFORE_EDITORIAL=PASS, longform evidence expansion status=PASS. O Production avançou ao editorial e falhou depois por INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER com observed_words=1808 e target_words=3300; portanto não confunda web-gate improvement com mission success. Verifique especificamente: causalidade do delta; preservation de max_sources e max_acquisition_attempts; zero-cost policy; DIRECT_FIRST/APILAYER_FALLBACK_ONLY; provenance/fact-check; risco de duplicar claims; risco de bypass de known-source dedupe; authority do DeepSeek Harness; e regressões. Reviewer deve ser independente da identidade executora do candidate. Retorne verdict ACCEPT, REJECT ou HOLD com evidência e razões. Nenhuma mutation, nenhum gasto pago, nenhum upload/publicação, nenhum relaxamento de qualidade.",
+  "source_head": "1a3ab463d360832d0568d8d27862a80478e9fc62",
+  "cail": {
+    "baseline_head": "9200a0f95c0a38c0551fd9d2f42892116c6d9d91",
+    "candidate_id": "cail-official-source-transport-eligibility",
+    "candidate_head": "1a3ab463d360832d0568d8d27862a80478e9fc62",
+    "baseline_run": 36129479953,
+    "candidate_run": 36130135840,
+    "candidate_ci_run": 36130136147,
+    "baseline_metrics": {
+      "selected": 2,
+      "acquired": 0,
+      "provenance": "INSUFFICIENT"
+    },
+    "candidate_metrics": {
+      "selected": 2,
+      "acquired": 1,
+      "provenance": "PASS"
+    },
+    "human_mission": "FAILED_TO_DELIVER",
+    "delivered_deliverables": 0,
+    "mutation_forbidden": true
   },
-  "auth_control_plane": "PRESERVE_GREEN_DO_NOT_REOPEN",
   "preserve": {
     "NEW_VOICE_SYNTHESIS": "NO",
     "FULL_RENDER": "NO",
     "YOUTUBE_UPLOAD": "NO",
     "YOUTUBE_PUBLICATION": "NO"
-  },
-  "attempt": 8
+  }
 }
