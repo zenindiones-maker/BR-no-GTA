@@ -161,21 +161,31 @@ class DurableExecutionV3:
           gref:gdict,rref:rdict,iref:intent})
         return commit,grant,record
 
-    def record_dispatch(self,*,snapshot:Any,continuation_id:str,dispatch_receipt:Any)->str:
+    def record_dispatch(self,*,snapshot:Any,continuation_id:str,dispatch_receipt:Any)->str|None:
         h=snapshot.mission_head; record=self._read(snapshot,h.get("active_continuation_ref") if h else None)
         if not h or not record or record.get("continuation_id")!=continuation_id:
-            raise PermissionError("STALE_CONTINUATION_NOOP:NOT_CURRENT")
+            return None
+        attempt={"schema":"DispatchAttempt/v1",
+          "dispatch_attempt_id":digest({"continuation_id":continuation_id,"receipt":dispatch_receipt}),
+          "continuation_id":continuation_id,"workflow":dispatch_receipt.get("workflow"),
+          "bootstrap_ref":dispatch_receipt.get("bootstrap_ref"),
+          "dispatch_started_at":dispatch_receipt.get("dispatch_started_at"),
+          "github_run_id":dispatch_receipt.get("run_id"),"result":dispatch_receipt.get("result","ACCEPTED")}
+        aref,_=immutable_ref("dispatch-attempts",attempt)
+        if record.get("status")=="CLAIMED":
+            # Receipt is provenance only. Authority already moved forward.
+            return self.commit(snapshot=snapshot,next_head={**h,"state_version":int(h["state_version"])+1},
+                               objects={aref:attempt})
         if record.get("status") not in {"ISSUED","DISPATCHED"}:
-            raise PermissionError("STALE_CONTINUATION_NOOP:NOT_DISPATCHABLE")
+            return None
         dispatched={**record,"status":"DISPATCHED",
-          "dispatch_attempts":int(record.get("dispatch_attempts",0))+1,
-          "dispatch_receipt":dispatch_receipt}
+          "dispatch_attempts":int(record.get("dispatch_attempts",0))+1}
         dref,_=immutable_ref("continuations",dispatched)
         active_outbox=h.get("active_outbox_ref")
         pending=[x for x in h.get("pending_outbox_refs",[]) if x!=active_outbox]
         nxt={**h,"state_version":int(h["state_version"])+1,"active_continuation_ref":dref,
              "active_outbox_ref":None,"pending_outbox_refs":pending}
-        return self.commit(snapshot=snapshot,next_head=nxt,objects={dref:dispatched})
+        return self.commit(snapshot=snapshot,next_head=nxt,objects={dref:dispatched,aref:attempt})
 
     def claim(self,*,snapshot:Any,mission_id:str,continuation_id:str,
               authorization_id:str,claimant_identity:ClaimantIdentity)->tuple[str,str,int]:
@@ -299,12 +309,24 @@ class DurableExecutionV3:
              "active_claim_ref":None,"mission_status":"RECOVERY_REQUIRED"}
         return self.commit(snapshot=snapshot,next_head=nxt,objects={aref:abandoned})
 
-    def require_current_claim(self,*,snapshot:Any,claim_id:str,fencing_epoch:int)->None:
+    def require_current_claim(self,*,snapshot:Any,claim_id:str,fencing_epoch:int,
+                              claimant_identity:ClaimantIdentity|None=None)->None:
         h=snapshot.mission_head
         if not h or int(h.get("fencing_epoch",-1))!=int(fencing_epoch):
             raise PermissionError("STALE_FENCING_TOKEN")
         claim=self._read(snapshot,h.get("active_claim_ref"))
-        if not claim or claim.get("claim_id")!=claim_id: raise PermissionError("STALE_FENCING_TOKEN")
+        continuation=self._read(snapshot,h.get("active_continuation_ref"))
+        if not claim or not continuation: raise PermissionError("NO_VALID_CANONICAL_CLAIM")
+        if claim.get("claim_id")!=claim_id or continuation.get("status")!="CLAIMED":
+            raise PermissionError("STALE_FENCING_TOKEN")
+        if continuation.get("claim_id")!=claim_id or int(continuation.get("fencing_epoch",-1))!=int(fencing_epoch):
+            raise PermissionError("STALE_FENCING_TOKEN")
+        if continuation.get("authority_generation")!=h.get("authority_generation"):
+            raise PermissionError("NO_VALID_CANONICAL_CLAIM")
+        if claimant_identity is not None and continuation.get("claimant_identity")!=claimant_identity.to_dict():
+            raise PermissionError("NO_VALID_CANONICAL_CLAIM")
+        if claim.get("claimant_identity")!=continuation.get("claimant_identity"):
+            raise PermissionError("NO_VALID_CANONICAL_CLAIM")
 
     def _read(self,snapshot:Any,path:str|None)->dict[str,Any]|None:
         if not path:return None
