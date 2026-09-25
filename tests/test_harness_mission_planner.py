@@ -526,4 +526,3 @@ def test_editorial_review_normalizes_reviewed_artifact_output_before_registry_se
     assert plan.planning_evidence["output_contract_normalizations"] == [
         "review-script-contract"
     ]
-
