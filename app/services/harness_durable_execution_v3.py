@@ -59,10 +59,22 @@ class AuthorizationGrant:
         return cls(authorization_id=h,content_sha256=h,**{k:v for k,v in logical.items() if k!="schema"})
 
 @dataclass(frozen=True)
+class ClaimantIdentity:
+    run_id:str; run_attempt:int; workflow_ref:str; workflow_sha:str; job_key:str
+    schema:str="ClaimantIdentity/v1"
+    def to_dict(self)->dict[str,Any]: return asdict(self)
+
+@dataclass(frozen=True)
+class ClaimantRunObservation:
+    claimant_identity:dict[str,Any]; observed_status:str; observed_conclusion:str|None
+    observed_head_sha:str; workflow_id:int|str; run_started_at:str|None; updated_at:str|None
+    observation_source:str="GITHUB_ACTIONS"; schema:str="ClaimantRunObservation/v1"
+
+@dataclass(frozen=True)
 class ContinuationRecord:
     continuation_id:str; authorization_ref:str; authorization_id:str; mission_id:str
     authority_generation:int; status:ContinuationStatus; claim_id:str|None=None
-    claimant_run_id:str|None=None; fencing_epoch:int|None=None; dispatch_attempts:int=0
+    claimant_identity:dict[str,Any]|None=None; fencing_epoch:int|None=None; dispatch_attempts:int=0
     dispatch_receipt:Any=None; issued_at_state_version:int|None=None
     claimed_at_state_version:int|None=None; consumed_at_state_version:int|None=None
     schema:str="ContinuationRecord/v1"
@@ -77,7 +89,8 @@ class OutboxIntent:
 @dataclass(frozen=True)
 class OperationRecord:
     operation_id:str; mission_id:str; logical_operation:str; artifact_hash:str
-    claim_id:str; fencing_epoch:int; status:str; external_receipt:Any=None
+    target_identity:str; semantic_request_hash:str; claim_id:str; fencing_epoch:int
+    status:str; external_receipt:Any=None
     schema:str="OperationRecord/v1"
 
 def authorize(*,current:ExecutionOutcome,previous:ExecutionOutcome|None,basis_state_version:int,
@@ -109,7 +122,8 @@ class DurableExecutionV3:
           "fencing_epoch":fencing_epoch,"authority_generation":authority_generation,
           "mission_status":mission_status,"active_authorization_ref":None,
           "active_continuation_ref":None,"active_claim_ref":None,"latest_outcome_ref":None,
-          "latest_progress_ref":None,"active_outbox_ref":None,"pending_outbox_refs":[],"side_effect_ledger_refs":[]}
+          "latest_progress_ref":None,"active_outbox_ref":None,"pending_outbox_refs":[],
+          "side_effect_ledger_refs":[],"operation_index":{}}
 
     def commit(self,*,snapshot:Any,next_head:dict[str,Any],objects:dict[str,dict[str,Any]])->str:
         prior=snapshot.mission_head; expected=None if prior is None else int(prior["state_version"])
@@ -164,7 +178,7 @@ class DurableExecutionV3:
         return self.commit(snapshot=snapshot,next_head=nxt,objects={dref:dispatched})
 
     def claim(self,*,snapshot:Any,mission_id:str,continuation_id:str,
-              authorization_id:str,claimant_run_id:str)->tuple[str,str,int]:
+              authorization_id:str,claimant_identity:ClaimantIdentity)->tuple[str,str,int]:
         h=snapshot.mission_head
         if not h or h.get("mission_id")!=mission_id: raise PermissionError("STALE_CONTINUATION_NOOP:MISSION")
         rref=h.get("active_continuation_ref"); gref=h.get("active_authorization_ref")
@@ -184,16 +198,20 @@ class DurableExecutionV3:
         if record["status"] not in {"ISSUED","DISPATCHED"}:
             raise PermissionError("STALE_CONTINUATION_NOOP:NOT_CLAIMABLE")
         epoch=int(h.get("fencing_epoch",0))+1
-        claim_id=digest({"continuation_id":continuation_id,"claimant_run_id":claimant_run_id,
-                         "fencing_epoch":epoch})
-        claimed={**record,"status":"CLAIMED","claim_id":claim_id,"claimant_run_id":claimant_run_id,
+        identity=claimant_identity.to_dict()
+        claim_id=digest({"continuation_id":continuation_id,"claimant_identity":identity,"fencing_epoch":epoch})
+        claimed={**record,"status":"CLAIMED","claim_id":claim_id,"claimant_identity":identity,
                  "fencing_epoch":epoch,"claimed_at_state_version":int(h["state_version"])+1}
         cref,_=immutable_ref("continuations",claimed)
         claim={"schema":"ClaimRecord/v1","claim_id":claim_id,"continuation_id":continuation_id,
-          "claimant_run_id":claimant_run_id,"fencing_epoch":epoch}
+          "claimant_identity":identity,"authority_generation":h["authority_generation"],
+          "fencing_epoch":epoch}
         claimref,_=immutable_ref("claims",claim)
+        active_outbox=h.get("active_outbox_ref")
+        pending=[x for x in h.get("pending_outbox_refs",[]) if x!=active_outbox]
         nxt={**h,"state_version":int(h["state_version"])+1,"fencing_epoch":epoch,
-             "active_continuation_ref":cref,"active_claim_ref":claimref}
+             "active_continuation_ref":cref,"active_claim_ref":claimref,
+             "active_outbox_ref":None,"pending_outbox_refs":pending}
         commit=self.commit(snapshot=snapshot,next_head=nxt,objects={cref:claimed,claimref:claim})
         return commit,claim_id,epoch
 
@@ -207,7 +225,7 @@ class DurableExecutionV3:
         oref,_=immutable_ref("outcomes",outcome.to_dict())
         objects={**semantic_objects,consumed_ref:consumed,oref:outcome.to_dict()}
         nxt={**h,"state_version":int(h["state_version"])+1,"active_continuation_ref":consumed_ref,
-             "latest_outcome_ref":oref,"mission_status":outcome.transition}
+             "latest_outcome_ref":oref,"mission_status":outcome.transition,"active_claim_ref":None}
         if (next_plan_ref is None)!=(next_plan_hash is None):
             raise ValueError("PLAN_REF_HASH_MUST_CHANGE_TOGETHER")
         if next_plan_ref is not None:
