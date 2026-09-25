@@ -199,7 +199,7 @@ class DurableExecutionV3:
 
     def settle(self,*,snapshot:Any,claim_id:str,fencing_epoch:int,outcome:ExecutionOutcome,
                semantic_objects:dict[str,dict[str,Any]],next_kind:DispatchKind|None=None,
-               next_reason:str="")->str:
+               next_reason:str="",next_plan_ref:str|None=None,next_plan_hash:str|None=None)->str:
         h=snapshot.mission_head; self.require_current_claim(snapshot=snapshot,claim_id=claim_id,fencing_epoch=fencing_epoch)
         record=self._read(snapshot,h["active_continuation_ref"])
         consumed={**record,"status":"CONSUMED","consumed_at_state_version":int(h["state_version"])+1}
@@ -208,13 +208,19 @@ class DurableExecutionV3:
         objects={**semantic_objects,consumed_ref:consumed,oref:outcome.to_dict()}
         nxt={**h,"state_version":int(h["state_version"])+1,"active_continuation_ref":consumed_ref,
              "latest_outcome_ref":oref,"mission_status":outcome.transition}
+        if (next_plan_ref is None)!=(next_plan_hash is None):
+            raise ValueError("PLAN_REF_HASH_MUST_CHANGE_TOGETHER")
+        if next_plan_ref is not None:
+            nxt["active_plan_ref"]=next_plan_ref; nxt["active_plan_hash"]=next_plan_hash
+        if outcome.transition=="REPLAN_REQUIRED" and next_kind=="EXECUTE":
+            raise PermissionError("REPLAN_REQUIRED_FORBIDS_EXECUTE")
         if next_kind is not None:
             generation=int(h["authority_generation"])+1
             previous_payload=self._read(snapshot,h.get("latest_outcome_ref"))
             previous=ExecutionOutcome(**previous_payload) if previous_payload else None
             grant=authorize(current=outcome,previous=previous,basis_state_version=int(h["state_version"]),
-              active_plan_ref=h["active_plan_ref"],
-              active_plan_hash=h["active_plan_hash"],authority_generation=generation,kind=next_kind,
+              active_plan_ref=nxt["active_plan_ref"],
+              active_plan_hash=nxt["active_plan_hash"],authority_generation=generation,kind=next_kind,
               reason=next_reason,created_from_outcome_ref=oref)
             gd=asdict(grant); gr,_=immutable_ref("authorizations",gd)
             cid=digest({"mission_id":h["mission_id"],"authority_generation":generation,"authorization_id":grant.authorization_id})
