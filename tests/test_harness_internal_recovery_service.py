@@ -100,6 +100,13 @@ def test_provider_transient_escalates_without_repeating_strategy(tmp_path):
     third = state.select_recovery(observed)
     assert third.recoverable is False
     assert third.exhausted is True
+    snapshot = state.snapshot()
+    assert snapshot["MISSION_STATUS"] == "RECOVERING_INTERNAL"
+    assert snapshot["RECOVERY_STATE"] == "LOCAL_RECOVERY_EXHAUSTED"
+    assert snapshot["NEXT_TRANSITION"] == "REPLAN_REQUIRED"
+    assert snapshot["MISSION_STATUS"] != "FAILED_TERMINAL"
+    events = [item["event"] for item in snapshot["events"]]
+    assert "LOCAL_RECOVERY_EXHAUSTED" in events
 
 
 def test_capability_timeout_wording_is_provider_transient():
