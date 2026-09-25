@@ -1353,3 +1353,40 @@ def test_sequence_evidence_gap_focus_preserves_missing_questions_without_padding
     assert "consequência policial" in focus
     assert "185.0" in focus
     assert "lançamento" in focus
+
+def test_editorial_retry_preserves_all_verified_reinjected_claims():
+    from types import SimpleNamespace
+    from scripts.real_multi_agent_production import _payload_for_task
+
+    claims = [
+        {
+            "claim_id": f"claim-{index:02d}",
+            "statement": f"Verified finding {index}",
+            "source": f"https://www.rockstargames.com/VI/source-{index}",
+            "fact_check_result": "SUPPORTED",
+        }
+        for index in range(30)
+    ]
+    task = SimpleNamespace(
+        mission_id="mission-1",
+        task_id="editorial-1",
+        goal_id="goal-1",
+        objective="build evidence-bounded editorial",
+        capability_id="editorial.process",
+        input_refs=(),
+    )
+    payload = _payload_for_task(
+        task=task,
+        parent_context={"evidence_refs": []},
+        state={
+            "target_goal_id": "goal-1",
+            "target_duration_seconds": 1200.0,
+            "claims": claims,
+        },
+        human_goal="Produce a supported 20-minute GTA VI analysis.",
+    )
+
+    editorial_claims = payload["editorial_context"]["verified_claims"]
+    assert len(editorial_claims) == 30
+    assert editorial_claims[-1]["claim_id"] == "claim-29"
+
