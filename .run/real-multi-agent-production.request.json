@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36129479953,
-    "reason": "A/B validate official-source transport re-eligibility after generic acquisition excluded already-known Rockstar evidence",
+    "retry_of_run": 36152763201,
+    "reason": "Resume after governed Rockstar acquisition is reused by Newswire ingestion instead of issuing a second direct transport request",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "8c271390a6bfa2d6031ff769c93d3a3788849a17",
+    "candidate_head": "cdae5d58ca102720d56b515c73e55647bc858ab3",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -34,11 +34,11 @@
       "failure_class": "NO_OPERATIONAL_DELTA"
     },
     "active_candidate": {
-      "candidate_id": "cail-official-source-transport-eligibility",
-      "primary_variable": "official_source_transport_eligibility",
-      "what_blocker_does_this_remove": "official source already represented as a claim was incorrectly treated as already proven by generic web.source.acquire",
-      "new_execution_path": "fresh official URL -> governed discovery seed -> web.source.acquire -> provenance",
-      "proof": "real Production must show at least one successful governed source acquisition and PROVENANCE=PASS",
+      "candidate_id": "cail-rockstar-governed-acquisition-reuse",
+      "primary_variable": "reuse_governed_monitor_result_for_ingestion",
+      "what_blocker_does_this_remove": "topic_selection gta6.research reissued direct Rockstar transport after governed recovery and reproduced the HTTP 302 redirect loop",
+      "new_execution_path": "direct monitor failure -> Harness-authorized web.source.acquire -> recovered monitor result -> Newswire ingestion without second direct fetch -> fact-check/editorial",
+      "proof": "real Production must pass topic_selection beyond the former redirect-loop boundary with no second direct Rockstar fetch",
       "max_sources_unchanged": true,
       "acquisition_attempt_bound_unchanged": true,
       "timeout_unchanged": true,
@@ -61,4 +61,3 @@
     }
   }
 }
- 
