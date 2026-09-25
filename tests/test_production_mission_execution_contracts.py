@@ -1390,11 +1390,19 @@ def test_editorial_retry_preserves_all_verified_reinjected_claims():
     assert len(editorial_claims) == 30
     assert editorial_claims[-1]["claim_id"] == "claim-29"
 
-def test_editorial_retry_payload_carries_partial_structure_after_recovery():
+def test_editorial_replan_preserves_partial_structure_through_typed_need():
     from pathlib import Path
 
     source = Path("scripts/real_multi_agent_production.py").read_text(encoding="utf-8")
+    broker = Path(
+        "app/services/hermes_multiagent/capability_broker.py"
+    ).read_text(encoding="utf-8")
 
-    assert 'state["editorial_recovery_seed_structure"] = dict(' in source
-    assert '"recovery_seed_structure": state.get(' in source
-    assert '"editorial_recovery_seed_structure"' in source
+    assert "HarnessExecutionNeed/v1" in broker
+    assert '"produced_artifact_refs"' in broker
+    assert '"usable_partial_result_ref"' in broker
+    assert "execute_harness_execution_need(" in source
+    assert 'input_artifact_refs=resolved[' in source
+    assert 'payload["harness_resolved_need_ref"]' in source
+    assert "editorial_recovery_seed_structure" not in source
+
