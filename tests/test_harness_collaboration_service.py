@@ -536,3 +536,59 @@ def test_sandboxed_recovery_policy_keeps_incident_planning_deterministic():
     assert "CAN_SEMANTIC_REASONING" in set(
         requirements[3]["required_operations"]
     )
+
+
+def test_private_production_boundary_resolves_missing_downstream_capability_question():
+    goal = build_goal_envelope(
+        human_goal=(
+            "Produza um novo vídeo real do BR no GTA 6 e leve o master aprovado "
+            "somente para revisão privada no YouTube."
+        ),
+        project="BR-no-GTA",
+        goal_id="goal-private-production-boundary",
+        subject="real multi-agent GTA6 audiovisual production",
+        source_surface="work",
+        canonical_state={
+            "youtube_publication_public": "FORBIDDEN",
+            "youtube_publication_unlisted": "FORBIDDEN",
+            "youtube_private_hd_review": "ALLOWED",
+            "human_goal_execution_authorized": True,
+            "semantic_planning_boundary": (
+                "PREPRODUCTION_THROUGH_PRODUCTION_PLAN"
+            ),
+            "downstream_execution_orchestrated_by_workflow": True,
+        },
+    )
+    question = (
+        "No runtime/render/narration capability is present in the provided "
+        "capabilities list, and YouTube private upload capability is also missing. "
+        "Should the plan rely on production.plan to represent downstream steps or "
+        "require explicit capability addition?"
+    )
+
+    assert collaboration_service._clarification_is_resolved_by_explicit_goal(
+        goal,
+        question,
+    ) is True
+
+
+def test_missing_downstream_capability_question_is_not_suppressed_without_boundary():
+    goal = build_goal_envelope(
+        human_goal="Prepare a GTA6 research plan.",
+        project="BR-no-GTA",
+        goal_id="goal-no-production-boundary",
+        subject="GTA6 research",
+        source_surface="work",
+        canonical_state={
+            "human_goal_execution_authorized": True,
+        },
+    )
+    question = (
+        "No runtime/render/narration capability is present in the provided "
+        "capabilities list. Should the plan require explicit capability addition?"
+    )
+
+    assert collaboration_service._clarification_is_resolved_by_explicit_goal(
+        goal,
+        question,
+    ) is False

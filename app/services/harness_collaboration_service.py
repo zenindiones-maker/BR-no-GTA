@@ -732,6 +732,41 @@ def _clarification_is_resolved_by_explicit_goal(
     folded = re.sub(r"\s+", " ", str(question or "").strip().casefold())
     if not folded:
         return False
+
+    preproduction_boundary = (
+        str(state.get("semantic_planning_boundary") or "").upper()
+        == "PREPRODUCTION_THROUGH_PRODUCTION_PLAN"
+        and state.get("downstream_execution_orchestrated_by_workflow") is True
+    )
+    if preproduction_boundary:
+        missing_downstream_markers = (
+            "runtime/render/narration",
+            "runtime capability",
+            "render capability",
+            "narration capability",
+            "youtube private upload capability",
+            "private upload capability",
+            "downstream capability",
+            "provided capabilities list",
+            "capabilities list",
+        )
+        boundary_resolution_markers = (
+            "production.plan",
+            "rely",
+            "represent downstream",
+            "require explicit",
+            "capability addition",
+            "missing",
+        )
+        if (
+            any(marker in folded for marker in missing_downstream_markers)
+            and any(marker in folded for marker in boundary_resolution_markers)
+        ):
+            # The real production workflow owns render/narration/private-review
+            # execution after the semantic preproduction DAG. Their absence from
+            # the bounded planner candidate list is not a missing human decision.
+            return True
+
     if not any(
         marker in folded
         for marker in (

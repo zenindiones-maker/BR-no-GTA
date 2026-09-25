@@ -2391,6 +2391,10 @@ def run(
             "human_goal_execution_authorized": bool(
                 human_execution_authorized
             ),
+            "semantic_planning_boundary": (
+                "PREPRODUCTION_THROUGH_PRODUCTION_PLAN"
+            ),
+            "downstream_execution_orchestrated_by_workflow": True,
         },
     )
 
