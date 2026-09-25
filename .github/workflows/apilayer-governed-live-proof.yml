@@ -32,6 +32,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install bounded proof runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r requirements.txt pytest
+
       - name: Focused web fabric regression
         run: |
           set -euo pipefail
