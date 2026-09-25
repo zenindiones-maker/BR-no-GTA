@@ -1842,4 +1842,32 @@ _REGISTRY._records = tuple(
     )
 )
 
+# LTX-2.5 optional visual generation; runtime eligibility is checked at execution time.
+LTX_25_VISUAL_RECORD = CapabilityRecord(
+    capability_id="visual.generate.transform.ltx-2.5", capability_type="CAPABILITY", domain="audiovisual",
+    implementation="Harness-governed LTX-2.5 synthetic visual generation/transform boundary feeding VEdit",
+    input_contract="typed synthetic visual requirement + mission/task lineage + optional source asset refs",
+    output_contract="GeneratedVisualAsset with typed provenance + visual QA status, or LTX_RUNTIME_UNAVAILABLE",
+    requirements=("DeepSeek Harness EXECUTION authorization","eligible CUDA runtime with sufficient VRAM","Python >=3.12","accepted gated LTX-2.5 model access","locally ready official model components; no implicit download"),
+    maturity=PARTIAL, availability=AVAILABLE, allowed_actions=("EXECUTION",),
+    policy_tags=("visual","generation","transform","ltx-2.5","synthetic","vedit","non-evidence","runtime-gated"),
+    security_boundary="Harness-only routing; GENERATED_VISUAL is never factual GTA VI evidence or OFFICIAL/PRIMARY/VERIFIED; no artificial padding, paid fallback, implicit weight download, publication authority, or VEdit replacement.",
+    cost_class="FREE_NO_BILLING", quota_class="HARDWARE_GATED", latency_class="GPU_DEPENDENT",
+    quality_class="RUNTIME_GATED_SYNTHETIC_VISUAL_QA_REQUIRED",
+    evidence_contract="app.services.ltx_visual_capability_service.GeneratedVisualAsset",
+    fallback_eligibility=False,
+    executor_binding="app.services.ltx_visual_capability_service.execute_ltx_visual_capability",
+    version="1", provider_id="lightricks-ltx-2.5", model_id="Lightricks/LTX-2.5",
+    side_effects=("generated visual asset",), supports_parallelism=False, supports_retry=False,
+    supports_resume=True, supports_review=True, side_effect_class="BOUNDED_MEDIA_GENERATION",
+    default_read_scope=("content","artifacts"), default_write_scope=("artifacts/generated-visuals",),
+    allowed_tools=("nvidia-smi","ltx-pipelines","ffmpeg"), health_policy="LTX_RUNTIME_ELIGIBILITY_REQUIRED",
+    execution_operations=(CAN_CONSUME_ARTIFACT_REFS, CAN_PRODUCE_ARTIFACT_REFS),
+    execution_kind="DETERMINISTIC_WORKER", functional_roles=("VISUAL_GENERATION",),
+)
+if _REGISTRY._by_id.get(LTX_25_VISUAL_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate LTX-2.5 capability id")
+_REGISTRY._by_id[LTX_25_VISUAL_RECORD.capability_id] = LTX_25_VISUAL_RECORD
+_REGISTRY._records = tuple(sorted((*_REGISTRY._records, LTX_25_VISUAL_RECORD), key=lambda item: item.capability_id))
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
