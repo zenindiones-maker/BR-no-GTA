@@ -33,7 +33,7 @@ permissions:
 
 concurrency:
   group: real-multi-agent-production
-  cancel-in-progress: false
+  # A commit can explicitly invalidate an older stale production after a safety-critical gate fix.\n  # Ordinary production commits remain serial and never cancel in-progress renders.\n  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[cancel-stale-production]') }}
 
 env:
   PYTHONPATH: .
