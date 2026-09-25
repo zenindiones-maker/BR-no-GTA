@@ -1389,4 +1389,3 @@ def test_editorial_retry_preserves_all_verified_reinjected_claims():
     editorial_claims = payload["editorial_context"]["verified_claims"]
     assert len(editorial_claims) == 30
     assert editorial_claims[-1]["claim_id"] == "claim-29"
-
