@@ -985,3 +985,42 @@ def test_story_plan_marks_uncovered_beat_as_sequence_evidence_gap_without_paddin
     assert "Economia interna" in gaps[0]["missing_questions"][0]
     assert "O que as evidências realmente sustentam?" not in gaps[0]["missing_questions"][0]
     assert "<p" not in gaps[0]["missing_questions"][0]
+
+def test_sequence_batch_prompt_preserves_its_duration_contract():
+    from app.services import script_generator_service as generator
+
+    batch = {
+        "batch_id": "sequence-batch-01",
+        "sequence_ids": ["sequence-001"],
+        "target_duration": 360.0,
+        "evidence_refs": ["artifact:claim-1"],
+        "supported_claims": ["Claim verificada sobre GTA VI."],
+        "sequences": [{
+            "sequence_id": "sequence-001",
+            "story_beat": "Beat factual",
+            "central_question": "Qual evidência sustenta este beat?",
+            "continuity_context": "",
+            "target_duration": 360.0,
+            "evidence_refs": ["artifact:claim-1"],
+            "supported_claims": ["Claim verificada sobre GTA VI."],
+        }],
+    }
+
+    prompt = generator._build_sequence_batch_prompt(
+        title="Pauta",
+        description="Descrição",
+        research_context=None,
+        editorial_context={
+            "verified_claims": [{
+                "statement": "Claim verificada sobre GTA VI.",
+                "evidence_refs": ["artifact:claim-1"],
+            }]
+        },
+        batch=batch,
+        prior_headings=[],
+    )
+
+    assert "Aproximadamente 6.0 minutos de narração." in prompt
+    assert "pelo menos 792 palavras úteis" in prompt
+    assert "alvo adicional agregado: cerca de 6.00 minutos" in prompt
+
