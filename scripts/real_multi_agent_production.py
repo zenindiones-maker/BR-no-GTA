@@ -13,6 +13,7 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
+from app.services.harness_mission_execution_router import execute_harness_execution_need
 from app.database.gta6_goal_repository import (
     get_gta6_goal_artifacts,
     get_gta6_goal_artifacts_by_idea_id,
@@ -2802,14 +2803,66 @@ def run(
                 # Generic executor boundary: execute only the capability selected
                 # by DeepSeek Harness. Failures carry a typed semantic need back to
                 # Harness; this runner never chooses the recovery capability or route.
-                execution = broker.execute_delegated_capability(
-                    task_id=task_id,
-                    capability_id=task.capability_id,
-                    payload=payload,
-                    dependency_context=(
-                        parent_context if task.dependencies else None
-                    ),
-                )
+                try:
+                    execution = broker.execute_delegated_capability(
+                        task_id=task_id,
+                        capability_id=task.capability_id,
+                        payload=payload,
+                        dependency_context=(
+                            parent_context if task.dependencies else None
+                        ),
+                    )
+                except DelegatedCapabilityFailure as failure:
+                    # Executor reports only a typed semantic need. DeepSeek
+                    # Harness persists it, owns RETRY/REPLAN, resolves the
+                    # capability dynamically, executes that resolved node, and
+                    # returns the durable result for minimal-subgraph resume.
+                    planning_context = dict(
+                        plan.planning_evidence.get("adaptive_context")
+                        or plan.planning_evidence.get("planning_context")
+                        or {}
+                    )
+                    planning_context.setdefault(
+                        "mission_class", goal.mission_class
+                    )
+                    lifecycle = execute_harness_execution_need(
+                        mission_plan={
+                            "mission_id": spec.mission_id,
+                            "plan_id": plan.plan_id,
+                            "goal": goal.to_dict(),
+                        },
+                        need=failure.need,
+                        planning_context=planning_context,
+                        artifact_dir=artifact_dir / "harness",
+                        used_capability_ids={
+                            item.capability_id for item in preplan.tasks
+                        },
+                        execute_resolved_capability=lambda **resolved: (
+                            broker.execute_harness_resolved_need(
+                                causal_task_id=task_id,
+                                selected_capability_id=resolved[
+                                    "selected_capability_id"
+                                ],
+                                semantic_requirement=resolved[
+                                    "semantic_requirement"
+                                ],
+                                need_ref=resolved["need_ref"],
+                                input_artifact_refs=resolved[
+                                    "input_artifact_refs"
+                                ],
+                            )
+                        ),
+                    )
+                    if lifecycle.get("execution") is None:
+                        raise
+                    execution = broker.retry_delegated_capability(
+                        failure=failure,
+                        payload=payload,
+                        dependency_context=(
+                            parent_context if task.dependencies else None
+                        ),
+                        harness_resolution=lifecycle,
+                    )
                 _observe_execution(task=task, execution=execution, state=state)
                 if not board.complete(
                     task_mapping[task_id],
