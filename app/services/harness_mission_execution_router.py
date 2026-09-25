@@ -478,6 +478,113 @@ def resolve_harness_execution_need(
     }
 
 
+def execute_harness_execution_need(
+    *,
+    mission_plan: dict[str, Any],
+    need: dict[str, Any],
+    planning_context: dict[str, Any],
+    artifact_dir: str | Path,
+    execute_resolved_capability,
+    used_capability_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Drive a persisted executor need through the canonical Harness lifecycle.
+
+    The callback is an execution boundary only: Harness has already selected the
+    capability. It cannot substitute the selected capability or downstream
+    executor.
+    """
+    resolution = resolve_harness_execution_need(
+        mission_plan=mission_plan,
+        need=need,
+        planning_context=planning_context,
+        artifact_dir=artifact_dir,
+        used_capability_ids=used_capability_ids,
+    )
+    transition = dict(resolution["mission_state_update"])
+    lifecycle_dir = Path(artifact_dir) / "harness-mission-state"
+    lifecycle_dir.mkdir(parents=True, exist_ok=True)
+    transition_raw = json.dumps(
+        transition, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    transition_sha = sha256(transition_raw).hexdigest()
+    transition_path = lifecycle_dir / (
+        f"{transition['mission_id']}-{transition['causal_task_id']}-"
+        f"{transition_sha[:16]}.json"
+    )
+    if not transition_path.exists():
+        transition_path.write_bytes(transition_raw)
+
+    decision = str(transition["decision"])
+    if decision in {"BLOCK", "RETRY"}:
+        return {
+            **resolution,
+            "mission_state_ref": f"artifact:harness-mission-state:{transition_sha}",
+            "execution": None,
+        }
+
+    selected = dict(resolution.get("resolution") or {})
+    selected_capability_id = str(selected.get("selected_capability_id") or "")
+    if not selected_capability_id:
+        raise RuntimeError("Harness REPLAN did not resolve a capability")
+    execution = execute_resolved_capability(
+        selected_capability_id=selected_capability_id,
+        semantic_requirement=str(selected.get("required_capability") or ""),
+        causal_task_id=str(transition["causal_task_id"]),
+        need_ref=str(resolution["persisted_need"]["need_ref"]),
+        input_artifact_refs=tuple(
+            str(item)
+            for item in (need.get("produced_artifact_refs") or ())
+            if str(item).strip()
+        ),
+    )
+    if not isinstance(execution, dict):
+        raise TypeError("resolved capability execution must return a typed mapping")
+    observed_capability = str(execution.get("capability_id") or "")
+    if observed_capability and observed_capability != selected_capability_id:
+        raise PermissionError(
+            "executor substituted capability after Harness resolution"
+        )
+    task_result_ref = str(
+        execution.get("task_result_ref")
+        or execution.get("evidence_ref")
+        or ""
+    ).strip()
+    if not task_result_ref:
+        raise RuntimeError("resolved execution did not persist TaskResult evidence")
+    resumed = {
+        **transition,
+        "decision": "RESUME",
+        "resolved_capability_id": selected_capability_id,
+        "resolved_task_result_ref": task_result_ref,
+        "dependency_updated": True,
+        "next_task_ready": str(transition["causal_task_id"]),
+        "result_consumption_required": True,
+        "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+    }
+    resumed_raw = json.dumps(
+        resumed, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    resumed_sha = sha256(resumed_raw).hexdigest()
+    resumed_path = lifecycle_dir / (
+        f"{resumed['mission_id']}-{resumed['causal_task_id']}-"
+        f"{resumed_sha[:16]}.json"
+    )
+    if not resumed_path.exists():
+        resumed_path.write_bytes(resumed_raw)
+    return {
+        **resolution,
+        "mission_state_update": resumed,
+        "mission_state_ref": f"artifact:harness-mission-state:{resumed_sha}",
+        "execution": dict(execution),
+        "lifecycle_events": (
+            "RESULT_PRODUCED",
+            "RESULT_PERSISTED",
+            "DEPENDENCY_UPDATED",
+            "NEXT_TASK_READY",
+        ),
+    }
+
+
 def execute_harness_mission_plan(
     *,
     plan: dict[str, Any],
