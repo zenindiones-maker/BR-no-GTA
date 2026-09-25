@@ -311,6 +311,36 @@ def _target_duration_seconds(claim_count: int) -> float:
     return 1200.0
 
 
+def _longform_retry_target_seconds(current_target_seconds: Any) -> float:
+    """Reconcile a preferred long-form target after a proven underdelivery.
+
+    A failed 25-minute attempt is runtime evidence that the current editorial
+    evidence cannot support the preferred target without padding. The one
+    bounded recovery retry therefore falls back only to the already-canonical
+    professional minimum of 20 minutes; it never permits a short final video.
+    """
+    try:
+        current = float(current_target_seconds)
+    except (TypeError, ValueError):
+        current = 1200.0
+    return 1200.0 if current > 1200.0 else max(1200.0, current)
+
+
+def _governed_web_acquisition_status(
+    *,
+    selected_count: int,
+    successful_count: int,
+    blocked_count: int,
+) -> str:
+    if successful_count > 0:
+        return "PASS"
+    if selected_count <= 0:
+        return "NO_NEW_URLS"
+    if blocked_count >= selected_count:
+        return "BLOCKED_ZERO_COST_TRANSPORT"
+    return "NO_ACQUIRED_CONTENT"
+
+
 def _exception_chain_text(exc: BaseException) -> str:
     parts: list[str] = []
     current: BaseException | None = exc
@@ -842,6 +872,8 @@ def _run_governed_longform_web_acquisition(
     refs = [item for item in (search_ref,) if item]
     candidates: list[dict[str, Any]] = []
     transports: list[str] = []
+    successful_acquisitions = 0
+    blocked_acquisitions = 0
 
     for index, item in enumerate(selected_results, start=1):
         source_url = str(item.get("url") or "").strip()
@@ -928,7 +960,9 @@ def _run_governed_longform_web_acquisition(
                 run_id=acquire_run_id,
                 reason=_exception_chain_text(exc),
             )
+            blocked_acquisitions += 1
             continue
+        successful_acquisitions += 1
         _complete_dynamic_child(
             board=board,
             proposal=acquire_proposal,
@@ -992,9 +1026,14 @@ def _run_governed_longform_web_acquisition(
         "candidates": candidates,
         "evidence_refs": list(dict.fromkeys(refs)),
         "WEB_DISCOVERY_GOVERNED": discovery_state,
-        "WEB_SOURCE_ACQUISITION_GOVERNED": (
-            "PASS" if selected_results else "NO_NEW_URLS"
+        "WEB_SOURCE_ACQUISITION_GOVERNED": _governed_web_acquisition_status(
+            selected_count=len(selected_results),
+            successful_count=successful_acquisitions,
+            blocked_count=blocked_acquisitions,
         ),
+        "web_source_selected_count": len(selected_results),
+        "web_source_successful_acquisition_count": successful_acquisitions,
+        "web_source_blocked_acquisition_count": blocked_acquisitions,
         "APILAYER_DIRECT_FALLBACK_ONLY": "PASS",
         "transport_providers": list(dict.fromkeys(transports)),
         "snapshot_used": False,
@@ -2286,14 +2325,30 @@ def run(
                         research_task_id=research_task.task_id,
                         round_index=1,
                     )
+                    if expansion.get("status") != "PASS":
+                        _write(
+                            artifact_dir / "longform-evidence-expansion.json",
+                            expansion,
+                        )
+                        raise RuntimeError(
+                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
+                        ) from failure
+
+                    initial_target = float(
+                        state.get("target_duration_seconds") or 1200.0
+                    )
+                    retry_target = _longform_retry_target_seconds(initial_target)
+                    state["target_duration_seconds"] = retry_target
+                    expansion["initial_editorial_target_seconds"] = initial_target
+                    expansion["editorial_retry_target_seconds"] = retry_target
+                    expansion["PROFESSIONAL_20_MINIMUM_PRESERVED"] = "PASS"
+                    expansion["PREFERRED_TARGET_RECONCILED_FROM_RUNTIME_EVIDENCE"] = (
+                        "PASS" if retry_target < initial_target else "NOT_REQUIRED"
+                    )
                     _write(
                         artifact_dir / "longform-evidence-expansion.json",
                         expansion,
                     )
-                    if expansion.get("status") != "PASS":
-                        raise RuntimeError(
-                            "INSUFFICIENT_EDITORIAL_EVIDENCE_FOR_20_MIN_MASTER"
-                        ) from failure
                     retry_payload = _payload_for_task(
                         task=task,
                         parent_context=parent_context,

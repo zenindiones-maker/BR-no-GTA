@@ -32,8 +32,10 @@ from scripts.real_multi_agent_production import (
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
     _fresh_research_candidates,
+    _governed_web_acquisition_status,
     _is_longform_underdelivery_failure,
     _longform_fallback_source_urls,
+    _longform_retry_target_seconds,
     _novelty_gate,
     _payload_for_task,
     _partition_longform_fresh_candidates,
@@ -748,6 +750,31 @@ def test_professional_duration_target_never_drops_below_twenty_minutes():
     assert _target_duration_seconds(5) == 1200.0
     assert _target_duration_seconds(8) == 1200.0
     assert _target_duration_seconds(12) == 1500.0
+
+
+def test_longform_retry_reconciles_preferred_target_only_to_professional_minimum():
+    assert _longform_retry_target_seconds(1500.0) == 1200.0
+    assert _longform_retry_target_seconds(1200.0) == 1200.0
+    assert _longform_retry_target_seconds(600.0) == 1200.0
+    assert _longform_retry_target_seconds(None) == 1200.0
+
+
+def test_web_acquisition_status_never_reports_pass_for_blocked_transports():
+    assert _governed_web_acquisition_status(
+        selected_count=2,
+        successful_count=0,
+        blocked_count=2,
+    ) == "BLOCKED_ZERO_COST_TRANSPORT"
+    assert _governed_web_acquisition_status(
+        selected_count=2,
+        successful_count=1,
+        blocked_count=1,
+    ) == "PASS"
+    assert _governed_web_acquisition_status(
+        selected_count=0,
+        successful_count=0,
+        blocked_count=0,
+    ) == "NO_NEW_URLS"
 
 def test_novelty_duration_uses_human_approved_voice_b_calibration(monkeypatch):
     assert VOICE_B_EFFECTIVE_PLANNING_WPM == 132.0
