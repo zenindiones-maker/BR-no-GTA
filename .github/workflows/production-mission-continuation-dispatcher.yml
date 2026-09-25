@@ -1,0 +1,54 @@
+name: Production Mission Continuation Dispatcher
+run-name: Continue ${{ inputs.mission_id }} @ v${{ inputs.expected_state_version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id:
+        required: true
+        type: string
+      expected_state_version:
+        required: true
+        type: string
+      continuation_id:
+        required: true
+        type: string
+      predecessor_run_id:
+        required: true
+        type: string
+      target_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: production-mission-continuation-${{ inputs.mission_id }}-${{ inputs.continuation_id }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch authorized target worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISSION_ID: ${{ inputs.mission_id }}
+          EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version }}
+          CONTINUATION_ID: ${{ inputs.continuation_id }}
+          PREDECESSOR_RUN_ID: ${{ inputs.predecessor_run_id }}
+          TARGET_REF: ${{ inputs.target_ref }}
+        run: |
+          set -euo pipefail
+          gh workflow run real-multi-agent-production.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$TARGET_REF" \
+            -f resume_run_id="$PREDECESSOR_RUN_ID" \
+            -f durable_mission_key="$MISSION_ID" \
+            -f continuation_count="$EXPECTED_STATE_VERSION" \
+            -f continuation_id="$CONTINUATION_ID" \
+            -f expected_state_version="$EXPECTED_STATE_VERSION"
+          echo "TRANSPORT_ONLY_DISPATCH=PASS"
