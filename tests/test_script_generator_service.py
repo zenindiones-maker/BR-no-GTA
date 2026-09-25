@@ -1023,4 +1023,3 @@ def test_sequence_batch_prompt_preserves_its_duration_contract():
     assert "Aproximadamente 6.0 minutos de narração." in prompt
     assert "pelo menos 792 palavras úteis" in prompt
     assert "alvo adicional agregado: cerca de 6.00 minutos" in prompt
-
