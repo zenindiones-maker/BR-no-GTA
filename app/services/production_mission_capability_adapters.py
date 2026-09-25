@@ -186,6 +186,15 @@ def execute_editorial_process_task(
     editorial_context = payload.get("editorial_context")
     if editorial_context is not None and not isinstance(editorial_context, dict):
         raise ValueError("editorial_context must be an object")
+    editorial_context = dict(editorial_context or {})
+    if str(payload.get("resume_mode") or "") == "EXTEND_VALID_PARTIAL":
+        partial_result = payload.get("partial_result")
+        if not isinstance(partial_result, dict):
+            raise ValueError("durable editorial resume requires partial_result")
+        editorial_context["recovery_seed_structure"] = partial_result
+        editorial_context["recovery_seed_task_result_ref"] = str(
+            payload.get("partial_result_ref") or ""
+        )
 
     provider_request = HarnessRoutingRequest(
             intent=(
@@ -243,7 +252,7 @@ def execute_editorial_process_task(
             ai_provider=provider,
             execution_context=authorization_to_context(action_authorization),
             goal_id=target_goal_id,
-            editorial_context=dict(editorial_context or {}),
+            editorial_context=editorial_context,
         )
     finally:
         consume_harness_authorization(action_authorization)
