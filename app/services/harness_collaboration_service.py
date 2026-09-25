@@ -737,8 +737,13 @@ def _clarification_is_resolved_by_explicit_goal(
         for marker in (
             "confirm",
             "confirma",
+            "approve",
+            "approval",
+            "aprovar",
+            "aprova",
             "prosseguir",
             "continuar com",
+            "continue with",
             "iniciar",
             "executar o",
             "executar a",
@@ -764,6 +769,43 @@ def _clarification_is_resolved_by_explicit_goal(
         != "ALLOWED"
     ):
         return False
+
+    # Never convert a new external/sensitive scope request into an implicit
+    # approval merely because the overall mission was previously authorized.
+    external_scope_markers = (
+        "paid", "payment", "billing", "purchase", "spend", "charge",
+        "credential", "password", "secret", "access token", "api key",
+        "new permission", "additional permission", "delete", "destroy",
+        "force push", "merge to main",
+    )
+    if any(marker in folded for marker in external_scope_markers):
+        return False
+
+    private_review_authorized = (
+        str(state.get("youtube_private_hd_review") or "").upper() == "ALLOWED"
+        and str(state.get("youtube_publication_public") or "").upper() == "FORBIDDEN"
+        and str(state.get("youtube_publication_unlisted") or "").upper() == "FORBIDDEN"
+    )
+    procedural_markers = (
+        "research", "pesquisa",
+        "editorial", "roteiro", "script",
+        "planning", "planejamento", "plan", "plano", "dag",
+        "render", "renderização", "renderizacao",
+        "narration", "narração", "narracao",
+        "mastering", "master", "masterização", "masterizacao",
+        "delivery", "entrega",
+        "pipeline", "workflow",
+        "review", "revisão", "revisao",
+    )
+    procedural_marker_count = sum(
+        1 for marker in procedural_markers if marker in folded
+    )
+    if private_review_authorized and procedural_marker_count >= 2:
+        # The human already authorized the private end-to-end production.
+        # Asking again to approve an internal DAG, or to continue from script
+        # into render/narration/master/private delivery, is procedural churn,
+        # not a new human decision.
+        return True
 
     stop = {
         "confirmar", "confirma", "confirmacao", "confirmação", "execucao",

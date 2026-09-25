@@ -227,6 +227,39 @@ def test_explicit_human_goal_resolves_redundant_private_review_confirmation():
     assert plan.semantic_plan_proposal["clarification_question"] is None
 
 
+def test_explicit_private_goal_resolves_internal_dag_and_next_phase_approval():
+    goal = _authorized_private_review_goal()
+    plan = plan_mission_from_human_goal(
+        goal,
+        semantic_inference=lambda _prompt, _context: _clarifying_research_proposal(
+            "Approve this 6-task research/editorial/planning DAG? Next phase "
+            "(render/narration/mastering/delivery) will be a separate plan after "
+            "you review script + plan."
+        ),
+    )
+    assert (
+        plan.planning_evidence["clarification_resolution"]
+        == "EXPLICIT_HUMAN_GOAL_AUTHORIZATION"
+    )
+    assert plan.semantic_plan_proposal["needs_human_clarification"] is False
+    assert plan.semantic_plan_proposal["clarification_question"] is None
+
+
+def test_explicit_private_goal_resolves_internal_portuguese_plan_approval():
+    goal = _authorized_private_review_goal()
+    plan = plan_mission_from_human_goal(
+        goal,
+        semantic_inference=lambda _prompt, _context: _clarifying_research_proposal(
+            "Aprovar este plano interno de pesquisa, roteiro e renderização antes "
+            "de continuar a entrega PRIVATE já autorizada?"
+        ),
+    )
+    assert (
+        plan.planning_evidence["clarification_resolution"]
+        == "EXPLICIT_HUMAN_GOAL_AUTHORIZATION"
+    )
+
+
 def test_explicit_private_authorization_does_not_clear_forbidden_public_scope():
     goal = _authorized_private_review_goal()
     try:
