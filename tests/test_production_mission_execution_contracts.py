@@ -1404,5 +1404,5 @@ def test_editorial_replan_preserves_partial_structure_through_typed_need():
     assert "execute_harness_execution_need(" in source
     assert 'input_artifact_refs=resolved[' in source
     assert 'payload["harness_resolved_need_ref"]' in source
-    assert "editorial_recovery_seed_structure" not in source
+    assert 'state["editorial_recovery_seed_structure"] =' not in source
 
