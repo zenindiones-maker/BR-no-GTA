@@ -1173,10 +1173,27 @@ def _generate_ai_structure(
                 break
 
         story_assembly = _story_assembly_metadata(structure=assembly, video_plan=video_plan)
+        factual_evidence_gaps = [
+            gap
+            for gap in evidence_gaps
+            if "additional non-duplicate source-grounded facts or implications supporting this beat"
+            not in (gap.get("missing_claim_types") or ())
+        ]
+        duration_evidence_gaps = [
+            gap
+            for gap in evidence_gaps
+            if gap not in factual_evidence_gaps
+        ]
+        aggregate_supported_seconds = _spoken_seconds_for_words(
+            _structure_word_count(assembly)
+        )
+        blocking_evidence_gaps = list(factual_evidence_gaps)
+        if aggregate_supported_seconds < float(target_duration_seconds):
+            blocking_evidence_gaps.extend(duration_evidence_gaps)
         global_qa = _global_editorial_qa(
             structure=assembly,
             video_plan=video_plan,
-            evidence_gaps=evidence_gaps,
+            evidence_gaps=blocking_evidence_gaps,
             target_duration_seconds=float(target_duration_seconds),
         )
         assembly["_internal_editorial_structure"] = {
