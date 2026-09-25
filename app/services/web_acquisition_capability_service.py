@@ -335,20 +335,20 @@ def _decode_source(raw: bytes, *, content_type: str = "") -> str:
     # the evidence budget before the article body is reached.
     cleaned = re.sub(r"(?is)<!--.*?-->", " ", text)
     cleaned = re.sub(
-        r"(?is)<(script|style|noscript|svg|template|iframe|nav|footer)\\b[^>]*>.*?</\\1>",
+        r"(?is)<(script|style|noscript|svg|template|iframe|nav|footer)\b[^>]*>.*?</\1>",
         " ",
         cleaned,
     )
     cleaned = re.sub(
-        r"(?is)</?(?:p|div|section|article|main|h[1-6]|li|br|tr|td|th)\\b[^>]*>",
-        "\\n",
+        r"(?is)</?(?:p|div|section|article|main|h[1-6]|li|br|tr|td|th)\b[^>]*>",
+        "\n",
         cleaned,
     )
     cleaned = re.sub(r"(?s)<[^>]+>", " ", cleaned)
     cleaned = unescape(cleaned)
-    cleaned = re.sub(r"[ \\t\\r\\f\\v]+", " ", cleaned)
-    cleaned = re.sub(r" *\\n *", "\\n", cleaned)
-    cleaned = re.sub(r"\\n{2,}", "\\n", cleaned).strip()
+    cleaned = re.sub(r"[ \t\r\f\v]+", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    cleaned = re.sub(r"\n{2,}", "\n", cleaned).strip()
     return cleaned[:MAX_SOURCE_CHARS]
 
 
