@@ -2919,14 +2919,20 @@ def run(
                     },
                 ):
                     raise RuntimeError(f"HERMES_TASK_COMPLETE_FAILED:{task_id}")
+                # Dependency edges are resolved by the Harness plan. Do not let the
+                # producer choose a downstream agent/executor. The producer emits
+                # only its typed TaskResult; Harness resolves each dependent
+                # capability when that task becomes runnable. Parent context then
+                # proves downstream consumption from the persisted TaskResult.
                 for child_id in dependents.get(task_id, ()):
-                    broker.submit_handoff(
+                    broker.record_dependency_handoff(
                         from_task_id=task_id,
                         to_task_id=child_id,
                         evidence_refs=[execution["evidence_ref"]],
                         summary=(
-                            f"{task_id} completed and handed its persisted "
-                            f"TaskResultEnvelope lineage to {child_id}."
+                            f"{task_id} produced a persisted TaskResultEnvelope; "
+                            f"Harness dependency resolution made it available to "
+                            f"the required capability for {child_id}."
                         ),
                     )
 
