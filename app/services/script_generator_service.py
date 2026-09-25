@@ -1092,7 +1092,7 @@ def _generate_ai_structure(
     if (
         target_duration_seconds is not None
         and float(target_duration_seconds) >= 1200.0
-        and len(verified_claims) >= 1
+        and len(verified_claims) >= 2
     ):
         video_plan, evidence_gaps = _build_longform_video_plan(
             title=title,
@@ -1304,9 +1304,25 @@ def _generate_ai_structure(
         f"observed_development_sections={final_sections} "
         f"required_development_sections={minimum_sections}"
     )
+    localized_video_plan = None
+    localized_sequence_gaps: list[SequenceEvidenceGap] = []
+    if (
+        target_duration_seconds is not None
+        and float(target_duration_seconds) >= 1200.0
+        and len(verified_claims) >= 1
+    ):
+        localized_video_plan, localized_sequence_gaps = _build_longform_video_plan(
+            title=title,
+            description=description,
+            initial_structure=previous_structure,
+            editorial_context=editorial_context,
+            target_duration_seconds=float(target_duration_seconds),
+        )
     failure.failure_evidence = {
         "schema": "EditorialUnderDeliveryFailure/v1",
         "partial_structure": previous_structure,
+        "video_plan": localized_video_plan,
+        "sequence_evidence_gaps": localized_sequence_gaps,
         "observed_words": final_words,
         "observed_development_sections": final_sections,
         "target_words": target_words,

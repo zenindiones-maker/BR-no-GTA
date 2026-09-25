@@ -1064,8 +1064,7 @@ def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch)
     assert result["development"] == seed["development"]
     assert generator._structure_word_count(result) >= 2640
 
-
-def test_single_verified_claim_enters_story_assembly_to_localize_longform_gaps():
+def test_single_verified_claim_localizes_longform_gaps_without_changing_generation_mode():
     import json
     from app.services.ai_provider import AIProviderError, AIResponse
 
@@ -1111,6 +1110,7 @@ def test_single_verified_claim_enters_story_assembly_to_localize_longform_gaps()
         )
 
     evidence = captured.value.failure_evidence
-    assert evidence["schema"] == "EditorialEvidenceGapFailure/v1"
+    assert evidence["schema"] == "EditorialUnderDeliveryFailure/v1"
     assert evidence["partial_structure"]["development"]
+    assert evidence["video_plan"]["schema"] == "video-plan/v1"
     assert evidence["sequence_evidence_gaps"]
