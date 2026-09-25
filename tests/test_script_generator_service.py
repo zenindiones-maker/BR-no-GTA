@@ -934,6 +934,7 @@ def test_story_assembly_marks_duration_undercoverage_as_typed_sequence_evidence_
 
     evidence = getattr(captured.value, "failure_evidence", {})
     assert evidence["schema"] == "EditorialEvidenceGapFailure/v1"
+    assert evidence["partial_structure"]["development"]
     assert evidence["sequence_evidence_gaps"]
     assert (
         evidence["global_editorial_qa"]["EVIDENCE_COVERAGE"]
@@ -1062,3 +1063,54 @@ def test_longform_recovery_seed_is_preserved_instead_of_regenerated(monkeypatch)
 
     assert result["development"] == seed["development"]
     assert generator._structure_word_count(result) >= 2640
+
+
+def test_single_verified_claim_enters_story_assembly_to_localize_longform_gaps():
+    import json
+    from app.services.ai_provider import AIProviderError, AIResponse
+
+    initialize_schema()
+    idea_id = insert_idea(
+        title="TESTE - localizar gaps com uma claim",
+        description="Localize a falta de evidência antes da recuperação web.",
+        status="approved",
+        score=9.5,
+    )
+
+    def short(prefix):
+        body = " ".join([prefix] * 45)
+        return {
+            "hook": "abertura factual",
+            "introduction": "contexto factual",
+            "development": [
+                {"heading": "Lançamento", "body": body},
+                {"heading": "Protagonistas", "body": body},
+                {"heading": "Leonida", "body": body},
+            ],
+            "conclusion": "conclusao factual",
+            "cta": "cta factual",
+        }
+
+    class Provider:
+        def __init__(self):
+            self.responses = [short("base"), short("a"), short("b")]
+        def generate(self, _prompt):
+            return AIResponse(text=json.dumps(self.responses.pop(0)))
+
+    with pytest.raises(AIProviderError) as captured:
+        generate_script_structure(
+            idea_id,
+            ai_provider=Provider(),
+            editorial_context={"verified_claims": [{
+                "claim_id": "one",
+                "statement": "GTA VI possui lançamento oficialmente anunciado.",
+                "source": "https://www.rockstargames.com/VI",
+                "fact_check_result": "SUPPORTED",
+            }]},
+            target_duration_seconds=1200.0,
+        )
+
+    evidence = captured.value.failure_evidence
+    assert evidence["schema"] == "EditorialEvidenceGapFailure/v1"
+    assert evidence["partial_structure"]["development"]
+    assert evidence["sequence_evidence_gaps"]
