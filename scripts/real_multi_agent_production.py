@@ -2855,13 +2855,27 @@ def run(
                     )
                     if lifecycle.get("execution") is None:
                         raise
-                    execution = broker.retry_delegated_capability(
-                        failure=failure,
+                    # The resolved node has produced and persisted the missing
+                    # dependency. Re-enter only the failed causal task; do not
+                    # route or retry from the executor boundary.
+                    parent_context = broker.parent_context(task_id=task_id)
+                    payload = _payload_for_task(
+                        task=task,
+                        parent_context=parent_context,
+                        state=state,
+                        human_goal=human_goal,
+                    )
+                    execution = broker.execute_delegated_capability(
+                        task_id=task_id,
+                        capability_id=task.capability_id,
                         payload=payload,
+                        retry_attempt=min(
+                            failure.retry_attempt + 1,
+                            int(task.retry_budget),
+                        ),
                         dependency_context=(
                             parent_context if task.dependencies else None
                         ),
-                        harness_resolution=lifecycle,
                     )
                 _observe_execution(task=task, execution=execution, state=state)
                 if not board.complete(
