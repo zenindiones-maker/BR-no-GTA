@@ -459,6 +459,24 @@ class HermesHarnessCapabilityBroker:
                 return dict(row)
         return None
 
+    def load_persisted_partial_result(self, *, task_result_ref: str) -> dict[str, Any]:
+        """Load a durable partial result by its TaskResult reference."""
+        envelope = load_task_result_envelope(
+            artifact_dir=self.artifact_dir,
+            task_result_ref=str(task_result_ref),
+        )
+        if envelope.mission_id != self.spec.mission_id:
+            raise PermissionError("partial TaskResult mission mismatch")
+        payload = dict(envelope.result_payload or {})
+        if not bool(payload.get("usable_partial_result")):
+            raise PermissionError("TaskResult is not marked as reusable partial work")
+        return {
+            "task_result_ref": str(task_result_ref),
+            "task_id": envelope.task_id,
+            "execution_status": str(payload.get("execution_status") or envelope.status),
+            "partial_result": payload.get("partial_result"),
+        }
+
     def record_candidate_not_required(
         self,
         *,
@@ -1749,6 +1767,44 @@ class HermesHarnessCapabilityBroker:
                 failure_evidence = dict(
                     getattr(exc, "failure_evidence", {}) or {}
                 )
+                # A failed execution may still have produced valid reusable
+                # work. Persist that work before publishing HarnessExecutionNeed
+                # so REPLAN can extend it instead of regenerating from zero.
+                partial_value = (
+                    failure_evidence.get("partial_result")
+                    or failure_evidence.get("partial_structure")
+                )
+                if partial_value is not None:
+                    partial_row = self._persist_result(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        agent_id=task.selected_agent_id,
+                        routing_id=decision.routing_id,
+                        authorization_id=child.authorization_id,
+                        elapsed_seconds=max(
+                            0.0, time.perf_counter() - task_started_perf
+                        ),
+                        result={
+                            "execution_status": "FAILED",
+                            "usable_partial_result": True,
+                            "partial_result": _jsonable(partial_value),
+                            "failure_evidence": _jsonable(failure_evidence),
+                        },
+                        idempotency_key=task.idempotency_key,
+                        capability_version=task.capability_version,
+                        retry_count=retry_attempt,
+                        skill_id=task.selected_skill_id,
+                        executor_binding=task.selected_executor_binding,
+                        source_task_ids=tuple(task.dependencies),
+                        started_at=started_at,
+                        status="PARTIAL_FAILED",
+                    )
+                    failure_evidence["partial_result_ref"] = str(
+                        partial_row["task_result_ref"]
+                    )
+                    failure_evidence["partial_result_artifact_ref"] = str(
+                        partial_row["evidence_ref"]
+                    )
                 routing_policy_evidence = getattr(exc, "evidence", None)
                 if isinstance(routing_policy_evidence, dict):
                     failure_evidence = {
