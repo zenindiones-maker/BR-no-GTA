@@ -35,6 +35,7 @@ from scripts.real_multi_agent_production import (
     _classify_web_failure,
     _fresh_research_candidates,
     _governed_web_acquisition_status,
+    _governed_web_known_source_keys,
     _is_longform_underdelivery_failure,
     _longform_expansion_terminal_error,
     _longform_fallback_source_urls,
@@ -1068,6 +1069,69 @@ def test_fresh_official_source_expands_into_distinct_atomic_findings():
     assert all(item["fact_check_result"] == "OFFICIAL_PRIMARY" for item in candidates)
     assert any("34 original tracks" in item["statement"] for item in candidates)
     assert any("criminal conspiracy" in item["statement"] for item in candidates)
+
+
+def test_governed_web_known_sources_keep_official_transport_proof_eligible():
+    state = {
+        "claims": [
+            {
+                "source": "https://www.rockstargames.com/VI",
+                "fact_check_result": "OFFICIAL_PRIMARY",
+            },
+            {
+                "source": "https://www.gamespot.com/articles/gta-6-current-report/",
+                "fact_check_result": "SUPPORTED",
+            },
+        ]
+    }
+
+    known = _governed_web_known_source_keys(state)
+
+    assert "https://www.rockstargames.com/VI" not in known
+    assert (
+        "https://www.gamespot.com/articles/gta-6-current-report"
+        in known
+    )
+
+
+def test_longform_fallback_can_reacquire_official_for_web_provenance():
+    candidates = [
+        {
+            "source": "https://www.rockstargames.com/VI",
+            "fact_check_result": "OFFICIAL_PRIMARY",
+        },
+        {
+            "source": "https://www.gamespot.com/articles/gta-6-current-report/",
+            "fact_check_result": "PENDING_FACT_CHECK",
+        },
+    ]
+    fresh = {
+        "packet": {
+            "official_sources": [
+                {
+                    "resolved_url": (
+                        "https://store.rockstargames.com/game/buy-gta-vi"
+                    )
+                }
+            ],
+            "secondary_sources": [],
+        }
+    }
+
+    urls = _longform_fallback_source_urls(
+        candidates,
+        fresh,
+        excluded_source_urls=[
+            "https://www.gamespot.com/articles/gta-6-current-report/"
+        ],
+    )
+
+    assert "https://www.rockstargames.com/VI" in urls
+    assert (
+        "https://store.rockstargames.com/game/buy-gta-vi"
+        in urls
+    )
+    assert not any("gamespot.com" in item for item in urls)
 
 
 def test_longform_fallback_prefers_new_independent_source_families():

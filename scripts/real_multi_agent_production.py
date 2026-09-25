@@ -522,6 +522,24 @@ def _canonical_source_url(value: Any) -> str:
     return f"{(parsed.scheme or 'https').casefold()}://{host}{path}"
 
 
+def _governed_web_known_source_keys(state: dict[str, Any]) -> set[str]:
+    """Deduplicate editorially known secondary sources, not official transport proof.
+
+    Official Rockstar evidence may already support a claim through fresh research,
+    but that does not prove the separate generic web.source.acquire transport and
+    provenance boundary. Keeping official URLs eligible here lets the governed web
+    fabric prove that boundary without increasing source or attempt budgets.
+    """
+    keys = {
+        _canonical_source_url(item.get("source"))
+        for item in (state.get("claims") or ())
+        if isinstance(item, dict)
+        and not _is_rockstar_official_url(item.get("source"))
+    }
+    keys.discard("")
+    return keys
+
+
 def _web_source_statement(
     acquired: dict[str, Any],
     *,
@@ -846,12 +864,7 @@ def _run_governed_longform_web_acquisition(
         }
 
     root = broker._task(research_task_id)
-    known_sources = {
-        _canonical_source_url(item.get("source"))
-        for item in (state.get("claims") or ())
-        if isinstance(item, dict)
-    }
-    known_sources.discard("")
+    known_sources = _governed_web_known_source_keys(state)
 
     search_id = f"{research_task_id}-longform-web-discovery-{round_index}"
     search_proposal = broker.propose_child_task(
@@ -1648,15 +1661,15 @@ def _run_bounded_longform_evidence_expansion(
         _partition_longform_fresh_candidates(original_candidates)
     )
 
-    selected_candidate_source_urls = [
+    pending_candidate_source_urls = [
         str(item.get("source") or "").strip()
-        for item in [*official_candidates, *pending_candidates]
+        for item in pending_candidates
         if str(item.get("source") or "").strip()
     ]
     fallback_urls = _longform_fallback_source_urls(
         original_candidates,
         fresh_recovery,
-        excluded_source_urls=selected_candidate_source_urls,
+        excluded_source_urls=pending_candidate_source_urls,
     )
     web_recovery = _run_governed_longform_web_acquisition(
         broker=broker,

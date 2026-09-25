@@ -9,8 +9,8 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36128893381,
-    "reason": "A/B validate bounded official-first web source selection after request-profile candidate rejected",
+    "retry_of_run": 36129479953,
+    "reason": "A/B validate official-source transport re-eligibility after generic acquisition excluded already-known Rockstar evidence",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
@@ -34,10 +34,30 @@
       "failure_class": "NO_OPERATIONAL_DELTA"
     },
     "active_candidate": {
-      "candidate_id": "cail-official-first-source-selection",
-      "primary_variable": "candidate_ordering",
+      "candidate_id": "cail-official-source-transport-eligibility",
+      "primary_variable": "official_source_transport_eligibility",
+      "what_blocker_does_this_remove": "official source already represented as a claim was incorrectly treated as already proven by generic web.source.acquire",
+      "new_execution_path": "fresh official URL -> governed discovery seed -> web.source.acquire -> provenance",
+      "proof": "real Production must show at least one successful governed source acquisition and PROVENANCE=PASS",
       "max_sources_unchanged": true,
-      "acquisition_attempt_bound_unchanged": true
+      "acquisition_attempt_bound_unchanged": true,
+      "timeout_unchanged": true,
+      "zero_cost_policy_unchanged": true
+    },
+    "previous_candidate": {
+      "candidate_id": "cail-official-first-source-selection",
+      "outcome": "REJECTED_STANDALONE",
+      "baseline": {
+        "source_selected": 2,
+        "source_acquired": 0,
+        "provenance": "INSUFFICIENT"
+      },
+      "observed": {
+        "source_selected": 2,
+        "source_acquired": 0,
+        "provenance": "INSUFFICIENT"
+      },
+      "finding": "official ordering had no effect because official sources were excluded before acquisition"
     }
   }
 }
