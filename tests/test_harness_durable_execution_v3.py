@@ -146,3 +146,33 @@ def test_operation_ledger_requires_current_fence():
  with pytest.raises(PermissionError,match="STALE_FENCING_TOKEN"):
   rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence-1,
    logical_operation="telegram-send",artifact_hash="def")
+
+def test_replan_required_cannot_emit_execute_p1_and_replan_can_publish_p2():
+ rt,s=runtime();_,g,r=issue(rt,s);_,claim,fence=rt.claim(snapshot=s.snapshot("M1"),
+  mission_id="M1",continuation_id=r.continuation_id,authorization_id=g.authorization_id,
+  claimant_run_id="exec")
+ with pytest.raises(PermissionError,match="REPLAN_REQUIRED_FORBIDS_EXECUTE"):
+  rt.settle(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence,
+   outcome=outcome(transition="REPLAN_REQUIRED",useful_progress=False),semantic_objects={},
+   next_kind="EXECUTE",next_reason="illegal")
+ # settle EXECUTE attempt by issuing REPLAN
+ rt.settle(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence,
+  outcome=outcome(transition="REPLAN_REQUIRED",useful_progress=False),semantic_objects={},
+  next_kind="REPLAN",next_reason="repair plan")
+ replan_record=s.objects[s.head["active_continuation_ref"]]
+ replan_grant=s.objects[s.head["active_authorization_ref"]]
+ _,replan_claim,replan_fence=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
+  continuation_id=replan_record["continuation_id"],authorization_id=replan_grant["authorization_id"],
+  claimant_run_id="planner")
+ p2=PlanRevision.create(mission_id="M1",human_goal_id="HG1",plan_id="P2",revision=2,
+  parent_plan_ref=s.head["active_plan_ref"],parent_plan_hash=s.head["active_plan_hash"],
+  supersedes_plan_id="P1",reason_ref="outcome",affected_subgraph=("research",),
+  plan_payload={"tasks":["research-v2"]},runtime_revision="a"*40,orchestration_version="3.0")
+ p2ref=f"objects/plans/sha256/{p2.content_sha256}.json"
+ rt.settle(snapshot=s.snapshot("M1"),claim_id=replan_claim,fencing_epoch=replan_fence,
+  outcome=outcome(attempt_id="REPLAN1",status="COMPLETED",transition="EXECUTE_READY",
+   strategy_signature="plan-v2",failure_signature=None,useful_progress=True),
+  semantic_objects={p2ref:p2.__dict__},next_kind="EXECUTE",next_reason="execute P2",
+  next_plan_ref=p2ref,next_plan_hash=p2.content_sha256)
+ assert s.head["active_plan_ref"]==p2ref
+ assert s.objects[s.head["active_authorization_ref"]]["active_plan_ref"]==p2ref
