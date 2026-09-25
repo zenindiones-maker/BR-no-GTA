@@ -1201,6 +1201,7 @@ def _generate_ai_structure(
             "video_plan": video_plan,
             "editorial_sequence_batches_generated": generated_batches,
             "sequence_evidence_gaps": evidence_gaps,
+            "blocking_sequence_evidence_gaps": blocking_evidence_gaps,
             "story_assembly": story_assembly,
             "global_editorial_qa": global_qa,
         }
