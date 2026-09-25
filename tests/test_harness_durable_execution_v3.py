@@ -120,3 +120,29 @@ def test_settlement_cas_conflict_changes_nothing_canonical():
   rt.settle(snapshot=stale,claim_id=claim,fencing_epoch=f,outcome=outcome(),
    semantic_objects={},next_kind=None)
  assert s.head==before and set(s.objects)==objects
+
+def test_relay_is_at_least_once_but_claim_is_single():
+ rt,s=runtime();_,g,r=issue(rt,s)
+ rt.record_dispatch(snapshot=s.snapshot("M1"),continuation_id=r.continuation_id,
+  dispatch_receipt={"run_id":111})
+ assert s.objects[s.head["active_continuation_ref"]]["status"]=="DISPATCHED"
+ assert s.head["pending_outbox_refs"]==[]
+ snap=s.snapshot("M1")
+ _,claim,fence=rt.claim(snapshot=snap,mission_id="M1",continuation_id=r.continuation_id,
+  authorization_id=g.authorization_id,claimant_run_id="111")
+ assert fence==1 and claim
+
+def test_operation_ledger_requires_current_fence():
+ rt,s=runtime();_,g,r=issue(rt,s);_,claim,fence=rt.claim(snapshot=s.snapshot("M1"),
+  mission_id="M1",continuation_id=r.continuation_id,authorization_id=g.authorization_id,
+  claimant_run_id="A")
+ _,op=rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence,
+  logical_operation="youtube-private-upload",artifact_hash="abc")
+ opref=s.head["side_effect_ledger_refs"][-1]
+ rt.start_operation(snapshot=s.snapshot("M1"),operation_ref=opref,claim_id=claim,fencing_epoch=fence)
+ started=s.head["side_effect_ledger_refs"][-1]
+ rt.settle_operation(snapshot=s.snapshot("M1"),operation_ref=started,claim_id=claim,
+  fencing_epoch=fence,status="UNKNOWN_RECONCILIATION_REQUIRED")
+ with pytest.raises(PermissionError,match="STALE_FENCING_TOKEN"):
+  rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence-1,
+   logical_operation="telegram-send",artifact_hash="def")
