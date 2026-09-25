@@ -49,6 +49,8 @@ def test_fetch_returns_monitored_page(monkeypatch):
         "https://www.rockstargames.com/VI"
     )
     assert captured["user_agent"] == DEFAULT_USER_AGENT
+    assert "Mozilla/5.0" in captured["user_agent"]
+    assert "BR-no-GTA/1.0" in captured["user_agent"]
     assert captured["timeout"] == 12.0
 
 
