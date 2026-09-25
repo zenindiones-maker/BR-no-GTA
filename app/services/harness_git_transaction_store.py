@@ -18,6 +18,9 @@ class GitSnapshot:
     tree_sha: str
     mission_head: dict[str, Any] | None
 
+    def read_json(self, store: "GitHubGitTransactionStore", path: str) -> dict[str, Any] | None:
+        return store.read_json(path, self.head_sha)
+
 
 class GitHubGitTransactionStore:
     """Git object database backed CAS store.
@@ -82,6 +85,9 @@ class GitHubGitTransactionStore:
             raise
         content = base64.b64decode(str(row["content"]).replace("\n", ""))
         return json.loads(content)
+
+    def read_json(self, path: str, ref: str) -> dict[str, Any] | None:
+        return self._blob_json(path, ref)
 
     def snapshot(self, mission_id: str) -> GitSnapshot:
         ref = self._ref()
