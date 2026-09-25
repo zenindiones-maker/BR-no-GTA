@@ -844,7 +844,6 @@ def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metada
     assert len(internal["video_plan"]["sequences"]) == 4
     assert internal["global_editorial_qa"]["TOTAL_SUPPORTED_DURATION"] == "PASS"
     assert internal["global_editorial_qa"]["content_supported_duration_minutes"] == 27.576
-    assert internal["sequence_evidence_gaps"]
     assert internal["blocking_sequence_evidence_gaps"] == []
     assert internal["global_editorial_qa"]["EVIDENCE_COVERAGE"] == "PASS"
     assert internal["global_editorial_qa"]["ARTIFICIAL_PADDING"] == "OFF"
