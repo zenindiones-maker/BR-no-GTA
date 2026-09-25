@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.services.harness_mission_execution_router import execute_harness_execution_need
+from app.services.harness_durable_execution_service import HarnessDurableExecutionService
 from app.database.gta6_goal_repository import (
     get_gta6_goal_artifacts,
     get_gta6_goal_artifacts_by_idea_id,
@@ -2756,6 +2757,36 @@ def run(
         )
         profile_by_task = {profile.task_id: profile for profile in profiles}
         task_by_id = {task.task_id: task for task in preplan.tasks}
+        durable = HarnessDurableExecutionService(
+            mission_id=spec.mission_id,
+            state_version=int(os.getenv("BR_EXPECTED_STATE_VERSION") or 0),
+            artifact_dir=artifact_dir / "harness",
+        )
+        persisted_results = broker.result_snapshot()
+
+        # Reconstruct the transient working set deterministically from durable
+        # completed TaskResults before any runnable node is dispatched. This is
+        # semantic replay: predecessor work survives worker replacement and the
+        # same _observe_execution projection used on first execution rebuilds
+        # selected topic/claims/editorial context without mission-specific
+        # artifact scraping.
+        replayed_task_ids: set[str] = set()
+        for replay_level in preplan.execution_levels:
+            for replay_task_id in replay_level:
+                rows = [
+                    dict(row)
+                    for row in persisted_results.get(replay_task_id, ())
+                    if str(row.get("status") or "") == "COMPLETED"
+                ]
+                if not rows:
+                    continue
+                _observe_execution(
+                    task=task_by_id[replay_task_id],
+                    execution=rows[-1],
+                    state=state,
+                )
+                replayed_task_ids.add(replay_task_id)
+
         dependents: dict[str, list[str]] = {task.task_id: [] for task in preplan.tasks}
         for task in preplan.tasks:
             for parent in task.dependencies:
@@ -2767,6 +2798,17 @@ def run(
             # concurrency without changing semantic behavior.
             for task_id in level:
                 task = task_by_id[task_id]
+                materialized = durable.materialize(
+                    consumer_task_id=task_id,
+                    required_task_ids=task.dependencies,
+                    task_results=broker.result_snapshot(),
+                )
+                durable.persist_context(materialized)
+                if materialized.status != "READY":
+                    raise RuntimeError(
+                        f"EXECUTION_DEPENDENCY_MATERIALIZATION_{materialized.status}:"
+                        f"{task_id}:{materialized.reason}"
+                    )
                 run_id = _claim_task(board, task_mapping, profile_by_task, task_id)
                 parent_context = (
                     broker.parent_context(task_id=task_id)
