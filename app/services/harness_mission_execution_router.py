@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from hashlib import sha256
+import json
+from pathlib import Path
 from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -11,6 +14,7 @@ from app.services.harness_authorization_service import (
     issue_harness_authorization,
 )
 from app.services.harness_collaboration_service import TaskEnvelope
+from app.services.harness_adaptive_planning_service import select_capability_for_requirement
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
@@ -334,6 +338,143 @@ def _execute_direct_capability(
         "result": adapted.to_dict(),
         "HERMES_USED": "NO",
         "HERMES_SELECTION_REASON": "single direct capability is sufficient",
+    }
+
+
+def _persist_execution_need(
+    *,
+    mission_plan: dict[str, Any],
+    need: dict[str, Any],
+    artifact_dir: str | Path,
+) -> dict[str, Any]:
+    """Persist an executor need before Harness changes mission execution state."""
+    if str(need.get("schema") or "") != "HarnessExecutionNeed/v1":
+        raise ValueError("HarnessExecutionNeed/v1 is required")
+    mission_id = str(mission_plan.get("mission_id") or "").strip()
+    causal_task_id = str(need.get("causal_task_id") or "").strip()
+    if not mission_id or not causal_task_id:
+        raise ValueError("execution need requires mission_id and causal_task_id")
+    canonical = {
+        **dict(need),
+        "mission_id": mission_id,
+        "authority": "DEEPSEEK_HARNESS",
+        "producer_selected_resolver": False,
+    }
+    raw = json.dumps(
+        canonical, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    digest = sha256(raw).hexdigest()
+    root = Path(artifact_dir) / "harness-execution-needs"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{mission_id}-{causal_task_id}-{digest[:16]}.json"
+    if not path.exists():
+        path.write_bytes(raw)
+    return {
+        "need_ref": f"artifact:harness-execution-need:{digest}",
+        "path": str(path),
+        "sha256": digest,
+        "need": canonical,
+    }
+
+
+def resolve_harness_execution_need(
+    *,
+    mission_plan: dict[str, Any],
+    need: dict[str, Any],
+    planning_context: dict[str, Any],
+    artifact_dir: str | Path,
+    used_capability_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Canonical Harness receiver for executor needs.
+
+    Executors describe what is missing. Harness alone persists the need, decides
+    RETRY versus REPLAN, and resolves any new semantic capability requirement.
+    """
+    persisted = _persist_execution_need(
+        mission_plan=mission_plan,
+        need=need,
+        artifact_dir=artifact_dir,
+    )
+    typed = dict(persisted["need"])
+    retryable = str(typed.get("retryability") or "").upper() == "RETRYABLE"
+    replan_required = bool(typed.get("replan_required"))
+    failure_class = str(typed.get("failure_class") or "").upper()
+    if failure_class in {
+        "INSUFFICIENT_EVIDENCE",
+        "TASKOUTPUTCONTRACTVIOLATION",
+        "ROUTINGPOLICYERROR",
+    }:
+        replan_required = True
+    decision = "REPLAN" if replan_required else "RETRY" if retryable else "BLOCK"
+    state_update = {
+        "schema": "HarnessMissionStateTransition/v1",
+        "authority": "DEEPSEEK_HARNESS",
+        "mission_id": str(mission_plan.get("mission_id") or ""),
+        "causal_task_id": str(typed.get("causal_task_id") or ""),
+        "need_ref": persisted["need_ref"],
+        "decision": decision,
+        "preserve_completed_results": True,
+        "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+    }
+    if decision != "REPLAN":
+        return {
+            "persisted_need": persisted,
+            "mission_state_update": state_update,
+            "resolution": None,
+        }
+
+    semantic_requirement = str(typed.get("semantic_requirement") or "").strip()
+    if not semantic_requirement:
+        raise ValueError("REPLAN requires semantic_requirement")
+    requirement = {
+        "task_id": f"need-{persisted['sha256'][:12]}",
+        "action": "READ",
+        "authorized_action": "READ",
+        "task_class": "evidence-recovery",
+        "functional_role": "EVIDENCE",
+        "required_capability_description": semantic_requirement,
+        "objective": semantic_requirement,
+        "query": " ".join([
+            semantic_requirement,
+            *[
+                str(item)
+                for item in (typed.get("missing_requirements") or ())
+                if str(item).strip()
+            ],
+        ]).strip(),
+        "expected_output": "verified evidence artifacts satisfying the missing requirements",
+        "input_refs": list(typed.get("produced_artifact_refs") or ()),
+        "risk_side_effect_class": "READ_ONLY",
+        "candidate_requirement": "NOT_APPLICABLE",
+        "dependencies": [str(typed.get("causal_task_id") or "")],
+    }
+    capability_id, competence_used, avoided, selection = (
+        select_capability_for_requirement(
+            requirement,
+            context=dict(planning_context),
+            used=set(used_capability_ids or ()),
+        )
+    )
+    prior_capability = str(typed.get("failed_capability_id") or "").strip()
+    if prior_capability and capability_id == prior_capability:
+        raise RuntimeError(
+            "HARNESS_REPLAN_REPEATED_FAILED_ROUTE_WITHOUT_NEW_CAUSAL_INFORMATION"
+        )
+    return {
+        "persisted_need": persisted,
+        "mission_state_update": {
+            **state_update,
+            "semantic_requirement": semantic_requirement,
+            "resolved_capability_id": capability_id,
+        },
+        "resolution": {
+            "required_capability": semantic_requirement,
+            "selected_capability_id": capability_id,
+            "selected_by_competence": bool(competence_used),
+            "avoided_paths": list(avoided),
+            "selection": dict(selection),
+            "producer_selected_resolver": False,
+        },
     }
 
 
