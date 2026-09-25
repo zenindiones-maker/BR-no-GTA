@@ -928,6 +928,12 @@ def _run_governed_longform_web_acquisition(
                 if isinstance(item, dict)
             ]
 
+    # max_sources is a success target, not a first-attempt ceiling. Permit one
+    # alternate candidate when the first zero-cost transport is unavailable so
+    # a single blocked URL cannot mask another directly retrievable source.
+    # The alternate is bounded and does not increase the successful-source
+    # budget.
+    max_acquisition_attempts = max_sources + 1
     selected_results: list[dict[str, Any]] = []
     seen_sources = set(known_sources)
     search_ref = str(
@@ -949,7 +955,7 @@ def _run_governed_longform_web_acquisition(
             "_parent_task_id": search_id,
             "_parent_evidence_ref": search_ref,
         })
-        if len(selected_results) >= max_sources:
+        if len(selected_results) >= max_acquisition_attempts:
             break
 
     fallback_parent_id = str(
@@ -959,7 +965,7 @@ def _run_governed_longform_web_acquisition(
         fallback_parent_evidence_ref or ""
     ).strip()
     for source_url in fallback_source_urls:
-        if len(selected_results) >= max_sources:
+        if len(selected_results) >= max_acquisition_attempts:
             break
         value = str(source_url or "").strip()
         source_key = _canonical_source_url(value)
@@ -988,6 +994,8 @@ def _run_governed_longform_web_acquisition(
     snapshot_failure_classes: list[str] = []
 
     for index, item in enumerate(selected_results, start=1):
+        if successful_acquisitions >= max_sources:
+            break
         source_url = str(item.get("url") or "").strip()
         acquire_parent_id = str(
             item.get("_parent_task_id") or search_id
