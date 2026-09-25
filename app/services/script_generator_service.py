@@ -1092,7 +1092,7 @@ def _generate_ai_structure(
     if (
         target_duration_seconds is not None
         and float(target_duration_seconds) >= 1200.0
-        and len(verified_claims) >= 2
+        and len(verified_claims) >= 1
     ):
         video_plan, evidence_gaps = _build_longform_video_plan(
             title=title,
@@ -1244,6 +1244,7 @@ def _generate_ai_structure(
         )
         failure.failure_evidence = {
             "schema": "EditorialEvidenceGapFailure/v1",
+            "partial_structure": assembly,
             "video_plan": video_plan,
             "sequence_evidence_gaps": evidence_gaps,
             "story_assembly": story_assembly,
