@@ -1,0 +1,54 @@
+name: APILayer Governed Live Proof
+run-name: APILayer Governed Live Proof · ${{ github.run_id }}
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/apilayer-governed-live-proof.yml"
+      - "scripts/apilayer_governed_live_proof.py"
+      - "app/services/web_acquisition_capability_service.py"
+      - "tests/test_web_acquisition_capability_service.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  ZERO_COST_OPERATION: "TRUE"
+
+jobs:
+  live-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Focused web fabric regression
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_web_acquisition_capability_service.py
+
+      - name: Execute governed APILayer live proof
+        env:
+          APILAYER_API_KEY: ${{ secrets.APILAYER_API_KEY }}
+        run: |
+          set -euo pipefail
+          python scripts/apilayer_governed_live_proof.py             --output artifacts/apilayer-live-proof/report.json
+
+      - name: Upload bounded proof evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apilayer-governed-live-proof-${{ github.run_id }}
+          path: artifacts/apilayer-live-proof
+          if-no-files-found: error
+          retention-days: 7
