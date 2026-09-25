@@ -270,6 +270,26 @@ def capability_health(capability_id: str) -> CapabilityHealth:
         )
 
     if str(record.health_policy or "") == "CODEX_AUTH_REQUIRED":
+        new_auth_policy = str(
+            os.getenv("BR_NEW_CODEX_DEVICE_AUTH") or ""
+        ).strip().upper()
+        if new_auth_policy in {"DENIED", "FORBIDDEN", "DISABLED", "FALSE", "0"}:
+            return CapabilityHealth(
+                capability_id=record.capability_id,
+                state=BLOCKED,
+                reason=(
+                    "Codex requires fresh authentication, but human policy forbids "
+                    "new Codex device authentication. Exclude this candidate and let "
+                    "Harness resolve another compatible Registry capability."
+                ),
+                retry_allowed=False,
+                confidence=1.0,
+                sample_size=0,
+                last_success_at=None,
+                last_failure_at=None,
+                evidence_refs=("human-policy:NEW_CODEX_DEVICE_AUTH=DENIED",),
+                source="HUMAN_CODEX_AUTH_POLICY",
+            )
         github_actions = str(os.getenv("GITHUB_ACTIONS") or "").strip().lower()
         federation_config = str(
             os.getenv("BR_CODEX_FEDERATION_CONFIGURED") or ""
