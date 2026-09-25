@@ -4,9 +4,13 @@ from dataclasses import dataclass
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 
 
-DEFAULT_USER_AGENT = "BR-no-GTA/1.0"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 "
+    "Chrome/120 Safari/537.36 BR-no-GTA/1.0"
+)
 
 
 @dataclass(frozen=True)
