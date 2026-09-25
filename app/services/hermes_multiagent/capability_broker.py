@@ -2825,7 +2825,23 @@ class HermesHarnessCapabilityBroker:
                 "producer_selected_resolver": False,
             })
         child = self._task(task_id)
-        context = self.parent_context(task_id=task_id)
+        # The causal task failed before producing a TaskResultEnvelope.  Its
+        # HarnessExecutionNeed is the durable dependency artifact for this
+        # recovery node, so do not require parent_context() to manufacture a
+        # nonexistent successful result from the failed causal task.
+        context = {
+            "mission_id": self.spec.mission_id,
+            "task_id": task_id,
+            "goal_id": self.spec.goal_id,
+            "parents": [],
+            "evidence_refs": list(dict.fromkeys([
+                need_ref,
+                *[str(ref) for ref in input_artifact_refs if str(ref).strip()],
+            ])),
+            "dependency_result_refs": [],
+            "harness_execution_need_ref": need_ref,
+            "causal_task_id": causal_task_id,
+        }
         payload = {
             "mission_id": child.mission_id,
             "task_id": child.task_id,
