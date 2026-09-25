@@ -2871,9 +2871,25 @@ def run(
                         or resolved_result.get("evidence_ref")
                         or ""
                     ).strip()
+                    partial_ref = str(
+                        lifecycle["persisted_need"]["need"].get(
+                            "usable_partial_result_ref"
+                        )
+                        or ""
+                    ).strip()
+                    if partial_ref:
+                        persisted_partial = broker.load_persisted_partial_result(
+                            task_result_ref=partial_ref
+                        )
+                        payload["partial_result_ref"] = partial_ref
+                        payload["partial_result"] = persisted_partial[
+                            "partial_result"
+                        ]
+                        payload["resume_mode"] = "EXTEND_VALID_PARTIAL"
                     if resolved_ref:
                         payload["evidence_refs"] = list(dict.fromkeys([
                             *list(payload.get("evidence_refs") or ()),
+                            *([partial_ref] if partial_ref else []),
                             resolved_ref,
                         ]))
                         payload["harness_resolved_need_ref"] = str(
