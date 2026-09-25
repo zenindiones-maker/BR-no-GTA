@@ -6,6 +6,7 @@ from urllib import error
 import pytest
 
 from scripts.apilayer_governed_live_proof import _classify as classify_live_proof_failure
+from scripts import gta6_fresh_research_worker as fresh_research
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_authorization_service import issue_harness_authorization
 from app.services.harness_routing_policy_service import (
@@ -17,16 +18,26 @@ from app.services import web_acquisition_capability_service as web
 
 
 class FakeResponse:
-    def __init__(self, body: bytes, *, status=200, headers=None):
+    def __init__(
+        self,
+        body: bytes,
+        *,
+        status=200,
+        headers=None,
+        url="https://example.com/resolved",
+    ):
         self.body = body
         self.status = status
         self.headers = dict(headers or {})
+        self.url = url
     def __enter__(self):
         return self
     def __exit__(self, *_args):
         return False
     def read(self, _limit=-1):
         return self.body
+    def geturl(self):
+        return self.url
 
 
 def _route(capability_id, *, action="RESEARCH"):
@@ -105,6 +116,47 @@ def test_direct_source_fetch_precedes_apilayer_and_cache_precedes_network(
     )
     assert second["cache_hit"] is True
     assert len(calls) == 1
+
+
+def test_direct_source_request_profile_matches_fresh_research_zero_cost_get(
+    monkeypatch,
+):
+    calls = []
+
+    def urlopen(req, timeout):
+        calls.append(
+            {
+                "headers": {
+                    str(key).casefold(): str(value)
+                    for key, value in req.header_items()
+                },
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse(
+            b"<html><body>Rockstar source content for transport parity.</body></html>",
+            headers={"Content-Type": "text/html"},
+            url=req.full_url,
+        )
+
+    monkeypatch.setattr(web.request, "urlopen", urlopen)
+
+    web._direct_fetch("https://example.com/source", web.DEFAULT_TIMEOUT_SECONDS)
+    fresh_research._fetch_text(
+        "https://example.com/source",
+        timeout=int(web.DEFAULT_TIMEOUT_SECONDS),
+    )
+
+    direct, fresh = calls
+    assert direct["headers"]["accept"] == fresh["headers"]["accept"]
+    assert (
+        direct["headers"]["accept-language"]
+        == fresh["headers"]["accept-language"]
+    )
+    assert direct["headers"]["user-agent"] == "BR-no-GTA-Harness/1.0"
+    assert fresh["headers"]["user-agent"] == fresh_research.USER_AGENT
+    assert float(direct["timeout"]) == web.DEFAULT_TIMEOUT_SECONDS
+    assert float(fresh["timeout"]) == web.DEFAULT_TIMEOUT_SECONDS
 
 
 def test_direct_failure_uses_scraper_lite_exactly_once_and_redacts_secret(
