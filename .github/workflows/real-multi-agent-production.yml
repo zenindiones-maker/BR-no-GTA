@@ -561,7 +561,7 @@ jobs:
           echo "TELEGRAM_REMAINS_PRIMARY_HUMAN_INTERFACE=PASS"
 
       - name: Build final operational production report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (env.BR_CONTINUATION_ID == '' || env.BR_CONTINUATION_AUTHORITY_SCHEMA == 'ContinuationAuthorization/v1') }}
         run: |
           set -euo pipefail
           python scripts/summarize_performance_trace.py \
