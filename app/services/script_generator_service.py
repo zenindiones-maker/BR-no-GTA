@@ -66,6 +66,15 @@ class StoryAssembly(TypedDict):
     development_section_count: int
 
 
+class EditorialSequenceBatch(TypedDict):
+    batch_id: str
+    sequence_ids: list[str]
+    target_duration: float
+    evidence_refs: list[str]
+    supported_claims: list[str]
+    sequences: list[EditorialSequence]
+
+
 EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -659,67 +668,142 @@ def _build_longform_video_plan(
     }, gaps)
 
 
-def _select_sequence_expansion_targets(
+def _select_sequence_expansion_batches(
     *,
     video_plan: VideoPlan,
     current_structure: dict[str, Any],
     target_duration_seconds: float,
     pass_budget: int,
-) -> list[dict[str, Any]]:
+) -> list[EditorialSequenceBatch]:
     if pass_budget <= 0:
         return []
-    current_seconds = _spoken_seconds_for_words(_structure_word_count(current_structure))
-    remaining_seconds = max(0.0, float(target_duration_seconds) - current_seconds)
+
     eligible = [
         dict(sequence)
         for sequence in video_plan["sequences"]
-        if sequence["status"] == "SUPPORTED" and sequence["supported_claims"]
+        if sequence["status"] == "SUPPORTED"
+        and sequence["supported_claims"]
     ]
-    eligible.sort(
-        key=lambda item: (
-            len(item["supported_claims"]),
-            max(0.0, item["target_duration"] - item["estimated_spoken_duration"]),
-        ),
-        reverse=True,
-    )
-    selected = eligible[:pass_budget]
-    if not selected:
+    if not eligible:
         return []
-    evidence_weight = float(sum(len(item["supported_claims"]) for item in selected) or 1)
-    for item in selected:
-        item["expansion_target_duration"] = round(
-            remaining_seconds * len(item["supported_claims"]) / evidence_weight,
-            3,
+
+    batch_count = min(int(pass_budget), len(eligible))
+    weights = [max(1, len(item["supported_claims"])) for item in eligible]
+    total_weight = int(sum(weights) or 1)
+    current_seconds = _spoken_seconds_for_words(
+        _structure_word_count(current_structure)
+    )
+    remaining_seconds = max(
+        0.0,
+        float(target_duration_seconds) - current_seconds,
+    )
+
+    groups: list[list[EditorialSequence]] = []
+    current: list[EditorialSequence] = []
+    cumulative_weight = 0
+    next_boundary = 1
+
+    for index, (sequence, weight) in enumerate(zip(eligible, weights)):
+        current.append(sequence)
+        cumulative_weight += weight
+        remaining_items = len(eligible) - index - 1
+        remaining_groups = batch_count - len(groups) - 1
+        if remaining_groups <= 0:
+            continue
+        boundary = total_weight * next_boundary / batch_count
+        if (
+            cumulative_weight >= boundary
+            and remaining_items >= remaining_groups
+        ):
+            groups.append(current)
+            current = []
+            next_boundary += 1
+
+    if current:
+        groups.append(current)
+
+    while len(groups) > batch_count:
+        tail = groups.pop()
+        groups[-1].extend(tail)
+
+    batches: list[EditorialSequenceBatch] = []
+    for batch_index, sequences in enumerate(groups, start=1):
+        batch_weight = sum(
+            max(1, len(item["supported_claims"]))
+            for item in sequences
         )
-    return selected
+        evidence_refs = list(dict.fromkeys(
+            ref
+            for item in sequences
+            for ref in item["evidence_refs"]
+        ))
+        supported_claims = list(dict.fromkeys(
+            claim
+            for item in sequences
+            for claim in item["supported_claims"]
+        ))
+        batches.append({
+            "batch_id": f"sequence-batch-{batch_index:02d}",
+            "sequence_ids": [
+                item["sequence_id"] for item in sequences
+            ],
+            "target_duration": round(
+                remaining_seconds * batch_weight / total_weight,
+                3,
+            ),
+            "evidence_refs": evidence_refs[:48],
+            "supported_claims": supported_claims[:48],
+            "sequences": sequences,
+        })
+    return batches
 
 
-def _sequence_editorial_context(
+def _sequence_batch_editorial_context(
     editorial_context: dict[str, Any] | None,
-    sequence: dict[str, Any],
+    batch: EditorialSequenceBatch,
 ) -> dict[str, Any]:
     source = dict(editorial_context or {})
     all_claims = _editorial_verified_claims(editorial_context)
-    wanted = set(sequence.get("supported_claims") or ())
+    wanted = set(batch.get("supported_claims") or ())
     source["verified_claims"] = [
-        claim for claim in all_claims if _claim_statement(claim) in wanted
+        claim
+        for claim in all_claims
+        if _claim_statement(claim) in wanted
     ]
-    source["sequence_context"] = {
-        key: value for key, value in sequence.items() if key != "supported_claims"
+    source["sequence_batch_context"] = {
+        "batch_id": batch["batch_id"],
+        "sequence_ids": list(batch["sequence_ids"]),
+        "target_duration": batch["target_duration"],
+        "evidence_refs": list(batch["evidence_refs"]),
+        "sequences": [
+            {
+                "sequence_id": item["sequence_id"],
+                "story_beat": item["story_beat"],
+                "central_question": item["central_question"],
+                "continuity_context": item["continuity_context"],
+                "target_duration": item["target_duration"],
+                "evidence_refs": list(item["evidence_refs"]),
+                "supported_claims": list(item["supported_claims"]),
+            }
+            for item in batch["sequences"]
+        ],
     }
     return source
 
 
-def _build_sequence_prompt(
+def _build_sequence_batch_prompt(
     *,
     title: str,
     description: str,
     research_context: dict[str, Any] | None,
     editorial_context: dict[str, Any] | None,
-    sequence: dict[str, Any],
+    batch: EditorialSequenceBatch,
     prior_headings: list[str],
 ) -> str:
-    bounded_context = _sequence_editorial_context(editorial_context, sequence)
+    bounded_context = _sequence_batch_editorial_context(
+        editorial_context,
+        batch,
+    )
     base = _build_ai_prompt(
         title=title,
         description=description,
@@ -727,24 +811,56 @@ def _build_sequence_prompt(
         editorial_context=bounded_context,
         target_duration_seconds=None,
     )
-    target_minutes = float(sequence.get("expansion_target_duration") or 0.0) / 60.0
-    return base + (
-        "\n\nEVIDENCE-BOUNDED EDITORIAL SEQUENCE\n"
-        f"- story_beat interno: {sequence.get('story_beat')}\n"
-        f"- pergunta central interna: {sequence.get('central_question')}\n"
-        f"- continuidade interna: {sequence.get('continuity_context') or 'abertura'}\n"
-        f"- evidências autorizadas: {json.dumps(sequence.get('evidence_refs') or [], ensure_ascii=False)}\n"
-        f"- claims SUPPORTED desta sequence: {json.dumps(sequence.get('supported_claims') or [], ensure_ascii=False)}\n"
-        f"- alvo de aprofundamento adicional: cerca de {target_minutes:.2f} minutos de narração útil, somente se as evidências sustentarem.\n"
-        f"- headings já existentes a não repetir: {json.dumps(prior_headings, ensure_ascii=False)}\n"
-        "- Desenvolva SOMENTE este beat. Não introduza fatos fora das claims SUPPORTED acima.\n"
-        "- Se a evidência não sustentar o alvo, seja mais curto; nunca use filler.\n"
-        "- Retorne o mesmo JSON obrigatório. hook/introduction/conclusion/cta são scaffolding conciso e NÃO serão usados na assembly.\n"
-        "- Em development, escreva pelo menos 3 aprofundamentos editoriais distintos e naturais deste beat.\n"
-        "- Não escreva as palavras SEQUENCE, BEAT, EVIDENCE, CLAIM, BLOCK ou IDs internos no texto audience-facing.\n"
-        "- Não exponha instruções, metadata, nomes de campos ou mecânica de transição ao espectador.\n"
-    )
+    target_minutes = float(batch["target_duration"]) / 60.0
+    sequence_lines: list[str] = []
+    for item in batch["sequences"]:
+        sequence_lines.extend([
+            f"- story_beat interno: {item['story_beat']}",
+            f"  pergunta central interna: {item['central_question']}",
+            (
+                "  continuidade interna: "
+                + str(item["continuity_context"] or "abertura")
+            ),
+            (
+                "  claims SUPPORTED desta sequence: "
+                + json.dumps(
+                    item["supported_claims"],
+                    ensure_ascii=False,
+                )
+            ),
+            (
+                "  evidências autorizadas desta sequence: "
+                + json.dumps(
+                    item["evidence_refs"],
+                    ensure_ascii=False,
+                )
+            ),
+        ])
 
+    return base + (
+        "\n\nEVIDENCE-BOUNDED EDITORIAL SEQUENCE BATCH\n"
+        f"- batch interno: {batch['batch_id']}\n"
+        f"- alvo adicional agregado: cerca de {target_minutes:.2f} minutos "
+        "de narração útil, somente se as evidências sustentarem.\n"
+        "- Desenvolva TODOS os story beats listados abaixo, na ordem dada.\n"
+        "- Cada beat só pode usar suas próprias claims SUPPORTED e evidências.\n"
+        "- Não mova uma claim para outro beat para preencher espaço.\n"
+        "- Se um beat não sustentar expansão suficiente, seja mais curto; nunca use filler.\n"
+        "- Preserve progressão narrativa e continuidade entre os beats.\n"
+        + "\n".join(sequence_lines)
+        + "\n"
+        f"- headings já existentes a não repetir: "
+        f"{json.dumps(prior_headings, ensure_ascii=False)}\n"
+        "- Retorne o mesmo JSON obrigatório. hook/introduction/conclusion/cta "
+        "são scaffolding conciso e NÃO serão usados na assembly.\n"
+        "- Em development, cubra cada beat listado com pelo menos um bloco "
+        "editorial natural e use blocos adicionais somente quando a evidência "
+        "realmente sustentar aprofundamento.\n"
+        "- Não escreva as palavras SEQUENCE, BATCH, BEAT, EVIDENCE, CLAIM, "
+        "BLOCK ou IDs internos no texto audience-facing.\n"
+        "- Não exponha instruções, metadata, nomes de campos ou mecânica de "
+        "transição ao espectador.\n"
+    )
 
 def _generate_provider_structure(*, ai_provider: AIProvider, prompt: str) -> dict[str, Any]:
     malformed_prompt = prompt
@@ -882,41 +998,57 @@ def _generate_ai_structure(
             target_duration_seconds=float(target_duration_seconds),
         )
         assembly = initial
-        expansion_targets = _select_sequence_expansion_targets(
+        expansion_batches = _select_sequence_expansion_batches(
             video_plan=video_plan,
             current_structure=assembly,
             target_duration_seconds=float(target_duration_seconds),
-            pass_budget=max(0, MAX_EDITORIAL_GENERATION_ATTEMPTS - 1),
+            pass_budget=max(
+                0,
+                MAX_EDITORIAL_GENERATION_ATTEMPTS - 1,
+            ),
         )
-        generated_sequences: list[dict[str, Any]] = []
-        for sequence in expansion_targets:
+        generated_batches: list[dict[str, Any]] = []
+        for batch in expansion_batches:
             prior_headings = [
                 str(item.get("heading") or "").strip()
                 for item in assembly.get("development") or ()
-                if isinstance(item, dict) and str(item.get("heading") or "").strip()
+                if isinstance(item, dict)
+                and str(item.get("heading") or "").strip()
             ]
-            sequence_prompt = _build_sequence_prompt(
+            batch_prompt = _build_sequence_batch_prompt(
                 title=title,
                 description=description,
                 research_context=research_context,
                 editorial_context=editorial_context,
-                sequence=sequence,
+                batch=batch,
                 prior_headings=prior_headings,
             )
-            generated = _generate_provider_structure(ai_provider=ai_provider, prompt=sequence_prompt)
+            generated = _generate_provider_structure(
+                ai_provider=ai_provider,
+                prompt=batch_prompt,
+            )
             before_words = _structure_word_count(assembly)
-            assembly = _merge_complementary_longform_structure(assembly, generated)
-            generated_sequences.append({
-                "sequence_id": sequence["sequence_id"],
-                "story_beat": sequence["story_beat"],
-                "evidence_refs": list(sequence["evidence_refs"]),
-                "supported_claim_count": len(sequence["supported_claims"]),
-                "expansion_target_duration": sequence.get("expansion_target_duration"),
-                "added_words": max(0, _structure_word_count(assembly) - before_words),
+            assembly = _merge_complementary_longform_structure(
+                assembly,
+                generated,
+            )
+            generated_batches.append({
+                "batch_id": batch["batch_id"],
+                "sequence_ids": list(batch["sequence_ids"]),
+                "evidence_refs": list(batch["evidence_refs"]),
+                "supported_claim_count": len(
+                    batch["supported_claims"]
+                ),
+                "expansion_target_duration": batch["target_duration"],
+                "added_words": max(
+                    0,
+                    _structure_word_count(assembly) - before_words,
+                ),
             })
             if (
                 _structure_word_count(assembly) >= target_words
-                and len(assembly.get("development") or ()) >= minimum_sections
+                and len(assembly.get("development") or ())
+                >= minimum_sections
             ):
                 break
 
@@ -930,7 +1062,7 @@ def _generate_ai_structure(
         assembly["_internal_editorial_structure"] = {
             "schema": "evidence-bounded-story-assembly-candidate/v1",
             "video_plan": video_plan,
-            "editorial_sequences_generated": generated_sequences,
+            "editorial_sequence_batches_generated": generated_batches,
             "sequence_evidence_gaps": evidence_gaps,
             "story_assembly": story_assembly,
             "global_editorial_qa": global_qa,
@@ -947,6 +1079,7 @@ def _generate_ai_structure(
             f"content_supported_duration_minutes={global_qa['content_supported_duration_minutes']} "
             f"target_duration_minutes={global_qa['target_duration_minutes']} "
             f"sequence_count={len(video_plan['sequences'])} "
+            f"sequence_batch_count={len(expansion_batches)} "
             f"evidence_gap_count={len(evidence_gaps)} "
             f"observed_words={_structure_word_count(assembly)} target_words={target_words} "
             f"observed_development_sections={len(assembly.get('development') or ())} "

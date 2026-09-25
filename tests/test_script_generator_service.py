@@ -823,10 +823,22 @@ def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metada
     )
 
     assert len(provider.prompts) == 3
-    assert "EVIDENCE-BOUNDED EDITORIAL SEQUENCE" in provider.prompts[1]
+    assert "EVIDENCE-BOUNDED EDITORIAL SEQUENCE BATCH" in provider.prompts[1]
     assert "claims SUPPORTED desta sequence" in provider.prompts[1]
     assert "EXPANSÃO EDITORIAL COMPLEMENTAR OBRIGATÓRIA" not in provider.prompts[1]
     internal = result["_internal_editorial_structure"]
+    covered_sequence_ids = {
+        sequence_id
+        for batch in internal["editorial_sequence_batches_generated"]
+        for sequence_id in batch["sequence_ids"]
+    }
+    supported_sequence_ids = {
+        item["sequence_id"]
+        for item in internal["video_plan"]["sequences"]
+        if item["status"] == "SUPPORTED"
+    }
+    assert covered_sequence_ids == supported_sequence_ids
+    assert len(internal["editorial_sequence_batches_generated"]) == 2
     assert internal["video_plan"]["schema"] == "video-plan/v1"
     assert internal["story_assembly"]["schema"] == "story-assembly/v1"
     assert len(internal["video_plan"]["sequences"]) == 4
