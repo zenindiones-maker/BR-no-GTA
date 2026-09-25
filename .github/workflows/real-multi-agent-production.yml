@@ -2,6 +2,20 @@ name: Real Multi-Agent Production
 run-name: Real Multi-Agent Production · ${{ github.run_id }}
 
 on:
+  workflow_dispatch:
+    inputs:
+      resume_run_id:
+        description: "Prior Production run whose durable checkpoint must be rehydrated"
+        required: false
+        default: ""
+      durable_mission_key:
+        description: "Stable mission identity across workflow/process restarts"
+        required: false
+        default: ""
+      continuation_count:
+        description: "Bounded autonomous continuation generation"
+        required: false
+        default: "0"
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -49,6 +63,9 @@ env:
   BR_PERFORMANCE_TRACE_FILE: ${{ github.workspace }}/artifacts/real-multi-agent-production/performance-trace.jsonl
   BR_PERFORMANCE_TRACE_ID: "real-production:${{ github.run_id }}:${{ github.run_attempt }}"
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
+  BR_DURABLE_MISSION_KEY: ${{ inputs.durable_mission_key || format('production-{0}', github.sha) }}
+  BR_RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
+  BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
@@ -81,6 +98,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+
+      - name: Rehydrate durable mission checkpoint
+        if: ${{ env.BR_RESUME_RUN_ID != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p .resume-checkpoint
+          gh run download "$BR_RESUME_RUN_ID" \\
+            --repo "$GITHUB_REPOSITORY" \\
+            --name "real-multi-agent-production-$BR_RESUME_RUN_ID" \\
+            --dir .resume-checkpoint
+          if [ -d .resume-checkpoint/artifacts/real-multi-agent-production ]; then
+            mkdir -p artifacts/real-multi-agent-production
+            cp -a .resume-checkpoint/artifacts/real-multi-agent-production/. artifacts/real-multi-agent-production/
+          fi
+          if [ -f artifacts/real-multi-agent-production/durable-mission-state.json ]; then
+            cp artifacts/real-multi-agent-production/durable-mission-state.json \\
+              artifacts/real-multi-agent-production/previous-durable-mission-state.json
+          fi
+          echo "CHECKPOINT_REHYDRATION=PASS"
+          echo "COMPLETED_WORK_NOT_REEXECUTED=ENFORCED_BY_TASK_RESULT_IDEMPOTENCY"
 
       - name: Install bounded controller runtime
         run: |
@@ -520,6 +557,57 @@ jobs:
               "YOUTUBE_REVIEW_VIDEO_ID":final.get("YOUTUBE_REVIEW_VIDEO_ID"),
           }
           (root/"final-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
+          # Durable mission state is the cross-run source of continuation truth.
+          # A workflow process ending is not equivalent to the human mission ending.
+          partials=[]
+          for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
+              try: row=json.loads(path.read_text())
+              except Exception: continue
+              if row.get("status") != "PARTIAL_FAILED": continue
+              result=row.get("result") or {}
+              evidence=result.get("failure_evidence") or {}
+              qa=evidence.get("global_editorial_qa") or {}
+              minutes=qa.get("content_supported_duration_minutes")
+              if minutes is None:
+                  text=json.dumps(evidence,ensure_ascii=False)
+                  import re
+                  m=re.search(r'content_supported_duration_minutes["=: ]+([0-9.]+)',text)
+                  minutes=float(m.group(1)) if m else None
+              partials.append({"task_id":row.get("task_id"),"task_result_ref":f"artifact:task-results/{path.name}","minutes":minutes,"failure_class":"INSUFFICIENT_EVIDENCE"})
+          latest=partials[-1] if partials else {}
+          previous={}
+          previous_path=root/"previous-durable-mission-state.json"
+          if previous_path.is_file():
+              try: previous=json.loads(previous_path.read_text())
+              except Exception: previous={}
+          current_minutes=float(latest.get("minutes") or 0.0)
+          previous_minutes=float(previous.get("mission_progress",{}).get("content_supported_duration_minutes") or 0.0)
+          progress=current_minutes > previous_minutes + 0.001
+          failure_signature=(f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}" if latest else "")
+          repeated=(failure_signature and failure_signature==previous.get("failure_signature"))
+          terminal=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING"
+          correctable=bool(latest) and not terminal and not repeated
+          durable={
+              "schema":"DurableMissionState/v1",
+              "mission_key":os.environ.get("BR_DURABLE_MISSION_KEY"),
+              "objective":"MASTER_FINAL>=20min -> FINAL_QA PASS -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING",
+              "source_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "source_run_attempt":int(os.environ.get("GITHUB_RUN_ATTEMPT","1")),
+              "continuation_count":int(os.environ.get("BR_CONTINUATION_COUNT","0")),
+              "terminal":terminal,
+              "mission_state":"HUMAN_REVIEW_PENDING" if terminal else "MISSION_NOT_TERMINAL",
+              "current_blocker":latest or None,
+              "failure_signature":failure_signature or None,
+              "repeated_failure_signature":bool(repeated),
+              "correctable_failure":bool(correctable),
+              "next_action_required":bool(correctable),
+              "resume_scope":"MINIMAL_AFFECTED_SUBGRAPH",
+              "valid_artifacts_preserved":True,
+              "partial_results":partials[-8:],
+              "mission_progress":{"content_supported_duration_minutes":current_minutes,"improved_from_previous_checkpoint":progress},
+              "loop_guard":{"blind_retry_forbidden":True,"same_signature_requires_different_replan":True,"max_autonomous_continuations":6},
+          }
+          (root/"durable-mission-state.json").write_text(json.dumps(durable,ensure_ascii=False,indent=2),encoding="utf-8")
           print("FINAL_PRODUCTION_STATE="+str(report["FINAL_PRODUCTION_STATE"]))
           print("YOUTUBE_PUBLICATION="+str(report["YOUTUBE_PUBLICATION"]))
           print("CODEX_CHECKPOINT_PRESERVED=PASS")
@@ -535,3 +623,42 @@ jobs:
             runtime/youtube-upload/results/
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Continue non-terminal durable mission
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STATE=artifacts/real-multi-agent-production/durable-mission-state.json
+          test -f "$STATE" || { echo "DURABLE_MISSION_STATE_MISSING"; exit 0; }
+          eval "$(python - <<'PY'
+          import json,shlex
+          d=json.load(open('artifacts/real-multi-agent-production/durable-mission-state.json'))
+          print('NEXT='+shlex.quote('1' if d.get('next_action_required') else '0'))
+          print('COUNT='+shlex.quote(str(int(d.get('continuation_count') or 0))))
+          print('KEY='+shlex.quote(str(d.get('mission_key') or '')))
+          print('REPEATED='+shlex.quote('1' if d.get('repeated_failure_signature') else '0'))
+          PY
+          )"
+          if [ "$NEXT" != 1 ]; then
+            echo "AUTONOMOUS_CONTINUATION_NOT_REQUIRED=PASS"
+            exit 0
+          fi
+          if [ "$REPEATED" = 1 ]; then
+            echo "FAILURE_SIGNATURE_LOOP_GUARD=PASS"
+            exit 0
+          fi
+          if [ "$COUNT" -ge 6 ]; then
+            echo "GOVERNED_CONTINUATION_BUDGET_EXHAUSTED=PASS"
+            exit 0
+          fi
+          NEXT_COUNT=$((COUNT+1))
+          gh workflow run real-multi-agent-production.yml \\
+            --repo "$GITHUB_REPOSITORY" \\
+            --ref "$GITHUB_REF_NAME" \\
+            -f resume_run_id="$GITHUB_RUN_ID" \\
+            -f durable_mission_key="$KEY" \\
+            -f continuation_count="$NEXT_COUNT"
+          echo "EVENT_DRIVEN_RESUME=PASS"
+          echo "BOUNDED_AUTONOMOUS_CONTINUATION=PASS"
