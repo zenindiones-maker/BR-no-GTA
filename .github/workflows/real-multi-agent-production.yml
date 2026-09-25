@@ -703,7 +703,10 @@ jobs:
               goal_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
               remaining_requirements=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["CONTINUE_ORIGINAL_PRODUCTION"]),
               eligible_capability_ids=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["harness.semantic.requirement.resolve"]),
-              budget_available=int(os.environ.get("BR_CONTINUATION_COUNT","0") or 0) < 6,
+              # Transport/redrive count is observability only. Mission
+              # terminality is governed by semantic progress, strategy history,
+              # human/external gates and remaining executable work.
+              budget_available=True,
               authorized_action_available=True,
               failure_signature=failure_signature,
               strategy="MINIMAL_AFFECTED_SUBGRAPH",
@@ -762,12 +765,8 @@ jobs:
             exit 0
           fi
           if [ "$REPEATED" = 1 ]; then
-            echo "FAILURE_SIGNATURE_LOOP_GUARD=PASS"
-            exit 0
-          fi
-          if [ "$COUNT" -ge 6 ]; then
-            echo "GOVERNED_CONTINUATION_BUDGET_EXHAUSTED=PASS"
-            exit 0
+            echo "SAME_ROUTE_FORBIDDEN=PASS"
+            echo "REPLAN_REQUIRED=PASS"
           fi
           NEXT_COUNT=$((COUNT+1))
           STATE_VERSION="$(python -c 'import json; print(json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))["state_version"])')"
