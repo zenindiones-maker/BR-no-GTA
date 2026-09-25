@@ -42,7 +42,24 @@ class _ProofBoard:
         return 1
 
 
+def _root_cause(exc: Exception) -> Exception:
+    current = exc
+    seen: set[int] = set()
+    for _ in range(8):
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        candidate = getattr(current, "__cause__", None)
+        if not isinstance(candidate, Exception):
+            candidate = getattr(current, "__context__", None)
+        if not isinstance(candidate, Exception):
+            break
+        current = candidate
+    return current
+
+
 def _classify(exc: Exception) -> str:
+    exc = _root_cause(exc)
     message = str(exc)
     if isinstance(exc, APILayerAuthRequired):
         if "PRODUCT_AUTH_REQUIRED" in message:
@@ -313,9 +330,12 @@ def main() -> int:
         ]
         report["status"] = "PASS" if all(required) else "FAIL"
     except Exception as exc:
+        root = _root_cause(exc)
         report["status"] = "FAIL"
         report["FAILURE_CLASS"] = _classify(exc)
-        report["FAILURE_DETAIL"] = str(exc)[:800]
+        report["FAILURE_DETAIL"] = str(root)[:800]
+        report["FAILURE_WRAPPER"] = type(exc).__name__
+        report["FAILURE_ROOT_TYPE"] = type(root).__name__
         report["SECRET_LEAKAGE"] = int(
             bool(secret) and secret in json.dumps(report, default=str)
         )
