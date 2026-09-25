@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 import pytest
 from app.services.harness_durable_execution_v3 import (
- DurableExecutionV3,ExecutionOutcome,MissionIdentity,PlanRevision,immutable_ref)
+ DurableExecutionV3,ExecutionOutcome,MissionIdentity,PlanRevision,ClaimantIdentity,
+ ClaimantRunObservation,immutable_ref)
 from app.services.harness_git_transaction_store import CasConflict
 
 @dataclass
@@ -18,6 +19,9 @@ class FakeGitStore:
   observed=None if self.head is None else self.head["state_version"]
   if observed!=expected_state_version: raise CasConflict("CAS_CONFLICT:STATE_VERSION")
   self.objects.update(immutable_objects);self.commits+=1;self.sha=f"H{self.commits}";self.head=dict(mission_head);return self.sha
+
+def claimant(run_id="100",attempt=1):
+ return ClaimantIdentity(run_id,attempt,"wf@refs/heads/main","a"*40,"production")
 
 def plan():
  return PlanRevision.create(mission_id="M1",human_goal_id="HG1",plan_id="P1",revision=1,
@@ -53,26 +57,26 @@ def test_issue_is_atomic_and_refresh_claims_generation():
  assert len(s.head["pending_outbox_refs"])==1
  refreshed=s.snapshot("M1")
  c,claim,fence=rt.claim(snapshot=refreshed,mission_id="M1",continuation_id=r.continuation_id,
-  authorization_id=g.authorization_id,claimant_run_id="101")
+  authorization_id=g.authorization_id,claimant_identity=claimant("101",1))
  assert c=="H2" and fence==1 and claim==s.objects[s.head["active_claim_ref"]]["claim_id"]
 
 def test_forged_or_noncanonical_authority_rejected():
  rt,s=runtime();_,g,r=issue(rt,s);snap=s.snapshot("M1")
  with pytest.raises(PermissionError,match="CALLER_SUPPLIED"):
   rt.claim(snapshot=snap,mission_id="M1",continuation_id="forged",
-   authorization_id=g.authorization_id,claimant_run_id="x")
+   authorization_id=g.authorization_id,claimant_identity=claimant("x",1))
  s.head["active_authorization_ref"]="objects/authorizations/sha256/notcanonical.json"
  with pytest.raises(PermissionError,match="NO_VALID_CANONICAL_CLAIM"):
   rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",continuation_id=r.continuation_id,
-   authorization_id=g.authorization_id,claimant_run_id="x")
+   authorization_id=g.authorization_id,claimant_identity=claimant("x",1))
 
 def test_two_workers_exactly_one_claims():
  rt,s=runtime();_,g,r=issue(rt,s);a=s.snapshot("M1");b=s.snapshot("M1")
  assert rt.claim(snapshot=a,mission_id="M1",continuation_id=r.continuation_id,
-  authorization_id=g.authorization_id,claimant_run_id="A")[2]==1
+  authorization_id=g.authorization_id,claimant_identity=claimant("A",1))[2]==1
  with pytest.raises(CasConflict,match="STALE_WORKER_NOOP"):
   rt.claim(snapshot=b,mission_id="M1",continuation_id=r.continuation_id,
-   authorization_id=g.authorization_id,claimant_run_id="B")
+   authorization_id=g.authorization_id,claimant_identity=claimant("B",1))
  assert s.head["fencing_epoch"]==1
 
 def test_old_generation_plan_runtime_orchestration_rejected():
@@ -82,18 +86,20 @@ def test_old_generation_plan_runtime_orchestration_rejected():
   original=s.head[key];s.head[key]=value
   with pytest.raises(PermissionError,match="STALE_CONTINUATION_NOOP"):
    rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",continuation_id=r.continuation_id,
-    authorization_id=g.authorization_id,claimant_run_id="X")
+    authorization_id=g.authorization_id,claimant_identity=claimant("X",1))
   s.head[key]=original
 
 def test_abandoned_claim_recovery_mints_higher_fence():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,f1=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
-  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_run_id="dead")
- rt.abandon(snapshot=s.snapshot("M1"),claim_id=claim,claimant_run_conclusion="failure")
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("dead",1))
+ obs=ClaimantRunObservation(claimant("dead",1).to_dict(),"completed","failure","a"*40,1,None,None)
+ _,oref=rt.persist_run_observation(snapshot=s.snapshot("M1"),observation=obs)
+ rt.abandon(snapshot=s.snapshot("M1"),claim_id=claim,observation_ref=oref)
  # recovery reducer issues a fresh generation
  _,g2,r2=rt.issue(snapshot=s.snapshot("M1"),current=outcome(attempt_id="A2"),previous=None,
   kind="RECOVERY",reason="abandoned claim")
  _,claim2,f2=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",continuation_id=r2.continuation_id,
-  authorization_id=g2.authorization_id,claimant_run_id="new")
+  authorization_id=g2.authorization_id,claimant_identity=claimant("new",1))
  assert f2>f1
  with pytest.raises(PermissionError,match="STALE_FENCING_TOKEN"):
   rt.require_current_claim(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f1)
@@ -101,7 +107,7 @@ def test_abandoned_claim_recovery_mints_higher_fence():
 
 def test_settlement_all_or_nothing_and_consumes():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
-  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_run_id="A")
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("A",1))
  snap=s.snapshot("M1")
  result={"schema":"TaskResultEnvelope/v2","task_id":"research","status":"COMPLETED"}
  rr,_=immutable_ref("task-results",result)
@@ -113,7 +119,7 @@ def test_settlement_all_or_nothing_and_consumes():
 
 def test_settlement_cas_conflict_changes_nothing_canonical():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
-  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_run_id="A")
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("A",1))
  stale=s.snapshot("M1");s.sha="OTHER"
  before=dict(s.head);objects=set(s.objects)
  with pytest.raises(CasConflict):
@@ -129,28 +135,28 @@ def test_relay_is_at_least_once_but_claim_is_single():
  assert s.head["pending_outbox_refs"]==[]
  snap=s.snapshot("M1")
  _,claim,fence=rt.claim(snapshot=snap,mission_id="M1",continuation_id=r.continuation_id,
-  authorization_id=g.authorization_id,claimant_run_id="111")
+  authorization_id=g.authorization_id,claimant_identity=claimant("111",1))
  assert fence==1 and claim
 
 def test_operation_ledger_requires_current_fence():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,fence=rt.claim(snapshot=s.snapshot("M1"),
   mission_id="M1",continuation_id=r.continuation_id,authorization_id=g.authorization_id,
-  claimant_run_id="A")
+  claimant_identity=claimant("A",1))
  _,op=rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence,
-  logical_operation="youtube-private-upload",artifact_hash="abc")
- opref=s.head["side_effect_ledger_refs"][-1]
- rt.start_operation(snapshot=s.snapshot("M1"),operation_ref=opref,claim_id=claim,fencing_epoch=fence)
- started=s.head["side_effect_ledger_refs"][-1]
- rt.settle_operation(snapshot=s.snapshot("M1"),operation_ref=started,claim_id=claim,
+  logical_operation="youtube-private-upload",artifact_hash="abc",target_identity="channel",
+  semantic_request_hash="req")
+ rt.start_operation(snapshot=s.snapshot("M1"),operation_id=op.operation_id,claim_id=claim,fencing_epoch=fence)
+ rt.authorize_external_call(snapshot=s.snapshot("M1"),operation_id=op.operation_id,claim_id=claim,fencing_epoch=fence)
+ rt.settle_operation(snapshot=s.snapshot("M1"),operation_id=op.operation_id,claim_id=claim,
   fencing_epoch=fence,status="UNKNOWN_RECONCILIATION_REQUIRED")
  with pytest.raises(PermissionError,match="STALE_FENCING_TOKEN"):
   rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence-1,
-   logical_operation="telegram-send",artifact_hash="def")
+   logical_operation="telegram-send",artifact_hash="def",target_identity="chat",semantic_request_hash="req2")
 
 def test_replan_required_cannot_emit_execute_p1_and_replan_can_publish_p2():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,fence=rt.claim(snapshot=s.snapshot("M1"),
   mission_id="M1",continuation_id=r.continuation_id,authorization_id=g.authorization_id,
-  claimant_run_id="exec")
+  claimant_identity=claimant("exec",1))
  with pytest.raises(PermissionError,match="REPLAN_REQUIRED_FORBIDS_EXECUTE"):
   rt.settle(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=fence,
    outcome=outcome(transition="REPLAN_REQUIRED",useful_progress=False),semantic_objects={},
@@ -163,7 +169,7 @@ def test_replan_required_cannot_emit_execute_p1_and_replan_can_publish_p2():
  replan_grant=s.objects[s.head["active_authorization_ref"]]
  _,replan_claim,replan_fence=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
   continuation_id=replan_record["continuation_id"],authorization_id=replan_grant["authorization_id"],
-  claimant_run_id="planner")
+  claimant_identity=claimant("planner",1))
  p2=PlanRevision.create(mission_id="M1",human_goal_id="HG1",plan_id="P2",revision=2,
   parent_plan_ref=s.head["active_plan_ref"],parent_plan_hash=s.head["active_plan_hash"],
   supersedes_plan_id="P1",reason_ref="outcome",affected_subgraph=("research",),
@@ -176,3 +182,53 @@ def test_replan_required_cannot_emit_execute_p1_and_replan_can_publish_p2():
   next_plan_ref=p2ref,next_plan_hash=p2.content_sha256)
  assert s.head["active_plan_ref"]==p2ref
  assert s.objects[s.head["active_authorization_ref"]]["active_plan_ref"]==p2ref
+
+def test_same_run_id_different_attempt_is_not_same_claimant():
+ assert claimant("123",1).to_dict()!=claimant("123",2).to_dict()
+
+def test_claim_atomically_satisfies_outbox_and_late_receipt_is_safe():
+ rt,s=runtime();_,g,r=issue(rt,s)
+ assert s.head["active_outbox_ref"] and len(s.head["pending_outbox_refs"])==1
+ _,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",continuation_id=r.continuation_id,
+  authorization_id=g.authorization_id,claimant_identity=claimant("500",1))
+ assert s.head["active_outbox_ref"] is None and s.head["pending_outbox_refs"]==[]
+ claimed_ref=s.head["active_continuation_ref"]
+ rt.record_dispatch(snapshot=s.snapshot("M1"),continuation_id=r.continuation_id,
+  dispatch_receipt={"run_id":500,"workflow":"bootstrap","result":"ACCEPTED"})
+ assert s.objects[s.head["active_continuation_ref"]]["status"]=="CLAIMED"
+ assert s.head["active_continuation_ref"]==claimed_ref
+ rt.require_current_claim(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f,
+  claimant_identity=claimant("500",1))
+
+def test_settlement_retires_claim_immediately():
+ rt,s=runtime();_,g,r=issue(rt,s);_,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("600",1))
+ rt.settle(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f,outcome=outcome(status="COMPLETED"),
+  semantic_objects={})
+ assert s.head["active_claim_ref"] is None
+ assert s.objects[s.head["active_continuation_ref"]]["status"]=="CONSUMED"
+ with pytest.raises((PermissionError,TypeError)):
+  rt.require_current_claim(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f,
+   claimant_identity=claimant("600",1))
+
+def test_caller_cannot_self_abandon_and_terminal_success_can_abandon():
+ rt,s=runtime();_,g,r=issue(rt,s);_,claim,_=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("700",1))
+ obs=ClaimantRunObservation(claimant("700",1).to_dict(),"in_progress",None,"a"*40,1,None,None)
+ _,oref=rt.persist_run_observation(snapshot=s.snapshot("M1"),observation=obs)
+ with pytest.raises(PermissionError,match="CLAIMANT_NOT_TERMINAL"):
+  rt.abandon(snapshot=s.snapshot("M1"),claim_id=claim,observation_ref=oref)
+ obs2=ClaimantRunObservation(claimant("700",1).to_dict(),"completed","success","a"*40,1,None,None)
+ _,oref2=rt.persist_run_observation(snapshot=s.snapshot("M1"),observation=obs2)
+ rt.abandon(snapshot=s.snapshot("M1"),claim_id=claim,observation_ref=oref2)
+ assert s.objects[s.head["active_continuation_ref"]]["status"]=="ABANDONED"
+
+def test_operation_id_is_claim_independent_and_reconcile_blocks_duplicate():
+ rt,s=runtime();_,g,r=issue(rt,s);_,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",
+  continuation_id=r.continuation_id,authorization_id=g.authorization_id,claimant_identity=claimant("800",1))
+ _,op=rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f,
+  logical_operation="telegram-send",artifact_hash="h",target_identity="chat-1",semantic_request_hash="req")
+ rt.start_operation(snapshot=s.snapshot("M1"),operation_id=op.operation_id,claim_id=claim,fencing_epoch=f)
+ with pytest.raises(PermissionError,match="OPERATION_RECONCILIATION_REQUIRED"):
+  rt.plan_operation(snapshot=s.snapshot("M1"),claim_id=claim,fencing_epoch=f,
+   logical_operation="telegram-send",artifact_hash="h",target_identity="chat-1",semantic_request_hash="req")
