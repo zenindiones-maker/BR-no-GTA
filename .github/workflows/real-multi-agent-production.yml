@@ -66,7 +66,7 @@ env:
   BR_HERMES_UPSTREAM_ROOT: ${{ github.workspace }}/.runtime/hermes-agent
   BR_DURABLE_MISSION_KEY: ${{ inputs.durable_mission_key || format('production-{0}', github.sha) }}
   BR_RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
-  BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}
+  BR_CONTINUATION_COUNT: ${{ inputs.continuation_count || '0' }}\n  BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}\n  BR_EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version || '' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
@@ -697,11 +697,16 @@ jobs:
             exit 0
           fi
           NEXT_COUNT=$((COUNT+1))
-          gh workflow run real-multi-agent-production.yml \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --ref "$GITHUB_REF_NAME" \\
-            -f resume_run_id="$GITHUB_RUN_ID" \\
-            -f durable_mission_key="$KEY" \\
-            -f continuation_count="$NEXT_COUNT"
+          STATE_VERSION="$(python -c 'import json; print(json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))["state_version"])')"
+          CONTINUATION_ID="$KEY:$STATE_VERSION:$GITHUB_RUN_ID"
+          gh workflow run production-mission-continuation-dispatcher.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f mission_id="$KEY" \
+            -f expected_state_version="$STATE_VERSION" \
+            -f continuation_id="$CONTINUATION_ID" \
+            -f predecessor_run_id="$GITHUB_RUN_ID" \
+            -f target_ref="$GITHUB_REF_NAME"
+          echo "CONTINUATION_REQUEST_EMITTED=PASS"
           echo "EVENT_DRIVEN_RESUME=PASS"
           echo "BOUNDED_AUTONOMOUS_CONTINUATION=PASS"
