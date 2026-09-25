@@ -808,7 +808,7 @@ def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metada
         },
         {
             "claim_id": "album",
-            "statement": "O álbum oficial possui 34 faixas originais ligadas à energia de Vice City e Leonida.",
+            "statement": "O álbum oficial de música possui 34 faixas originais ligadas à energia do mundo de GTA VI.",
             "source": "https://www.rockstargames.com/VI",
             "evidence_refs": ["artifact:album"],
             "fact_check_result": "SUPPORTED",
@@ -843,6 +843,10 @@ def test_longform_story_first_sequences_are_evidence_bounded_and_internal_metada
     assert internal["story_assembly"]["schema"] == "story-assembly/v1"
     assert len(internal["video_plan"]["sequences"]) == 4
     assert internal["global_editorial_qa"]["TOTAL_SUPPORTED_DURATION"] == "PASS"
+    assert internal["global_editorial_qa"]["content_supported_duration_minutes"] == 27.576
+    assert internal["sequence_evidence_gaps"]
+    assert internal["blocking_sequence_evidence_gaps"] == []
+    assert internal["global_editorial_qa"]["EVIDENCE_COVERAGE"] == "PASS"
     assert internal["global_editorial_qa"]["ARTIFICIAL_PADDING"] == "OFF"
     audience = generator._structure_to_content(result)
     assert "sequence-001" not in audience
