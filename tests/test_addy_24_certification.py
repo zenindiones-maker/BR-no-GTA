@@ -437,6 +437,7 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
                     "code": "timeout",
                     "retryable": True,
                     "failure_pattern": "nvidia_nim_timeout",
+                    "failure_stage": "transport_request",
                     "message": "bounded timeout",
                 },
                 routing={"routing_id": routing_decision.routing_id},
