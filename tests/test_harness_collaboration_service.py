@@ -1,3 +1,4 @@
+from app.services.harness_collaboration_service import plan_mission_from_human_goal
 from app.services import harness_collaboration_service as collaboration_service
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_collaboration_service import (
