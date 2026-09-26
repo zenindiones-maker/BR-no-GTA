@@ -15,3 +15,23 @@ def test_higher_evidence_score_beats_lexicographic_name():
  a,z=reg("worker-A"),reg("worker-Z");s=CapabilityScheduler((a,z),evidence_snapshot=snap({"worker-A":10,"worker-Z":90}));assert s.route(mission_id="m",plan_id="p",plan_revision=1,task=task()).selected_worker=="worker-Z"
 def test_routing_replay_is_byte_identical():
  regs=(reg("x"),reg("y"));s=CapabilityScheduler(regs,evidence_snapshot=snap({"x":70,"y":70}));a=s.route(mission_id="m",plan_id="p",plan_revision=1,task=task());b=s.route(mission_id="m",plan_id="p",plan_revision=1,task=task());assert canonical_bytes(__import__("dataclasses").asdict(a))==canonical_bytes(__import__("dataclasses").asdict(b))
+
+def test_tampered_routing_evidence_snapshot_fails_closed():
+ import pytest
+ r=reg("x");snapshot=snap({"x":70});snapshot.worker_evidence["x"]["competence"]=99
+ with pytest.raises(ValueError,match="ROUTING_EVIDENCE_SNAPSHOT_HASH_INVALID"):
+  CapabilityScheduler((r,),evidence_snapshot=snapshot).route(mission_id="m",plan_id="p",plan_revision=1,task=task())
+
+def test_tampered_provider_and_tool_availability_fail_closed():
+ import pytest
+ r=reg("x")
+ for field in ("provider_availability","tool_availability"):
+  snapshot=snap({"x":70});getattr(snapshot,field)["unexpected"]=True
+  with pytest.raises(ValueError,match="ROUTING_EVIDENCE_SNAPSHOT_HASH_INVALID"):
+   CapabilityScheduler((r,),evidence_snapshot=snapshot).route(mission_id="m",plan_id="p",plan_revision=1,task=task())
+
+def test_routing_decision_binds_content_addressed_snapshot():
+ r=reg("x");snapshot=snap({"x":70});d=CapabilityScheduler((r,),evidence_snapshot=snapshot).route(mission_id="m",plan_id="p",plan_revision=1,task=task())
+ assert d.evidence_snapshot_hash==snapshot.snapshot_hash
+ assert d.evidence_snapshot_ref=="objects/routing-evidence/sha256/"+snapshot.snapshot_hash+".json"
+
