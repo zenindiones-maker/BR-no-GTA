@@ -1,5 +1,7 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from hashlib import sha256
+from app.services.harness_git_transaction_store import canonical_bytes
 from typing import Any
 
 @dataclass(frozen=True)
@@ -14,9 +16,9 @@ class TaskExecutionEnvelope:
 @dataclass(frozen=True)
 class TaskExecutionEvidence:
  mission_id:str;plan_id:str;plan_revision:int;task_id:str;attempt_id:str;capability_id:str;capability_version:str
- completion_status:str;typed_output_refs:tuple[str,...];partial_refs:tuple[str,...];provider_id:str|None;model_id:str|None
+ worker_id:str;worker_build_id:str;completion_status:str;typed_output_refs:tuple[str,...];partial_refs:tuple[str,...];provider_id:str|None;model_id:str|None
  provider_call_count:int;agent_call_count:int;executed_operations:tuple[str,...];raw_exception_type:str|None;raw_error_code:str|None
- observed_metrics:dict[str,float];evidence_hash:str;schema:str="TaskExecutionEvidence/v1"
+ observed_metrics:dict[str,float];checkpoint_refs:tuple[str,...];evidence_hash:str;schema:str="TaskExecutionEvidence/v1"
 
 @dataclass(frozen=True)
 class ReviewEvidence:
@@ -40,3 +42,14 @@ class PolicyDecision:
  mission_id:str;plan_id:str;plan_revision:int;created_from_state_version:int;task_id:str|None=None;schema:str="PolicyDecision/v1"
 
 AUTHORITY_RULE="LLM_PROPOSES_TRUSTED_STATE_MACHINE_DISPOSES"
+
+FORBIDDEN_WORKER_AUTHORITY_FIELDS=frozenset({"mission_status","transition","next_transition","next_kind","failure_class","retry_classification","useful_progress","authority_generation","next_authorization","next_continuation","next_outbox","selected_next_worker","selected_next_agent","terminality"})
+
+def validate_worker_evidence_payload(payload:dict)->None:
+ extra=set(payload)-{f.name for f in __import__("dataclasses").fields(TaskExecutionEvidence)}
+ forbidden=FORBIDDEN_WORKER_AUTHORITY_FIELDS & set(payload)
+ if forbidden: raise ValueError("WORKER_EVIDENCE_INVALID:AUTHORITY_FIELD")
+ if extra: raise ValueError("WORKER_EVIDENCE_INVALID:UNKNOWN_FIELD")
+ supplied=str(payload.get("evidence_hash") or "")
+ raw={k:v for k,v in payload.items() if k!="evidence_hash"}
+ if supplied!=sha256(canonical_bytes(raw)).hexdigest(): raise ValueError("WORKER_EVIDENCE_INVALID:HASH")
