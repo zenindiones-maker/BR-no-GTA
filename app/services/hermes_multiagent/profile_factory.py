@@ -83,6 +83,23 @@ class HermesProfileFactory:
             allowed_tools=HERMES_COORDINATION_TOOLS,
         )
 
+    def identity_for_task(self, task: RoutedCollaborationTask, *, mission_id: str, runtime_role: str | None = None, profile_home: str, worker_build_id: str, attempt_id: str | None = None) -> HermesProfileIdentity:
+        profile = self.project_task(task, runtime_role=runtime_role)
+        role = profile.runtime_role
+        description = f"{role} executes {profile.capability_id} only inside an authorized Hermes delegated subgraph."
+        return HermesProfileIdentity(
+            profile_instance_id=profile.profile_name,
+            profile_role=role,
+            mission_id=mission_id,
+            plan_task_id=task.task_id,
+            attempt_id=attempt_id,
+            worker_instance_id=f"{mission_id}:{task.task_id}:{attempt_id or 'initial'}",
+            description=description,
+            profile_home=profile_home,
+            worker_build_id=worker_build_id,
+            capability_ids=(profile.capability_id,),
+        )
+
     def project_orchestrator(self) -> HermesRuntimeProfile:
         record = self.registry.get("collaboration.hermes.execute")
         if record is None:
@@ -123,20 +140,3 @@ class HermesProfileFactory:
             raise ValueError("Hermes runtime profile names must be unique within a mission")
         return profiles
 
-
-    def identity_for_task(self, task: RoutedCollaborationTask, *, mission_id: str, runtime_role: str | None = None, profile_home: str, worker_build_id: str, attempt_id: str | None = None) -> HermesProfileIdentity:
-        profile = self.project_task(task, runtime_role=runtime_role)
-        role = profile.runtime_role
-        description = f"{role} executes {profile.capability_id} only inside an authorized Hermes delegated subgraph."
-        return HermesProfileIdentity(
-            profile_instance_id=profile.profile_name,
-            profile_role=role,
-            mission_id=mission_id,
-            plan_task_id=task.task_id,
-            attempt_id=attempt_id,
-            worker_instance_id=f"{mission_id}:{task.task_id}:{attempt_id or 'initial'}",
-            description=description,
-            profile_home=profile_home,
-            worker_build_id=worker_build_id,
-            capability_ids=(profile.capability_id,),
-        )
