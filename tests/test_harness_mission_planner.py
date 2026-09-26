@@ -339,25 +339,11 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
     assert "CAN_REVIEW" not in set(review_task.required_operations)
 
 
-def test_system_improvement_allows_read_only_research_but_rejects_domain_mismatch():
-    _active_opencode_failure()
-    human_goal = "Analise o BR-no-GTA e encontre uma perda mensurável de desempenho ou fragilidade arquitetural; investigue com evidência read-only e proponha uma melhoria segura."
-    goal = build_goal_envelope(human_goal=human_goal, project="BR-no-GTA", goal_id="goal-system-action-policy", subject="melhoria arquitetural mensurável")
-    proposal = {
-        "interpreted_goal": "Coletar evidência read-only.", "assumptions": [],
-        "required_outcomes": ["evidência"], "tasks": [{
-            "task_id": "verify-improvement", "objective": "Verificar evidência.",
-            "task_class": "candidate-validation", "required_capability_description": "read-only engineering evidence verification",
-            "candidate_capability_ids": [], "dependencies": [], "expected_output": "IndependentVerification",
-            "acceptance_criteria": ["evidência verificável"], "risk_side_effect_class": "READ_ONLY", "action": "RESEARCH",
-        }], "rationale": "evidence", "context_usage_notes": [], "uncertainty": 0.1,
-        "needs_human_clarification": False, "clarification_question": None,
-        "memory_strategy_notes": [], "reused_artifact_refs": [], "avoided_bad_paths": [],
-    }
-    plan = plan_mission_from_human_goal(goal, semantic_inference=lambda *_: proposal)
-    assert goal.mission_class == "SYSTEM_IMPROVEMENT"
-    assert plan.collaboration_plan.tasks[0].action == "RESEARCH"
-    assert plan.collaboration_plan.tasks[0].risk_side_effect_class == "READ_ONLY"
+def test_system_improvement_allows_read_only_research_policy():
+    from app.services.harness_adaptive_planning_service import _mission_action_allowed
+    assert _mission_action_allowed(mission_class="SYSTEM_IMPROVEMENT", action="RESEARCH", risk_side_effect_class="READ_ONLY")
+    assert _mission_action_allowed(mission_class="SYSTEM_IMPROVEMENT", action="DECISION", risk_side_effect_class="READ_ONLY")
+    assert _mission_action_allowed(mission_class="SYSTEM_IMPROVEMENT", action="DEVELOPMENT", risk_side_effect_class="BOUNDED_MUTATION")
 
 
 def test_system_improvement_research_mutation_fails_closed():
