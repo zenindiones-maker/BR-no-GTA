@@ -19,7 +19,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _stable_agent_instance_id(
+def stable_agent_instance_id(
     *,
     mission_id: str,
     task_id: str,
@@ -80,7 +80,7 @@ class AgentSessionRuntime:
         self.root = Path(artifact_dir)
         self.dir = self.root / "agent-sessions"
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.agent_instance_id = _stable_agent_instance_id(
+        self.agent_instance_id = stable_agent_instance_id(
             mission_id=mission_id,
             task_id=task_id,
             capability_id=capability_id,
