@@ -341,7 +341,7 @@ def test_execution_router_keeps_known_missions_off_provider_fallback():
 
 def test_system_improvement_allows_read_only_research_but_rejects_domain_mismatch():
     _active_opencode_failure()
-    human_goal = "Investigue uma fragilidade arquitetural com evidência read-only."
+    human_goal = "Analise o BR-no-GTA e encontre uma perda mensurável de desempenho ou fragilidade arquitetural; investigue com evidência read-only e proponha uma melhoria segura."
     goal = build_goal_envelope(human_goal=human_goal, project="BR-no-GTA", goal_id="goal-system-action-policy", subject="melhoria arquitetural mensurável")
     proposal = {
         "interpreted_goal": "Coletar evidência read-only.", "assumptions": [],
