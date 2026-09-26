@@ -476,10 +476,16 @@ def build_proof() -> dict[str, Any]:
     negative = _negative_routing_gates()
     learning = _learning_plane_proof()
 
+    required_codex_capabilities = {
+        "agent-office.codex.bounded-development",
+        "agent-office.codex.independent-review",
+        "agent-office.codex.readonly-analysis",
+    }
     codex_rows = [
         row for row in matrix
-        if str(row.get("CAPABILITY_ID") or "").startswith("agent-office.codex.")
+        if str(row.get("CAPABILITY_ID") or "") in required_codex_capabilities
     ]
+    codex_ids = {str(row.get("CAPABILITY_ID") or "") for row in codex_rows}
     active_rows = [
         row for row in matrix
         if row.get("STATUS") == "ACTIVE_EXECUTABLE"
@@ -567,19 +573,19 @@ def build_proof() -> dict[str, Any]:
         "NO_SECOND_CONTROL_PLANE": all(negative.values()),
         "SYSTEM_AGENT_INVENTORY_PROOF": inventory["AGENT_INVENTORY_COMPLETE"],
         "CODEX_DISCOVERABLE": (
-            len(codex_rows) == 2
+            codex_ids == required_codex_capabilities
             and all(row.get("DISCOVERABLE") for row in codex_rows)
         ),
         "CODEX_EXECUTION_CONTRACT": (
-            len(codex_rows) == 2
+            codex_ids == required_codex_capabilities
             and all(row.get("EXECUTION_CONTRACT_VALID") for row in codex_rows)
         ),
         "CODEX_ROUTABLE_WHEN_AUTH_AVAILABLE": (
-            len(codex_rows) == 2
+            codex_ids == required_codex_capabilities
             and all(row.get("HARNESS_ROUTE_AVAILABLE") for row in codex_rows)
         ),
         "CODEX_BLOCKER_EXPLICIT": (
-            len(codex_rows) == 2
+            codex_ids == required_codex_capabilities
             and all(row.get("STATUS") == "BLOCKED_EXTERNAL" for row in codex_rows)
             and all(row.get("CURRENT_HEALTH") == "BLOCKED" for row in codex_rows)
         ),
@@ -597,14 +603,16 @@ def build_proof() -> dict[str, Any]:
     gates["SYSTEM_AGENT_INTEGRATION"] = all(gates.values())
 
     return {
-        "schema_version": 1,
-        "authority": "DEEPSEEK_HARNESS",
+        "schema_version": 2,
+        "artifact_role": "OBSERVATIONAL_INTEGRATION_PROOF",
+        "canonical_mission_authority": "DEEPSEEK_HARNESS",
         "CANONICAL_AUTH_CHECKPOINT": REAL_AUTH_CHECKPOINT_RUN_ID,
-        "MISSION_STATE": "WAITING_FOR_EXTERNAL_AUTH",
-        "EXTERNAL_HUMAN_BLOCKER": "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION",
+        "OBSERVED_EXTERNAL_BLOCKERS": ["CODEX_NONINTERACTIVE_AUTH_CONFIGURATION"],
+        "CAPABILITY_AVAILABILITY_SUMMARY": {"codex": learning["CODEX_CURRENT_HEALTH"]},
+        "MISSION_GATE_RECOMMENDATION": "NO_GLOBAL_HUMAN_GATE_WHILE_ALTERNATE_AUTHORIZED_ROUTES_EXIST",
         "NO_NEW_NATURAL_SWARM": True,
         "NO_SEMANTIC_REPLAN": True,
-        "NO_NVIDIA_CALL": True,
+        "DETERMINISTIC_INTEGRATION_PROVIDER_CALLS": 0,
         "TOTAL_CAPABILITIES_FOUND": inventory["TOTAL_CAPABILITIES_FOUND"],
         "TOTAL_AGENTS_FOUND": inventory["TOTAL_AGENTS_FOUND"],
         "TOTAL_SKILLS_FOUND": inventory["TOTAL_SKILLS_FOUND"],
@@ -695,7 +703,7 @@ def main() -> int:
     print("CODEX_CHECKPOINT_PRESERVED=PASS")
     print("NO_NEW_NATURAL_SWARM=PASS")
     print("NO_SEMANTIC_REPLAN=PASS")
-    print("NO_NVIDIA_CALL=PASS")
+    print("DETERMINISTIC_INTEGRATION_PROVIDER_CALLS=0")
     return 0 if result["gates"]["SYSTEM_AGENT_INTEGRATION"] else 2
 
 
