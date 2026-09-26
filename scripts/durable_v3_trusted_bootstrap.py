@@ -5,6 +5,7 @@ from pathlib import Path
 from app.services.harness_durable_execution_v3 import ClaimantIdentity,DurableExecutionV3
 from app.services.harness_trusted_execution_outcome_reducer import ActivityExecutionEvidence,TrustedExecutionOutcomeReducer
 from app.services.harness_git_transaction_store import CasConflict,GitHubGitTransactionStore
+from app.services.harness_claimant_run_observer import GitHubActionsClaimantObserver
 
 def store():
  return GitHubGitTransactionStore(repository=os.environ["GITHUB_REPOSITORY"],token=os.environ["GITHUB_TOKEN"])
@@ -82,8 +83,20 @@ def settle(a):
  print("TRUSTED_SETTLEMENT=PASS")
  print("SETTLED_ATTEMPT_HAS_NO_ACTIVE_CLAIM=PASS")
 
+def abandon(a):
+ s=store();snap=s.snapshot(a.mission_id);h=snap.mission_head or {};cont=s.read_json(h.get("active_continuation_ref"),snap.head_sha) if h.get("active_continuation_ref") else None
+ if not cont or cont.get("status")!="CLAIMED": raise SystemExit("NO_ACTIVE_CLAIM")
+ if cont.get("continuation_id")!=a.continuation_id or cont.get("authorization_id")!=a.authorization_id: raise SystemExit("NO_ACTIVE_CLAIM")
+ ident=ClaimantIdentity(**cont["claimant_identity"])
+ observation=GitHubActionsClaimantObserver(repository=os.environ["GITHUB_REPOSITORY"],token=os.environ["GITHUB_TOKEN"]).observe(ident)
+ if observation.observed_status!="completed": raise SystemExit("CLAIMANT_NOT_TERMINAL")
+ rt=DurableExecutionV3(s);commit,oref=rt.persist_run_observation(snapshot=snap,observation=observation)
+ print("CLAIMANT_ATTEMPT_1_TERMINAL_OBSERVATION=PASS")
+ fresh=s.snapshot(a.mission_id);rt.abandon(snapshot=fresh,claim_id=cont["claim_id"],observation_ref=oref)
+ print("ORPHAN_CLAIM_ABANDONED_CANONICALLY=PASS")
+
 def main():
- p=argparse.ArgumentParser();p.add_argument("mode",choices=["claim","settle"]);p.add_argument("--mission-id",required=True)
+ p=argparse.ArgumentParser();p.add_argument("mode",choices=["claim","settle","abandon"]);p.add_argument("--mission-id",required=True)
  p.add_argument("--continuation-id",required=True);p.add_argument("--authorization-id",required=True);a=p.parse_args()
- claim(a) if a.mode=="claim" else settle(a)
+ claim(a) if a.mode=="claim" else (settle(a) if a.mode=="settle" else abandon(a))
 if __name__=="__main__":main()
