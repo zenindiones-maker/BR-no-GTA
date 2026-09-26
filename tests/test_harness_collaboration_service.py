@@ -608,4 +608,3 @@ def test_durable_mission_identity_goal_mismatch_fails_closed():
     goal = build_goal_envelope(human_goal="Improve system safely", project="BR-no-GTA", goal_id="goal-a", subject="system improvement")
     with pytest.raises(ValueError, match="DURABLE_MISSION_HUMAN_GOAL_MISMATCH"):
         plan_mission_from_human_goal(goal, trusted_mission_identity={"mission_id":"m","human_goal_id":"goal-b","lineage_id":"l"})
-
