@@ -19,6 +19,13 @@ def _load_mapping() -> dict[str, str]:
     return {str(k): str(v) for k, v in data.items()}
 
 
+def _compatibility_profile_role(profile: str) -> str:
+    """Legacy canary behavior keyed by declared role prefix, never Harness routing authority."""
+    for role in ("hermes-research-verifier","hermes-evidence-analyst","hermes-editorial-critic","hermes-reviewer"):
+        if profile == role or profile.startswith(role + "-"):
+            return role
+    return profile
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream-root", required=True)
