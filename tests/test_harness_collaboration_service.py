@@ -592,3 +592,19 @@ def test_missing_downstream_capability_question_is_not_suppressed_without_bounda
         goal,
         question,
     ) is False
+
+def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
+    goal = build_goal_envelope(human_goal="Improve system safely", project="BR-no-GTA", goal_id="goal-stable-mission", subject="system improvement")
+    identity={"mission_id":"mission-stable","human_goal_id":"goal-stable-mission","lineage_id":"lineage-stable"}
+    p1=plan_mission_from_human_goal(goal, trusted_mission_identity=identity)
+    p2=plan_mission_from_human_goal(goal, trusted_mission_identity=identity)
+    assert p1.mission_id=="mission-stable"
+    assert p2.mission_id=="mission-stable"
+    assert p1.plan_id==p2.plan_id
+
+def test_durable_mission_identity_goal_mismatch_fails_closed():
+    import pytest
+    goal = build_goal_envelope(human_goal="Improve system safely", project="BR-no-GTA", goal_id="goal-a", subject="system improvement")
+    with pytest.raises(ValueError, match="DURABLE_MISSION_HUMAN_GOAL_MISMATCH"):
+        plan_mission_from_human_goal(goal, trusted_mission_identity={"mission_id":"m","human_goal_id":"goal-b","lineage_id":"l"})
+
