@@ -1,0 +1,11 @@
+name: Durable V3 Claim Recovery Dispatch
+on:
+  workflow_dispatch:
+permissions:
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - env: {GH_TOKEN: ${{ github.token }}}
+        run: gh workflow run durable-v3-claim-recovery.yml -R "$GITHUB_REPOSITORY" -f mission_id=proof-bootstrap-release-88b56223 -f continuation_id=CONT-BOOTREL-313 -f authorization_id=AUTH-BOOTREL-313
