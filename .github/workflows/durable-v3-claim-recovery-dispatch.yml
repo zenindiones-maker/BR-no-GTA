@@ -1,6 +1,9 @@
 name: Durable V3 Claim Recovery Dispatch
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/durable-v3-claim-recovery-dispatch.yml]
 permissions:
   actions: write
 jobs:
