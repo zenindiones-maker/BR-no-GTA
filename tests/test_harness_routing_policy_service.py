@@ -472,7 +472,7 @@ def test_free_quota_exhaustion_fails_closed_without_paid_fallback():
 
 
 def test_paid_fallback_is_forbidden_even_when_fallback_is_allowed():
-    with pytest.raises(RoutingPolicyError, match="No eligible policy-governed fallback") as exc_info:
+    with pytest.raises(RoutingPolicyError, match="No effective provider/model candidates remain") as exc_info:
         route_harness_request(
             _request(
                 preferred_providers=("nvidia_nim", "tuxevil"),
@@ -493,7 +493,7 @@ def test_paid_fallback_is_forbidden_even_when_fallback_is_allowed():
 
 
 def test_unknown_cost_fallback_is_forbidden_even_when_fallback_is_allowed():
-    with pytest.raises(RoutingPolicyError, match="No eligible policy-governed fallback") as exc_info:
+    with pytest.raises(RoutingPolicyError, match="No effective provider/model candidates remain") as exc_info:
         route_harness_request(
             _request(
                 preferred_providers=("nvidia_nim", "tuxevil"),
