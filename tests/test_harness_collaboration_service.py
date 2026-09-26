@@ -667,7 +667,7 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
         lambda *, mission_id, goal_id, tasks: type(
             "IdentityTestCollaboration",
             (),
-            {"mission_id": mission_id, "goal_id": goal_id, "tasks": tuple(tasks)},
+            {"mission_id": mission_id, "goal_id": goal_id, "tasks": tuple(tasks), "to_dict": lambda self: {"mission_id": mission_id, "goal_id": goal_id, "tasks": list(tasks)}},
         )(),
     )
     p1 = plan_mission_from_human_goal(
