@@ -14,5 +14,6 @@
   "no_render": true,
   "no_youtube_upload": true,
   "no_youtube_publication": true,
-  "requested_at": "2026-09-20T23:15:00Z"
+  "requested_at": "2026-09-20T23:15:00Z",
+  "agent_execution_plane_v1_canary": "1970-01-01T00:00:00.000Z"
 }
