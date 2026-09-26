@@ -33,3 +33,11 @@ class WorkerExecutionPlane:
   result=reg.adapter.execute(envelope)
   evidence=reg.adapter.normalize_evidence(envelope,result)
   return route,evidence
+ def execute_trusted(self,*,mission_id,plan_id,plan_revision,task:TaskDefinition,envelope:TaskExecutionEnvelope,authority_context:dict,executor_worker_id=None):
+  route=self.scheduler.route(mission_id=mission_id,plan_id=plan_id,plan_revision=plan_revision,task=task,executor_worker_id=executor_worker_id)
+  reg=next(r for r in self.registrations if r.manifest.worker_id==route.selected_worker)
+  from app.services.harness_trusted_task_envelope import TrustedTaskEnvelopeValidator
+  TrustedTaskEnvelopeValidator.validate(envelope=envelope,head=authority_context["head"],grant=authority_context["grant"],continuation=authority_context["continuation"],claim=authority_context.get("claim"),task=task,route=route,registration=reg)
+  result=reg.adapter.execute(envelope)
+  evidence=reg.adapter.normalize_evidence(envelope,result)
+  return route,evidence
