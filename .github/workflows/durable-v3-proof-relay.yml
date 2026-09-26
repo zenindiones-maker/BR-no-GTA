@@ -34,7 +34,7 @@ jobs:
           echo "BOOTSTRAP_REF_DRIFT=NO"
           gh workflow run durable-v3-entrypoint-proof.yml --ref "$BOOTSTRAP"             -f mission_id="$MISSION" -f continuation_id="$CONTINUATION"             -f authorization_id="$AUTHORIZATION" -f runtime_revision="FORGED-INPUT-MUST-BE-IGNORED"
           for i in $(seq 1 20); do
-            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/durable-v3-entrypoint-proof.yml/runs?branch=$BOOTSTRAP&event=workflow_dispatch&per_page=10"               --jq '.workflow_runs[] | select(.display_title | contains("proof-entrypoint-v3")) | .id' | head -1)
+            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/durable-v3-entrypoint-proof.yml/runs?branch=$BOOTSTRAP&event=workflow_dispatch&per_page=10"               --jq '.workflow_runs[] | select(.display_title | contains(env.MISSION)) | .id' | head -1)
             test -n "$RUN_ID" && break
             sleep 2
           done
