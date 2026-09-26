@@ -816,7 +816,9 @@ class HermesHarnessCapabilityBroker:
                     "TOOL_INPUT_REF_OUTSIDE_TASK_SCOPE:" + value
                 )
             if not value.startswith("artifact:"):
-                continue
+                raise AgentToolRequestError(
+                    "TOOL_INPUT_REF_SCHEME_INVALID:" + value
+                )
             relative = value.split(":", 1)[1].lstrip("/")
             if not relative:
                 raise AgentToolRequestError("TOOL_INPUT_ARTIFACT_REF_EMPTY")
