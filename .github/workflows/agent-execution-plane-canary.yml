@@ -4,6 +4,10 @@ on:
   push:
     branches: [work/gate6f-analytics-learning]
     paths:
+      - 'app/services/harness_routing_evidence_snapshot_service.py'
+      - 'tests/test_harness_worker_scoring.py'
+      - 'app/services/harness_worker_adapters.py'
+      - 'app/services/harness_worker_scheduler.py'
       - .github/workflows/agent-execution-plane-canary.yml
       - scripts/agent_execution_plane_canary.py
       - app/services/harness_worker_*.py
