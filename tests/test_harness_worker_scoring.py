@@ -35,3 +35,14 @@ def test_routing_decision_binds_content_addressed_snapshot():
  assert d.evidence_snapshot_hash==snapshot.snapshot_hash
  assert d.evidence_snapshot_ref=="objects/routing-evidence/sha256/"+snapshot.snapshot_hash+".json"
 
+def test_routing_snapshot_immutable_object_bytes_are_hash_bound():
+ from app.services.harness_routing_evidence_snapshot_service import immutable_snapshot_object
+ snapshot=snap({"x":70});ref,raw=immutable_snapshot_object(snapshot)
+ assert ref.endswith(snapshot.snapshot_hash+".json")
+ assert raw
+
+def test_unmeasured_worker_is_not_fake_healthy():
+ import pytest
+ r=reg("x");snapshot=RoutingEvidenceSnapshot.create(decision_as_of="2026-09-26T12:00:00+00:00",worker_evidence={})
+ with pytest.raises(RuntimeError,match="ROUTING_EVIDENCE_UNMEASURED"):
+  CapabilityScheduler((r,),evidence_snapshot=snapshot).route(mission_id="m",plan_id="p",plan_revision=1,task=task())
