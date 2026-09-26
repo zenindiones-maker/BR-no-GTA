@@ -678,4 +678,3 @@ def test_unsupported_action_fails_closed_before_normalization():
     import pytest
     with pytest.raises(ValueError):
         MissionPlanProposal.from_mapping(canonical, max_tasks=8)
-
