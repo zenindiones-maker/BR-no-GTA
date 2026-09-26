@@ -21,10 +21,18 @@ class CandidateDecision:
  worker_id:str;accepted:bool;reason:str
 
 @dataclass(frozen=True)
+class WorkerScore:
+ worker_id:str;competence:int;health:int;task_success:int;recent_failure_penalty:int;retry_penalty:int;human_correction_penalty:int;latency:int;cost:int;certification_freshness:int;total:int
+
+@dataclass(frozen=True)
+class WorkerScoringPolicy:
+ version:str="worker-scoring/v1";competence_weight:int=30;health_weight:int=20;task_success_weight:int=20;certification_weight:int=10;latency_weight:int=10;cost_weight:int=10;failure_penalty_weight:int=20;retry_penalty_weight:int=10;human_correction_penalty_weight:int=10
+
+@dataclass(frozen=True)
 class RoutingDecision:
  mission_id:str;plan_id:str;plan_revision:int;task_id:str;eligible_candidates:tuple[str,...];rejected_candidates:tuple[CandidateDecision,...]
- selected_worker:str;selected_capability:str;provider_requirements:tuple[str,...];selected_provider:str|None;selected_model:str|None
- policy_version:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
+ candidate_scores:tuple[WorkerScore,...];selected_worker:str;selected_capability:str;provider_requirements:tuple[str,...];selected_provider:str|None;selected_model:str|None
+ policy_version:str;scoring_policy_version:str;tie_break_reason:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
 
 class WorkerEligibilityEngine:
  def evaluate(self,task:TaskDefinition,reg:WorkerRegistration,*,executor_worker_id:str|None=None)->CandidateDecision:
@@ -63,12 +71,22 @@ class WorkerEligibilityEngine:
   return CandidateDecision(m.worker_id,True,"ACCEPTED")
 
 class CapabilityScheduler:
- def __init__(self,registrations:tuple[WorkerRegistration,...]):self.registrations=registrations;self.engine=WorkerEligibilityEngine()
+ def __init__(self,registrations:tuple[WorkerRegistration,...],*,performance:dict[str,dict[str,int]]|None=None,scoring_policy:WorkerScoringPolicy|None=None):
+  self.registrations=registrations;self.engine=WorkerEligibilityEngine();self.performance=performance or {};self.scoring_policy=scoring_policy or WorkerScoringPolicy()
+ def _score(self,reg:WorkerRegistration)->WorkerScore:
+  p=self.performance.get(reg.manifest.worker_id,{})
+  competence=max(0,min(100,int(p.get("competence",50))));health=max(0,min(100,int(p.get("health",100))));success=max(0,min(100,int(p.get("task_success",50))))
+  failure=max(0,min(100,int(p.get("recent_failure_penalty",0))));retry=max(0,min(100,int(p.get("retry_penalty",0))));correction=max(0,min(100,int(p.get("human_correction_penalty",0))))
+  latency=max(0,min(100,int(p.get("latency",50))));cost=max(0,min(100,int(p.get("cost",100))));fresh=max(0,min(100,int(p.get("certification_freshness",100))))
+  w=self.scoring_policy;total=competence*w.competence_weight+health*w.health_weight+success*w.task_success_weight+fresh*w.certification_weight+latency*w.latency_weight+cost*w.cost_weight-failure*w.failure_penalty_weight-retry*w.retry_penalty_weight-correction*w.human_correction_penalty_weight
+  return WorkerScore(reg.manifest.worker_id,competence,health,success,failure,retry,correction,latency,cost,fresh,total)
  def route(self,*,mission_id:str,plan_id:str,plan_revision:int,task:TaskDefinition,executor_worker_id:str|None=None)->RoutingDecision:
   decisions=tuple(self.engine.evaluate(task,r,executor_worker_id=executor_worker_id) for r in self.registrations)
   eligible=tuple(sorted(d.worker_id for d in decisions if d.accepted))
   if not eligible:raise RuntimeError("PRECONDITION_UNSATISFIED")
-  selected=eligible[0]
-  reg=next(r for r in self.registrations if r.manifest.worker_id==selected)
-  payload={"mission_id":mission_id,"plan_id":plan_id,"plan_revision":plan_revision,"task":asdict(task),"candidates":[asdict(x) for x in decisions]}
-  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v1","deterministic eligibility then stable evidence ranking",sha256(canonical_bytes(payload)).hexdigest())
+  regs=[r for r in self.registrations if r.manifest.worker_id in eligible];scores=tuple(sorted((self._score(r) for r in regs),key=lambda x:x.worker_id))
+  best=max(s.total for s in scores);tied=tuple(sorted(s.worker_id for s in scores if s.total==best))
+  selected=min(tied,key=lambda wid:sha256(canonical_bytes({"mission_id":mission_id,"plan_id":plan_id,"task_id":task.task_id,"worker_id":wid,"policy":self.scoring_policy.version})).hexdigest())
+  reg=next(r for r in regs if r.manifest.worker_id==selected)
+  payload={"mission_id":mission_id,"plan_id":plan_id,"plan_revision":plan_revision,"task":asdict(task),"candidates":[asdict(x) for x in decisions],"scores":[asdict(x) for x in scores],"scoring_policy":asdict(self.scoring_policy)}
+  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),scores,selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v2",self.scoring_policy.version,"STABLE_HASH" if len(tied)>1 else "HIGHEST_SCORE","hard eligibility then deterministic evidence score",sha256(canonical_bytes(payload)).hexdigest())
