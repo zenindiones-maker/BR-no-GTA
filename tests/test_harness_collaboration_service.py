@@ -640,8 +640,8 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
         "propose_validated_semantic_plan",
         lambda _context, *, inference=None, max_replans=1: (
             type("SemanticResult", (), {
-                "proposal": MissionPlanProposal.from_dict(
-                    inference("", {}) if inference else {}
+                "proposal": MissionPlanProposal.from_mapping(
+                    inference("", {}) if inference else {}, max_tasks=8
                 )
             })(),
             {
