@@ -11,7 +11,7 @@ jobs:
       actions: write
       contents: write
     env:
-  PYTHONPATH: .
+      PYTHONPATH: .
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
       MISSION: proof-entrypoint-v3
