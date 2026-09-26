@@ -26,14 +26,7 @@ class ExistingExecutorAdapter:
 
 class WorkerExecutionPlane:
  def __init__(self,registrations):self.registrations=tuple(registrations);self.scheduler=CapabilityScheduler(self.registrations)
- def execute(self,*,mission_id,plan_id,plan_revision,task:TaskDefinition,envelope:TaskExecutionEnvelope,executor_worker_id=None):
-  route=self.scheduler.route(mission_id=mission_id,plan_id=plan_id,plan_revision=plan_revision,task=task,executor_worker_id=executor_worker_id)
-  reg=next(r for r in self.registrations if r.manifest.worker_id==route.selected_worker)
-  if envelope.task_id!=task.task_id or envelope.required_capability!=route.selected_capability:raise PermissionError("TASK_EXECUTION_ENVELOPE_MISMATCH")
-  result=reg.adapter.execute(envelope)
-  evidence=reg.adapter.normalize_evidence(envelope,result)
-  return route,evidence
- def execute_trusted(self,*,mission_id,plan_id,plan_revision,task:TaskDefinition,envelope:TaskExecutionEnvelope,authority_context:dict,executor_worker_id=None):
+ def execute(self,*,mission_id,plan_id,plan_revision,task:TaskDefinition,envelope:TaskExecutionEnvelope,authority_context:dict,executor_worker_id=None):
   route=self.scheduler.route(mission_id=mission_id,plan_id=plan_id,plan_revision=plan_revision,task=task,executor_worker_id=executor_worker_id)
   reg=next(r for r in self.registrations if r.manifest.worker_id==route.selected_worker)
   from app.services.harness_trusted_task_envelope import TrustedTaskEnvelopeValidator
