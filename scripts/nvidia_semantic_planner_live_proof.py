@@ -905,7 +905,15 @@ def run(request_path: Path, output: Path) -> dict[str, Any]:
             observed_attempt and observed_attempt.get("HARNESS_VALIDATION_PASS")
         ),
         "ROOT_CAUSE_CLASS": (
-            "DOWNSTREAM_HARNESS_CAPABILITY_SELECTION"
+            "SEMANTIC_PLAN_POLICY_PRECONDITION"
+            if (
+                observed_attempt
+                and observed_attempt.get("STRUCTURED_OUTPUT_VALID")
+                and observed_attempt.get("MISSION_PROPOSAL_SCHEMA_VALID")
+                and not observed_attempt.get("HARNESS_VALIDATION_PASS")
+                and "mission_class=" in str(observed_attempt.get("VALIDATION_ERROR") or "")
+            )
+            else "DOWNSTREAM_HARNESS_CAPABILITY_SELECTION"
             if (
                 observed_attempt
                 and observed_attempt.get("STRUCTURED_OUTPUT_VALID")
