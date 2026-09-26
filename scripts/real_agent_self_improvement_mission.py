@@ -1757,10 +1757,10 @@ def run(
     accepted_review_candidates = [
         dict(item)
         for item in review_precheck.get("compatible_candidates") or ()
-        if str(item.get("agent_id") or "") not in proposal_agent_ids
+        if str(item.get("agent_id") or item.get("AGENT_ID") or "") not in proposal_agent_ids
     ]
     accepted_review_ids = {
-        str(item.get("capability_id") or "")
+        str(item.get("capability_id") or item.get("CAPABILITY_ID") or "")
         for item in accepted_review_candidates
     }
     review_capability_id = str(review_task.get("capability_id") or "")
@@ -1791,7 +1791,7 @@ def run(
                 )
             )
         replacement_record = GLOBAL_CAPABILITY_REGISTRY.get(
-            str(replacement.get("capability_id") or "")
+            str(replacement.get("capability_id") or replacement.get("CAPABILITY_ID") or "")
         )
         if replacement_record is None:
             raise RuntimeError("INDEPENDENT_REVIEW_REPLAN_CAPABILITY_MISSING")
