@@ -209,7 +209,7 @@ def main() -> int:
                 ),
                 run_id=run_id,
             )
-            if not ok or implementer != "hermes-editorial-critic":
+            if not ok or _compatibility_profile_role(str(implementer or "")) != "hermes-editorial-critic":
                 raise RuntimeError("reviewer request_changes did not return to critic")
             return 0
 
