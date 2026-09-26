@@ -4,6 +4,9 @@ from app.contracts.harness_specialized_worker_contracts import TaskExecutionEnve
 from app.services.harness_worker_plane import AgentCapabilityManifest,CapabilityCertification,CapabilitySpec,WorkerRegistration
 from app.services.harness_worker_scheduler import TaskDefinition,CapabilityScheduler,RoutingEvidenceSnapshot
 from app.services.harness_worker_adapters import ExistingExecutorAdapter,WorkerExecutionPlane
+from app.services.harness_routing_evidence_snapshot_service import RoutingEvidenceSnapshotBuilder,immutable_snapshot_object
+from app.database.schema import initialize_schema
+from app.services.harness_learning_service import HarnessEpisode,persist_episode
 
 BUILD="execution-plane-canary-v1"
 def cert(w,c):
@@ -14,7 +17,14 @@ def adapter(worker,cap,role="ANALYSIS",kind="DETERMINISTIC_WORKER"):
  m=manifest(worker,cap,role,kind)
  return WorkerRegistration(m,ExistingExecutorAdapter(m,lambda e:{"status":"COMPLETED","typed_output_refs":(f"result:{e.task_id}",),"executed_operations":("CAN_READ_REPOSITORY",),"agent_call_count":1}),cert(worker,cap))
 def main():
+ initialize_schema()
  regs=(adapter("worker-alpha","analysis.root-cause"),adapter("worker-beta","analysis.other"),adapter("reviewer-beta","review.independent","REVIEW","INDEPENDENT_REVIEWER"))
+ now=datetime.now(timezone.utc)
+ persist_episode(HarnessEpisode("routing-proof-episode","g","d","x","t","worker-alpha","analysis.root-cause","routing","root-cause",now.isoformat(),(now+timedelta(seconds=1)).isoformat(),1.0,"COMPLETED",{"observed":True},("evidence:routing-proof",),output_refs=("result:routing-proof",),evidence_refs=("evidence:routing-proof",),latency_seconds=1.0))
+ real_snapshot=RoutingEvidenceSnapshotBuilder((regs[0],),provider_availability={},tool_availability={"python":True}).build(decision_as_of=(now+timedelta(seconds=2)).isoformat())
+ real_snapshot.validate();real_ref,real_bytes=immutable_snapshot_object(real_snapshot)
+ assert "worker-alpha" in real_snapshot.worker_evidence and real_ref.endswith(real_snapshot.snapshot_hash+".json") and real_bytes
+ print("REAL_LEARNING_EVIDENCE_SNAPSHOT=PASS");print("ROUTING_SNAPSHOT_IMMUTABLE_OBJECT=PASS")
  task=TaskDefinition("T1","root-cause","analysis.root-cause","1","ANALYSIS","DETERMINISTIC_WORKER","TaskInput/v1","TaskOutput/v1",(),(),("CAN_READ_REPOSITORY",),"READ_ONLY",("repository",),(),None,4,8000,10000,"NONE","PARALLEL_SAFE","NONE",("typed output",))
  snapshot=RoutingEvidenceSnapshot.create(decision_as_of=datetime.now(timezone.utc).isoformat(),worker_evidence={r.manifest.worker_id:{"competence":80,"health":100,"task_success":90,"certification_freshness":100,"latency_efficiency_score":80,"cost_efficiency_score":100} for r in regs},tool_availability={"python":True})
  s=CapabilityScheduler(regs,evidence_snapshot=snapshot);r=s.route(mission_id="m",plan_id="p",plan_revision=1,task=task)
