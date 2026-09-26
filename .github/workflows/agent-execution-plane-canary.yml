@@ -3,7 +3,12 @@ on:
   workflow_dispatch:
   push:
     branches: [work/gate6f-analytics-learning]
-    paths: [.github/workflows/agent-execution-plane-canary.yml]
+    paths:
+      - .github/workflows/agent-execution-plane-canary.yml
+      - scripts/agent_execution_plane_canary.py
+      - app/services/harness_worker_*.py
+      - app/services/harness_trusted_task_envelope.py
+      - app/contracts/harness_specialized_worker_contracts.py
 permissions:
   contents: read
 jobs:
