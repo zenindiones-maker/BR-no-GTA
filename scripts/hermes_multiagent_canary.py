@@ -358,24 +358,21 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         "HERMES_SECOND_CONTROL_PLANE": False,
         "HERMES_CANONICAL_MEMORY": False,
         "COLLABORATION_PLAN_TO_HERMES": len(plan.tasks) == 3,
+        "HERMES_PROFILE_ROLE_BINDING": all(name in {_profile_role(p) for p in run_profiles} for name in (
+            "hermes-research-verifier","hermes-evidence-analyst","hermes-editorial-critic","hermes-reviewer",
+        )),
+        "HERMES_PROFILE_INSTANCE_ISOLATION": len(set(run_profiles)) >= 4 and all(
+            (hermes_home / "profiles" / name / "config.yaml").is_file()
+            for name in set(run_profiles)
+        ),
         "NAMED_PROFILES": (
             all(name in {_profile_role(p) for p in run_profiles} for name in (
-                "hermes-research-verifier",
-                "hermes-evidence-analyst",
-                "hermes-editorial-critic",
-                "hermes-reviewer",
+                "hermes-research-verifier","hermes-evidence-analyst","hermes-editorial-critic","hermes-reviewer",
             ))
-            and all(
-                (hermes_home / "profiles" / name / "config.yaml").is_file()
-                for name in (
-                    "hermes-orchestrator",
-                    "hermes-research-verifier",
-                    "hermes-evidence-analyst",
-                    "hermes-editorial-critic",
-                    "hermes-reviewer",
-                    "hermes-system-failure-analyst",
-                )
-            )
+            and all((hermes_home / "profiles" / name / "config.yaml").is_file() for name in set(run_profiles))
+            and all((hermes_home / "profiles" / name / "config.yaml").is_file() for name in (
+                "hermes-orchestrator","hermes-system-failure-analyst",
+            ))
         ),
         "KANBAN_DURABLE_TASKS": len(board.get("tasks") or ()) == 3 and len(runs) >= 5,
         "AGENT_TO_AGENT_HANDOFF": handoff_a,
