@@ -52,6 +52,11 @@ from app.services.semantic_tool_loop_service import (
     utcnow,
 )
 from app.services.bounded_memory_context_service import build_bounded_memory_context
+from app.services.execution_principal_identity_service import (
+    principal_from_task,
+    persist_execution_principal,
+)
+from app.services.agent_session_service import stable_agent_instance_id
 from app.services.task_result_envelope_service import (
     DependencyArtifactMissing,
     build_task_result_envelope,
@@ -376,6 +381,50 @@ class HermesHarnessCapabilityBroker:
     ) -> dict[str, Any]:
         persist_started = time.perf_counter()
         normalized = _jsonable(result)
+        task = self._task(task_id)
+        record = self.registry.get(capability_id)
+        principal_record = None
+        if record is not None and str(record.execution_kind or "").upper() in {
+            "SEMANTIC_REASONER", "DETERMINISTIC_ANALYSIS_AGENT", "INDEPENDENT_REVIEWER"
+        }:
+            expected_instance = stable_agent_instance_id(
+                mission_id=self.spec.mission_id,
+                task_id=task_id,
+                capability_id=capability_id,
+                agent_id=str(agent_id or record.agent_id or capability_id),
+                skill_id=skill_id,
+            )
+            session_path = self.artifact_dir / "agent-sessions" / (
+                f"{task_id}-{expected_instance}.json"
+            )
+            if session_path.is_file():
+                session = json.loads(session_path.read_text(encoding="utf-8"))
+                principal = principal_from_task(
+                    mission_id=self.spec.mission_id,
+                    plan_id="",
+                    task={
+                        "task_id": task_id,
+                        "functional_role": task.functional_role,
+                        "capability_id": capability_id,
+                        "capability_version": capability_version,
+                        "selected_agent_id": agent_id,
+                        "selected_skill_id": skill_id,
+                    },
+                    authorization_id=authorization_id,
+                    session=session,
+                    worker_build_id=self.spec.base_sha,
+                )
+                principal_record = persist_execution_principal(
+                    principal, artifact_dir=self.artifact_dir
+                )
+                if isinstance(normalized, dict):
+                    normalized = dict(normalized)
+                    normalized["execution_principal_ref"] = principal_record["ref"]
+                    normalized["execution_principal_sha256"] = principal_record["sha256"]
+                    normalized["evidence_refs"] = list(dict.fromkeys([
+                        *list(normalized.get("evidence_refs") or ()),
+                        principal_record["ref"],
+                    ]))
         index = len(self._task_results.get(task_id, ())) + 1
         relative = Path("capability-results") / f"{task_id}-{index}.json"
         target = self.artifact_dir / relative
