@@ -1,4 +1,5 @@
 from app.services.harness_collaboration_service import plan_mission_from_human_goal
+from app.services.harness_adaptive_planning_service import MissionPlanProposal
 from app.services import harness_collaboration_service as collaboration_service
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_collaboration_service import (
@@ -639,7 +640,7 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
         "propose_validated_semantic_plan",
         lambda _context, *, inference=None, max_replans=1: (
             type("SemanticResult", (), {
-                "proposal": collaboration_service.MissionPlanProposal.from_dict(
+                "proposal": MissionPlanProposal.from_dict(
                     inference("", {}) if inference else {}
                 )
             })(),
