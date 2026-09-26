@@ -12,16 +12,16 @@ def store():
 def read_policy(s,snap):
  h=snap.mission_head or {}; ref=h.get("bootstrap_policy_ref")
  p=s.read_json(ref,snap.head_sha) if ref else None
- if not p or p.get("schema")!="BootstrapPolicy/v1": raise SystemExit("TRUSTED_BOOTSTRAP_MISMATCH:POLICY")
+ if not p or p.get("schema") not in {"BootstrapPolicy/v1","BootstrapPolicy/v2"}: raise SystemExit("TRUSTED_BOOTSTRAP_MISMATCH:POLICY")
  return p
 
 def validate_bootstrap(p):
- checks={
-  "repository_id":os.environ["GITHUB_REPOSITORY_ID"],
-  "workflow_path":os.environ["GITHUB_WORKFLOW_REF"].split("@",1)[0].split("/",2)[-1],
-  "bootstrap_ref":os.environ["BOOTSTRAP_REF"],
-  "expected_workflow_sha":os.environ["GITHUB_WORKFLOW_SHA"],
-  "allowed_event":"workflow_dispatch"}
+ workflow_path=os.environ["GITHUB_WORKFLOW_REF"].split("@",1)[0].split("/",2)[-1]
+ checks={"repository_id":os.environ["GITHUB_REPOSITORY_ID"],"workflow_path":workflow_path,"allowed_event":"workflow_dispatch"}
+ if p.get("schema")=="BootstrapPolicy/v2":
+  checks.update({"bootstrap_release_ref":os.environ["BOOTSTRAP_REF"],"bootstrap_release_sha":os.environ["GITHUB_WORKFLOW_SHA"]})
+ else:
+  checks.update({"bootstrap_ref":os.environ["BOOTSTRAP_REF"],"expected_workflow_sha":os.environ["GITHUB_WORKFLOW_SHA"]})
  for k,v in checks.items():
   if str(p.get(k))!=str(v): raise SystemExit("TRUSTED_BOOTSTRAP_MISMATCH:"+k)
  print("BOOTSTRAP_PROVENANCE=PASS")
