@@ -1480,9 +1480,9 @@ def propose_validated_semantic_plan(
                     "than assigning semantic reasoning to a deterministic executor. Telegram "
                     "ingress capabilities are never outbound delivery capabilities. The requested "
                     "side-effect class must fit the record. Mission class is also a hard authority constraint: "
-                    "SYSTEM_IMPROVEMENT tasks must use DEVELOPMENT, including measurement, "
-                    "verification, review and benchmark work; do not route those tasks through "
-                    "RESEARCH capabilities. The goal says a code candidate is conditional; do "
+                    "SYSTEM_IMPROVEMENT permits READ_ONLY RESEARCH for evidence, bounded DEVELOPMENT "
+                    "for engineering, and READ_ONLY DECISION for non-authoritative proposals; "
+                    "action and side-effect class are jointly validated. The goal says a code candidate is conditional; do "
                     "not invent a mutation task when no healthy write executor exists."
                 ),
             ]
