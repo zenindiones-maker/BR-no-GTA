@@ -36,6 +36,10 @@ class RoutingEvidenceSnapshot:
  def create(cls,*,decision_as_of:str,worker_evidence:dict[str,dict[str,Any]],provider_availability:dict[str,bool]|None=None,tool_availability:dict[str,bool]|None=None,provenance_refs:tuple[str,...]=()):
   logical={"schema":"RoutingEvidenceSnapshot/v1","decision_as_of":decision_as_of,"worker_evidence":worker_evidence,"provider_availability":provider_availability or {},"tool_availability":tool_availability or {},"provenance_refs":list(provenance_refs)}
   return cls(decision_as_of,worker_evidence,provider_availability or {},tool_availability or {},provenance_refs,sha256(canonical_bytes(logical)).hexdigest())
+ def validate(self)->None:
+  logical={"schema":self.schema,"decision_as_of":self.decision_as_of,"worker_evidence":self.worker_evidence,"provider_availability":self.provider_availability,"tool_availability":self.tool_availability,"provenance_refs":list(self.provenance_refs)}
+  if sha256(canonical_bytes(logical)).hexdigest()!=self.snapshot_hash:
+   raise ValueError("ROUTING_EVIDENCE_SNAPSHOT_HASH_INVALID")
 
 @dataclass(frozen=True)
 class WorkerScoringPolicy:
@@ -45,7 +49,7 @@ class WorkerScoringPolicy:
 class RoutingDecision:
  mission_id:str;plan_id:str;plan_revision:int;task_id:str;eligible_candidates:tuple[str,...];rejected_candidates:tuple[CandidateDecision,...]
  candidate_scores:tuple[WorkerScore,...];selected_worker:str;selected_capability:str;provider_requirements:tuple[str,...];selected_provider:str|None;selected_model:str|None
- policy_version:str;scoring_policy_version:str;evidence_snapshot_hash:str;tie_break_reason:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
+ policy_version:str;scoring_policy_version:str;evidence_snapshot_ref:str;evidence_snapshot_hash:str;tie_break_reason:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
 
 class WorkerEligibilityEngine:
  def evaluate(self,task:TaskDefinition,reg:WorkerRegistration,*,decision_as_of:str,provider_availability:dict[str,bool],tool_availability:dict[str,bool],executor_worker_id:str|None=None)->CandidateDecision:
@@ -97,6 +101,7 @@ class CapabilityScheduler:
   w=self.scoring_policy;total=competence*w.competence_weight+health*w.health_weight+success*w.task_success_weight+fresh*w.certification_weight+latency*w.latency_weight+cost*w.cost_weight-failure*w.failure_penalty_weight-retry*w.retry_penalty_weight-correction*w.human_correction_penalty_weight
   return WorkerScore(reg.manifest.worker_id,competence,health,success,failure,retry,correction,latency,cost,fresh,total)
  def route(self,*,mission_id:str,plan_id:str,plan_revision:int,task:TaskDefinition,executor_worker_id:str|None=None)->RoutingDecision:
+  self.evidence_snapshot.validate()
   decisions=tuple(self.engine.evaluate(task,r,decision_as_of=self.evidence_snapshot.decision_as_of,provider_availability=self.evidence_snapshot.provider_availability,tool_availability=self.evidence_snapshot.tool_availability,executor_worker_id=executor_worker_id) for r in self.registrations)
   eligible=tuple(sorted(d.worker_id for d in decisions if d.accepted))
   if not eligible:raise RuntimeError("PRECONDITION_UNSATISFIED")
@@ -105,4 +110,4 @@ class CapabilityScheduler:
   selected=min(tied,key=lambda wid:sha256(canonical_bytes({"mission_id":mission_id,"plan_id":plan_id,"task_id":task.task_id,"worker_id":wid,"policy":self.scoring_policy.version})).hexdigest())
   reg=next(r for r in regs if r.manifest.worker_id==selected)
   payload={"mission_id":mission_id,"plan_id":plan_id,"plan_revision":plan_revision,"task":asdict(task),"candidates":[asdict(x) for x in decisions],"scores":[asdict(x) for x in scores],"scoring_policy":asdict(self.scoring_policy),"evidence_snapshot_hash":self.evidence_snapshot.snapshot_hash}
-  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),scores,selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v2",self.scoring_policy.version,self.evidence_snapshot.snapshot_hash,"STABLE_HASH" if len(tied)>1 else "HIGHEST_SCORE","hard eligibility then deterministic evidence score",sha256(canonical_bytes(payload)).hexdigest())
+  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),scores,selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v2",self.scoring_policy.version,"objects/routing-evidence/sha256/"+self.evidence_snapshot.snapshot_hash+".json",self.evidence_snapshot.snapshot_hash,"STABLE_HASH" if len(tied)>1 else "HIGHEST_SCORE","hard eligibility then deterministic evidence score",sha256(canonical_bytes(payload)).hexdigest())
