@@ -139,4 +139,3 @@ class HermesProfileFactory:
         if len(names) != len(set(names)):
             raise ValueError("Hermes runtime profile names must be unique within a mission")
         return profiles
-
