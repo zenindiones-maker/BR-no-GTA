@@ -11,6 +11,11 @@ from urllib import error, parse, request
 class CasConflict(RuntimeError):
     pass
 
+class GitRefUpdateRejected(RuntimeError):
+    def __init__(self,status:int,body:str,expected_head_sha:str,observed_head_sha:str)->None:
+        self.status=status;self.body=body;self.expected_head_sha=expected_head_sha;self.observed_head_sha=observed_head_sha
+        super().__init__(f"GITHUB_REF_UPDATE_VALIDATION_FAILED:{status}:expected={expected_head_sha}:observed={observed_head_sha}:{body[:300]}")
+
 
 @dataclass(frozen=True)
 class GitSnapshot:
@@ -64,8 +69,8 @@ class GitHubGitTransactionStore:
                 return json.loads(raw) if raw else {}
         except error.HTTPError as exc:
             raw = exc.read().decode("utf-8", "replace")
-            if exc.code in {409, 422}:
-                raise CasConflict(f"CAS_CONFLICT:{exc.code}:{raw[:300]}") from exc
+            if exc.code == 409:
+                raise CasConflict(f"CAS_CONFLICT_CANDIDATE:409:{raw[:300]}") from exc
             raise RuntimeError(f"GITHUB_GIT_API_ERROR:{exc.code}:{raw[:500]}") from exc
 
     def _ref(self) -> dict[str, Any]:
@@ -156,13 +161,14 @@ class GitHubGitTransactionStore:
         )
         encoded = parse.quote(f"heads/{self.branch}", safe="/")
         try:
-            self._api(
-                "PATCH",
-                f"/git/refs/{encoded}",
-                {"sha": commit["sha"], "force": False},
-            )
-        except CasConflict:
-            raise CasConflict("CAS_CONFLICT:STALE_WORKER_NOOP")
+            self._api("PATCH",f"/git/refs/{encoded},{"sha": commit["sha"], "force": False})
+        except (CasConflict,RuntimeError) as exc:
+            status=409 if isinstance(exc,CasConflict) else (422 if "GITHUB_GIT_API_ERROR:422:" in str(exc) else 0)
+            if status not in {409,422}: raise
+            observed=str(self._ref()["object"]["sha"])
+            if observed!=expected_head_sha:
+                raise CasConflict(f"CAS_CONFLICT_CONFIRMED:expected={expected_head_sha}:observed={observed}:http={status}") from exc
+            raise GitRefUpdateRejected(status,str(exc),expected_head_sha,observed) from exc
         return str(commit["sha"])
 
 
