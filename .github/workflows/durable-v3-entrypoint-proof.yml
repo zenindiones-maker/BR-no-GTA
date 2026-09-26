@@ -1,0 +1,134 @@
+name: Durable V3 Entrypoint Proof
+run-name: Durable V3 Entrypoint Proof · ${{ inputs.mission_id }} · ${{ github.run_id }} · attempt ${{ github.run_attempt }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id: {required: true, type: string}
+      continuation_id: {required: true, type: string}
+      authorization_id: {required: true, type: string}
+      runtime_revision: {required: false, type: string, description: "UNTRUSTED diagnostic input; never used for authority"}
+
+permissions: {}
+
+env:
+  BOOTSTRAP_REF: durable-v3-bootstrap
+
+jobs:
+  trusted_claim:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      claim_id: ${{ steps.claim.outputs.claim_id }}
+      fencing_epoch: ${{ steps.claim.outputs.fencing_epoch }}
+      runtime_revision: ${{ steps.claim.outputs.runtime_revision }}
+      orchestration_version: ${{ steps.claim.outputs.orchestration_version }}
+      claimant_identity: ${{ steps.claim.outputs.claimant_identity }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: claim
+        name: Trusted canonical claim
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python scripts/durable_v3_trusted_bootstrap.py claim             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"
+          echo "TRUSTED_CLAIM_JOB_EXTERNAL_SECRETS=NONE"
+          echo "WORKFLOW_INPUT_RUNTIME_SHA=UNTRUSTED"
+
+  runtime_execution:
+    needs: trusted_claim
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.stub.outputs.result }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.trusted_claim.outputs.runtime_revision }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact authorized runtime
+        env:
+          AUTHORIZED_RUNTIME: ${{ needs.trusted_claim.outputs.runtime_revision }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_RUNTIME"
+          git cat-file -e "$AUTHORIZED_RUNTIME^{commit}"
+          echo "EXACT_RUNTIME_CHECKOUT=PASS"
+          echo "RUNTIME_JOB_STATE_WRITE_CAPABILITY=NONE"
+      - id: stub
+        name: Typed semantic workload stub
+        env:
+          CLAIM_ID: ${{ needs.trusted_claim.outputs.claim_id }}
+          FENCE: ${{ needs.trusted_claim.outputs.fencing_epoch }}
+          RUNTIME: ${{ needs.trusted_claim.outputs.runtime_revision }}
+          ORCH: ${{ needs.trusted_claim.outputs.orchestration_version }}
+          CLAIMANT: ${{ needs.trusted_claim.outputs.claimant_identity }}
+          MISSION: ${{ inputs.mission_id }}
+          CONTINUATION: ${{ inputs.continuation_id }}
+          AUTHORIZATION: ${{ inputs.authorization_id }}
+        run: |
+          python - <<'PY'
+          import json,os
+          result={"schema":"ExecutionResultEnvelope/v1","mission_id":os.environ["MISSION"],
+            "continuation_id":os.environ["CONTINUATION"],"authorization_id":os.environ["AUTHORIZATION"],
+            "claim_id":os.environ["CLAIM_ID"],"fencing_epoch":int(os.environ["FENCE"]),
+            "runtime_revision":os.environ["RUNTIME"],"orchestration_version":os.environ["ORCH"],
+            "claimant_identity":json.loads(os.environ["CLAIMANT"]),"task_results":[],"partial_refs":[],
+            "provider_call_count":0,"agent_call_count":0,"semantic_metrics":{"stub":1},
+            "proposed_outcome":{"attempt_id":"entrypoint-proof","mission_id":os.environ["MISSION"],
+              "human_goal_id":"proof-human","source_state_version":2,"plan_id":"P1","plan_revision":1,
+              "runtime_revision":os.environ["RUNTIME"],"orchestration_version":os.environ["ORCH"],
+              "causal_task_id":"semantic-stub","capability_id":"proof.stub","capability_version":"1",
+              "status":"COMPLETED","transition":"COMPLETED","failure_class":None,"failure_code":None,
+              "failure_signature":None,"exception_type":None,"strategy_signature":"proof-stub",
+              "retry_classification":None,"provider_call_count":0,"agent_call_count":0,
+              "executed_task_ids":["semantic-stub"],"reused_task_ids":[],"new_task_result_hashes":[],
+              "replayed_task_result_hashes":[],"new_artifact_hashes":[],"new_verified_evidence":[],
+              "mission_metric_before":0,"mission_metric_after":1,"useful_progress":True}}
+          with open(os.environ["GITHUB_OUTPUT"],"a") as f:f.write("result="+json.dumps(result,separators=(",",":"))+"\n")
+          print("SEMANTIC_EXECUTION_STARTED=YES")
+          print("PLANNER_CALLS=0")
+          print("PROVIDER_CALLS=0")
+          print("AGENT_CALLS=0")
+          print("TASKRESULT_WRITES=0")
+          print("SIDE_EFFECTS=0")
+          PY
+
+  trusted_settlement:
+    needs: [trusted_claim,runtime_execution]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Trusted canonical settlement
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXECUTION_RESULT_JSON: ${{ needs.runtime_execution.outputs.result }}
+        run: |
+          set -euo pipefail
+          python scripts/durable_v3_trusted_bootstrap.py settle             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"
+          echo "TRUSTED_SETTLEMENT_JOB_EXTERNAL_SECRETS=NONE"
+          echo "TRUST_PLANE_RUNTIME_ISOLATION=PASS"
