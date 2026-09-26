@@ -636,8 +636,13 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
     }
     monkeypatch.setattr(
         collaboration_service,
-        "_select_registry_implementation",
-        lambda *args, **kwargs: ("repository.read-scoped", "test-registry-selection"),
+        "select_capability_for_requirement",
+        lambda requirement, **kwargs: (
+            "repository.read-scoped",
+            False,
+            [],
+            {"selection_source": "identity-test-fixture"},
+        ),
     )
     p1 = plan_mission_from_human_goal(
         goal,
@@ -709,4 +714,3 @@ def test_durable_mission_identity_goal_mismatch_fails_closed():
             semantic_inference=should_never_run,
         )
     assert calls["semantic"] == 0
-
