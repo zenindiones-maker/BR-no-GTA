@@ -102,6 +102,34 @@ def _objective_within_parent(child: str, parent: str) -> bool:
 
 
 @dataclass(frozen=True)
+class HermesProfileIdentity:
+    profile_instance_id: str
+    profile_role: str
+    mission_id: str
+    plan_task_id: str
+    worker_instance_id: str
+    description: str
+    profile_home: str
+    worker_build_id: str
+    capability_ids: tuple[str, ...]
+    attempt_id: str | None = None
+    schema: str = "HermesProfileIdentity/v1"
+    authority: str = HERMES_AUTHORITY
+    publication_authority: str = "NONE"
+
+    def __post_init__(self) -> None:
+        for name in ("profile_instance_id","profile_role","mission_id","plan_task_id","worker_instance_id","description","profile_home","worker_build_id"):
+            _required(getattr(self,name),name)
+        if not self.capability_ids:
+            raise ValueError("capability_ids must not be empty")
+        if self.authority != HERMES_AUTHORITY or self.publication_authority != "NONE":
+            raise PermissionError("Hermes profile identity cannot gain mission/publication authority")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class HermesRuntimeProfile:
     profile_name: str
     task_id: str
