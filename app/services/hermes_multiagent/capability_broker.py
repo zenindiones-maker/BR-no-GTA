@@ -815,7 +815,7 @@ class HermesHarnessCapabilityBroker:
     def _compact_parent_handoffs(context: dict[str, Any]) -> None:
         compacted = []
         for item in context.get("parent_handoffs") or ():
-            if not isinstance(item, dict):
+            if not isinstance(item, dict) or item.get("direct_dependency") is not True:
                 continue
             compacted.append({
                 key: item.get(key)
