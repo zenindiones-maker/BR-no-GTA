@@ -113,7 +113,7 @@ jobs:
           assert d["EXTERNAL_HUMAN_BLOCKER"] == "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION"
           assert d["NO_NEW_NATURAL_SWARM"] is True
           assert d["NO_SEMANTIC_REPLAN"] is True
-          assert d["NO_NVIDIA_CALL"] is True
+          assert d["DETERMINISTIC_INTEGRATION_PROVIDER_CALLS"] == 0
           assert d["ORPHANS_FOUND"] == 0
           assert d["BROKEN_BINDINGS_FOUND"] == 0
           assert d["DUPLICATE_AUTHORITIES_FOUND"] == 0
@@ -124,13 +124,21 @@ jobs:
               row for row in d["matrix"]
               if row["CAPABILITY_ID"].startswith("agent-office.codex.")
           ]
-          assert len(codex) == 2
+          assert {row["CAPABILITY_ID"] for row in codex} == {
+    "agent-office.codex.bounded-development",
+    "agent-office.codex.independent-review",
+    "agent-office.codex.readonly-analysis",
+}
           assert all(row["STATUS"] == "BLOCKED_EXTERNAL" for row in codex)
           assert all(row["CURRENT_HEALTH"] == "BLOCKED" for row in codex)
           assert all(row["DISCOVERABLE"] for row in codex)
           assert all(row["HARNESS_ROUTE_AVAILABLE"] for row in codex)
 
-          assert len(d["routing_cases"]) == 9
+          assert {case["CASE_ID"] for case in d["routing_cases"]} >= {
+    "read-only-repository-analysis","bounded-mutation-candidate","independent-review",
+    "benchmark-execution","semantic-reasoning","research","audiovisual-task",
+    "gta6-knowledge-retrieval","presentation-human-facing-response",
+}
           assert all(
               case["SELECTION_FROM_REGISTRY"] is True
               and case["HARDCODED_AGENT_SELECTION"] is False
@@ -145,7 +153,9 @@ jobs:
               case for case in d["routing_cases"]
               if case["ROUTING_MODE"] == "HARNESS_POLICY"
           ]
-          assert len(policy_cases) == 4
+          assert {case["CASE_ID"] for case in policy_cases} >= {
+    "research","audiovisual-task","gta6-knowledge-retrieval","presentation-human-facing-response",
+}
           assert all(case["SELECTED_CAPABILITY"] for case in policy_cases)
           assert all(d["negative_routing"].values())
 
@@ -163,7 +173,7 @@ jobs:
           print("CANONICAL_CHECKPOINT=35850473901")
           print("NO_NEW_NATURAL_SWARM=PASS")
           print("NO_SEMANTIC_REPLAN=PASS")
-          print("NO_NVIDIA_CALL=PASS")
+          print("DETERMINISTIC_INTEGRATION_PROVIDER_CALLS=0")
           print("SYSTEM_AGENT_INTEGRATION=PASS")
           PY
 
