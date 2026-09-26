@@ -1,6 +1,9 @@
 name: Agent Execution Plane Canary
 on:
   workflow_dispatch:
+  push:
+    branches: [work/gate6f-analytics-learning]
+    paths: [.github/workflows/agent-execution-plane-canary.yml]
 permissions:
   contents: read
 jobs:
