@@ -636,6 +636,22 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
     }
     monkeypatch.setattr(
         collaboration_service,
+        "propose_validated_semantic_plan",
+        lambda _context, *, inference=None, max_replans=1: (
+            type("SemanticResult", (), {
+                "proposal": collaboration_service.MissionPlanProposal.from_dict(
+                    inference("", {}) if inference else {}
+                )
+            })(),
+            {
+                "proposal_attempts": 1,
+                "replan_count": 0,
+                "provider_evidence": {"test_fixture": True},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        collaboration_service,
         "select_capability_for_requirement",
         lambda requirement, **kwargs: (
             "repository.read-scoped",
