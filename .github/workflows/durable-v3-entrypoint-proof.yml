@@ -172,7 +172,7 @@ jobs:
           test "$(jq -r .workflow_run.repository_id <<<"$META")" = "$GITHUB_REPOSITORY_ID" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_PROVENANCE; exit 78; }
           test "$(jq -r .workflow_run.head_repository_id <<<"$META")" = "$GITHUB_REPOSITORY_ID" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_PROVENANCE; exit 78; }
           test "$(jq -r .workflow_run.head_sha <<<"$META")" = "$BOOTSTRAP_RELEASE_SHA" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_PROVENANCE; exit 78; }
-          test "$(jq -r .digest <<<"$META")" = "$EXPECTED_ARTIFACT_DIGEST" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_PROVENANCE; exit 78; }
+          test "$(jq -r .digest <<<"$META")" = "sha256:$EXPECTED_ARTIFACT_DIGEST" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_PROVENANCE; exit 78; }
           echo "ARTIFACT_ID_BINDING=PASS"; echo "ARTIFACT_RUN_BINDING=PASS"; echo "ARTIFACT_RELEASE_SHA_BINDING=PASS"; echo "ARTIFACT_METADATA_BINDING=PASS"
           test -f "$EVIDENCE_FILE" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_HASH; exit 78; }
           test "$(find "$(dirname "$EVIDENCE_FILE")" -maxdepth 1 -type f -name activity-evidence.json -print | wc -l)" = "1" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_HASH; exit 78; }
