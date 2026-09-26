@@ -6,6 +6,7 @@ from app.services.harness_durable_execution_v3 import ClaimantIdentity,DurableEx
 from app.services.harness_trusted_execution_outcome_reducer import ActivityExecutionEvidence,TrustedExecutionOutcomeReducer
 from app.services.harness_git_transaction_store import CasConflict,GitHubGitTransactionStore
 from app.services.harness_claimant_run_observer import GitHubActionsClaimantObserver
+from app.services.harness_trusted_plan_binding import TrustedPlanBinding
 
 def store():
  return GitHubGitTransactionStore(repository=os.environ["GITHUB_REPOSITORY"],token=os.environ["GITHUB_TOKEN"])
@@ -74,7 +75,11 @@ def settle(a):
  rt.require_current_claim(snapshot=snap,claim_id=evidence.claim_id,fencing_epoch=evidence.fencing_epoch,claimant_identity=ident)
  h=snap.mission_head;grant=s.read_json(h["active_authorization_ref"],snap.head_sha);cont=s.read_json(h["active_continuation_ref"],snap.head_sha)
  plan=s.read_json(h["active_plan_ref"],snap.head_sha);prev=s.read_json(h.get("latest_outcome_ref"),snap.head_sha) if h.get("latest_outcome_ref") else None
- outcome,decision=TrustedExecutionOutcomeReducer.reduce(head=h,plan=plan,previous=prev,grant=grant,continuation=cont,evidence=evidence)
+ try:
+  validated=TrustedPlanBinding.validate(head=h,grant=grant,plan=plan,plan_ref=h["active_plan_ref"])
+ except ValueError as e: raise SystemExit(str(e))
+ print("TRUSTED_PLAN_SCHEMA=PASS");print("TRUSTED_PLAN_HASH=PASS");print("MISSION_PLAN_BINDING=PASS");print("AUTHORIZATION_PLAN_BINDING=PASS");print("CANONICAL_PLAN_BINDING=PASS")
+ outcome,decision=TrustedExecutionOutcomeReducer.reduce(head=h,validated_plan=validated,previous=prev,grant=grant,continuation=cont,evidence=evidence)
  rt.settle(snapshot=snap,claim_id=evidence.claim_id,fencing_epoch=evidence.fencing_epoch,outcome=outcome,semantic_objects={})
  print("RUNTIME_RESULT_IS_EVIDENCE_NOT_AUTHORITY=PASS")
  print("TRUSTED_OUTCOME_REDUCER=PASS")
