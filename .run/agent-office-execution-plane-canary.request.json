@@ -1,0 +1,7 @@
+{
+  "schema": "AgentExecutionPlaneCanaryRequest/v1",
+  "capability": "agent-office.deterministic-analysis",
+  "side_effect_class": "READ_ONLY",
+  "public_side_effects": false,
+  "requested_at": "1970-01-01T00:00:00.000Z"
+}
