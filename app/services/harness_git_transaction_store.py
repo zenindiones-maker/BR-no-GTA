@@ -11,6 +11,14 @@ from urllib import error, parse, request
 class CasConflict(RuntimeError):
     pass
 
+class GitApiError(RuntimeError):
+    def __init__(self,status:int|None,body:str,method:str,path:str,kind:str="HTTP")->None:
+        self.status=status;self.body=body;self.method=method;self.path=path;self.kind=kind
+        super().__init__(f"GITHUB_API_{kind}:{status}:{method}:{path}:{body[:500]}")
+
+class RefUpdateOutcomeUnknown(RuntimeError):
+    pass
+
 class GitRefUpdateRejected(RuntimeError):
     def __init__(self,status:int,body:str,expected_head_sha:str,observed_head_sha:str)->None:
         self.status=status;self.body=body;self.expected_head_sha=expected_head_sha;self.observed_head_sha=observed_head_sha
@@ -68,10 +76,10 @@ class GitHubGitTransactionStore:
                 raw = response.read()
                 return json.loads(raw) if raw else {}
         except error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", "replace")
-            if exc.code == 409:
-                raise CasConflict(f"CAS_CONFLICT_CANDIDATE:409:{raw[:300]}") from exc
-            raise RuntimeError(f"GITHUB_GIT_API_ERROR:{exc.code}:{raw[:500]}") from exc
+            raw=exc.read().decode("utf-8","replace")
+            raise GitApiError(exc.code,raw,method,path) from exc
+        except (error.URLError,TimeoutError,ConnectionError) as exc:
+            raise GitApiError(None,repr(exc),method,path,"TRANSPORT") from exc
 
     def _ref(self) -> dict[str, Any]:
         encoded = parse.quote(f"heads/{self.branch}", safe="/")
@@ -84,9 +92,8 @@ class GitHubGitTransactionStore:
         encoded = parse.quote(path, safe="/")
         try:
             row = self._api("GET", f"/contents/{encoded}?ref={parse.quote(ref, safe='')}")
-        except RuntimeError as exc:
-            if "GITHUB_GIT_API_ERROR:404:" in str(exc):
-                return None
+        except GitApiError as exc:
+            if exc.status==404:return None
             raise
         content = base64.b64decode(str(row["content"]).replace("\n", ""))
         return json.loads(content)
@@ -160,20 +167,28 @@ class GitHubGitTransactionStore:
             },
         )
         encoded = parse.quote(f"heads/{self.branch}", safe="/")
-        try:
-            self._api(
-                "PATCH",
-                f"/git/refs/{encoded}",
-                {"sha": commit["sha"], "force": False},
-            )
-        except (CasConflict,RuntimeError) as exc:
-            status=409 if isinstance(exc,CasConflict) else (422 if "GITHUB_GIT_API_ERROR:422:" in str(exc) else 0)
-            if status not in {409,422}: raise
-            observed=str(self._ref()["object"]["sha"])
-            if observed!=expected_head_sha:
-                raise CasConflict(f"CAS_CONFLICT_CONFIRMED:expected={expected_head_sha}:observed={observed}:http={status}") from exc
-            raise GitRefUpdateRejected(status,str(exc),expected_head_sha,observed) from exc
-        return str(commit["sha"])
+        candidate=str(commit["sha"])
+        for patch_attempt in range(1,3):
+            try:
+                self._api("PATCH",f"/git/refs/{encoded},{"sha":candidate,"force":False})
+                return candidate
+            except GitApiError as exc:
+                ambiguous=exc.kind=="TRANSPORT" or (exc.status is not None and 500<=exc.status<=599)
+                reconcilable=ambiguous or exc.status in {409,422}
+                if not reconcilable: raise
+                try: observed=str(self._ref()["object"]["sha"])
+                except GitApiError as read_exc:
+                    raise RefUpdateOutcomeUnknown(f"REF_UPDATE_OUTCOME_UNKNOWN:expected={expected_head_sha}:candidate={candidate}") from read_exc
+                if observed==candidate:return candidate
+                if observed!=expected_head_sha:
+                    raise CasConflict(f"CAS_CONFLICT_CONFIRMED:expected={expected_head_sha}:candidate={candidate}:observed={observed}:http={exc.status}") from exc
+                if exc.status==422:
+                    raise GitRefUpdateRejected(422,exc.body,expected_head_sha,observed) from exc
+                if exc.status in {409}:
+                    raise GitRefUpdateRejected(409,exc.body,expected_head_sha,observed) from exc
+                if ambiguous and patch_attempt<2:continue
+                raise RefUpdateOutcomeUnknown(f"REF_UPDATE_OUTCOME_UNKNOWN:expected={expected_head_sha}:candidate={candidate}:observed={observed}") from exc
+        raise RefUpdateOutcomeUnknown("REF_UPDATE_OUTCOME_UNKNOWN")
 
 
 def canonical_bytes(value: Any) -> bytes:
