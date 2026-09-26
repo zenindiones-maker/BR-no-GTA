@@ -661,6 +661,15 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
             {"selection_source": "identity-test-fixture"},
         ),
     )
+    monkeypatch.setattr(
+        collaboration_service,
+        "build_collaboration_plan",
+        lambda *, mission_id, goal_id, tasks: type(
+            "IdentityTestCollaboration",
+            (),
+            {"mission_id": mission_id, "goal_id": goal_id, "tasks": tuple(tasks)},
+        )(),
+    )
     p1 = plan_mission_from_human_goal(
         goal,
         trusted_mission_identity=identity,
