@@ -1019,3 +1019,154 @@ def test_external_localized_replan_escalates_to_new_provider_when_model_set_exha
     assert result.result["SELECTED_RECOVERY_MODEL"] == "qwen3:4b-instruct"
     assert result.result["RECOVERY_ROUTE_CHANGED"] is True
     assert result.result["EXHAUSTED_PAIR_REUSED"] == 0
+
+
+def test_two_distinct_agent_turns_have_distinct_provider_attempt_ids(monkeypatch):
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(
+        service, "route_harness_request",
+        lambda request: _route(routing_id="routing-stable", model="model-a"),
+    )
+    monkeypatch.setattr(
+        service, "execute_harness_ai_generation",
+        lambda **kwargs: _success("model-a", "routing-stable"),
+    )
+    one = _payload()
+    one["agent_instance_id"] = "agent-stable"
+    one["agent_turn"] = 1
+    first = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(), payload=one,
+    )
+    two = _payload()
+    two["agent_instance_id"] = "agent-stable"
+    two["agent_turn"] = 2
+    second = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(), payload=two,
+    )
+    assert (
+        first.result["provider_attempts"][0]["attempt_id"]
+        != second.result["provider_attempts"][0]["attempt_id"]
+    )
+
+
+def test_successful_historical_provider_pair_not_false_exhausted(monkeypatch):
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(
+        service, "route_harness_request",
+        lambda request: _route(routing_id="routing-success", model="model-a"),
+    )
+    monkeypatch.setattr(
+        service, "execute_harness_ai_generation",
+        lambda **kwargs: _success("model-a", "routing-success"),
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-old-success",
+            "attempt_id": "historical-success",
+            "status": "EXECUTED",
+        }],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [],
+    }
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(), payload=payload,
+    )
+    assert result.status == "EXECUTED"
+    assert result.result["EXHAUSTED_PROVIDER_MODEL_PAIRS"] == []
+    assert result.result["EXHAUSTED_PAIR_REUSED"] == 0
+
+
+def test_failed_attempt_survives_subsequent_routing_failure(monkeypatch):
+    _patch_common(monkeypatch)
+    routes = 0
+    def fake_route(request):
+        nonlocal routes
+        routes += 1
+        if routes == 1:
+            return _route(routing_id="routing-a", model="model-a")
+        raise RoutingPolicyError(
+            "Primary provider is unavailable and fallback is not permitted",
+            evidence={
+                "failure_stage": "provider_selection",
+                "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
+                "eligible_provider_count": 1,
+            },
+        )
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service, "execute_harness_ai_generation",
+        lambda **kwargs: _timeout("model-a", "routing-a"),
+    )
+    with pytest.raises(RoutingPolicyError) as observed:
+        service.execute_authorized_addy_skill(
+            authorization=_auth("capability:addy:debugging-and-error-recovery"),
+            routing_decision=_addy_route(), payload=_payload(),
+        )
+    evidence = observed.value.failure_evidence
+    assert len(evidence["provider_attempts"]) == 1
+    assert evidence["provider_attempts"][0]["status"] == "FAILED"
+    assert evidence["EXHAUSTED_PROVIDER_MODEL_PAIRS"]
+
+
+def test_fresh_provider_health_used_for_replan(monkeypatch):
+    _patch_common(monkeypatch)
+    reads = []
+    def fresh_health():
+        reads.append(len(reads) + 1)
+        return {
+            "eligible_zero_cost_provider_ids": ["nvidia_nim"],
+            "providers": [{
+                "provider_id": "nvidia_nim",
+                "state": "AVAILABLE",
+                "read": reads[-1],
+            }],
+        }
+    routes = iter([
+        _route(routing_id="routing-a", model="model-a"),
+        _route(routing_id="routing-b", model="model-b"),
+    ])
+    generations = iter([
+        _timeout("model-a", "routing-a"),
+        _success("model-b", "routing-b"),
+    ])
+    monkeypatch.setattr(service, "semantic_provider_health", fresh_health)
+    monkeypatch.setattr(service, "route_harness_request", lambda request: next(routes))
+    monkeypatch.setattr(service, "execute_harness_ai_generation", lambda **kwargs: next(generations))
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(), payload=_payload(),
+    )
+    assert result.status == "EXECUTED"
+    assert len(reads) == 2
+    assert len(result.result["PROVIDER_HEALTH_SNAPSHOTS"]) == 2
+    assert result.result["PROVIDER_HEALTH_REVALIDATED"] is True
+
+
+def test_no_global_silent_provider_fallback(monkeypatch):
+    _patch_common(monkeypatch)
+    requests = []
+    routes = iter([
+        _route(routing_id="routing-a", model="model-a"),
+        _route(routing_id="routing-b", model="model-b"),
+    ])
+    generations = iter([
+        _timeout("model-a", "routing-a"),
+        _success("model-b", "routing-b"),
+    ])
+    def fake_route(request):
+        requests.append(request)
+        return next(routes)
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(service, "execute_harness_ai_generation", lambda **kwargs: next(generations))
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(), payload=_payload(),
+    )
+    assert all(request.fallback_allowed is False for request in requests)
+    assert requests[1].preferred_providers == ("nvidia_nim",)
+    assert result.result["NO_BLIND_PROVIDER_RETRY"] is True

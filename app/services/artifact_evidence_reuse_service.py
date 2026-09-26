@@ -19,6 +19,50 @@ REQUIRES_INPUT_ARTIFACT_CONTENT = True
 MAX_CONTEXT_CHARS = 32768
 _MAX_SUMMARY_CHARS = 9000
 _MAX_FILE_EXCERPT_CHARS = 1800
+_TYPED_INCIDENT_FIELDS = (
+    "schema", "failure_class", "observed_evidence", "localization",
+    "confidence", "evidence_refs", "incident_id", "mission_id", "task_id",
+    "manifest", "sha256",
+)
+
+
+def _bounded_typed_incident_fields(content: Any) -> dict[str, Any]:
+    stack: list[Any] = [content]
+    found: dict[str, Any] = {}
+    visited = 0
+    while stack and visited < 128:
+        value = stack.pop()
+        visited += 1
+        if isinstance(value, dict):
+            for key in _TYPED_INCIDENT_FIELDS:
+                if key in found or value.get(key) in (None, "", [], {}):
+                    continue
+                candidate = value.get(key)
+                rendered = json.dumps(
+                    candidate, ensure_ascii=False,
+                    separators=(",", ":"), default=str,
+                )
+                found[key] = (
+                    candidate if len(rendered) <= 2400
+                    else {
+                        "truncated": True,
+                        "excerpt": rendered[:2200],
+                        "original_chars": len(rendered),
+                    }
+                )
+            stack.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value[:32])
+        elif isinstance(value, str):
+            raw = value.strip()
+            if raw.startswith(("{", "[")) and len(raw) <= MAX_CONTEXT_CHARS:
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, (dict, list)):
+                    stack.append(parsed)
+    return found
 
 
 def _bounded_summary(content: Any) -> dict[str, Any]:
@@ -38,6 +82,10 @@ def _bounded_summary(content: Any) -> dict[str, Any]:
     incident = content.get("incident")
     if isinstance(incident, dict):
         summary["incident"] = dict(incident)
+
+    typed_fields = _bounded_typed_incident_fields(content)
+    if typed_fields:
+        summary["typed_incident_evidence"] = typed_fields
 
     manifest = content.get("manifest")
     if isinstance(manifest, list):
@@ -118,6 +166,14 @@ def execute_pre_materialized_artifact_reuse(
     ):
         raise PermissionError("artifact evidence reuse routing executor mismatch")
 
+    requested_mode = str(
+        payload.get("mode") or "bounded_summary"
+    ).strip().lower()
+    if requested_mode not in {
+        "bounded_summary", "typed_summary", "full_content",
+    }:
+        raise ValueError("UNSUPPORTED_ARTIFACT_REUSE_MODE:" + requested_mode)
+
     context = payload.get("context")
     if not isinstance(context, dict):
         raise ValueError("artifact evidence reuse requires bounded context")
@@ -169,8 +225,21 @@ def execute_pre_materialized_artifact_reuse(
             "summary": _bounded_summary(content),
         })
 
+    typed_fields_available = any(
+        bool((item.get("summary") or {}).get("typed_incident_evidence"))
+        for item in summaries
+    )
     result = {
         "status": "REUSED",
+        "requested_mode": requested_mode,
+        "effective_mode": "BOUNDED_TYPED_SUMMARY",
+        "raw_full_content_returned": False,
+        "mode_notice": (
+            "full_content is represented as a bounded typed projection; "
+            "raw unbounded artifact content is never returned"
+            if requested_mode == "full_content" else None
+        ),
+        "typed_incident_fields_available": typed_fields_available,
         "artifact_refs": [item["artifact_ref"] for item in manifest],
         "artifact_manifest": manifest,
         "evidence_summary": summaries,

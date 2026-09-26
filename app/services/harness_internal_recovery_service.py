@@ -15,6 +15,9 @@ TOOL_AUTHORIZATION_SCOPE_GAP = "TOOL_AUTHORIZATION_SCOPE_GAP"
 TOOL_EXECUTION_TRANSIENT = "TOOL_EXECUTION_TRANSIENT"
 PROVIDER_TRANSIENT = "PROVIDER_TRANSIENT"
 PROVIDER_MODEL_UNAVAILABLE = "PROVIDER_MODEL_UNAVAILABLE"
+PROVIDER_ROUTE_UNAVAILABLE = "PROVIDER_ROUTE_UNAVAILABLE"
+PROVIDER_POOL_EXHAUSTED = "PROVIDER_POOL_EXHAUSTED"
+MODEL_SET_EXHAUSTED = "MODEL_SET_EXHAUSTED"
 REGISTRY_SELECTION_GAP = "REGISTRY_SELECTION_GAP"
 ARTIFACT_RESOLUTION_FAILURE = "ARTIFACT_RESOLUTION_FAILURE"
 CHECKPOINT_INCOMPATIBLE = "CHECKPOINT_INCOMPATIBLE"
@@ -38,6 +41,12 @@ _STRATEGIES: dict[str, tuple[str, ...]] = {
     TOOL_EXECUTION_TRANSIENT: ("RETRY_SAME_TASK", "LOCALIZED_TOOL_REPLAN"),
     PROVIDER_TRANSIENT: ("RETRY_SAME_TASK", "LOCALIZED_PROVIDER_REPLAN"),
     PROVIDER_MODEL_UNAVAILABLE: ("LOCALIZED_PROVIDER_REPLAN",),
+    MODEL_SET_EXHAUSTED: ("PROVIDER_LEVEL_REPLAN",),
+    PROVIDER_ROUTE_UNAVAILABLE: (
+        "REFRESH_PROVIDER_HEALTH",
+        "PROVIDER_LEVEL_REPLAN",
+    ),
+    PROVIDER_POOL_EXHAUSTED: ("RECONCILE_PROVIDER_HEALTH",),
     REGISTRY_SELECTION_GAP: ("LOCALIZED_REGISTRY_RESOLUTION",),
     ARTIFACT_RESOLUTION_FAILURE: ("REFRESH_LINEAGE",),
     CHECKPOINT_INCOMPATIBLE: ("INVALIDATE_INCOMPATIBLE_NODE",),
@@ -85,6 +94,56 @@ def _cause_chain(exc: BaseException) -> list[BaseException]:
     return rows
 
 
+def _typed_routing_failure_class(
+    causes: list[BaseException],
+) -> str | None:
+    aliases = {
+        "TRANSIENT_PROVIDER_TIMEOUT": PROVIDER_TRANSIENT,
+        "TRANSIENT_PROVIDER_HTTP_5XX": PROVIDER_TRANSIENT,
+        "TRANSPORT_TIMEOUT": PROVIDER_TRANSIENT,
+        "MODEL_UNAVAILABLE": PROVIDER_MODEL_UNAVAILABLE,
+        "PROVIDER_UNAVAILABLE": PROVIDER_ROUTE_UNAVAILABLE,
+        PROVIDER_TRANSIENT: PROVIDER_TRANSIENT,
+        PROVIDER_MODEL_UNAVAILABLE: PROVIDER_MODEL_UNAVAILABLE,
+        PROVIDER_ROUTE_UNAVAILABLE: PROVIDER_ROUTE_UNAVAILABLE,
+        PROVIDER_POOL_EXHAUSTED: PROVIDER_POOL_EXHAUSTED,
+        MODEL_SET_EXHAUSTED: MODEL_SET_EXHAUSTED,
+        REGISTRY_SELECTION_GAP: REGISTRY_SELECTION_GAP,
+    }
+    stack: list[Any] = []
+    for cause in causes:
+        for attr in ("failure_evidence", "evidence"):
+            value = getattr(cause, attr, None)
+            if isinstance(value, dict):
+                stack.append(value)
+    seen: set[int] = set()
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            typed = str(value.get("failure_class") or "").strip().upper()
+            if typed in aliases:
+                return aliases[typed]
+            if str(value.get("failure_pattern") or "").strip().lower() == "provider_model_set_exhausted":
+                return MODEL_SET_EXHAUSTED
+            stage = str(value.get("failure_stage") or "").strip().lower()
+            if stage == "capability_selection":
+                return REGISTRY_SELECTION_GAP
+            if stage in {"model_selection", "same_provider_model_replan"}:
+                return PROVIDER_MODEL_UNAVAILABLE
+            if stage in {"provider_selection", "provider_routing", "provider_level_replan"}:
+                eligible = value.get("eligible_provider_count")
+                if isinstance(eligible, int) and not isinstance(eligible, bool) and eligible == 0:
+                    return PROVIDER_POOL_EXHAUSTED
+                return PROVIDER_ROUTE_UNAVAILABLE
+            stack.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value)
+    return None
+
+
 def classify_internal_failure(
     exc: BaseException,
     *,
@@ -100,8 +159,11 @@ def classify_internal_failure(
         reason_parts.append(safe or str(item))
     reason = " | ".join(reason_parts)[:1600]
     folded = (names + " " + reason).casefold()
+    typed_failure_class = _typed_routing_failure_class(causes)
 
-    if "taskinputcontractviolation" in folded:
+    if typed_failure_class is not None:
+        failure_class = typed_failure_class
+    elif "taskinputcontractviolation" in folded:
         failure_class = CONTRACT_INPUT_GAP
     elif (
         "agenttoolauthorizationerror" in folded
@@ -188,7 +250,6 @@ def classify_internal_failure(
     elif any(marker in folded for marker in (
         "no healthy registry capability",
         "registry selection",
-        "routingpolicyerror",
         "non-executable registry capability",
     )):
         failure_class = REGISTRY_SELECTION_GAP

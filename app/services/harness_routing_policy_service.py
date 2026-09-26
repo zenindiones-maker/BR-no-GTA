@@ -633,9 +633,16 @@ def _select_provider(
         raise RoutingPolicyError(
             "Primary provider is unavailable and fallback is not permitted",
             evidence={
+                "failure_stage": "provider_selection",
+                "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
                 "primary_provider": primary_provider,
                 "fallback_allowed": False,
                 "zero_cost_operation": request.zero_cost_operation,
+                "eligible_provider_count": len(eligible),
+                "eligible_provider_ids": [
+                    normalize_provider_id(record.provider_id or "")
+                    for record in eligible
+                ],
                 "rejected_candidates": [
                     asdict(item) for item in rejected
                 ],
@@ -655,9 +662,13 @@ def _select_provider(
         raise RoutingPolicyError(
             "No eligible policy-governed fallback provider is available",
             evidence={
+                "failure_stage": "provider_selection",
+                "failure_class": "PROVIDER_POOL_EXHAUSTED",
                 "primary_provider": primary_provider,
                 "fallback_allowed": True,
                 "zero_cost_operation": request.zero_cost_operation,
+                "eligible_provider_count": 0,
+                "eligible_provider_ids": [],
                 "rejected_candidates": [
                     asdict(item) for item in rejected
                 ],
@@ -867,6 +878,8 @@ def route_harness_request(
         raise RoutingPolicyError(
             "No executable capability satisfies Harness routing policy",
             evidence={
+                "failure_stage": "capability_selection",
+                "failure_class": "REGISTRY_SELECTION_GAP",
                 "intent": request.intent,
                 "authorized_action": action,
                 "zero_cost_operation": request.zero_cost_operation,

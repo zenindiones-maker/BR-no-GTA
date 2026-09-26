@@ -2,10 +2,14 @@ from types import SimpleNamespace
 
 from app.services.harness_internal_recovery_service import (
     CONTRACT_INPUT_GAP,
+    PROVIDER_POOL_EXHAUSTED,
+    PROVIDER_ROUTE_UNAVAILABLE,
     PROVIDER_TRANSIENT,
+    REGISTRY_SELECTION_GAP,
     HarnessInternalRecoveryState,
     classify_internal_failure,
 )
+from app.services.harness_routing_policy_service import RoutingPolicyError
 from app.services.task_input_contract_service import (
     TaskInputContractViolation,
     resolve_task_input_contract,
@@ -148,3 +152,64 @@ def test_full_timeout_can_skip_same_task_retry_strategy(tmp_path):
         disallowed_strategies=("RETRY_SAME_TASK",),
     )
     assert decision.strategy == "LOCALIZED_PROVIDER_REPLAN"
+
+
+def test_routing_policy_provider_stage_not_registry_gap():
+    failure = RoutingPolicyError(
+        "Primary provider is unavailable and fallback is not permitted",
+        evidence={
+            "failure_stage": "provider_selection",
+            "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
+            "eligible_provider_count": 1,
+        },
+    )
+    result = classify_internal_failure(
+        failure, task=_task(),
+        context={"dependency_context_sha256": "provider-route"},
+    )
+    assert result.failure_class == PROVIDER_ROUTE_UNAVAILABLE
+    assert result.failure_class != REGISTRY_SELECTION_GAP
+
+
+def test_registry_selection_gap_reserved_for_capability_selection():
+    failure = RoutingPolicyError(
+        "No executable capability satisfies Harness routing policy",
+        evidence={
+            "failure_stage": "capability_selection",
+            "failure_class": "REGISTRY_SELECTION_GAP",
+        },
+    )
+    result = classify_internal_failure(
+        failure, task=_task(),
+        context={"dependency_context_sha256": "capability-route"},
+    )
+    assert result.failure_class == REGISTRY_SELECTION_GAP
+
+
+def test_provider_pool_exhausted_is_internal_not_human_gate(tmp_path):
+    failure = RoutingPolicyError(
+        "No eligible zero-cost semantic provider is available",
+        evidence={
+            "failure_stage": "provider_selection",
+            "failure_class": "PROVIDER_POOL_EXHAUSTED",
+            "eligible_provider_count": 0,
+            "zero_cost_operation": True,
+        },
+    )
+    result = classify_internal_failure(
+        failure, task=_task(),
+        context={"dependency_context_sha256": "provider-health"},
+    )
+    assert result.failure_class == PROVIDER_POOL_EXHAUSTED
+    assert result.recoverable is True
+    assert result.human_intervention_required is False
+    state = HarnessInternalRecoveryState(
+        mission_id="mission-provider-pool",
+        goal_id="goal-provider-pool",
+        artifact_dir=tmp_path,
+    )
+    observed = state.observe_failure(
+        task=_task(), exc=failure,
+        context={"dependency_context_sha256": "provider-health"},
+    )
+    assert state.select_recovery(observed).strategy == "RECONCILE_PROVIDER_HEALTH"

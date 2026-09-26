@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
@@ -310,19 +311,114 @@ def execute_authorized_addy_skill(
         and str(item.get("model_id") or "").strip()
     }
 
-    provider_health = semantic_provider_health()
-    eligible_providers = tuple(
-        str(item).strip()
-        for item in (
-            provider_health.get("eligible_zero_cost_provider_ids") or ()
-        )
-        if str(item).strip()
-    )
-    if not eligible_providers:
-        raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
-
     provider_attempts: list[dict[str, Any]] = []
+    provider_health_snapshots: list[dict[str, Any]] = []
+    routing_health_snapshots: dict[str, dict[str, Any]] = {}
     nvidia_latency_budget: dict[str, Any] | None = None
+    agent_instance_id = str(
+        payload.get("agent_instance_id")
+        or (
+            (context.get("agent_session") or {}).get("agent_instance_id")
+            if isinstance(context.get("agent_session"), dict)
+            else ""
+        )
+        or ""
+    ).strip()
+    agent_turn = int(
+        payload.get("agent_turn")
+        or context.get("agent_turn")
+        or (
+            (context.get("agent_session") or {}).get("turn_index")
+            if isinstance(context.get("agent_session"), dict)
+            else 0
+        )
+        or 0
+    )
+
+    def _fresh_provider_health(recovery_phase: str):
+        observed = semantic_provider_health()
+        eligible = tuple(
+            str(item).strip()
+            for item in (
+                observed.get("eligible_zero_cost_provider_ids") or ()
+            )
+            if str(item).strip()
+        )
+        body = {
+            "schema": "ProviderHealthSnapshot/v1",
+            "recovery_phase": recovery_phase,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "eligible_provider_ids": list(eligible),
+            "eligible_provider_count": len(eligible),
+            "providers": [
+                dict(item)
+                for item in (observed.get("providers") or ())
+                if isinstance(item, dict)
+            ],
+        }
+        digest = sha256(json.dumps(
+            body, ensure_ascii=True, sort_keys=True,
+            separators=(",", ":"), default=str,
+        ).encode("utf-8")).hexdigest()
+        snapshot = {**body, "snapshot_sha256": digest}
+        provider_health_snapshots.append(snapshot)
+        return eligible, snapshot
+
+    def _routing_failure_evidence(
+        *, exc: RoutingPolicyError, recovery_phase: str,
+        preferred_provider: str | None,
+        health_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        typed = dict(getattr(exc, "evidence", {}) or {})
+        typed.setdefault("failure_stage", "provider_selection")
+        typed.setdefault("failure_class", "PROVIDER_ROUTE_UNAVAILABLE")
+        typed["recovery_phase"] = recovery_phase
+        typed["provider_health_snapshot"] = dict(health_snapshot)
+        typed["eligible_provider_count"] = int(
+            health_snapshot.get("eligible_provider_count") or 0
+        )
+        exc.evidence = typed
+        current_pairs = [
+            {
+                "provider_id": str(row.get("provider_id") or "").strip(),
+                "model_id": str(row.get("model_id") or "").strip(),
+                "routing_id": str(row.get("routing_id") or "").strip(),
+                "attempt_id": str(row.get("attempt_id") or "").strip(),
+                "failure_class": str(row.get("failure_class") or "").strip(),
+                "status": str(row.get("status") or "").strip().upper(),
+            }
+            for row in provider_attempts
+            if str(row.get("provider_id") or "").strip()
+            and str(row.get("model_id") or "").strip()
+        ]
+        failed = [
+            dict(row) for row in current_pairs if row.get("status") == "FAILED"
+        ]
+        evidence = {
+            "schema": "ProviderRecoveryFailureEvidence/v1",
+            "failure_class": typed["failure_class"],
+            "failure_stage": typed["failure_stage"],
+            "recovery_phase": recovery_phase,
+            "original_provider": preferred_provider,
+            "provider_attempts": [dict(row) for row in provider_attempts],
+            "ATTEMPTED_PROVIDER_MODEL_PAIRS": [
+                *prior_attempted_pairs, *current_pairs,
+            ],
+            "EXHAUSTED_PROVIDER_MODEL_PAIRS": [
+                *prior_exhausted_pairs, *failed,
+            ],
+            "provider_health_snapshot": dict(health_snapshot),
+            "routing_policy_error": {
+                "error_type": type(exc).__name__,
+                "message": str(exc)[:1200],
+                "evidence": typed,
+            },
+            "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED": (
+                recovery_phase == "PROVIDER_LEVEL_REPLAN"
+            ),
+        }
+        exc.failure_evidence = evidence
+        return evidence
 
     def _full_timeout_or_read_stall(evidence) -> bool:
         error = (
@@ -388,9 +484,32 @@ def execute_authorized_addy_skill(
         unavailable_models: tuple[str, ...] = (),
         exhausted_pairs: tuple[tuple[str, str], ...] = (),
         failure_pattern: str | None = None,
+        recovery_phase: str = "INITIAL_PROVIDER_SELECTION",
     ):
-        return route_harness_request(
-            HarnessRoutingRequest(
+        eligible_providers, health_snapshot = _fresh_provider_health(
+            recovery_phase
+        )
+        if not eligible_providers:
+            exc = RoutingPolicyError(
+                "No eligible zero-cost semantic provider is available",
+                evidence={
+                    "failure_stage": "provider_selection",
+                    "failure_class": "PROVIDER_POOL_EXHAUSTED",
+                    "eligible_provider_count": 0,
+                    "eligible_provider_ids": [],
+                    "zero_cost_operation": True,
+                    "recovery_phase": recovery_phase,
+                },
+            )
+            _routing_failure_evidence(
+                exc=exc, recovery_phase=recovery_phase,
+                preferred_provider=preferred_provider,
+                health_snapshot=health_snapshot,
+            )
+            raise exc
+        try:
+            decision = route_harness_request(
+                HarnessRoutingRequest(
                 intent=(
                     f"execute pinned Addy skill {skill_name} with governed "
                     "semantic reasoning and structured output"
@@ -418,6 +537,17 @@ def execute_authorized_addy_skill(
                 ),
             )
         )
+        except RoutingPolicyError as exc:
+            _routing_failure_evidence(
+                exc=exc, recovery_phase=recovery_phase,
+                preferred_provider=preferred_provider,
+                health_snapshot=health_snapshot,
+            )
+            raise
+        routing_health_snapshots[str(decision.routing_id)] = dict(
+            health_snapshot
+        )
+        return decision
 
     def _execute_provider(provider_routing, *, phase: str):
         nonlocal nvidia_latency_budget
@@ -434,10 +564,10 @@ def execute_authorized_addy_skill(
         pair_key = (selected_provider, selected_model)
         if (
             phase in {"INITIAL", "LOCALIZED_MODEL_REPLAN"}
-            and pair_key in prior_attempted_pair_keys
+            and pair_key in prior_exhausted_pair_keys
         ):
             raise PermissionError(
-                "ATTEMPTED_PROVIDER_MODEL_PAIR_REUSED:"
+                "EXHAUSTED_PROVIDER_MODEL_PAIR_REUSED:"
                 + selected_provider
                 + ":"
                 + selected_model
@@ -472,7 +602,11 @@ def execute_authorized_addy_skill(
                 "capability_id": provider_routing.selected_capability_id,
                 "selected_provider": selected_provider,
                 "selected_model": provider_routing.selected_model,
-                "eligible_zero_cost_provider_ids": list(eligible_providers),
+                "eligible_zero_cost_provider_ids": list(
+                    routing_health_snapshots.get(
+                        str(provider_routing.routing_id), {}
+                    ).get("eligible_provider_ids") or ()
+                ),
                 "selected_executor_binding": (
                     provider_routing.selected_provider_executor_binding
                 ),
@@ -505,23 +639,27 @@ def execute_authorized_addy_skill(
         observed_failure_class = _failure_class(semantic_evidence)
         attempt_number = len(provider_attempts) + 1
         attempt_id = sha256(
-            (
-                mission_id
-                + "|"
-                + task_id
-                + "|"
-                + str(attempt_number)
-                + "|"
-                + str(provider_routing.routing_id)
-                + "|"
-                + observed_provider
-                + "|"
-                + observed_model
-            ).encode("utf-8")
+            "|".join([
+                mission_id,
+                task_id,
+                agent_instance_id,
+                str(agent_turn),
+                str(attempt_number),
+                phase,
+                str(provider_routing.routing_id),
+                observed_provider,
+                observed_model,
+            ]).encode("utf-8")
         ).hexdigest()[:24]
+        route_health = routing_health_snapshots.get(
+            str(provider_routing.routing_id), {}
+        )
         provider_attempts.append({
             "attempt": attempt_number,
+            "provider_attempt_ordinal": attempt_number,
             "attempt_id": attempt_id,
+            "agent_instance_id": agent_instance_id or None,
+            "agent_turn": agent_turn,
             "phase": phase,
             "routing_id": provider_routing.routing_id,
             "provider": observed_provider,
@@ -533,6 +671,15 @@ def execute_authorized_addy_skill(
             "retry_count": int(semantic_evidence.retry_count or 0),
             "latency_seconds": semantic_evidence.latency_seconds,
             "attempt_deadline_ms": attempt_deadline_ms,
+            "provider_health_snapshot_sha256": str(
+                route_health.get("snapshot_sha256") or ""
+            ) or None,
+            "provider_health_observed_at": str(
+                route_health.get("observed_at") or ""
+            ) or None,
+            "provider_health_recovery_phase": str(
+                route_health.get("recovery_phase") or ""
+            ) or None,
             "health_evidence": list(
                 (
                     getattr(
@@ -554,11 +701,7 @@ def execute_authorized_addy_skill(
     ).strip()
     recovery_unavailable_models = tuple(dict.fromkeys(
         str(item.get("model_id") or "").strip()
-        for item in (
-            prior_attempted_pairs
-            if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
-            else prior_exhausted_pairs
-        )
+        for item in prior_exhausted_pairs
         if (
             str(item.get("model_id") or "").strip()
             and (
@@ -602,6 +745,11 @@ def execute_authorized_addy_skill(
                 if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
                 else None
             ),
+            recovery_phase=(
+                "SAME_PROVIDER_MODEL_REPLAN"
+                if recovery_strategy == "LOCALIZED_PROVIDER_REPLAN"
+                else "INITIAL_PROVIDER_SELECTION"
+            ),
         )
     except RoutingPolicyError:
         if (
@@ -617,6 +765,7 @@ def execute_authorized_addy_skill(
             unavailable_models=(),
             exhausted_pairs=exhausted_pair_tuple,
             failure_pattern="provider_model_set_exhausted",
+            recovery_phase="PROVIDER_LEVEL_REPLAN",
         )
         if (
             str(provider_routing.selected_provider or "").strip()
@@ -638,6 +787,7 @@ def execute_authorized_addy_skill(
 
     same_routing_retry_count = 0
     same_routing_retry_result = "NOT_APPLICABLE"
+    retry_backoff_seconds = 0.0
     transient_retry_exhausted = False
     same_model_full_timeout_retry_avoided = False
     localized_replan_attempted = False
@@ -668,6 +818,14 @@ def execute_authorized_addy_skill(
             )
         elif bool(error.get("retryable")):
             same_routing_retry_count = 1
+            jitter_seed = int(sha256(
+                "|".join([
+                    mission_id, task_id, agent_instance_id,
+                    str(agent_turn), str(provider_routing.routing_id),
+                ]).encode("utf-8")
+            ).hexdigest()[:8], 16)
+            retry_backoff_seconds = 0.05 + ((jitter_seed % 50) / 1000.0)
+            time.sleep(retry_backoff_seconds)
             semantic = _execute_provider(
                 provider_routing,
                 phase="SAME_ROUTING_RETRY",
@@ -697,6 +855,7 @@ def execute_authorized_addy_skill(
                 preferred_provider=original_provider,
                 unavailable_models=(original_model,),
                 failure_pattern=localized_replan_failure_pattern,
+                recovery_phase="SAME_PROVIDER_MODEL_REPLAN",
             )
             rerouted_provider = str(rerouted.selected_provider or "").strip()
             rerouted_model = str(rerouted.selected_model or "").strip()
@@ -748,6 +907,7 @@ def execute_authorized_addy_skill(
                         *current_failed_pairs,
                     ])),
                     failure_pattern="provider_model_set_exhausted",
+                    recovery_phase="PROVIDER_LEVEL_REPLAN",
                 )
                 rerouted_provider = str(
                     rerouted.selected_provider or ""
@@ -1030,6 +1190,25 @@ def execute_authorized_addy_skill(
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
+            "RETRY_BACKOFF_SECONDS": retry_backoff_seconds,
+            "PROVIDER_ATTEMPT_IDENTITY_UNIQUE": (
+                len({
+                    str(item.get("attempt_id") or "")
+                    for item in provider_attempts
+                    if str(item.get("attempt_id") or "")
+                }) == len(provider_attempts)
+            ),
+            "PROVIDER_HEALTH_REVALIDATED": (
+                all(
+                    bool(routing_health_snapshots.get(
+                        str(item.get("routing_id") or ""), {}
+                    ).get("snapshot_sha256"))
+                    for item in provider_attempts
+                )
+                and bool(provider_health_snapshots)
+            ),
+            "PROVIDER_HEALTH_SNAPSHOTS": provider_health_snapshots,
+            "NO_BLIND_PROVIDER_RETRY": True,
             "BOUNDED_PROVIDER_ATTEMPTS": (
                 len(provider_attempts) <= 3
             ),
@@ -1195,6 +1374,25 @@ def execute_authorized_addy_skill(
             "IDENTICAL_ROUTE_RETRY_COUNT": 0
             if same_model_full_timeout_retry_avoided
             else same_routing_retry_count,
+            "RETRY_BACKOFF_SECONDS": retry_backoff_seconds,
+            "PROVIDER_ATTEMPT_IDENTITY_UNIQUE": (
+                len({
+                    str(item.get("attempt_id") or "")
+                    for item in provider_attempts
+                    if str(item.get("attempt_id") or "")
+                }) == len(provider_attempts)
+            ),
+            "PROVIDER_HEALTH_REVALIDATED": (
+                all(
+                    bool(routing_health_snapshots.get(
+                        str(item.get("routing_id") or ""), {}
+                    ).get("snapshot_sha256"))
+                    for item in provider_attempts
+                )
+                and bool(provider_health_snapshots)
+            ),
+            "PROVIDER_HEALTH_SNAPSHOTS": provider_health_snapshots,
+            "NO_BLIND_PROVIDER_RETRY": True,
             "BOUNDED_PROVIDER_ATTEMPTS": len(provider_attempts) <= 3,
             "agent_instance_id": str(
                 payload.get("agent_instance_id") or ""
