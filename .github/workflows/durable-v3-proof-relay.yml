@@ -1,0 +1,44 @@
+name: Durable V3 Proof Relay
+on:
+  push:
+    branches: [work/gate6f-analytics-learning]
+    paths: [.github/workflows/durable-v3-proof-relay.yml]
+permissions: {}
+jobs:
+  relay:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      MISSION: proof-entrypoint-v3
+      CONTINUATION: CONT-ENTRYPOINT-1
+      AUTHORIZATION: AUTH-ENTRYPOINT-1
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: {persist-credentials: false}
+      - name: Validate canonical bootstrap and dispatch bounded proof
+        id: relay
+        run: |
+          set -euo pipefail
+          POLICY=$(gh api "repos/$GITHUB_REPOSITORY/contents/objects/bootstrap-policies/entrypoint-v3.json?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
+          EXPECTED=$(jq -r .expected_workflow_sha <<<"$POLICY")
+          BOOTSTRAP=$(jq -r .bootstrap_ref <<<"$POLICY")
+          OBSERVED=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BOOTSTRAP" --jq .object.sha)
+          test "$OBSERVED" = "$EXPECTED" || { echo BOOTSTRAP_REF_DRIFT; exit 78; }
+          echo "BOOTSTRAP_REF_DRIFT=NO"
+          gh workflow run durable-v3-entrypoint-proof.yml --ref "$BOOTSTRAP"             -f mission_id="$MISSION" -f continuation_id="$CONTINUATION"             -f authorization_id="$AUTHORIZATION" -f runtime_revision="FORGED-INPUT-MUST-BE-IGNORED"
+          for i in $(seq 1 20); do
+            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/durable-v3-entrypoint-proof.yml/runs?branch=$BOOTSTRAP&event=workflow_dispatch&per_page=10"               --jq '.workflow_runs[] | select(.display_title | contains("proof-entrypoint-v3")) | .id' | head -1)
+            test -n "$RUN_ID" && break
+            sleep 2
+          done
+          test -n "${RUN_ID:-}" || { echo DELIVERY_RESULT_UNKNOWN; exit 75; }
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
+          echo "DISPATCH_RECEIPT_RESOLVED=PASS"
+      - name: Persist authority-neutral dispatch receipt
+        run: |
+          python scripts/durable_v3_proof_relay.py --mission-id "$MISSION"             --continuation-id "$CONTINUATION" --authorization-id "$AUTHORIZATION"             --workflow-run-id "${{ steps.relay.outputs.run_id }}"             --expected-workflow-sha "${{ steps.relay.outputs.expected }}"
