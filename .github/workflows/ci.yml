@@ -267,10 +267,14 @@ jobs:
           set -euo pipefail
           .venv/bin/python - <<'PY'
           from pathlib import Path
-          import yaml
-          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
-              with path.open("r", encoding="utf-8") as fh:
-                  yaml.safe_load(fh)
+          import subprocess, sys
+          files=[str(p) for p in sorted(Path(".github/workflows").glob("*.y*ml"))]
+          if not files:
+              raise SystemExit("NO_WORKFLOW_YAML_FOUND")
+          # Ruby + Psych is preinstalled on GitHub's Ubuntu runner and gives a real YAML parse
+          # without adding a Python dependency to the project environment.
+          code="require 'yaml'; ARGV.each { |p| YAML.load_file(p) }"
+          subprocess.run(["ruby","-e",code,*files],check=True)
           print("WORKFLOW_YAML_SYNTAX_VALID=PASS")
           PY
 
