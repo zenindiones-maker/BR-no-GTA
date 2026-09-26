@@ -27,7 +27,7 @@ def base(status="ISSUED",claimant=None,gen=1,plan="P",runtime="R",orch="3",cid="
  h={"mission_id":"M","authority_generation":gen,"active_plan_ref":plan,"active_plan_hash":"PH","runtime_revision":runtime,
  "orchestration_version":orch,"active_authorization_ref":"G","active_continuation_ref":"CREF","active_claim_ref":None,
  "bootstrap_policy_ref":"POL"}
- p={"schema":"BootstrapPolicy/v1","repository_id":"1","workflow_path":"durable-v3-entrypoint-proof.yml",
+ p={"schema":"BootstrapPolicy/v1","repository_id":"1","workflow_path":".github/workflows/durable-v3-entrypoint-proof.yml",
  "bootstrap_ref":"durable-v3-bootstrap","expected_workflow_sha":"WS","allowed_event":"workflow_dispatch"}
  return h,{"G":g,"CREF":r,"POL":p}
 
