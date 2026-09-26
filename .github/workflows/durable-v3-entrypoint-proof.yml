@@ -8,6 +8,7 @@ on:
       continuation_id: {required: true, type: string}
       authorization_id: {required: true, type: string}
       runtime_revision: {required: false, type: string, description: "UNTRUSTED diagnostic input; never used for authority"}
+      dispatch_attempt_id: {required: false, type: string, description: "transport correlation only; never authority"}
 
 permissions: {}
 
