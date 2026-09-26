@@ -604,7 +604,7 @@ def _durable_identity_proposal(*, task_id: str, objective: str) -> dict:
             "objective": objective,
             "task_class": "analysis",
             "required_capability_description": "repository analysis",
-            "candidate_capability_ids": ["repository.read-scoped"],
+            "candidate_capability_ids": [],
             "dependencies": [],
             "expected_output": "Evidence",
             "acceptance_criteria": ["proof"],
