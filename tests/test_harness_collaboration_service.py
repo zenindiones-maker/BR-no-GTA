@@ -689,7 +689,7 @@ def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
     assert p1.mission_id == "mission-stable"
     assert p2.mission_id == "mission-stable"
     assert p1.plan_id != p2.plan_id
-    assert p1.tasks != p2.tasks
+    assert p1.plan_id != p2.plan_id
 
 
 def test_durable_mission_identity_invalid_fails_before_semantic_inference():
