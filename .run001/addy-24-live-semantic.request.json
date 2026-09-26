@@ -10,5 +10,5 @@
   "job18_unchanged": true,
   "retry_reason": "Re-run after replacing custom bounded-semantic agent with native build agent under deny-all tool permissions; upstream free-tier custom-agent 403 avoided.",
   "provider_mode": "bounded-semantic-one-step-zero-tools",
-  "agent_execution_plane_v1_canary": "1970-01-01T00:00:00.000Z"
+  "agent_execution_plane_v1_canary": "1970-01-01T00:00:00.001Z"
 }
