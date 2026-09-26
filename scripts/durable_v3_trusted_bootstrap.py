@@ -2,7 +2,8 @@ from __future__ import annotations
 import argparse,json,os,subprocess
 from dataclasses import asdict
 from pathlib import Path
-from app.services.harness_durable_execution_v3 import ClaimantIdentity,DurableExecutionV3,ExecutionOutcome
+from app.services.harness_durable_execution_v3 import ClaimantIdentity,DurableExecutionV3
+from app.services.harness_trusted_execution_outcome_reducer import ActivityExecutionEvidence,TrustedExecutionOutcomeReducer
 from app.services.harness_git_transaction_store import GitHubGitTransactionStore
 
 def store():
@@ -43,17 +44,21 @@ def claim(a):
  print("CANONICAL_CLAIM=PASS")
 
 def settle(a):
- payload=json.loads(os.environ["EXECUTION_RESULT_JSON"])
+ payload=json.loads(Path(os.environ["EVIDENCE_FILE"]).read_text())
  s=store();snap=s.snapshot(a.mission_id);p=read_policy(s,snap);validate_bootstrap(p)
- ident=ClaimantIdentity(**payload["claimant_identity"])
- rt=DurableExecutionV3(s)
- rt.require_current_claim(snapshot=snap,claim_id=payload["claim_id"],fencing_epoch=int(payload["fencing_epoch"]),
-  claimant_identity=ident)
- if payload["runtime_revision"]!=snap.mission_head["runtime_revision"]: raise SystemExit("RUNTIME_REVISION_MISMATCH")
- if payload["orchestration_version"]!=snap.mission_head["orchestration_version"]: raise SystemExit("VERSION_INCOMPATIBLE")
- outcome=ExecutionOutcome(**payload["proposed_outcome"])
- rt.settle(snapshot=snap,claim_id=payload["claim_id"],fencing_epoch=int(payload["fencing_epoch"]),
-  outcome=outcome,semantic_objects={})
+ try:evidence=ActivityExecutionEvidence.strict(payload)
+ except ValueError as e: raise SystemExit(str(e))
+ if evidence.mission_id!=a.mission_id or evidence.continuation_id!=a.continuation_id or evidence.authorization_id!=a.authorization_id: raise SystemExit("RESULT_EVIDENCE_INVALID:CALLER_IDENTITY")
+ ident=ClaimantIdentity(**evidence.claimant_identity);rt=DurableExecutionV3(s)
+ rt.require_current_claim(snapshot=snap,claim_id=evidence.claim_id,fencing_epoch=evidence.fencing_epoch,claimant_identity=ident)
+ h=snap.mission_head;grant=s.read_json(h["active_authorization_ref"],snap.head_sha);cont=s.read_json(h["active_continuation_ref"],snap.head_sha)
+ plan=s.read_json(h["active_plan_ref"],snap.head_sha);prev=s.read_json(h.get("latest_outcome_ref"),snap.head_sha) if h.get("latest_outcome_ref") else None
+ outcome,decision=TrustedExecutionOutcomeReducer.reduce(head=h,plan=plan,previous=prev,grant=grant,continuation=cont,evidence=evidence)
+ rt.settle(snapshot=snap,claim_id=evidence.claim_id,fencing_epoch=evidence.fencing_epoch,outcome=outcome,semantic_objects={})
+ print("RUNTIME_RESULT_IS_EVIDENCE_NOT_AUTHORITY=PASS")
+ print("TRUSTED_OUTCOME_REDUCER=PASS")
+ print("CANONICAL_TRANSITION="+decision.transition)
+ print("CANONICAL_USEFUL_PROGRESS="+str(decision.useful_progress).upper())
  print("TRUSTED_SETTLEMENT=PASS")
  print("SETTLED_ATTEMPT_HAS_NO_ACTIVE_CLAIM=PASS")
 
