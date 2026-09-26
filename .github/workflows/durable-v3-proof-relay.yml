@@ -24,7 +24,9 @@ jobs:
         id: relay
         run: |
           set -euo pipefail
-          POLICY=$(gh api "repos/$GITHUB_REPOSITORY/contents/objects/bootstrap-policies/entrypoint-v3.json?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
+          HEAD_JSON=$(gh api "repos/$GITHUB_REPOSITORY/contents/missions/$MISSION/head.json?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
+          POLICY_REF=$(jq -r .bootstrap_policy_ref <<<"$HEAD_JSON")
+          POLICY=$(gh api "repos/$GITHUB_REPOSITORY/contents/$POLICY_REF?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
           EXPECTED=$(jq -r .expected_workflow_sha <<<"$POLICY")
           BOOTSTRAP=$(jq -r .bootstrap_ref <<<"$POLICY")
           OBSERVED=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BOOTSTRAP" --jq .object.sha)
