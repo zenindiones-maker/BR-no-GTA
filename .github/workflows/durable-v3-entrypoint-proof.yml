@@ -41,9 +41,12 @@ jobs:
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          MISSION_ID: ${{ inputs.mission_id }}
+          CONTINUATION_ID: ${{ inputs.continuation_id }}
+          AUTHORIZATION_ID: ${{ inputs.authorization_id }}
         run: |
           set -euo pipefail
-          python scripts/durable_v3_trusted_bootstrap.py claim             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"
+          python scripts/durable_v3_trusted_bootstrap.py claim             --mission-id "$MISSION_ID"             --continuation-id "$CONTINUATION_ID"             --authorization-id "$AUTHORIZATION_ID"
           echo "TRUSTED_CLAIM_JOB_EXTERNAL_SECRETS=NONE"
           echo "WORKFLOW_INPUT_RUNTIME_SHA=UNTRUSTED"
 
@@ -53,7 +56,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      result: ${{ steps.stub.outputs.result }}
+      evidence_sha256: ${{ steps.stub.outputs.evidence_sha256 }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -83,7 +86,7 @@ jobs:
           grep -Eq '403|Resource not accessible|permission' <<<"$OUT"
           echo "RUNTIME_JOB_STATE_WRITE_CAPABILITY=NONE"
       - id: stub
-        name: Typed semantic workload stub
+        name: Activity evidence workload stub
         env:
           CLAIM_ID: ${{ needs.trusted_claim.outputs.claim_id }}
           FENCE: ${{ needs.trusted_claim.outputs.fencing_epoch }}
@@ -95,31 +98,30 @@ jobs:
           AUTHORIZATION: ${{ inputs.authorization_id }}
         run: |
           python - <<'PY'
-          import json,os
-          result={"schema":"ExecutionResultEnvelope/v1","mission_id":os.environ["MISSION"],
+          import hashlib,json,os
+          from pathlib import Path
+          p={"schema":"ActivityExecutionEvidence/v1","mission_id":os.environ["MISSION"],
             "continuation_id":os.environ["CONTINUATION"],"authorization_id":os.environ["AUTHORIZATION"],
             "claim_id":os.environ["CLAIM_ID"],"fencing_epoch":int(os.environ["FENCE"]),
             "runtime_revision":os.environ["RUNTIME"],"orchestration_version":os.environ["ORCH"],
-            "claimant_identity":json.loads(os.environ["CLAIMANT"]),"task_results":[],"partial_refs":[],
-            "provider_call_count":0,"agent_call_count":0,"semantic_metrics":{"stub":1},
-            "proposed_outcome":{"attempt_id":"entrypoint-proof","mission_id":os.environ["MISSION"],
-              "human_goal_id":"proof-human","source_state_version":2,"plan_id":"P1","plan_revision":1,
-              "runtime_revision":os.environ["RUNTIME"],"orchestration_version":os.environ["ORCH"],
-              "causal_task_id":"semantic-stub","capability_id":"proof.stub","capability_version":"1",
-              "status":"COMPLETED","transition":"COMPLETED","failure_class":None,"failure_code":None,
-              "failure_signature":None,"exception_type":None,"strategy_signature":"proof-stub",
-              "retry_classification":None,"provider_call_count":0,"agent_call_count":0,
-              "executed_task_ids":["semantic-stub"],"reused_task_ids":[],"new_task_result_hashes":[],
-              "replayed_task_result_hashes":[],"new_artifact_hashes":[],"new_verified_evidence":[],
-              "mission_metric_before":0,"mission_metric_after":1,"useful_progress":True}}
-          with open(os.environ["GITHUB_OUTPUT"],"a") as f:f.write("result="+json.dumps(result,separators=(",",":"))+"\n")
-          print("SEMANTIC_EXECUTION_STARTED=YES")
-          print("PLANNER_CALLS=0")
-          print("PROVIDER_CALLS=0")
-          print("AGENT_CALLS=0")
-          print("TASKRESULT_WRITES=0")
-          print("SIDE_EFFECTS=0")
+            "claimant_identity":json.loads(os.environ["CLAIMANT"]),"activity_id":"entrypoint-proof",
+            "semantic_task_key":"semantic-stub","capability_id":"proof.stub","capability_version":"1",
+            "completion_status":"COMPLETED","typed_output_refs":[],"partial_refs":[],"raw_exception_type":None,
+            "raw_error_code":None,"provider_call_count":0,"agent_call_count":0,
+            "observed_metrics":{"mission_metric":0},"executed_operations":[],"artifact_manifest_ref":None}
+          raw=json.dumps(p,sort_keys=True,separators=(",",":")).encode();p["evidence_hash"]=hashlib.sha256(raw).hexdigest()
+          data=json.dumps(p,sort_keys=True,separators=(",",":")).encode();Path("activity-evidence.json").write_bytes(data)
+          h=hashlib.sha256(data).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"],"a") as f:f.write("evidence_sha256="+h+"\n")
+          print("SEMANTIC_EXECUTION_STARTED=YES");print("RUNTIME_RESULT_IS_EVIDENCE_NOT_AUTHORITY=PASS")
+          print("PLANNER_CALLS=0");print("PROVIDER_CALLS=0");print("AGENT_CALLS=0");print("TASKRESULT_WRITES=0");print("SIDE_EFFECTS=0")
           PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: activity-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: activity-evidence.json
+          if-no-files-found: error
+          retention-days: 1
 
   trusted_settlement:
     needs: [trusted_claim,runtime_execution]
@@ -132,6 +134,10 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: activity-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: untrusted-runtime-evidence
       - name: Trusted canonical settlement
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -140,10 +146,15 @@ jobs:
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          EXECUTION_RESULT_JSON: ${{ needs.runtime_execution.outputs.result }}
+          MISSION_ID: ${{ inputs.mission_id }}
+          CONTINUATION_ID: ${{ inputs.continuation_id }}
+          AUTHORIZATION_ID: ${{ inputs.authorization_id }}
+          EVIDENCE_FILE: untrusted-runtime-evidence/activity-evidence.json
+          EXPECTED_EVIDENCE_SHA256: ${{ needs.runtime_execution.outputs.evidence_sha256 }}
         run: |
           set -euo pipefail
-          python scripts/durable_v3_trusted_bootstrap.py settle             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"
+          test "$(sha256sum "$EVIDENCE_FILE" | awk '{print $1}')" = "$EXPECTED_EVIDENCE_SHA256" || { echo RESULT_EVIDENCE_INVALID:ARTIFACT_HASH; exit 78; }
+          python scripts/durable_v3_trusted_bootstrap.py settle             --mission-id "$MISSION_ID"             --continuation-id "$CONTINUATION_ID"             --authorization-id "$AUTHORIZATION_ID"
           echo "TRUSTED_SETTLEMENT_JOB_EXTERNAL_SECRETS=NONE"
           echo "TRUST_PLANE_RUNTIME_ISOLATION=PASS"
 
@@ -162,8 +173,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          MISSION_ID: ${{ inputs.mission_id }}
+          CONTINUATION_ID: ${{ inputs.continuation_id }}
+          AUTHORIZATION_ID: ${{ inputs.authorization_id }}
           GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
-          python scripts/durable_v3_fail_closed_probe.py             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"             --old-claim-id "${{ needs.trusted_claim.outputs.claim_id }}"             --old-fence "${{ needs.trusted_claim.outputs.fencing_epoch }}"
+          python scripts/durable_v3_fail_closed_probe.py             --mission-id "$MISSION_ID"             --continuation-id "$CONTINUATION_ID"             --authorization-id "$AUTHORIZATION_ID"             --old-claim-id "${{ needs.trusted_claim.outputs.claim_id }}"             --old-fence "${{ needs.trusted_claim.outputs.fencing_epoch }}"
           echo "ENTRYPOINT_FAIL_CLOSED_CORE=PASS"
