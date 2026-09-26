@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/munder-difflin-agent-office
+      - work/gate6f-analytics-learning
     paths:
       - "app/services/agent_office/**"
       - "app/services/agent_office_harness_service.py"
@@ -11,6 +12,7 @@ on:
       - "scripts/agent_office_*.py"
       - "tests/test_agent_office.py"
       - ".github/workflows/agent-office-worker.yml"
+      - ".run/agent-office-execution-plane-canary.request.json"
   workflow_dispatch:
     inputs:
       branch:
