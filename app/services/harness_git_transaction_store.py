@@ -170,7 +170,11 @@ class GitHubGitTransactionStore:
         candidate=str(commit["sha"])
         for patch_attempt in range(1,3):
             try:
-                self._api("PATCH",f"/git/refs/{encoded},{"sha":candidate,"force":False})
+                self._api(
+                    "PATCH",
+                    f"/git/refs/{encoded}",
+                    {"sha": candidate, "force": False},
+                )
                 return candidate
             except GitApiError as exc:
                 ambiguous=exc.kind=="TRANSPORT" or (exc.status is not None and 500<=exc.status<=599)
