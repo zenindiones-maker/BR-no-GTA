@@ -708,16 +708,24 @@ _MISSION_CLASS_ALLOWED_TASK_ACTIONS = {
     # Mission class is a Harness authority boundary, not a semantic-planner hint.
     # System-improvement specialist work stays in the DEVELOPMENT action; final
     # Harness decisions remain outside the delegated task DAG.
-    "SYSTEM_IMPROVEMENT": frozenset({"DEVELOPMENT"}),
+    "SYSTEM_IMPROVEMENT": frozenset({"RESEARCH", "DEVELOPMENT", "DECISION"}),
 }
 
 
-def _mission_action_allowed(*, mission_class: Any, action: Any) -> bool:
+def _mission_action_allowed(*, mission_class: Any, action: Any, risk_side_effect_class: Any = "READ_ONLY") -> bool:
     normalized_class = str(mission_class or "").strip().upper()
+    normalized_action = str(action or "").strip().upper()
+    risk = str(risk_side_effect_class or "READ_ONLY").strip().upper()
     allowed = _MISSION_CLASS_ALLOWED_TASK_ACTIONS.get(normalized_class)
-    if not allowed:
-        return True
-    return str(action or "").strip().upper() in allowed
+    if allowed and normalized_action not in allowed:
+        return False
+    if normalized_class == "SYSTEM_IMPROVEMENT":
+        if normalized_action in {"RESEARCH", "DECISION"}:
+            return risk == "READ_ONLY"
+        if normalized_action == "DEVELOPMENT":
+            return risk in {"READ_ONLY", "LOW", "MEDIUM", "BOUNDED_MUTATION", "MUTATING"}
+        return False
+    return True
 
 
 def _mission_action_policy_errors(
@@ -751,6 +759,7 @@ def _mission_action_policy_errors(
         if not _mission_action_allowed(
             mission_class=normalized_class,
             action=effective_action,
+            risk_side_effect_class=task.risk_side_effect_class,
         ):
             errors.append(
                 f"{task.task_id}: action {effective_action} "
