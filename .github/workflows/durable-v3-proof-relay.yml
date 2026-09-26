@@ -15,9 +15,9 @@ jobs:
       PYTHONPATH: .
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
-      MISSION: proof-bootstrap-release-30ab3781
-      CONTINUATION: CONT-BOOTREL-314
-      AUTHORIZATION: AUTH-BOOTREL-314
+      MISSION: proof-bootstrap-release-d278d129
+      CONTINUATION: CONT-BOOTREL-315
+      AUTHORIZATION: AUTH-BOOTREL-315
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {persist-credentials: false}
