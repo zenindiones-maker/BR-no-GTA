@@ -757,6 +757,7 @@ def _select_provider(
                 "failure_class": failure_class,
                 "recovery_phase": phase,
                 "zero_cost_operation": request.zero_cost_operation,
+                "fallback_allowed": request.fallback_allowed,
                 "HEALTH_ELIGIBLE_PROVIDER_COUNT": (
                     eligibility_snapshot[
                         "HEALTH_ELIGIBLE_PROVIDER_COUNT"

@@ -1214,3 +1214,92 @@ def test_nontransient_retryable_flag_does_not_retry(monkeypatch):
     assert result.status == "FAILED"
     assert len(calls) == 1
     assert result.result["RETRY_COUNT"] == 0
+
+
+def test_recovery_retry_replans_with_all_prior_and_current_exhausted_pairs(
+    monkeypatch,
+):
+    _patch_common(monkeypatch)
+    route_b = _route(routing_id="routing-b", model="model-b")
+    route_requests = []
+
+    def fake_route(request):
+        route_requests.append(request)
+        if len(route_requests) == 1:
+            return route_b
+        assert request.recovery_phase == "SAME_PROVIDER_MODEL_REPLAN"
+        assert set(request.exhausted_provider_model_pairs) == {
+            ("nvidia_nim", "model-a"),
+            ("nvidia_nim", "model-b"),
+        }
+        raise RoutingPolicyError(
+            "No effective provider/model candidates remain after hard eligibility filters",
+            evidence={
+                "failure_stage": "provider_selection",
+                "failure_class": "MODEL_SET_EXHAUSTED",
+                "recovery_phase": "SAME_PROVIDER_MODEL_REPLAN",
+                "EFFECTIVE_ROUTING_PROVIDER_COUNT": 0,
+                "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": 0,
+            },
+        )
+
+    generation_calls = []
+    def fake_generation(**kwargs):
+        generation_calls.append(kwargs)
+        return _upstream_failure("model-b", "routing-b")
+
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        fake_generation,
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "PREVIOUS_SELECTED_MODEL": "model-a",
+        "ATTEMPTED_ROUTING_IDS": ["routing-a"],
+        "ATTEMPTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+            "status": "FAILED",
+        }],
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "routing-a",
+            "attempt_id": "attempt-a",
+            "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+            "status": "FAILED",
+        }],
+    }
+
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth(
+            "capability:addy:debugging-and-error-recovery"
+        ),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+
+    assert len(route_requests) == 2
+    assert len(generation_calls) == 2
+    assert result.status == "FAILED"
+    assert result.result["FAILURE_CLASS"] == "MODEL_SET_EXHAUSTED"
+    assert result.result[
+        "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED"
+    ] is True
+    assert result.result["LOCALIZED_REPLAN_RESULT"] == "MODEL_SET_EXHAUSTED"
+    assert result.result["PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED"] is False
+    exhausted = {
+        (item["provider_id"], item["model_id"])
+        for item in result.result["EXHAUSTED_PROVIDER_MODEL_PAIRS"]
+    }
+    assert exhausted == {
+        ("nvidia_nim", "model-a"),
+        ("nvidia_nim", "model-b"),
+    }

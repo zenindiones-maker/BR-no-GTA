@@ -905,9 +905,26 @@ def execute_authorized_addy_skill(
         )
         localized_replan_attempted = True
         try:
+            current_failed_pairs = tuple(dict.fromkeys([
+                *exhausted_pair_tuple,
+                *[
+                    (
+                        str(row.get("provider_id") or "").strip(),
+                        str(row.get("model_id") or "").strip(),
+                    )
+                    for row in provider_attempts
+                    if (
+                        str(row.get("status") or "").strip().upper()
+                        == "FAILED"
+                        and str(row.get("provider_id") or "").strip()
+                        and str(row.get("model_id") or "").strip()
+                    )
+                ],
+            ]))
             rerouted = _route_provider(
                 preferred_provider=original_provider,
                 unavailable_models=(original_model,),
+                exhausted_pairs=current_failed_pairs,
                 failure_pattern=localized_replan_failure_pattern,
                 recovery_phase="SAME_PROVIDER_MODEL_REPLAN",
             )
