@@ -8,6 +8,7 @@ on:
       - '.github/workflows/system-agent-integration-proof.yml'
       - 'scripts/system_agent_integration_proof.py'
       - 'scripts/validate_system_agent_integration_proof.py'
+      - 'tests/test_harness_ecosystem_inventory.py'
       - 'scripts/audit_harness_ecosystem.py'
       - 'app/services/global_capability_registry.py'
       - 'app/services/global_capability_registry_base.py'
