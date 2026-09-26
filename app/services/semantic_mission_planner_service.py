@@ -774,9 +774,9 @@ def build_semantic_planner_prompt(
         "^[a-z0-9][a-z0-9._-]{0,79}$; ids must be unique and dep entries must "
         "reference those exact ids. Set need='' when caps is nonempty. "
         "Mission authority is constrained by CONTEXT.mission_class: for "
-        "SYSTEM_IMPROVEMENT every task act must be D (DEVELOPMENT), including "
-        "measurement, verification, review and benchmark work; never use R "
-        "(RESEARCH) as a substitute for engineering verification. Prefer "
+        "SYSTEM_IMPROVEMENT may use R (RESEARCH) only for READ_ONLY evidence work, "
+        "D (DEVELOPMENT) for bounded engineering work, and C (DECISION) only for "
+        "non-authoritative READ_ONLY proposals; never use X for external effects. Prefer "
         "2-4 tasks when sufficient; "
         "use <=%d tasks; clarify only if required for a safe feasible plan." % max_tasks
     )
