@@ -333,6 +333,9 @@ class DurableExecutionV3:
             raise PermissionError("CANONICAL_RUN_OBSERVATION_REQUIRED")
         if observation.get("claimant_identity")!=record.get("claimant_identity"):
             raise PermissionError("OBSERVATION_CLAIMANT_MISMATCH")
+        expected_execution_revision=record.get("claimant_identity",{}).get("workflow_sha")
+        if observation.get("observed_head_sha")!=expected_execution_revision:
+            raise PermissionError("OBSERVATION_EXECUTION_REVISION_MISMATCH")
         if observation.get("observed_status")!="completed":
             raise PermissionError("CLAIMANT_NOT_TERMINAL")
         abandoned={**record,"status":"ABANDONED"}
