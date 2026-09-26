@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/system-agent-integration-proof.yml'
       - 'scripts/system_agent_integration_proof.py'
+      - 'scripts/validate_system_agent_integration_proof.py'
       - 'scripts/audit_harness_ecosystem.py'
       - 'app/services/global_capability_registry.py'
       - 'app/services/global_capability_registry_base.py'
@@ -59,123 +60,18 @@ jobs:
       - name: Compile integration proof
         run: |
           set -euo pipefail
-          python -m py_compile             scripts/system_agent_integration_proof.py             scripts/audit_harness_ecosystem.py
+          python -m py_compile scripts/system_agent_integration_proof.py scripts/validate_system_agent_integration_proof.py scripts/audit_harness_ecosystem.py
           echo "SYSTEM_AGENT_INTEGRATION_COMPILE=PASS"
 
       - name: Prove total agent integration deterministically
         run: |
           set -euo pipefail
-          python scripts/system_agent_integration_proof.py             --output runtime/system-agent-integration/system-agent-integration.json
+          python scripts/system_agent_integration_proof.py --output runtime/system-agent-integration/system-agent-integration.json
 
-      - name: Assert canonical integration gates
+      - name: Validate canonical observational integration artifact
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          p = Path("runtime/system-agent-integration/system-agent-integration.json")
-          d = json.loads(p.read_text(encoding="utf-8"))
-          gates = d["gates"]
-
-          required = (
-              "ROUTING_CASES_VALID",
-              "ALL_ACTIVE_CAPABILITIES_DISCOVERABLE",
-              "ALL_AGENT_IDENTITIES_CANONICAL",
-              "EXECUTOR_BINDINGS_VALID",
-              "EXECUTION_CONTRACTS_VALID",
-              "HEALTH_POLICIES_VALID",
-              "AUTHORITY_BOUNDARIES_VALID",
-              "ALL_AGENTS_DISCOVERABLE",
-              "ALL_CAPABILITIES_ROUTABLE_WHERE_AUTHORIZED",
-              "NEGATIVE_ROUTING_GATES",
-              "NO_AGENT_WITHOUT_BOUNDARY",
-              "NO_ORPHAN_ACTIVE_CAPABILITY",
-              "NO_DUPLICATE_AUTHORITY",
-              "NO_SECOND_CONTROL_PLANE",
-              "SYSTEM_AGENT_INVENTORY_PROOF",
-              "CODEX_DISCOVERABLE",
-              "CODEX_EXECUTION_CONTRACT",
-              "CODEX_ROUTABLE_WHEN_AUTH_AVAILABLE",
-              "CODEX_BLOCKER_EXPLICIT",
-              "REAL_FAILURE_EPISODES_LINKED",
-              "FAILURE_DOMAIN_CORRECT",
-              "PROVIDER_COMPETENCE_NOT_WRONGLY_PENALIZED",
-              "NEXT_SIMILAR_DECISION_CAN_READ_MEMORY",
-              "SYSTEM_AGENT_INTEGRATION",
-          )
-          for key in required:
-              assert gates[key] is True, (key, gates[key])
-
-          assert d["authority"] == "DEEPSEEK_HARNESS"
-          assert d["CANONICAL_AUTH_CHECKPOINT"] == "35850473901"
-          assert d["MISSION_STATE"] == "WAITING_FOR_EXTERNAL_AUTH"
-          assert d["EXTERNAL_HUMAN_BLOCKER"] == "CODEX_NONINTERACTIVE_AUTH_CONFIGURATION"
-          assert d["NO_NEW_NATURAL_SWARM"] is True
-          assert d["NO_SEMANTIC_REPLAN"] is True
-          assert d["DETERMINISTIC_INTEGRATION_PROVIDER_CALLS"] == 0
-          assert d["ORPHANS_FOUND"] == 0
-          assert d["BROKEN_BINDINGS_FOUND"] == 0
-          assert d["DUPLICATE_AUTHORITIES_FOUND"] == 0
-          assert d["INVALID_EXECUTION_CONTRACTS_FOUND"] == 0
-          assert d["CODEX_CURRENT_STATE"] == "BLOCKED"
-
-          codex = [
-              row for row in d["matrix"]
-              if row["CAPABILITY_ID"].startswith("agent-office.codex.")
-          ]
-          assert {row["CAPABILITY_ID"] for row in codex} == {
-    "agent-office.codex.bounded-development",
-    "agent-office.codex.independent-review",
-    "agent-office.codex.readonly-analysis",
-}
-          assert all(row["STATUS"] == "BLOCKED_EXTERNAL" for row in codex)
-          assert all(row["CURRENT_HEALTH"] == "BLOCKED" for row in codex)
-          assert all(row["DISCOVERABLE"] for row in codex)
-          assert all(row["HARNESS_ROUTE_AVAILABLE"] for row in codex)
-
-          assert {case["CASE_ID"] for case in d["routing_cases"]} >= {
-    "read-only-repository-analysis","bounded-mutation-candidate","independent-review",
-    "benchmark-execution","semantic-reasoning","research","audiovisual-task",
-    "gta6-knowledge-retrieval","presentation-human-facing-response",
-}
-          assert all(
-              case["SELECTION_FROM_REGISTRY"] is True
-              and case["HARDCODED_AGENT_SELECTION"] is False
-              and case["SELECTION_STATE"] in {"SELECTED", "BLOCKED_EXTERNAL"}
-              for case in d["routing_cases"]
-          )
-          assert not any(
-              case["SELECTION_STATE"] == "NO_COMPATIBLE_CAPABILITY"
-              for case in d["routing_cases"]
-          )
-          policy_cases = [
-              case for case in d["routing_cases"]
-              if case["ROUTING_MODE"] == "HARNESS_POLICY"
-          ]
-          assert {case["CASE_ID"] for case in policy_cases} >= {
-    "research","audiovisual-task","gta6-knowledge-retrieval","presentation-human-facing-response",
-}
-          assert all(case["SELECTED_CAPABILITY"] for case in policy_cases)
-          assert all(d["negative_routing"].values())
-
-          print("CODEX_DISCOVERABLE=PASS")
-          print("CODEX_EXECUTION_CONTRACT=PASS")
-          print("CODEX_ROUTABLE_WHEN_AUTH_AVAILABLE=PASS")
-          print("CODEX_CURRENT_HEALTH=BLOCKED_EXTERNAL")
-          print("CODEX_BLOCKER_EXPLICIT=PASS")
-          print("ROUTING_CASES_VALID=PASS")
-          print("NEGATIVE_ROUTING_GATES=PASS")
-          print("REAL_FAILURE_EPISODES_LINKED=PASS")
-          print("FAILURE_DOMAIN_CORRECT=PASS")
-          print("PROVIDER_COMPETENCE_NOT_WRONGLY_PENALIZED=PASS")
-          print("NEXT_SIMILAR_DECISION_CAN_READ_MEMORY=PASS")
-          print("CANONICAL_CHECKPOINT=35850473901")
-          print("NO_NEW_NATURAL_SWARM=PASS")
-          print("NO_SEMANTIC_REPLAN=PASS")
-          print("DETERMINISTIC_INTEGRATION_PROVIDER_CALLS=0")
-          print("SYSTEM_AGENT_INTEGRATION=PASS")
-          PY
+          python scripts/validate_system_agent_integration_proof.py --input runtime/system-agent-integration/system-agent-integration.json
 
       - name: Run focused contract and boundary tests
         run: |
