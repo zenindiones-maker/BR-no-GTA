@@ -4,6 +4,7 @@ from hashlib import sha256
 from typing import Any
 from app.services.harness_git_transaction_store import canonical_bytes
 from app.services.harness_durable_execution_v3 import ExecutionOutcome
+from app.services.harness_trusted_plan_binding import ValidatedPlanBinding
 
 FORBIDDEN={"mission_status","next_transition","transition","next_kind","failure_class","retry_classification",
 "useful_progress","authority_generation","next_authorization","next_continuation","next_outbox","mission_metric_after",
@@ -35,14 +36,12 @@ class TransitionDecision:
 
 class TrustedExecutionOutcomeReducer:
  @staticmethod
- def reduce(*,head:dict[str,Any],plan:dict[str,Any],previous:dict[str,Any]|None,
+ def reduce(*,head:dict[str,Any],validated_plan:ValidatedPlanBinding,previous:dict[str,Any]|None,
             grant:dict[str,Any],continuation:dict[str,Any],evidence:ActivityExecutionEvidence)->tuple[ExecutionOutcome,TransitionDecision]:
   if evidence.mission_id!=head["mission_id"] or evidence.authorization_id!=grant["authorization_id"]: raise ValueError("RESULT_EVIDENCE_INVALID:IDENTITY")
   if evidence.continuation_id!=continuation["continuation_id"] or evidence.claim_id!=continuation["claim_id"]: raise ValueError("RESULT_EVIDENCE_INVALID:CLAIM")
   if evidence.fencing_epoch!=head["fencing_epoch"] or evidence.runtime_revision!=head["runtime_revision"]: raise ValueError("RESULT_EVIDENCE_INVALID:FENCE_RUNTIME")
   if evidence.orchestration_version!=head["orchestration_version"]: raise ValueError("RESULT_EVIDENCE_INVALID:ORCHESTRATION")
-  if plan.get("plan_id")!=head.get("active_plan_hash") and plan.get("content_sha256")!=head.get("active_plan_hash"):
-   if plan.get("plan_id")!="P1" or head.get("active_plan_hash")!="proof-plan": raise ValueError("RESULT_EVIDENCE_INVALID:PLAN")
   ok=evidence.completion_status=="COMPLETED" and not evidence.raw_exception_type and not evidence.raw_error_code
   failure_class=None if ok else ("CONTRACT_MISMATCH" if evidence.raw_error_code and ("CONTRACT" in evidence.raw_error_code or "PRECONDITION" in evidence.raw_error_code) else "DETERMINISTIC_LOGIC_FAILURE")
   retry=None if ok else "NON_RETRYABLE"
@@ -53,9 +52,9 @@ class TrustedExecutionOutcomeReducer:
   next_kind=None if ok else ("REPLAN" if transition=="REPLAN_REQUIRED" else "RECOVERY")
   failure_code=evidence.raw_error_code
   fs=None if ok else sha256(canonical_bytes({"exception":evidence.raw_exception_type,"code":failure_code,"task":evidence.semantic_task_key})).hexdigest()
-  strategy=sha256(canonical_bytes({"plan":head["active_plan_ref"],"task":evidence.semantic_task_key,"capability":evidence.capability_id})).hexdigest()
+  strategy=sha256(canonical_bytes({"plan":validated_plan.plan_ref,"task":evidence.semantic_task_key,"capability":evidence.capability_id})).hexdigest()
   out=ExecutionOutcome(attempt_id=evidence.activity_id,mission_id=head["mission_id"],human_goal_id=head["human_goal_id"],
-   source_state_version=int(head["state_version"]),plan_id=str(plan.get("plan_id","P1")),plan_revision=int(plan.get("revision",1)),
+   source_state_version=int(head["state_version"]),plan_id=validated_plan.plan_id,plan_revision=validated_plan.revision,
    runtime_revision=head["runtime_revision"],orchestration_version=head["orchestration_version"],causal_task_id=evidence.semantic_task_key,
    capability_id=evidence.capability_id,capability_version=evidence.capability_version,status="COMPLETED" if ok else "FAILED",
    transition=transition,failure_class=failure_class,failure_code=failure_code,failure_signature=fs,exception_type=evidence.raw_exception_type,
