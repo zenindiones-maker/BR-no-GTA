@@ -161,7 +161,11 @@ class GitHubGitTransactionStore:
         )
         encoded = parse.quote(f"heads/{self.branch}", safe="/")
         try:
-            self._api("PATCH",f"/git/refs/{encoded},{"sha": commit["sha"], "force": False})
+            self._api(
+                "PATCH",
+                f"/git/refs/{encoded}",
+                {"sha": commit["sha"], "force": False},
+            )
         except (CasConflict,RuntimeError) as exc:
             status=409 if isinstance(exc,CasConflict) else (422 if "GITHUB_GIT_API_ERROR:422:" in str(exc) else 0)
             if status not in {409,422}: raise
