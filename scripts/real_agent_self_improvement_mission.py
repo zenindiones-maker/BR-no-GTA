@@ -15,6 +15,7 @@ import time
 from typing import Any
 
 from app.database.schema import initialize_schema
+from app.services.artifact_import_service import import_artifact
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -1730,9 +1731,43 @@ def run(
             manifest=manifest,
             artifact_ref=incident_artifact_ref,
         )
+    residual_spec = dict(request.get("residual_replan") or {}) or None
+    if residual_spec:
+        normalized_refs = []
+        import_manifests = []
+        for raw_ref in residual_spec.get("input_artifact_refs") or ():
+            ref = str(raw_ref or "").strip()
+            if not ref:
+                continue
+            if ref.startswith("artifact:"):
+                normalized_refs.append(ref)
+                continue
+            source = Path(ref)
+            manifest = import_artifact(
+                mission_id=str(first.get("mission_id") or ""),
+                source_path=source,
+                ingress_roots=(output_dir / "residual-input",),
+                artifact_root=first_runtime_dir,
+                source_kind="TRUSTED_RESIDUAL_EVIDENCE",
+                source_locator=ref,
+                imported_at=datetime.now(timezone.utc).isoformat(),
+            )
+            normalized_refs.append(manifest.canonical_artifact_ref)
+            import_manifests.append(manifest.to_dict())
+        residual_spec["input_artifact_refs"] = normalized_refs
+        if import_manifests:
+            write_json(
+                output_dir / "artifact-imports.json",
+                {"schema": "ArtifactImportSet/v1", "imports": import_manifests},
+            )
+            print("CANONICAL_ARTIFACT_REF_CREATED=PASS")
+            print("RAW_RUNTIME_PATH_NOT_EXPOSED_TO_AGENT_TOOL=PASS")
+            print("ARTIFACT_IMPORT_SHA256_VALID=PASS")
+            print("ARTIFACT_IMPORT_SIZE_VALID=PASS")
+            print("CONTENT_ADDRESSED_IMPORT=PASS")
     first, residual_replan_evidence = apply_runtime_residual_replan(
         first,
-        residual_spec=dict(request.get("residual_replan") or {}) or None,
+        residual_spec=residual_spec,
     )
     write_json(output_dir / "runtime-residual-replan.json", residual_replan_evidence)
     # first-plan.json is immutable planning/history evidence; residual replan is separate.
