@@ -744,6 +744,7 @@ def plan_once(
     failure_episode_id: str | None,
     manifest: list[dict],
     artifact_ref: str | None,
+    trusted_mission_identity: dict[str, str] | None = None,
 ):
     incident = dict(request.get("incident") or {})
     goal = build_goal_envelope(
@@ -791,7 +792,7 @@ def plan_once(
         raise RuntimeError(
             "INCIDENT_RECOVERY_MISSION_CLASS_INVALID:" + goal.mission_class
         )
-    obj = plan_mission_from_human_goal(goal, artifact_ref=artifact_ref)
+    obj = plan_mission_from_human_goal(goal, artifact_ref=artifact_ref, trusted_mission_identity=trusted_mission_identity)
     elapsed = (time.perf_counter() - started) * 1000
     payload = obj.to_dict()
     route = select_mission_execution_route(payload)
@@ -1705,32 +1706,31 @@ def run(
         if resume_identity is not None
         else f"real-self-improvement-{os.getenv('GITHUB_RUN_ID') or 'local'}"
     )
-    first, route, planning_ms = plan_once(
-        planning_goal_id,
-        output_dir / "first-plan.json",
-        goal_text=goal_text,
-        request=request,
-        failure_episode_id=failure_episode_id,
-        manifest=manifest,
-        artifact_ref=incident_artifact_ref,
-    )
-    if (
-        resume_identity is not None
-        and str(first.get("mission_id") or "")
-        != str(resume_identity["mission_id"])
-    ):
-        raise RuntimeError(
-            "CHECKPOINT_MISSION_ID_DRIFT:"
-            + str(first.get("mission_id") or "")
-            + "!="
-            + str(resume_identity["mission_id"])
+    if resume_identity is not None:
+        source_wrapper = json.loads((checkpoint_source_dir / "first-plan.json").read_text(encoding="utf-8"))
+        first = dict(source_wrapper.get("plan") or source_wrapper)
+        if str(first.get("mission_id") or "") != str(resume_identity["mission_id"]):
+            raise RuntimeError("CHECKPOINT_MISSION_ID_DRIFT")
+        route = select_mission_execution_route(first)
+        planning_ms = 0.0
+        write_json(output_dir / "first-plan.json", source_wrapper)
+        print("NORMAL_RESUME_PLANNER_CALLS=0")
+    else:
+        first, route, planning_ms = plan_once(
+            planning_goal_id,
+            output_dir / "first-plan.json",
+            goal_text=goal_text,
+            request=request,
+            failure_episode_id=failure_episode_id,
+            manifest=manifest,
+            artifact_ref=incident_artifact_ref,
         )
     first, residual_replan_evidence = apply_runtime_residual_replan(
         first,
         residual_spec=dict(request.get("residual_replan") or {}) or None,
     )
     write_json(output_dir / "runtime-residual-replan.json", residual_replan_evidence)
-    write_json(output_dir / "first-plan.json", {"plan": first, "residual_replan": residual_replan_evidence})
+    # first-plan.json is immutable planning/history evidence; residual replan is separate.
     # Codex is permitted only when selected by the Harness Registry after a
     # proven runtime eligibility snapshot; no task-specific bypass is used.
 
