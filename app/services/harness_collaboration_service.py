@@ -1348,6 +1348,7 @@ def plan_mission_from_human_goal(
     *,
     artifact_ref: str | None = None,
     semantic_inference: Callable[[str, dict[str, Any]], str | dict[str, Any]] | None = None,
+    trusted_mission_identity: dict[str, str] | None = None,
 ) -> HarnessMissionPlan:
     policy = load_continuous_operation_policy()
     resources = dict(policy.resource_governance)
@@ -1653,8 +1654,21 @@ def plan_mission_from_human_goal(
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")).hexdigest()[:20]
-        mission_id = f"mission-{fingerprint}"
         plan_id = f"plan-{fingerprint}"
+        if trusted_mission_identity is not None:
+            trusted_goal_id = str(trusted_mission_identity.get("human_goal_id") or "").strip()
+            mission_id = str(trusted_mission_identity.get("mission_id") or "").strip()
+            lineage_id = str(trusted_mission_identity.get("lineage_id") or "").strip()
+            if not mission_id or not trusted_goal_id or not lineage_id:
+                raise ValueError("DURABLE_MISSION_IDENTITY_INVALID")
+            if trusted_goal_id != goal.goal_id:
+                raise ValueError("DURABLE_MISSION_HUMAN_GOAL_MISMATCH")
+        else:
+            mission_fingerprint = sha256(json.dumps(
+                {"human_goal_id": goal.goal_id, "human_goal": goal.human_goal},
+                ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()[:20]
+            mission_id = f"mission-{mission_fingerprint}"
     with PerformanceSpan(
         stage="harness.planning.task-envelope-build",
         category="PLANNING_TASK_ENVELOPE_BUILD_TIME",
