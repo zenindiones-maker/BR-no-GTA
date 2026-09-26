@@ -54,6 +54,7 @@ from app.services.capability_execution_contract_service import (
     CAN_WRITE_REPOSITORY,
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
+from app.services.harness_worker_registry_bridge import manifest_from_capability_registry
 from app.services.execution_mission_envelope_service import (
     build_execution_mission_envelope,
     persist_execution_mission_envelope,
@@ -1748,17 +1749,47 @@ def run(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }
+    proposal_tasks = [
+        item for item in tasks(first)
+        if str(item.get("functional_role") or "").upper() == "PROPOSAL"
+    ]
     proposal_agent_ids = {
         str(item.get("selected_agent_id") or "")
-        for item in tasks(first)
-        if str(item.get("functional_role") or "").upper() == "PROPOSAL"
-        and str(item.get("selected_agent_id") or "").strip()
+        for item in proposal_tasks
+        if str(item.get("selected_agent_id") or "").strip()
     }
-    accepted_review_candidates = [
-        dict(item)
-        for item in review_precheck.get("compatible_candidates") or ()
-        if str(item.get("agent_id") or item.get("AGENT_ID") or "") not in proposal_agent_ids
-    ]
+    proposal_worker_ids = {
+        manifest_from_capability_registry(
+            str(item.get("capability_id") or ""),
+            worker_build_id=base_sha,
+        ).worker_id
+        for item in proposal_tasks
+        if str(item.get("capability_id") or "").strip()
+    }
+    accepted_review_candidates = []
+    for item in review_precheck.get("compatible_candidates") or ():
+        candidate = dict(item)
+        capability = str(
+            candidate.get("capability_id")
+            or candidate.get("CAPABILITY_ID")
+            or ""
+        )
+        if not capability:
+            continue
+        manifest = manifest_from_capability_registry(
+            capability,
+            worker_build_id=base_sha,
+        )
+        if (
+            manifest.worker_id not in proposal_worker_ids
+            and "INDEPENDENT_REVIEWER" in {
+                str(kind).upper() for kind in manifest.execution_kinds
+            }
+        ):
+            candidate["WORKER_ID"] = manifest.worker_id
+            candidate["WORKER_BUILD_ID"] = manifest.worker_build_id
+            candidate["EXECUTION_KIND"] = "INDEPENDENT_REVIEWER"
+            accepted_review_candidates.append(candidate)
     accepted_review_ids = {
         str(item.get("capability_id") or item.get("CAPABILITY_ID") or "")
         for item in accepted_review_candidates
@@ -1772,7 +1803,17 @@ def run(
         and bool(review_record.supports_review)
         and required_review_ops.issubset(review_ops)
         and review_capability_id != "collaboration.hermes.execute"
-        and str(review_record.agent_id or "") not in proposal_agent_ids
+        and manifest_from_capability_registry(
+            review_capability_id,
+            worker_build_id=base_sha,
+        ).worker_id not in proposal_worker_ids
+        and "INDEPENDENT_REVIEWER" in {
+            str(kind).upper()
+            for kind in manifest_from_capability_registry(
+                review_capability_id,
+                worker_build_id=base_sha,
+            ).execution_kinds
+        }
     )
     reviewer_replan = {
         "schema": "runtime-reviewer-replan/v1",
