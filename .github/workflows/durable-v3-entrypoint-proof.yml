@@ -1,5 +1,5 @@
 name: Durable V3 Entrypoint Proof
-run-name: Durable V3 Entrypoint Proof · ${{ github.run_id }} · attempt ${{ github.run_attempt }}
+run-name: Durable V3 Entrypoint Proof · ${{ inputs.mission_id }} · ${{ github.run_id }} · attempt ${{ github.run_attempt }}
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
 permissions: {}
 
 env:
-  BOOTSTRAP_REF: work/gate6f-analytics-learning
+  BOOTSTRAP_REF: durable-v3-bootstrap
 
 jobs:
   trusted_claim:
