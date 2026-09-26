@@ -1,0 +1,25 @@
+name: Durable V3 Claim Recovery
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id: {required: true, type: string}
+      continuation_id: {required: true, type: string}
+      authorization_id: {required: true, type: string}
+permissions: {}
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: work/gate6f-analytics-learning
+          persist-credentials: false
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/durable_v3_trusted_bootstrap.py abandon --mission-id "${{ inputs.mission_id }}" --continuation-id "${{ inputs.continuation_id }}" --authorization-id "${{ inputs.authorization_id }}"
