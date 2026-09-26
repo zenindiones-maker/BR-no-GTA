@@ -262,6 +262,18 @@ jobs:
           .venv/bin/python --version
           .venv/bin/python -c "import pytest; print('PYTEST_VERSION='+pytest.__version__)"
 
+      - name: Validate workflow YAML syntax
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+              with path.open("r", encoding="utf-8") as fh:
+                  yaml.safe_load(fh)
+          print("WORKFLOW_YAML_SYNTAX_VALID=PASS")
+          PY
+
   gate6f:
     name: Gate6F specialized
     needs: [impact, bootstrap]
