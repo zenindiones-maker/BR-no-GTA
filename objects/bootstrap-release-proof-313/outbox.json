@@ -1,0 +1,1 @@
+{"schema":"OutboxIntent/v1","continuation_id":"CONT-BOOTREL-313","authorization_ref":"objects/bootstrap-release-proof-313/grant.json","authorization_id":"AUTH-BOOTREL-313","mission_id":"proof-bootstrap-release-88b56223","authority_generation":1,"kind":"EXECUTE","runtime_revision":"88b56223f014188050a40e78520a811e94fe2953","orchestration_version":"3.1","status":"PENDING"}
