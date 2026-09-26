@@ -178,6 +178,8 @@ jobs:
           AUTHORIZATION_ID: ${{ inputs.authorization_id }}
           GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          OLD_CLAIM_ID: ${{ needs.trusted_claim.outputs.claim_id }}
+          OLD_FENCE: ${{ needs.trusted_claim.outputs.fencing_epoch }}
         run: |
-          python scripts/durable_v3_fail_closed_probe.py             --mission-id "$MISSION_ID"             --continuation-id "$CONTINUATION_ID"             --authorization-id "$AUTHORIZATION_ID"             --old-claim-id "${{ needs.trusted_claim.outputs.claim_id }}"             --old-fence "${{ needs.trusted_claim.outputs.fencing_epoch }}"
+          python scripts/durable_v3_fail_closed_probe.py             --mission-id "$MISSION_ID"             --continuation-id "$CONTINUATION_ID"             --authorization-id "$AUTHORIZATION_ID"             --old-claim-id "$OLD_CLAIM_ID"             --old-fence "$OLD_FENCE"
           echo "ENTRYPOINT_FAIL_CLOSED_CORE=PASS"
