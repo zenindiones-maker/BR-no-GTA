@@ -19,7 +19,8 @@ def main():
  s=CapabilityScheduler(regs);r=s.route(mission_id="m",plan_id="p",plan_revision=1,task=task)
  assert r.selected_worker=="worker-alpha";assert any(x.worker_id=="worker-beta" and not x.accepted for x in r.rejected_candidates)
  env=TaskExecutionEnvelope("m","g","l","p",1,"h","T1","root-cause","a1","analysis.root-cause","1",(),"TaskInput/v1","TaskOutput/v1",(),"runtime","orch","auth","claim",1,{},4,{} ,None,"trace")
- route,e=WorkerExecutionPlane(regs).execute(mission_id="m",plan_id="p",plan_revision=1,task=task,envelope=env)
+ authority={"head":{"mission_id":"m","human_goal_id":"g","active_plan_hash":"h","runtime_revision":"runtime","orchestration_version":"orch","authority_generation":1,"fencing_epoch":1,"active_claim_ref":"claim"},"grant":{"authorization_id":"auth","authority_generation":1},"continuation":{"continuation_id":"cont","authorization_id":"auth","claim_id":"claim","fencing_epoch":1},"claim":{"claim_id":"claim","fencing_epoch":1}}
+ route,e=WorkerExecutionPlane(regs).execute(mission_id="m",plan_id="p",plan_revision=1,task=task,envelope=env,authority_context=authority)
  validate_worker_evidence_payload(asdict(e))
  impossible=TaskDefinition(**{**asdict(task),"task_id":"T2","required_capability":"missing.capability"})
  try:s.route(mission_id="m",plan_id="p",plan_revision=1,task=impossible)
