@@ -153,6 +153,13 @@ def _runner_factory(*, upstream_root: Path, hermes_home: Path):
     return run
 
 
+def _profile_role(value: str) -> str:
+    value=str(value or "")
+    for role in ("hermes-research-verifier","hermes-evidence-analyst","hermes-editorial-critic","hermes-reviewer"):
+        if value==role or value.startswith(role+"-"):
+            return role
+    return value
+
 def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     initialize_schema()
     facts = _video_a_facts()
@@ -272,12 +279,12 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
     run_profiles = [str(run.get("profile") or "") for run in runs]
 
     handoff_a = any(
-        c.get("author") == "hermes-research-verifier"
+        _profile_role(c.get("author")) == "hermes-research-verifier"
         and "HANDOFF_FROM=hermes-research-verifier" in str(c.get("body") or "")
         for c in comments
     )
     consumed = any(
-        run.get("profile") == "hermes-evidence-analyst"
+        _profile_role(run.get("profile")) == "hermes-evidence-analyst"
         and "HANDOFF_CONSUMED=YES" in str(run.get("summary") or "")
         and "DECISION_CHANGED_BY_HANDOFF=YES" in str(run.get("summary") or "")
         for run in runs
@@ -286,8 +293,8 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         1 for event in events if event.get("kind") == "review_requested"
     )
     changes_requested = any(event.get("kind") == "changes_requested" for event in events)
-    critic_runs = [run for run in runs if run.get("profile") == "hermes-editorial-critic"]
-    reviewer_runs = [run for run in runs if run.get("profile") == "hermes-reviewer"]
+    critic_runs = [run for run in runs if _profile_role(run.get("profile")) == "hermes-editorial-critic"]
+    reviewer_runs = [run for run in runs if _profile_role(run.get("profile")) == "hermes-reviewer"]
 
     tasks_by_plan: dict[str, dict[str, Any]] = {}
     for task in board.get("tasks") or ():
@@ -352,7 +359,7 @@ def run_canary(*, upstream_root: Path, artifact_dir: Path) -> dict[str, Any]:
         "HERMES_CANONICAL_MEMORY": False,
         "COLLABORATION_PLAN_TO_HERMES": len(plan.tasks) == 3,
         "NAMED_PROFILES": (
-            all(name in run_profiles for name in (
+            all(name in {_profile_role(p) for p in run_profiles} for name in (
                 "hermes-research-verifier",
                 "hermes-evidence-analyst",
                 "hermes-editorial-critic",
