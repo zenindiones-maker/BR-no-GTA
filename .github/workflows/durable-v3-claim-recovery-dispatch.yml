@@ -1,8 +1,6 @@
 name: Durable V3 Claim Recovery Dispatch
 on:
-  push:
-    branches: [work/gate6f-analytics-learning]
-    paths: [.github/workflows/durable-v3-claim-recovery-dispatch.yml]
+  workflow_dispatch:
 permissions:
   actions: write
 jobs:
