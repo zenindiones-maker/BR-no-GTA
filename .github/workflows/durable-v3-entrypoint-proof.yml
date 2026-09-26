@@ -12,6 +12,7 @@ on:
 permissions: {}
 
 env:
+  PYTHONPATH: .
   BOOTSTRAP_REF: durable-v3-bootstrap
 
 jobs:
