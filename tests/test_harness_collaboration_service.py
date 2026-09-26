@@ -594,18 +594,119 @@ def test_missing_downstream_capability_question_is_not_suppressed_without_bounda
         question,
     ) is False
 
+def _durable_identity_proposal(*, task_id: str, objective: str) -> dict:
+    return {
+        "interpreted_goal": "Improve safely",
+        "assumptions": [],
+        "required_outcomes": ["proof"],
+        "tasks": [{
+            "task_id": task_id,
+            "objective": objective,
+            "task_class": "analysis",
+            "required_capability_description": "repository analysis",
+            "candidate_capability_ids": ["repository.read-scoped"],
+            "dependencies": [],
+            "expected_output": "Evidence",
+            "acceptance_criteria": ["proof"],
+            "risk_side_effect_class": "READ_ONLY",
+            "action": "RESEARCH",
+        }],
+        "rationale": "identity regression proof",
+        "context_usage_notes": [],
+        "uncertainty": 0.1,
+        "needs_human_clarification": False,
+        "clarification_question": None,
+        "memory_strategy_notes": [],
+        "reused_artifact_refs": [],
+        "avoided_bad_paths": [],
+    }
+
+
 def test_durable_mission_identity_is_not_derived_from_plan_content(monkeypatch):
-    goal = build_goal_envelope(human_goal="Improve system safely", project="BR-no-GTA", goal_id="goal-stable-mission", subject="system improvement")
-    identity={"mission_id":"mission-stable","human_goal_id":"goal-stable-mission","lineage_id":"lineage-stable"}
-    proposal={"interpreted_goal":"Improve safely","assumptions":[],"required_outcomes":["proof"],"tasks":[{"task_id":"t1","objective":"inspect","task_class":"analysis","required_capability_description":"repository analysis","candidate_capability_ids":[],"dependencies":[],"expected_output":"Evidence","acceptance_criteria":["proof"],"risk_side_effect_class":"READ_ONLY","action":"RESEARCH"}],"rationale":"proof","context_usage_notes":[],"uncertainty":0.1,"needs_human_clarification":False,"clarification_question":None,"memory_strategy_notes":[],"reused_artifact_refs":[],"avoided_bad_paths":[]}
-    p1=plan_mission_from_human_goal(goal, trusted_mission_identity=identity, semantic_inference=lambda *_:proposal)
-    p2=plan_mission_from_human_goal(goal, trusted_mission_identity=identity, semantic_inference=lambda *_:proposal)
-    assert p1.mission_id=="mission-stable"
-    assert p2.mission_id=="mission-stable"
-    assert p1.plan_id==p2.plan_id
+    goal = build_goal_envelope(
+        human_goal="Improve system safely",
+        project="BR-no-GTA",
+        goal_id="goal-stable-mission",
+        subject="system improvement",
+    )
+    identity = {
+        "mission_id": "mission-stable",
+        "human_goal_id": "goal-stable-mission",
+        "lineage_id": "lineage-stable",
+    }
+    monkeypatch.setattr(
+        collaboration_service,
+        "_select_registry_implementation",
+        lambda *args, **kwargs: ("repository.read-scoped", "test-registry-selection"),
+    )
+    p1 = plan_mission_from_human_goal(
+        goal,
+        trusted_mission_identity=identity,
+        semantic_inference=lambda *_: _durable_identity_proposal(
+            task_id="t1",
+            objective="inspect repository state",
+        ),
+    )
+    p2 = plan_mission_from_human_goal(
+        goal,
+        trusted_mission_identity=identity,
+        semantic_inference=lambda *_: _durable_identity_proposal(
+            task_id="t2",
+            objective="inspect a different repository boundary",
+        ),
+    )
+    assert p1.mission_id == "mission-stable"
+    assert p2.mission_id == "mission-stable"
+    assert p1.plan_id != p2.plan_id
+    assert p1.tasks != p2.tasks
+
+
+def test_durable_mission_identity_invalid_fails_before_semantic_inference():
+    goal = build_goal_envelope(
+        human_goal="Improve system safely",
+        project="BR-no-GTA",
+        goal_id="goal-a",
+        subject="system improvement",
+    )
+    calls = {"semantic": 0}
+    def should_never_run(*_args, **_kwargs):
+        calls["semantic"] += 1
+        raise AssertionError("SEMANTIC_INFERENCE_MUST_NOT_RUN")
+    import pytest
+    with pytest.raises(ValueError, match="DURABLE_MISSION_IDENTITY_INVALID"):
+        plan_mission_from_human_goal(
+            goal,
+            trusted_mission_identity={
+                "mission_id": "",
+                "human_goal_id": "goal-a",
+                "lineage_id": "l",
+            },
+            semantic_inference=should_never_run,
+        )
+    assert calls["semantic"] == 0
+
 
 def test_durable_mission_identity_goal_mismatch_fails_closed():
+    goal = build_goal_envelope(
+        human_goal="Improve system safely",
+        project="BR-no-GTA",
+        goal_id="goal-a",
+        subject="system improvement",
+    )
+    calls = {"semantic": 0}
+    def should_never_run(*_args, **_kwargs):
+        calls["semantic"] += 1
+        raise AssertionError("SEMANTIC_INFERENCE_MUST_NOT_RUN")
     import pytest
-    goal = build_goal_envelope(human_goal="Improve system safely", project="BR-no-GTA", goal_id="goal-a", subject="system improvement")
     with pytest.raises(ValueError, match="DURABLE_MISSION_HUMAN_GOAL_MISMATCH"):
-        plan_mission_from_human_goal(goal, trusted_mission_identity={"mission_id":"m","human_goal_id":"goal-b","lineage_id":"l"}, semantic_inference=lambda *_: {})
+        plan_mission_from_human_goal(
+            goal,
+            trusted_mission_identity={
+                "mission_id": "m",
+                "human_goal_id": "goal-b",
+                "lineage_id": "l",
+            },
+            semantic_inference=should_never_run,
+        )
+    assert calls["semantic"] == 0
+
