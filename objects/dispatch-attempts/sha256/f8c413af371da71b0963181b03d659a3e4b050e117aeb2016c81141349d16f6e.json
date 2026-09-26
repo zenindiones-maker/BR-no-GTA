@@ -1,0 +1,1 @@
+{"bootstrap_ref":"durable-v3-bootstrap","continuation_id":"CONT-OUTCOME-1","dispatch_attempt_id":"870b1ea4c8f70e4531c8a704b891421ad787214a3d0b07135125b3296176bdd6","dispatch_started_at":null,"github_run_id":"36204771931","result":"ACCEPTED","schema":"DispatchAttempt/v1","workflow":".github/workflows/durable-v3-entrypoint-proof.yml"}
