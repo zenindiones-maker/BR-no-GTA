@@ -2,8 +2,7 @@ from __future__ import annotations
 from dataclasses import asdict,dataclass
 from hashlib import sha256
 from typing import Any
-from datetime import datetime,timezone
-from dataclasses import replace
+from datetime import datetime
 from app.services.harness_worker_plane import digest
 from app.services.harness_git_transaction_store import canonical_bytes
 from app.services.harness_worker_plane import WorkerRegistration
@@ -22,7 +21,21 @@ class CandidateDecision:
 
 @dataclass(frozen=True)
 class WorkerScore:
- worker_id:str;competence:int;health:int;task_success:int;recent_failure_penalty:int;retry_penalty:int;human_correction_penalty:int;latency:int;cost:int;certification_freshness:int;total:int
+ worker_id:str;competence:int;health:int;task_success:int;recent_failure_penalty:int;retry_penalty:int;human_correction_penalty:int;latency_efficiency_score:int;cost_efficiency_score:int;certification_freshness:int;total:int
+
+@dataclass(frozen=True)
+class RoutingEvidenceSnapshot:
+ decision_as_of:str
+ worker_evidence:dict[str,dict[str,Any]]
+ provider_availability:dict[str,bool]
+ tool_availability:dict[str,bool]
+ provenance_refs:tuple[str,...]
+ snapshot_hash:str
+ schema:str="RoutingEvidenceSnapshot/v1"
+ @classmethod
+ def create(cls,*,decision_as_of:str,worker_evidence:dict[str,dict[str,Any]],provider_availability:dict[str,bool]|None=None,tool_availability:dict[str,bool]|None=None,provenance_refs:tuple[str,...]=()):
+  logical={"schema":"RoutingEvidenceSnapshot/v1","decision_as_of":decision_as_of,"worker_evidence":worker_evidence,"provider_availability":provider_availability or {},"tool_availability":tool_availability or {},"provenance_refs":list(provenance_refs)}
+  return cls(decision_as_of,worker_evidence,provider_availability or {},tool_availability or {},provenance_refs,sha256(canonical_bytes(logical)).hexdigest())
 
 @dataclass(frozen=True)
 class WorkerScoringPolicy:
@@ -32,10 +45,10 @@ class WorkerScoringPolicy:
 class RoutingDecision:
  mission_id:str;plan_id:str;plan_revision:int;task_id:str;eligible_candidates:tuple[str,...];rejected_candidates:tuple[CandidateDecision,...]
  candidate_scores:tuple[WorkerScore,...];selected_worker:str;selected_capability:str;provider_requirements:tuple[str,...];selected_provider:str|None;selected_model:str|None
- policy_version:str;scoring_policy_version:str;tie_break_reason:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
+ policy_version:str;scoring_policy_version:str;evidence_snapshot_hash:str;tie_break_reason:str;reason:str;input_hash:str;schema:str="RoutingDecision/v1"
 
 class WorkerEligibilityEngine:
- def evaluate(self,task:TaskDefinition,reg:WorkerRegistration,*,executor_worker_id:str|None=None)->CandidateDecision:
+ def evaluate(self,task:TaskDefinition,reg:WorkerRegistration,*,decision_as_of:str,provider_availability:dict[str,bool],tool_availability:dict[str,bool],executor_worker_id:str|None=None)->CandidateDecision:
   m=reg.manifest;c={x.capability_id:x.capability_version for x in m.capabilities}
   manifest_raw=asdict(m);manifest_hash=manifest_raw.pop("manifest_sha256")
   manifest_valid=manifest_hash==digest(manifest_raw)
@@ -43,7 +56,7 @@ class WorkerEligibilityEngine:
   cert_valid=False
   if cert is not None:
    cert_raw=asdict(cert);cert_hash=cert_raw.pop("certification_hash")
-   try: cert_not_expired=datetime.fromisoformat(cert.expires_at.replace("Z","+00:00"))>datetime.now(timezone.utc)
+   try: cert_not_expired=datetime.fromisoformat(cert.expires_at.replace("Z","+00:00"))>datetime.fromisoformat(decision_as_of.replace("Z","+00:00"))
    except ValueError: cert_not_expired=False
    cert_valid=cert_hash==digest(cert_raw) and cert_not_expired and cert.worker_id==m.worker_id and cert.capability_id==task.required_capability and cert.capability_version==task.required_capability_version
   checks=[
@@ -65,28 +78,31 @@ class WorkerEligibilityEngine:
    (cert is None or cert.success,"BUILD_NOT_CERTIFIED"),
    (not task.review_requirement or m.supports_review,"REVIEW_UNSUPPORTED"),
    (not task.review_requirement or executor_worker_id!=m.worker_id,"REVIEW_INDEPENDENCE_FAILED"),
+   (all(tool_availability.get(t,False) for t in m.tool_requirements),"TOOL_UNAVAILABLE"),
+   (all(provider_availability.get(p,False) for p in m.provider_requirements),"PROVIDER_ROUTE_UNAVAILABLE"),
   ]
   for ok,reason in checks:
    if not ok:return CandidateDecision(m.worker_id,False,reason)
   return CandidateDecision(m.worker_id,True,"ACCEPTED")
 
 class CapabilityScheduler:
- def __init__(self,registrations:tuple[WorkerRegistration,...],*,performance:dict[str,dict[str,int]]|None=None,scoring_policy:WorkerScoringPolicy|None=None):
-  self.registrations=registrations;self.engine=WorkerEligibilityEngine();self.performance=performance or {};self.scoring_policy=scoring_policy or WorkerScoringPolicy()
+ def __init__(self,registrations:tuple[WorkerRegistration,...],*,evidence_snapshot:RoutingEvidenceSnapshot,scoring_policy:WorkerScoringPolicy|None=None):
+  self.registrations=registrations;self.engine=WorkerEligibilityEngine();self.evidence_snapshot=evidence_snapshot;self.scoring_policy=scoring_policy or WorkerScoringPolicy()
  def _score(self,reg:WorkerRegistration)->WorkerScore:
-  p=self.performance.get(reg.manifest.worker_id,{})
-  competence=max(0,min(100,int(p.get("competence",50))));health=max(0,min(100,int(p.get("health",100))));success=max(0,min(100,int(p.get("task_success",50))))
+  p=self.evidence_snapshot.worker_evidence.get(reg.manifest.worker_id,{})
+  if not p: raise RuntimeError("ROUTING_EVIDENCE_UNMEASURED:"+reg.manifest.worker_id)
+  competence=max(0,min(100,int(p.get("competence",0))));health=max(0,min(100,int(p.get("health",0))));success=max(0,min(100,int(p.get("task_success",0))))
   failure=max(0,min(100,int(p.get("recent_failure_penalty",0))));retry=max(0,min(100,int(p.get("retry_penalty",0))));correction=max(0,min(100,int(p.get("human_correction_penalty",0))))
-  latency=max(0,min(100,int(p.get("latency",50))));cost=max(0,min(100,int(p.get("cost",100))));fresh=max(0,min(100,int(p.get("certification_freshness",100))))
+  latency=max(0,min(100,int(p.get("latency_efficiency_score",0))));cost=max(0,min(100,int(p.get("cost_efficiency_score",0))));fresh=max(0,min(100,int(p.get("certification_freshness",0))))
   w=self.scoring_policy;total=competence*w.competence_weight+health*w.health_weight+success*w.task_success_weight+fresh*w.certification_weight+latency*w.latency_weight+cost*w.cost_weight-failure*w.failure_penalty_weight-retry*w.retry_penalty_weight-correction*w.human_correction_penalty_weight
   return WorkerScore(reg.manifest.worker_id,competence,health,success,failure,retry,correction,latency,cost,fresh,total)
  def route(self,*,mission_id:str,plan_id:str,plan_revision:int,task:TaskDefinition,executor_worker_id:str|None=None)->RoutingDecision:
-  decisions=tuple(self.engine.evaluate(task,r,executor_worker_id=executor_worker_id) for r in self.registrations)
+  decisions=tuple(self.engine.evaluate(task,r,decision_as_of=self.evidence_snapshot.decision_as_of,provider_availability=self.evidence_snapshot.provider_availability,tool_availability=self.evidence_snapshot.tool_availability,executor_worker_id=executor_worker_id) for r in self.registrations)
   eligible=tuple(sorted(d.worker_id for d in decisions if d.accepted))
   if not eligible:raise RuntimeError("PRECONDITION_UNSATISFIED")
   regs=[r for r in self.registrations if r.manifest.worker_id in eligible];scores=tuple(sorted((self._score(r) for r in regs),key=lambda x:x.worker_id))
   best=max(s.total for s in scores);tied=tuple(sorted(s.worker_id for s in scores if s.total==best))
   selected=min(tied,key=lambda wid:sha256(canonical_bytes({"mission_id":mission_id,"plan_id":plan_id,"task_id":task.task_id,"worker_id":wid,"policy":self.scoring_policy.version})).hexdigest())
   reg=next(r for r in regs if r.manifest.worker_id==selected)
-  payload={"mission_id":mission_id,"plan_id":plan_id,"plan_revision":plan_revision,"task":asdict(task),"candidates":[asdict(x) for x in decisions],"scores":[asdict(x) for x in scores],"scoring_policy":asdict(self.scoring_policy)}
-  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),scores,selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v2",self.scoring_policy.version,"STABLE_HASH" if len(tied)>1 else "HIGHEST_SCORE","hard eligibility then deterministic evidence score",sha256(canonical_bytes(payload)).hexdigest())
+  payload={"mission_id":mission_id,"plan_id":plan_id,"plan_revision":plan_revision,"task":asdict(task),"candidates":[asdict(x) for x in decisions],"scores":[asdict(x) for x in scores],"scoring_policy":asdict(self.scoring_policy),"evidence_snapshot_hash":self.evidence_snapshot.snapshot_hash}
+  return RoutingDecision(mission_id,plan_id,plan_revision,task.task_id,eligible,tuple(d for d in decisions if not d.accepted),scores,selected,task.required_capability,reg.manifest.provider_requirements,None,None,"worker-routing/v2",self.scoring_policy.version,self.evidence_snapshot.snapshot_hash,"STABLE_HASH" if len(tied)>1 else "HIGHEST_SCORE","hard eligibility then deterministic evidence score",sha256(canonical_bytes(payload)).hexdigest())
