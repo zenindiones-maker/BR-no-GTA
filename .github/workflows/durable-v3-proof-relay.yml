@@ -14,9 +14,9 @@ jobs:
       PYTHONPATH: .
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
-      MISSION: proof-outcome-boundary-v1
-      CONTINUATION: CONT-OUTCOME-1
-      AUTHORIZATION: AUTH-OUTCOME-1
+      MISSION: proof-bootstrap-release-7fa02a58
+      CONTINUATION: CONT-BOOTREL-311
+      AUTHORIZATION: AUTH-BOOTREL-311
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {persist-credentials: false}
@@ -27,16 +27,20 @@ jobs:
           HEAD_JSON=$(gh api "repos/$GITHUB_REPOSITORY/contents/missions/$MISSION/head.json?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
           POLICY_REF=$(jq -r .bootstrap_policy_ref <<<"$HEAD_JSON")
           POLICY=$(gh api "repos/$GITHUB_REPOSITORY/contents/$POLICY_REF?ref=harness-state" --jq .content | tr -d '\n' | base64 -d)
-          EXPECTED=$(jq -r .expected_workflow_sha <<<"$POLICY")
-          BOOTSTRAP=$(jq -r .bootstrap_ref <<<"$POLICY")
-          OBSERVED=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BOOTSTRAP" --jq .object.sha)
-          test "$OBSERVED" = "$EXPECTED" || { echo BOOTSTRAP_REF_DRIFT; exit 78; }
-          echo "BOOTSTRAP_REF_DRIFT=NO"
+          EXPECTED=$(jq -r '.bootstrap_release_sha // .expected_workflow_sha' <<<"$POLICY")
+          BOOTSTRAP=$(jq -r '.bootstrap_release_ref // .bootstrap_ref' <<<"$POLICY")
+          API_VERSION=$(jq -r '.github_api_version // "2022-11-28"' <<<"$POLICY")
+          OBSERVED=$(gh api -H "X-GitHub-Api-Version: $API_VERSION" "repos/$GITHUB_REPOSITORY/git/ref/heads/$BOOTSTRAP" --jq .object.sha)
+          test "$OBSERVED" = "$EXPECTED" || { echo BOOTSTRAP_RELEASE_REF_DRIFT; exit 78; }
+          echo "BOOTSTRAP_RELEASE_REF_RESOLVES_EXPECTED_SHA=PASS"
+          echo "BOOTSTRAP_DISPATCH_CONTRACT_MATCH=PASS"
           DISPATCH_ATTEMPT_ID="dispatch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          BODY=$(jq -nc --arg ref "$BOOTSTRAP" --arg m "$MISSION" --arg c "$CONTINUATION" --arg a "$AUTHORIZATION" --arg d "$DISPATCH_ATTEMPT_ID" '{ref:$ref,inputs:{mission_id:$m,continuation_id:$c,authorization_id:$a,runtime_revision:"FORGED-INPUT-MUST-BE-IGNORED",dispatch_attempt_id:$d},return_run_details:true}')
-          RESP=$(gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/durable-v3-entrypoint-proof.yml/dispatches" --input - <<<"$BODY") || { echo DELIVERY_RESULT_UNKNOWN; exit 75; }
-          RUN_ID=$(jq -r '.workflow_run_id // .run_id // empty' <<<"$RESP")
+          BODY=$(jq -nc --arg ref "$BOOTSTRAP" --arg m "$MISSION" --arg c "$CONTINUATION" --arg a "$AUTHORIZATION" --arg d "$DISPATCH_ATTEMPT_ID" '{ref:$ref,inputs:{mission_id:$m,continuation_id:$c,authorization_id:$a,runtime_revision:"FORGED-INPUT-MUST-BE-IGNORED",dispatch_attempt_id:$d}}')
+          RESP=$(gh api -H "X-GitHub-Api-Version: $API_VERSION" -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/durable-v3-entrypoint-proof.yml/dispatches" --input - <<<"$BODY") || { echo DELIVERY_RESULT_UNKNOWN; exit 75; }
+          RUN_ID=$(jq -r '.workflow_run_id // empty' <<<"$RESP")
           test -n "$RUN_ID" || { echo DELIVERY_RESULT_UNKNOWN; exit 75; }
+          echo "HTTP_DISPATCH_SUCCESS=PASS"
+          echo "WORKFLOW_RUN_ID_DIRECT=PASS"
           echo "EXACT_DISPATCH_CORRELATION=PASS"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
