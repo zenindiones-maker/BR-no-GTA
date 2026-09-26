@@ -69,6 +69,19 @@ jobs:
           git cat-file -e "$AUTHORIZED_RUNTIME^{commit}"
           echo "EXACT_RUNTIME_CHECKOUT=PASS"
           echo "RUNTIME_JOB_STATE_WRITE_CAPABILITY=NONE"
+      - name: Prove runtime cannot mutate harness-state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STATE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/harness-state" --jq .object.sha)
+          set +e
+          OUT=$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/harness-state" -f sha="$STATE_SHA" -F force=false 2>&1)
+          RC=$?
+          set -e
+          test "$RC" -ne 0
+          grep -Eq '403|Resource not accessible|permission' <<<"$OUT"
+          echo "RUNTIME_JOB_STATE_WRITE_CAPABILITY=NONE"
       - id: stub
         name: Typed semantic workload stub
         env:
@@ -133,3 +146,24 @@ jobs:
           python scripts/durable_v3_trusted_bootstrap.py settle             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"
           echo "TRUSTED_SETTLEMENT_JOB_EXTERNAL_SECRETS=NONE"
           echo "TRUST_PLANE_RUNTIME_ISOLATION=PASS"
+
+  fail_closed_matrix:
+    needs: [trusted_claim,trusted_settlement]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Probe stale forged and consumed authority
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          python scripts/durable_v3_fail_closed_probe.py             --mission-id "${{ inputs.mission_id }}"             --continuation-id "${{ inputs.continuation_id }}"             --authorization-id "${{ inputs.authorization_id }}"             --old-claim-id "${{ needs.trusted_claim.outputs.claim_id }}"             --old-fence "${{ needs.trusted_claim.outputs.fencing_epoch }}"
+          echo "ENTRYPOINT_FAIL_CLOSED_CORE=PASS"
