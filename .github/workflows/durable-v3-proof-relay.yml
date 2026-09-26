@@ -43,5 +43,8 @@ jobs:
           echo "expected=$EXPECTED" >> "$GITHUB_OUTPUT"
           echo "DISPATCH_RECEIPT_RESOLVED=PASS"
       - name: Persist authority-neutral dispatch receipt
+        env:
+          WORKFLOW_RUN_ID: ${{ steps.relay.outputs.run_id }}
+          EXPECTED_WORKFLOW_SHA: ${{ steps.relay.outputs.expected }}
         run: |
-          python scripts/durable_v3_proof_relay.py --mission-id "$MISSION"             --continuation-id "$CONTINUATION" --authorization-id "$AUTHORIZATION"             --workflow-run-id "${{ steps.relay.outputs.run_id }}"             --expected-workflow-sha "${{ steps.relay.outputs.expected }}"
+          python scripts/durable_v3_proof_relay.py --mission-id "$MISSION"             --continuation-id "$CONTINUATION" --authorization-id "$AUTHORIZATION"             --workflow-run-id "$WORKFLOW_RUN_ID"             --expected-workflow-sha "$EXPECTED_WORKFLOW_SHA"
