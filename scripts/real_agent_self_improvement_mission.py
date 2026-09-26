@@ -55,6 +55,10 @@ from app.services.capability_execution_contract_service import (
 )
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.harness_worker_registry_bridge import manifest_from_capability_registry
+from app.services.harness_review_independence_service import (
+    evaluate_review_independence,
+    persist_review_independence,
+)
 from app.services.execution_mission_envelope_service import (
     build_execution_mission_envelope,
     persist_execution_mission_envelope,
@@ -1911,14 +1915,76 @@ def run(
         raise RuntimeError(
             "REAL_TYPED_HANDOFF_CHAIN_DID_NOT_MATCH_DIAGNOSIS_ROOT_CAUSE_PROPOSAL"
         )
-    if author(found["review"]) == author(found["proposal"]):
-        raise RuntimeError("INDEPENDENT_REVIEWER_EQUALS_PRIMARY_AUTHOR")
     proposal_id = str((found["proposal"] or {}).get("task_id") or "")
     proposal_to_review = proposal_id in set(
         (found["review"] or {}).get("source_task_ids") or ()
     )
     if not proposal_to_review:
         raise RuntimeError("REVIEW_DID_NOT_RESOLVE_PROPOSAL_ARTIFACT")
+
+    def load_execution_principal(row):
+        payload = dict((row or {}).get("result_payload") or {})
+        principal_ref = str(payload.get("execution_principal_ref") or "")
+        principal_sha = str(payload.get("execution_principal_sha256") or "")
+        if not principal_ref.startswith("artifact:") or not principal_sha:
+            raise PermissionError("MISSING_EXECUTION_PRINCIPAL_REJECTED")
+        target = (first_runtime_dir / principal_ref[len("artifact:"):]).resolve()
+        if first_runtime_dir.resolve() not in target.parents or not target.is_file():
+            raise PermissionError("MISSING_EXECUTION_PRINCIPAL_REJECTED")
+        principal = json.loads(target.read_text(encoding="utf-8"))
+        if str(principal.get("content_sha256") or "") != principal_sha:
+            raise PermissionError("EXECUTION_PRINCIPAL_HASH_MISMATCH")
+        return principal_ref, principal
+
+    proposal_principal_ref, proposal_principal = load_execution_principal(
+        found["proposal"]
+    )
+    review_principal_ref, review_principal = load_execution_principal(
+        found["review"]
+    )
+    review_record = GLOBAL_CAPABILITY_REGISTRY.get(
+        str((found["review"] or {}).get("capability_id") or "")
+    )
+    independence = evaluate_review_independence(
+        reviewed_execution_principal=proposal_principal,
+        reviewer_execution_principal=review_principal,
+        reviewed_task_result_ref=str(ref(found["proposal"]) or ""),
+        reviewed_task_result_content_sha256=str(
+            (found["proposal"] or {}).get("content_sha256") or ""
+        ),
+        bound_task_result_ref=str(ref(found["proposal"]) or ""),
+        bound_task_result_sha256=str(
+            (found["proposal"] or {}).get("content_sha256") or ""
+        ),
+        reviewed_execution_principal_ref=proposal_principal_ref,
+        reviewer_execution_principal_ref=review_principal_ref,
+        reviewer_read_only=bool(
+            review_record
+            and str(review_record.side_effect_class or "").upper()
+            == "READ_ONLY"
+        ),
+        reviewer_supports_review=bool(
+            review_record and review_record.supports_review
+        ),
+    )
+    independence_record = persist_review_independence(
+        independence, artifact_dir=first_runtime_dir
+    )
+    if independence.decision != "PASS":
+        raise PermissionError(
+            "INDEPENDENT_REVIEW_EXECUTION_PRINCIPAL_REJECTED:"
+            + json.dumps(independence.checks, sort_keys=True)
+        )
+    print("INDEPENDENT_REVIEWER_SELECTED_BY_CAPABILITY=PASS")
+    print("REVIEWER_EXECUTION_KIND=INDEPENDENT_REVIEWER")
+    print("REVIEWER_AGENT_INSTANCE_DISTINCT=PASS")
+    print("REVIEWER_WORKER_DISTINCT=PASS")
+    print("REVIEWER_AUTHORIZATION_DISTINCT=PASS")
+    print("REVIEWER_SESSION_DISTINCT=PASS")
+    print("REVIEW_RESULT_EXACT_BINDING=PASS")
+    print("REVIEWER_READ_ONLY=PASS")
+    print("NO_FAKE_REVIEWER=PASS")
+    print("NO_REVIEW_AUTHORITY_INFLATION=PASS")
 
     recovery = execute_reviewed_recovery(
         plan=first,
