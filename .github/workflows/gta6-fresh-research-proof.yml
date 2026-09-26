@@ -7,6 +7,7 @@ on:
     paths:
       - scripts/gta6_fresh_research_worker.py
       - .github/workflows/gta6-fresh-research-proof.yml
+      - .run/gta6-fresh-research-proof.request.json
 
 permissions:
   contents: read
