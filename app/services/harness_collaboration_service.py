@@ -1343,6 +1343,24 @@ def _planning_domain(goal: GoalEnvelope) -> str:
     }.get(goal.mission_class, "general")
 
 
+def _validate_trusted_mission_identity(
+    goal: GoalEnvelope,
+    trusted_mission_identity: dict[str, str] | None,
+) -> dict[str, str] | None:
+    if trusted_mission_identity is None:
+        return None
+    normalized = {
+        "mission_id": str(trusted_mission_identity.get("mission_id") or "").strip(),
+        "human_goal_id": str(trusted_mission_identity.get("human_goal_id") or "").strip(),
+        "lineage_id": str(trusted_mission_identity.get("lineage_id") or "").strip(),
+    }
+    if not all(normalized.values()):
+        raise ValueError("DURABLE_MISSION_IDENTITY_INVALID")
+    if normalized["human_goal_id"] != goal.goal_id:
+        raise ValueError("DURABLE_MISSION_HUMAN_GOAL_MISMATCH")
+    return normalized
+
+
 def plan_mission_from_human_goal(
     goal: GoalEnvelope,
     *,
@@ -1350,6 +1368,10 @@ def plan_mission_from_human_goal(
     semantic_inference: Callable[[str, dict[str, Any]], str | dict[str, Any]] | None = None,
     trusted_mission_identity: dict[str, str] | None = None,
 ) -> HarnessMissionPlan:
+    trusted_mission_identity = _validate_trusted_mission_identity(
+        goal,
+        trusted_mission_identity,
+    )
     policy = load_continuous_operation_policy()
     resources = dict(policy.resource_governance)
     bounds = _resource_bounds(resources)
@@ -1656,13 +1678,7 @@ def plan_mission_from_human_goal(
         ).encode("utf-8")).hexdigest()[:20]
         plan_id = f"plan-{fingerprint}"
         if trusted_mission_identity is not None:
-            trusted_goal_id = str(trusted_mission_identity.get("human_goal_id") or "").strip()
-            mission_id = str(trusted_mission_identity.get("mission_id") or "").strip()
-            lineage_id = str(trusted_mission_identity.get("lineage_id") or "").strip()
-            if not mission_id or not trusted_goal_id or not lineage_id:
-                raise ValueError("DURABLE_MISSION_IDENTITY_INVALID")
-            if trusted_goal_id != goal.goal_id:
-                raise ValueError("DURABLE_MISSION_HUMAN_GOAL_MISMATCH")
+            mission_id = trusted_mission_identity["mission_id"]
         else:
             mission_fingerprint = sha256(json.dumps(
                 {"human_goal_id": goal.goal_id, "human_goal": goal.human_goal},
