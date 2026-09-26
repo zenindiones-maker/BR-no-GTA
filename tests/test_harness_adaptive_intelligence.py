@@ -660,7 +660,7 @@ def test_presentation_task_that_outputs_production_plan_is_normalized_before_sel
         "candidate_capability_ids": [],
         "expected_output": "ProductionPlan",
         "acceptance_criteria": ["typed production plan"],
-        "action": "EXECUTE",
+        "action": "EXECUTION",
     })
     proposal = MissionPlanProposal.from_mapping(canonical, max_tasks=8)
 
@@ -671,3 +671,11 @@ def test_presentation_task_that_outputs_production_plan_is_normalized_before_sel
     assert task_ids == ("production-plan",)
     assert normalized.tasks[0].task_class == "production-planning"
     assert normalized.tasks[0].expected_output == "ProductionPlan"
+
+def test_unsupported_action_fails_closed_before_normalization():
+    canonical = _proposal(candidate_id="")
+    canonical["tasks"][0]["action"] = "EXECUTE"
+    import pytest
+    with pytest.raises(ValueError):
+        MissionPlanProposal.from_mapping(canonical, max_tasks=8)
+
