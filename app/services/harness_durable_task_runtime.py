@@ -12,7 +12,13 @@ class DurableTaskRuntime:
   payload=asdict(attempt);ref,_=immutable_ref("task-attempts",payload)
   refs=dict(head.get("task_attempt_refs") or {});key=f"{attempt.task_id}:{attempt.attempt_id}"
   existing=refs.get(key)
-  if existing and existing!=ref:raise PermissionError("TASK_ATTEMPT_TERMINAL_IDENTITY_CONFLICT")
+  if existing:
+   previous=self.store.read_json(existing,snap.head_sha) or {}
+   terminal={"COMPLETED","FAILED_TYPED","ABANDONED","REVIEWED"}
+   allowed={"PENDING":{"READY"},"READY":{"ROUTED"},"ROUTED":{"DISPATCHED"},"DISPATCHED":{"CLAIMED"},"CLAIMED":{"RUNNING"},"RUNNING":{"COMPLETED","FAILED_TYPED","CHECKPOINTED","ABANDONED","REVIEW_REQUIRED"},"CHECKPOINTED":{"RESUMED","ABANDONED"},"RESUMED":{"RUNNING","COMPLETED","FAILED_TYPED","CHECKPOINTED","ABANDONED"},"REVIEW_REQUIRED":{"REVIEWED"}}
+   prior=str(previous.get("status") or "")
+   if prior in terminal and attempt.status!=prior:raise PermissionError("TASK_ATTEMPT_TERMINAL_STATE_IMMUTABLE")
+   if attempt.status!=prior and attempt.status not in allowed.get(prior,set()):raise PermissionError("TASK_ATTEMPT_INVALID_TRANSITION")
   refs[key]=ref;head["task_attempt_refs"]=refs;head["state_version"]=int(head["state_version"])+1
   commit=self.store.transact(mission_id=attempt.mission_id,expected_head_sha=snap.head_sha,expected_state_version=int(snap.mission_head["state_version"]),mission_head=head,immutable_objects={ref:payload})
   return commit,ref
