@@ -43,7 +43,7 @@ def main() -> int:
     )
     task = board.get_task(args.task_id)
     run_id = int(task.get("current_run_id") or 0)
-    profile = str(task.get("assignee") or "")
+    profile = _compatibility_profile_role(str(task.get("assignee") or ""))
     if run_id <= 0 or not profile.startswith("hermes-"):
         raise RuntimeError("worker does not own a valid Hermes profile run")
     board.heartbeat(args.task_id, run_id=run_id, note=f"{profile} started bounded analysis")
