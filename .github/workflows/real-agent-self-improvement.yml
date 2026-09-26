@@ -33,6 +33,7 @@ on:
       - "tests/test_recovery_execution_service.py"
       - "tests/test_harness_executor_availability_service.py"
       - "tests/test_harness_collaboration_service.py"
+      - "tests/test_real_agent_self_improvement_residual_replan.py"
       - ".github/workflows/real-agent-self-improvement.yml"
       - ".run/real-agent-self-improvement.request.json"
   workflow_dispatch:
