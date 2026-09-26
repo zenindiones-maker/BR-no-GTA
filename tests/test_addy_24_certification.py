@@ -496,7 +496,7 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
     assert calls == ["nvidia/model-a", "nvidia/model-b"]
     assert routing_requests[0].unavailable_model_ids == ()
     assert routing_requests[1].unavailable_model_ids == ("nvidia/model-a",)
-    assert routing_requests[1].failure_pattern == "nvidia_nim_timeout"
+    assert routing_requests[1].failure_pattern == "full_timeout_same_model_retry_forbidden"
     assert len(evidence.result["provider_attempts"]) == 2
     assert evidence.result["provider_attempts"][0]["status"] == "FAILED"
     assert evidence.result["provider_attempts"][1]["status"] == "EXECUTED"
