@@ -37,5 +37,6 @@
     "schema_source": "mission_plan_json_schema",
     "disable_thinking": true
   },
-  "observability_only": false
+  "observability_only": false,
+  "agent_execution_plane_v1_canary": "1970-01-01T00:00:00.000Z"
 }
