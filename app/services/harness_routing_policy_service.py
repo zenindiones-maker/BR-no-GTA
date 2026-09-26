@@ -83,6 +83,17 @@ class HarnessRoutingRequest:
     minimum_context_tokens: int | None = None
     tool_use_required: bool = False
     structured_output_required: bool = False
+    mission_id: str | None = None
+    task_id: str | None = None
+    agent_instance_id: str | None = None
+    agent_turn: int | None = None
+    recovery_phase: str = "INITIAL_PROVIDER_SELECTION"
+    provider_health_snapshot_ref: str | None = None
+    provider_health_snapshot_sha256: str | None = None
+    health_eligible_provider_ids: tuple[str, ...] = ()
+    provider_level_replan_authorized: bool = False
+    from_provider: str | None = None
+    allow_half_open_probe: bool = False
 
 
 @dataclass(frozen=True)
@@ -434,6 +445,13 @@ def _provider_records(
                 )
             if m_health.circuit_breaker_state == "OPEN":
                 reasons.append("model_circuit_breaker_open")
+            if (
+                m_health.circuit_breaker_state == "HALF_OPEN"
+                and not request.allow_half_open_probe
+            ):
+                reasons.append(
+                    "model_circuit_breaker_half_open_probe_not_authorized"
+                )
             if m_health.rate_limit_state in {
                 "RATE_LIMITED",
                 "THROTTLED",
@@ -578,6 +596,129 @@ def _provider_records(
     return eligible, rejected
 
 
+def _provider_eligibility_snapshot(
+    request: HarnessRoutingRequest,
+    registry: GlobalCapabilityRegistry,
+    *,
+    eligible: list[CapabilityRecord],
+    rejected: list[RoutingRejection],
+) -> dict[str, Any]:
+    accepted_ids = {record.capability_id for record in eligible}
+    rejected_by_id = {
+        item.candidate_id: tuple(item.reasons)
+        for item in rejected
+        if item.stage == "provider"
+    }
+    universe: list[dict[str, Any]] = []
+    effective: list[dict[str, Any]] = []
+    rejected_rows: list[dict[str, Any]] = []
+    for record in registry.all():
+        if (
+            record.capability_type != "PROVIDER"
+            or not record.provider_id
+            or record.domain != request.provider_domain
+        ):
+            continue
+        binding = _authorized_provider_model_binding(record) or {}
+        provider_id = normalize_provider_id(record.provider_id or "")
+        model_id = str(binding.get("model_id") or record.model_id or "").strip()
+        accepted = record.capability_id in accepted_ids
+        row = {
+            "candidate_id": record.capability_id,
+            "provider_id": provider_id,
+            "model_id": model_id or None,
+            "status": "ACCEPTED" if accepted else "REJECTED",
+            "reasons": list(rejected_by_id.get(record.capability_id, ())),
+        }
+        universe.append(row)
+        (effective if accepted else rejected_rows).append(row)
+
+    provider_ids = sorted({
+        str(item["provider_id"])
+        for item in effective
+        if item.get("provider_id")
+    })
+    model_pairs = sorted({
+        (str(item["provider_id"]), str(item["model_id"]))
+        for item in effective
+        if item.get("provider_id") and item.get("model_id")
+    })
+    health_ids = sorted({
+        normalize_provider_id(item)
+        for item in request.health_eligible_provider_ids
+        if str(item).strip()
+    })
+    phase = str(
+        request.recovery_phase or "INITIAL_PROVIDER_SELECTION"
+    ).strip().upper()
+    if effective:
+        pool_state = "NONEMPTY"
+    elif phase == "SAME_PROVIDER_MODEL_REPLAN":
+        pool_state = "MODEL_SET_EXHAUSTED"
+    else:
+        pool_state = "PROVIDER_POOL_EXHAUSTED"
+
+    logical = {
+        "schema": "ProviderEligibilitySnapshot/v1",
+        "mission_id": request.mission_id,
+        "task_id": request.task_id,
+        "agent_instance_id": request.agent_instance_id,
+        "agent_turn": request.agent_turn,
+        "recovery_phase": phase,
+        "health_snapshot_ref": request.provider_health_snapshot_ref,
+        "health_snapshot_sha256": request.provider_health_snapshot_sha256,
+        "candidate_universe": universe,
+        "effective_candidates": effective,
+        "rejected_candidates": rejected_rows,
+        "unavailable_provider_ids": [
+            normalize_provider_id(item)
+            for item in request.unavailable_provider_ids
+        ],
+        "unavailable_model_ids": list(request.unavailable_model_ids),
+        "exhausted_provider_model_pairs": [
+            [normalize_provider_id(provider_id), str(model_id)]
+            for provider_id, model_id
+            in request.exhausted_provider_model_pairs
+        ],
+        "required_model_capabilities": list(
+            request.required_model_capabilities
+        ),
+        "structured_output_required": bool(
+            request.structured_output_required
+        ),
+        "tool_use_required": bool(request.tool_use_required),
+        "zero_cost_required": bool(request.zero_cost_operation),
+        "security_requirements": list(request.required_security_terms),
+        "HEALTH_ELIGIBLE_PROVIDER_IDS": health_ids,
+        "HEALTH_ELIGIBLE_PROVIDER_COUNT": len(health_ids),
+        "effective_provider_ids": provider_ids,
+        "effective_provider_count": len(provider_ids),
+        "effective_model_pairs": [
+            [provider_id, model_id]
+            for provider_id, model_id in model_pairs
+        ],
+        "effective_model_pair_count": len(model_pairs),
+        "pool_state": pool_state,
+        "HARD_ELIGIBILITY_BEFORE_RANKING": True,
+    }
+    content_sha256 = sha256(json.dumps(
+        logical,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")).hexdigest()
+    return {
+        **logical,
+        "content_sha256": content_sha256,
+        "snapshot_ref": (
+            "objects/provider-eligibility/sha256/"
+            + content_sha256
+            + ".json"
+        ),
+    }
+
+
 def _select_provider(
     request: HarnessRoutingRequest,
     registry: GlobalCapabilityRegistry,
@@ -587,11 +728,93 @@ def _select_provider(
     tuple[str, ...],
     bool,
     list[RoutingRejection],
+    dict[str, Any] | None,
 ]:
     if not request.provider_required:
-        return None, None, (), False, []
+        return None, None, (), False, [], None
 
     eligible, rejected = _provider_records(request, registry)
+    eligibility_snapshot = _provider_eligibility_snapshot(
+        request,
+        registry,
+        eligible=eligible,
+        rejected=rejected,
+    )
+    phase = str(
+        request.recovery_phase or "INITIAL_PROVIDER_SELECTION"
+    ).strip().upper()
+    if not eligible:
+        failure_class = (
+            "MODEL_SET_EXHAUSTED"
+            if phase == "SAME_PROVIDER_MODEL_REPLAN"
+            else "PROVIDER_POOL_EXHAUSTED"
+        )
+        raise RoutingPolicyError(
+            "No effective provider/model candidates remain after hard "
+            "eligibility filters",
+            evidence={
+                "failure_stage": "provider_selection",
+                "failure_class": failure_class,
+                "recovery_phase": phase,
+                "HEALTH_ELIGIBLE_PROVIDER_COUNT": (
+                    eligibility_snapshot[
+                        "HEALTH_ELIGIBLE_PROVIDER_COUNT"
+                    ]
+                ),
+                "EFFECTIVE_ROUTING_PROVIDER_COUNT": 0,
+                "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": 0,
+                "pool_state": eligibility_snapshot["pool_state"],
+                "provider_eligibility_snapshot": eligibility_snapshot,
+                "rejected_candidates": [
+                    asdict(item) for item in rejected
+                ],
+            },
+        )
+
+    if phase == "PROVIDER_LEVEL_REPLAN":
+        old_provider = normalize_provider_id(
+            str(request.from_provider or "")
+        )
+        unavailable = {
+            normalize_provider_id(item)
+            for item in request.unavailable_provider_ids
+        }
+        if (
+            not request.provider_level_replan_authorized
+            or not old_provider
+            or old_provider not in unavailable
+        ):
+            raise RoutingPolicyError(
+                "Provider-level replan lacks explicit Harness authorization "
+                "or old-provider exclusion",
+                evidence={
+                    "failure_stage": "provider_selection",
+                    "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
+                    "recovery_phase": phase,
+                    "provider_level_replan_authorized": bool(
+                        request.provider_level_replan_authorized
+                    ),
+                    "from_provider": old_provider or None,
+                    "old_provider_excluded": (
+                        bool(old_provider)
+                        and old_provider in unavailable
+                    ),
+                    "EFFECTIVE_ROUTING_PROVIDER_COUNT": (
+                        eligibility_snapshot["effective_provider_count"]
+                    ),
+                    "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": (
+                        eligibility_snapshot[
+                            "effective_model_pair_count"
+                        ]
+                    ),
+                    "provider_eligibility_snapshot": (
+                        eligibility_snapshot
+                    ),
+                    "rejected_candidates": [
+                        asdict(item) for item in rejected
+                    ],
+                },
+            )
     preferred = tuple(
         normalize_provider_id(item) for item in request.preferred_providers
     )
@@ -627,6 +850,7 @@ def _select_provider(
             fallback_candidates,
             False,
             rejected,
+            eligibility_snapshot,
         )
 
     if not request.fallback_allowed:
@@ -638,11 +862,20 @@ def _select_provider(
                 "primary_provider": primary_provider,
                 "fallback_allowed": False,
                 "zero_cost_operation": request.zero_cost_operation,
-                "eligible_provider_count": len(eligible),
-                "eligible_provider_ids": [
-                    normalize_provider_id(record.provider_id or "")
-                    for record in eligible
-                ],
+                "HEALTH_ELIGIBLE_PROVIDER_COUNT": (
+                    eligibility_snapshot[
+                        "HEALTH_ELIGIBLE_PROVIDER_COUNT"
+                    ]
+                ),
+                "EFFECTIVE_ROUTING_PROVIDER_COUNT": (
+                    eligibility_snapshot["effective_provider_count"]
+                ),
+                "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": (
+                    eligibility_snapshot[
+                        "effective_model_pair_count"
+                    ]
+                ),
+                "provider_eligibility_snapshot": eligibility_snapshot,
                 "rejected_candidates": [
                     asdict(item) for item in rejected
                 ],
@@ -663,12 +896,24 @@ def _select_provider(
             "No eligible policy-governed fallback provider is available",
             evidence={
                 "failure_stage": "provider_selection",
-                "failure_class": "PROVIDER_POOL_EXHAUSTED",
+                "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
                 "primary_provider": primary_provider,
                 "fallback_allowed": True,
                 "zero_cost_operation": request.zero_cost_operation,
-                "eligible_provider_count": 0,
-                "eligible_provider_ids": [],
+                "HEALTH_ELIGIBLE_PROVIDER_COUNT": (
+                    eligibility_snapshot[
+                        "HEALTH_ELIGIBLE_PROVIDER_COUNT"
+                    ]
+                ),
+                "EFFECTIVE_ROUTING_PROVIDER_COUNT": (
+                    eligibility_snapshot["effective_provider_count"]
+                ),
+                "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": (
+                    eligibility_snapshot[
+                        "effective_model_pair_count"
+                    ]
+                ),
+                "provider_eligibility_snapshot": eligibility_snapshot,
                 "rejected_candidates": [
                     asdict(item) for item in rejected
                 ],
@@ -681,7 +926,14 @@ def _select_provider(
         for record in fallbacks[1:]
         if normalize_provider_id(record.provider_id or "") != chosen
     ))
-    return selected, primary_provider, remaining, True, rejected
+    return (
+        selected,
+        primary_provider,
+        remaining,
+        True,
+        rejected,
+        eligibility_snapshot,
+    )
 
 
 def _routing_id(payload: dict[str, Any]) -> str:
@@ -920,10 +1172,16 @@ def route_harness_request(
         fallback_candidates = ()
         fallback_occurred = False
         provider_rejections = []
+        provider_eligibility_snapshot = None
     else:
-        provider, primary_provider, fallback_candidates, fallback_occurred, provider_rejections = (
-            _select_provider(request, registry)
-        )
+        (
+            provider,
+            primary_provider,
+            fallback_candidates,
+            fallback_occurred,
+            provider_rejections,
+            provider_eligibility_snapshot,
+        ) = _select_provider(request, registry)
     rejected.extend(provider_rejections)
 
     selected_provider = (
@@ -1038,6 +1296,21 @@ def route_harness_request(
             if item.get("capability_id") == capability.capability_id
             and item.get("evidence_sufficient") is True
         ],
+        "provider_eligibility_snapshot": provider_eligibility_snapshot,
+        "provider_eligibility_snapshot_ref": (
+            provider_eligibility_snapshot.get("snapshot_ref")
+            if isinstance(provider_eligibility_snapshot, dict)
+            else None
+        ),
+        "provider_eligibility_snapshot_sha256": (
+            provider_eligibility_snapshot.get("content_sha256")
+            if isinstance(provider_eligibility_snapshot, dict)
+            else None
+        ),
+        "EFFECTIVE_PROVIDER_ELIGIBILITY_COMPUTED": (
+            provider_eligibility_snapshot is not None
+        ),
+        "HARD_ELIGIBILITY_BEFORE_RANKING": True,
         "selected_provider_cost_class": provider.cost_class if provider is not None else None,
         "selected_model_capabilities": (
             sorted(_model_capabilities(provider))

@@ -1170,3 +1170,107 @@ def test_no_global_silent_provider_fallback(monkeypatch):
     assert all(request.fallback_allowed is False for request in requests)
     assert requests[1].preferred_providers == ("nvidia_nim",)
     assert result.result["NO_BLIND_PROVIDER_RETRY"] is True
+
+
+def test_second_failed_model_returns_model_set_exhausted_to_harness(monkeypatch):
+    _patch_common(monkeypatch)
+    routes = iter([
+        _route(routing_id="route-a", model="model-a"),
+        _route(routing_id="route-b", model="model-b"),
+    ])
+    calls = iter([
+        _timeout("model-a", "route-a"),
+        _upstream_failure("model-b", "route-b"),
+    ])
+    monkeypatch.setattr(
+        service, "route_harness_request", lambda request: next(routes)
+    )
+    monkeypatch.setattr(
+        service, "execute_harness_ai_generation",
+        lambda **kwargs: next(calls),
+    )
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(),
+        payload=_payload(),
+    )
+    assert result.status == "FAILED"
+    assert result.result["FAILURE_CLASS"] == "MODEL_SET_EXHAUSTED"
+    assert result.result[
+        "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED"
+    ] is True
+    assert result.result[
+        "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED"
+    ] is False
+    assert len(result.result["provider_attempts"]) == 2
+
+
+def test_provider_level_replan_only_from_harness_strategy(monkeypatch):
+    _patch_common(monkeypatch)
+    requests = []
+    def fake_route(request):
+        requests.append(request)
+        return _route(
+            routing_id="route-provider-level",
+            provider="ollama_local",
+            model="model-c",
+        )
+    monkeypatch.setattr(service, "route_harness_request", fake_route)
+    monkeypatch.setattr(
+        service, "execute_harness_ai_generation",
+        lambda **kwargs: _success("model-c", "route-provider-level"),
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "PROVIDER_LEVEL_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "EXHAUSTED_PROVIDER_MODEL_PAIRS": [{
+            "provider_id": "nvidia_nim",
+            "model_id": "model-a",
+            "routing_id": "route-a",
+            "status": "FAILED",
+        }],
+    }
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+    assert result.status == "EXECUTED"
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.recovery_phase == "PROVIDER_LEVEL_REPLAN"
+    assert request.provider_level_replan_authorized is True
+    assert request.from_provider == "nvidia_nim"
+    assert "nvidia_nim" in request.unavailable_provider_ids
+    assert request.fallback_allowed is False
+
+
+def test_nontransient_retryable_flag_does_not_retry(monkeypatch):
+    _patch_common(monkeypatch)
+    route = _route(routing_id="route-policy", model="model-a")
+    monkeypatch.setattr(service, "route_harness_request", lambda request: route)
+    failed = _timeout("model-a", "route-policy")
+    failed = HarnessAIProviderEvidence(**{
+        **failed.to_dict(),
+        "error": {
+            **failed.error,
+            "code": "policy_rejected",
+            "retryable": True,
+            "failure_stage": "policy",
+            "status_code": 0,
+        },
+    })
+    calls = []
+    def execute(**kwargs):
+        calls.append(1)
+        return failed
+    monkeypatch.setattr(service, "execute_harness_ai_generation", execute)
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(),
+        payload=_payload(),
+    )
+    assert result.status == "FAILED"
+    assert len(calls) == 1
+    assert result.result["RETRY_COUNT"] == 0

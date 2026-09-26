@@ -1,13 +1,13 @@
 from dataclasses import replace
 from datetime import datetime,timezone,timedelta
-from app.services.harness_worker_plane import AgentCapability,AgentCapabilityManifest,CapabilityCertification,WorkerRegistration,digest
+from app.services.harness_worker_plane import CapabilitySpec,AgentCapabilityManifest,CapabilityCertification,WorkerRegistration,digest
 from app.services.harness_worker_scheduler import CapabilityScheduler,TaskDefinition,RoutingEvidenceSnapshot
 from app.services.harness_git_transaction_store import canonical_bytes
 def reg(w):
- m=AgentCapabilityManifest(w,w,"SEMANTIC","b1",(AgentCapability("cap","1"),),("ROLE",),("AGENT",),("TaskExecutionEnvelope/v1",),("TaskExecutionEvidence/v1",),("op",),"READ_ONLY",("r",),(),False,False,False,False,(),(),10,1000,("SHORT",),"x","h")
+ m=AgentCapabilityManifest(w,w,"SEMANTIC","b1",(CapabilitySpec("cap","1"),),("ROLE",),("AGENT",),("TaskExecutionEnvelope/v1",),("TaskExecutionEvidence/v1",),("op",),"READ_ONLY",("r",),(),False,False,False,False,(),(),10,1000,("SHORT",),"x","h")
  m=replace(m,manifest_sha256=digest({k:v for k,v in __import__("dataclasses").asdict(m).items() if k!="manifest_sha256"}))
  now=datetime.now(timezone.utc);cert=CapabilityCertification(w,"b1","cap","1","run",1,"REAL_CANARY","TaskExecutionEnvelope/v1","TaskExecutionEvidence/v1","READ_ONLY",True,1,"",(now-timedelta(minutes=1)).isoformat(),(now+timedelta(days=1)).isoformat())
- cert=replace(cert,certification_hash=digest({k:v for k,v in __import__("dataclasses").asdict(cert).items() if k!="certification_hash"}));return WorkerRegistration(m,cert)
+ cert=replace(cert,certification_hash=digest({k:v for k,v in __import__("dataclasses").asdict(cert).items() if k!="certification_hash"}));return WorkerRegistration(m,None,cert)
 def task():return TaskDefinition("t","k","cap","1","ROLE","AGENT","TaskExecutionEnvelope/v1","TaskExecutionEvidence/v1",(),(),("op",),"READ_ONLY",("r",),(),None,5,100,1000,"B","S","N",())
 def snap(rows):
  return RoutingEvidenceSnapshot.create(decision_as_of="2026-09-26T12:00:00+00:00",worker_evidence={k:{"competence":v,"health":100,"task_success":80,"certification_freshness":100,"latency_efficiency_score":80,"cost_efficiency_score":100} for k,v in rows.items()})

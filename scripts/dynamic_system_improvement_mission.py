@@ -1625,6 +1625,9 @@ def run(
                             "REFRESH_LINEAGE",
                             "LOCALIZED_REGISTRY_RESOLUTION",
                             "LOCALIZED_TOOL_REPLAN",
+                            "REFRESH_PROVIDER_HEALTH",
+                            "PROVIDER_LEVEL_REPLAN",
+                            "RECONCILE_PROVIDER_HEALTH",
                         }
                         if (
                             not decision.recoverable
@@ -1636,6 +1639,20 @@ def run(
                             decision=decision,
                         )
                         recovery_retries += 1
+                        if decision.strategy in {
+                            "REFRESH_PROVIDER_HEALTH",
+                            "RECONCILE_PROVIDER_HEALTH",
+                        }:
+                            seed = int(
+                                classification.failure_signature[:8],
+                                16,
+                            )
+                            cooldown_seconds = 0.10 + (
+                                (seed % 100) / 1000.0
+                            )
+                            time.sleep(cooldown_seconds)
+                        else:
+                            cooldown_seconds = 0.0
                         if decision.strategy == "REFRESH_LINEAGE":
                             parent_context = broker.parent_context(
                                 task_id=task_id
@@ -1709,6 +1726,26 @@ def run(
                                 classification.failure_signature
                             ),
                             "RECOVERY_STRATEGY": decision.strategy,
+                            "PROVIDER_RECOVERY_CYCLE": {
+                                "schema": "ProviderRecoveryCycle/v1",
+                                "mission_id": spec.mission_id,
+                                "task_id": task_id,
+                                "cycle": recovery_retries,
+                                "failure_signature": (
+                                    classification.failure_signature
+                                ),
+                                "cooldown_class": (
+                                    "BOUNDED_RECONCILIATION"
+                                    if decision.strategy in {
+                                        "REFRESH_PROVIDER_HEALTH",
+                                        "RECONCILE_PROVIDER_HEALTH",
+                                    }
+                                    else "NONE"
+                                ),
+                                "cooldown_seconds": cooldown_seconds,
+                                "recovery_result": "PENDING_REEXECUTION",
+                                "MAX_PROVIDER_RECOVERY_CYCLES": 3,
+                            },
                             "ATTEMPTED_PROVIDER_MODEL_PAIRS": _merge_attempts(
                                 prior_pairs,
                                 provider_failure[

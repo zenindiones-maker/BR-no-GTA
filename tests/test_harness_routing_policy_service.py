@@ -580,3 +580,117 @@ def test_exhausted_provider_model_pair_is_filtered_before_selection():
         and "provider_model_pair_exhausted" in rejection.reasons
         for rejection in decision.rejected_candidates
     )
+
+
+def test_empty_effective_pool_classified_before_primary_selection():
+    with pytest.raises(RoutingPolicyError) as observed:
+        route_harness_request(
+            _request(
+                preferred_providers=("nvidia_nim",),
+                allowed_providers=("nvidia_nim",),
+                unavailable_provider_ids=("nvidia_nim",),
+                recovery_phase="INITIAL_PROVIDER_SELECTION",
+                health_eligible_provider_ids=("nvidia_nim",),
+            ),
+            registry=_provider_registry(),
+        )
+    evidence = observed.value.evidence
+    assert evidence["failure_class"] == "PROVIDER_POOL_EXHAUSTED"
+    assert "Primary provider is unavailable" not in str(observed.value)
+    assert evidence["EFFECTIVE_ROUTING_PROVIDER_COUNT"] == 0
+
+
+def test_health_available_but_mission_ineligible_supported():
+    with pytest.raises(RoutingPolicyError) as observed:
+        route_harness_request(
+            _request(
+                allowed_providers=("nvidia_nim",),
+                unavailable_provider_ids=("nvidia_nim",),
+                recovery_phase="PROVIDER_LEVEL_REPLAN",
+                provider_level_replan_authorized=True,
+                from_provider="nvidia_nim",
+                health_eligible_provider_ids=("nvidia_nim",),
+            ),
+            registry=_provider_registry(),
+        )
+    evidence = observed.value.evidence
+    assert evidence["HEALTH_ELIGIBLE_PROVIDER_COUNT"] == 1
+    assert evidence["EFFECTIVE_ROUTING_PROVIDER_COUNT"] == 0
+    snapshot = evidence["provider_eligibility_snapshot"]
+    assert snapshot["schema"] == "ProviderEligibilitySnapshot/v1"
+    assert snapshot["pool_state"] == "PROVIDER_POOL_EXHAUSTED"
+
+
+def test_same_provider_empty_model_set_is_model_set_exhausted():
+    models = tuple(sorted(_nvidia_pool_models()))
+    assert models
+    with pytest.raises(RoutingPolicyError) as observed:
+        route_harness_request(
+            _request(
+                preferred_providers=("nvidia_nim",),
+                allowed_providers=("nvidia_nim",),
+                unavailable_model_ids=models,
+                recovery_phase="SAME_PROVIDER_MODEL_REPLAN",
+                health_eligible_provider_ids=("nvidia_nim",),
+            ),
+            registry=_provider_registry(),
+        )
+    assert observed.value.evidence["failure_class"] == "MODEL_SET_EXHAUSTED"
+
+
+def test_provider_route_unavailable_requires_nonempty_effective_pool():
+    with pytest.raises(RoutingPolicyError) as observed:
+        route_harness_request(
+            _request(
+                preferred_providers=("nvidia_nim",),
+                allowed_providers=("nvidia_nim", "tuxevil"),
+                unavailable_provider_ids=("nvidia_nim",),
+                fallback_allowed=False,
+                health_eligible_provider_ids=("nvidia_nim", "tuxevil"),
+            ),
+            registry=_provider_registry(fallback=True),
+        )
+    evidence = observed.value.evidence
+    assert evidence["failure_class"] == "PROVIDER_ROUTE_UNAVAILABLE"
+    assert evidence["EFFECTIVE_ROUTING_PROVIDER_COUNT"] > 0
+
+
+def test_provider_level_replan_requires_harness_authorization():
+    with pytest.raises(RoutingPolicyError) as observed:
+        route_harness_request(
+            _request(
+                preferred_providers=(),
+                allowed_providers=("nvidia_nim", "tuxevil"),
+                unavailable_provider_ids=("nvidia_nim",),
+                recovery_phase="PROVIDER_LEVEL_REPLAN",
+                provider_level_replan_authorized=False,
+                from_provider="nvidia_nim",
+                health_eligible_provider_ids=("nvidia_nim", "tuxevil"),
+            ),
+            registry=_provider_registry(fallback=True),
+        )
+    evidence = observed.value.evidence
+    assert evidence["failure_class"] == "PROVIDER_ROUTE_UNAVAILABLE"
+    assert evidence["EFFECTIVE_ROUTING_PROVIDER_COUNT"] > 0
+
+
+def test_provider_level_replan_excludes_old_provider_without_fallback():
+    decision = route_harness_request(
+        _request(
+            preferred_providers=(),
+            allowed_providers=("nvidia_nim", "tuxevil"),
+            unavailable_provider_ids=("nvidia_nim",),
+            recovery_phase="PROVIDER_LEVEL_REPLAN",
+            provider_level_replan_authorized=True,
+            from_provider="nvidia_nim",
+            fallback_allowed=False,
+            health_eligible_provider_ids=("nvidia_nim", "tuxevil"),
+        ),
+        registry=_provider_registry(fallback=True),
+    )
+    assert decision.selected_provider == "tuxevil"
+    assert decision.fallback_allowed is False
+    assert decision.fallback_occurred is False
+    snapshot = decision.policy_metadata["provider_eligibility_snapshot"]
+    assert "nvidia_nim" not in snapshot["effective_provider_ids"]
+    assert snapshot["HARD_ELIGIBILITY_BEFORE_RANKING"] is True

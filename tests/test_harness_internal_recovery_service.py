@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services.harness_internal_recovery_service import (
     CONTRACT_INPUT_GAP,
+    MODEL_SET_EXHAUSTED,
     PROVIDER_POOL_EXHAUSTED,
     PROVIDER_ROUTE_UNAVAILABLE,
     PROVIDER_TRANSIENT,
@@ -213,3 +214,34 @@ def test_provider_pool_exhausted_is_internal_not_human_gate(tmp_path):
         context={"dependency_context_sha256": "provider-health"},
     )
     assert state.select_recovery(observed).strategy == "RECONCILE_PROVIDER_HEALTH"
+
+
+def test_model_set_exhausted_selects_provider_level_replan(tmp_path):
+    failure = RoutingPolicyError(
+        "No effective provider/model candidates remain",
+        evidence={
+            "failure_stage": "provider_selection",
+            "failure_class": "MODEL_SET_EXHAUSTED",
+            "recovery_phase": "SAME_PROVIDER_MODEL_REPLAN",
+            "EFFECTIVE_ROUTING_PROVIDER_COUNT": 0,
+        },
+    )
+    classification = classify_internal_failure(
+        failure,
+        task=_task(),
+        context={"dependency_context_sha256": "model-set"},
+    )
+    assert classification.failure_class == MODEL_SET_EXHAUSTED
+    state = HarnessInternalRecoveryState(
+        mission_id="mission-model-set",
+        goal_id="goal-model-set",
+        artifact_dir=tmp_path,
+    )
+    observed = state.observe_failure(
+        task=_task(),
+        exc=failure,
+        context={"dependency_context_sha256": "model-set"},
+    )
+    decision = state.select_recovery(observed)
+    assert decision.strategy == "PROVIDER_LEVEL_REPLAN"
+    assert decision.human_intervention_required is False
