@@ -96,6 +96,7 @@ def test_worker_engine_classification_counts_physical_engines_not_runner_aliases
     }
     assert canonical_worker_engine_ids() == (
         "codex",
+        "codex-independent-reviewer",
         "codex-readonly",
         "deterministic-analysis",
     )
