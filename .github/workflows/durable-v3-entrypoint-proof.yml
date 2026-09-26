@@ -14,7 +14,7 @@ permissions: {}
 
 env:
   PYTHONPATH: .
-  BOOTSTRAP_REF: durable-v3-bootstrap
+  BOOTSTRAP_REF: ${{ github.ref_name }}
 
 jobs:
   trusted_claim:
