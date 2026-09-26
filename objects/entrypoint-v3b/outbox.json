@@ -1,0 +1,1 @@
+{"schema":"OutboxIntent/v1","continuation_id":"CONT-ENTRYPOINT-2","authorization_ref":"objects/entrypoint-v3b/grant.json","authorization_id":"AUTH-ENTRYPOINT-2","mission_id":"proof-entrypoint-v3b","authority_generation":1,"kind":"EXECUTE","runtime_revision":"13fbff24313873adca8722f01a85023cc588c991","orchestration_version":"3.0","status":"PENDING"}

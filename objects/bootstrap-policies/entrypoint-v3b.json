@@ -1,0 +1,1 @@
+{"schema":"BootstrapPolicy/v1","repository_id":"1352945085","workflow_path":".github/workflows/durable-v3-entrypoint-proof.yml","bootstrap_ref":"durable-v3-bootstrap","expected_workflow_sha":"13fbff24313873adca8722f01a85023cc588c991","protocol_version":"3.0","allowed_event":"workflow_dispatch"}
