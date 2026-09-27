@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: harness-continuous-learning-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   learning-proof:
     runs-on: ubuntu-24.04
