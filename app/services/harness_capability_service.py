@@ -155,6 +155,7 @@ CAPABILITY_CATALOG = tuple(
             "video.edit.vedit",
             "media.analysis.cloud",
             "gta6.brain.decide",
+            "browser.qa.validate",
         }
     )
 )

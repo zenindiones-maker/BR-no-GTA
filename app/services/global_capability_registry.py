@@ -1870,4 +1870,58 @@ if _REGISTRY._by_id.get(LTX_25_VISUAL_RECORD.capability_id) is not None:
 _REGISTRY._by_id[LTX_25_VISUAL_RECORD.capability_id] = LTX_25_VISUAL_RECORD
 _REGISTRY._records = tuple(sorted((*_REGISTRY._records, LTX_25_VISUAL_RECORD), key=lambda item: item.capability_id))
 
+
+BROWSER_QA_VALIDATE_RECORD = CapabilityRecord(
+    capability_id="browser.qa.validate",
+    capability_type="EXECUTOR",
+    domain="browser-qa",
+    implementation="Harness-governed deterministic Playwright real-browser validation executor for local VEdit frontend surfaces",
+    input_contract="BrowserQARequest/v1 with loopback authorized_url, bounded scenarios and mission/task/candidate lineage",
+    output_contract="BrowserQAReport/v1 plus content-addressed screenshot/trace/report refs",
+    requirements=(
+        "persisted DeepSeek Harness DEVELOPMENT authorization",
+        "exact Global Capability Registry executor binding",
+        "isolated Chromium context",
+        "pinned Playwright runtime",
+        "local VEdit/test fixture only",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=("browser","qa","playwright","frontend","ui","validation","accessibility","aria","visual","trace","read-only"),
+    security_boundary="DeepSeek Harness sole authority; loopback-only, read-only, isolated, caller-non-overridable; no personal profile/credentials, unsafe code, arbitrary MCP server, file URL, publication, routing, policy, golden auto-update, or self-approval authority.",
+    cost_class="FREE_NO_BILLING",
+    quota_class="LOCAL_DETERMINISTIC",
+    latency_class="LOCAL_BROWSER",
+    quality_class="REAL_BROWSER_DETERMINISTIC_QA_EVIDENCE",
+    evidence_contract="app.services.browser_qa_harness_service.BrowserQAReport/v1",
+    fallback_eligibility=False,
+    executor_binding="app.services.browser_qa_harness_service.execute_browser_qa_capability",
+    version="1",
+    provider_id="internal",
+    agent_id="browser-qa-validator",
+    side_effects=("ephemeral isolated browser context","QA evidence artifacts"),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=("video-engine/frontend","artifacts/browser-qa"),
+    default_write_scope=("artifacts/browser-qa",),
+    allowed_tools=("playwright-test",),
+    health_policy="BROWSER_RUNTIME_REQUIRED",
+    execution_operations=(CAN_RUN_TESTS,CAN_CONSUME_ARTIFACT_REFS,CAN_PRODUCE_ARTIFACT_REFS),
+    execution_kind="TOOL",
+    functional_roles=("QA",),
+)
+if _REGISTRY._by_id.get(BROWSER_QA_VALIDATE_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate browser QA capability id")
+_REGISTRY._by_id[BROWSER_QA_VALIDATE_RECORD.capability_id] = BROWSER_QA_VALIDATE_RECORD
+_REGISTRY._records = tuple(sorted((*_REGISTRY._records, BROWSER_QA_VALIDATE_RECORD), key=lambda item: item.capability_id))
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY
