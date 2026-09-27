@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36354062143,
-  "expected_head_sha": "8a24438ef69329acc791bb7582e44e687d1a9f84",
-  "reason": "exact current successor in known durable blind-resume storm; stop transport churn before child-plan reuse fix",
+  "run_id": 36354116161,
+  "expected_head_sha": "c2c2f5d35398c8d05d2455d848dd55547b424176",
+  "reason": "cancel active stale successor before it can dispatch another blind-resume continuation",
   "requested_by": "durable-resume-causal-containment"
 }
