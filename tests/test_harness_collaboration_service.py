@@ -883,3 +883,39 @@ def test_human_gate_is_preserved_as_human_verification():
     verification = plan.tasks[0].verification_plan
     assert verification["human_gate_required"] is True
     assert verification["steps"][0]["verification_kind"] == "HUMAN_GATE"
+
+
+
+def test_collaboration_plan_serializes_resource_conflicts():
+    plan = build_collaboration_plan(
+        mission_id="mission-conflict-plan",
+        goal_id="goal-conflict-plan",
+        tasks=[
+            {
+                "task_id": "read",
+                "capability_id": "repository.read-scoped",
+                "action": "RESEARCH",
+                "objective": "read one repository boundary",
+                "read_scope": ["app/services"],
+                "expected_output": "Evidence",
+            },
+            {
+                "task_id": "write",
+                "capability_id": "agent-office.codex.bounded-development",
+                "action": "DEVELOPMENT",
+                "objective": "mutate the same repository boundary",
+                "read_scope": ["app/services"],
+                "write_scope": ["app/services/x.py"],
+                "expected_output": "CandidatePatch",
+                "required_operations": [
+                    "CAN_READ_REPOSITORY",
+                    "CAN_WRITE_REPOSITORY",
+                    "CAN_MUTATE_CANDIDATE",
+                    "CAN_PRODUCE_ARTIFACT_REFS",
+                ],
+            },
+        ],
+    )
+    assert plan.conflict_graph["schema"] == "TaskConflictGraph/v1"
+    assert plan.execution_levels == (("read",), ("write",))
+    assert plan.conflict_graph["authority"] == "DEEPSEEK_HARNESS"

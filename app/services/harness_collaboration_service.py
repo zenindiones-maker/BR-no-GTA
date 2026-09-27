@@ -25,6 +25,9 @@ from app.services.harness_routing_policy_service import (
 )
 from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.task_atomicity_service import require_atomic_task
+from app.services.task_conflict_graph_service import (
+    build_task_conflict_graph,
+)
 from app.services.task_verification_service import (
     compile_task_verification_plan,
 )
@@ -348,6 +351,7 @@ class CollaborationPlan:
     authority: str
     tasks: tuple[RoutedCollaborationTask, ...]
     execution_levels: tuple[tuple[str, ...], ...]
+    conflict_graph: dict[str, Any] = field(default_factory=dict)
 
     @property
     def serial_steps(self) -> tuple[str, ...]:
@@ -366,6 +370,7 @@ class CollaborationPlan:
             "execution_levels": [list(level) for level in self.execution_levels],
             "serial_steps": list(self.serial_steps),
             "parallel_steps": [list(level) for level in self.parallel_steps],
+            "conflict_graph": dict(self.conflict_graph),
         }
 
 
@@ -468,7 +473,7 @@ def build_collaboration_plan(
         )
         for task in normalized
     }
-    execution_levels = _levels(normalized)
+    _levels(normalized)
     routed: list[RoutedCollaborationTask] = []
     for task in normalized:
         record = GLOBAL_CAPABILITY_REGISTRY.get(task.capability_id)
@@ -569,12 +574,17 @@ def build_collaboration_plan(
                 ].to_dict(),
             )
         )
+    conflict_graph = build_task_conflict_graph(
+        mission_id=mission_id,
+        tasks=tuple(routed),
+    )
     return CollaborationPlan(
         mission_id=mission_id,
         goal_id=goal_id,
         authority="DEEPSEEK_HARNESS",
         tasks=tuple(routed),
-        execution_levels=execution_levels,
+        execution_levels=conflict_graph.execution_levels,
+        conflict_graph=conflict_graph.to_dict(),
     )
 
 
