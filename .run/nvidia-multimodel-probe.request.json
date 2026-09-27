@@ -1,9 +1,9 @@
 {
   "schema": "nvidia-multimodel-live-request/v1",
   "mission": "NVIDIA_NIM_OPERATIONAL_V1",
-  "base_sha": "e4b48c5a91e914cbf68455f230ed9c5d68ca35a4",
-  "previous_live_run_id": 35768705958,
-  "retry_reason": "HarnessEpisode.error JSON persistence blocker fixed and deterministically proven",
+  "base_sha": "2452c3a50b17a4c863e8327b5737ad79ffa100e1",
+  "previous_live_run_id": 36321409275,
+  "retry_reason": "Fresh post-WAIT provider availability observation for durable reconciliation wake proof",
   "models_expected": 5,
   "probe_budget_per_model": 1,
   "harness_operational_generation_budget": 1,
