@@ -97,7 +97,7 @@ def test_ab_source_uses_real_provider_tokens_not_chars_div_4():
     ).read_text(encoding="utf-8")
     assert 'usage.get("prompt_tokens")' in source
     assert "chars_div_4" not in source
-    assert "PROMOTION_DECISION" in source
+    assert "FINAL_ROUTE_DECISION" in source
 
 
 
