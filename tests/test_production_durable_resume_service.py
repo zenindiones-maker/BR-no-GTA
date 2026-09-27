@@ -1,12 +1,18 @@
+import hashlib
 import json
 import pytest
 
 from app.services.production_durable_resume_service import (
     DurableResumePolicyError,
+    _canonical_sha,
     build_fresh_evidence_lineage,
     ensure_latest_editorial_execution_need,
     load_pending_execution_need,
     plan_nonterminal_continuation,
+)
+from app.services.task_result_envelope_service import (
+    build_task_result_envelope,
+    persist_task_result_envelope,
 )
 
 DIGEST="sha256:"+"a"*64
@@ -86,126 +92,234 @@ def test_invalid_supervisor_transition_fails_closed():
         )
 
 
+RUN_ID=36351695467
+FRESH_REF=f"github-actions:{RUN_ID}"
+
+
+def _packet(producer_mission):
+    return {
+        "status":"PASS",
+        "execution_id":(
+            f"execution:{producer_mission}:fresh:"
+            "FACT_CHECK_SOURCE_RECOVERY:0"
+        ),
+        "checked_at":"2026-09-27T12:00:00Z",
+        "official_source_count":1,
+        "secondary_source_count":1,
+        "official_sources":[{
+            "url":"https://www.rockstargames.com/VI",
+            "resolved_url":"https://www.rockstargames.com/VI",
+            "source_hierarchy":"OFFICIAL_PRIMARY",
+            "original_source":True,
+            "content_hash":"source-a",
+            "content_excerpt":"Official GTA VI evidence.",
+        }],
+        "secondary_sources":[{
+            "url":"https://example.org/report",
+            "resolved_url":"https://example.org/report",
+            "source_hierarchy":"SECONDARY",
+            "original_source":True,
+            "content_hash":"source-b",
+            "content_excerpt":"Secondary evidence.",
+        }],
+    }
+
+
+def _provenance(packet):
+    return [{
+        "url":source["url"],
+        "resolved_url":source["resolved_url"],
+        "source_hierarchy":source["source_hierarchy"],
+        "original_source":source["original_source"],
+        "content_hash":source["content_hash"],
+    } for key in ("official_sources","secondary_sources")
+      for source in packet[key]]
+
+
 def _fixture(tmp_path):
     root=tmp_path
-    (root/"hermes"/"task-results").mkdir(parents=True)
-    (root/"harness"/"harness-execution-needs").mkdir(
-        parents=True
-    )
-    (root/"harness"/"harness-mission-state").mkdir(
-        parents=True
-    )
-    child="mission-"+"b"*20
+    (root/"hermes").mkdir(parents=True)
+    (root/"harness"/"harness-execution-needs").mkdir(parents=True)
+    (root/"harness"/"harness-mission-state").mkdir(parents=True)
+    parent="mission-"+"a"*20
+    consumer="mission-"+"b"*20
+    producer="mission-"+"c"*20
     (root/"mission-plan.json").write_text(
-        json.dumps({"mission_id":child,"plan_id":"plan-a"}),
+        json.dumps({"mission_id":consumer,"plan_id":"plan-a"}),
         encoding="utf-8",
     )
-    row={
-        "schema":"TaskResultEnvelope/v1",
-        "mission_id":child,
-        "task_id":"editorial_script",
-        "status":"PARTIAL_FAILED",
-        "content_sha256":"c"*64,
-        "evidence_refs":[
-            "github-actions:36351695467",
-            "https://www.rockstargames.com/VI",
-        ],
-        "result_payload":{
-            "failure_evidence":{
-                "sequence_evidence_gaps":[{
-                    "sequence_id":"sequence-1",
-                    "missing_questions":[
-                        "Which verified fact closes this gap?"
-                    ],
-                    "missing_claim_types":["official evidence"],
-                }],
-                "global_editorial_qa":{
-                    "content_supported_duration_minutes":15.409,
-                    "target_duration_minutes":20.0,
-                },
-                "artificial_padding":False,
+    result={
+        "failure_evidence":{
+            "sequence_evidence_gaps":[{
+                "sequence_id":"sequence-1",
+                "missing_questions":["Which verified fact closes this gap?"],
+                "missing_claim_types":["official evidence"],
+            }],
+            "global_editorial_qa":{
+                "content_supported_duration_minutes":15.409,
+                "target_duration_minutes":20.0,
             },
-            "partial_result":"accepted partial",
+            "artificial_padding":False,
         },
+        "partial_result":"accepted partial",
+        "evidence_refs":[FRESH_REF,"https://www.rockstargames.com/VI"],
     }
-    (
-        root/"hermes"/"task-results"/"editorial_script-3.json"
-    ).write_text(json.dumps(row),encoding="utf-8")
+    envelope=build_task_result_envelope(
+        mission_id=consumer,
+        task_id="editorial_script",
+        capability_id="editorial.process",
+        agent_id="editorial-agent",
+        skill_id=None,
+        executor_binding="editorial.binding",
+        status="PARTIAL_FAILED",
+        started_at="2026-09-27T11:00:00Z",
+        completed_at="2026-09-27T11:01:00Z",
+        elapsed_ms=60000,
+        result=result,
+        source_task_ids=("research_topic",),
+        authorization_id="auth-editorial",
+    )
+    persist_task_result_envelope(
+        envelope,artifact_dir=root/"hermes",index=3,
+    )
+    packet=_packet(producer)
+    (root/"fact-check-source-recovery.json").write_text(
+        json.dumps({
+            "schema":"fact-check-source-recovery/v2",
+            "status":"PASS",
+            "fresh_cloud_execution_ref":FRESH_REF,
+            "producer_recovery_mission_id":producer,
+            "producer_execution_id":packet["execution_id"],
+            "producer_recovery_type":"FACT_CHECK_SOURCE_RECOVERY",
+            "producer_run_id":RUN_ID,
+            "produced_artifact_ref":FRESH_REF,
+            "produced_artifact_digest":None,
+            "producer_packet_sha256":_canonical_sha(packet),
+            "source_provenance":_provenance(packet),
+        }),encoding="utf-8"
+    )
+    return root,parent,consumer,producer,packet
+
+
+def test_latest_partial_materializes_need_before_resume(tmp_path):
+    root,_,consumer,_,_=_fixture(tmp_path)
+    result=ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    assert result["created"] is True
+    pending=load_pending_execution_need(
+        artifact_dir=root,mission_id=consumer,task_id="editorial_script",
+    )
+    assert pending["need_ref"]==result["need_ref"]
+    assert "Which verified fact" in repr(pending["need"]["missing_requirements"])
+
+
+def test_fresh_evidence_lineage_separates_producer_and_consumer(tmp_path):
+    root,parent,consumer,producer,packet=_fixture(tmp_path)
+    ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    lineage=build_fresh_evidence_lineage(
+        artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
+    )
+    assert len({parent,consumer,producer})==3
+    assert lineage["parent_durable_mission_id"]==parent
+    assert lineage["producer_recovery_mission_id"]==producer
+    assert lineage["producer_execution_id"]==packet["execution_id"]
+    assert lineage["producer_recovery_type"]=="FACT_CHECK_SOURCE_RECOVERY"
+    assert lineage["producer_run_id"]==RUN_ID
+    assert lineage["consumer_mission_id"]==consumer
+    assert lineage["consumer_task_id"]=="editorial_script"
+    assert lineage["consumer_execution_need_id"].startswith(
+        "artifact:harness-execution-need:"
+    )
+    assert lineage["direct_execution_need_child"] is False
+    assert lineage["relationship"]==(
+        "UPSTREAM_RECOVERY_EVIDENCE_CONSUMED_BY_CAUSAL_TASK"
+    )
+    assert lineage["produced_artifact_ref"]==FRESH_REF
+    assert lineage["source_provenance"]==_provenance(packet)
+    assert lineage["lineage_valid"] is True
+
+
+def test_unrelated_producer_without_persisted_link_fails_closed(tmp_path):
+    root,parent,_,_,packet=_fixture(tmp_path)
+    ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    packet=dict(packet)
+    packet["execution_id"]="execution:mission-unrelated:fresh:FACT_CHECK_SOURCE_RECOVERY:0"
+    with pytest.raises(DurableResumePolicyError,match="producer execution identity mismatch"):
+        build_fresh_evidence_lineage(
+            artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
+        )
+
+
+def test_artifact_not_referenced_by_consumer_fails_closed(tmp_path):
+    root,parent,_,_,packet=_fixture(tmp_path)
+    path=root/"hermes"/"task-results"/"editorial_script-3.json"
+    row=json.loads(path.read_text())
+    row["evidence_refs"]=[ref for ref in row["evidence_refs"] if ref!=FRESH_REF]
+    check=dict(row); check.pop("content_sha256",None)
+    row["content_sha256"]=hashlib.sha256(
+        json.dumps(
+            check,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str
+        ).encode("utf-8")
+    ).hexdigest()
+    path.write_text(json.dumps(row),encoding="utf-8")
+    ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    with pytest.raises(DurableResumePolicyError,match="did not consume"):
+        build_fresh_evidence_lineage(
+            artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
+        )
+
+
+def test_missing_provenance_fails_closed(tmp_path):
+    root,parent,_,_,packet=_fixture(tmp_path)
+    ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    packet=dict(packet); packet["official_sources"]=[]; packet["secondary_sources"]=[]
+    recovery=json.loads((root/"fact-check-source-recovery.json").read_text())
+    recovery["producer_packet_sha256"]=_canonical_sha(packet)
+    recovery["source_provenance"]=[]
+    (root/"fact-check-source-recovery.json").write_text(json.dumps(recovery),encoding="utf-8")
+    with pytest.raises(DurableResumePolicyError,match="provenance is missing"):
+        build_fresh_evidence_lineage(
+            artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
+        )
+
+
+def test_digest_mismatch_fails_closed(tmp_path):
+    root,parent,_,_,packet=_fixture(tmp_path)
+    ensure_latest_editorial_execution_need(
+        artifact_dir=root,force_new_strategy=False,
+    )
+    recovery=json.loads((root/"fact-check-source-recovery.json").read_text())
+    recovery["producer_packet_sha256"]="0"*64
+    (root/"fact-check-source-recovery.json").write_text(json.dumps(recovery),encoding="utf-8")
+    with pytest.raises(DurableResumePolicyError,match="packet digest mismatch"):
+        build_fresh_evidence_lineage(
+            artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
+        )
+
+
+def test_legacy_v1_checkpoint_uses_bounded_migration(tmp_path):
+    root,parent,_,producer,packet=_fixture(tmp_path)
     (root/"fact-check-source-recovery.json").write_text(
         json.dumps({
             "schema":"fact-check-source-recovery/v1",
             "status":"PASS",
-            "fresh_cloud_execution_ref":"github-actions:36351695467",
+            "fresh_cloud_execution_ref":FRESH_REF,
         }),encoding="utf-8"
     )
-    return root,child
-
-
-def test_latest_partial_materializes_need_before_resume(tmp_path):
-    root,child=_fixture(tmp_path)
-    result=ensure_latest_editorial_execution_need(
-        artifact_dir=root,
-        force_new_strategy=False,
-    )
-    assert result["created"] is True
-    assert result["need"]["usable_partial_result_ref"]==(
-        "artifact:task-results/editorial_script-3.json"
-    )
-    pending=load_pending_execution_need(
-        artifact_dir=root,
-        mission_id=child,
-        task_id="editorial_script",
-    )
-    assert pending["need_ref"]==result["need_ref"]
-    assert "Which verified fact" in repr(
-        pending["need"]["missing_requirements"]
-    )
-
-
-def test_fresh_evidence_lineage_proves_child_and_consumer(tmp_path):
-    root,child=_fixture(tmp_path)
     ensure_latest_editorial_execution_need(
-        artifact_dir=root,
-        force_new_strategy=False,
+        artifact_dir=root,force_new_strategy=False,
     )
     lineage=build_fresh_evidence_lineage(
-        artifact_dir=root,
-        parent_mission_id="mission-"+"a"*20,
-        fresh_packet={
-            "execution_id":(
-                f"execution:{child}:fresh:"
-                "FACT_CHECK_SOURCE_RECOVERY:0"
-            ),
-            "status":"PASS",
-        },
+        artifact_dir=root,parent_mission_id=parent,fresh_packet=packet,
     )
-    assert lineage["parent_mission_id"]=="mission-"+"a"*20
-    assert lineage["child_mission_id"]==child
-    assert lineage["direct_execution_need_child"] is False
-    assert lineage["harness_execution_need_id"].startswith(
-        "artifact:harness-execution-need:"
-    )
-    assert (
-        lineage["produced_artifact_ref"]
-        =="github-actions:36351695467"
-    )
-    assert lineage["consumer_task_id"]=="editorial_script"
-    assert lineage["lineage_valid"] is True
-
-
-def test_wrong_fresh_child_identity_fails_closed(tmp_path):
-    root,_=_fixture(tmp_path)
-    ensure_latest_editorial_execution_need(
-        artifact_dir=root,
-        force_new_strategy=False,
-    )
-    with pytest.raises(
-        DurableResumePolicyError,match="not a child"
-    ):
-        build_fresh_evidence_lineage(
-            artifact_dir=root,
-            parent_mission_id="mission-"+"a"*20,
-            fresh_packet={
-                "execution_id":"execution:mission-wrong:fresh:x:0",
-            },
-        )
+    assert lineage["producer_recovery_mission_id"]==producer
+    assert lineage["legacy_recovery_contract_migrated"] is True

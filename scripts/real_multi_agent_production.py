@@ -1475,12 +1475,57 @@ def _ensure_fact_check_source_claims(
         state.setdefault("expansion_evidence_refs", [])
         if ref not in state["expansion_evidence_refs"]:
             state["expansion_evidence_refs"].append(ref)
+    packet = dict(fresh.get("packet") or {})
+    source_provenance = []
+    for collection in ("official_sources", "secondary_sources"):
+        for source in packet.get(collection) or ():
+            if not isinstance(source, dict):
+                continue
+            url = str(source.get("url") or "").strip()
+            if not url:
+                continue
+            source_provenance.append({
+                "url": url,
+                "resolved_url": str(
+                    source.get("resolved_url") or url
+                ).strip(),
+                "source_hierarchy": str(
+                    source.get("source_hierarchy") or ""
+                ).strip() or None,
+                "original_source": source.get("original_source"),
+                "content_hash": str(
+                    source.get("content_hash") or ""
+                ).strip() or None,
+            })
+    producer_run_id = None
+    if ref:
+        match = re.fullmatch(r"github-actions:([1-9][0-9]*)", ref)
+        producer_run_id = int(match.group(1)) if match else None
+    packet_sha = hashlib.sha256(
+        json.dumps(
+            packet,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     report = {
-        "schema": "fact-check-source-recovery/v1",
+        "schema": "fact-check-source-recovery/v2",
         "status": "PASS",
         "selected_topic": selected_topic,
         "official_claim_count": len(official),
         "fresh_cloud_execution_ref": ref or None,
+        "producer_recovery_mission_id": broker.spec.mission_id,
+        "producer_execution_id": str(
+            fresh.get("execution_id") or ""
+        ).strip(),
+        "producer_recovery_type": "FACT_CHECK_SOURCE_RECOVERY",
+        "producer_run_id": producer_run_id,
+        "produced_artifact_ref": ref or None,
+        "produced_artifact_digest": None,
+        "producer_packet_sha256": packet_sha,
+        "source_provenance": source_provenance,
         "artificial_padding": False,
     }
     state["fact_check_source_recovery"] = report

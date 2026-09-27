@@ -10,6 +10,9 @@ from typing import Any
 from app.services.harness_mission_execution_router import (
     persist_harness_execution_need,
 )
+from app.services.task_result_envelope_service import (
+    load_task_result_envelope,
+)
 
 TERMINAL_MISSION_STATES=frozenset({
     "DELIVERABLE_READY","COMPLETED","FAILED_TERMINAL",
@@ -269,6 +272,44 @@ def load_pending_execution_need(
     return {"need_ref":ref,"need":need,"path":str(path)}
 
 
+def _fresh_packet_provenance(packet: dict[str,Any])->list[dict[str,Any]]:
+    rows=[]
+    for collection in ("official_sources","secondary_sources"):
+        for source in packet.get(collection) or ():
+            if not isinstance(source,dict):
+                continue
+            url=str(source.get("url") or "").strip()
+            if not url:
+                continue
+            rows.append({
+                "url":url,
+                "resolved_url":str(
+                    source.get("resolved_url") or url
+                ).strip(),
+                "source_hierarchy":str(
+                    source.get("source_hierarchy") or ""
+                ).strip() or None,
+                "original_source":source.get("original_source"),
+                "content_hash":str(
+                    source.get("content_hash") or ""
+                ).strip() or None,
+            })
+    return rows
+
+
+def _legacy_producer_mission_id(execution_id: str)->str:
+    match=re.fullmatch(
+        r"execution:(mission-[A-Za-z0-9._-]+):"
+        r"fresh:FACT_CHECK_SOURCE_RECOVERY:[0-9]+",
+        execution_id,
+    )
+    if match is None:
+        raise DurableResumePolicyError(
+            "legacy fresh recovery producer identity is not reconstructible"
+        )
+    return match.group(1)
+
+
 def build_fresh_evidence_lineage(
     *,
     artifact_dir: str|Path,
@@ -281,30 +322,89 @@ def build_fresh_evidence_lineage(
     if not recovery_path.is_file() or latest is None:
         return None
     recovery=_read(recovery_path)
+    schema=str(recovery.get("schema") or "")
+    if schema not in {
+        "fact-check-source-recovery/v1",
+        "fact-check-source-recovery/v2",
+    }:
+        raise DurableResumePolicyError(
+            "fresh recovery provenance contract is unsupported"
+        )
     fresh_ref=str(
-        recovery.get("fresh_cloud_execution_ref") or ""
+        recovery.get("produced_artifact_ref")
+        or recovery.get("fresh_cloud_execution_ref")
+        or ""
     ).strip()
-    if not fresh_ref.startswith("github-actions:"):
+    if not re.fullmatch(r"github-actions:[1-9][0-9]*",fresh_ref):
+        raise DurableResumePolicyError("fresh research artifact ref is invalid")
+    run_id=int(fresh_ref.split(":",1)[1])
+    execution_id=str(fresh_packet.get("execution_id") or "").strip()
+    if not execution_id:
         raise DurableResumePolicyError(
-            "fresh research artifact ref is invalid"
+            "fresh research producer execution identity is missing"
         )
-    run_id=fresh_ref.split(":",1)[1]
-    execution_id=str(
-        fresh_packet.get("execution_id") or ""
+    migrated=schema=="fact-check-source-recovery/v1"
+    producer_execution_id=str(
+        recovery.get("producer_execution_id") or execution_id
     ).strip()
-    mission_plan=_read(root/"mission-plan.json")
-    child_mission_id=str(
-        mission_plan.get("mission_id") or ""
+    producer_mission_id=str(
+        recovery.get("producer_recovery_mission_id") or ""
     ).strip()
-    if not child_mission_id:
-        raise DurableResumePolicyError("child mission identity missing")
-    if not execution_id.startswith(
-        f"execution:{child_mission_id}:fresh:"
-    ):
+    producer_recovery_type=str(
+        recovery.get("producer_recovery_type")
+        or "FACT_CHECK_SOURCE_RECOVERY"
+    ).strip()
+    producer_run_id=int(recovery.get("producer_run_id") or run_id)
+    expected_packet_sha=str(
+        recovery.get("producer_packet_sha256") or ""
+    ).strip()
+    persisted_provenance=recovery.get("source_provenance")
+    if migrated:
+        producer_mission_id=_legacy_producer_mission_id(execution_id)
+        expected_packet_sha=_canonical_sha(fresh_packet)
+        persisted_provenance=_fresh_packet_provenance(fresh_packet)
+    if not producer_mission_id:
         raise DurableResumePolicyError(
-            "fresh research execution is not a child of the current Harness mission"
+            "fresh recovery producer mission identity is missing"
         )
-    consumer_path,consumer=latest
+    if producer_execution_id!=execution_id:
+        raise DurableResumePolicyError(
+            "fresh recovery producer execution identity mismatch"
+        )
+    if producer_recovery_type!="FACT_CHECK_SOURCE_RECOVERY":
+        raise DurableResumePolicyError("fresh recovery type is invalid")
+    if producer_run_id!=run_id:
+        raise DurableResumePolicyError(
+            "fresh recovery run identity mismatch"
+        )
+    actual_packet_sha=_canonical_sha(fresh_packet)
+    if not expected_packet_sha or expected_packet_sha!=actual_packet_sha:
+        raise DurableResumePolicyError(
+            "fresh recovery packet digest mismatch"
+        )
+    packet_provenance=_fresh_packet_provenance(fresh_packet)
+    if not packet_provenance:
+        raise DurableResumePolicyError("fresh evidence provenance is missing")
+    if persisted_provenance!=packet_provenance:
+        raise DurableResumePolicyError(
+            "fresh recovery persisted provenance mismatch"
+        )
+
+    consumer_path,_=latest
+    consumer_ref=f"artifact:task-results/{consumer_path.name}"
+    try:
+        consumer=load_task_result_envelope(
+            artifact_dir=root/"hermes",
+            task_result_ref=consumer_ref,
+        )
+    except Exception as exc:
+        raise DurableResumePolicyError(
+            "consumer TaskResultEnvelope integrity validation failed"
+        ) from exc
+    consumer_mission_id=str(consumer.get("mission_id") or "").strip()
+    consumer_task_id=str(consumer.get("task_id") or "").strip()
+    if not consumer_mission_id or not consumer_task_id:
+        raise DurableResumePolicyError("consumer task identity is missing")
     refs=[
         str(item) for item in (consumer.get("evidence_refs") or ())
         if str(item).strip()
@@ -315,41 +415,35 @@ def build_fresh_evidence_lineage(
         )
     pending=load_pending_execution_need(
         artifact_dir=root,
-        mission_id=child_mission_id,
-        task_id=str(consumer.get("task_id") or ""),
+        mission_id=consumer_mission_id,
+        task_id=consumer_task_id,
     )
-    need_ref=str(
-        (pending or {}).get("need_ref") or ""
-    ).strip() or None
-    provenance=[
-        item for item in refs if item.startswith("https://")
-    ]
-    if not provenance:
-        raise DurableResumePolicyError(
-            "fresh evidence provenance is missing"
-        )
+    need_ref=str((pending or {}).get("need_ref") or "").strip() or None
     lineage={
         "schema":"FreshEvidenceLineage/v1",
         "authority":"DEEPSEEK_HARNESS",
-        "parent_mission_id":str(parent_mission_id),
-        "child_mission_id":child_mission_id,
-        "child_execution_id":execution_id,
-        "harness_execution_need_id":need_ref,
-        "direct_execution_need_child":False,
-        "relationship":(
-            "UPSTREAM_FRESH_EVIDENCE_ALREADY_CONSUMED_BY_CAUSAL_TASK"
-        ),
-        "task_id":str(consumer.get("task_id") or ""),
+        "parent_durable_mission_id":str(parent_mission_id),
+        "producer_recovery_mission_id":producer_mission_id,
+        "producer_execution_id":producer_execution_id,
+        "producer_recovery_type":producer_recovery_type,
+        "producer_run_id":producer_run_id,
         "produced_artifact_ref":fresh_ref,
-        "fresh_research_run_id":int(run_id),
-        "provenance":provenance,
-        "consumer_task_id":str(consumer.get("task_id") or ""),
-        "consumer_task_result_ref":(
-            f"artifact:task-results/{consumer_path.name}"
+        "produced_artifact_digest":(
+            str(recovery.get("produced_artifact_digest") or "").strip()
+            or None
         ),
+        "producer_packet_sha256":actual_packet_sha,
+        "source_provenance":packet_provenance,
+        "consumer_mission_id":consumer_mission_id,
+        "consumer_task_id":consumer_task_id,
+        "consumer_task_result_ref":consumer_ref,
         "consumer_task_result_sha256":str(
             consumer.get("content_sha256") or ""
         ),
+        "consumer_execution_need_id":need_ref,
+        "direct_execution_need_child":False,
+        "relationship":"UPSTREAM_RECOVERY_EVIDENCE_CONSUMED_BY_CAUSAL_TASK",
+        "legacy_recovery_contract_migrated":migrated,
         "lineage_valid":True,
     }
     lineage["content_sha256"]=_canonical_sha(lineage)
