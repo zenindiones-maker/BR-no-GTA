@@ -25,7 +25,7 @@ concurrency:
 jobs:
   measured-ab:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       PYTHONPATH: .
       ZERO_COST_OPERATION: "TRUE"
@@ -90,7 +90,7 @@ jobs:
           print("SOURCE_ARTIFACT_ID=10942716797")
           PY
 
-      - name: Run same-information real-token JSON vs TOON A-B
+      - name: Run bounded paired real-token JSON vs TOON A-B
         run: |
           set -euo pipefail
           test -n "$NVIDIA_API_KEY"
@@ -108,6 +108,7 @@ jobs:
               "artifacts/llm-context-serialization-ab/"
               "llm-context-serialization-ab.json"
           ).read_text(encoding="utf-8"))
+          assert d["schema"]=="LLMContextSerializationAB/v2"
           g=d["gates"]
           for key in (
               "TOON_SELECTIVE_SERIALIZATION",
@@ -116,17 +117,32 @@ jobs:
               "AUTHORITY_UNCHANGED",
               "ROUNDTRIP_EQUIVALENCE",
               "REAL_TOKEN_MEASUREMENT",
+              "SEMANTIC_EQUIVALENCE",
               "FALLBACK_AVAILABLE",
               "JSON_BASELINE_PRESERVED",
               "TOON_SPEC_PINNED",
               "TOON_SERIALIZER_PINNED",
               "TOON_CONFORMANCE_DECLARED",
+              "WARMUP_EXCLUDED_FROM_METRICS",
+              "PAIR_ORDER_DETERMINISTIC",
+              "MEASURED_PAIR_COUNT_COMPLETE",
+              "SAME_PROVIDER_MODEL_ROUTE",
+              "JSON_OUTPUT_SCHEMA_PRESERVED",
           ):
               assert g[key] is True, key
           assert d["projection"]["toon_serializer_build"]=="toons==0.8.0"
+          assert d["projection"]["toon_spec_version"]=="4.1"
           assert d["projection"]["toon_conformance_fixture_version"]=="4.1.1"
+          assert d["warmups"]["count"]==2
+          assert d["warmups"]["excluded_from_metrics"] is True
+          paired=d["paired_benchmark"]
+          assert paired["measured_pair_count"]==8
+          assert paired["minimum_valid_pair_count"]==6
+          assert paired["order_policy"]=="ALTERNATING_DETERMINISTIC"
+          assert d["historical_single_pair"]["run_id"]==36355517460
+          assert d["historical_single_pair"]["used_for_final_route_decision"] is False
           decision=d["promotion"]["decision"]
-          assert decision in {"PROMOTE","REJECT"}
+          assert decision in {"PROMOTE","REJECT","DEFER"}
           preview=d["promotion"]["selection_preview"]
           if decision=="PROMOTE":
               assert preview["selected_format"]=="TOON_V4_1"
@@ -134,15 +150,19 @@ jobs:
           else:
               assert preview["selected_format"]=="JSON_COMPACT"
               assert preview["serializer_build"]=="python-json-canonical/v1"
-              assert d["metrics"]["TOKEN_REDUCTION_PERCENT"] is not None
-              print("TOON_REJECTED_JSON_FALLBACK_PRESERVED=PASS")
-          assert d["baseline"]["provider_id"]==d["toon"]["provider_id"]
-          assert d["baseline"]["model_id"]==d["toon"]["model_id"]
-          assert d["baseline"]["routing_id"]==d["toon"]["routing_id"]
+              assert preview["json_fallback_available"] is True
+              print("TOON_NOT_PROMOTED_JSON_FALLBACK_PRESERVED=PASS")
+          assert d["metrics"]["TOKEN_REDUCTION_PERCENT"] is not None
+          assert d["metrics"]["PROVIDER_LATENCY_JSON"]["sample_count"]>=6
+          assert d["metrics"]["PROVIDER_LATENCY_TOON"]["sample_count"]>=6
+          assert d["metrics"]["PAIRED_LATENCY_RATIO"]["sample_count"]>=6
+          print("BOUNDED_PAIRED_BENCHMARK=PASS")
+          print("WARMUP_EXCLUDED_FROM_METRICS=PASS")
           print("SAME_PROVIDER_MODEL_ROUTE=PASS")
           print("JSON_OUTPUT_SCHEMA_PRESERVED=PASS")
           print("NO_AUTHORITY_CHANGE=PASS")
-          print("PROMOTE_OR_REJECT="+d["promotion"]["decision"])
+          print("FINAL_ROUTE_DECISION="+decision)
+          print("DECISION_REASON="+d["promotion"]["reason"])
           PY
 
       - name: Upload measured A-B evidence

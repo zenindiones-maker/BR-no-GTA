@@ -3,8 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.llm_context_serialization_ab import (
+    MEASURED_PAIR_COUNT,
+    MIN_VALID_PAIR_COUNT,
     SOURCE_EXECUTION_ID,
+    _distribution,
     _expected,
+    _final_route_decision,
+    _pair_order,
     _prompt,
     _rows_from_fresh_packet,
 )
@@ -93,3 +98,78 @@ def test_ab_source_uses_real_provider_tokens_not_chars_div_4():
     assert 'usage.get("prompt_tokens")' in source
     assert "chars_div_4" not in source
     assert "PROMOTION_DECISION" in source
+
+
+
+def test_bounded_pair_order_is_deterministic_and_alternating():
+    assert MEASURED_PAIR_COUNT == 8
+    assert _pair_order(1) == ("JSON_COMPACT", "TOON_V4_1")
+    assert _pair_order(2) == ("TOON_V4_1", "JSON_COMPACT")
+    assert [_pair_order(i) for i in range(1, 5)] == [
+        ("JSON_COMPACT", "TOON_V4_1"),
+        ("TOON_V4_1", "JSON_COMPACT"),
+        ("JSON_COMPACT", "TOON_V4_1"),
+        ("TOON_V4_1", "JSON_COMPACT"),
+    ]
+
+
+def test_latency_distribution_uses_median_and_nearest_rank_p90():
+    stats = _distribution([100, 110, 120, 130, 140, 150, 160, 900])
+    assert stats["sample_count"] == 8
+    assert stats["min"] == 100.0
+    assert stats["p50"] == 135.0
+    assert stats["p90"] == 900.0
+    assert stats["max"] == 900.0
+    assert stats["mean"] > stats["p50"]
+
+
+def test_final_route_decision_defers_when_replication_is_contaminated():
+    decision, reason = _final_route_decision(
+        valid_pair_count=MIN_VALID_PAIR_COUNT - 1,
+        token_reduction=24.0,
+        semantic_equivalence=True,
+        schema_not_worse=True,
+        output_schema_preserved=True,
+        latency_ok=True,
+    )
+    assert decision == "DEFER"
+    assert reason == "INSUFFICIENT_UNCONTAMINATED_PAIRED_SAMPLES"
+
+
+def test_final_route_decision_rejects_reproducible_latency_regression():
+    decision, reason = _final_route_decision(
+        valid_pair_count=MEASURED_PAIR_COUNT,
+        token_reduction=24.0,
+        semantic_equivalence=True,
+        schema_not_worse=True,
+        output_schema_preserved=True,
+        latency_ok=False,
+    )
+    assert decision == "REJECT"
+    assert reason == "REPEATED_PROVIDER_LATENCY_REGRESSION"
+
+
+def test_final_route_decision_promotes_only_after_all_gates():
+    decision, reason = _final_route_decision(
+        valid_pair_count=MEASURED_PAIR_COUNT,
+        token_reduction=24.0,
+        semantic_equivalence=True,
+        schema_not_worse=True,
+        output_schema_preserved=True,
+        latency_ok=True,
+    )
+    assert decision == "PROMOTE"
+    assert reason == "MEASURED_GAIN_WITH_EQUIVALENT_OUTCOME"
+
+
+def test_ab_source_has_warmup_and_contamination_contracts():
+    source = Path(
+        "scripts/llm_context_serialization_ab.py"
+    ).read_text(encoding="utf-8")
+    assert "WARMUP_EXCLUDED_FROM_METRICS" in source
+    assert "PAIR_CONTAMINATED" in source
+    assert "CONTAMINATED_PAIR_COUNT" in source
+    assert "FINAL_ROUTE_DECISION" in source
+    assert "PROMOTE" in source
+    assert "REJECT" in source
+    assert "DEFER" in source

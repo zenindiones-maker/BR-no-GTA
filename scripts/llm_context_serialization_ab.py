@@ -4,7 +4,9 @@ import argparse
 import copy
 from hashlib import sha256
 import json
+import math
 from pathlib import Path
+from statistics import mean, median, pstdev
 import time
 from typing import Any
 
@@ -41,6 +43,12 @@ SOURCE_EXECUTION_ID = (
 PROMOTION_THRESHOLD_PERCENT = 10.0
 MAX_LATENCY_REGRESSION_RATIO = 1.25
 MAX_LATENCY_REGRESSION_SECONDS = 0.5
+MAX_P90_LATENCY_REGRESSION_RATIO = 1.50
+MAX_P90_LATENCY_REGRESSION_SECONDS = 1.0
+MEASURED_PAIR_COUNT = 8
+MIN_VALID_PAIR_COUNT = 6
+REQUEST_TIMEOUT_SECONDS = 45.0
+PRIOR_SINGLE_PAIR_RUN_ID = 36355517460
 
 OUTPUT_SCHEMA = {
     "type": "object",
@@ -214,15 +222,32 @@ def _parse_json_object(value: str) -> dict[str, Any]:
     return parsed
 
 
-def _provider_run(*, prompt: str, routing, label: str) -> dict[str, Any]:
+def _provider_run(
+    *,
+    prompt: str,
+    routing,
+    label: str,
+    pair_id: str,
+    order: int,
+    phase: str,
+    request_index: int,
+) -> dict[str, Any]:
+    execution_id = (
+        f"toon-ab:{phase}:{pair_id}:{order}:{label}:"
+        f"{request_index}:{_sha(prompt)[:12]}"
+    )
     authorization = issue_harness_authorization(
         authorized_action="DECISION",
         subject=f"provider:{routing.selected_provider}",
         harness_decision_id=routing.routing_id,
-        execution_id=f"toon-ab:{label}:{_sha(prompt)[:16]}",
+        execution_id=execution_id,
         lineage={
-            "experiment": "LLM_CONTEXT_SERIALIZATION_AB/v1",
+            "experiment": "LLM_CONTEXT_SERIALIZATION_AB/v2",
             "candidate": label,
+            "pair_id": pair_id,
+            "order": order,
+            "phase": phase,
+            "request_index": request_index,
             "routing_id": routing.routing_id,
             "selected_provider": routing.selected_provider,
             "selected_model": routing.selected_model,
@@ -237,13 +262,15 @@ def _provider_run(*, prompt: str, routing, label: str) -> dict[str, Any]:
             authorization=authorization,
             routing_decision=routing,
             structured_output_schema=OUTPUT_SCHEMA,
-            request_timeout_seconds=120.0,
+            request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
         )
     finally:
         consume_harness_authorization(authorization)
     wall_ms = (time.perf_counter() - started) * 1000.0
     result = dict(evidence.result or {})
     usage = dict(result.get("usage") or {})
+    performance = dict(evidence.performance or {})
+    error = dict(evidence.error or {})
     output_text = str(result.get("text") or "")
     parsed: dict[str, Any] | None = None
     parse_error: str | None = None
@@ -251,11 +278,45 @@ def _provider_run(*, prompt: str, routing, label: str) -> dict[str, Any]:
         parsed = _parse_json_object(output_text)
     except Exception as exc:
         parse_error = f"{type(exc).__name__}:{exc}"[:800]
+
+    retry_count = int(evidence.retry_count or 0)
+    subrequest_count = performance.get("subrequest_count")
+    failure_class = (
+        performance.get("failure_class")
+        or error.get("failure_pattern")
+        or error.get("code")
+    )
+    contamination_reasons: list[str] = []
+    if evidence.status != "EXECUTED" or not evidence.active:
+        contamination_reasons.append("PROVIDER_EXECUTION_NOT_CLEAN")
+    if evidence.provider != routing.selected_provider:
+        contamination_reasons.append("PROVIDER_ROUTE_CHANGED")
+    if (evidence.model or routing.selected_model) != routing.selected_model:
+        contamination_reasons.append("MODEL_ROUTE_CHANGED")
+    if evidence.harness_decision_id != routing.routing_id:
+        contamination_reasons.append("ROUTING_ID_CHANGED")
+    if retry_count > 0:
+        contamination_reasons.append("PROVIDER_RETRY")
+    if isinstance(subrequest_count, int) and subrequest_count > 1:
+        contamination_reasons.append("MULTIPLE_PROVIDER_SUBREQUESTS")
+    if failure_class:
+        contamination_reasons.append("PROVIDER_FAILURE_CLASS_PRESENT")
+
     return {
         "label": label,
+        "pair_id": pair_id,
+        "order": order,
+        "phase": phase,
+        "request_index": request_index,
         "provider_id": evidence.provider,
         "model_id": evidence.model or routing.selected_model,
         "routing_id": routing.routing_id,
+        "harness_decision_id": evidence.harness_decision_id,
+        "execution_id": evidence.execution_id,
+        "authorization_id": evidence.authorization_id,
+        "provider_attempt_identity": (
+            evidence.authorization_id or evidence.execution_id
+        ),
         "status": evidence.status,
         "active": bool(evidence.active),
         "input_tokens": usage.get("prompt_tokens"),
@@ -265,24 +326,156 @@ def _provider_run(*, prompt: str, routing, label: str) -> dict[str, Any]:
             float(evidence.latency_seconds or 0.0) * 1000.0, 3
         ),
         "wall_latency_ms": round(wall_ms, 3),
-        "retry_count": int(evidence.retry_count or 0),
+        "first_response_latency_ms": performance.get(
+            "first_response_latency_ms"
+        ),
+        "time_to_first_token_ms": None,
+        "ttft_available": False,
+        "finish_reason": result.get("finish_reason"),
+        "retry_count": retry_count,
+        "subrequest_count": subrequest_count,
+        "http_status": performance.get("http_status"),
+        "failure_class": failure_class,
         "parse_valid": parsed is not None,
         "parse_error": parse_error,
         "parsed_output": parsed,
         "structured_output_schema_mode": (
-            (evidence.performance or {}).get(
-                "structured_output_schema_mode"
-            )
+            performance.get("structured_output_schema_mode")
+            or performance.get("structured_output_mode")
         ),
         "evidence_refs": list(evidence.evidence_refs or ()),
+        "pair_contaminated": bool(contamination_reasons),
+        "contamination_reasons": contamination_reasons,
     }
-
 
 def _semantic_valid(
     observed: dict[str, Any] | None,
     expected: dict[str, Any],
 ) -> bool:
     return isinstance(observed, dict) and observed == expected
+
+
+def _pair_order(pair_number: int) -> tuple[str, str]:
+    return (
+        (JSON_COMPACT, TOON_V4_1)
+        if pair_number % 2 == 1
+        else (TOON_V4_1, JSON_COMPACT)
+    )
+
+
+def _nearest_rank_p90(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(value) for value in values)
+    rank = max(1, math.ceil(0.90 * len(ordered)))
+    return ordered[rank - 1]
+
+
+def _distribution(values: list[float]) -> dict[str, Any]:
+    numeric = [float(value) for value in values]
+    if not numeric:
+        return {
+            "sample_count": 0,
+            "min": None,
+            "p50": None,
+            "p90": None,
+            "max": None,
+            "mean": None,
+            "stddev": None,
+        }
+    return {
+        "sample_count": len(numeric),
+        "min": round(min(numeric), 3),
+        "p50": round(median(numeric), 3),
+        "p90": round(float(_nearest_rank_p90(numeric)), 3),
+        "max": round(max(numeric), 3),
+        "mean": round(mean(numeric), 3),
+        "stddev": round(pstdev(numeric), 3),
+    }
+
+
+def _stable_token_count(
+    runs: list[dict[str, Any]],
+    field: str,
+) -> int | None:
+    values = {
+        run.get(field)
+        for run in runs
+        if isinstance(run.get(field), int) and run.get(field) >= 0
+    }
+    if len(values) != 1:
+        return None
+    return int(next(iter(values)))
+
+
+def _latency_policy(
+    *,
+    json_stats: dict[str, Any],
+    toon_stats: dict[str, Any],
+    paired_ratio_stats: dict[str, Any],
+) -> tuple[bool, dict[str, Any]]:
+    json_p50 = json_stats.get("p50")
+    toon_p50 = toon_stats.get("p50")
+    json_p90 = json_stats.get("p90")
+    toon_p90 = toon_stats.get("p90")
+    ratio_p50 = paired_ratio_stats.get("p50")
+    if None in {
+        json_p50,
+        toon_p50,
+        json_p90,
+        toon_p90,
+        ratio_p50,
+    }:
+        return False, {"reason": "LATENCY_EVIDENCE_INCOMPLETE"}
+
+    p50_limit = max(
+        float(json_p50) * MAX_LATENCY_REGRESSION_RATIO,
+        float(json_p50)
+        + MAX_LATENCY_REGRESSION_SECONDS * 1000.0,
+    )
+    p90_limit = max(
+        float(json_p90) * MAX_P90_LATENCY_REGRESSION_RATIO,
+        float(json_p90)
+        + MAX_P90_LATENCY_REGRESSION_SECONDS * 1000.0,
+    )
+    ok = (
+        float(toon_p50) <= p50_limit
+        and float(toon_p90) <= p90_limit
+        and float(ratio_p50) <= MAX_LATENCY_REGRESSION_RATIO
+    )
+    return ok, {
+        "p50_limit_ms": round(p50_limit, 3),
+        "p90_limit_ms": round(p90_limit, 3),
+        "paired_ratio_p50_limit": MAX_LATENCY_REGRESSION_RATIO,
+        "reason": (
+            "REPEATED_LATENCY_WITHIN_POLICY"
+            if ok else "REPEATED_LATENCY_MATERIAL_REGRESSION"
+        ),
+    }
+
+
+def _final_route_decision(
+    *,
+    valid_pair_count: int,
+    token_reduction: float | None,
+    semantic_equivalence: bool,
+    schema_not_worse: bool,
+    output_schema_preserved: bool,
+    latency_ok: bool,
+) -> tuple[str, str]:
+    if valid_pair_count < MIN_VALID_PAIR_COUNT:
+        return "DEFER", "INSUFFICIENT_UNCONTAMINATED_PAIRED_SAMPLES"
+    if token_reduction is None:
+        return "DEFER", "REAL_TOKEN_MEASUREMENT_INCOMPLETE"
+    if token_reduction < PROMOTION_THRESHOLD_PERCENT:
+        return "REJECT", "TOKEN_REDUCTION_BELOW_POLICY_THRESHOLD"
+    if not semantic_equivalence:
+        return "REJECT", "SEMANTIC_EQUIVALENCE_FAILED"
+    if not schema_not_worse or not output_schema_preserved:
+        return "REJECT", "OUTPUT_SCHEMA_VALIDITY_REGRESSED"
+    if not latency_ok:
+        return "REJECT", "REPEATED_PROVIDER_LATENCY_REGRESSION"
+    return "PROMOTE", "MEASURED_GAIN_WITH_EQUIVALENT_OUTCOME"
 
 
 def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
@@ -316,8 +509,8 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
     routing = route_harness_request(
         HarnessRoutingRequest(
             intent=(
-                "same-information JSON versus TOON transport "
-                "equivalence for GTA6 evidence rows"
+                "same-information JSON versus TOON bounded paired "
+                "transport equivalence for GTA6 evidence rows"
             ),
             authorized_action="DECISION",
             domain="ai",
@@ -346,35 +539,131 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
             "canonical_payload_sha256"
         ],
     }
-    baseline_prompt = _prompt(
-        **common,
-        serialization_format=JSON_COMPACT,
-        serialization_spec_version="JSON",
-        payload=str(json_candidate["payload"]),
-    )
-    toon_prompt = _prompt(
-        **common,
-        serialization_format=TOON_V4_1,
-        serialization_spec_version=TOON_SPEC_VERSION,
-        payload=str(toon_candidate["payload"]),
-    )
-    baseline = _provider_run(
-        prompt=baseline_prompt,
-        routing=routing,
-        label=JSON_COMPACT,
-    )
-    toon = _provider_run(
-        prompt=toon_prompt,
-        routing=routing,
-        label=TOON_V4_1,
-    )
+    prompts = {
+        JSON_COMPACT: _prompt(
+            **common,
+            serialization_format=JSON_COMPACT,
+            serialization_spec_version="JSON",
+            payload=str(json_candidate["payload"]),
+        ),
+        TOON_V4_1: _prompt(
+            **common,
+            serialization_format=TOON_V4_1,
+            serialization_spec_version=TOON_SPEC_VERSION,
+            payload=str(toon_candidate["payload"]),
+        ),
+    }
 
-    baseline_semantic = _semantic_valid(
-        baseline["parsed_output"], expected
+    request_index = 0
+    warmups: list[dict[str, Any]] = []
+    for warmup_order, label in enumerate(
+        (JSON_COMPACT, TOON_V4_1),
+        start=1,
+    ):
+        request_index += 1
+        run_result = _provider_run(
+            prompt=prompts[label],
+            routing=routing,
+            label=label,
+            pair_id=f"warmup-{label.lower()}",
+            order=warmup_order,
+            phase="WARMUP",
+            request_index=request_index,
+        )
+        run_result["semantic_valid"] = _semantic_valid(
+            run_result["parsed_output"],
+            expected,
+        )
+        warmups.append(run_result)
+
+    pairs: list[dict[str, Any]] = []
+    for pair_number in range(1, MEASURED_PAIR_COUNT + 1):
+        order = _pair_order(pair_number)
+        pair_runs: list[dict[str, Any]] = []
+        for position, label in enumerate(order, start=1):
+            request_index += 1
+            run_result = _provider_run(
+                prompt=prompts[label],
+                routing=routing,
+                label=label,
+                pair_id=f"pair-{pair_number:02d}",
+                order=position,
+                phase="MEASURED",
+                request_index=request_index,
+            )
+            run_result["semantic_valid"] = _semantic_valid(
+                run_result["parsed_output"],
+                expected,
+            )
+            pair_runs.append(run_result)
+
+        contamination_reasons = sorted({
+            reason
+            for item in pair_runs
+            for reason in item["contamination_reasons"]
+        })
+        providers = {item["provider_id"] for item in pair_runs}
+        models = {item["model_id"] for item in pair_runs}
+        routes = {item["routing_id"] for item in pair_runs}
+        if providers != {routing.selected_provider}:
+            contamination_reasons.append("PAIR_PROVIDER_IDENTITY_DRIFT")
+        if models != {routing.selected_model}:
+            contamination_reasons.append("PAIR_MODEL_IDENTITY_DRIFT")
+        if routes != {routing.routing_id}:
+            contamination_reasons.append("PAIR_ROUTING_IDENTITY_DRIFT")
+        pair_contaminated = bool(contamination_reasons)
+
+        by_format = {item["label"]: item for item in pair_runs}
+        json_latency = float(
+            by_format[JSON_COMPACT]["provider_latency_ms"] or 0.0
+        )
+        toon_latency = float(
+            by_format[TOON_V4_1]["provider_latency_ms"] or 0.0
+        )
+        ratio = (
+            toon_latency / json_latency
+            if not pair_contaminated and json_latency > 0
+            else None
+        )
+        pairs.append({
+            "pair_id": f"pair-{pair_number:02d}",
+            "order": list(order),
+            "runs": pair_runs,
+            "PAIR_CONTAMINATED": pair_contaminated,
+            "contamination_reasons": contamination_reasons,
+            "paired_latency_ratio": (
+                round(ratio, 6) if ratio is not None else None
+            ),
+        })
+
+    valid_pairs = [
+        pair for pair in pairs if not pair["PAIR_CONTAMINATED"]
+    ]
+    contaminated_pairs = [
+        pair for pair in pairs if pair["PAIR_CONTAMINATED"]
+    ]
+    valid_runs = [
+        item
+        for pair in valid_pairs
+        for item in pair["runs"]
+    ]
+    json_runs = [
+        item for item in valid_runs
+        if item["label"] == JSON_COMPACT
+    ]
+    toon_runs = [
+        item for item in valid_runs
+        if item["label"] == TOON_V4_1
+    ]
+
+    input_baseline = _stable_token_count(
+        json_runs,
+        "input_tokens",
     )
-    toon_semantic = _semantic_valid(toon["parsed_output"], expected)
-    input_baseline = baseline.get("input_tokens")
-    input_toon = toon.get("input_tokens")
+    input_toon = _stable_token_count(
+        toon_runs,
+        "input_tokens",
+    )
     real_tokens = (
         isinstance(input_baseline, int)
         and input_baseline > 0
@@ -385,34 +674,71 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
         ((input_baseline - input_toon) / input_baseline * 100.0)
         if real_tokens else None
     )
-    latency_limit = max(
-        baseline["provider_latency_ms"] * MAX_LATENCY_REGRESSION_RATIO,
-        baseline["provider_latency_ms"]
-        + MAX_LATENCY_REGRESSION_SECONDS * 1000.0,
+
+    json_latency_stats = _distribution([
+        item["provider_latency_ms"] for item in json_runs
+    ])
+    toon_latency_stats = _distribution([
+        item["provider_latency_ms"] for item in toon_runs
+    ])
+    paired_ratio_stats = _distribution([
+        float(pair["paired_latency_ratio"])
+        for pair in valid_pairs
+        if pair["paired_latency_ratio"] is not None
+    ])
+    json_output_stats = _distribution([
+        item["output_tokens"] for item in json_runs
+        if isinstance(item.get("output_tokens"), int)
+    ])
+    toon_output_stats = _distribution([
+        item["output_tokens"] for item in toon_runs
+        if isinstance(item.get("output_tokens"), int)
+    ])
+    json_first_response_stats = _distribution([
+        item["first_response_latency_ms"] for item in json_runs
+        if isinstance(item.get("first_response_latency_ms"), (int, float))
+    ])
+    toon_first_response_stats = _distribution([
+        item["first_response_latency_ms"] for item in toon_runs
+        if isinstance(item.get("first_response_latency_ms"), (int, float))
+    ])
+
+    baseline_parse_failures = sum(
+        1 for item in json_runs if not item["parse_valid"]
     )
-    latency_ok = (
-        toon["provider_latency_ms"] <= latency_limit
-        if baseline["provider_latency_ms"] > 0 else True
+    toon_parse_failures = sum(
+        1 for item in toon_runs if not item["parse_valid"]
     )
-    schema_not_worse = (
-        int(bool(toon["parse_valid"]))
-        >= int(bool(baseline["parse_valid"]))
+    baseline_semantic_failures = sum(
+        1 for item in json_runs if not item["semantic_valid"]
     )
-    task_not_worse = int(toon_semantic) >= int(baseline_semantic)
-    retry_not_worse = (
-        int(toon["retry_count"]) <= int(baseline["retry_count"])
+    toon_semantic_failures = sum(
+        1 for item in toon_runs if not item["semantic_valid"]
     )
-    promote = bool(
-        real_tokens
-        and token_reduction is not None
-        and token_reduction >= PROMOTION_THRESHOLD_PERCENT
-        and baseline_semantic
-        and toon_semantic
-        and schema_not_worse
-        and task_not_worse
-        and retry_not_worse
-        and latency_ok
+    schema_not_worse = toon_parse_failures <= baseline_parse_failures
+    semantic_equivalence = (
+        bool(valid_pairs)
+        and baseline_semantic_failures == 0
+        and toon_semantic_failures == 0
     )
+    output_schema_preserved = (
+        baseline_parse_failures == 0
+        and toon_parse_failures == 0
+    )
+    latency_ok, latency_policy = _latency_policy(
+        json_stats=json_latency_stats,
+        toon_stats=toon_latency_stats,
+        paired_ratio_stats=paired_ratio_stats,
+    )
+    decision, decision_reason = _final_route_decision(
+        valid_pair_count=len(valid_pairs),
+        token_reduction=token_reduction,
+        semantic_equivalence=semantic_equivalence,
+        schema_not_worse=schema_not_worse,
+        output_schema_preserved=output_schema_preserved,
+        latency_ok=latency_ok,
+    )
+
     policy = LLMPromptSerializationPolicy(
         minimum_token_reduction_percent=PROMOTION_THRESHOLD_PERCENT
     )
@@ -435,17 +761,23 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
                 str(routing.selected_model),
                 TOON_SPEC_VERSION,
             )]
-            if promote else []
+            if decision == "PROMOTE" else []
         ),
         policy=policy,
     )
+
     report = {
-        "schema": "LLMContextSerializationAB/v1",
+        "schema": "LLMContextSerializationAB/v2",
         "authority": "NONE",
         "source_run_id": SOURCE_RUN_ID,
         "source_artifact_id": SOURCE_ARTIFACT_ID,
         "source_execution_id": SOURCE_EXECUTION_ID,
         "fixture_kind": "REAL_FRESH_RESEARCH_PACKET",
+        "historical_single_pair": {
+            "run_id": PRIOR_SINGLE_PAIR_RUN_ID,
+            "decision": "REJECT",
+            "used_for_final_route_decision": False,
+        },
         "projection": {
             "projection_class": projection["projection_class"],
             "canonical_projection_sha256": projection[
@@ -468,6 +800,7 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
             "toon_serializer_build": toon_candidate[
                 "serializer_build"
             ],
+            "toon_spec_version": TOON_SPEC_VERSION,
             "toon_conformance_fixture_version": toon_candidate[
                 "conformance_fixture_version"
             ],
@@ -476,47 +809,56 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
             "provider_id": routing.selected_provider,
             "model_id": routing.selected_model,
             "routing_id": routing.routing_id,
+            "authorized_action": "DECISION",
+            "fallback_allowed": False,
         },
         "expected_semantic_output": expected,
-        "baseline": baseline,
-        "toon": toon,
+        "warmups": {
+            "count": len(warmups),
+            "excluded_from_metrics": True,
+            "runs": warmups,
+        },
+        "paired_benchmark": {
+            "measured_pair_count": len(pairs),
+            "valid_pair_count": len(valid_pairs),
+            "contaminated_pair_count": len(contaminated_pairs),
+            "minimum_valid_pair_count": MIN_VALID_PAIR_COUNT,
+            "order_policy": "ALTERNATING_DETERMINISTIC",
+            "pairs": pairs,
+        },
         "metrics": {
-            "INPUT_TOKENS_BASELINE": input_baseline,
+            "INPUT_TOKENS_JSON": input_baseline,
             "INPUT_TOKENS_TOON": input_toon,
             "TOKEN_REDUCTION_PERCENT": (
                 round(token_reduction, 4)
                 if token_reduction is not None else None
             ),
-            "SERIALIZED_BYTES_BASELINE": json_candidate[
+            "SERIALIZED_BYTES_JSON": json_candidate[
                 "serialized_bytes"
             ],
             "SERIALIZED_BYTES_TOON": toon_candidate[
                 "serialized_bytes"
             ],
-            "SERIALIZATION_LATENCY_MS": toon_candidate[
+            "LOCAL_SERIALIZATION_LATENCY_MS": toon_candidate[
                 "serialization_latency_ms"
             ],
-            "PROVIDER_LATENCY_MS_BASELINE": baseline[
-                "provider_latency_ms"
-            ],
-            "PROVIDER_LATENCY_MS_TOON": toon[
-                "provider_latency_ms"
-            ],
-            "PARSE_FAILURE_RATE_BASELINE": (
-                0.0 if baseline["parse_valid"] else 1.0
-            ),
-            "PARSE_FAILURE_RATE_TOON": (
-                0.0 if toon["parse_valid"] else 1.0
-            ),
-            "SEMANTIC_EQUIVALENCE": bool(
-                baseline_semantic and toon_semantic
-            ),
-            "TASK_OUTCOME_EQUIVALENCE": bool(
-                baseline_semantic == toon_semantic
-            ),
+            "PROVIDER_LATENCY_JSON": json_latency_stats,
+            "PROVIDER_LATENCY_TOON": toon_latency_stats,
+            "PAIRED_LATENCY_RATIO": paired_ratio_stats,
+            "OUTPUT_TOKENS_JSON": json_output_stats,
+            "OUTPUT_TOKENS_TOON": toon_output_stats,
+            "FIRST_RESPONSE_LATENCY_JSON": json_first_response_stats,
+            "FIRST_RESPONSE_LATENCY_TOON": toon_first_response_stats,
+            "TIME_TO_FIRST_TOKEN_AVAILABLE": False,
+            "PARSE_FAILURES_JSON": baseline_parse_failures,
+            "PARSE_FAILURES_TOON": toon_parse_failures,
+            "SEMANTIC_FAILURES_JSON": baseline_semantic_failures,
+            "SEMANTIC_FAILURES_TOON": toon_semantic_failures,
+            "SEMANTIC_EQUIVALENCE": semantic_equivalence,
             "OUTPUT_SCHEMA_VALIDITY_NOT_WORSE": schema_not_worse,
-            "RETRY_RATE_NOT_WORSE": retry_not_worse,
+            "JSON_OUTPUT_SCHEMA_PRESERVED": output_schema_preserved,
             "LATENCY_NOT_MATERIALLY_REGRESSED": latency_ok,
+            "LATENCY_POLICY_EVIDENCE": latency_policy,
         },
         "gates": {
             "TOON_SELECTIVE_SERIALIZATION": True,
@@ -534,12 +876,8 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
                 toon_candidate["roundtrip_verified"]
             ),
             "REAL_TOKEN_MEASUREMENT": real_tokens,
-            "SEMANTIC_EQUIVALENCE": bool(
-                baseline_semantic and toon_semantic
-            ),
-            "FALLBACK_AVAILABLE": bool(
-                json_candidate.get("payload")
-            ),
+            "SEMANTIC_EQUIVALENCE": semantic_equivalence,
+            "FALLBACK_AVAILABLE": bool(json_candidate.get("payload")),
             "JSON_BASELINE_PRESERVED": True,
             "TOON_SPEC_PINNED": TOON_SPEC_VERSION == "4.1",
             "TOON_SERIALIZER_PINNED": (
@@ -550,40 +888,91 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
                 toon_candidate.get("conformance_fixture_version")
                 == TOON_CONFORMANCE_FIXTURE_VERSION
             ),
+            "WARMUP_EXCLUDED_FROM_METRICS": True,
+            "PAIR_ORDER_DETERMINISTIC": all(
+                tuple(pair["order"]) == _pair_order(index)
+                for index, pair in enumerate(pairs, start=1)
+            ),
+            "MEASURED_PAIR_COUNT_COMPLETE": (
+                len(pairs) == MEASURED_PAIR_COUNT
+            ),
+            "SAME_PROVIDER_MODEL_ROUTE": all(
+                not any(
+                    reason in {
+                        "PAIR_PROVIDER_IDENTITY_DRIFT",
+                        "PAIR_MODEL_IDENTITY_DRIFT",
+                        "PAIR_ROUTING_IDENTITY_DRIFT",
+                    }
+                    for reason in pair["contamination_reasons"]
+                )
+                for pair in pairs
+            ),
+            "JSON_OUTPUT_SCHEMA_PRESERVED": output_schema_preserved,
         },
         "promotion": {
-            "decision": "PROMOTE" if promote else "REJECT",
+            "decision": decision,
+            "reason": decision_reason,
             "threshold_percent": PROMOTION_THRESHOLD_PERCENT,
-            "reason": (
-                "MEASURED_GAIN_WITH_EQUIVALENT_OUTCOME"
-                if promote
-                else "QUALITY_OR_EFFICIENCY_GATE_NOT_MET"
-            ),
+            "latency_policy": latency_policy,
             "selection_preview": selection_preview,
         },
     }
+
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
         + "\n",
         encoding="utf-8",
     )
-    for key in (
-        "INPUT_TOKENS_BASELINE",
-        "INPUT_TOKENS_TOON",
-        "TOKEN_REDUCTION_PERCENT",
-        "SERIALIZED_BYTES_BASELINE",
-        "SERIALIZED_BYTES_TOON",
-        "SERIALIZATION_LATENCY_MS",
-        "PROVIDER_LATENCY_MS_BASELINE",
-        "PROVIDER_LATENCY_MS_TOON",
-        "PARSE_FAILURE_RATE_BASELINE",
-        "PARSE_FAILURE_RATE_TOON",
-    ):
-        print(f"{key}={report['metrics'].get(key)}")
-    for key, value in report["gates"].items():
-        print(f"{key}={'PASS' if value else 'FAIL'}")
-    print("PROMOTION_DECISION=" + report["promotion"]["decision"])
+    print(f"WARMUP_EXCLUDED_FROM_METRICS=TRUE")
+    print(f"MEASURED_PAIR_COUNT={len(pairs)}")
+    print(f"VALID_PAIR_COUNT={len(valid_pairs)}")
+    print(f"CONTAMINATED_PAIR_COUNT={len(contaminated_pairs)}")
+    print(f"INPUT_TOKENS_JSON={input_baseline}")
+    print(f"INPUT_TOKENS_TOON={input_toon}")
+    print(
+        "TOKEN_REDUCTION_PERCENT="
+        + str(report["metrics"]["TOKEN_REDUCTION_PERCENT"])
+    )
+    print(f"SERIALIZED_BYTES_JSON={json_candidate['serialized_bytes']}")
+    print(f"SERIALIZED_BYTES_TOON={toon_candidate['serialized_bytes']}")
+    print(
+        "LOCAL_SERIALIZATION_LATENCY_MS="
+        + str(toon_candidate["serialization_latency_ms"])
+    )
+    print(
+        "PROVIDER_LATENCY_JSON_P50="
+        + str(json_latency_stats["p50"])
+    )
+    print(
+        "PROVIDER_LATENCY_TOON_P50="
+        + str(toon_latency_stats["p50"])
+    )
+    print(
+        "PROVIDER_LATENCY_JSON_P90="
+        + str(json_latency_stats["p90"])
+    )
+    print(
+        "PROVIDER_LATENCY_TOON_P90="
+        + str(toon_latency_stats["p90"])
+    )
+    print(
+        "PAIRED_LATENCY_RATIO_P50="
+        + str(paired_ratio_stats["p50"])
+    )
+    print(f"PARSE_FAILURES_JSON={baseline_parse_failures}")
+    print(f"PARSE_FAILURES_TOON={toon_parse_failures}")
+    print(
+        "SEMANTIC_EQUIVALENCE="
+        + ("PASS" if semantic_equivalence else "FAIL")
+    )
+    print("FINAL_ROUTE_DECISION=" + decision)
+    print("DECISION_REASON=" + decision_reason)
+    print(
+        "JSON_FALLBACK_STATUS="
+        + ("PASS" if selection_preview["selected_format"] == JSON_COMPACT
+           or selection_preview["json_fallback_available"] else "FAIL")
+    )
     return report
 
 
@@ -603,7 +992,7 @@ def main() -> int:
         fresh_research=args.fresh_research,
         output=args.output,
     )
-    required = all(
+    required_integrity = all(
         report["gates"][key]
         for key in (
             "TOON_SELECTIVE_SERIALIZATION",
@@ -612,12 +1001,23 @@ def main() -> int:
             "AUTHORITY_UNCHANGED",
             "ROUNDTRIP_EQUIVALENCE",
             "REAL_TOKEN_MEASUREMENT",
+            "SEMANTIC_EQUIVALENCE",
             "FALLBACK_AVAILABLE",
             "JSON_BASELINE_PRESERVED",
             "TOON_SPEC_PINNED",
+            "TOON_SERIALIZER_PINNED",
+            "TOON_CONFORMANCE_DECLARED",
+            "WARMUP_EXCLUDED_FROM_METRICS",
+            "PAIR_ORDER_DETERMINISTIC",
+            "MEASURED_PAIR_COUNT_COMPLETE",
+            "SAME_PROVIDER_MODEL_ROUTE",
+            "JSON_OUTPUT_SCHEMA_PRESERVED",
         )
     )
-    return 0 if required else 2
+    decision = str(report["promotion"]["decision"])
+    if decision not in {"PROMOTE", "REJECT", "DEFER"}:
+        return 2
+    return 0 if required_integrity else 2
 
 
 if __name__ == "__main__":
