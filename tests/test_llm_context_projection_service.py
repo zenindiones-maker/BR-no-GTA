@@ -437,7 +437,7 @@ def test_pinned_serializer_roundtrip_mismatch_fails_closed():
     _, projection = _projection()
     with pytest.raises(
         RuntimeError,
-        match="TOON_PINNED_ROUNDTRIP_MISMATCH",
+        match="TOON_PINNED_DECODE_SCHEMA_MISMATCH",
     ):
         build_pinned_toon_serialization(
             projection=projection,
