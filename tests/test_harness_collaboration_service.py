@@ -886,7 +886,32 @@ def test_human_gate_is_preserved_as_human_verification():
 
 
 
-def test_collaboration_plan_serializes_resource_conflicts():
+def test_collaboration_plan_serializes_resource_conflicts(monkeypatch):
+    from types import SimpleNamespace
+
+    def deterministic_route(request):
+        record = collaboration_service.GLOBAL_CAPABILITY_REGISTRY.get(
+            request.required_capability_id
+        )
+        assert record is not None
+        return SimpleNamespace(
+            routing_id=f"routing-{request.required_capability_id}",
+            candidate_capability_ids=(request.required_capability_id,),
+            selected_executor_binding=record.executor_binding,
+            evidence_expectations=(),
+            policy_metadata={
+                "selected_implementation": {
+                    "agent_id": record.agent_id,
+                    "skill_id": record.skill_id,
+                }
+            },
+        )
+
+    monkeypatch.setattr(
+        collaboration_service,
+        "route_harness_request",
+        deterministic_route,
+    )
     plan = build_collaboration_plan(
         mission_id="mission-conflict-plan",
         goal_id="goal-conflict-plan",
