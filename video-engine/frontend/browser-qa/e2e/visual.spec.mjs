@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { test, expect } from '@playwright/test'
 import {
   assertRuntimeGates,
@@ -15,6 +17,14 @@ async function assertReviewedVisual(page, testInfo, name) {
     body: actual,
     contentType: 'image/png',
   })
+  const evidenceDir = path.join(
+    process.cwd(),
+    'browser-qa',
+    'visual-actual',
+    testInfo.project.name,
+  )
+  await mkdir(evidenceDir, { recursive: true })
+  await writeFile(path.join(evidenceDir, name + '.png'), actual)
 }
 
 test.beforeEach(async ({ page }, testInfo) => {

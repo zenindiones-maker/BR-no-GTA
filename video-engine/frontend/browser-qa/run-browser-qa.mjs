@@ -167,10 +167,12 @@ try {
 const testEvidence = await contentAddress(path.join(QA, 'test-results'))
 const htmlEvidence = await contentAddress(path.join(QA, 'html-report'))
 const baselineEvidence = await contentAddress(path.join(QA, 'visual-baselines'))
+const actualVisualEvidence = await contentAddress(path.join(QA, 'visual-actual'))
 const evidence = [
   ...testEvidence,
   ...htmlEvidence,
   ...baselineEvidence,
+  ...actualVisualEvidence,
 ]
 const failedAssertions = assertions.filter((row) => row.status !== 'passed')
 const failed = executed.status !== 0 || failedAssertions.length > 0
@@ -205,9 +207,7 @@ const body = {
   visual_baseline_ref:
     baselineEvidence.find((row) => row.source.endsWith('.png'))?.artifact_ref || null,
   actual_screenshot_ref:
-    testEvidence.find((row) =>
-      row.source.includes('visual-actual-') && row.source.endsWith('.png')
-    )?.artifact_ref || null,
+    actualVisualEvidence.find((row) => row.source.endsWith('.png'))?.artifact_ref || null,
   visual_diff_ref:
     testEvidence.find((row) => row.source.endsWith('-diff.png'))?.artifact_ref || null,
   trace_ref: evidence.find((row) => row.source.endsWith('trace.zip'))?.artifact_ref || null,
