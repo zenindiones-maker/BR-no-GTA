@@ -1468,28 +1468,44 @@ def plan_mission_from_human_goal(
             proposal = None
         else:
             with PerformanceSpan(
-            stage="harness.planning.semantic-planner",
-            category="PLANNING_SEMANTIC_PLANNER_TIME",
-            goal_id=goal.goal_id,
-            input_size=len(json.dumps(adaptive_context, default=str).encode("utf-8")),
-        ) as semantic_span:
-            semantic_result, semantic_evidence = propose_validated_semantic_plan(
-                adaptive_context,
-                inference=semantic_inference,
-                max_replans=1,
-            )
-            semantic_span.set(
-                output_size=len(json.dumps(semantic_result.proposal.to_dict(), default=str).encode("utf-8")),
-                metadata={
-                    "planner_model_calls": int(semantic_evidence.get("proposal_attempts") or 1),
-                    "replan_count": int(semantic_evidence.get("replan_count") or 0),
-                },
-            )
-            proposal = semantic_result.proposal
-            planning_evidence.update(semantic_evidence)
-            planning_evidence["semantic_provider_call_count"] = int(
-                semantic_evidence.get("proposal_attempts") or 1
-            )
+                stage="harness.planning.semantic-planner",
+                category="PLANNING_SEMANTIC_PLANNER_TIME",
+                goal_id=goal.goal_id,
+                input_size=len(
+                    json.dumps(
+                        adaptive_context,
+                        default=str,
+                    ).encode("utf-8")
+                ),
+            ) as semantic_span:
+                semantic_result, semantic_evidence = (
+                    propose_validated_semantic_plan(
+                        adaptive_context,
+                        inference=semantic_inference,
+                        max_replans=1,
+                    )
+                )
+                semantic_span.set(
+                    output_size=len(
+                        json.dumps(
+                            semantic_result.proposal.to_dict(),
+                            default=str,
+                        ).encode("utf-8")
+                    ),
+                    metadata={
+                        "planner_model_calls": int(
+                            semantic_evidence.get("proposal_attempts") or 1
+                        ),
+                        "replan_count": int(
+                            semantic_evidence.get("replan_count") or 0
+                        ),
+                    },
+                )
+                proposal = semantic_result.proposal
+                planning_evidence.update(semantic_evidence)
+                planning_evidence["semantic_provider_call_count"] = int(
+                    semantic_evidence.get("proposal_attempts") or 1
+                )
         if proposal is not None and proposal.needs_human_clarification:
             if _clarification_is_resolved_by_explicit_goal(
                 goal,
