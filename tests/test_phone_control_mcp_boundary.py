@@ -16,7 +16,12 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
-from app.services import phone_control_harness_service, phone_control_service
+from app.services import (
+    harness_mcp_capability_execution as mcp_execution,
+    phone_control_harness_service,
+    phone_control_service,
+)
+from app.services.harness_capability_service import CapabilityEvidence
 
 
 def _phone_routing():
@@ -73,11 +78,27 @@ def test_br_capability_execute_accepts_authorized_phone_executor(monkeypatch):
 def test_existing_skill_path_still_executes(monkeypatch):
     calls = []
 
-    def fake_skill(capability, payload):
-        calls.append((capability.capability_id, payload))
-        return {"ok": True}
+    def fake_skill(*, authorization, routing_decision, payload):
+        calls.append(
+            (routing_decision.selected_capability_id, payload)
+        )
+        return CapabilityEvidence(
+            capability_id=routing_decision.selected_capability_id,
+            provider="addy-agent-skills",
+            status="EXECUTED",
+            active=True,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={"ok": True},
+        )
 
-    monkeypatch.setattr(server, "execute_codex_addy_capability", fake_skill)
+    monkeypatch.setattr(
+        mcp_execution,
+        "execute_authorized_addy_skill",
+        fake_skill,
+    )
     payload = json.loads(
         server.br_capability_execute(
             capability_id="addy:code-review-and-quality",

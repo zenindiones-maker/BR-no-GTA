@@ -131,9 +131,11 @@ def test_broker_executes_exact_registry_binding_under_fresh_child_authorization(
     payload = result["result"]
     assert payload["result"]["status"] == "PROPOSAL_ONLY"
     audit = broker.audit_snapshot()
-    assert len(audit) == 1
-    assert audit[0]["runtime"] == "hermes"
-    assert audit[0]["policy_violations"] == 0
+    events = [item["event"] for item in audit]
+    assert events[0] == "TASK_PRECONDITION_PASSED"
+    assert len(audit) == 2
+    assert audit[-1]["runtime"] == "hermes"
+    assert audit[-1]["policy_violations"] == 0
     assert Path(tmp_path / "capability-results/improve-1.json").is_file()
 
 
@@ -166,7 +168,7 @@ def test_broker_rejects_capability_swap_even_if_other_registry_capability_exists
         task_mapping={"improve": "board-improve"},
         artifact_dir=tmp_path,
     )
-    with pytest.raises(PermissionError, match="only its CollaborationPlan capability"):
+    with pytest.raises(PermissionError, match="cannot reroute a task"):
         broker.execute_delegated_capability(
             task_id="improve",
             capability_id="gta6.brain.decide",

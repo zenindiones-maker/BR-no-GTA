@@ -21,7 +21,8 @@ from app.services.harness_authorization_service import (
     issue_harness_authorization,
     validate_harness_authorization,
 )
-from app.services.harness_capability_service import execute_capability
+from app.services.harness_capability_service import CapabilityEvidence, execute_capability
+from app.services import harness_mcp_capability_execution as mcp_execution
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     RoutingPolicyError,
@@ -56,7 +57,7 @@ def test_harness_routing_selects_exactly_one_addy_skill_with_explainable_metadat
     selected = decision.policy_metadata["selected_implementation"]
     assert decision.selected_capability_id == "addy:code-review-and-quality"
     assert selected["type"] == "SKILL"
-    assert selected["agent_id"] == "codex"
+    assert selected["agent_id"] == "addy-agent-skills"
     assert selected["skill_id"] == "code-review-and-quality"
     assert selected["executor_binding"] == decision.selected_executor_binding
     assert selected["evidence_contract"].endswith("CapabilityEvidence")
@@ -79,9 +80,9 @@ def test_addy_inventory_is_pinned_bounded_and_individually_selectable():
     assert len(records) == len(ADDY_SKILLS)
     assert len({r.skill_id for r in records}) == 24
     assert all(r.allowed_actions == ("DEVELOPMENT",) for r in records)
-    assert all(r.agent_id == "codex" for r in records)
-    assert all("one selected skill only" in r.security_boundary for r in records)
-    assert all(r.executor_binding.endswith("execute_codex_addy_capability") for r in records)
+    assert all(r.agent_id == "addy-agent-skills" for r in records)
+    assert all("exact pinned Addy skill identity" in r.security_boundary for r in records)
+    assert all(r.executor_binding.endswith("execute_authorized_addy_skill") for r in records)
 
 
 def test_selected_addy_prompt_names_only_selected_skill_and_forbids_other_skills():
@@ -109,10 +110,26 @@ def test_harness_boundary_routes_before_issuing_authorization(monkeypatch):
 
     monkeypatch.setattr(server, "route_harness_request", routed)
     monkeypatch.setattr(server, "issue_harness_authorization", issued)
+    def fake_addy(*, authorization, routing_decision, payload):
+        return CapabilityEvidence(
+            capability_id=routing_decision.selected_capability_id,
+            provider="addy-agent-skills",
+            status="EXECUTED",
+            active=True,
+            authority=authorization.authority,
+            authorized_action=authorization.authorized_action,
+            harness_decision_id=authorization.harness_decision_id,
+            execution_id=authorization.execution_id,
+            result={
+                "skill": routing_decision.selected_capability_id,
+                "ok": True,
+            },
+        )
+
     monkeypatch.setattr(
-        server,
-        "execute_codex_addy_capability",
-        lambda capability, payload: {"skill": capability.capability_id, "ok": True},
+        mcp_execution,
+        "execute_authorized_addy_skill",
+        fake_addy,
     )
 
     result = json.loads(
@@ -257,8 +274,15 @@ def test_youtube_skill_keeps_private_upload_and_publication_authorization_distin
 
 def test_render_keeps_execution_authorization_boundary():
     render = GLOBAL_CAPABILITY_REGISTRY.get("video.render")
+    replacement = GLOBAL_CAPABILITY_REGISTRY.get(
+        "production.render.execute"
+    )
     assert render.allowed_actions == ("EXECUTION",)
-    assert "fail-closed render boundary" in render.security_boundary
+    assert render.execution_enabled is False
+    assert "superseded by production.render.execute" in render.security_boundary
+    assert replacement is not None
+    assert replacement.execution_enabled is True
+    assert replacement.allowed_actions == ("EXECUTION",)
 
 
 def test_addy_skill_never_selects_provider_or_model_sovereignly():

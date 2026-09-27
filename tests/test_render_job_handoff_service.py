@@ -183,7 +183,9 @@ def test_render_worker_downloads_artifact_into_expected_root():
 
 def test_render_worker_installs_pytest_before_adapter_validation():
     workflow = Path(".github/workflows/render-worker.yml").read_text(encoding="utf-8")
-    install_index = workflow.index("Install consolidated Python runtime dependencies")
+    install_index = workflow.index(
+        "Build or validate versioned render Python runtime"
+    )
     validate_index = workflow.index("Validate vendored execution adapter")
     install_block = workflow[install_index:validate_index]
     assert "python -m pip install" in install_block
