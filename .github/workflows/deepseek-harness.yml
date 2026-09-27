@@ -30,6 +30,8 @@ jobs:
     env:
       PYTHONPATH: .
       BR_TEST_DATABASE: /tmp/br-deepseek-harness-native.db
+      DSH_VERSION: "0.1.7-rc.2"
+      DSH_MCP_CLIENT_VERSION: "0.1.7-rc.2"
 
     steps:
       - name: Checkout exact branch state
@@ -64,21 +66,38 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/deepseek-harness-native
-          npm view @deepseek-ai/dsh name version description repository.url             | tee runtime/deepseek-harness-native/package.txt
-          npx --yes @deepseek-ai/dsh --help             > runtime/deepseek-harness-native/help.txt
+          npm view "@deepseek-ai/dsh@${DSH_VERSION}" name version description repository.url \
+            | tee runtime/deepseek-harness-native/package.txt
+          test "$(npm view "@deepseek-ai/dsh@${DSH_VERSION}" version)" = "$DSH_VERSION"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" --version \
+            | tee runtime/deepseek-harness-native/version.txt
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" --help \
+            > runtime/deepseek-harness-native/help.txt
 
       - name: Install pinned BR MCP client plugin
         run: |
           set -euo pipefail
           npm install --global pnpm@10
           pnpm --version | tee runtime/deepseek-harness-native/pnpm-version.txt
-          npx --yes @deepseek-ai/dsh plugin --profile headless add             @deepseek-ai/dsh-mcp-client@0.0.1-rc.1
-          npx --yes @deepseek-ai/dsh plugin --profile headless list             | tee runtime/deepseek-harness-native/plugins.txt
+          npm view "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}" \
+            name version peerDependencies --json \
+            | tee runtime/deepseek-harness-native/mcp-client-package.json
+          test "$(npm view "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}" version)" = "$DSH_MCP_CLIENT_VERSION"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            plugin --profile headless add \
+            "@deepseek-ai/dsh-mcp-client@${DSH_MCP_CLIENT_VERSION}"
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            plugin --profile headless list \
+            | tee runtime/deepseek-harness-native/plugins.txt
 
       - name: Resolve canonical BR Harness configuration
         run: |
           set -euo pipefail
-          npx --yes @deepseek-ai/dsh             --profile headless             --patch .dsh/cordis.patch.yml             --dump-config 2>&1             | tee runtime/deepseek-harness-native/resolved-config.txt
+          npx --yes "@deepseek-ai/dsh@${DSH_VERSION}" \
+            --profile headless \
+            --patch .dsh/cordis.patch.yml \
+            --dump-config 2>&1 \
+            | tee runtime/deepseek-harness-native/resolved-config.txt
           grep -q 'agent-loop' runtime/deepseek-harness-native/resolved-config.txt
           grep -q 'gta6-master' runtime/deepseek-harness-native/resolved-config.txt
           grep -q 'gta6-master-session' runtime/deepseek-harness-native/resolved-config.txt
