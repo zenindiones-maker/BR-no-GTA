@@ -399,13 +399,22 @@ def resolve_harness_execution_need(
     retryable = str(typed.get("retryability") or "").upper() == "RETRYABLE"
     replan_required = bool(typed.get("replan_required"))
     failure_class = str(typed.get("failure_class") or "").upper()
+    provider_wait = failure_class == "PROVIDER_POOL_EXHAUSTED"
     if failure_class in {
         "INSUFFICIENT_EVIDENCE",
         "TASKOUTPUTCONTRACTVIOLATION",
         "ROUTINGPOLICYERROR",
-    }:
+    } and not provider_wait:
         replan_required = True
-    decision = "REPLAN" if replan_required else "RETRY" if retryable else "BLOCK"
+    decision = (
+        "WAIT_FOR_PROVIDER_AVAILABILITY"
+        if provider_wait
+        else "REPLAN"
+        if replan_required
+        else "RETRY"
+        if retryable
+        else "BLOCK"
+    )
     state_update = {
         "schema": "HarnessMissionStateTransition/v1",
         "authority": "DEEPSEEK_HARNESS",
@@ -415,6 +424,13 @@ def resolve_harness_execution_need(
         "decision": decision,
         "preserve_completed_results": True,
         "resume_scope": "MINIMAL_AFFECTED_SUBGRAPH",
+        "mission_status": (
+            "WAITING_FOR_PROVIDER_AVAILABILITY"
+            if decision == "WAIT_FOR_PROVIDER_AVAILABILITY"
+            else "RECOVERING_INTERNAL"
+        ),
+        "mission_terminal": False,
+        "human_intervention_required": False,
     }
     if decision != "REPLAN":
         return {
@@ -519,7 +535,7 @@ def execute_harness_execution_need(
         transition_path.write_bytes(transition_raw)
 
     decision = str(transition["decision"])
-    if decision in {"BLOCK", "RETRY"}:
+    if decision in {"BLOCK", "RETRY", "WAIT_FOR_PROVIDER_AVAILABILITY"}:
         return {
             **resolution,
             "mission_state_ref": f"artifact:harness-mission-state:{transition_sha}",

@@ -6,10 +6,14 @@ on:
       - work/gate6f-analytics-learning
     paths:
       - ".run/nvidia-multimodel-probe.request.json"
+      - ".github/workflows/nvidia-multimodel-probe.yml"
+      - ".github/workflows/real-agent-self-improvement.yml"
+      - "app/services/provider_availability_reconciliation_service.py"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   probe:
@@ -92,3 +96,12 @@ jobs:
           path: artifacts/nvidia-multimodel/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Wake provider availability reconciliation
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run real-agent-self-improvement.yml             --repo "$GITHUB_REPOSITORY"             --ref work/gate6f-analytics-learning             -f operation=PROVIDER_RECONCILIATION             -f health_event_run_id="$GITHUB_RUN_ID"             -f health_event_artifact_name="nvidia-multimodel-probe-$GITHUB_RUN_ID"
+          echo "PROVIDER_HEALTH_EVENT_DISPATCHED=PASS"

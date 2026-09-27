@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   proof:
@@ -149,3 +150,18 @@ jobs:
         run: |
           echo "TUXEVIL_ZERO_COST_PROOF=FAIL"
           exit 1
+
+
+      - name: Wake provider availability reconciliation
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run real-agent-self-improvement.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref work/gate6f-analytics-learning \
+            -f operation=PROVIDER_RECONCILIATION \
+            -f health_event_run_id="$GITHUB_RUN_ID" \
+            -f health_event_artifact_name="tuxevil-zero-cost-proof"
+          echo "PROVIDER_HEALTH_EVENT_DISPATCHED=PASS"

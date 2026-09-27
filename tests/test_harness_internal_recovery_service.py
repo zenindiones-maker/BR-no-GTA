@@ -214,7 +214,14 @@ def test_provider_pool_exhausted_is_internal_not_human_gate(tmp_path):
         task=_task(), exc=failure,
         context={"dependency_context_sha256": "provider-health"},
     )
-    assert state.select_recovery(observed).strategy == "RECONCILE_PROVIDER_HEALTH"
+    decision = state.select_recovery(observed)
+    assert decision.strategy == "WAIT_FOR_PROVIDER_AVAILABILITY"
+    snapshot = state.snapshot()
+    assert snapshot["MISSION_STATUS"] == "RECOVERING_INTERNAL"
+    assert snapshot["RECOVERY_STATE"] == "WAITING_FOR_PROVIDER_AVAILABILITY"
+    assert snapshot["NEXT_TRANSITION"] == (
+        "PROVIDER_AVAILABILITY_RECONCILIATION"
+    )
 
 
 def test_model_set_exhausted_selects_provider_level_replan(tmp_path):

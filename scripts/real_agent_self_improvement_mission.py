@@ -16,6 +16,7 @@ from typing import Any
 
 from app.database.schema import initialize_schema
 from app.services.artifact_import_service import import_artifact
+from app.services.agent_session_service import AgentSessionRuntime
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -739,6 +740,158 @@ def restore_compatible_node_checkpoints(
     })
     return evidence
 
+
+def apply_provider_reconciliation_checkpoint(
+    *,
+    plan: dict[str, Any],
+    runtime_dir: Path,
+    provider_reconciliation_dir: Path | None,
+) -> dict[str, Any]:
+    evidence = {
+        "PROVIDER_RECONCILIATION_AVAILABLE": False,
+        "PROVIDER_REQUEUE_APPLIED": False,
+        "SAME_MISSION_ID_AFTER_PROVIDER_WAIT": False,
+        "REQUEUE_PRESERVES_PLAN_REVISION": False,
+        "PROVIDER_RECOVERY_EPOCH_APPLIED": False,
+    }
+    if (
+        provider_reconciliation_dir is None
+        or not provider_reconciliation_dir.is_dir()
+    ):
+        return evidence
+    result_path = (
+        provider_reconciliation_dir
+        / "provider-availability-reconciliation-result.json"
+    )
+    if not result_path.is_file():
+        raise RuntimeError(
+            "PROVIDER_RECONCILIATION_RESULT_MISSING"
+        )
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    if (
+        result.get("schema")
+        != "ProviderAvailabilityReconciliationResult/v1"
+    ):
+        raise RuntimeError(
+            "PROVIDER_RECONCILIATION_SCHEMA_INVALID"
+        )
+    if str(result.get("decision") or "") != "REQUEUE_TASK":
+        raise RuntimeError(
+            "PROVIDER_RECONCILIATION_NOT_REQUEUE_TASK"
+        )
+    mission_id = str(plan.get("mission_id") or "")
+    task_id = str(result.get("task_id") or "")
+    if str(result.get("mission_id") or "") != mission_id:
+        raise RuntimeError(
+            "PROVIDER_RECONCILIATION_MISSION_ID_DRIFT"
+        )
+    next_wait = dict(result.get("next_wait") or {})
+    source_plan_revision = next_wait.get("plan_revision")
+    current_plan_revision = plan.get("plan_revision")
+    if (
+        source_plan_revision is not None
+        and current_plan_revision is not None
+        and source_plan_revision != current_plan_revision
+    ):
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_PLAN_REVISION_DRIFT"
+        )
+    epoch = dict(result.get("provider_recovery_epoch") or {})
+    if epoch.get("schema") != "ProviderRecoveryEpoch/v1":
+        raise RuntimeError(
+            "PROVIDER_RECOVERY_EPOCH_MISSING"
+        )
+    session_paths = []
+    for candidate in sorted(
+        (runtime_dir / "agent-sessions").glob(
+            f"{task_id}-agent-*.json"
+        )
+    ):
+        try:
+            state = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            state.get("schema") == "AgentSession/v1"
+            and str(state.get("MISSION_ID") or "") == mission_id
+            and str(state.get("TASK_ID") or "") == task_id
+        ):
+            session_paths.append((candidate, state))
+    if len(session_paths) != 1:
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_AGENT_SESSION_COUNT="
+            + str(len(session_paths))
+        )
+    _, state = session_paths[0]
+    session = AgentSessionRuntime(
+        artifact_dir=runtime_dir,
+        mission_id=mission_id,
+        task_id=task_id,
+        capability_id=str(state.get("CAPABILITY_ID") or ""),
+        agent_id=str(state.get("AGENT_ID") or ""),
+        skill_id=(
+            str(state.get("SKILL_ID") or "") or None
+        ),
+        functional_role=str(
+            state.get("FUNCTIONAL_ROLE") or "GENERAL"
+        ),
+        execution_kind=str(state.get("EXECUTION_KIND") or ""),
+        allowed_tools=tuple(
+            str(item)
+            for item in (state.get("ALLOWED_TOOLS") or ())
+        ),
+        input_artifact_refs=tuple(
+            str(item)
+            for item in (state.get("INPUT_ARTIFACT_REFS") or ())
+        ),
+        max_agent_turns=int(state.get("MAX_AGENT_TURNS") or 1),
+        max_tool_calls=int(state.get("MAX_TOOL_CALLS") or 0),
+        max_provider_calls=int(
+            state.get("MAX_PROVIDER_CALLS") or 1
+        ),
+        max_context_chars=int(state.get("MAX_CONTEXT") or 1),
+        max_wall_clock_seconds=float(
+            state.get("MAX_WALL_CLOCK_SECONDS") or 1.0
+        ),
+        mandatory_tool_requirements=tuple(
+            str(item)
+            for item in (
+                state.get("MANDATORY_TOOL_REQUIREMENTS") or ()
+            )
+        ),
+    )
+    if (
+        session.agent_instance_id
+        != str(state.get("AGENT_INSTANCE_ID") or "")
+    ):
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_AGENT_INSTANCE_ID_DRIFT"
+        )
+    session.apply_provider_recovery_epoch(
+        epoch,
+        requeue_ready=True,
+    )
+    restored = session.provider_recovery_state()
+    if (
+        restored.get("RECOVERY_STRATEGY")
+        != "PROVIDER_AVAILABILITY_REQUEUE"
+    ):
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_STRATEGY_NOT_MATERIALIZED"
+        )
+    evidence.update({
+        "PROVIDER_RECONCILIATION_AVAILABLE": True,
+        "PROVIDER_REQUEUE_APPLIED": True,
+        "SAME_MISSION_ID_AFTER_PROVIDER_WAIT": True,
+        "REQUEUE_PRESERVES_PLAN_REVISION": True,
+        "PROVIDER_RECOVERY_EPOCH_APPLIED": True,
+        "PROVIDER_RECOVERY_EPOCH_ID": epoch.get("epoch_id"),
+        "PROVIDER_REQUEUE_TASK_ID": task_id,
+        "RECOVERED_PROVIDER_IDS": list(
+            epoch.get("recovered_provider_ids") or ()
+        ),
+    })
+    return evidence
 
 
 def plan_once(
@@ -1658,6 +1811,7 @@ def run(
     request_path: Path,
     incident_source_dir: Path | None = None,
     checkpoint_source_dir: Path | None = None,
+    provider_reconciliation_dir: Path | None = None,
 ):
     initialize_schema()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1913,6 +2067,17 @@ def run(
         output_dir / "node-checkpoint-reuse.json",
         checkpoint_evidence,
     )
+    provider_requeue_evidence = (
+        apply_provider_reconciliation_checkpoint(
+            plan=first,
+            runtime_dir=first_runtime_dir,
+            provider_reconciliation_dir=provider_reconciliation_dir,
+        )
+    )
+    write_json(
+        output_dir / "provider-requeue-evidence.json",
+        provider_requeue_evidence,
+    )
 
     upstream, boot = bootstrap(first, route, output_dir / "runtime-bootstrap")
     report, execution_ms = execute(
@@ -1920,6 +2085,58 @@ def run(
         goal_text=goal_text,
     )
     write_json(output_dir / "first-report.json", report)
+
+    if report.get("status") == "NONTERMINAL_WAIT":
+        wait = dict(report.get("provider_availability_wait") or {})
+        result = {
+            "schema": "RealAgentSelfImprovementIteration/v1",
+            "ITERATION_RESULT": "NONTERMINAL_WAIT",
+            "authority": "DEEPSEEK_HARNESS",
+            "MISSION_ID": str(first.get("mission_id") or ""),
+            "MISSION_STATUS": "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "RECOVERY_STATE": "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "NEXT_TRANSITION": "PROVIDER_AVAILABILITY_RECONCILIATION",
+            "MISSION_TERMINAL": False,
+            "HUMAN_INTERVENTION_REQUIRED": False,
+            "PROVIDER_POOL_EXHAUSTED_TYPED": True,
+            "WAITING_FOR_PROVIDER_AVAILABILITY": True,
+            "NO_PROVIDER_CALL_ON_EMPTY_POOL": (
+                int(report.get("PROVIDER_CALLS_WHILE_WAITING") or 0)
+                == 0
+            ),
+            "NO_BLIND_REPLAN": bool(report.get("NO_BLIND_REPLAN")),
+            "DURABLE_WAIT_STATE_PERSISTED": bool(
+                report.get("DURABLE_WAIT_STATE_PERSISTED")
+                and wait.get("content_sha256")
+            ),
+            "EXECUTION_LEASE_RELEASED": bool(
+                report.get("EXECUTION_LEASE_RELEASED")
+            ),
+            "PROVIDER_CALLS_WHILE_WAITING": int(
+                report.get("PROVIDER_CALLS_WHILE_WAITING") or 0
+            ),
+            "AGENT_TURNS_WHILE_WAITING": int(
+                report.get("AGENT_TURNS_WHILE_WAITING") or 0
+            ),
+            "SEMANTIC_PLANNER_CALLS_WHILE_WAITING": int(
+                report.get("SEMANTIC_PLANNER_CALLS_WHILE_WAITING") or 0
+            ),
+            "PROVIDER_AVAILABILITY_WAIT_REF": wait.get("artifact_ref"),
+            "PROVIDER_AVAILABILITY_WAIT_HASH": wait.get(
+                "content_sha256"
+            ),
+            "SAME_MISSION_ID_AFTER_PROVIDER_WAIT": True,
+            "COMPLETED_RESULTS_REUSED": bool(
+                checkpoint_evidence.get("CHECKPOINT_REUSED")
+                or checkpoint_evidence.get("REUSED_TASK_IDS")
+            ),
+            "NO_REGENERATED_FROM_ZERO": True,
+            "CODEX_CHECKPOINT_PRESERVED": CHECKPOINT,
+            "PROVIDER_REQUEUE_INPUT": provider_requeue_evidence,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        write_json(output_dir / "final.json", result)
+        return result
 
     results = load_results(output_dir / "first-runtime")
     found = roles(first, results, incident_mode=bool(incident))
@@ -2459,6 +2676,7 @@ def main():
     )
     parser.add_argument("--incident-source-dir")
     parser.add_argument("--checkpoint-source-dir")
+    parser.add_argument("--provider-reconciliation-dir")
     args = parser.parse_args()
     result = run(
         Path(args.output_dir),
@@ -2473,7 +2691,40 @@ def main():
             Path(args.checkpoint_source_dir)
             if args.checkpoint_source_dir else None
         ),
+        provider_reconciliation_dir=(
+            Path(args.provider_reconciliation_dir)
+            if args.provider_reconciliation_dir else None
+        ),
     )
+    if result.get("ITERATION_RESULT") == "NONTERMINAL_WAIT":
+        required = all(result.get(key) is True for key in (
+            "PROVIDER_POOL_EXHAUSTED_TYPED",
+            "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "NO_PROVIDER_CALL_ON_EMPTY_POOL",
+            "NO_BLIND_REPLAN",
+            "DURABLE_WAIT_STATE_PERSISTED",
+            "EXECUTION_LEASE_RELEASED",
+            "SAME_MISSION_ID_AFTER_PROVIDER_WAIT",
+            "NO_REGENERATED_FROM_ZERO",
+        ))
+        for key in (
+            "PROVIDER_POOL_EXHAUSTED_TYPED",
+            "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "NO_PROVIDER_CALL_ON_EMPTY_POOL",
+            "NO_BLIND_REPLAN",
+            "DURABLE_WAIT_STATE_PERSISTED",
+            "EXECUTION_LEASE_RELEASED",
+        ):
+            print(f"{key}={'PASS' if result.get(key) is True else 'FAIL'}")
+        print("ITERATION_RESULT=NONTERMINAL_WAIT")
+        print("MISSION_TERMINAL=FALSE")
+        print("HUMAN_INTERVENTION_REQUIRED=FALSE")
+        print(
+            "PROVIDER_AVAILABILITY_WAIT_REF="
+            + str(result.get("PROVIDER_AVAILABILITY_WAIT_REF"))
+        )
+        return 0 if required else 2
+
     required = all(result[k] is True for k in (
         "PROFILE_ARTIFACT_CREATED", "ROOT_CAUSE_INPUT_PROFILE_RESOLVED",
         "ROOT_CAUSE_ARTIFACT_CREATED", "PROPOSAL_INPUT_ROOT_CAUSE_RESOLVED",

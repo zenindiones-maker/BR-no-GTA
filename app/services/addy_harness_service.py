@@ -371,10 +371,9 @@ def execute_authorized_addy_skill(
             )
             if str(item).strip()
         )
-        body = {
-            "schema": "ProviderHealthSnapshot/v1",
+        material = {
+            "schema": "ProviderHealthMaterialState/v1",
             "recovery_phase": recovery_phase,
-            "observed_at": datetime.now(timezone.utc).isoformat(),
             "eligible_provider_ids": list(eligible),
             "HEALTH_ELIGIBLE_PROVIDER_COUNT": len(eligible),
             "providers": [
@@ -382,6 +381,16 @@ def execute_authorized_addy_skill(
                 for item in (observed.get("providers") or ())
                 if isinstance(item, dict)
             ],
+        }
+        material_digest = sha256(json.dumps(
+            material, ensure_ascii=True, sort_keys=True,
+            separators=(",", ":"), default=str,
+        ).encode("utf-8")).hexdigest()
+        body = {
+            **material,
+            "schema": "ProviderHealthSnapshot/v1",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "material_state_sha256": material_digest,
         }
         digest = sha256(json.dumps(
             body, ensure_ascii=True, sort_keys=True,
@@ -651,15 +660,8 @@ def execute_authorized_addy_skill(
         circuit_state = str(
             prior_circuit_states.get(selected_provider) or "CLOSED"
         ).strip().upper()
-        if (
-            recovery_strategy == "RECONCILE_PROVIDER_HEALTH"
-            and selected_provider in temporarily_ejected_provider_ids
-            and circuit_state == "OPEN"
-        ):
-            circuit_state = transition_provider_circuit(
-                "OPEN",
-                "COOLDOWN_ELAPSED",
-            )["to_state"]
+        # OPEN is not promoted merely because the semantic task ran again.
+        # A fresh governed reconciliation proof must open a new recovery epoch.
         admission = provider_admission_state(
             provider_id=selected_provider,
             circuit_state=circuit_state,
@@ -793,10 +795,16 @@ def execute_authorized_addy_skill(
         route_health = routing_health_snapshots.get(
             str(provider_routing.routing_id), {}
         )
+        recovery_epoch = dict(
+            internal_recovery.get("PROVIDER_RECOVERY_EPOCH") or {}
+        )
         provider_attempts.append({
             "attempt": attempt_number,
             "provider_attempt_ordinal": attempt_number,
             "attempt_id": attempt_id,
+            "recovery_epoch_id": str(
+                recovery_epoch.get("epoch_id") or "initial"
+            ),
             "agent_instance_id": agent_instance_id or None,
             "agent_turn": agent_turn,
             "phase": phase,
@@ -911,6 +919,12 @@ def execute_authorized_addy_skill(
                 "PROVIDER_LEVEL_REPLAN_RESELECTED_EXHAUSTED_PROVIDER"
             )
         provider_level_replan_harness_authorized = True
+    elif recovery_strategy == "PROVIDER_AVAILABILITY_REQUEUE":
+        provider_routing = _route_provider(
+            exhausted_pairs=exhausted_pair_tuple,
+            failure_pattern="provider_availability_requeue",
+            recovery_phase="PROVIDER_AVAILABILITY_REQUEUE",
+        )
     elif recovery_strategy in {
         "REFRESH_PROVIDER_HEALTH",
         "RECONCILE_PROVIDER_HEALTH",

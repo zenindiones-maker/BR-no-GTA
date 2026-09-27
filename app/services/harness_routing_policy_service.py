@@ -749,6 +749,10 @@ def _select_provider(
             if phase == "SAME_PROVIDER_MODEL_REPLAN"
             else "PROVIDER_POOL_EXHAUSTED"
         )
+        reconciliation_request = {
+            "schema": "ProviderRoutingReconciliationRequest/v1",
+            **asdict(request),
+        }
         raise RoutingPolicyError(
             "No effective provider/model candidates remain after hard "
             "eligibility filters",
@@ -767,6 +771,13 @@ def _select_provider(
                 "EFFECTIVE_ROUTING_MODEL_PAIR_COUNT": 0,
                 "pool_state": eligibility_snapshot["pool_state"],
                 "provider_eligibility_snapshot": eligibility_snapshot,
+                "provider_eligibility_snapshot_ref": (
+                    eligibility_snapshot["snapshot_ref"]
+                ),
+                "provider_eligibility_snapshot_sha256": (
+                    eligibility_snapshot["content_sha256"]
+                ),
+                "reconciliation_request": reconciliation_request,
                 "rejected_candidates": [
                     asdict(item) for item in rejected
                 ],

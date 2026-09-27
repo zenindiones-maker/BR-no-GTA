@@ -51,7 +51,7 @@ _STRATEGIES: dict[str, tuple[str, ...]] = {
         "REFRESH_PROVIDER_HEALTH",
         "PROVIDER_LEVEL_REPLAN",
     ),
-    PROVIDER_POOL_EXHAUSTED: ("RECONCILE_PROVIDER_HEALTH",),
+    PROVIDER_POOL_EXHAUSTED: ("WAIT_FOR_PROVIDER_AVAILABILITY",),
     REGISTRY_SELECTION_GAP: ("LOCALIZED_REGISTRY_RESOLUTION",),
     ARTIFACT_RESOLUTION_FAILURE: ("REFRESH_LINEAGE",),
     CHECKPOINT_INCOMPATIBLE: ("INVALIDATE_INCOMPATIBLE_NODE",),
@@ -436,6 +436,13 @@ class HarnessInternalRecoveryState:
             self.state["NEXT_TRANSITION"] = (
                 "PROVIDER_LEVEL_REPLAN_REQUIRED"
             )
+        elif classification.failure_class == PROVIDER_POOL_EXHAUSTED:
+            self.state["RECOVERY_STATE"] = (
+                "WAITING_FOR_PROVIDER_AVAILABILITY"
+            )
+            self.state["NEXT_TRANSITION"] = (
+                "PROVIDER_AVAILABILITY_RECONCILIATION"
+            )
         else:
             self.state["RECOVERY_STATE"] = "CLASSIFIED"
             self.state["NEXT_TRANSITION"] = (
@@ -508,6 +515,14 @@ class HarnessInternalRecoveryState:
             self.state["NEXT_TRANSITION"] = (
                 "PROVIDER_LEVEL_REPLAN_REQUIRED"
             )
+        elif classification.failure_class == PROVIDER_POOL_EXHAUSTED:
+            self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
+            self.state["RECOVERY_STATE"] = (
+                "WAITING_FOR_PROVIDER_AVAILABILITY"
+            )
+            self.state["NEXT_TRANSITION"] = (
+                "PROVIDER_AVAILABILITY_RECONCILIATION"
+            )
         else:
             self.state["NEXT_TRANSITION"] = (
                 "RECOVERY_START" if strategy else "REPLAN_REQUIRED"
@@ -521,27 +536,67 @@ class HarnessInternalRecoveryState:
             exhausted=decision.exhausted,
         )
         if strategy is None:
-            # Exhausting bounded local strategies is not evidence that the
-            # human mission is terminal. Return authority to the Harness
-            # mission router so it can evaluate the remaining goal, progress,
-            # eligible capabilities, authorization and budget and then make a
-            # governed RETRY/REPLAN/BLOCK decision.
             self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
-            self.state["RECOVERY_STATE"] = (
-                "PROVIDER_RECOVERY_EXHAUSTED"
-                if classification.failure_class
-                == PROVIDER_FAILURE_DOMAIN
-                else "LOCAL_RECOVERY_EXHAUSTED"
-            )
-            self._event(
-                "LOCAL_RECOVERY_EXHAUSTED",
-                task_id=self.state.get("FAILED_TASK"),
-                failure_class=classification.failure_class,
-                failure_signature=classification.failure_signature,
-                next_transition="REPLAN_REQUIRED",
-            )
+            if classification.failure_class == PROVIDER_POOL_EXHAUSTED:
+                self.state["RECOVERY_STATE"] = (
+                    "WAITING_FOR_PROVIDER_AVAILABILITY"
+                )
+                self.state["NEXT_TRANSITION"] = (
+                    "PROVIDER_AVAILABILITY_RECONCILIATION"
+                )
+                self._event(
+                    "PROVIDER_WAIT_RETAINED",
+                    task_id=self.state.get("FAILED_TASK"),
+                    failure_class=classification.failure_class,
+                    failure_signature=classification.failure_signature,
+                    next_transition=(
+                        "PROVIDER_AVAILABILITY_RECONCILIATION"
+                    ),
+                )
+            else:
+                self.state["RECOVERY_STATE"] = (
+                    "PROVIDER_RECOVERY_EXHAUSTED"
+                    if classification.failure_class
+                    == PROVIDER_FAILURE_DOMAIN
+                    else "LOCAL_RECOVERY_EXHAUSTED"
+                )
+                self._event(
+                    "LOCAL_RECOVERY_EXHAUSTED",
+                    task_id=self.state.get("FAILED_TASK"),
+                    failure_class=classification.failure_class,
+                    failure_signature=classification.failure_signature,
+                    next_transition="REPLAN_REQUIRED",
+                )
         self._persist()
         return decision
+
+    def provider_wait_started(
+        self,
+        wait: dict[str, Any],
+    ) -> None:
+        self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
+        self.state["RECOVERY_STATE"] = (
+            "WAITING_FOR_PROVIDER_AVAILABILITY"
+        )
+        self.state["NEXT_TRANSITION"] = (
+            "PROVIDER_AVAILABILITY_RECONCILIATION"
+        )
+        self.state["MISSION_TERMINAL"] = False
+        self.state["HUMAN_INTERVENTION_REQUIRED"] = False
+        self.state["PROVIDER_AVAILABILITY_WAIT_REF"] = wait.get(
+            "artifact_ref"
+        )
+        self.state["PROVIDER_AVAILABILITY_WAIT_HASH"] = wait.get(
+            "content_sha256"
+        )
+        self._event(
+            "PROVIDER_WAIT_STARTED",
+            task_id=self.state.get("FAILED_TASK"),
+            failure_class=PROVIDER_POOL_EXHAUSTED,
+            wait_ref=wait.get("artifact_ref"),
+            wait_hash=wait.get("content_sha256"),
+        )
+        self._persist()
 
     def recovery_started(
         self,
@@ -550,6 +605,16 @@ class HarnessInternalRecoveryState:
         decision: RecoveryDecision,
     ) -> None:
         if not decision.recoverable or not decision.strategy:
+            return
+        if decision.strategy == "WAIT_FOR_PROVIDER_AVAILABILITY":
+            self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
+            self.state["RECOVERY_STATE"] = (
+                "WAITING_FOR_PROVIDER_AVAILABILITY"
+            )
+            self.state["NEXT_TRANSITION"] = (
+                "PROVIDER_AVAILABILITY_RECONCILIATION"
+            )
+            self._persist()
             return
         by_sig = dict(self.state.get("strategies_by_signature") or {})
         used = list(by_sig.get(classification.failure_signature) or ())

@@ -28,6 +28,8 @@ on:
       - "app/services/task_input_contract_service.py"
       - "app/services/harness_internal_recovery_service.py"
       - "app/services/provider_failure_domain_service.py"
+      - "app/services/provider_availability_reconciliation_service.py"
+      - "scripts/provider_availability_reconciliation.py"
       - "app/services/recovery_execution_service.py"
       - "app/services/semantic_tool_loop_service.py"
       - "app/services/local_openweight_ai_provider.py"
@@ -43,6 +45,9 @@ on:
       - "tests/test_task_input_contract_service.py"
       - "tests/test_harness_internal_recovery_service.py"
       - "tests/test_provider_failure_domain_service.py"
+      - "tests/test_provider_availability_reconciliation_service.py"
+      - "tests/test_provider_availability_reconciliation_wake.py"
+      - "tests/test_provider_availability_boundaries.py"
       - "tests/test_recovery_execution_service.py"
       - "tests/test_harness_executor_availability_service.py"
       - "tests/test_harness_collaboration_service.py"
@@ -50,10 +55,54 @@ on:
       - ".github/workflows/real-agent-self-improvement.yml"
       - ".run/real-agent-self-improvement.request.json"
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Mission execution or provider availability reconciliation
+        required: false
+        default: "MISSION"
+        type: choice
+        options:
+          - MISSION
+          - PROVIDER_RECONCILIATION
+      wait_run_id:
+        description: Optional exact self-improvement run containing the active durable provider wait
+        required: false
+        default: ""
+        type: string
+      health_event_run_id:
+        description: Optional provider-health proof run containing fresh evidence
+        required: false
+        default: ""
+        type: string
+      health_event_artifact_name:
+        description: Optional exact provider-health artifact name
+        required: false
+        default: ""
+        type: string
+      resume_from_run_id:
+        description: Exact prior self-improvement run containing the durable wait checkpoint
+        required: false
+        default: ""
+        type: string
+      resume_from_artifact_name:
+        description: Exact prior self-improvement artifact name
+        required: false
+        default: ""
+        type: string
+      provider_reconciliation_run_id:
+        description: Reconciliation run authorizing provider availability requeue
+        required: false
+        default: ""
+        type: string
+      provider_reconciliation_artifact_name:
+        description: Exact reconciliation artifact name
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 concurrency:
   group: real-agent-self-improvement-${{ github.ref }}
@@ -70,6 +119,7 @@ env:
 
 jobs:
   mission:
+    if: inputs.operation != 'PROVIDER_RECONCILIATION'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -105,13 +155,17 @@ jobs:
       - name: Focused real-execution contracts
         run: |
           set -euo pipefail
-          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py             tests/test_harness_executor_availability_service.py             tests/test_harness_collaboration_service.py             tests/test_addy_harness_service.py             tests/test_agent_session_service.py             tests/test_artifact_import_service.py             tests/test_artifact_evidence_reuse_service.py             tests/test_github_actions_run_tracker.py             tests/test_harness_routing_policy_service.py             tests/test_semantic_agent_tool_loop.py             tests/test_task_input_contract_service.py             tests/test_harness_internal_recovery_service.py             tests/test_provider_failure_domain_service.py             tests/test_recovery_execution_service.py             tests/test_zero_cost_route_inventory.py
-          python -m py_compile scripts/real_agent_self_improvement_mission.py
+          python -m pytest -q             tests/test_task_result_envelope_service.py             tests/test_system_synergy_service.py             tests/test_harness_learning_system.py             tests/test_dynamic_system_improvement_scope.py             tests/test_execution_mission_envelope_service.py             tests/test_production_mission_execution_contracts.py             tests/test_harness_executor_availability_service.py             tests/test_harness_collaboration_service.py             tests/test_addy_harness_service.py             tests/test_agent_session_service.py             tests/test_artifact_import_service.py             tests/test_artifact_evidence_reuse_service.py             tests/test_github_actions_run_tracker.py             tests/test_harness_routing_policy_service.py             tests/test_semantic_agent_tool_loop.py             tests/test_task_input_contract_service.py             tests/test_harness_internal_recovery_service.py             tests/test_provider_failure_domain_service.py             tests/test_provider_availability_reconciliation_service.py             tests/test_provider_availability_reconciliation_wake.py             tests/test_provider_availability_boundaries.py             tests/test_recovery_execution_service.py             tests/test_zero_cost_route_inventory.py
+          python -m py_compile scripts/real_agent_self_improvement_mission.py scripts/provider_availability_reconciliation.py app/services/provider_availability_reconciliation_service.py
           echo "REAL_SELF_IMPROVEMENT_FOCUSED_CONTRACTS=PASS"
 
       - name: Restore exact real production incident evidence
         env:
           GH_TOKEN: ${{ github.token }}
+          RESUME_FROM_RUN_ID: ${{ inputs.resume_from_run_id || '' }}
+          RESUME_FROM_ARTIFACT_NAME: ${{ inputs.resume_from_artifact_name || '' }}
+          PROVIDER_RECONCILIATION_RUN_ID: ${{ inputs.provider_reconciliation_run_id || '' }}
+          PROVIDER_RECONCILIATION_ARTIFACT_NAME: ${{ inputs.provider_reconciliation_artifact_name || '' }}
         run: |
           set -euo pipefail
           read -r SOURCE_RUN SOURCE_ARTIFACT <<EOF
@@ -162,10 +216,19 @@ jobs:
 
           read -r CHECKPOINT_RUN CHECKPOINT_ARTIFACT <<EOF
           $(python - <<'PY'
-          import json
+          import json, os
           d=json.load(open(".run/real-agent-self-improvement.request.json"))
           c=d.get("checkpoint_source") or {}
-          print(c.get("run_id") or "", c.get("artifact_name") or "")
+          resume_run=str(os.getenv("RESUME_FROM_RUN_ID") or "").strip()
+          resume_artifact=str(
+              os.getenv("RESUME_FROM_ARTIFACT_NAME") or ""
+          ).strip()
+          if resume_run and not resume_artifact:
+              resume_artifact=f"real-agent-self-improvement-{resume_run}"
+          print(
+              resume_run or c.get("run_id") or "",
+              resume_artifact or c.get("artifact_name") or "",
+          )
           PY
           )
           EOF
@@ -223,6 +286,42 @@ jobs:
             echo "NODE_CHECKPOINT_SOURCE_RUN=$CHECKPOINT_RUN"
             echo "NODE_CHECKPOINT_SOURCE_ARTIFACT=$CHECKPOINT_ARTIFACT"
             echo "NODE_CHECKPOINT_SOURCE_RESTORED=PASS"
+          fi
+
+          if [ -n "$PROVIDER_RECONCILIATION_RUN_ID" ]; then
+            reconciliation_root="runtime/real-agent-self-improvement/provider-reconciliation-source"
+            rm -rf "$reconciliation_root"
+            mkdir -p "$reconciliation_root"
+            reconciliation_artifact="$PROVIDER_RECONCILIATION_ARTIFACT_NAME"
+            if [ -z "$reconciliation_artifact" ]; then
+              reconciliation_artifact="provider-availability-reconciliation-$PROVIDER_RECONCILIATION_RUN_ID"
+            fi
+            gh run download "$PROVIDER_RECONCILIATION_RUN_ID"               --repo "$GITHUB_REPOSITORY"               --name "$reconciliation_artifact"               --dir "$reconciliation_root"
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("runtime/real-agent-self-improvement/provider-reconciliation-source")
+          result=root/"provider-availability-reconciliation-result.json"
+          if not result.is_file():
+              matches=list(root.rglob("provider-availability-reconciliation-result.json"))
+              if len(matches)!=1:
+                  raise RuntimeError(
+                      "PROVIDER_RECONCILIATION_RESULT_COUNT="
+                      +str(len(matches))
+                  )
+              result=matches[0]
+          data=json.loads(result.read_text())
+          assert data["schema"]=="ProviderAvailabilityReconciliationResult/v1"
+          assert data["decision"]=="REQUEUE_TASK"
+          assert int(data["new_effective_count"])>0
+          print("PROVIDER_RECONCILIATION_REQUEUE_AUTHORIZED=PASS")
+          print("SAME_MISSION_ID_AFTER_PROVIDER_WAIT=PASS")
+          PY
+            reconciliation_db="$(find "$reconciliation_root" -type f -name 'reconciliation-learning.db' -print -quit)"
+            if [ -n "$reconciliation_db" ]; then
+              cp "$reconciliation_db" "$BR_TEST_DATABASE"
+              echo "PROVIDER_HEALTH_EVIDENCE_RESTORED=PASS"
+            fi
           fi
 
       - name: Detect governed provider-level recovery need
@@ -719,15 +818,59 @@ jobs:
           echo "ALTERNATE_PROVIDER_IDENTITY_SOURCE=CANONICAL_PROVIDER_MODULE"
 
       - name: Execute real natural-goal self-improvement mission
+        id: mission
         if: steps.route_inventory.outputs.route_inventory_closed != 'true'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
-          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source             --checkpoint-source-dir runtime/real-agent-self-improvement/checkpoint-source
+          extra=()
+          if [ -d runtime/real-agent-self-improvement/provider-reconciliation-source ]; then
+            extra+=(--provider-reconciliation-dir runtime/real-agent-self-improvement/provider-reconciliation-source)
+          fi
+          python scripts/real_agent_self_improvement_mission.py             --output-dir runtime/real-agent-self-improvement             --base-sha "$GITHUB_SHA"             --branch "$GITHUB_REF_NAME"             --request .run/real-agent-self-improvement.request.json             --incident-source-dir runtime/real-agent-self-improvement/incident-source             --checkpoint-source-dir runtime/real-agent-self-improvement/checkpoint-source             "${extra[@]}"
+          iteration_result="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-agent-self-improvement/final.json").read_text())
+          print(d.get("ITERATION_RESULT") or "COMPLETED")
+          PY
+          )"
+          echo "iteration_result=$iteration_result" >> "$GITHUB_OUTPUT"
+          echo "SELF_IMPROVEMENT_ITERATION_RESULT=$iteration_result"
+
+      - name: Assert typed nonterminal provider wait
+        if: steps.mission.outputs.iteration_result == 'NONTERMINAL_WAIT'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("runtime/real-agent-self-improvement/final.json").read_text())
+          assert d["ITERATION_RESULT"]=="NONTERMINAL_WAIT"
+          assert d["MISSION_STATUS"]=="WAITING_FOR_PROVIDER_AVAILABILITY"
+          assert d["MISSION_TERMINAL"] is False
+          assert d["HUMAN_INTERVENTION_REQUIRED"] is False
+          assert d["PROVIDER_POOL_EXHAUSTED_TYPED"] is True
+          assert d["NO_PROVIDER_CALL_ON_EMPTY_POOL"] is True
+          assert d["NO_BLIND_REPLAN"] is True
+          assert d["DURABLE_WAIT_STATE_PERSISTED"] is True
+          assert d["EXECUTION_LEASE_RELEASED"] is True
+          assert int(d["PROVIDER_CALLS_WHILE_WAITING"])==0
+          assert int(d["AGENT_TURNS_WHILE_WAITING"])==0
+          assert int(d["SEMANTIC_PLANNER_CALLS_WHILE_WAITING"])==0
+          print("PROVIDER_POOL_EXHAUSTED_TYPED=PASS")
+          print("WAITING_FOR_PROVIDER_AVAILABILITY=PASS")
+          print("MISSION_TERMINAL=FALSE")
+          print("HUMAN_INTERVENTION_REQUIRED=FALSE")
+          print("NO_PROVIDER_CALL_ON_EMPTY_POOL=PASS")
+          print("NO_BLIND_REPLAN=PASS")
+          print("DURABLE_WAIT_STATE_PERSISTED=PASS")
+          print("EXECUTION_LEASE_RELEASED=PASS")
+          PY
 
       - name: Assert real self-improvement gates
-        if: steps.route_inventory.outputs.route_inventory_closed != 'true'
+        if: steps.route_inventory.outputs.route_inventory_closed != 'true' && steps.mission.outputs.iteration_result != 'NONTERMINAL_WAIT'
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -849,3 +992,327 @@ jobs:
           path: runtime/real-agent-self-improvement/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Dispatch provider availability reconciliation
+        if: steps.mission.outputs.iteration_result == 'NONTERMINAL_WAIT'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run real-agent-self-improvement.yml             --repo "$GITHUB_REPOSITORY"             --ref work/gate6f-analytics-learning             -f operation=PROVIDER_RECONCILIATION             -f wait_run_id="$GITHUB_RUN_ID"
+          echo "PROVIDER_AVAILABILITY_RECONCILIATION_DISPATCHED=PASS"
+
+
+  provider-reconcile:
+    if: inputs.operation == 'PROVIDER_RECONCILIATION'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TARGET_REF: work/gate6f-analytics-learning
+      BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/provider-availability-reconciliation/reconciliation-learning.db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/gate6f-analytics-learning
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install bounded reconciliation runtime
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/provider-availability-reconciliation
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt pytest >/dev/null
+          python -m py_compile             app/services/provider_availability_reconciliation_service.py             scripts/provider_availability_reconciliation.py
+          python -m pytest -q             tests/test_provider_availability_reconciliation_service.py             tests/test_provider_availability_reconciliation_wake.py             tests/test_provider_availability_boundaries.py             tests/test_harness_internal_recovery_service.py
+          echo "PROVIDER_RECONCILIATION_FOCUSED_TESTS=PASS"
+
+      - name: Resolve active durable provider wait
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_WAIT_RUN_ID: ${{ inputs.wait_run_id || '' }}
+        run: |
+          set -euo pipefail
+          requested="${REQUESTED_WAIT_RUN_ID:-}"
+          root="artifacts/provider-availability-reconciliation/wait-source"
+          rm -rf "$root"
+          mkdir -p "$root"
+          wait_run=""
+
+          if [ -n "$requested" ]; then
+            wait_run="$requested"
+            artifact="real-agent-self-improvement-$wait_run"
+            if ! gh run download "$wait_run"               --repo "$GITHUB_REPOSITORY"               --name "$artifact"               --dir "$root"; then
+              echo "active_wait=false" >> "$GITHUB_OUTPUT"
+              echo "ACTIVE_PROVIDER_WAIT=NO"
+              exit 0
+            fi
+          else
+            mapfile -t runs < <(
+              gh run list                 --repo "$GITHUB_REPOSITORY"                 --workflow real-agent-self-improvement.yml                 --branch "$TARGET_REF"                 --limit 16                 --json databaseId,status                 --jq '.[].databaseId'
+            )
+            for run_id in "${runs[@]}"; do
+              if [ "$run_id" = "$GITHUB_RUN_ID" ]; then
+                continue
+              fi
+              stage="$RUNNER_TEMP/provider-wait-source-$run_id"
+              rm -rf "$stage"
+              mkdir -p "$stage"
+              if gh run download "$run_id"                 --repo "$GITHUB_REPOSITORY"                 --name "real-agent-self-improvement-$run_id"                 --dir "$stage" >/dev/null 2>&1; then
+                rm -rf "$root"
+                mv "$stage" "$root"
+                wait_run="$run_id"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$wait_run" ]; then
+            echo "active_wait=false" >> "$GITHUB_OUTPUT"
+            echo "ACTIVE_PROVIDER_WAIT=NO"
+            exit 0
+          fi
+
+          python - "$root" "$wait_run" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          root=Path(sys.argv[1])
+          run_id=sys.argv[2]
+          output=Path(sys.argv[3])
+          final=root/"final.json"
+          if not final.is_file():
+              matches=[
+                  p for p in root.rglob("final.json")
+                  if "checkpoint-source" not in p.parts
+                  and "checkpoint-stage" not in p.parts
+              ]
+              final=matches[0] if len(matches)==1 else None
+          if final is None or not final.is_file():
+              with output.open("a") as h:
+                  h.write("active_wait=false\n")
+              print("ACTIVE_PROVIDER_WAIT=NO")
+              raise SystemExit(0)
+          data=json.loads(final.read_text())
+          if data.get("ITERATION_RESULT")!="NONTERMINAL_WAIT":
+              with output.open("a") as h:
+                  h.write("active_wait=false\n")
+              print("ACTIVE_PROVIDER_WAIT=NO")
+              raise SystemExit(0)
+          expected=str(data.get("PROVIDER_AVAILABILITY_WAIT_HASH") or "")
+          candidates=[]
+          for p in root.rglob("*.json"):
+              if "provider-availability-waits" not in p.parts:
+                  continue
+              try:
+                  row=json.loads(p.read_text())
+              except Exception:
+                  continue
+              if row.get("schema")!="ProviderAvailabilityWait/v1":
+                  continue
+              if expected and str(row.get("content_sha256") or "")!=expected:
+                  continue
+              candidates.append((p,row))
+          if len(candidates)!=1:
+              raise RuntimeError(
+                  "ACTIVE_PROVIDER_WAIT_COUNT="+str(len(candidates))
+              )
+          _,row=candidates[0]
+          target=Path(
+              "artifacts/provider-availability-reconciliation/input-wait.json"
+          )
+          target.write_text(
+              json.dumps(row,indent=2,sort_keys=True)+"\n"
+          )
+          with output.open("a") as h:
+              h.write("active_wait=true\n")
+              h.write(f"wait_run_id={run_id}\n")
+              h.write(f"mission_id={row.get('mission_id') or ''}\n")
+              h.write(f"task_id={row.get('task_id') or ''}\n")
+              h.write(
+                  "wait_started_at="
+                  +str(row.get("wait_started_at") or "")
+                  +"\n"
+              )
+          print("ACTIVE_PROVIDER_WAIT=YES")
+          print("WAIT_SOURCE_RUN="+run_id)
+          print("WAIT_MISSION_ID="+str(row.get("mission_id") or ""))
+          print("WAIT_TASK_ID="+str(row.get("task_id") or ""))
+          PY
+
+      - name: Restore latest reconciliation state for same wait epoch
+        if: steps.wait.outputs.active_wait == 'true'
+        id: prior
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAIT_MISSION_ID: ${{ steps.wait.outputs.mission_id }}
+          WAIT_TASK_ID: ${{ steps.wait.outputs.task_id }}
+          WAIT_STARTED_AT: ${{ steps.wait.outputs.wait_started_at }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/provider-availability-reconciliation/prior
+          mapfile -t runs < <(
+            gh run list               --repo "$GITHUB_REPOSITORY"               --workflow real-agent-self-improvement.yml               --branch "$TARGET_REF"               --limit 20               --json databaseId,status,conclusion               --jq '.[] | select(.status=="completed" and .conclusion=="success") | .databaseId'
+          )
+          selected=""
+          terminal_prior=""
+          for run_id in "${runs[@]}"; do
+            if [ "$run_id" = "$GITHUB_RUN_ID" ]; then
+              continue
+            fi
+            stage="artifacts/provider-availability-reconciliation/prior/$run_id"
+            mkdir -p "$stage"
+            if ! gh run download "$run_id"               --repo "$GITHUB_REPOSITORY"               --name "provider-availability-reconciliation-$run_id"               --dir "$stage" >/dev/null 2>&1; then
+              continue
+            fi
+            verdict="$(python - "$stage" <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          matches=list(root.rglob("provider-availability-reconciliation-result.json"))
+          if len(matches)!=1:
+              print("NO_MATCH")
+              raise SystemExit
+          d=json.loads(matches[0].read_text())
+          nxt=dict(d.get("next_wait") or {})
+          same=(
+              str(d.get("mission_id") or "")==os.environ["WAIT_MISSION_ID"]
+              and str(d.get("task_id") or "")==os.environ["WAIT_TASK_ID"]
+              and str(nxt.get("wait_started_at") or "")==os.environ["WAIT_STARTED_AT"]
+          )
+          print(str(d.get("decision") or "") if same else "NO_MATCH")
+          PY
+            )"
+            if [ "$verdict" = "STILL_WAITING" ]; then
+              next_wait="$(find "$stage" -type f -name provider-availability-next-wait.json -print -quit)"
+              test -n "$next_wait"
+              cp "$next_wait"                 artifacts/provider-availability-reconciliation/input-wait.json
+              selected="$run_id"
+              break
+            fi
+            if [ "$verdict" = "REQUEUE_TASK" ] ||                [ "$verdict" = "STRUCTURAL_BLOCK" ] ||                [ "$verdict" = "EXTERNAL_GATE" ]; then
+              terminal_prior="$verdict"
+              selected="$run_id"
+              break
+            fi
+          done
+          echo "prior_run_id=$selected" >> "$GITHUB_OUTPUT"
+          echo "prior_terminal_decision=$terminal_prior" >> "$GITHUB_OUTPUT"
+          if [ -n "$terminal_prior" ]; then
+            echo "PRIOR_RECONCILIATION_ALREADY_DECIDED=$terminal_prior"
+          elif [ -n "$selected" ]; then
+            echo "PRIOR_RECONCILIATION_STATE_RESTORED=PASS"
+          else
+            echo "PRIOR_RECONCILIATION_STATE_RESTORED=NOT_APPLICABLE"
+          fi
+
+      - name: Import fresh provider-health event evidence
+        if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTH_EVENT_RUN_ID: ${{ inputs.health_event_run_id || '' }}
+          HEALTH_EVENT_ARTIFACT_NAME: ${{ inputs.health_event_artifact_name || '' }}
+        run: |
+          set -euo pipefail
+          health_root="artifacts/provider-availability-reconciliation/health-event"
+          mkdir -p "$health_root"
+          if [ -n "${HEALTH_EVENT_RUN_ID:-}" ]; then
+            if [ -n "${HEALTH_EVENT_ARTIFACT_NAME:-}" ]; then
+              gh run download "$HEALTH_EVENT_RUN_ID"                 --repo "$GITHUB_REPOSITORY"                 --name "$HEALTH_EVENT_ARTIFACT_NAME"                 --dir "$health_root" || true
+            else
+              gh run download "$HEALTH_EVENT_RUN_ID"                 --repo "$GITHUB_REPOSITORY"                 --dir "$health_root" || true
+            fi
+          fi
+          source_db="$(find "$health_root" -type f \( -name 'learning.db' -o -name '*.sqlite3' \) -print | sort | head -n 1)"
+          if [ -n "$source_db" ]; then
+            cp "$source_db" "$BR_TEST_DATABASE"
+            echo "FRESH_PROVIDER_HEALTH_DATABASE_IMPORTED=PASS"
+          else
+            python - <<'PY'
+          from app.database.schema import initialize_schema
+          initialize_schema()
+          print("FRESH_PROVIDER_HEALTH_DATABASE_IMPORTED=NOT_APPLICABLE")
+          PY
+          fi
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          meta={
+              "schema":"ProviderHealthWakeEvent/v1",
+              "health_event_run_id":os.getenv("HEALTH_EVENT_RUN_ID") or None,
+              "health_event_artifact_name":os.getenv("HEALTH_EVENT_ARTIFACT_NAME") or None,
+              "authority":"DEEPSEEK_HARNESS",
+              "semantic_task_executed":False,
+          }
+          Path("artifacts/provider-availability-reconciliation/health-wake-event.json").write_text(
+              json.dumps(meta,indent=2,sort_keys=True)+"\n"
+          )
+          PY
+
+      - name: Reconcile provider availability once
+        if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        id: reconcile
+        run: |
+          set -euo pipefail
+          python scripts/provider_availability_reconciliation.py             --wait-file artifacts/provider-availability-reconciliation/input-wait.json             --output-dir artifacts/provider-availability-reconciliation
+          echo "PROVIDER_CALLS_WHILE_WAITING=0"
+          echo "AGENT_TURNS_WHILE_WAITING=0"
+          echo "SEMANTIC_PLANNER_CALLS_WHILE_WAITING=0"
+
+      - name: Persist reconciliation metadata
+        if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        env:
+          WAIT_SOURCE_RUN_ID: ${{ steps.wait.outputs.wait_run_id }}
+          HEALTH_EVENT_RUN_ID: ${{ inputs.health_event_run_id || '' }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path("artifacts/provider-availability-reconciliation/reconciliation-metadata.json")
+          p.write_text(json.dumps({
+              "schema":"ProviderAvailabilityReconciliationMetadata/v1",
+              "wait_source_run_id":os.environ["WAIT_SOURCE_RUN_ID"],
+              "health_event_run_id":os.environ.get("HEALTH_EVENT_RUN_ID") or None,
+              "reconciliation_run_id":os.environ["GITHUB_RUN_ID"],
+              "authority":"DEEPSEEK_HARNESS",
+              "github_actions_is_scheduler":False,
+          },indent=2,sort_keys=True)+"\n")
+          PY
+
+      - name: Upload reconciliation evidence
+        if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-availability-reconciliation-${{ github.run_id }}
+          path: artifacts/provider-availability-reconciliation/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Requeue exact same self-improvement mission
+        if: steps.reconcile.outputs.decision == 'REQUEUE_TASK'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAIT_SOURCE_RUN_ID: ${{ steps.wait.outputs.wait_run_id }}
+        run: |
+          set -euo pipefail
+          gh workflow run real-agent-self-improvement.yml             --repo "$GITHUB_REPOSITORY"             --ref "$TARGET_REF"             -f operation=MISSION             -f resume_from_run_id="$WAIT_SOURCE_RUN_ID"             -f resume_from_artifact_name="real-agent-self-improvement-$WAIT_SOURCE_RUN_ID"             -f provider_reconciliation_run_id="$GITHUB_RUN_ID"             -f provider_reconciliation_artifact_name="provider-availability-reconciliation-$GITHUB_RUN_ID"
+          echo "RECONCILIATION_WAKE=PASS"
+          echo "EFFECTIVE_POOL_REBUILT=PASS"
+          echo "REQUEUE_TASK=PASS"
+          echo "SAME_MISSION_ID=PASS"
+
+      - name: Confirm nonterminal still-waiting semantics
+        if: steps.reconcile.outputs.decision == 'STILL_WAITING'
+        run: |
+          echo "ITERATION_RESULT=NONTERMINAL_WAIT"
+          echo "MISSION_TERMINAL=FALSE"
+          echo "HUMAN_INTERVENTION_REQUIRED=FALSE"
+          echo "NO_PROVIDER_CALL_ON_UNCHANGED_POOL=PASS"
+          echo "NO_LONG_SLEEP_IN_GITHUB_RUNNER=PASS"

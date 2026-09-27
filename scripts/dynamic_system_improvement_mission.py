@@ -35,6 +35,11 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.provider_availability_reconciliation_service import (
+    PROVIDER_POOL_EXHAUSTED,
+    ProviderAvailabilityWaitRequired,
+    build_provider_availability_wait,
+)
 from app.services.hermes_multiagent.capability_broker import (
     DelegatedCapabilityFailure,
     HermesHarnessCapabilityBroker,
@@ -318,6 +323,30 @@ def _claim(board, mapping, profiles, task_id: str, *, reviewer: str | None = Non
 def _complete(board, mapping, task_id: str, run_id: int, summary: str) -> None:
     if not board.complete(mapping[task_id], summary=summary, run_id=run_id):
         raise RuntimeError(f"Hermes completion failed: {task_id}")
+
+
+def _release_execution_lease_for_provider_wait(
+    board,
+    mapping,
+    task_id: str,
+    run_id: int,
+) -> bool:
+    board_task_id = mapping[task_id]
+    released = bool(
+        board.block(
+            board_task_id,
+            reason=(
+                "HARNESS_NONTERMINAL_PROVIDER_AVAILABILITY_WAIT"
+            ),
+            run_id=run_id,
+            kind="needs_input",
+        )
+    )
+    if not released:
+        return False
+    return str(
+        board.get_task(board_task_id).get("status") or ""
+    ).lower() == "blocked"
 
 
 def _candidate_from_parent_context(parent_context: dict[str, Any]) -> str | None:
@@ -1658,6 +1687,56 @@ def run(
                             classification,
                             disallowed_strategies=disallowed_strategies,
                         )
+                        if (
+                            classification.failure_class
+                            == PROVIDER_POOL_EXHAUSTED
+                            and decision.strategy
+                            == "WAIT_FOR_PROVIDER_AVAILABILITY"
+                        ):
+                            retry_context = dict(
+                                payload.get("context")
+                                or parent_context
+                                or {}
+                            )
+                            wait = build_provider_availability_wait(
+                                artifact_dir=artifact_dir,
+                                mission_id=spec.mission_id,
+                                plan_id=str(
+                                    mission_plan.get("plan_id") or ""
+                                ) or None,
+                                plan_revision=mission_plan.get(
+                                    "plan_revision"
+                                ),
+                                task_id=task_id,
+                                failure_signature=(
+                                    classification.failure_signature
+                                ),
+                                failure_evidence=getattr(
+                                    exc, "failure_evidence", None
+                                ),
+                                internal_recovery=dict(
+                                    retry_context.get(
+                                        "internal_recovery"
+                                    ) or {}
+                                ),
+                            )
+                            lease_released = (
+                                _release_execution_lease_for_provider_wait(
+                                    board,
+                                    task_mapping,
+                                    task_id,
+                                    run_id,
+                                )
+                            )
+                            if not lease_released:
+                                raise RuntimeError(
+                                    "PROVIDER_WAIT_EXECUTION_LEASE_NOT_RELEASED"
+                                ) from exc
+                            broker.recovery.provider_wait_started(wait)
+                            raise ProviderAvailabilityWaitRequired(
+                                wait,
+                                execution_lease_released=True,
+                            ) from exc
                         allowed_local = {
                             "RETRY_SAME_TASK",
                             "LOCALIZED_PROVIDER_REPLAN",
@@ -1984,6 +2063,7 @@ def run(
                         ),
                     )
 
+    provider_wait: ProviderAvailabilityWaitRequired | None = None
     try:
         with PerformanceSpan(
             stage="delegation-plane.mission.hermes-runtime",
@@ -2001,10 +2081,47 @@ def run(
                 runner=runner,
                 upstream_sha=UPSTREAM_SHA,
             )
+    except ProviderAvailabilityWaitRequired as exc:
+        provider_wait = exc
+        canonical = {
+            "success": False,
+            "status": "NONTERMINAL_WAIT",
+            "MISSION_TERMINAL": False,
+        }
     finally:
         consume_harness_authorization(authorization)
 
     broker = holder.get("broker")
+    if provider_wait is not None:
+        recovery = (
+            broker.recovery.snapshot() if broker is not None else {}
+        )
+        return {
+            "status": "NONTERMINAL_WAIT",
+            "ITERATION_RESULT": "NONTERMINAL_WAIT",
+            "authority": "DEEPSEEK_HARNESS",
+            "mission_plan": mission_plan,
+            "delegation_envelope": spec.to_dict(),
+            "hermes_canonical_result": canonical,
+            "execution_reference": execution_reference,
+            "internal_recovery": recovery,
+            "provider_availability_wait": dict(provider_wait.wait),
+            "MISSION_STATUS": "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "RECOVERY_STATE": "WAITING_FOR_PROVIDER_AVAILABILITY",
+            "NEXT_TRANSITION": "PROVIDER_AVAILABILITY_RECONCILIATION",
+            "MISSION_TERMINAL": False,
+            "HUMAN_INTERVENTION_REQUIRED": False,
+            "PROVIDER_POOL_EXHAUSTED_TYPED": True,
+            "NO_PROVIDER_CALL_ON_EMPTY_POOL": True,
+            "NO_BLIND_REPLAN": True,
+            "DURABLE_WAIT_STATE_PERSISTED": True,
+            "EXECUTION_LEASE_RELEASED": bool(
+                provider_wait.execution_lease_released
+            ),
+            "PROVIDER_CALLS_WHILE_WAITING": 0,
+            "AGENT_TURNS_WHILE_WAITING": 0,
+            "SEMANTIC_PLANNER_CALLS_WHILE_WAITING": 0,
+        }
     if broker is not None:
         broker.recovery.mission_completed()
 

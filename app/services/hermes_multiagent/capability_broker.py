@@ -123,6 +123,34 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _delegated_failure_class(
+    failure_mode: str,
+    evidence: dict[str, Any],
+) -> str:
+    stack: list[Any] = [evidence]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            typed = str(
+                value.get("failure_class")
+                or value.get("FAILURE_CLASS")
+                or ""
+            ).strip().upper()
+            if typed in {
+                "PROVIDER_POOL_EXHAUSTED",
+                "MODEL_SET_EXHAUSTED",
+                "PROVIDER_FAILURE_DOMAIN",
+                "PROVIDER_ROUTE_UNAVAILABLE",
+                "PROVIDER_MODEL_UNAVAILABLE",
+                "PROVIDER_TRANSIENT",
+            }:
+                return typed
+            stack.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value)
+    return str(failure_mode or "").strip() or "UNKNOWN"
+
+
 class DelegatedCapabilityFailure(RuntimeError):
     def __init__(
         self,
@@ -167,11 +195,26 @@ class DelegatedCapabilityFailure(RuntimeError):
                     if str(item).strip()
                 )
         insufficient = bool(gaps) or "insufficient" in self.failure_mode.casefold()
-        failure_class = "INSUFFICIENT_EVIDENCE" if insufficient else self.failure_mode
-        status = "NEEDS_CAPABILITY" if self.requires_harness_replan else "BLOCKED"
+        typed_failure = _delegated_failure_class(
+            self.failure_mode,
+            evidence,
+        )
+        failure_class = (
+            "INSUFFICIENT_EVIDENCE" if insufficient else typed_failure
+        )
+        provider_wait = failure_class == "PROVIDER_POOL_EXHAUSTED"
+        status = (
+            "WAITING_FOR_PROVIDER_AVAILABILITY"
+            if provider_wait
+            else "NEEDS_CAPABILITY"
+            if self.requires_harness_replan
+            else "BLOCKED"
+        )
         semantic_requirement = (
             "additional verified evidence satisfying the reported missing requirements"
             if insufficient
+            else "provider availability reconciliation without semantic replanning"
+            if provider_wait
             else "a capability able to resolve the typed execution failure"
         )
         partial_refs = [
@@ -191,8 +234,17 @@ class DelegatedCapabilityFailure(RuntimeError):
                 or evidence.get("partial_structure_ref")
                 or ""
             ),
-            "retryability": "RETRYABLE" if self.retry_allowed else "REPLAN_REQUIRED",
-            "replan_required": bool(self.requires_harness_replan or insufficient),
+            "retryability": (
+                "NOT_EXECUTABLE_NOW"
+                if provider_wait
+                else "RETRYABLE"
+                if self.retry_allowed
+                else "REPLAN_REQUIRED"
+            ),
+            "replan_required": bool(
+                (self.requires_harness_replan or insufficient)
+                and not provider_wait
+            ),
             "causal_task_id": self.task_id,
             "producer_selected_resolver": False,
         }
@@ -1870,21 +1922,30 @@ class HermesHarnessCapabilityBroker:
                             "evidence": dict(routing_policy_evidence),
                         },
                     }
+                typed_failure_class = _delegated_failure_class(
+                    type(exc).__name__,
+                    failure_evidence,
+                )
                 turn_consumed = provider_call_count(failure_evidence) > 0
                 if turn_consumed:
                     session.begin_turn(agent_turn)
                 session.fail(
-                    failure_class=type(exc).__name__,
+                    failure_class=typed_failure_class,
                     evidence=failure_evidence,
                     turn_consumed=turn_consumed,
+                )
+                provider_wait = (
+                    typed_failure_class == "PROVIDER_POOL_EXHAUSTED"
                 )
                 failure = DelegatedCapabilityFailure(
                     task_id=task_id,
                     capability_id=capability_id,
-                    failure_mode=type(exc).__name__,
+                    failure_mode=typed_failure_class,
                     retry_attempt=retry_attempt,
-                    retry_allowed=retry_allowed,
-                    requires_harness_replan=not retry_allowed,
+                    retry_allowed=(retry_allowed and not provider_wait),
+                    requires_harness_replan=(
+                        not retry_allowed and not provider_wait
+                    ),
                     failure_evidence=failure_evidence,
                 )
                 self._audit.append({
@@ -1901,7 +1962,8 @@ class HermesHarnessCapabilityBroker:
                     "retry_count": retry_attempt,
                     "retry_allowed": retry_allowed,
                     "requires_harness_replan": not retry_allowed,
-                    "failure_mode": type(exc).__name__,
+                    "failure_mode": typed_failure_class,
+                    "error_type": type(exc).__name__,
                     "failure_evidence": failure_evidence,
                     "evidence_refs": [],
                 })

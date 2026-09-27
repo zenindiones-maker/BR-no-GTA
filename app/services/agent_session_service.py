@@ -487,6 +487,23 @@ class AgentSessionRuntime:
             self.state["FAILURE_EVIDENCE"] = dict(evidence)
         self._persist()
 
+    def apply_provider_recovery_epoch(
+        self,
+        epoch: dict[str, Any],
+        *,
+        requeue_ready: bool,
+    ) -> None:
+        if str(epoch.get("schema") or "") != "ProviderRecoveryEpoch/v1":
+            raise ValueError("ProviderRecoveryEpoch/v1 is required")
+        if not str(epoch.get("epoch_id") or "").strip():
+            raise ValueError("provider recovery epoch_id is required")
+        self.state["PROVIDER_RECOVERY_EPOCH"] = dict(epoch)
+        self.state["PROVIDER_REQUEUE_READY"] = bool(requeue_ready)
+        if requeue_ready:
+            self.state["STATUS"] = "READY"
+            self.state["FAILURE_TURN_CONSUMED"] = False
+        self._persist()
+
     def provider_recovery_state(self) -> dict[str, Any]:
         def walk(value: Any):
             if isinstance(value, dict):
@@ -497,9 +514,23 @@ class AgentSessionRuntime:
                 for child in value:
                     yield from walk(child)
 
+        active_epoch = dict(
+            self.state.get("PROVIDER_RECOVERY_EPOCH") or {}
+        )
+        active_epoch_id = str(
+            active_epoch.get("epoch_id") or ""
+        ).strip()
+        recovered_provider_ids = {
+            str(item).strip()
+            for item in (
+                active_epoch.get("recovered_provider_ids") or ()
+            )
+            if str(item).strip()
+        }
         attempted: list[dict[str, Any]] = []
         exhausted: list[dict[str, Any]] = []
         attempts: list[dict[str, Any]] = []
+        historical_attempts: list[dict[str, Any]] = []
         failure_domains: list[dict[str, Any]] = []
         for node in walk(self.state):
             domain = (
@@ -517,21 +548,62 @@ class AgentSessionRuntime:
                 provider_attempt_rows = node.get("provider_attempts")
             for item in provider_attempt_rows or ():
                 if isinstance(item, dict):
-                    attempts.append(dict(item))
+                    row = dict(item)
+                    historical_attempts.append(row)
+                    provider_id = str(
+                        row.get("provider_id")
+                        or row.get("provider")
+                        or ""
+                    ).strip()
+                    row_epoch = str(
+                        row.get("recovery_epoch_id") or ""
+                    ).strip()
+                    if (
+                        not active_epoch_id
+                        or provider_id not in recovered_provider_ids
+                        or row_epoch == active_epoch_id
+                    ):
+                        attempts.append(row)
             for item in (
                 node.get("ATTEMPTED_PROVIDER_MODEL_PAIRS")
                 or node.get("attempted_provider_model_pairs")
                 or ()
             ):
                 if isinstance(item, dict):
-                    attempted.append(dict(item))
+                    provider_id = str(
+                        item.get("provider_id")
+                        or item.get("provider")
+                        or ""
+                    ).strip()
+                    row_epoch = str(
+                        item.get("recovery_epoch_id") or ""
+                    ).strip()
+                    if (
+                        not active_epoch_id
+                        or provider_id not in recovered_provider_ids
+                        or row_epoch == active_epoch_id
+                    ):
+                        attempted.append(dict(item))
             for item in (
                 node.get("EXHAUSTED_PROVIDER_MODEL_PAIRS")
                 or node.get("exhausted_provider_model_pairs")
                 or ()
             ):
                 if isinstance(item, dict):
-                    exhausted.append(dict(item))
+                    provider_id = str(
+                        item.get("provider_id")
+                        or item.get("provider")
+                        or ""
+                    ).strip()
+                    row_epoch = str(
+                        item.get("recovery_epoch_id") or ""
+                    ).strip()
+                    if (
+                        not active_epoch_id
+                        or provider_id not in recovered_provider_ids
+                        or row_epoch == active_epoch_id
+                    ):
+                        exhausted.append(dict(item))
 
         def normalized_pair(item: dict[str, Any]) -> dict[str, Any] | None:
             provider_id = str(
@@ -605,10 +677,15 @@ class AgentSessionRuntime:
             for item in attempts
             if str(item.get("attempt_id") or "").strip()
         }
+        historical_attempt_ids = {
+            str(item.get("attempt_id") or "").strip()
+            for item in historical_attempts
+            if str(item.get("attempt_id") or "").strip()
+        }
         provider_call_count = (
-            len(attempt_ids)
-            if attempt_ids
-            else len(attempts)
+            len(historical_attempt_ids)
+            if historical_attempt_ids
+            else len(historical_attempts)
         )
         provider_domain = next(
             (
@@ -616,6 +693,8 @@ class AgentSessionRuntime:
                 if str(item.get("scope") or "").strip().upper()
                 == "PROVIDER_LOCAL"
                 and item.get("provider_ejected") is True
+                and str(item.get("provider_id") or "")
+                not in recovered_provider_ids
             ),
             None,
         )
@@ -629,11 +708,20 @@ class AgentSessionRuntime:
                 "FORBIDDEN" if full_timeout else None
             ),
             "RECOVERY_STRATEGY": (
-                "PROVIDER_LEVEL_REPLAN"
+                "PROVIDER_AVAILABILITY_REQUEUE"
+                if (
+                    active_epoch_id
+                    and bool(self.state.get("PROVIDER_REQUEUE_READY"))
+                    and recovered_provider_ids
+                )
+                else "PROVIDER_LEVEL_REPLAN"
                 if provider_domain is not None
                 else "LOCALIZED_PROVIDER_REPLAN"
                 if exhausted
                 else None
+            ),
+            "PROVIDER_RECOVERY_EPOCH": (
+                active_epoch if active_epoch_id else None
             ),
             "FAILURE_DOMAIN_CLASSIFICATION": provider_domain,
             "PROVIDER_CIRCUIT_STATES": (
@@ -655,6 +743,9 @@ class AgentSessionRuntime:
             ),
             "PROVIDER_CALL_COUNT": provider_call_count,
             "FAILED_PROVIDER_ATTEMPTS_PERSISTED": bool(exhausted),
+            "HISTORICAL_PROVIDER_ATTEMPT_COUNT": len(
+                historical_attempts
+            ),
         }
 
     def prior_tool_results(self) -> list[dict[str, Any]]:
