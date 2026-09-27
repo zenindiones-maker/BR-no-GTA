@@ -91,7 +91,7 @@ def test_gta6_knowledge_recall_uses_canonical_claim_and_provenance_without_provi
     assert canonical["provider_calls"] == 0
     assert canonical["semantic_provider_required"] is False
     assert canonical["canonical_memory_plane"] == "BR_SQLITE"
-    assert canonical["obsidian_role"] == "PUBLISHED_MEMORY_VIEW"
+    assert canonical["obsidian_role"] == "LONG_TERM_HUMAN_KNOWLEDGE_VIEW"
     assert canonical["SOURCE_PROVENANCE_PRESERVED"] == "PASS"
     assert claim_id in {item["claim_id"] for item in canonical["claims"]}
     assert "Jason Duval" in result["answer"]

@@ -281,7 +281,7 @@ def test_status_answer_comes_from_persisted_real_state_not_model_guess():
         presenter=_presenter,
     )
     assert "extração acústica PT-BR" in result["answer"]
-    assert "ACOUSTIC_EXTRACTION" in result["answer"]
+    assert "ACOUSTIC_EXTRACTION" not in result["answer"]
     assert "35499900001" in result["answer"]
 
 

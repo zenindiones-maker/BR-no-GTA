@@ -108,8 +108,11 @@ def test_no_padding_qa_accepts_unique_contiguous_source_windows():
         links.append({
             "segment_id": index + 1,
             "section_id": f"S{index // 10:02d}",
-            "asset_ref": "remote://media-worker/official-longform",
-            "source_start_seconds": index * 10.0,
+            "asset_ref": (
+                "remote://media-worker/official-longform-"
+                f"{index // 30}"
+            ),
+            "source_start_seconds": (index % 30) * 10.0,
             "duration_seconds": 10.0,
         })
     result = validate_no_padding(job=job, edit_qa={"duration_seconds": 1200.0, "semantic_links": links})
@@ -121,13 +124,16 @@ def test_no_padding_qa_rejects_source_reuse():
     job = {"product_profile": "professional_ptbr_v1", "render_job_id": 920101, "youtube_publication": False, "estimated_duration_seconds": 1200.0}
     links = []
     for index in range(120):
-        start = index * 10.0
+        start = (index % 30) * 10.0
         if index == 119:
             start = 0.0
         links.append({
             "segment_id": index + 1,
             "section_id": f"S{index // 10:02d}",
-            "asset_ref": "remote://media-worker/official-longform",
+            "asset_ref": (
+                "remote://media-worker/official-longform-"
+                f"{index // 30}"
+            ),
             "source_start_seconds": start,
             "duration_seconds": 10.0,
         })

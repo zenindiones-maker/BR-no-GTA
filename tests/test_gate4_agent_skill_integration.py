@@ -60,7 +60,9 @@ def test_harness_routing_selects_exactly_one_addy_skill_with_explainable_metadat
     assert selected["agent_id"] == "addy-agent-skills"
     assert selected["skill_id"] == "code-review-and-quality"
     assert selected["executor_binding"] == decision.selected_executor_binding
-    assert selected["evidence_contract"].endswith("CapabilityEvidence")
+    assert "CapabilityEvidence" in selected["evidence_contract"]
+    assert "AgentInvocationReceipt" in selected["evidence_contract"]
+    assert "HarnessAIProviderEvidence" in selected["evidence_contract"]
     assert decision.fallback_occurred is False
     assert any("selected by Harness policy" in reason for reason in decision.rationale)
 
