@@ -355,7 +355,7 @@ export default function App() {
               <span>tracce</span>
               {/* il minimo e' l'altezza sotto la quale i comandi della testata
                   non ci starebbero piu': due righe da 18px, spazi e margini */}
-              <input type="range" min="44" max="140" step="2" value={sizes.trackH}
+              <input type="range" min="54" max="140" step="2" value={sizes.trackH}
                 style={{ width: 84 }} title="Altezza delle tracce: abbassala per vederne di piu'"
                 onChange={(e) => setSizes((s) => ({ ...s, trackH: +e.target.value }))} />
             </span>
