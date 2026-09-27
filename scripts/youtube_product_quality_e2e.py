@@ -28,6 +28,9 @@ from app.services.youtube_package_service import (
     persist_youtube_content_package,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.product_quality_artifact_contract import (
+    PRODUCT_QUALITY_E2E_SCHEMA,
+)
 from app.services.production_plan_refresh_service import refresh_production_plan_from_persisted_script
 from app.services.youtube_role_context_service import (
     build_production_packet,
@@ -527,6 +530,7 @@ def build_product(
 
     scenes = list(production_plan.get("scenes") or [])
     return {
+        "schema": PRODUCT_QUALITY_E2E_SCHEMA,
         "status": "PASS",
         "mission_id": mission_id,
         "brain_result": brain,

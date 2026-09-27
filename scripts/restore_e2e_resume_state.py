@@ -11,12 +11,18 @@ import shutil
 import subprocess
 
 from app.database.schema import initialize_schema
-from app.services.e2e_stage_checkpoint_service import build_resume_plan
+from app.services.e2e_stage_checkpoint_service import (
+    build_resume_plan,
+    invalidate_stage_and_descendants,
+)
 from app.services.e2e_stage_spec_service import (
     bootstrap_checkpoints,
     bootstrap_upstream_checkpoints,
     build_specs_from_artifacts,
     build_upstream_specs_from_artifacts,
+)
+from app.services.product_quality_artifact_contract import (
+    assess_product_quality_artifact,
 )
 
 
@@ -198,40 +204,124 @@ def main() -> int:
             args.runtime_dir.mkdir(parents=True, exist_ok=True)
             for name in upstream_required:
                 (args.runtime_dir / name).write_bytes((source_dir / name).read_bytes())
-            has_product = "product-quality-e2e.json" in set(extracted)
-            if has_product:
-                (args.runtime_dir / "product-quality-e2e.json").write_bytes(
-                    (source_dir / "product-quality-e2e.json").read_bytes()
+            artifact_has_product = (
+                "product-quality-e2e.json" in set(extracted)
+            )
+            product_compatibility = {
+                "schema": "ProductQualityArtifactCompatibility/v1",
+                "compatible": False,
+                "observed_schema": None,
+                "reasons": ["PRODUCT_ARTIFACT_ABSENT"],
+            }
+            product: dict | None = None
+            if artifact_has_product:
+                source_product = json.loads(
+                    (source_dir / "product-quality-e2e.json").read_text(
+                        encoding="utf-8"
+                    )
                 )
-            os.environ["BR_TEST_DATABASE"] = str((args.runtime_dir / "mission.db").resolve())
+                product_compatibility = (
+                    assess_product_quality_artifact(source_product)
+                )
+                if product_compatibility["compatible"]:
+                    product = source_product
+                    (
+                        args.runtime_dir / "product-quality-e2e.json"
+                    ).write_text(
+                        json.dumps(
+                            product,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+            runtime_product = args.runtime_dir / "product-quality-e2e.json"
+            if product is None and runtime_product.exists():
+                runtime_product.unlink()
+
+            os.environ["BR_TEST_DATABASE"] = str(
+                (args.runtime_dir / "mission.db").resolve()
+            )
             initialize_schema()
-            fresh = json.loads((args.runtime_dir / "fresh-research.json").read_text(encoding="utf-8"))
-            proof = json.loads((args.runtime_dir / "multi-agent-proof.json").read_text(encoding="utf-8"))
-            durations = _trace_durations(source_dir / "performance-trace.jsonl")
-            if has_product:
-                product = json.loads((args.runtime_dir / "product-quality-e2e.json").read_text(encoding="utf-8"))
+            fresh = json.loads(
+                (args.runtime_dir / "fresh-research.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            proof = json.loads(
+                (args.runtime_dir / "multi-agent-proof.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            durations = _trace_durations(
+                source_dir / "performance-trace.jsonl"
+            )
+
+            product_compatible = product is not None
+            if product_compatible:
                 bootstrap = bootstrap_checkpoints(
                     fresh=fresh,
                     proof=proof,
                     product=product,
-                    source_commit_sha=str(source_run.get("head_sha") or ""),
+                    source_commit_sha=str(
+                        source_run.get("head_sha") or ""
+                    ),
                     source_run_id=str(source_run.get("id") or ""),
                     durations_ms=durations,
                 )
-                specs = build_specs_from_artifacts(fresh=fresh, proof=proof, product=product)
+                specs = build_specs_from_artifacts(
+                    fresh=fresh,
+                    proof=proof,
+                    product=product,
+                )
             else:
                 bootstrap = bootstrap_upstream_checkpoints(
                     fresh=fresh,
                     proof=proof,
-                    source_commit_sha=str(source_run.get("head_sha") or ""),
+                    source_commit_sha=str(
+                        source_run.get("head_sha") or ""
+                    ),
                     source_run_id=str(source_run.get("id") or ""),
                     durations_ms=durations,
                 )
-                specs = build_upstream_specs_from_artifacts(fresh=fresh, proof=proof)
-            plan = build_resume_plan(goal_id=bootstrap["goal_id"], specs=specs)
+                invalidate_stage_and_descendants(
+                    goal_id=bootstrap["goal_id"],
+                    stage_id="editorial-script",
+                    reason="PRODUCT_ARTIFACT_CONTRACT_INCOMPATIBLE",
+                )
+                specs = build_upstream_specs_from_artifacts(
+                    fresh=fresh,
+                    proof=proof,
+                )
+
+            plan = build_resume_plan(
+                goal_id=bootstrap["goal_id"],
+                specs=specs,
+            )
             reusable_upstream = {
-                "research", "fact-check", "gta6-brain", "content-strategy"
+                "research",
+                "fact-check",
+                "gta6-brain",
+                "content-strategy",
             } <= set(plan["reused_stages"])
+
+            if not product_compatible:
+                product_stages = [
+                    "editorial-script",
+                    "script-review",
+                    "seo",
+                    "production-management",
+                    "thumbnail",
+                    "youtube-package",
+                ]
+                plan = {
+                    **plan,
+                    "RESUME_FROM_STAGE": "editorial-script",
+                    "RECOMPUTED_STAGE_COUNT": len(product_stages),
+                    "recomputed_stages": product_stages,
+                }
+
             candidate = {
                 "mode": "TARGETED_RETRY_RUN",
                 "resume_available": True,
@@ -241,7 +331,15 @@ def main() -> int:
                 "bootstrap": bootstrap,
                 **plan,
                 "reuse_upstream": reusable_upstream,
-                "reuse_product_package": has_product and "youtube-package" in set(plan["reused_stages"]),
+                "reuse_product_package": (
+                    product_compatible
+                    and "youtube-package" in set(
+                        plan["reused_stages"]
+                    )
+                ),
+                "product_artifact_compatibility": (
+                    product_compatibility
+                ),
             }
             candidates.append(candidate)
             if reusable_upstream:

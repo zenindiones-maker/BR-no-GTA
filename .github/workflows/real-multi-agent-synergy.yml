@@ -32,6 +32,7 @@ on:
       - 'app/database/e2e_stage_checkpoint_repository.py'
       - 'app/services/e2e_stage_spec_service.py'
       - 'app/services/e2e_stage_checkpoint_service.py'
+      - 'app/services/product_quality_artifact_contract.py'
       - 'scripts/restore_e2e_resume_state.py'
 
 permissions:
