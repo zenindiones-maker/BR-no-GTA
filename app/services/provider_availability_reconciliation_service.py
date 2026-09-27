@@ -1105,10 +1105,15 @@ class ProviderAvailabilityReconciler:
             category="provider-availability-wait",
             payload=next_wait,
         )
-        result_with_wait = {
-            **persisted_result,
-            "next_wait": persisted_wait,
-        }
+        result_with_wait = json.loads(json.dumps(
+            {
+                **persisted_result,
+                "next_wait": persisted_wait,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ))
         idempotency_path.parent.mkdir(parents=True, exist_ok=True)
         idempotency_path.write_text(
             json.dumps(
@@ -1116,7 +1121,6 @@ class ProviderAvailabilityReconciler:
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
-                default=str,
             ) + "\n",
             encoding="utf-8",
         )

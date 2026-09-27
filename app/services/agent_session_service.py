@@ -660,6 +660,7 @@ class AgentSessionRuntime:
 
         attempted = unique_pairs(attempted)
         exhausted = unique_pairs(exhausted)
+        historical_attempts = _unique_rows(historical_attempts)
         attempted_routes = list(dict.fromkeys(
             row["routing_id"]
             for row in attempted

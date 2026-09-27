@@ -156,7 +156,34 @@ def test_wait_state_consumes_zero_semantic_planner_calls(tmp_path):
 def test_unchanged_health_hash_does_not_requeue(tmp_path):
     result = _reconcile(tmp_path)
     assert result["decision"] == "STILL_WAITING"
-    assert result["RECONCILIATION_NO_STATE_CHANGE"] == "PASS"
+    assert result["previous_health_hash"] == "health-a"
+    assert result["new_health_hash"] == "health-a"
+    assert result["new_effective_count"] == 0
+
+
+def test_unchanged_health_and_eligibility_hashes_are_no_state_change(tmp_path):
+    reconciler = ProviderAvailabilityReconciler()
+    first = reconciler.reconcile(
+        wait=_wait(tmp_path),
+        artifact_dir=tmp_path,
+        now=NOW + timedelta(minutes=2),
+        health_snapshot=_health("health-a"),
+    )
+    second = reconciler.reconcile(
+        wait=first["next_wait"],
+        artifact_dir=tmp_path,
+        now=NOW + timedelta(minutes=3),
+        health_snapshot=_health("health-a"),
+    )
+    assert second["previous_health_hash"] == second["new_health_hash"]
+    assert (
+        second["previous_eligibility_hash"]
+        == second["new_eligibility_hash"]
+    )
+    assert second["state_changed"] is False
+    assert second["decision"] == "STILL_WAITING"
+    assert second["RECONCILIATION_NO_STATE_CHANGE"] == "PASS"
+    assert second["NO_PROVIDER_CALL_ON_UNCHANGED_POOL"] == "PASS"
 
 
 def test_unchanged_eligibility_hash_does_not_requeue(tmp_path):
