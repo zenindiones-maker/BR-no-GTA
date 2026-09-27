@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.services.agent_session_service import AgentSessionRuntime
 from app.services.harness_mission_execution_router import (
     resolve_harness_execution_need,
@@ -200,3 +202,25 @@ def test_wait_state_releases_execution_lease():
         41,
         "needs_input",
     )]
+
+
+def test_reconciliation_observes_same_nvidia_auth_surface_as_execution():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "real-agent-self-improvement.yml"
+    ).read_text(encoding="utf-8")
+    reconcile = workflow.split(
+        "- name: Reconcile provider availability once",
+        1,
+    )[1].split("\n      - name:", 1)[0]
+    mission = workflow.split(
+        "- name: Execute real natural-goal self-improvement mission",
+        1,
+    )[1].split("\n      - name:", 1)[0]
+    credential = "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}"
+    assert credential in reconcile
+    assert credential in mission
+    assert "scripts/provider_availability_reconciliation.py" in reconcile
+    assert "PROVIDER_CALLS_WHILE_WAITING=0" in reconcile

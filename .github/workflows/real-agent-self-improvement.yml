@@ -1357,6 +1357,11 @@ jobs:
       - name: Reconcile provider availability once
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
         id: reconcile
+        env:
+          # Reconciliation recomputes the same hard eligibility that execution
+          # will observe. Credential presence is evidence only; this step still
+          # performs zero semantic/provider calls.
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python scripts/provider_availability_reconciliation.py             --wait-file artifacts/provider-availability-reconciliation/input-wait.json             --output-dir artifacts/provider-availability-reconciliation
