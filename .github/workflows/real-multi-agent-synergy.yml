@@ -62,6 +62,7 @@ jobs:
       BR_PERFORMANCE_TRACE_ID: "github:${{ github.run_id }}:${{ github.run_attempt }}"
       BR_E2E_RESEARCH_FRESHNESS_SECONDS: "900"
       BR_E2E_FORCE_FULL: "${{ contains(github.event.head_commit.message, '[full-proof]') }}"
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
 
     steps:
       - name: Checkout exact branch state
@@ -220,8 +221,6 @@ jobs:
 
       - name: SEMANTIC_SMOKE gate
         if: steps.resume.outputs.reuse_upstream != 'true'
-        env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python scripts/semantic_smoke_gate.py \
