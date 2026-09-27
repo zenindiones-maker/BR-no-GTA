@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from hashlib import sha256
+import importlib
 import json
 import math
 import re
@@ -11,6 +12,10 @@ from typing import Any, Callable, Iterable
 
 TOON_SPEC_VERSION = "4.1"
 TOON_SERIALIZER_BUILD = "br-no-gta-toon-tabular-v1"
+TOON_PINNED_PACKAGE = "toons"
+TOON_PINNED_VERSION = "0.8.0"
+TOON_CONFORMANCE_FIXTURE_VERSION = "4.1.1"
+TOON_PINNED_SERIALIZER_BUILD = "toons==0.8.0"
 TOON_PROMOTION_STATE = "EXPERIMENTAL"
 JSON_COMPACT = "JSON_COMPACT"
 TOON_V4_1 = "TOON_V4_1"
@@ -685,3 +690,66 @@ def render_llm_projection_block(
         str(decision.get("payload") or ""),
         "UNTRUSTED_SUBORDINATE_DATA_END",
     ])
+
+
+def load_pinned_toon_serializer(module: Any | None = None):
+    """Resolve the exact experimental TOON package or fail closed."""
+    resolved = (
+        module
+        if module is not None
+        else importlib.import_module(TOON_PINNED_PACKAGE)
+    )
+    if str(getattr(resolved, "__version__", "")) != TOON_PINNED_VERSION:
+        raise RuntimeError("TOON_PINNED_VERSION_MISMATCH")
+    if str(getattr(resolved, "__toon_spec__", "")) != TOON_SPEC_VERSION:
+        raise RuntimeError("TOON_PINNED_SPEC_VERSION_MISMATCH")
+    if not callable(getattr(resolved, "dumps", None)):
+        raise RuntimeError("TOON_PINNED_ENCODER_MISSING")
+    if not callable(getattr(resolved, "loads", None)):
+        raise RuntimeError("TOON_PINNED_DECODER_MISSING")
+    return resolved
+
+
+def build_pinned_toon_serialization(
+    *,
+    projection: dict[str, Any],
+    module: Any | None = None,
+) -> dict[str, Any]:
+    """Serialize the exact JSON baseline rows using the pinned package.
+
+    This layer has no authority and never mutates canonical Harness state.
+    """
+    resolved = load_pinned_toon_serializer(module)
+    candidates = dict(projection.get("serialization_candidates") or {})
+    baseline = dict(candidates.get(JSON_COMPACT) or {})
+    baseline_payload = str(baseline.get("payload") or "")
+    if not baseline_payload:
+        raise RuntimeError("JSON_BASELINE_REQUIRED_FOR_TOON")
+    canonical_rows = json.loads(baseline_payload)
+    canonical = _canonical_json(canonical_rows)
+    started = time.perf_counter()
+    payload = str(resolved.dumps(canonical_rows))
+    serialization_latency_ms = (
+        time.perf_counter() - started
+    ) * 1000.0
+    decoded = resolved.loads(payload)
+    if _canonical_json(decoded) != canonical:
+        raise RuntimeError("TOON_PINNED_ROUNDTRIP_MISMATCH")
+    return {
+        "format": TOON_V4_1,
+        "spec_version": TOON_SPEC_VERSION,
+        "conformance_fixture_version": TOON_CONFORMANCE_FIXTURE_VERSION,
+        "serializer_build": TOON_PINNED_SERIALIZER_BUILD,
+        "serialized_bytes": len(payload.encode("utf-8")),
+        "serialized_input_sha256": _sha(payload),
+        "payload": payload,
+        "roundtrip_verified": True,
+        "serialization_latency_ms": round(
+            serialization_latency_ms,
+            4,
+        ),
+        "canonical_projection_sha256": projection.get(
+            "canonical_payload_sha256"
+        ),
+        "authority": AUTHORITY_NONE,
+    }

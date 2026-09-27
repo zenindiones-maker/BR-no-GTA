@@ -1,0 +1,3 @@
+# Experimental LLM-input projection only. Canonical Harness state stays JSON.
+# TOON spec v4.1; upstream package reports conformance to official fixtures v4.1.1.
+toons==0.8.0

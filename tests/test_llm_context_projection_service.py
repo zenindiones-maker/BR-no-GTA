@@ -14,6 +14,9 @@ from app.services.llm_context_projection_service import (
     PROVIDER_RECOVERY_LLM_PROJECTION,
     TOON_PROMOTION_STATE,
     TOON_SPEC_VERSION,
+    TOON_PINNED_VERSION,
+    TOON_CONFORMANCE_FIXTURE_VERSION,
+    build_pinned_toon_serialization,
     TOON_V4_1,
     build_llm_context_projection,
     decode_toon_tabular,
@@ -360,3 +363,83 @@ def test_canonical_authority_contracts_do_not_import_toon():
         text = Path(path).read_text(encoding="utf-8")
         assert "llm_context_projection_service" not in text
         assert "TOON_V4_1" not in text
+
+
+
+class _PinnedToon:
+    __version__ = TOON_PINNED_VERSION
+    __toon_spec__ = TOON_SPEC_VERSION
+
+    @staticmethod
+    def dumps(value):
+        return "PINNED:" + json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def loads(value):
+        return json.loads(value.removeprefix("PINNED:"))
+
+
+def test_pinned_serializer_preserves_projection_identity():
+    _, projection = _projection()
+    candidate = build_pinned_toon_serialization(
+        projection=projection,
+        module=_PinnedToon,
+    )
+    assert candidate["roundtrip_verified"] is True
+    assert candidate["spec_version"] == "4.1"
+    assert candidate["conformance_fixture_version"] == "4.1.1"
+    assert candidate["serializer_build"] == "toons==0.8.0"
+    assert candidate["canonical_projection_sha256"] == (
+        projection["canonical_payload_sha256"]
+    )
+
+
+def test_pinned_serializer_version_drift_fails_closed():
+    class Wrong(_PinnedToon):
+        __version__ = "0.8.1"
+
+    _, projection = _projection()
+    with pytest.raises(
+        RuntimeError,
+        match="TOON_PINNED_VERSION_MISMATCH",
+    ):
+        build_pinned_toon_serialization(
+            projection=projection,
+            module=Wrong,
+        )
+
+
+def test_pinned_serializer_spec_drift_fails_closed():
+    class Wrong(_PinnedToon):
+        __toon_spec__ = "4.2"
+
+    _, projection = _projection()
+    with pytest.raises(
+        RuntimeError,
+        match="TOON_PINNED_SPEC_VERSION_MISMATCH",
+    ):
+        build_pinned_toon_serialization(
+            projection=projection,
+            module=Wrong,
+        )
+
+
+def test_pinned_serializer_roundtrip_mismatch_fails_closed():
+    class Wrong(_PinnedToon):
+        @staticmethod
+        def loads(value):
+            return [{"tampered": True}]
+
+    _, projection = _projection()
+    with pytest.raises(
+        RuntimeError,
+        match="TOON_PINNED_ROUNDTRIP_MISMATCH",
+    ):
+        build_pinned_toon_serialization(
+            projection=projection,
+            module=Wrong,
+        )

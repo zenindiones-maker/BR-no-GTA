@@ -11,6 +11,7 @@ on:
       - "scripts/semantic_planner_context_profile.py"
       - "tests/test_llm_context_projection_service.py"
       - "tests/test_llm_context_serialization_ab.py"
+      - "requirements-llm-context-experimental.txt"
       - ".github/workflows/llm-context-serialization-ab.yml"
 
 permissions:
@@ -37,14 +38,23 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-llm-context-experimental.txt
 
       - name: Install deterministic runtime
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python -m pip install -q -r requirements.txt pytest
+          python -m pip install -q             -r requirements.txt             -r requirements-llm-context-experimental.txt             pytest
+          python - <<'PY'
+          import toons
+          assert toons.__version__ == "0.8.0"
+          assert toons.__toon_spec__ == "4.1"
+          print("TOON_SERIALIZER_VERSION_PINNED=PASS")
+          print("TOON_CONFORMANCE_FIXTURE_VERSION=4.1.1")
+          PY
           gh --version
 
       - name: Focused TOON projection tests
@@ -109,8 +119,13 @@ jobs:
               "FALLBACK_AVAILABLE",
               "JSON_BASELINE_PRESERVED",
               "TOON_SPEC_PINNED",
+              "TOON_SERIALIZER_PINNED",
+              "TOON_CONFORMANCE_DECLARED",
           ):
               assert g[key] is True, key
+          assert d["projection"]["toon_serializer_build"]=="toons==0.8.0"
+          assert d["projection"]["toon_conformance_fixture_version"]=="4.1.1"
+          assert d["promotion"]["selection_preview"]["serializer_build"]=="toons==0.8.0"
           assert d["baseline"]["provider_id"]==d["toon"]["provider_id"]
           assert d["baseline"]["model_id"]==d["toon"]["model_id"]
           assert d["baseline"]["routing_id"]==d["toon"]["routing_id"]

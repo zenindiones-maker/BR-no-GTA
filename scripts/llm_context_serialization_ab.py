@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -21,9 +22,12 @@ from app.services.llm_context_projection_service import (
     GTA6_KNOWLEDGE_LLM_PROJECTION,
     JSON_COMPACT,
     LLMPromptSerializationPolicy,
+    TOON_CONFORMANCE_FIXTURE_VERSION,
+    TOON_PINNED_SERIALIZER_BUILD,
     TOON_SPEC_VERSION,
     TOON_V4_1,
     build_llm_context_projection,
+    build_pinned_toon_serialization,
     select_llm_prompt_serialization,
 )
 
@@ -294,11 +298,20 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
     json_candidate = dict(
         projection["serialization_candidates"][JSON_COMPACT]
     )
-    toon_candidate = dict(
+    internal_candidate = dict(
         projection["serialization_candidates"][TOON_V4_1]
     )
+    if not internal_candidate.get("roundtrip_verified"):
+        raise RuntimeError("INTERNAL_TOON_GOLDEN_ROUNDTRIP_REQUIRED")
+    toon_candidate = build_pinned_toon_serialization(
+        projection=projection,
+    )
     if not toon_candidate.get("roundtrip_verified"):
-        raise RuntimeError("TOON_ROUNDTRIP_EQUIVALENCE_REQUIRED_FOR_AB")
+        raise RuntimeError("PINNED_TOON_ROUNDTRIP_EQUIVALENCE_REQUIRED")
+    if toon_candidate.get("canonical_projection_sha256") != (
+        projection["canonical_payload_sha256"]
+    ):
+        raise RuntimeError("PINNED_TOON_CANONICAL_HASH_DRIFT")
 
     routing = route_harness_request(
         HarnessRoutingRequest(
@@ -403,8 +416,12 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
     policy = LLMPromptSerializationPolicy(
         minimum_token_reduction_percent=PROMOTION_THRESHOLD_PERCENT
     )
+    selection_projection = copy.deepcopy(projection)
+    selection_projection["serialization_candidates"][TOON_V4_1] = (
+        dict(toon_candidate)
+    )
     selection_preview = select_llm_prompt_serialization(
-        projection,
+        selection_projection,
         target_provider=str(routing.selected_provider),
         target_model=str(routing.selected_model),
         measured_input_tokens={
@@ -435,13 +452,24 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
                 "canonical_payload_sha256"
             ],
             "canonical_row_count": projection["canonical_row_count"],
-            "serialization_latency_ms": projection[
-                "serialization_latency_ms"
-            ],
+            "serialization_latency_ms": {
+                "projection_build_ms": projection[
+                    "serialization_latency_ms"
+                ],
+                "pinned_toon_encode_ms": toon_candidate[
+                    "serialization_latency_ms"
+                ],
+            },
             "json_bytes": json_candidate["serialized_bytes"],
             "toon_bytes": toon_candidate["serialized_bytes"],
             "roundtrip_verified": toon_candidate[
                 "roundtrip_verified"
+            ],
+            "toon_serializer_build": toon_candidate[
+                "serializer_build"
+            ],
+            "toon_conformance_fixture_version": toon_candidate[
+                "conformance_fixture_version"
             ],
         },
         "route": {
@@ -465,7 +493,7 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
             "SERIALIZED_BYTES_TOON": toon_candidate[
                 "serialized_bytes"
             ],
-            "SERIALIZATION_LATENCY_MS": projection[
+            "SERIALIZATION_LATENCY_MS": toon_candidate[
                 "serialization_latency_ms"
             ],
             "PROVIDER_LATENCY_MS_BASELINE": baseline[
@@ -514,6 +542,14 @@ def run(*, fresh_research: Path, output: Path) -> dict[str, Any]:
             ),
             "JSON_BASELINE_PRESERVED": True,
             "TOON_SPEC_PINNED": TOON_SPEC_VERSION == "4.1",
+            "TOON_SERIALIZER_PINNED": (
+                toon_candidate.get("serializer_build")
+                == TOON_PINNED_SERIALIZER_BUILD
+            ),
+            "TOON_CONFORMANCE_DECLARED": (
+                toon_candidate.get("conformance_fixture_version")
+                == TOON_CONFORMANCE_FIXTURE_VERSION
+            ),
         },
         "promotion": {
             "decision": "PROMOTE" if promote else "REJECT",
