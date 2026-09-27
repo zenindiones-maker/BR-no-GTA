@@ -224,3 +224,30 @@ def test_reconciliation_observes_same_nvidia_auth_surface_as_execution():
     assert credential in mission
     assert "scripts/provider_availability_reconciliation.py" in reconcile
     assert "PROVIDER_CALLS_WHILE_WAITING=0" in reconcile
+
+
+def test_reconciliation_upload_excludes_transient_download_trees():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "real-agent-self-improvement.yml"
+    ).read_text(encoding="utf-8")
+    stage = workflow.split(
+        "- name: Stage bounded reconciliation evidence",
+        1,
+    )[1].split("\n      - name:", 1)[0]
+    upload = workflow.split(
+        "- name: Upload reconciliation evidence",
+        1,
+    )[1].split("\n      - name:", 1)[0]
+
+    assert 'transient={"wait-source","prior","health-event"}' in stage
+    assert "TRANSIENT_RECONCILIATION_DOWNLOADS_EXCLUDED=PASS" in stage
+    assert "RECONCILIATION_UPLOAD_BYTES_BOUNDED=PASS" in stage
+    assert "128*1024*1024" in stage
+    assert (
+        "path: ${{ runner.temp }}/provider-reconciliation-publish/"
+        in upload
+    )
+    assert "path: artifacts/provider-availability-reconciliation/" not in upload

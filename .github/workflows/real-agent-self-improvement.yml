@@ -1442,12 +1442,65 @@ jobs:
           },indent=2,sort_keys=True)+"\n")
           PY
 
+      - name: Stage bounded reconciliation evidence
+        if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source=Path("artifacts/provider-availability-reconciliation").resolve()
+          target=(Path(os.environ["RUNNER_TEMP"])/"provider-reconciliation-publish").resolve()
+          transient={"wait-source","prior","health-event"}
+          shutil.rmtree(target,ignore_errors=True)
+          target.mkdir(parents=True,exist_ok=True)
+
+          for child in source.iterdir():
+              if child.name in transient:
+                  continue
+              destination=target/child.name
+              if child.is_dir():
+                  shutil.copytree(child,destination)
+              elif child.is_file():
+                  shutil.copy2(child,destination)
+
+          for forbidden in transient:
+              if (target/forbidden).exists():
+                  raise RuntimeError(
+                      "TRANSIENT_RECONCILIATION_DOWNLOAD_SURVIVED="+forbidden
+                  )
+
+          required=target/"provider-availability-reconciliation-result.json"
+          if not required.is_file():
+              raise RuntimeError("CANONICAL_RECONCILIATION_RESULT_MISSING")
+
+          total=sum(
+              path.stat().st_size
+              for path in target.rglob("*")
+              if path.is_file()
+          )
+          limit=128*1024*1024
+          if total > limit:
+              raise RuntimeError(
+                  "RECONCILIATION_UPLOAD_BYTES_EXCEEDED:"
+                  +str(total)
+                  +">"
+                  +str(limit)
+              )
+
+          print("TRANSIENT_RECONCILIATION_DOWNLOADS_EXCLUDED=PASS")
+          print("RECONCILIATION_UPLOAD_BYTES="+str(total))
+          print("RECONCILIATION_UPLOAD_BYTES_BOUNDED=PASS")
+          PY
+
       - name: Upload reconciliation evidence
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
         uses: actions/upload-artifact@v4
         with:
           name: provider-availability-reconciliation-${{ github.run_id }}
-          path: artifacts/provider-availability-reconciliation/
+          path: ${{ runner.temp }}/provider-reconciliation-publish/
           if-no-files-found: error
           retention-days: 30
 
