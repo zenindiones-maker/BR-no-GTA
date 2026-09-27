@@ -66,14 +66,20 @@ export default function App() {
 
   // ---- stato iniziale ed eventi dal server --------------------------------
   useEffect(() => {
-    api.state().then((s) => {
+    let mounted = true
+    const refreshProjectState = () => api.state().then((s) => {
+      if (!mounted) return
       setSys(s)
       setProject(s.project)
       setPath(s.path)
       setRevision(s.revision)
-    }).catch((e) => setError(e.message))
+    }).catch((e) => {
+      if (mounted) setError(e.message)
+    })
 
-    return connectEvents((ev) => {
+    refreshProjectState()
+    const disconnect = connectEvents((ev) => {
+      if (ev.type === 'project') refreshProjectState()
       if (ev.type === 'render') setJob(ev.job)
       if (ev.type === 'proxies') {
         // anche in caso di errore: altrimenti l'avviso "genero i proxy" resta li' per sempre
@@ -81,6 +87,10 @@ export default function App() {
         if (ev.state === 'error') setError(`proxy non riusciti: ${ev.error}`)
       }
     })
+    return () => {
+      mounted = false
+      disconnect()
+    }
   }, [])
 
   useEffect(() => {

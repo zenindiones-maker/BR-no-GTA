@@ -36,7 +36,6 @@ ALLOWED_BROWSER_OPERATIONS = frozenset({
     "functional",
     "accessibility",
     "aria",
-    "visual",
     "all",
 })
 FORBIDDEN_CALLER_FIELDS = frozenset({
@@ -111,6 +110,7 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "candidate_sha",
         "frontend_build_sha",
         "timeout_seconds",
+        "viewport",
     }
     extras = sorted(set(payload) - allowed)
     if extras:
@@ -136,6 +136,9 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     timeout = int(timeout)
     if timeout < 5 or timeout > 300:
         raise _blocked("browser QA timeout_seconds is outside bounds", stage="policy")
+    viewport = str(payload.get("viewport") or "both").strip().lower()
+    if viewport not in {"both", "desktop", "desktop-narrow"}:
+        raise _blocked("browser QA viewport is not allowlisted", stage="policy")
 
     def required_id(key: str) -> str:
         value = str(payload.get(key) or "").strip()
@@ -179,6 +182,7 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "candidate_sha": candidate_sha,
         "frontend_build_sha": frontend_build_sha,
         "timeout_seconds": timeout,
+        "viewport": viewport,
     }
 
 

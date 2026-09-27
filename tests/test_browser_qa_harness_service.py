@@ -159,6 +159,29 @@ def test_unapproved_origin_is_blocked(url):
     assert payload["result"]["status"] == "BLOCKED"
 
 
+@pytest.mark.parametrize("viewport", ["mobile", "wide", "../desktop"])
+def test_unapproved_viewport_is_blocked(viewport):
+    payload = _call({
+        "authorized_url": "http://127.0.0.1:5173/",
+        "mission_id": "mission-browser-qa",
+        "task_id": "task-browser-qa",
+        "candidate_sha": "a" * 40,
+        "viewport": viewport,
+    })
+    assert payload["result"]["status"] == "BLOCKED"
+
+
+def test_unimplemented_visual_operation_is_blocked():
+    payload = _call({
+        "authorized_url": "http://127.0.0.1:5173/",
+        "mission_id": "mission-browser-qa",
+        "task_id": "task-browser-qa",
+        "candidate_sha": "a" * 40,
+        "operation": "visual",
+    })
+    assert payload["result"]["status"] == "BLOCKED"
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

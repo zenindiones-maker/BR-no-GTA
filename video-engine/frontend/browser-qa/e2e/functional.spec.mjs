@@ -16,7 +16,7 @@ test('[functional:editor-load] real VEdit loads canonical project', async ({ pag
   await expect(page.getByText('Video principal', { exact: true })).toBeVisible()
   await expect(page.getByText('Overlay QA', { exact: true })).toBeVisible()
   await expect(page.getByText('QA Blue', { exact: true })).toBeVisible()
-  await expect(page.getByTitle('Escala dos tempos em timeline')).toBeVisible()
+  await expect(page.getByRole('slider', { name: 'Scala dei tempi in timeline' })).toBeVisible()
   await assertRuntimeGates(gates, testInfo)
 })
 
@@ -82,12 +82,16 @@ test('[functional:responsive] root layout remains bounded', async ({ page }, tes
   await page.goto('/')
   const metrics = await page.evaluate(() => ({
     innerWidth: window.innerWidth,
-    scrollWidth: document.documentElement.scrollWidth,
     innerHeight: window.innerHeight,
-    scrollHeight: document.documentElement.scrollHeight,
+    bodyOverflow: getComputedStyle(document.body).overflow,
   }))
-  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1)
-  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.innerHeight + 1)
+  const appBox = await page.locator('.app').boundingBox()
+  expect(appBox).not.toBeNull()
+  expect(appBox.x).toBeGreaterThanOrEqual(0)
+  expect(appBox.y).toBeGreaterThanOrEqual(0)
+  expect(appBox.x + appBox.width).toBeLessThanOrEqual(metrics.innerWidth + 1)
+  expect(appBox.y + appBox.height).toBeLessThanOrEqual(metrics.innerHeight + 1)
+  expect(metrics.bodyOverflow).toBe('hidden')
   await expect(page.getByRole('button', { name: /media/i }).first()).toBeVisible()
   await assertRuntimeGates(gates, testInfo)
 })

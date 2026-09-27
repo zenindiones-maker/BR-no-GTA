@@ -33,7 +33,7 @@ test('[aria:editor] important surfaces expose stable accessible structure', asyn
   const topbar = await page.locator('.topbar').ariaSnapshot()
   const timeline = await page.locator('.timeline').ariaSnapshot()
   expect(topbar).toContain('button')
-  expect(topbar).toContain('novo')
+  expect(topbar).toContain('nuovo')
   expect(topbar).toContain('salva')
   expect(timeline).toContain('Video principal')
   expect(timeline).toContain('Overlay QA')
