@@ -183,6 +183,22 @@ def capture_canonical_execution_episode(
             "ROUTING_ID": str(canonical.routing_id or "") or None,
             "PROVIDER_ATTEMPTS": provider_attempts,
             "FAILURE_EPISODES": failure_episodes,
+            "DOMAIN_DECISION": (
+                dict(result_payload.get("domain_decision") or {})
+                if isinstance(
+                    result_payload.get("domain_decision"),
+                    Mapping,
+                )
+                else None
+            ),
+            "DOMAIN_PROJECTION": (
+                dict(result_payload.get("domain_projection") or {})
+                if isinstance(
+                    result_payload.get("domain_projection"),
+                    Mapping,
+                )
+                else None
+            ),
             "FAILURE_DOMAIN_CLASSIFICATION": (
                 dict(result_payload.get("FAILURE_DOMAIN_CLASSIFICATION") or {})
                 if isinstance(

@@ -3,6 +3,9 @@ from __future__ import annotations
 from app.database import harness_learning_repository
 from app.services.ai_provider import AIResponse
 from app.services import gta6_brain_harness_service as brain_service
+from app.services.gta6_domain_projection_service import (
+    GTA6_DOMAIN_PROJECTION_SCHEMA,
+)
 from app.services.harness_authorization_service import (
     consume_harness_authorization,
     issue_harness_authorization,
@@ -11,8 +14,13 @@ from app.services.harness_routing_policy_service import HarnessRoutingRequest, r
 
 
 class _FakeProvider:
+    def __init__(self):
+        self.prompts: list[str] = []
+
     def generate(self, prompt: str) -> AIResponse:
+        self.prompts.append(prompt)
         assert "GTA6 Brain" in prompt
+        assert GTA6_DOMAIN_PROJECTION_SCHEMA in prompt
         return AIResponse(
             text='{"action":"WAIT","reason":"No queued work in canonical state.","priority":"LOW","confidence":0.98}',
             provider="fake",
@@ -48,11 +56,17 @@ def test_gta6_brain_is_selectable_but_cannot_authorize_execution(monkeypatch):
         },
     )
 
+    fake_provider = _FakeProvider()
+
     def fake_select(*, routing_decision, authorization):
         assert routing_decision.selected_provider
-        return routing_decision.selected_provider, _FakeProvider()
+        return routing_decision.selected_provider, fake_provider
 
-    monkeypatch.setattr(brain_service, "select_harness_ai_provider", fake_select)
+    monkeypatch.setattr(
+        brain_service,
+        "select_harness_ai_provider",
+        fake_select,
+    )
     try:
         evidence = brain_service.execute_authorized_gta6_brain_decision(
             authorization=authorization,
@@ -70,7 +84,15 @@ def test_gta6_brain_is_selectable_but_cannot_authorize_execution(monkeypatch):
     assert evidence.status == "EXECUTED"
     assert evidence.result["brain_decision"]["action"] == "WAIT"
     assert evidence.result["execution_authorized"] is False
+    projection = evidence.result["domain_projection"]
+    assert projection["schema"] == GTA6_DOMAIN_PROJECTION_SCHEMA
+    assert len(projection["content_sha256"]) == 64
+    assert projection["projection_ref"].startswith(
+        "gta6-domain-projection:sha256:"
+    )
     receipt = evidence.result["receipt"]
+    assert projection["projection_ref"] in receipt["input_refs"]
+    assert projection["projection_ref"] in receipt["evidence_refs"]
     assert receipt["agent_id"] == "gta6-brain"
     assert receipt["proven_live"] is True
     assert receipt["returned_to_harness"] is True
@@ -83,4 +105,14 @@ def test_gta6_brain_is_selectable_but_cannot_authorize_execution(monkeypatch):
     assert len(episodes) == 1
     assert episodes[0]["capability_id"] == capability_id
     assert episodes[0]["actual_outcome"]["observed"] is True
+    assert (
+        episodes[0]["actual_outcome"]["DOMAIN_DECISION"]["action"]
+        == "WAIT"
+    )
+    assert (
+        episodes[0]["actual_outcome"]["DOMAIN_PROJECTION"][
+            "content_sha256"
+        ]
+        == projection["content_sha256"]
+    )
     assert episodes[0]["status"] == "COMPLETED"

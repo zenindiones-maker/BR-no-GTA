@@ -6,6 +6,11 @@ from typing import Any
 
 from app.services.global_capability_registry import GLOBAL_CAPABILITY_REGISTRY
 from app.services.gta6_brain import GTA6Brain
+from app.services.gta6_domain_projection_service import (
+    GTA6_DOMAIN_PROJECTION_SCHEMA,
+    build_gta6_domain_projection,
+    gta6_domain_projection_ref,
+)
 from app.services.harness_ai_provider_service import select_harness_ai_provider
 from app.services.harness_authorization_service import (
     HarnessAuthorization,
@@ -21,6 +26,7 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 
 
@@ -108,23 +114,82 @@ def execute_authorized_gta6_brain_decision(
         },
     )
 
+    with PerformanceSpan(
+        stage="gta6.domain-projection.build",
+        category="GTA6_DOMAIN_PROJECTION_BUILD",
+        mission_id=mission_id,
+        task_id=task_id,
+        goal_id=goal_id,
+        agent_id="gta6-brain",
+        capability_id=GTA6_BRAIN_CAPABILITY_ID,
+    ) as projection_span:
+        projection = build_gta6_domain_projection(
+            mission_id=mission_id,
+            task_id=task_id,
+            goal_id=goal_id,
+        )
+        projection_ref = gta6_domain_projection_ref(projection)
+        projection_span.values["input_size"] = len(
+            str(projection).encode("utf-8")
+        )
+        projection_span.values["metadata"] = {
+            "gta6_domain_projection_build_total": 1,
+            "gta6_domain_projection_bytes": len(
+                str(projection).encode("utf-8")
+            ),
+            "gta6_domain_projection_evidence_refs": len(
+                projection.get("evidence_refs") or ()
+            ),
+            "gta6_brain_feedback_items_retrieved": sum(
+                len(
+                    projection["decision_feedback"].get(key) or ()
+                )
+                for key in (
+                    "recent_brain_decisions",
+                    "relevant_failure_memories",
+                    "relevant_human_corrections",
+                )
+            ),
+            "gta6_brain_previous_episode_retrieved": len(
+                projection["decision_feedback"].get(
+                    "recent_brain_decisions"
+                ) or ()
+            ),
+            "gta6_brain_human_corrections_retrieved": len(
+                projection["decision_feedback"].get(
+                    "relevant_human_corrections"
+                ) or ()
+            ),
+            "gta6_brain_failure_memories_retrieved": len(
+                projection["decision_feedback"].get(
+                    "relevant_failure_memories"
+                ) or ()
+            ),
+        }
+
     started_at = datetime.now(timezone.utc).isoformat()
     try:
         _, provider = select_harness_ai_provider(
             routing_decision=provider_routing,
             authorization=provider_authorization,
         )
-        decision = GTA6Brain(ai_provider=provider).decide()
+        decision = GTA6Brain(ai_provider=provider).decide(projection)
     finally:
         consume_harness_authorization(provider_authorization)
     finished_at = datetime.now(timezone.utc).isoformat()
 
-    evidence_refs = (
+    evidence_refs = tuple(dict.fromkeys((
         f"routing:{routing_decision.routing_id}",
         f"authorization:{auth.authorization_id}",
         f"provider-routing:{provider_routing.routing_id}",
         f"provider-authorization:{provider_authorization.authorization_id}",
-    )
+        projection_ref,
+        *tuple(
+            str(ref)
+            for ref in projection.get("evidence_refs") or ()
+            if str(ref)
+        ),
+    )))
     receipt = AgentInvocationReceipt(
         mission_id=mission_id,
         task_id=task_id,
@@ -135,7 +200,14 @@ def execute_authorized_gta6_brain_decision(
         capability=GTA6_BRAIN_CAPABILITY_ID,
         executor=GTA6_BRAIN_EXECUTOR_BINDING,
         provider=str(provider_routing.selected_provider),
-        input_refs=tuple(str(x) for x in payload.get("input_refs") or ()),
+        input_refs=tuple(dict.fromkeys([
+            *[
+                str(x)
+                for x in payload.get("input_refs") or ()
+                if str(x)
+            ],
+            projection_ref,
+        ])),
         output_refs=(f"brain-decision:{mission_id}:{task_id}",),
         evidence_refs=evidence_refs,
         started_at=started_at,
@@ -157,6 +229,33 @@ def execute_authorized_gta6_brain_decision(
         execution_id=auth.execution_id,
         result={
             "brain_decision": asdict(decision),
+            "domain_decision": asdict(decision),
+            "domain_projection": {
+                "schema": GTA6_DOMAIN_PROJECTION_SCHEMA,
+                "projection_ref": projection_ref,
+                "content_sha256": projection["content_sha256"],
+                "observed_at": projection["observed_at"],
+                "evidence_refs": list(
+                    projection.get("evidence_refs") or ()
+                ),
+                "feedback_counts": {
+                    "recent_brain_decisions": len(
+                        projection["decision_feedback"][
+                            "recent_brain_decisions"
+                        ]
+                    ),
+                    "relevant_failure_memories": len(
+                        projection["decision_feedback"][
+                            "relevant_failure_memories"
+                        ]
+                    ),
+                    "relevant_human_corrections": len(
+                        projection["decision_feedback"][
+                            "relevant_human_corrections"
+                        ]
+                    ),
+                },
+            },
             "receipt": receipt.to_dict(),
             "provider_routing": provider_routing.to_dict(),
             "authority": "DEEPSEEK_HARNESS",
@@ -178,6 +277,9 @@ def execute_authorized_gta6_brain_decision(
         domain=record.domain,
         task_class="gta6-domain-decision",
         skill_version=record.version,
-        source_versions={f"capability:{GTA6_BRAIN_CAPABILITY_ID}": str(record.version)},
+        source_versions={
+            f"capability:{GTA6_BRAIN_CAPABILITY_ID}": str(record.version),
+            "gta6-domain-projection": GTA6_DOMAIN_PROJECTION_SCHEMA,
+        },
     )
     return evidence

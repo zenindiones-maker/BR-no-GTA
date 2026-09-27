@@ -1106,8 +1106,13 @@ GTA6_BRAIN_DECISION_RECORD = CapabilityRecord(
     capability_type="AGENT",
     domain="gta6-decision",
     implementation="Harness-subordinated GTA6 Brain domain decision specialist",
-    input_contract="canonical GTA6 operational state + optional mission/goal lineage",
-    output_contract="BrainDecision + AgentInvocationReceipt + canonical Harness evidence",
+    input_contract=(
+        "Harness-owned GTA6DomainProjection/v1 + mission/task/goal lineage"
+    ),
+    output_contract=(
+        "BrainDecision + GTA6 domain projection identity + "
+        "AgentInvocationReceipt + canonical Harness evidence"
+    ),
     requirements=(
         "persisted Harness DECISION authorization",
         "Harness-selected ai.reasoning.text provider/model",
@@ -1128,7 +1133,7 @@ GTA6_BRAIN_DECISION_RECORD = CapabilityRecord(
     evidence_contract="app.services.gta6_brain.BrainDecision + AgentInvocationReceipt",
     fallback_eligibility=False,
     executor_binding="app.services.gta6_brain_harness_service.execute_authorized_gta6_brain_decision",
-    version="1",
+    version="2",
     provider_id=None,
     agent_id="gta6-brain",
     side_effects=(),

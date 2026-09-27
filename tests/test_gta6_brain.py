@@ -153,3 +153,45 @@ def test_brain_rejects_non_json():
         match="returned invalid JSON",
     ):
         brain._parse_decision(provider.response)
+
+
+
+def test_brain_explicit_projection_bypasses_legacy_self_read(monkeypatch):
+    provider = FakeAIProvider(
+        json.dumps({
+            "action": "WAIT",
+            "reason": "Projection says no actionable work.",
+            "priority": "LOW",
+            "confidence": 0.9,
+        })
+    )
+    brain = GTA6Brain(provider)
+    monkeypatch.setattr(
+        brain,
+        "build_context",
+        lambda: pytest.fail(
+            "canonical Harness path must not self-read DB"
+        ),
+    )
+    projection = {
+        "schema": "GTA6DomainProjection/v1",
+        "brain_projection_authority": "NONE",
+        "content_sha256": "a" * 64,
+        "summary": {"active_queue_count": 0},
+        "decision_feedback": {},
+    }
+
+    decision = brain.decide(projection)
+
+    assert decision.action == "WAIT"
+    assert "GTA6DomainProjection/v1" in provider.prompts[0]
+    assert '"active_queue_count": 0' in provider.prompts[0]
+
+
+def test_brain_rejects_projection_with_authority():
+    brain = GTA6Brain(FakeAIProvider("{}"))
+    with pytest.raises(ValueError, match="cannot carry authority"):
+        brain.decide({
+            "schema": "GTA6DomainProjection/v1",
+            "brain_projection_authority": "DEEPSEEK_HARNESS",
+        })

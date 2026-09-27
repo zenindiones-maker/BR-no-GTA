@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from app.database.editorial_repository import list_editorial_evaluations
 from app.database.gta6_monitor_repository import get_gta6_monitor_state
@@ -104,17 +104,42 @@ class GTA6Brain:
             monitor_state=monitor_state,
         )
 
-    def decide(self) -> BrainDecision:
-        context = self.build_context()
+    def decide(
+        self,
+        projection: Mapping[str, Any] | None = None,
+    ) -> BrainDecision:
+        # Compatibility-only fallback for legacy callers. The canonical
+        # Harness path always supplies an explicit GTA6DomainProjection/v1.
+        context: BrainContext | Mapping[str, Any]
+        if projection is None:
+            context = self.build_context()
+        else:
+            if projection.get("schema") != "GTA6DomainProjection/v1":
+                raise ValueError(
+                    "GTA6 Brain requires GTA6DomainProjection/v1"
+                )
+            if projection.get("brain_projection_authority") != "NONE":
+                raise ValueError(
+                    "GTA6 Brain projection cannot carry authority"
+                )
+            context = projection
 
         prompt = self._build_prompt(context)
         response = self.ai_provider.generate(prompt)
 
         return self._parse_decision(response.text)
 
-    def _build_prompt(self, context: BrainContext) -> str:
+    def _build_prompt(
+        self,
+        context: BrainContext | Mapping[str, Any],
+    ) -> str:
+        context_payload = (
+            asdict(context)
+            if isinstance(context, BrainContext)
+            else dict(context)
+        )
         context_json = json.dumps(
-            asdict(context),
+            context_payload,
             ensure_ascii=False,
             indent=2,
             default=str,
