@@ -25,6 +25,9 @@ from app.services.harness_routing_policy_service import (
 )
 from app.services.performance_telemetry_service import PerformanceSpan
 from app.services.task_atomicity_service import require_atomic_task
+from app.services.task_verification_service import (
+    compile_task_verification_plan,
+)
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_PRODUCE_ARTIFACT_REFS,
@@ -96,6 +99,7 @@ class TaskEnvelope:
     failure_semantics: str = "FAIL_CLOSED"
     retry_semantics: str = ""
     independent_outcomes: bool = False
+    verification_specs: tuple[dict[str, Any], ...] = ()
     mission_id: str = "UNBOUND"
     goal_id: str = "UNBOUND"
 
@@ -259,6 +263,11 @@ class TaskEnvelope:
             independent_outcomes=bool(
                 value.get("independent_outcomes", False)
             ),
+            verification_specs=tuple(
+                dict(item)
+                for item in value.get("verification_specs") or ()
+                if isinstance(item, dict)
+            ),
             mission_id=str(value.get("mission_id") or "UNBOUND").strip(),
             goal_id=str(value.get("goal_id") or "UNBOUND").strip(),
         )
@@ -320,6 +329,7 @@ class RoutedCollaborationTask:
     supports_review: bool = False
     selection_evidence: dict[str, Any] = field(default_factory=dict)
     atomicity_contract: dict[str, Any] = field(default_factory=dict)
+    verification_plan: dict[str, Any] = field(default_factory=dict)
 
     @property
     def authorized_action(self) -> str:
@@ -417,6 +427,9 @@ def _task_idempotency_key(
         "failure_semantics": task.failure_semantics,
         "retry_semantics": task.retry_semantics,
         "independent_outcomes": task.independent_outcomes,
+        "verification_specs": [
+            dict(item) for item in task.verification_specs
+        ],
     }
     digest = sha256(
         json.dumps(
@@ -443,6 +456,13 @@ def build_collaboration_plan(
     )
     atomicity_by_task = {
         task.task_id: require_atomic_task(
+            task.to_dict(),
+            mission_id=mission_id,
+        )
+        for task in normalized
+    }
+    verification_by_task = {
+        task.task_id: compile_task_verification_plan(
             task.to_dict(),
             mission_id=mission_id,
         )
@@ -542,6 +562,9 @@ def build_collaboration_plan(
                     "policy_metadata": dict(decision.policy_metadata),
                 },
                 atomicity_contract=atomicity_by_task[
+                    task.task_id
+                ].to_dict(),
+                verification_plan=verification_by_task[
                     task.task_id
                 ].to_dict(),
             )

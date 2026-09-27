@@ -836,3 +836,50 @@ def test_independent_outcomes_require_split():
         assert "INDEPENDENT_OUTCOMES_DECLARED" in str(exc)
     else:
         raise AssertionError("independent outcomes did not require split")
+
+
+def test_acceptance_criteria_compile_to_typed_verification_plan():
+    plan = build_collaboration_plan(
+        mission_id="mission-verification",
+        goal_id="goal-verification",
+        tasks=[{
+            "task_id": "fact-check",
+            "capability_id": "gta6.fact-check",
+            "action": "RESEARCH",
+            "objective": "verify observed claims",
+            "expected_output": "FactCheckResult",
+            "acceptance_criteria": [
+                "verified claims preserve evidence provenance",
+                "result is machine-readable",
+            ],
+            "evidence_contract": "FactCheckResult/v1",
+        }],
+    )
+    verification = plan.tasks[0].verification_plan
+    assert verification["schema"] == "TaskVerificationPlan/v1"
+    assert verification["authority"] == "DEEPSEEK_HARNESS"
+    assert verification["no_agent_self_attestation"] is True
+    assert len(verification["steps"]) == 2
+    assert all(step["criterion_id"] for step in verification["steps"])
+    assert all(
+        step["verification_kind"] == "ARTIFACT_INSPECTION"
+        for step in verification["steps"]
+    )
+
+
+def test_human_gate_is_preserved_as_human_verification():
+    plan = build_collaboration_plan(
+        mission_id="mission-human-verification",
+        goal_id="goal-human-verification",
+        tasks=[{
+            "task_id": "voice-review",
+            "capability_id": "gta6.fact-check",
+            "action": "RESEARCH",
+            "objective": "prepare a bounded review artifact",
+            "acceptance_criteria": ["human approves final take"],
+            "human_gate_policy": "REQUIRED",
+        }],
+    )
+    verification = plan.tasks[0].verification_plan
+    assert verification["human_gate_required"] is True
+    assert verification["steps"][0]["verification_kind"] == "HUMAN_GATE"
