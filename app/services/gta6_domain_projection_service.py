@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from typing import Any, Iterable
@@ -83,9 +83,14 @@ def _parse_time(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        return datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(
+            value.strip().replace("Z", "+00:00")
+        )
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _latest_time(values: Iterable[Any]) -> str:

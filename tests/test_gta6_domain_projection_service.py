@@ -306,3 +306,43 @@ def test_projection_preserves_unknown_instead_of_inventing_zero(monkeypatch):
     assert projection["production"]["voice_status"] == "UNKNOWN"
     assert projection["production"]["pronunciation_gate"] == "UNKNOWN"
     assert projection["review"]["pending_human_review"] == "UNKNOWN"
+
+
+
+def test_projection_normalizes_sqlite_and_offset_timestamps(monkeypatch):
+    _empty(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "list_research_items",
+        lambda: [{
+            "id": 1,
+            "title": "SQLite timestamp",
+            "published_at": None,
+            "collected_at": "2026-09-27 17:00:00",
+        }],
+    )
+    monkeypatch.setattr(
+        harness_learning_repository,
+        "list_episodes",
+        lambda **kwargs: [{
+            "episode_id": "episode-aware",
+            "goal_id": "goal-1",
+            "task_id": "task-1",
+            "agent_id": "gta6-brain",
+            "decision_id": "decision-aware",
+            "status": "COMPLETED",
+            "created_at": "2026-09-27 17:01:00",
+            "finished_at": "2026-09-27T17:01:01+00:00",
+            "actual_outcome": {"success": True},
+            "evidence_refs": [],
+        }],
+    )
+
+    projection = service.build_gta6_domain_projection(
+        mission_id="mission-1",
+        task_id="task-1",
+        goal_id="goal-1",
+    )
+
+    assert projection["observed_at"] == "2026-09-27T17:01:01+00:00"
+    assert len(projection["content_sha256"]) == 64
