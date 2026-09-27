@@ -125,7 +125,17 @@ jobs:
               assert g[key] is True, key
           assert d["projection"]["toon_serializer_build"]=="toons==0.8.0"
           assert d["projection"]["toon_conformance_fixture_version"]=="4.1.1"
-          assert d["promotion"]["selection_preview"]["serializer_build"]=="toons==0.8.0"
+          decision=d["promotion"]["decision"]
+          assert decision in {"PROMOTE","REJECT"}
+          preview=d["promotion"]["selection_preview"]
+          if decision=="PROMOTE":
+              assert preview["selected_format"]=="TOON_V4_1"
+              assert preview["serializer_build"]=="toons==0.8.0"
+          else:
+              assert preview["selected_format"]=="JSON_COMPACT"
+              assert preview["serializer_build"]=="python-json-canonical/v1"
+              assert d["metrics"]["TOKEN_REDUCTION_PERCENT"] is not None
+              print("TOON_REJECTED_JSON_FALLBACK_PRESERVED=PASS")
           assert d["baseline"]["provider_id"]==d["toon"]["provider_id"]
           assert d["baseline"]["model_id"]==d["toon"]["model_id"]
           assert d["baseline"]["routing_id"]==d["toon"]["routing_id"]
