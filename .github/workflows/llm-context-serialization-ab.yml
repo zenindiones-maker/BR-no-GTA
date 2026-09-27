@@ -1,0 +1,130 @@
+name: LLM Context Serialization A-B
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/llm_context_projection_service.py"
+      - "scripts/llm_context_serialization_ab.py"
+      - "scripts/semantic_planner_context_profile.py"
+      - "tests/test_llm_context_projection_service.py"
+      - "tests/test_llm_context_serialization_ab.py"
+      - ".github/workflows/llm-context-serialization-ab.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: llm-context-serialization-ab
+  cancel-in-progress: true
+
+jobs:
+  measured-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .
+      ZERO_COST_OPERATION: "TRUE"
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      BR_TEST_DATABASE: ${{ github.workspace }}/artifacts/llm-context-serialization-ab/ab.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install deterministic runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r requirements.txt pytest
+          gh --version
+
+      - name: Focused TOON projection tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_llm_context_projection_service.py \
+            tests/test_llm_context_serialization_ab.py
+          echo "TOON_PROJECTION_FOCUSED_TESTS=PASS"
+
+      - name: Import exact real Fresh Research packet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/llm-context-serialization-ab/source
+          gh run download 36351695467 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name gta6-fresh-research \
+            --dir artifacts/llm-context-serialization-ab/source
+          test -f artifacts/llm-context-serialization-ab/source/result.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/llm-context-serialization-ab/source/result.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          assert d["status"]=="PASS"
+          assert d["execution_id"]=="execution:mission-5c239dbac2eb4abd29b1:fresh:FACT_CHECK_SOURCE_RECOVERY:0"
+          assert int(d["official_source_count"])==3
+          assert int(d["secondary_source_count"])==9
+          print("REAL_FRESH_RESEARCH_PACKET=PASS")
+          print("SOURCE_RUN_ID=36351695467")
+          print("SOURCE_ARTIFACT_ID=10942716797")
+          PY
+
+      - name: Run same-information real-token JSON vs TOON A-B
+        run: |
+          set -euo pipefail
+          test -n "$NVIDIA_API_KEY"
+          python scripts/llm_context_serialization_ab.py \
+            --fresh-research artifacts/llm-context-serialization-ab/source/result.json \
+            --output artifacts/llm-context-serialization-ab/llm-context-serialization-ab.json
+
+      - name: Assert experiment integrity gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(
+              "artifacts/llm-context-serialization-ab/"
+              "llm-context-serialization-ab.json"
+          ).read_text(encoding="utf-8"))
+          g=d["gates"]
+          for key in (
+              "TOON_SELECTIVE_SERIALIZATION",
+              "CANONICAL_STATE_UNCHANGED",
+              "PROVENANCE_PRESERVED",
+              "AUTHORITY_UNCHANGED",
+              "ROUNDTRIP_EQUIVALENCE",
+              "REAL_TOKEN_MEASUREMENT",
+              "FALLBACK_AVAILABLE",
+              "JSON_BASELINE_PRESERVED",
+              "TOON_SPEC_PINNED",
+          ):
+              assert g[key] is True, key
+          assert d["baseline"]["provider_id"]==d["toon"]["provider_id"]
+          assert d["baseline"]["model_id"]==d["toon"]["model_id"]
+          assert d["baseline"]["routing_id"]==d["toon"]["routing_id"]
+          print("SAME_PROVIDER_MODEL_ROUTE=PASS")
+          print("JSON_OUTPUT_SCHEMA_PRESERVED=PASS")
+          print("NO_AUTHORITY_CHANGE=PASS")
+          print("PROMOTE_OR_REJECT="+d["promotion"]["decision"])
+          PY
+
+      - name: Upload measured A-B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-context-serialization-ab-${{ github.run_id }}
+          path: artifacts/llm-context-serialization-ab/
+          if-no-files-found: error
+          retention-days: 30

@@ -5,6 +5,10 @@ from pathlib import Path
 
 from scripts.semantic_planner_inference_profile import _semantic_context
 from app.services.semantic_mission_planner_service import build_semantic_planner_prompt
+from app.services.llm_context_projection_service import (
+    LLMPromptSerializationPolicy,
+    TOON_SPEC_VERSION,
+)
 
 
 def _bytes(value):
@@ -35,6 +39,10 @@ def main() -> int:
         "prompt_token_estimate_chars_div_4":(len(prompt.encode("utf-8"))+3)//4,
         "context_capabilities":len(context.get("registry_summary") or ()),
         "competence_rows":len(context.get("competence_evidence") or ()),
+        "llm_context_serialization_policy":(
+            LLMPromptSerializationPolicy().to_dict()
+        ),
+        "toon_spec_version":TOON_SPEC_VERSION,
         "block_bytes":{key:_bytes(context.get(key)) for key in keys},
         "block_counts":{
             key:len(context.get(key) or ())
