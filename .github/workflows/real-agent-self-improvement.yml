@@ -337,10 +337,36 @@ jobs:
           from app.services.provider_health_service import (
               semantic_provider_health,
           )
+          from app.services.provider_availability_reconciliation_service import (
+              resolve_requeue_checkpoint_identity,
+          )
 
           request=json.load(open(".run/real-agent-self-improvement.request.json"))
           checkpoint=request.get("checkpoint_source") or {}
-          agent_instance_id=str(checkpoint.get("agent_instance_id") or "")
+          reconciliation_result=None
+          reconciliation_root=Path(
+              "runtime/real-agent-self-improvement/"
+              "provider-reconciliation-source"
+          )
+          if reconciliation_root.is_dir():
+              result_paths=list(
+                  reconciliation_root.rglob(
+                      "provider-availability-reconciliation-result.json"
+                  )
+              )
+              if len(result_paths)!=1:
+                  raise RuntimeError(
+                      "PROVIDER_RECONCILIATION_RESULT_COUNT="
+                      +str(len(result_paths))
+                  )
+              reconciliation_result=json.loads(
+                  result_paths[0].read_text(encoding="utf-8")
+              )
+          identity=resolve_requeue_checkpoint_identity(
+              request_checkpoint=checkpoint,
+              reconciliation_result=reconciliation_result,
+          )
+          agent_instance_id=identity["agent_instance_id"]
           root=Path("runtime/real-agent-self-improvement/checkpoint-source")
           # Artifact packaging may add one or more directory prefixes. Resolve
           # the canonical AgentSession by identity, never by a fixed extraction
@@ -350,11 +376,9 @@ jobs:
               if path.parent.name=="agent-sessions"
           )
           matches=[]
-          expected_task_id=str(
-              checkpoint.get("partial_task_id")
-              or checkpoint.get("resume_from_task_id")
-              or ""
-          )
+          expected_task_id=identity["task_id"]
+          expected_mission_id=identity["mission_id"]
+          print("CHECKPOINT_IDENTITY_SOURCE="+identity["source"])
           for path in sessions:
               try:
                   data=json.loads(path.read_text(encoding="utf-8"))
@@ -370,6 +394,17 @@ jobs:
                   or ""
               )
               if expected_task_id and session_task_id and session_task_id!=expected_task_id:
+                  continue
+              session_mission_id=str(
+                  data.get("MISSION_ID")
+                  or data.get("mission_id")
+                  or ""
+              )
+              if (
+                  expected_mission_id
+                  and session_mission_id
+                  and session_mission_id!=expected_mission_id
+              ):
                   continue
               matches.append((path,data))
 
@@ -397,6 +432,8 @@ jobs:
               raise RuntimeError("checkpoint AgentSession identity mismatch")
           if expected_task_id and resolved_task_id!=expected_task_id:
               raise RuntimeError("checkpoint AgentSession task mismatch")
+          if expected_mission_id and resolved_mission_id!=expected_mission_id:
+              raise RuntimeError("checkpoint AgentSession mission mismatch")
           # Mission identity is intrinsic to the restored AgentSession. Require it
           # to be present so a package collision cannot silently cross missions.
           if not resolved_mission_id:

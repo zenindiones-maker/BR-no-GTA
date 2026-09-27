@@ -401,3 +401,55 @@ def test_real_path_36285454407_enters_wait(tmp_path):
     assert wait["PROVIDER_CALLS_WHILE_WAITING"] == 0
     assert wait["HUMAN_INTERVENTION_REQUIRED"] is False
     assert wait["MISSION_TERMINAL"] is False
+
+
+def test_requeue_checkpoint_identity_uses_reconciled_agent_session():
+    from app.services.provider_availability_reconciliation_service import (
+        resolve_requeue_checkpoint_identity,
+    )
+
+    resolved = resolve_requeue_checkpoint_identity(
+        request_checkpoint={
+            "partial_task_id": "task-02",
+            "resume_from_task_id": "task-02",
+            "agent_instance_id": "agent-original",
+        },
+        reconciliation_result={
+            "schema": "ProviderAvailabilityReconciliationResult/v1",
+            "decision": "REQUEUE_TASK",
+            "mission_id": "mission-a",
+            "task_id": "task-02-semantic-diagnosis",
+            "next_wait": {
+                "schema": "ProviderAvailabilityWait/v1",
+                "mission_id": "mission-a",
+                "task_id": "task-02-semantic-diagnosis",
+                "agent_instance_id": "agent-requeued",
+            },
+        },
+    )
+    assert resolved == {
+        "source": "PROVIDER_RECONCILIATION_REQUEUE",
+        "mission_id": "mission-a",
+        "task_id": "task-02-semantic-diagnosis",
+        "agent_instance_id": "agent-requeued",
+    }
+
+
+def test_non_requeue_checkpoint_identity_preserves_request_checkpoint():
+    from app.services.provider_availability_reconciliation_service import (
+        resolve_requeue_checkpoint_identity,
+    )
+
+    resolved = resolve_requeue_checkpoint_identity(
+        request_checkpoint={
+            "partial_task_id": "task-02",
+            "agent_instance_id": "agent-original",
+        },
+        reconciliation_result=None,
+    )
+    assert resolved == {
+        "source": "REQUEST_CHECKPOINT",
+        "mission_id": "",
+        "task_id": "task-02",
+        "agent_instance_id": "agent-original",
+    }

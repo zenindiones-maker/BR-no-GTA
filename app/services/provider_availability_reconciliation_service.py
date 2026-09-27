@@ -719,6 +719,76 @@ def _new_live_proof_providers(
     return recovered
 
 
+def resolve_requeue_checkpoint_identity(
+    *,
+    request_checkpoint: dict[str, Any],
+    reconciliation_result: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Resolve the canonical AgentSession identity for normal or requeue resume."""
+
+    checkpoint = dict(request_checkpoint or {})
+    identity = {
+        "source": "REQUEST_CHECKPOINT",
+        "mission_id": "",
+        "task_id": str(
+            checkpoint.get("partial_task_id")
+            or checkpoint.get("resume_from_task_id")
+            or ""
+        ).strip(),
+        "agent_instance_id": str(
+            checkpoint.get("agent_instance_id") or ""
+        ).strip(),
+    }
+    result = dict(reconciliation_result or {})
+    if not result:
+        if not identity["agent_instance_id"] or not identity["task_id"]:
+            raise ValueError(
+                "request checkpoint requires agent_instance_id and task_id"
+            )
+        return identity
+
+    if result.get("schema") != (
+        "ProviderAvailabilityReconciliationResult/v1"
+    ):
+        raise ValueError(
+            "ProviderAvailabilityReconciliationResult/v1 is required"
+        )
+    if str(result.get("decision") or "") != "REQUEUE_TASK":
+        return identity
+
+    next_wait = dict(result.get("next_wait") or {})
+    if next_wait.get("schema") != "ProviderAvailabilityWait/v1":
+        raise ValueError(
+            "REQUEUE_TASK requires ProviderAvailabilityWait/v1 next_wait"
+        )
+    mission_id = str(result.get("mission_id") or "").strip()
+    task_id = str(result.get("task_id") or "").strip()
+    agent_instance_id = str(
+        next_wait.get("agent_instance_id") or ""
+    ).strip()
+    if not mission_id or not task_id or not agent_instance_id:
+        raise ValueError(
+            "requeue checkpoint identity requires mission_id, task_id, "
+            "and agent_instance_id"
+        )
+    if (
+        str(next_wait.get("mission_id") or "").strip()
+        and str(next_wait.get("mission_id") or "").strip() != mission_id
+    ):
+        raise ValueError("requeue mission identity mismatch")
+    if (
+        str(next_wait.get("task_id") or "").strip()
+        and str(next_wait.get("task_id") or "").strip() != task_id
+    ):
+        raise ValueError("requeue task identity mismatch")
+    return {
+        "source": "PROVIDER_RECONCILIATION_REQUEUE",
+        "mission_id": mission_id,
+        "task_id": task_id,
+        "agent_instance_id": agent_instance_id,
+    }
+
+
 class ProviderAvailabilityReconciler:
     """Subordinate availability reducer. It never executes the semantic task."""
 
