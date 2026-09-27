@@ -10,11 +10,11 @@
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
     "retry_of_run": 36152763201,
-    "reason": "Resume after governed Rockstar acquisition is reused by Newswire ingestion instead of issuing a second direct transport request",
+    "reason": "Resume durable Production after Task Protocol vNext current-head gates are GREEN and legacy continuation authority is upgraded to ContinuationAuthorization/v1",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "cdae5d58ca102720d56b515c73e55647bc858ab3",
+    "candidate_head": "97c8921e6b9ca4dc80248ef32f0ef8e19d68cbf2",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -58,6 +58,21 @@
         "provenance": "INSUFFICIENT"
       },
       "finding": "official ordering had no effect because official sources were excluded before acquisition"
+    },
+    "durable_continuation": {
+      "schema": "DurableProductionContinuationRequest/v1",
+      "resume_run_id": 36197094187,
+      "durable_mission_key": "mission-ad890d7d732e9be79838",
+      "continuation_count": 148,
+      "continuation_id": "mission-ad890d7d732e9be79838:148:36197094187",
+      "expected_state_version": 148,
+      "continuation_authority_schema": "ContinuationAuthorization/v1",
+      "checkpoint_artifact_id": 10890144463,
+      "checkpoint_artifact_digest": "sha256:4c137d287ae57073618147182db56923d12526b89259883b3a472c6f8c1a9732",
+      "predecessor_status": "RUNNABLE",
+      "predecessor_next_transition": "RESOLVE_REQUIREMENT",
+      "predecessor_artifact_expired": false
     }
-  }
+  },
+  "requested_from_head": "97c8921e6b9ca4dc80248ef32f0ef8e19d68cbf2"
 }

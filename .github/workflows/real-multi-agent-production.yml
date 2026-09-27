@@ -28,6 +28,11 @@ on:
         description: "Typed authorization schema required for governed continuation execution"
         required: false
         default: ""
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".run/real-multi-agent-production.request.json"
 
 permissions:
   contents: read
@@ -78,6 +83,88 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Load governed file-driven continuation request
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          request=json.loads(
+              Path(".run/real-multi-agent-production.request.json")
+              .read_text(encoding="utf-8")
+          )
+          meta=dict(request.get("resume_metadata") or {})
+          continuation=dict(meta.get("durable_continuation") or {})
+          required={
+              "resume_run_id",
+              "durable_mission_key",
+              "continuation_count",
+              "continuation_id",
+              "expected_state_version",
+              "continuation_authority_schema",
+              "checkpoint_artifact_digest",
+          }
+          missing=sorted(
+              key for key in required
+              if str(continuation.get(key) or "").strip()==""
+          )
+          if missing:
+              raise SystemExit(
+                  "FILE_DRIVEN_CONTINUATION_FIELDS_MISSING:"
+                  + ",".join(missing)
+              )
+          if (
+              continuation["continuation_authority_schema"]
+              != "ContinuationAuthorization/v1"
+          ):
+              raise SystemExit(
+                  "FILE_DRIVEN_CONTINUATION_AUTHORITY_INVALID"
+              )
+
+          mission=str(continuation["durable_mission_key"]).strip()
+          run=str(continuation["resume_run_id"]).strip()
+          state=str(continuation["expected_state_version"]).strip()
+          count=str(continuation["continuation_count"]).strip()
+          cid=str(continuation["continuation_id"]).strip()
+          digest=str(
+              continuation["checkpoint_artifact_digest"]
+          ).strip()
+
+          if not re.fullmatch(r"mission-[a-z0-9]{20}", mission):
+              raise SystemExit("FILE_DRIVEN_MISSION_ID_INVALID")
+          if not re.fullmatch(r"[1-9][0-9]*", run):
+              raise SystemExit("FILE_DRIVEN_RESUME_RUN_ID_INVALID")
+          if not re.fullmatch(r"[0-9]+", state):
+              raise SystemExit("FILE_DRIVEN_STATE_VERSION_INVALID")
+          if not re.fullmatch(r"[0-9]+", count):
+              raise SystemExit("FILE_DRIVEN_CONTINUATION_COUNT_INVALID")
+          if cid != f"{mission}:{state}:{run}":
+              raise SystemExit("FILE_DRIVEN_CONTINUATION_ID_INVALID")
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit("FILE_DRIVEN_CHECKPOINT_DIGEST_INVALID")
+
+          values={
+              "BR_MISSION_ID": mission,
+              "BR_RESUME_RUN_ID": run,
+              "BR_CONTINUATION_COUNT": count,
+              "BR_CONTINUATION_ID": cid,
+              "BR_EXPECTED_STATE_VERSION": state,
+              "BR_CONTINUATION_AUTHORITY_SCHEMA": (
+                  "ContinuationAuthorization/v1"
+              ),
+              "BR_EXPECTED_CHECKPOINT_DIGEST": digest,
+          }
+          with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as handle:
+              for key,value in values.items():
+                  handle.write(f"{key}={value}\n")
+          print("FILE_DRIVEN_CONTINUATION_LOADED=PASS")
+          print("CONTINUATION_AUTHORITY_SCHEMA=ContinuationAuthorization/v1")
+          print("RESUME_RUN_ID="+run)
+          print("EXPECTED_STATE_VERSION="+state)
+          PY
+
       - name: Reject legacy continuation without typed authority
         if: ${{ env.BR_CONTINUATION_ID != '' && env.BR_CONTINUATION_AUTHORITY_SCHEMA != 'ContinuationAuthorization/v1' }}
         run: |
@@ -123,6 +210,16 @@ jobs:
           a=matches[0]
           if a.get("expired"):
               raise SystemExit("CHECKPOINT_ARTIFACT_EXPIRED")
+          expected_digest=str(
+              os.environ.get("BR_EXPECTED_CHECKPOINT_DIGEST") or ""
+          ).strip()
+          if (
+              expected_digest
+              and str(a.get("digest") or "") != expected_digest
+          ):
+              raise SystemExit("CHECKPOINT_ARTIFACT_DIGEST_MISMATCH")
+          if expected_digest:
+              print("CHECKPOINT_ARTIFACT_DIGEST_MATCH=PASS")
           if str((a.get("workflow_run") or {}).get("id")) != run:
               raise SystemExit("CHECKPOINT_PREDECESSOR_MISMATCH")
           print("CHECKPOINT_ARTIFACT_FOUND=PASS")
