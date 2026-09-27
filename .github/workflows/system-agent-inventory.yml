@@ -106,7 +106,14 @@ jobs:
               x for x in d['capabilities']
               if x['CAPABILITY_ID'].startswith('agent-office.codex.')
           ]
-          assert len(codex)==2
+          assert len(codex)==3
+          assert {
+              x['CAPABILITY_ID'] for x in codex
+          } == {
+              'agent-office.codex.bounded-development',
+              'agent-office.codex.independent-review',
+              'agent-office.codex.readonly-analysis',
+          }
           assert all(x['STATUS']=='BLOCKED_EXTERNAL' for x in codex)
           assert all(x['CURRENT_HEALTH']=='BLOCKED' for x in codex)
           assert all(x['HEALTH_SOURCE']=='GITHUB_ACTIONS_CODEX_FEDERATION_CONFIG' for x in codex)

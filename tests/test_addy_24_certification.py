@@ -373,6 +373,7 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
             selected_provider="nvidia_nim",
             selected_model="nvidia/model-a",
             selected_capability_id="ai.reasoning.text",
+            policy_metadata={},
             selected_provider_executor_binding=(
                 "app.services.harness_ai_provider_service."
                 "execute_harness_ai_generation"
@@ -383,6 +384,7 @@ def test_addy_retryable_model_failure_is_rerouted_by_harness(monkeypatch):
             selected_provider="nvidia_nim",
             selected_model="nvidia/model-b",
             selected_capability_id="ai.reasoning.text",
+            policy_metadata={},
             selected_provider_executor_binding=(
                 "app.services.harness_ai_provider_service."
                 "execute_harness_ai_generation"
