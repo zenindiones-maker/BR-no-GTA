@@ -53,8 +53,13 @@ class GeneratedVisualAsset:
 def detect_ltx_runtime() -> LTXRuntimeEligibility:
     # Standard GitHub ubuntu-latest is intentionally not assumed eligible.
     accepted = os.getenv("LTX_MODEL_ACCESS_ACCEPTED", "").strip().lower() in {"1","true","yes"}
-    model_root = Path(os.getenv("LTX_MODEL_ROOT", ""))
-    model_ready = bool(str(model_root)) and model_root.is_dir() and any(model_root.iterdir())
+    model_root_value = os.getenv("LTX_MODEL_ROOT", "").strip()
+    model_root = Path(model_root_value) if model_root_value else None
+    model_ready = (
+        model_root is not None
+        and model_root.is_dir()
+        and any(model_root.iterdir())
+    )
     cuda = False
     gpu_name = None
     vram_gib = None

@@ -11,6 +11,10 @@ from app.services.script_service import (
     create_script,
     update_status,
 )
+from app.services.script_generator_service import (
+    VOICE_B_SCRIPT_PLANNING_WPM,
+    _build_ai_prompt,
+)
 
 
 def test_create_script_for_approved_idea():

@@ -102,7 +102,7 @@ def test_short_script_cannot_pass_longform_duration_gate():
 
 
 def test_no_padding_qa_accepts_unique_contiguous_source_windows():
-    job = {"product_profile": "professional_ptbr_v1", "render_job_id": 920101, "youtube_publication": False}
+    job = {"product_profile": "professional_ptbr_v1", "render_job_id": 920101, "youtube_publication": False, "estimated_duration_seconds": 1200.0}
     links = []
     for index in range(120):
         links.append({
@@ -118,7 +118,7 @@ def test_no_padding_qa_accepts_unique_contiguous_source_windows():
 
 
 def test_no_padding_qa_rejects_source_reuse():
-    job = {"product_profile": "professional_ptbr_v1", "render_job_id": 920101, "youtube_publication": False}
+    job = {"product_profile": "professional_ptbr_v1", "render_job_id": 920101, "youtube_publication": False, "estimated_duration_seconds": 1200.0}
     links = []
     for index in range(120):
         start = index * 10.0

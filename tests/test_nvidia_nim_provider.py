@@ -25,7 +25,7 @@ class FakeResponse:
 
 def test_generate_normalizes_reasoning_usage_and_model():
     payload = {
-        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "choices": [
             {
                 "message": {
@@ -66,7 +66,7 @@ def test_generate_normalizes_reasoning_usage_and_model():
     )
     req = mocked.call_args.args[0]
     body = json.loads(req.data.decode())
-    assert body["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert body["model"] == "nvidia/nemotron-3.5-lightning-30b-a3b"
     assert req.full_url == "https://nim.example/v1/chat/completions"
 
 

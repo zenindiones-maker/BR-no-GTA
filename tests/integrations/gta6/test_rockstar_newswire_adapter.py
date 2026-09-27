@@ -3,6 +3,7 @@ import pytest
 from app.integrations.gta6.rockstar_newswire_adapter import (
     convert_rockstar_article,
     convert_rockstar_articles,
+    parse_rockstar_newswire_html,
 )
 from app.integrations.gta6.rockstar_newswire_graph import (
     RockstarNewswireArticle,

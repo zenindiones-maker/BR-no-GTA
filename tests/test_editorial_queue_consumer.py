@@ -300,6 +300,7 @@ def test_process_next_editorial_queue_item_propagates_ai_provider():
     generate_script.assert_called_once_with(
         202,
         ai_provider=fake_provider,
+        editorial_context=None,
     )
 
     assert result is not None

@@ -6,7 +6,7 @@ def test_execution_plane_canary(capsys):
 
 def test_worker_authority_injection_is_rejected():
  import pytest
- from scripts.agent_execution_plane_canary import adapter,task
+ from scripts.agent_execution_plane_canary import adapter
  from app.contracts.harness_specialized_worker_contracts import TaskExecutionEnvelope
  from app.services.harness_worker_adapters import ExistingExecutorAdapter
  reg=adapter("evil-name","analysis.root-cause")

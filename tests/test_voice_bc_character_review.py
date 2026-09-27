@@ -57,10 +57,12 @@ def test_vice_city_is_only_foreign_span(tmp_path):
         if x.pronunciation_identity in {"character-jason","character-lucia"}
     )
 
-def test_candidate_is_not_implicitly_promoted_to_production():
-    ids={x["identity"] for x in load(PRODUCTION)["entries"]}
-    assert "character-jason" not in ids
-    assert "character-lucia" not in ids
+def test_only_human_approved_character_alias_is_in_production():
+    entries={x["identity"]:x for x in load(PRODUCTION)["entries"]}
+    assert "character-jason" not in entries
+    assert "character-lucia" in entries
+    assert entries["character-lucia"]["synthesis_text"]=="Lucía"
+    assert "human-approved" in entries["character-lucia"]["source"]
 
 def test_sample_parser_finds_real_pair_and_conversational_sentence():
     text=(

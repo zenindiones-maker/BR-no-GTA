@@ -67,7 +67,10 @@ def _artifact(tmp_path):
     }))
     (folder / "video-probe.json").write_text(json.dumps({
         "lineage": lineage,
-        "format": {"duration": "1500.000"},
+        "format": {
+            "duration": "1500.000",
+            "size": str(media.stat().st_size),
+        },
         "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
     }))
     (folder / "render-qa.json").write_text(json.dumps({

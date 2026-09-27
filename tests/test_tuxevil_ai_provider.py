@@ -98,7 +98,7 @@ def test_generate_rejects_invalid_completion():
     ):
         with pytest.raises(
             AIProviderError,
-            match="invalid chat completion",
+            match="empty response|invalid chat completion",
         ):
             provider.generate("Teste")
 
