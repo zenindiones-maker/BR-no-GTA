@@ -25,6 +25,8 @@ from app.services.llm_context_projection_service import (
     flatten_provider_recovery_rows,
     render_llm_projection_block,
     select_llm_prompt_serialization,
+    toon_json_model_diff,
+    toon_json_model_equal,
 )
 
 
@@ -446,18 +448,19 @@ def test_pinned_serializer_roundtrip_mismatch_fails_closed():
 
 
 
-def test_number_fields_are_schema_normalized_across_int_float_forms():
-    schema = PROJECTION_SCHEMAS[GTA6_KNOWLEDGE_LLM_PROJECTION]
+def test_canonical_json_preserves_numeric_representation():
     rows = flatten_gta6_knowledge_units(_units())
-    normalized = build_llm_context_projection(
+    projection = build_llm_context_projection(
         projection_class=GTA6_KNOWLEDGE_LLM_PROJECTION,
         rows=rows,
     )
     baseline = json.loads(
-        normalized["serialization_candidates"][JSON_COMPACT]["payload"]
+        projection["serialization_candidates"][JSON_COMPACT]["payload"]
     )
-    assert isinstance(baseline[0]["confidence"], float)
+    assert isinstance(baseline[0]["confidence"], int)
+    assert baseline[0]["confidence"] == 9
     assert isinstance(baseline[0]["source_quality_score"], float)
+    assert baseline[0]["source_quality_score"] == 1.0
 
 
 def test_pinned_serializer_uses_projection_schema_for_numeric_equivalence():
@@ -573,3 +576,73 @@ def test_toon_runtime_failure_falls_back_to_json(monkeypatch):
         serialized["selection_reason"]
         == "TOON_PINNED_ENCODER_FAILURE_JSON_FALLBACK"
     )
+
+
+
+def test_toon_json_model_equality_is_numeric_only_where_schema_says_number():
+    schema = PROJECTION_SCHEMAS[GTA6_KNOWLEDGE_LLM_PROJECTION]
+    rows = flatten_gta6_knowledge_units(_units(2))
+    expected = build_llm_context_projection(
+        projection_class=GTA6_KNOWLEDGE_LLM_PROJECTION,
+        rows=rows,
+    )
+    baseline = json.loads(
+        expected["serialization_candidates"][JSON_COMPACT]["payload"]
+    )
+    actual = copy.deepcopy(baseline)
+    actual[0]["confidence"] = 9.0
+    actual[0]["source_quality_score"] = 1
+    assert toon_json_model_equal(baseline, actual, schema=schema)
+    assert toon_json_model_diff(baseline, actual, schema=schema) == []
+
+
+@pytest.mark.parametrize(
+    "mutator,reason",
+    [
+        (lambda rows: rows[0].__setitem__("confidence", True), "NUMBER_MISMATCH"),
+        (lambda rows: rows[0].__setitem__("confidence", "9"), "NUMBER_MISMATCH"),
+        (lambda rows: rows[0].__setitem__("subject", 1), "STRING_MISMATCH"),
+        (lambda rows: rows[0].__setitem__("published_at", ""), "NULL_MISMATCH"),
+        (lambda rows: rows[0].pop("source_id"), "ACTUAL_SCHEMA_FIELDS_MISMATCH"),
+        (lambda rows: rows[0].__setitem__("extra", "x"), "ACTUAL_SCHEMA_FIELDS_MISMATCH"),
+        (lambda rows: rows.reverse(), "INTEGER_MISMATCH"),
+    ],
+)
+def test_toon_json_model_equality_fails_closed_on_non_numeric_drift(
+    mutator,
+    reason,
+):
+    schema = PROJECTION_SCHEMAS[GTA6_KNOWLEDGE_LLM_PROJECTION]
+    rows = flatten_gta6_knowledge_units(_units(2))
+    projection = build_llm_context_projection(
+        projection_class=GTA6_KNOWLEDGE_LLM_PROJECTION,
+        rows=rows,
+    )
+    expected = json.loads(
+        projection["serialization_candidates"][JSON_COMPACT]["payload"]
+    )
+    actual = copy.deepcopy(expected)
+    if reason == "NULL_MISMATCH":
+        expected[0]["published_at"] = None
+    mutator(actual)
+    diff = toon_json_model_diff(expected, actual, schema=schema)
+    assert diff
+    assert diff[0]["schema"] == "TOONJsonModelDiff/v1"
+    assert diff[0]["reason"] == reason
+    assert not toon_json_model_equal(expected, actual, schema=schema)
+
+
+def test_toon_json_model_equality_treats_negative_zero_as_zero():
+    schema = PROJECTION_SCHEMAS[GTA6_KNOWLEDGE_LLM_PROJECTION]
+    rows = flatten_gta6_knowledge_units(_units(1))
+    projection = build_llm_context_projection(
+        projection_class=GTA6_KNOWLEDGE_LLM_PROJECTION,
+        rows=rows,
+    )
+    expected = json.loads(
+        projection["serialization_candidates"][JSON_COMPACT]["payload"]
+    )
+    actual = copy.deepcopy(expected)
+    expected[0]["confidence"] = -0.0
+    actual[0]["confidence"] = 0
+    assert toon_json_model_equal(expected, actual, schema=schema)

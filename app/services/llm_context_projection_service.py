@@ -174,13 +174,22 @@ def _sha(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
 
-def _normalize_number(value: int | float) -> float:
+def _validate_number(value: int | float) -> int | float:
     if isinstance(value, bool):
         raise TypeError("boolean is not numeric")
-    numeric = float(value)
-    if not math.isfinite(numeric):
+    if not isinstance(value, (int, float)):
+        raise TypeError("value is not numeric")
+    if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("non-finite numbers are not supported")
-    return 0.0 if numeric == 0.0 else numeric
+    return value
+
+
+def _normalize_number(value: int | float) -> int | float:
+    """TOON-side numeric normalization; never used for canonical JSON identity."""
+    numeric = _validate_number(value)
+    if isinstance(numeric, float) and numeric == 0.0:
+        return 0
+    return numeric
 
 
 def _normalize_scalar(value: Any, field: ProjectionField) -> Any:
@@ -199,13 +208,156 @@ def _normalize_scalar(value: Any, field: ProjectionField) -> Any:
     if field.field_type == "number":
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError(f"{field.name} must be numeric")
-        return _normalize_number(value)
+        return _validate_number(value)
     if field.field_type == "boolean":
         if not isinstance(value, bool):
             raise TypeError(f"{field.name} must be boolean")
         return value
     raise ValueError(
         f"unsupported projection field type: {field.field_type}"
+    )
+
+
+def _toon_numeric_equal(expected: Any, actual: Any) -> bool:
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return False
+    if not isinstance(expected, (int, float)):
+        return False
+    if not isinstance(actual, (int, float)):
+        return False
+    try:
+        left = float(expected)
+        right = float(actual)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if not math.isfinite(left) or not math.isfinite(right):
+        return False
+    return left == right
+
+
+def toon_json_model_diff(
+    expected: Any,
+    actual: Any,
+    *,
+    schema: ProjectionSchema,
+    max_diffs: int = 12,
+) -> list[dict[str, Any]]:
+    """Return bounded, schema-aware JSON-model mismatches for TOON roundtrip.
+
+    Canonical JSON representation is intentionally not normalized here.
+    Numeric fields compare by mathematical value (1 == 1.0, -0 == 0),
+    while booleans, strings, nulls, object keys and array order remain strict.
+    """
+    diffs: list[dict[str, Any]] = []
+
+    def add(path: str, reason: str, left: Any, right: Any) -> None:
+        if len(diffs) >= max_diffs:
+            return
+        diffs.append({
+            "schema": "TOONJsonModelDiff/v1",
+            "path": path,
+            "reason": reason,
+            "expected_type": type(left).__name__,
+            "actual_type": type(right).__name__,
+            "expected": left,
+            "actual": right,
+        })
+
+    if not isinstance(expected, list) or not isinstance(actual, list):
+        add("$", "ARRAY_TYPE_MISMATCH", expected, actual)
+        return diffs
+    if len(expected) != len(actual):
+        add("$", "ARRAY_LENGTH_MISMATCH", len(expected), len(actual))
+        return diffs
+
+    declared = tuple(schema.field_names)
+    declared_set = set(declared)
+    for row_index, (left_row, right_row) in enumerate(zip(expected, actual)):
+        path = f"$[{row_index}]"
+        if not isinstance(left_row, dict) or not isinstance(right_row, dict):
+            add(path, "OBJECT_TYPE_MISMATCH", left_row, right_row)
+            continue
+        left_keys = set(left_row)
+        right_keys = set(right_row)
+        if left_keys != declared_set:
+            add(
+                path,
+                "EXPECTED_SCHEMA_FIELDS_MISMATCH",
+                sorted(declared_set),
+                sorted(left_keys),
+            )
+            continue
+        if right_keys != declared_set:
+            add(
+                path,
+                "ACTUAL_SCHEMA_FIELDS_MISMATCH",
+                sorted(declared_set),
+                sorted(right_keys),
+            )
+            continue
+
+        for field in schema.fields:
+            if len(diffs) >= max_diffs:
+                break
+            left = left_row[field.name]
+            right = right_row[field.name]
+            field_path = f"{path}.{field.name}"
+
+            if left is None or right is None:
+                if left is not None or right is not None:
+                    add(field_path, "NULL_MISMATCH", left, right)
+                continue
+
+            if field.field_type == "boolean":
+                if (
+                    not isinstance(left, bool)
+                    or not isinstance(right, bool)
+                    or left is not right
+                ):
+                    add(field_path, "BOOLEAN_MISMATCH", left, right)
+                continue
+
+            if field.field_type == "string":
+                if (
+                    not isinstance(left, str)
+                    or not isinstance(right, str)
+                    or left != right
+                ):
+                    add(field_path, "STRING_MISMATCH", left, right)
+                continue
+
+            if field.field_type == "integer":
+                if (
+                    isinstance(left, bool)
+                    or isinstance(right, bool)
+                    or not isinstance(left, int)
+                    or not isinstance(right, int)
+                    or left != right
+                ):
+                    add(field_path, "INTEGER_MISMATCH", left, right)
+                continue
+
+            if field.field_type == "number":
+                if not _toon_numeric_equal(left, right):
+                    add(field_path, "NUMBER_MISMATCH", left, right)
+                continue
+
+            add(field_path, "UNSUPPORTED_FIELD_TYPE", left, right)
+
+    return diffs
+
+
+def toon_json_model_equal(
+    expected: Any,
+    actual: Any,
+    *,
+    schema: ProjectionSchema,
+) -> bool:
+    return not toon_json_model_diff(
+        expected,
+        actual,
+        schema=schema,
+        max_diffs=1,
     )
 
 
@@ -509,9 +661,21 @@ def build_llm_context_projection(
     try:
         toon_payload = toon_encoder(normalized, schema=schema)
         decoded = toon_decoder(toon_payload, schema=schema)
-        roundtrip = _canonical_json(decoded) == canonical_json
+        roundtrip = toon_json_model_equal(
+            normalized,
+            decoded,
+            schema=schema,
+        )
         if not roundtrip:
-            toon_error = "ROUNDTRIP_MISMATCH"
+            mismatch = toon_json_model_diff(
+                normalized,
+                decoded,
+                schema=schema,
+            )
+            toon_error = (
+                "ROUNDTRIP_MISMATCH:"
+                + _canonical_json(mismatch)[:1200]
+            )
     except Exception as exc:
         toon_error = f"{type(exc).__name__}:{exc}"[:500]
         toon_payload = None
@@ -750,7 +914,21 @@ def build_pinned_toon_serialization(
         raise RuntimeError(
             "TOON_PINNED_DECODE_SCHEMA_MISMATCH"
         ) from exc
-    if _canonical_json(decoded) != canonical:
+    mismatch = toon_json_model_diff(
+        canonical_rows,
+        decoded_raw,
+        schema=schema,
+    )
+    if mismatch:
+        raise RuntimeError(
+            "TOON_PINNED_ROUNDTRIP_MISMATCH:"
+            + _canonical_json(mismatch)[:1200]
+        )
+    if not toon_json_model_equal(
+        canonical_rows,
+        decoded,
+        schema=schema,
+    ):
         raise RuntimeError("TOON_PINNED_ROUNDTRIP_MISMATCH")
     return {
         "format": TOON_V4_1,
