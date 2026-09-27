@@ -1,0 +1,8 @@
+{
+  "schema": "HarnessLearningProofRequest/v1",
+  "authority": "DEEPSEEK_HARNESS",
+  "purpose": "current-head-full-regression-proof",
+  "source_head": "e0af4952472e423dc238d47395f5917ade7f1b02",
+  "expected_workflow": "Harness Continuous Learning Validation",
+  "human_intervention_required": false
+}
