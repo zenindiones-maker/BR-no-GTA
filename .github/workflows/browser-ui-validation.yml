@@ -74,6 +74,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: video-engine/frontend/package-lock.json
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v6
@@ -88,12 +90,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ./video-engine
 
-      - name: Bootstrap exact Browser QA lock candidate
+      - name: Install exact versioned Browser QA dependency graph
         working-directory: video-engine/frontend
         run: |
           set -euo pipefail
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          expected_lock_sha="af425a7f7576b05295e8be828d3cf6a26c1ae329fbff3ae3848a3a81f67ec3cb"
+          test -f package-lock.json
+          before="$(sha256sum package-lock.json | awk '{print $1}')"
+          printf 'PACKAGE_LOCK_SHA256_BEFORE=%s\n' "$before"
+          test "$before" = "$expected_lock_sha"
           npm ci --ignore-scripts --no-audit --no-fund
+          after="$(sha256sum package-lock.json | awk '{print $1}')"
+          printf 'PACKAGE_LOCK_SHA256_AFTER=%s\n' "$after"
+          test "$after" = "$expected_lock_sha"
           node - <<'NODE'
           const p=require('./package-lock.json')
           const expected={
@@ -108,6 +117,7 @@ jobs:
           for (const [k,v] of Object.entries(expected)) {
             if (p.packages[k]?.version !== v) throw new Error(k+' version mismatch')
           }
+          console.log('VERSIONED_BROWSER_QA_LOCK=PASS')
           console.log('EXACT_TOP_LEVEL_BROWSER_QA_VERSIONS=PASS')
           NODE
 
