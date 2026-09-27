@@ -41,10 +41,14 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name "$SOURCE_ARTIFACT" \
             --dir /tmp/browser-visual-source
-          test -f /tmp/browser-visual-source/browser-qa/browser-qa-report.json
-          python - <<'PY'
-          import json
-          d=json.load(open('/tmp/browser-visual-source/browser-qa/browser-qa-report.json'))
+          mapfile -t reports < <(
+            find /tmp/browser-visual-source -type f \
+              -path '*/browser-qa/browser-qa-report.json' -print
+          )
+          test "${#reports[@]}" -eq 1
+          REPORT_PATH="${reports[0]}" python - <<'PY'
+          import json, os
+          d=json.load(open(os.environ['REPORT_PATH']))
           assert d['schema']=='BrowserQAReport/v1'
           assert d['result']=='PASS'
           assert d['candidate_sha']=='6c80506b6a35499a4e303b6afd5114b214c5c058'
@@ -60,14 +64,18 @@ jobs:
         run: |
           set -euo pipefail
           root="video-engine/frontend/browser-qa/visual-baselines"
-          source="/tmp/browser-visual-source/browser-qa/artifacts/sha256"
           mkdir -p "$root/chromium-desktop" "$root/chromium-desktop-narrow"
 
           copy_exact() {
             project="$1"
             name="$2"
             sha="$3"
-            src="$source/$sha.png"
+            mapfile -t sources < <(
+              find /tmp/browser-visual-source -type f \
+                -name "$sha.png" -print
+            )
+            test "${#sources[@]}" -eq 1
+            src="${sources[0]}"
             dst="$root/$project/$name.png"
             test -f "$src"
             actual="$(sha256sum "$src" | awk '{print $1}')"
