@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.main import initialize_application
+from app.database import harness_learning_repository as learning_repository
 from app.services.global_capability_registry_base import (
     AVAILABLE,
     FUNCTIONAL,
@@ -415,9 +416,26 @@ def main() -> int:
         confidence=0.8,
         status="ACTIVE",
     )
-    stale_ids = mark_stale_memories_for_version_change(current_versions={"skill": "v2"}, domain=DOMAIN)
-    if stale_seed["memory_id"] not in stale_ids or failure_memory["memory_id"] not in stale_ids:
-        raise RuntimeError("version change did not stale v1 operational memory")
+    stale_ids = mark_stale_memories_for_version_change(
+        current_versions={"skill": "v2"},
+        domain=DOMAIN,
+    )
+    stale_seed_after = learning_repository.get_memory(stale_seed["memory_id"])
+    failure_memory_after = learning_repository.get_memory(
+        failure_memory["memory_id"]
+    )
+    if stale_seed_after is None or stale_seed_after.get("status") != "STALE":
+        raise RuntimeError(
+            "promoted skill version did not persist stale status for v1 procedural memory"
+        )
+    if (
+        failure_memory_after is None
+        or failure_memory_after.get("status") != "STALE"
+        or failure_memory["memory_id"] not in stale_ids
+    ):
+        raise RuntimeError(
+            "version reconciliation did not persist stale status for newly observed v1 failure memory"
+        )
 
     for index, trial in enumerate(candidate_trials, start=1):
         persist_episode(_episode(
@@ -676,7 +694,27 @@ def main() -> int:
         "failure_memory": "FUNCTIONAL" if failure_memory_retrieved else "FAIL",
         "human_feedback_loop": "FUNCTIONAL" if human_feedback_retrieved else "FAIL",
         "memory_provenance": bool(episode_a["outcome_evidence"] and promotion["memory"]["evidence_refs"]),
-        "memory_staleness": stale_seed["memory_id"] in stale_ids,
+        "memory_staleness": (
+            stale_seed_after is not None
+            and stale_seed_after.get("status") == "STALE"
+            and failure_memory_after is not None
+            and failure_memory_after.get("status") == "STALE"
+        ),
+        "memory_staleness_evidence": {
+            "promoted_memory_id": stale_seed["memory_id"],
+            "promoted_memory_status": (
+                stale_seed_after.get("status")
+                if stale_seed_after is not None
+                else None
+            ),
+            "new_failure_memory_id": failure_memory["memory_id"],
+            "new_failure_memory_status": (
+                failure_memory_after.get("status")
+                if failure_memory_after is not None
+                else None
+            ),
+            "reconciled_memory_ids": sorted(stale_ids),
+        },
         "learning_candidate_pipeline": evaluation["decision"] == "PROMOTE",
         "baseline_vs_candidate_eval": {
             "decision": evaluation["decision"],
