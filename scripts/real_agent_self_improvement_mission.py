@@ -746,6 +746,7 @@ def apply_provider_reconciliation_checkpoint(
     plan: dict[str, Any],
     runtime_dir: Path,
     provider_reconciliation_dir: Path | None,
+    checkpoint_source_dir: Path | None = None,
 ) -> dict[str, Any]:
     evidence = {
         "PROVIDER_RECONCILIATION_AVAILABLE": False,
@@ -753,6 +754,8 @@ def apply_provider_reconciliation_checkpoint(
         "SAME_MISSION_ID_AFTER_PROVIDER_WAIT": False,
         "REQUEUE_PRESERVES_PLAN_REVISION": False,
         "PROVIDER_RECOVERY_EPOCH_APPLIED": False,
+        "PROVIDER_REQUEUE_SESSION_SOURCE": None,
+        "PROVIDER_REQUEUE_TOOL_RESULTS_RESTORED": 0,
     }
     if (
         provider_reconciliation_dir is None
@@ -786,6 +789,25 @@ def apply_provider_reconciliation_checkpoint(
             "PROVIDER_RECONCILIATION_MISSION_ID_DRIFT"
         )
     next_wait = dict(result.get("next_wait") or {})
+    if next_wait.get("schema") != "ProviderAvailabilityWait/v1":
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_WAIT_SCHEMA_INVALID"
+        )
+    agent_instance_id = str(
+        next_wait.get("agent_instance_id") or ""
+    ).strip()
+    if not task_id or not agent_instance_id:
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_IDENTITY_INCOMPLETE"
+        )
+    if (
+        str(next_wait.get("mission_id") or mission_id)
+        != mission_id
+        or str(next_wait.get("task_id") or task_id) != task_id
+    ):
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_WAIT_IDENTITY_DRIFT"
+        )
     source_plan_revision = next_wait.get("plan_revision")
     current_plan_revision = plan.get("plan_revision")
     if (
@@ -801,28 +823,133 @@ def apply_provider_reconciliation_checkpoint(
         raise RuntimeError(
             "PROVIDER_RECOVERY_EPOCH_MISSING"
         )
-    session_paths = []
-    for candidate in sorted(
-        (runtime_dir / "agent-sessions").glob(
-            f"{task_id}-agent-*.json"
-        )
-    ):
-        try:
-            state = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if (
-            state.get("schema") == "AgentSession/v1"
-            and str(state.get("MISSION_ID") or "") == mission_id
-            and str(state.get("TASK_ID") or "") == task_id
+
+    def matching_sessions(root: Path | None):
+        matches = []
+        if root is None or not root.is_dir():
+            return matches
+        for candidate in sorted(
+            path for path in root.rglob("*.json")
+            if path.parent.name == "agent-sessions"
         ):
-            session_paths.append((candidate, state))
-    if len(session_paths) != 1:
+            try:
+                state = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if state.get("schema") != "AgentSession/v1":
+                continue
+            if str(
+                state.get("MISSION_ID")
+                or state.get("mission_id")
+                or ""
+            ) != mission_id:
+                continue
+            if str(
+                state.get("TASK_ID")
+                or state.get("task_id")
+                or ""
+            ) != task_id:
+                continue
+            if str(
+                state.get("AGENT_INSTANCE_ID")
+                or state.get("agent_instance_id")
+                or ""
+            ) != agent_instance_id:
+                continue
+            matches.append((candidate, state))
+        return matches
+
+    runtime_matches = matching_sessions(runtime_dir)
+    if len(runtime_matches) > 1:
         raise RuntimeError(
             "PROVIDER_REQUEUE_AGENT_SESSION_COUNT="
-            + str(len(session_paths))
+            + str(len(runtime_matches))
         )
-    _, state = session_paths[0]
+    restored_tool_results = 0
+    if runtime_matches:
+        _, state = runtime_matches[0]
+        evidence["PROVIDER_REQUEUE_SESSION_SOURCE"] = "RUNTIME"
+    else:
+        source_matches = matching_sessions(checkpoint_source_dir)
+        if len(source_matches) != 1:
+            raise RuntimeError(
+                "PROVIDER_REQUEUE_AGENT_SESSION_COUNT="
+                + str(len(source_matches))
+            )
+        source_path, state = source_matches[0]
+        source_runtime = source_path.parent.parent.resolve()
+        runtime_root = runtime_dir.resolve()
+
+        for execution in state.get("TOOL_EXECUTIONS") or ():
+            if not isinstance(execution, dict):
+                continue
+            expected_hash = str(
+                execution.get("content_sha256") or ""
+            ).strip()
+            for ref in execution.get("output_refs") or ():
+                value = str(ref or "").strip()
+                if not value.startswith("artifact:tool-results/"):
+                    continue
+                relative = value[len("artifact:"):].lstrip("/")
+                source_tool = (source_runtime / relative).resolve()
+                if (
+                    source_tool != source_runtime
+                    and source_runtime not in source_tool.parents
+                ):
+                    raise RuntimeError(
+                        "PROVIDER_REQUEUE_TOOL_RESULT_PATH_ESCAPE"
+                    )
+                if not source_tool.is_file():
+                    raise RuntimeError(
+                        "PROVIDER_REQUEUE_TOOL_RESULT_MISSING"
+                    )
+                try:
+                    envelope = json.loads(
+                        source_tool.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise RuntimeError(
+                        "PROVIDER_REQUEUE_TOOL_RESULT_INVALID"
+                    ) from exc
+                if (
+                    envelope.get("schema") != "ToolResultEnvelope/v1"
+                    or str(envelope.get("mission_id") or "") != mission_id
+                    or str(envelope.get("task_id") or "") != task_id
+                    or (
+                        expected_hash
+                        and str(
+                            envelope.get("content_sha256") or ""
+                        ).strip() != expected_hash
+                    )
+                ):
+                    raise RuntimeError(
+                        "PROVIDER_REQUEUE_TOOL_RESULT_LINEAGE_INVALID"
+                    )
+                target_tool = (runtime_root / relative).resolve()
+                if (
+                    target_tool != runtime_root
+                    and runtime_root not in target_tool.parents
+                ):
+                    raise RuntimeError(
+                        "PROVIDER_REQUEUE_TOOL_RESULT_TARGET_ESCAPE"
+                    )
+                target_tool.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source_tool, target_tool)
+                restored_tool_results += 1
+
+        session_dir = runtime_dir / "agent-sessions"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        target_session = (
+            session_dir / f"{task_id}-{agent_instance_id}.json"
+        )
+        shutil.copyfile(source_path, target_session)
+        evidence["PROVIDER_REQUEUE_SESSION_SOURCE"] = (
+            "CHECKPOINT_SOURCE"
+        )
+        evidence["PROVIDER_REQUEUE_TOOL_RESULTS_RESTORED"] = (
+            restored_tool_results
+        )
+
     session = AgentSessionRuntime(
         artifact_dir=runtime_dir,
         mission_id=mission_id,
@@ -862,10 +989,16 @@ def apply_provider_reconciliation_checkpoint(
     )
     if (
         session.agent_instance_id
+        != agent_instance_id
+        or session.agent_instance_id
         != str(state.get("AGENT_INSTANCE_ID") or "")
     ):
         raise RuntimeError(
             "PROVIDER_REQUEUE_AGENT_INSTANCE_ID_DRIFT"
+        )
+    if not session.restored:
+        raise RuntimeError(
+            "PROVIDER_REQUEUE_AGENT_SESSION_NOT_RESTORED"
         )
     session.apply_provider_recovery_epoch(
         epoch,
@@ -887,12 +1020,12 @@ def apply_provider_reconciliation_checkpoint(
         "PROVIDER_RECOVERY_EPOCH_APPLIED": True,
         "PROVIDER_RECOVERY_EPOCH_ID": epoch.get("epoch_id"),
         "PROVIDER_REQUEUE_TASK_ID": task_id,
+        "PROVIDER_REQUEUE_AGENT_INSTANCE_ID": agent_instance_id,
         "RECOVERED_PROVIDER_IDS": list(
             epoch.get("recovered_provider_ids") or ()
         ),
     })
     return evidence
-
 
 def plan_once(
     goal_id,
@@ -2072,6 +2205,7 @@ def run(
             plan=first,
             runtime_dir=first_runtime_dir,
             provider_reconciliation_dir=provider_reconciliation_dir,
+            checkpoint_source_dir=checkpoint_source_dir,
         )
     )
     write_json(
