@@ -262,6 +262,8 @@ def _evidence_passes(
     refs = _texts(item.get("evidence_refs"))
     status = str(item.get("status") or "").upper()
     kind = str(step.get("verification_kind") or "")
+    if kind != "HUMAN_GATE" and authority != "DEEPSEEK_HARNESS":
+        return "INCOMPLETE", refs, "UNTRUSTED_VERIFIER_AUTHORITY"
     if status in {"FAIL", "FAILED", "REJECT"}:
         return "FAIL", refs, "EXPLICIT_VERIFIER_FAILURE"
     if kind == "HUMAN_GATE":

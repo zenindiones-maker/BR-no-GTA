@@ -43,6 +43,14 @@ from app.services.capability_execution_contract_service import (
 )
 
 
+TASK_PROTOCOL_V1 = "TaskProtocol/v1"
+TASK_PROTOCOL_VNEXT = "TaskProtocol/vNext"
+TASK_PROTOCOL_VERSIONS = frozenset({
+    TASK_PROTOCOL_V1,
+    TASK_PROTOCOL_VNEXT,
+})
+
+
 def _text(value: Any, field: str) -> str:
     value = str(value or "").strip()
     if not value:
@@ -103,6 +111,7 @@ class TaskEnvelope:
     retry_semantics: str = ""
     independent_outcomes: bool = False
     verification_specs: tuple[dict[str, Any], ...] = ()
+    task_protocol_version: str = TASK_PROTOCOL_V1
     mission_id: str = "UNBOUND"
     goal_id: str = "UNBOUND"
 
@@ -170,6 +179,11 @@ class TaskEnvelope:
         context_budget = int(value.get("context_budget_bytes") or 32768)
         tool_budget = int(value.get("tool_budget") or 16)
         retry_budget = int(value.get("retry_budget") if value.get("retry_budget") is not None else 1)
+        task_protocol_version = str(
+            value.get("task_protocol_version") or TASK_PROTOCOL_V1
+        ).strip()
+        if task_protocol_version not in TASK_PROTOCOL_VERSIONS:
+            raise ValueError("task_protocol_version is invalid")
         if not 1 <= time_budget <= 7200:
             raise ValueError("time_budget_seconds must be in [1, 7200]")
         if not 1024 <= context_budget <= 262144:
@@ -271,6 +285,7 @@ class TaskEnvelope:
                 for item in value.get("verification_specs") or ()
                 if isinstance(item, dict)
             ),
+            task_protocol_version=task_protocol_version,
             mission_id=str(value.get("mission_id") or "UNBOUND").strip(),
             goal_id=str(value.get("goal_id") or "UNBOUND").strip(),
         )
@@ -333,6 +348,7 @@ class RoutedCollaborationTask:
     selection_evidence: dict[str, Any] = field(default_factory=dict)
     atomicity_contract: dict[str, Any] = field(default_factory=dict)
     verification_plan: dict[str, Any] = field(default_factory=dict)
+    task_protocol_version: str = TASK_PROTOCOL_V1
 
     @property
     def authorized_action(self) -> str:
@@ -435,6 +451,7 @@ def _task_idempotency_key(
         "verification_specs": [
             dict(item) for item in task.verification_specs
         ],
+        "task_protocol_version": task.task_protocol_version,
     }
     digest = sha256(
         json.dumps(
@@ -572,6 +589,7 @@ def build_collaboration_plan(
                 verification_plan=verification_by_task[
                     task.task_id
                 ].to_dict(),
+                task_protocol_version=task.task_protocol_version,
             )
         )
     conflict_graph = build_task_conflict_graph(

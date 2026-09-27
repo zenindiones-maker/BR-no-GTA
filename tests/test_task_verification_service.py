@@ -145,3 +145,28 @@ def test_verification_specs_cannot_self_attest_outcome():
             },
             mission_id="mission-a",
         )
+
+
+
+def test_untrusted_nonhuman_verifier_authority_is_rejected():
+    plan = compile_task_verification_plan(
+        _task(),
+        mission_id="mission-a",
+    ).to_dict()
+    criterion = plan["steps"][0]["criterion_id"]
+    result = evaluate_task_verification(
+        plan,
+        task_result=_result(),
+        verification_evidence={
+            criterion: {
+                "status": "PASS",
+                "authority": "TOOL",
+                "source": "UNTRUSTED_TOOL",
+                "evidence_refs": ["artifact:evidence.json"],
+            }
+        },
+    )
+    assert result.status == "TASK_VERIFICATION_INCOMPLETE"
+    assert result.step_results[0]["reason"] == (
+        "UNTRUSTED_VERIFIER_AUTHORITY"
+    )

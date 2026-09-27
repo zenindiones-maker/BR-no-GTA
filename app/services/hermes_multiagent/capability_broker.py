@@ -81,12 +81,16 @@ from app.services.task_dependency_precondition_service import (
     TaskDependencyPreconditionFailure,
     validate_task_dependency_preconditions,
 )
+from app.services.task_verification_execution_service import (
+    execute_trusted_task_verification,
+)
 from app.services.telegram_group_human_surface_service import (
     HUMAN_SURFACE,
     send_harness_message_to_human_group,
 )
 
 from app.services.harness_collaboration_service import (
+    TASK_PROTOCOL_VNEXT,
     RoutedCollaborationTask,
     TaskEnvelope,
 )
@@ -481,6 +485,7 @@ class HermesHarnessCapabilityBroker:
         relative = Path("capability-results") / f"{task_id}-{index}.json"
         target = self.artifact_dir / relative
         now = datetime.now(timezone.utc).isoformat()
+        requested_status = str(status or "")
         task_result = build_task_result_envelope(
             mission_id=self.spec.mission_id,
             task_id=task_id,
@@ -488,7 +493,7 @@ class HermesHarnessCapabilityBroker:
             agent_id=agent_id,
             skill_id=skill_id,
             executor_binding=executor_binding,
-            status=str(status or ""),
+            status=requested_status,
             started_at=started_at or now,
             completed_at=completed_at or now,
             elapsed_ms=float(elapsed_seconds) * 1000.0,
@@ -496,6 +501,37 @@ class HermesHarnessCapabilityBroker:
             source_task_ids=source_task_ids,
             authorization_id=authorization_id,
         )
+        verification = None
+        effective_status = requested_status
+        if (
+            requested_status == "COMPLETED"
+            and str(
+                getattr(task, "task_protocol_version", "") or ""
+            ) == TASK_PROTOCOL_VNEXT
+        ):
+            verification = execute_trusted_task_verification(
+                task=task,
+                task_result=task_result.to_dict(),
+                artifact_dir=self.artifact_dir,
+                index=index,
+            )
+            if not verification["terminal_success"]:
+                effective_status = str(verification["status"])
+                task_result = build_task_result_envelope(
+                    mission_id=self.spec.mission_id,
+                    task_id=task_id,
+                    capability_id=capability_id,
+                    agent_id=agent_id,
+                    skill_id=skill_id,
+                    executor_binding=executor_binding,
+                    status=effective_status,
+                    started_at=started_at or now,
+                    completed_at=completed_at or now,
+                    elapsed_ms=float(elapsed_seconds) * 1000.0,
+                    result=normalized,
+                    source_task_ids=source_task_ids,
+                    authorization_id=authorization_id,
+                )
         task_result_record = persist_task_result_envelope(
             task_result, artifact_dir=self.artifact_dir, index=index
         )
@@ -510,7 +546,25 @@ class HermesHarnessCapabilityBroker:
             "idempotency_key": idempotency_key,
             "capability_version": capability_version,
             "retry_count": int(retry_count),
-            "status": str(status or ""),
+            "status": effective_status,
+            "task_protocol_version": str(
+                getattr(task, "task_protocol_version", "") or ""
+            ),
+            "verification_status": (
+                str(verification["status"])
+                if verification is not None
+                else "LEGACY_NOT_ENFORCED"
+            ),
+            "verification_terminal_success": (
+                bool(verification["terminal_success"])
+                if verification is not None
+                else None
+            ),
+            "verification_ref": (
+                verification.get("verification_ref")
+                if verification is not None
+                else None
+            ),
             "elapsed_seconds": round(elapsed_seconds, 6),
             "cost": 0.0,
             "policy_violations": 0,
@@ -528,6 +582,22 @@ class HermesHarnessCapabilityBroker:
             "sha256": sha256(raw.encode("utf-8")).hexdigest(),
         }
         self._task_results.setdefault(task_id, []).append(record)
+        if verification is not None:
+            self._audit.append({
+                "event": "TASK_VERIFICATION_PLAN_EXECUTED",
+                "authority": "DEEPSEEK_HARNESS",
+                "mission_id": self.spec.mission_id,
+                "task_id": task_id,
+                "task_protocol_version": task.task_protocol_version,
+                "verification_status": verification["status"],
+                "verification_terminal_success": bool(
+                    verification["terminal_success"]
+                ),
+                "verification_ref": verification.get(
+                    "verification_ref"
+                ),
+                "NO_AGENT_SELF_ATTESTED_SUCCESS": "PASS",
+            })
         return record
 
     def _existing_result(self, task) -> dict[str, Any] | None:
@@ -536,6 +606,12 @@ class HermesHarnessCapabilityBroker:
         for row in reversed(self._task_results.get(task.task_id, ())):
             if (
                 row.get("status") == "COMPLETED"
+                and (
+                    str(
+                        getattr(task, "task_protocol_version", "") or ""
+                    ) != TASK_PROTOCOL_VNEXT
+                    or row.get("verification_terminal_success") is True
+                )
                 and row.get("idempotency_key") == task.idempotency_key
                 and row.get("capability_id") == task.capability_id
                 and str(row.get("capability_version") or "1")
@@ -2242,6 +2318,52 @@ class HermesHarnessCapabilityBroker:
                     started_at=started_at,
                     completed_at=datetime.now(timezone.utc).isoformat(),
                 )
+                if (
+                    str(
+                        getattr(task, "task_protocol_version", "") or ""
+                    ) == TASK_PROTOCOL_VNEXT
+                    and result_row.get(
+                        "verification_terminal_success"
+                    ) is not True
+                ):
+                    verification_evidence = {
+                        "verification_status": result_row.get(
+                            "verification_status"
+                        ),
+                        "verification_ref": result_row.get(
+                            "verification_ref"
+                        ),
+                        "task_result_ref": result_row.get(
+                            "task_result_ref"
+                        ),
+                    }
+                    session.fail(
+                        failure_class="TASK_VERIFICATION_INCOMPLETE",
+                        evidence=verification_evidence,
+                        turn_consumed=False,
+                    )
+                    self._audit.append({
+                        "event": "TASK_VERIFICATION_INCOMPLETE",
+                        "authority": "DEEPSEEK_HARNESS",
+                        "mission_id": self.spec.mission_id,
+                        "task_id": task_id,
+                        "task_protocol_version": (
+                            task.task_protocol_version
+                        ),
+                        **verification_evidence,
+                        "AGENT_SAYS_DONE_NOT_ACCEPTED": "PASS",
+                    })
+                    raise DelegatedCapabilityFailure(
+                        task_id=task_id,
+                        capability_id=capability_id,
+                        failure_mode=(
+                            "TASK_VERIFICATION_INCOMPLETE"
+                        ),
+                        retry_attempt=retry_attempt,
+                        retry_allowed=False,
+                        requires_harness_replan=False,
+                        failure_evidence=verification_evidence,
+                    )
                 session.complete(
                     final_output_schema=(
                         output_validation.final_output_schema
