@@ -377,6 +377,20 @@ def _persist_execution_need(
     }
 
 
+def persist_harness_execution_need(
+    *,
+    mission_plan: dict[str, Any],
+    need: dict[str, Any],
+    artifact_dir: str | Path,
+) -> dict[str, Any]:
+    """Public trusted persistence boundary for a typed executor need."""
+    return _persist_execution_need(
+        mission_plan=mission_plan,
+        need=need,
+        artifact_dir=artifact_dir,
+    )
+
+
 def resolve_harness_execution_need(
     *,
     mission_plan: dict[str, Any],

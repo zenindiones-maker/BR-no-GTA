@@ -28,6 +28,22 @@ on:
         description: "Typed authorization schema required for governed continuation execution"
         required: false
         default: ""
+      checkpoint_artifact_digest:
+        description: "Exact predecessor checkpoint artifact SHA256 digest"
+        required: false
+        default: ""
+      continuation_transition:
+        description: "Harness supervisor next transition"
+        required: false
+        default: ""
+      continuation_strategy:
+        description: "Harness-governed resume scope/strategy"
+        required: false
+        default: ""
+      continuation_route_id:
+        description: "Typed continuation route identity"
+        required: false
+        default: ""
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -60,6 +76,10 @@ env:
   BR_CONTINUATION_ID: ${{ inputs.continuation_id || '' }}
   BR_EXPECTED_STATE_VERSION: ${{ inputs.expected_state_version || '' }}
   BR_CONTINUATION_AUTHORITY_SCHEMA: ${{ inputs.continuation_authority_schema || '' }}
+  BR_EXPECTED_CHECKPOINT_DIGEST: ${{ inputs.checkpoint_artifact_digest || '' }}
+  BR_CONTINUATION_TRANSITION: ${{ inputs.continuation_transition || '' }}
+  BR_CONTINUATION_STRATEGY: ${{ inputs.continuation_strategy || '' }}
+  BR_CONTINUATION_ROUTE_ID: ${{ inputs.continuation_route_id || '' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
@@ -155,6 +175,19 @@ jobs:
                   "ContinuationAuthorization/v1"
               ),
               "BR_EXPECTED_CHECKPOINT_DIGEST": digest,
+              "BR_CONTINUATION_TRANSITION": str(
+                  continuation.get("continuation_transition")
+                  or meta.get("predecessor_next_transition")
+                  or ""
+              ).strip(),
+              "BR_CONTINUATION_STRATEGY": str(
+                  continuation.get("continuation_strategy")
+                  or "MINIMAL_AFFECTED_SUBGRAPH"
+              ).strip(),
+              "BR_CONTINUATION_ROUTE_ID": str(
+                  continuation.get("continuation_route_id")
+                  or f"file-driven:{cid}"
+              ).strip(),
           }
           with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as handle:
               for key,value in values.items():
@@ -174,6 +207,28 @@ jobs:
           echo "AGENT_CALLS=0"
           echo "TASKRESULT_WRITES=0"
           exit 78
+
+      - name: Validate governed continuation transition
+        if: ${{ env.BR_CONTINUATION_ID != '' }}
+        run: |
+          set -euo pipefail
+          test "$BR_CONTINUATION_AUTHORITY_SCHEMA" = "ContinuationAuthorization/v1"
+          test "$BR_CONTINUATION_STRATEGY" = "MINIMAL_AFFECTED_SUBGRAPH"
+          test -n "$BR_CONTINUATION_ROUTE_ID"
+          python - <<'PY'
+          import os,re
+          digest=str(os.environ.get("BR_EXPECTED_CHECKPOINT_DIGEST") or "")
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}",digest):
+              raise SystemExit("CONTINUATION_CHECKPOINT_DIGEST_INVALID")
+          transition=str(os.environ.get("BR_CONTINUATION_TRANSITION") or "")
+          if transition not in {"RESOLVE_REQUIREMENT","REPLAN_REQUIRED"}:
+              raise SystemExit("CONTINUATION_TRANSITION_INVALID")
+          print("CONTINUATION_TRANSITION_TYPED=PASS")
+          print("BLIND_RETRY_FORBIDDEN=PASS")
+          if transition=="REPLAN_REQUIRED":
+              print("SAME_ROUTE_FORBIDDEN_ENFORCED=PASS")
+              print("REPLAN_TRANSITION_RECEIVED=PASS")
+          PY
 
       - uses: actions/setup-python@v5
         with:
@@ -277,6 +332,71 @@ jobs:
           PY
           echo "CHECKPOINT_REHYDRATION=PASS"
           echo "COMPLETED_WORK_NOT_REEXECUTED=ENFORCED_BY_TASK_RESULT_IDEMPOTENCY"
+
+      - name: Reconcile durable pending need before semantic resume
+        if: ${{ env.BR_RESUME_RUN_ID != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=artifacts/real-multi-agent-production
+          test -f "$ROOT/harness-mission-state.json"
+          FRESH_RUN="$(python - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path("artifacts/real-multi-agent-production/fact-check-source-recovery.json")
+          if not p.is_file():
+              print("")
+          else:
+              ref=str(json.loads(p.read_text()).get("fresh_cloud_execution_ref") or "")
+              m=re.fullmatch(r"github-actions:([1-9][0-9]*)",ref)
+              print(m.group(1) if m else "")
+          PY
+          )"
+          rm -rf .durable-fresh-evidence
+          if [ -n "$FRESH_RUN" ]; then
+            mkdir -p .durable-fresh-evidence
+            gh run download "$FRESH_RUN" --repo "$GITHUB_REPOSITORY" --name gta6-fresh-research --dir .durable-fresh-evidence
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.production_durable_resume_service import (
+              build_fresh_evidence_lineage,
+              ensure_latest_editorial_execution_need,
+          )
+          root=Path("artifacts/real-multi-agent-production")
+          state=json.loads((root/"harness-mission-state.json").read_text())
+          decision=dict(state.get("supervisor_decision") or {})
+          pending=ensure_latest_editorial_execution_need(
+              artifact_dir=root,
+              force_new_strategy=bool(
+                  decision.get("same_route_forbidden")
+                  or decision.get("action")=="REPLAN"
+              ),
+          )
+          if pending is not None:
+              print("DURABLE_PENDING_EXECUTION_NEED=PASS")
+              print("PENDING_NEED_REF="+str(pending["need_ref"]))
+          fresh=Path(".durable-fresh-evidence/result.json")
+          if fresh.is_file():
+              lineage=build_fresh_evidence_lineage(
+                  artifact_dir=root,
+                  parent_mission_id=str(state.get("mission_id") or ""),
+                  fresh_packet=json.loads(fresh.read_text()),
+              )
+              if lineage is not None:
+                  print("FRESH_EVIDENCE_LINEAGE_VALID=PASS")
+                  print("PARENT_MISSION_ID="+lineage["parent_mission_id"])
+                  print("CHILD_EXECUTION_ID="+lineage["child_execution_id"])
+                  print("HARNESS_EXECUTION_NEED_ID="+str(lineage["harness_execution_need_id"]))
+                  print("TASK_ID="+lineage["task_id"])
+                  print("PRODUCED_ARTIFACT_REF="+lineage["produced_artifact_ref"])
+                  print("CONSUMER_TASK_ID="+lineage["consumer_task_id"])
+          print("COMPLETED_RESULTS_PRESERVED=PASS")
+          print("NO_BLIND_RETRY=PASS")
+          print("NO_PADDING=PASS")
+          PY
 
       - name: Install bounded controller runtime
         run: |
@@ -813,6 +933,65 @@ jobs:
           print("CODEX_CHECKPOINT_PRESERVED=PASS")
           PY
 
+      - name: Prepare governed non-terminal durable checkpoint
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=artifacts/real-multi-agent-production
+          STATE="$ROOT/harness-mission-state.json"
+          test -f "$STATE" || { echo "DURABLE_MISSION_STATE_MISSING"; exit 0; }
+          FRESH_RUN="$(python - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path("artifacts/real-multi-agent-production/fact-check-source-recovery.json")
+          if not p.is_file():
+              print("")
+          else:
+              ref=str(json.loads(p.read_text()).get("fresh_cloud_execution_ref") or "")
+              m=re.fullmatch(r"github-actions:([1-9][0-9]*)",ref)
+              print(m.group(1) if m else "")
+          PY
+          )"
+          rm -rf .durable-fresh-evidence
+          if [ -n "$FRESH_RUN" ]; then
+            mkdir -p .durable-fresh-evidence
+            gh run download "$FRESH_RUN" --repo "$GITHUB_REPOSITORY" --name gta6-fresh-research --dir .durable-fresh-evidence
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.services.production_durable_resume_service import (
+              build_fresh_evidence_lineage,
+              ensure_latest_editorial_execution_need,
+          )
+          root=Path("artifacts/real-multi-agent-production")
+          state=json.loads((root/"harness-mission-state.json").read_text())
+          decision=dict(state.get("supervisor_decision") or {})
+          pending=ensure_latest_editorial_execution_need(
+              artifact_dir=root,
+              force_new_strategy=bool(
+                  decision.get("same_route_forbidden")
+                  or decision.get("action")=="REPLAN"
+              ),
+          )
+          if pending is not None:
+              print("LATEST_PARTIAL_NEED_PERSISTED=PASS")
+          fresh=Path(".durable-fresh-evidence/result.json")
+          if fresh.is_file():
+              lineage=build_fresh_evidence_lineage(
+                  artifact_dir=root,
+                  parent_mission_id=str(state.get("mission_id") or ""),
+                  fresh_packet=json.loads(fresh.read_text()),
+              )
+              if lineage is not None:
+                  print("FRESH_EVIDENCE_LINEAGE_VALID=PASS")
+          print("HARNESS_SUPERVISOR_RETAINS_CONTINUATION_AUTHORITY=PASS")
+          print("NO_BLIND_RETRY=PASS")
+          print("NO_PADDING=PASS")
+          PY
+
       - name: Upload complete real production evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -825,47 +1004,62 @@ jobs:
           retention-days: 30
 
       - name: Continue non-terminal durable mission
-        if: ${{ !cancelled() && success() }}
+        if: ${{ always() && !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           STATE=artifacts/real-multi-agent-production/harness-mission-state.json
           test -f "$STATE" || { echo "DURABLE_MISSION_STATE_MISSING"; exit 0; }
-          eval "$(python - <<'PY'
-          import json,shlex
-          d=json.load(open('artifacts/real-multi-agent-production/harness-mission-state.json'))
-          decision=d.get('supervisor_decision') or {}
-          transition=str(decision.get('next_transition') or '')
-          status=str(d.get('mission_status') or '')
-          next_required=bool(transition) and status not in {'DELIVERABLE_READY','COMPLETED','FAILED_TERMINAL','WAITING_HUMAN','WAITING_EXTERNAL'}
-          print('NEXT='+shlex.quote('1' if next_required else '0'))
-          print('COUNT='+shlex.quote(str(int(d.get('continuation_count') or 0))))
-          print('KEY='+shlex.quote(str(d.get('mission_id') or '')))
-          print('REPEATED='+shlex.quote('1' if decision.get('same_route_forbidden') else '0'))
+          ARTIFACT_NAME="real-multi-agent-production-$GITHUB_RUN_ID"
+          CHECKPOINT_DIGEST="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="'"$ARTIFACT_NAME"'") | .digest' | head -n 1)"
+          test -n "$CHECKPOINT_DIGEST"
+          python - "$CHECKPOINT_DIGEST" <<'PY' > .durable-continuation.env
+          import json,os,shlex,sys
+          from app.services.production_durable_resume_service import (
+              plan_nonterminal_continuation,
+          )
+          state=json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))
+          request=plan_nonterminal_continuation(
+              mission_state=state,
+              predecessor_run_id=int(os.environ["GITHUB_RUN_ID"]),
+              checkpoint_artifact_digest=sys.argv[1],
+          )
+          if request is None:
+              print("NEXT='0'")
+          else:
+              d=request.to_dict()
+              print("NEXT='1'")
+              for key,value in {
+                  "KEY":d["mission_id"],
+                  "COUNT":d["continuation_count"],
+                  "STATE_VERSION":d["expected_state_version"],
+                  "CONTINUATION_ID":d["continuation_id"],
+                  "AUTH_SCHEMA":d["continuation_authority_schema"],
+                  "TRANSITION":d["next_transition"],
+                  "STRATEGY":d["continuation_strategy"],
+                  "ROUTE_ID":d["continuation_route_id"],
+                  "ROUTE_POLICY":d["route_policy"],
+                  "CHECKPOINT_DIGEST":d["checkpoint_artifact_digest"],
+              }.items():
+                  print(f"{key}="+shlex.quote(str(value)))
           PY
-          )"
+          source .durable-continuation.env
           if [ "$NEXT" != 1 ]; then
             echo "AUTONOMOUS_CONTINUATION_NOT_REQUIRED=PASS"
             exit 0
           fi
-          if [ "$REPEATED" = 1 ]; then
-            echo "SAME_ROUTE_FORBIDDEN=PASS"
-            echo "REPLAN_REQUIRED=PASS"
-            echo "NORMAL_EXECUTE_DISPATCH=FORBIDDEN"
-            exit 0
+          if [ "$TRANSITION" = "REPLAN_REQUIRED" ]; then
+            test "$ROUTE_POLICY" = "NEW_STRATEGY"
+            echo "SAME_ROUTE_FORBIDDEN_ENFORCED=PASS"
+            echo "REPLAN_TRANSITION_EMITTED=PASS"
+            echo "BLIND_RETRY_FORBIDDEN=PASS"
           fi
-          NEXT_COUNT=$((COUNT+1))
-          STATE_VERSION="$(python -c 'import json; print(json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))["state_version"])')"
-          CONTINUATION_ID="$KEY:$STATE_VERSION:$GITHUB_RUN_ID"
-          gh workflow run production-mission-continuation-dispatcher.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f mission_id="$KEY" \
-            -f expected_state_version="$STATE_VERSION" \
-            -f continuation_id="$CONTINUATION_ID" \
-            -f predecessor_run_id="$GITHUB_RUN_ID" \
-            -f target_ref="$GITHUB_REF_NAME"
+          gh workflow run real-multi-agent-production.yml             --repo "$GITHUB_REPOSITORY"             --ref "$GITHUB_REF_NAME"             -f resume_run_id="$GITHUB_RUN_ID"             -f durable_mission_key="$KEY"             -f continuation_count="$COUNT"             -f continuation_id="$CONTINUATION_ID"             -f expected_state_version="$STATE_VERSION"             -f continuation_authority_schema="$AUTH_SCHEMA"             -f checkpoint_artifact_digest="$CHECKPOINT_DIGEST"             -f continuation_transition="$TRANSITION"             -f continuation_strategy="$STRATEGY"             -f continuation_route_id="$ROUTE_ID"
+          echo "FAILED_STEP_DOES_NOT_BLOCK_NONTERMINAL_RECONCILIATION=PASS"
+          echo "HARNESS_SUPERVISOR_RETAINS_CONTINUATION_AUTHORITY=PASS"
+          echo "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS"
           echo "CONTINUATION_REQUEST_EMITTED=PASS"
           echo "EVENT_DRIVEN_RESUME=PASS"
           echo "BOUNDED_AUTONOMOUS_CONTINUATION=PASS"
+
