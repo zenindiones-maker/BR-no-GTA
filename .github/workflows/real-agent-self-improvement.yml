@@ -1213,8 +1213,9 @@ jobs:
             echo "PRIOR_RECONCILIATION_STATE_RESTORED=NOT_APPLICABLE"
           fi
 
-      - name: Import fresh provider-health event evidence
+      - name: Import and coalesce durable provider-health evidence
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
+        id: health
         env:
           GH_TOKEN: ${{ github.token }}
           HEALTH_EVENT_RUN_ID: ${{ inputs.health_event_run_id || '' }}
@@ -1222,39 +1223,136 @@ jobs:
         run: |
           set -euo pipefail
           health_root="artifacts/provider-availability-reconciliation/health-event"
+          rm -rf "$health_root"
           mkdir -p "$health_root"
-          if [ -n "${HEALTH_EVENT_RUN_ID:-}" ]; then
-            if [ -n "${HEALTH_EVENT_ARTIFACT_NAME:-}" ]; then
-              gh run download "$HEALTH_EVENT_RUN_ID"                 --repo "$GITHUB_REPOSITORY"                 --name "$HEALTH_EVENT_ARTIFACT_NAME"                 --dir "$health_root" || true
+          selected_run="${HEALTH_EVENT_RUN_ID:-}"
+          selected_artifact="${HEALTH_EVENT_ARTIFACT_NAME:-}"
+          source_db=""
+
+          if [ -n "$selected_run" ]; then
+            explicit="$health_root/explicit-$selected_run"
+            mkdir -p "$explicit"
+            if [ -n "$selected_artifact" ]; then
+              gh run download "$selected_run" \
+                --repo "$GITHUB_REPOSITORY" \
+                --name "$selected_artifact" \
+                --dir "$explicit" || true
             else
-              gh run download "$HEALTH_EVENT_RUN_ID"                 --repo "$GITHUB_REPOSITORY"                 --dir "$health_root" || true
+              gh run download "$selected_run" \
+                --repo "$GITHUB_REPOSITORY" \
+                --dir "$explicit" || true
             fi
+            source_db="$(find "$explicit" -type f \( -name 'learning.db' -o -name '*.sqlite3' \) -print | sort | head -n 1)"
           fi
-          source_db="$(find "$health_root" -type f \( -name 'learning.db' -o -name '*.sqlite3' \) -print | sort | head -n 1)"
+
+          # A newer pending workflow dispatch can replace an older pending
+          # dispatch in the same concurrency group. The durable artifact is
+          # therefore the event source of truth; workflow input is only a hint.
+          if [ -z "$source_db" ]; then
+            runs_json="$RUNNER_TEMP/provider-health-runs.json"
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --branch "$TARGET_REF" \
+              --limit 40 \
+              --json databaseId,status,conclusion,createdAt,workflowName \
+              > "$runs_json"
+            mapfile -t health_runs < <(
+              python - "$runs_json" <<'PY'
+          import json,re,sys
+          rows=json.load(open(sys.argv[1],encoding="utf-8"))
+          rows=[
+              row for row in rows
+              if row.get("status")=="completed"
+              and row.get("conclusion")=="success"
+              and re.search(
+                  r"(health|probe|proof)",
+                  str(row.get("workflowName") or ""),
+                  re.I,
+              )
+          ]
+          rows.sort(
+              key=lambda row:str(row.get("createdAt") or ""),
+              reverse=True,
+          )
+          for row in rows:
+              print(str(row.get("databaseId") or ""))
+          PY
+            )
+            for run_id in "${health_runs[@]}"; do
+              [ -n "$run_id" ] || continue
+              [ "$run_id" != "$GITHUB_RUN_ID" ] || continue
+              mapfile -t artifact_names < <(
+                gh api \
+                  "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+                  --jq '.artifacts[].name' 2>/dev/null \
+                  | grep -Ei '(health|probe|proof)' || true
+              )
+              for artifact_name in "${artifact_names[@]}"; do
+                stage="$health_root/coalesced-$run_id"
+                rm -rf "$stage"
+                mkdir -p "$stage"
+                if ! gh run download "$run_id" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --name "$artifact_name" \
+                  --dir "$stage" >/dev/null 2>&1; then
+                  continue
+                fi
+                candidate="$(find "$stage" -type f \( -name 'learning.db' -o -name '*.sqlite3' \) -print | sort | head -n 1)"
+                if [ -n "$candidate" ]; then
+                  source_db="$candidate"
+                  selected_run="$run_id"
+                  selected_artifact="$artifact_name"
+                  break 2
+                fi
+              done
+            done
+          fi
+
           if [ -n "$source_db" ]; then
             cp "$source_db" "$BR_TEST_DATABASE"
+            imported="true"
             echo "FRESH_PROVIDER_HEALTH_DATABASE_IMPORTED=PASS"
           else
+            imported="false"
             python - <<'PY'
           from app.database.schema import initialize_schema
           initialize_schema()
           print("FRESH_PROVIDER_HEALTH_DATABASE_IMPORTED=NOT_APPLICABLE")
           PY
           fi
+
+          echo "health_event_run_id=$selected_run" >> "$GITHUB_OUTPUT"
+          echo "health_event_artifact_name=$selected_artifact" >> "$GITHUB_OUTPUT"
+          echo "fresh_health_database_imported=$imported" >> "$GITHUB_OUTPUT"
+          SELECTED_HEALTH_EVENT_RUN_ID="$selected_run" \
+          SELECTED_HEALTH_EVENT_ARTIFACT_NAME="$selected_artifact" \
+          FRESH_HEALTH_DATABASE_IMPORTED="$imported" \
           python - <<'PY'
           import json,os
           from pathlib import Path
           meta={
               "schema":"ProviderHealthWakeEvent/v1",
-              "health_event_run_id":os.getenv("HEALTH_EVENT_RUN_ID") or None,
-              "health_event_artifact_name":os.getenv("HEALTH_EVENT_ARTIFACT_NAME") or None,
+              "health_event_run_id":(
+                  os.getenv("SELECTED_HEALTH_EVENT_RUN_ID") or None
+              ),
+              "health_event_artifact_name":(
+                  os.getenv("SELECTED_HEALTH_EVENT_ARTIFACT_NAME") or None
+              ),
+              "fresh_health_database_imported":(
+                  os.getenv("FRESH_HEALTH_DATABASE_IMPORTED")=="true"
+              ),
+              "coalesced_from_durable_artifacts":True,
               "authority":"DEEPSEEK_HARNESS",
               "semantic_task_executed":False,
           }
-          Path("artifacts/provider-availability-reconciliation/health-wake-event.json").write_text(
+          Path(
+              "artifacts/provider-availability-reconciliation/"
+              "health-wake-event.json"
+          ).write_text(
               json.dumps(meta,indent=2,sort_keys=True)+"\n"
           )
           PY
+          echo "PROVIDER_HEALTH_EVENT_COALESCING=PASS"
 
       - name: Reconcile provider availability once
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
@@ -1270,7 +1368,7 @@ jobs:
         if: steps.wait.outputs.active_wait == 'true' && steps.prior.outputs.prior_terminal_decision == ''
         env:
           WAIT_SOURCE_RUN_ID: ${{ steps.wait.outputs.wait_run_id }}
-          HEALTH_EVENT_RUN_ID: ${{ inputs.health_event_run_id || '' }}
+          HEALTH_EVENT_RUN_ID: ${{ steps.health.outputs.health_event_run_id || inputs.health_event_run_id || '' }}
         run: |
           python - <<'PY'
           import json,os
