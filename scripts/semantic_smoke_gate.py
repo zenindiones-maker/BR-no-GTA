@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import time
 
@@ -20,29 +21,33 @@ def main() -> int:
     args = parser.parse_args()
 
     initialize_schema()
+    if not str(os.getenv("NVIDIA_API_KEY") or "").strip():
+        raise RuntimeError("SEMANTIC_SMOKE_SECRET_BLOCKER:NVIDIA_API_KEY")
     started = time.perf_counter()
     decision = route_harness_request(
         HarnessRoutingRequest(
-            intent="minimal pre-live semantic smoke for governed OpenCode provider",
+            intent="minimal pre-live semantic smoke for governed zero-cost NVIDIA provider",
             authorized_action="EDITORIAL",
             domain="ai",
             task_class="prelive-semantic-smoke",
             required_capability_id="ai.reasoning.text",
             provider_required=True,
             provider_domain="ai",
-            preferred_providers=("opencode",),
-            allowed_providers=("opencode",),
+            preferred_providers=("nvidia_nim",),
+            allowed_providers=("nvidia_nim",),
             fallback_allowed=False,
             zero_cost_operation=True,
             learning_required=False,
         )
     )
-    if decision.selected_provider != "opencode":
-        raise RuntimeError(f"semantic smoke routed unexpected provider: {decision.selected_provider}")
+    if decision.selected_provider != "nvidia_nim":
+        raise RuntimeError(
+            f"semantic smoke routed unexpected provider: {decision.selected_provider}"
+        )
 
     authorization = issue_harness_authorization(
         authorized_action="EDITORIAL",
-        subject="provider:opencode",
+        subject="provider:nvidia_nim",
         harness_decision_id="prelive-semantic-smoke",
         execution_id="prelive-semantic-smoke",
         lineage={

@@ -203,7 +203,7 @@ jobs:
           assert d["fallback_occurred"] is False, d
           assert d["zero_cost"] is True, d
           print("PROMOTED_PROVIDER_REHYDRATION=PASS")
-          print("SEMANTIC_PROVIDER_READY=PASS")
+          print("OPENCODE_EXECUTOR_PROFILE_READY=PASS")
           PY
 
       - name: FAST_STATIC/CONTRACT gate
@@ -220,6 +220,8 @@ jobs:
 
       - name: SEMANTIC_SMOKE gate
         if: steps.resume.outputs.reuse_upstream != 'true'
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set -euo pipefail
           python scripts/semantic_smoke_gate.py \
