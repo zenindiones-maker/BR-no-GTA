@@ -17,6 +17,11 @@ class AgentRename(BaseModel):
 
 
 PROJECT_PATH: Path | None = None
+# Stable IDs are part of the reviewed visual fixture identity. The previous
+# baseline candidates were captured with these exact IDs; making them explicit
+# removes UUID noise without weakening pixel-exact regression checks.
+QA_COLOR_CLIP_ID = "c06931e57"
+QA_TITLE_CLIP_ID = "c673445d8"
 
 
 def build_store(project_path: Path) -> Store:
@@ -34,6 +39,7 @@ def build_store(project_path: Path) -> Store:
         start=0.0,
         duration=4.0,
     )
+    blue.id = QA_COLOR_CLIP_ID
     store.set_clip(blue.id, name="QA Blue")
     overlay = store.add_track("video", name="Overlay QA")
     title = store.add_text(
@@ -42,6 +48,7 @@ def build_store(project_path: Path) -> Store:
         start=0.5,
         duration=2.5,
     )
+    title.id = QA_TITLE_CLIP_ID
     store.set_clip(title.id, name="QA Title")
     store.save()
     return store
