@@ -349,18 +349,34 @@ jobs:
               "provider-reconciliation-source"
           )
           if reconciliation_root.is_dir():
-              result_paths=list(
-                  reconciliation_root.rglob(
-                      "provider-availability-reconciliation-result.json"
-                  )
+              canonical_result=(
+                  reconciliation_root
+                  / "provider-availability-reconciliation-result.json"
               )
-              if len(result_paths)!=1:
-                  raise RuntimeError(
-                      "PROVIDER_RECONCILIATION_RESULT_COUNT="
-                      +str(len(result_paths))
+              if canonical_result.is_file():
+                  result_path=canonical_result
+                  print(
+                      "PROVIDER_RECONCILIATION_CANONICAL_RESULT="
+                      "ROOT_DIRECT"
+                  )
+              else:
+                  result_paths=list(
+                      reconciliation_root.rglob(
+                          "provider-availability-reconciliation-result.json"
+                      )
+                  )
+                  if len(result_paths)!=1:
+                      raise RuntimeError(
+                          "PROVIDER_RECONCILIATION_RESULT_COUNT="
+                          +str(len(result_paths))
+                      )
+                  result_path=result_paths[0]
+                  print(
+                      "PROVIDER_RECONCILIATION_CANONICAL_RESULT="
+                      "UNIQUE_FALLBACK"
                   )
               reconciliation_result=json.loads(
-                  result_paths[0].read_text(encoding="utf-8")
+                  result_path.read_text(encoding="utf-8")
               )
           identity=resolve_requeue_checkpoint_identity(
               request_checkpoint=checkpoint,

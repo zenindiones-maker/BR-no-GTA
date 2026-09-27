@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import inspect
+from pathlib import Path
 
 from app.services.provider_availability_reconciliation_service import (
     ProviderAvailabilityBackoffPolicy,
@@ -453,3 +454,27 @@ def test_non_requeue_checkpoint_identity_preserves_request_checkpoint():
         "task_id": "task-02",
         "agent_instance_id": "agent-original",
     }
+
+
+def test_requeue_workflow_prefers_root_canonical_reconciliation_result():
+    workflow = Path(
+        ".github/workflows/real-agent-self-improvement.yml"
+    ).read_text(encoding="utf-8")
+    step = workflow.split(
+        "- name: Detect governed provider-level recovery need", 1
+    )[1].split(
+        "- name:", 1
+    )[0]
+    direct = (
+        'reconciliation_root\n'
+        '                  / "provider-availability-reconciliation-result.json"'
+    )
+    assert direct in step
+    assert "if canonical_result.is_file():" in step
+    assert step.index("if canonical_result.is_file():") < step.index(
+        "reconciliation_root.rglob("
+    )
+    assert (
+        "PROVIDER_RECONCILIATION_CANONICAL_RESULT="
+        in step
+    )
