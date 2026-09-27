@@ -1,0 +1,140 @@
+name: Browser Visual Baseline Bootstrap
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .github/workflows/browser-visual-baseline-bootstrap.yml
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: browser-visual-baseline-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  pin-reviewed-goldens:
+    name: Pin reviewed visual goldens
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_RUN_ID: "36334444613"
+      SOURCE_ARTIFACT: "browser-ui-validation-36334444613"
+      SOURCE_CANDIDATE_SHA: "6c80506b6a35499a4e303b6afd5114b214c5c058"
+    steps:
+      - name: Checkout exact triggering commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download reviewed GREEN candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/browser-visual-source
+          mkdir -p /tmp/browser-visual-source
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$SOURCE_ARTIFACT" \
+            --dir /tmp/browser-visual-source
+          test -f /tmp/browser-visual-source/browser-qa/browser-qa-report.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/browser-visual-source/browser-qa/browser-qa-report.json'))
+          assert d['schema']=='BrowserQAReport/v1'
+          assert d['result']=='PASS'
+          assert d['candidate_sha']=='6c80506b6a35499a4e303b6afd5114b214c5c058'
+          assert d['playwright_version']=='1.63.0'
+          assert d['browser_name']=='chromium'
+          assert d['browser_version']=='153.0.8010.12'
+          assert d['node_version']=='v24.21.0'
+          assert int(d['metrics']['failed_assertion_count'])==0
+          print('REVIEW_SOURCE_BROWSER_QA_GREEN=PASS')
+          PY
+
+      - name: Materialize exactly reviewed goldens
+        run: |
+          set -euo pipefail
+          root="video-engine/frontend/browser-qa/visual-baselines"
+          source="/tmp/browser-visual-source/browser-qa/artifacts/sha256"
+          mkdir -p "$root/chromium-desktop" "$root/chromium-desktop-narrow"
+
+          copy_exact() {
+            project="$1"
+            name="$2"
+            sha="$3"
+            src="$source/$sha.png"
+            dst="$root/$project/$name.png"
+            test -f "$src"
+            actual="$(sha256sum "$src" | awk '{print $1}')"
+            test "$actual" = "$sha"
+            cp "$src" "$dst"
+            test "$(sha256sum "$dst" | awk '{print $1}')" = "$sha"
+          }
+
+          copy_exact chromium-desktop editor-with-project 0fcf96bc80c7eba06a61d457ae4843a31438d58922e94e3dac6f77d601ecc3a8
+          copy_exact chromium-desktop selected-clip 406c2643c6b516e99cbe2e22d3b900c4e5602eaff4ea7403796fe4c6fe5e9507
+          copy_exact chromium-desktop track-dialog daccb5805c3c638e6be89db6ba5b8ff7d055e8b154e3b048131e0b0a938323c6
+          copy_exact chromium-desktop inspector-open c8f0647f7f6013243ef71250972464bf8b9595d3902365d71152be2b30e9f7cd
+          copy_exact chromium-desktop-narrow editor-with-project 1aeb640d0be12d0250216f2fcc9c42d1aad4edb527462d27b3329f94fcb23379
+          copy_exact chromium-desktop-narrow selected-clip e21157bd3b2bfb441db46e5f63a06840dcdb50e2eb5ffe5c75a1fc85cccfbae7
+          copy_exact chromium-desktop-narrow track-dialog f2be02973fe4647b87e0571ce06e4e73b411552db5278f0b4daafb04261f77d1
+          copy_exact chromium-desktop-narrow inspector-open 74f7b91d8b157cc5a3f4cdcded4cb9dbc8df1671775574725931fdd41b650205
+
+          cat > "$root/review.yaml" <<'YAML'
+          schema: BrowserVisualBaselineReview/v1
+          authority: NONE
+          source_run_id: 36334444613
+          source_artifact: browser-ui-validation-36334444613
+          source_candidate_sha: 6c80506b6a35499a4e303b6afd5114b214c5c058
+          source_browser_qa_result: PASS
+          reviewed_as_candidate: true
+          auto_update_visual_goldens: false
+          environment:
+            os: ubuntu-24.04
+            node: 24.21.0
+            playwright: 1.63.0
+            browser: chromium
+            browser_version: 153.0.8010.12
+            device_scale_factor: 1
+          baselines:
+            chromium-desktop/editor-with-project.png: 0fcf96bc80c7eba06a61d457ae4843a31438d58922e94e3dac6f77d601ecc3a8
+            chromium-desktop/selected-clip.png: 406c2643c6b516e99cbe2e22d3b900c4e5602eaff4ea7403796fe4c6fe5e9507
+            chromium-desktop/track-dialog.png: daccb5805c3c638e6be89db6ba5b8ff7d055e8b154e3b048131e0b0a938323c6
+            chromium-desktop/inspector-open.png: c8f0647f7f6013243ef71250972464bf8b9595d3902365d71152be2b30e9f7cd
+            chromium-desktop-narrow/editor-with-project.png: 1aeb640d0be12d0250216f2fcc9c42d1aad4edb527462d27b3329f94fcb23379
+            chromium-desktop-narrow/selected-clip.png: e21157bd3b2bfb441db46e5f63a06840dcdb50e2eb5ffe5c75a1fc85cccfbae7
+            chromium-desktop-narrow/track-dialog.png: f2be02973fe4647b87e0571ce06e4e73b411552db5278f0b4daafb04261f77d1
+            chromium-desktop-narrow/inspector-open.png: 74f7b91d8b157cc5a3f4cdcded4cb9dbc8df1671775574725931fdd41b650205
+          YAML
+
+      - name: Prove mutation containment
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --porcelain=v1 | sed 's/^...//' | sort)
+          printf 'CHANGED=%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 9
+          for path in "${changed[@]}"; do
+            case "$path" in
+              video-engine/frontend/browser-qa/visual-baselines/chromium-desktop/*.png|              video-engine/frontend/browser-qa/visual-baselines/chromium-desktop-narrow/*.png|              video-engine/frontend/browser-qa/visual-baselines/review.yaml) ;;
+              *) echo "unexpected mutation: $path" >&2; exit 1 ;;
+            esac
+          done
+          echo "VISUAL_BASELINE_BOOTSTRAP_CONTAINMENT=PASS"
+
+      - name: Commit reviewed goldens only
+        run: |
+          set -euo pipefail
+          git add -- video-engine/frontend/browser-qa/visual-baselines
+          staged="$(git diff --cached --name-only | sort)"
+          printf 'STAGED<<EOF\n%s\nEOF\n' "$staged"
+          test "$(printf '%s\n' "$staged" | grep -c '^video-engine/frontend/browser-qa/visual-baselines/')" -eq 9
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test(frontend): pin reviewed browser visual baselines"
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD | wc -l)" -eq 9
+          git push origin "HEAD:${GITHUB_REF_NAME}"
