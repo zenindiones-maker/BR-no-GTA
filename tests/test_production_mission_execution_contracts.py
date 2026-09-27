@@ -32,6 +32,7 @@ from scripts.real_multi_agent_production import (
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _complete_replayed_task,
     _classify_web_failure,
     _fresh_research_candidates,
     _governed_web_acquisition_status,
@@ -1405,3 +1406,68 @@ def test_editorial_replan_preserves_partial_structure_through_typed_need():
     assert 'input_artifact_refs=resolved[' in source
     assert 'payload["harness_resolved_need_ref"]' in source
     assert 'state["editorial_recovery_seed_structure"] =' not in source
+
+
+
+def test_durable_completed_task_replay_never_claims_execution_again():
+    class FakeBoard:
+        def __init__(self):
+            self.completed = []
+
+        def get_task(self, task_id):
+            return {"id": task_id, "status": "pending"}
+
+        def complete(self, task_id, *, summary, run_id, metadata):
+            self.completed.append({
+                "task_id": task_id,
+                "summary": summary,
+                "run_id": run_id,
+                "metadata": dict(metadata),
+            })
+            return True
+
+    board = FakeBoard()
+    execution = {
+        "status": "COMPLETED",
+        "evidence_ref": "artifact:task-results/fact_verification.json",
+        "task_result_ref": "artifact:task-results/fact_verification.json",
+    }
+
+    _complete_replayed_task(
+        board=board,
+        mapping={"fact_verification": "board-fact-verification"},
+        task_id="fact_verification",
+        execution=execution,
+    )
+
+    assert len(board.completed) == 1
+    row = board.completed[0]
+    assert row["run_id"] is None
+    assert row["metadata"]["status"] == "COMPLETED_REPLAY"
+    assert row["metadata"]["provider_call_performed"] is False
+    assert row["metadata"]["execution_attempt_consumed"] is False
+    assert row["metadata"]["authority"] == "DEEPSEEK_HARNESS"
+
+
+def test_production_loop_hard_skips_replayed_completed_tasks_before_claim():
+    from pathlib import Path
+
+    source = Path("scripts/real_multi_agent_production.py").read_text(
+        encoding="utf-8"
+    )
+    replay_guard = source.index("if task_id in replayed_task_ids:")
+    replay_complete = source.index(
+        "_complete_replayed_task(",
+        replay_guard,
+    )
+    claim = source.index(
+        "run_id = _claim_task(",
+        replay_guard,
+    )
+    fact_check_recovery = source.index(
+        'task.capability_id == "gta6.fact-check"',
+        replay_guard,
+    )
+
+    assert replay_guard < replay_complete < claim < fact_check_recovery
+    assert "DURABLE_COMPLETED_TASK_REPLAYED=PASS" in source

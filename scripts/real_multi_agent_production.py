@@ -2620,6 +2620,49 @@ def _build_product(state: dict[str, Any], novelty: dict[str, Any]) -> dict[str, 
     }
 
 
+def _complete_replayed_task(
+    *,
+    board,
+    mapping: dict[str, str],
+    task_id: str,
+    execution: dict[str, Any],
+) -> None:
+    """Materialize a durable COMPLETED TaskResult onto the fresh Hermes board.
+
+    Replay restores transient state and dependency readiness; it is not a new
+    execution attempt and therefore must never claim a worker/provider again.
+    """
+    board_task_id = mapping[task_id]
+    current = board.get_task(board_task_id)
+    if str(current.get("status") or "") in {"done", "archived"}:
+        return
+    evidence_ref = str(
+        execution.get("evidence_ref")
+        or execution.get("task_result_ref")
+        or ""
+    ).strip()
+    if not board.complete(
+        board_task_id,
+        summary=(
+            "DURABLE_COMPLETED_TASK_REPLAY "
+            f"task={task_id} evidence={evidence_ref or 'persisted-result'}"
+        ),
+        run_id=None,
+        metadata={
+            "status": "COMPLETED_REPLAY",
+            "task_id": task_id,
+            "evidence_ref": evidence_ref or None,
+            "task_result_ref": execution.get("task_result_ref"),
+            "provider_call_performed": False,
+            "execution_attempt_consumed": False,
+            "authority": "DEEPSEEK_HARNESS",
+        },
+    ):
+        raise RuntimeError(
+            f"HERMES_DURABLE_REPLAY_COMPLETE_FAILED:{task_id}"
+        )
+
+
 def _claim_task(board, mapping: dict[str, str], profile_by_task: dict[str, Any], task_id: str) -> int:
     profile = profile_by_task[task_id]
     board.claim(mapping[task_id], claimer=profile.profile_name)
@@ -2869,6 +2912,27 @@ def run(
                         f"EXECUTION_DEPENDENCY_MATERIALIZATION_{materialized.status}:"
                         f"{task_id}:{materialized.reason}"
                     )
+                if task_id in replayed_task_ids:
+                    replay_rows = [
+                        dict(row)
+                        for row in persisted_results.get(task_id, ())
+                        if str(row.get("status") or "") == "COMPLETED"
+                    ]
+                    if not replay_rows:
+                        raise RuntimeError(
+                            f"DURABLE_REPLAY_RESULT_MISSING:{task_id}"
+                        )
+                    _complete_replayed_task(
+                        board=board,
+                        mapping=task_mapping,
+                        task_id=task_id,
+                        execution=replay_rows[-1],
+                    )
+                    print(
+                        "DURABLE_COMPLETED_TASK_REPLAYED=PASS "
+                        f"task_id={task_id}"
+                    )
+                    continue
                 run_id = _claim_task(board, task_mapping, profile_by_task, task_id)
                 parent_context = (
                     broker.parent_context(task_id=task_id)
