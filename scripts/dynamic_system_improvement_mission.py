@@ -133,6 +133,39 @@ def _provider_failure_attempt_state(
 
     pairs = [*explicit_attempted, *pairs]
     exhausted = [*explicit_exhausted, *exhausted]
+    failure_domain = (
+        result.get("FAILURE_DOMAIN_CLASSIFICATION")
+        or result.get("failure_domain_classification")
+    )
+    failure_domain = (
+        dict(failure_domain)
+        if isinstance(failure_domain, dict)
+        else {}
+    )
+    provider_circuit_state = str(
+        result.get("PROVIDER_CIRCUIT_STATE")
+        or (
+            (failure_domain.get("provider_circuit") or {}).get("to_state")
+            if failure_domain
+            else ""
+        )
+        or ""
+    ).strip().upper()
+    provider_reserve = result.get("PROVIDER_RECOVERY_RESERVE")
+    provider_reserve = (
+        dict(provider_reserve)
+        if isinstance(provider_reserve, dict)
+        else {}
+    )
+    ejected_provider = str(
+        failure_domain.get("provider_id")
+        if (
+            failure_domain.get("scope") == "PROVIDER_LOCAL"
+            and failure_domain.get("provider_ejected") is True
+        )
+        else ""
+    ).strip()
+
     full_timeout = bool(
         any(
             str(item.get("failure_class") or "")
@@ -160,6 +193,13 @@ def _provider_failure_attempt_state(
             or result.get("semantic_model")
             or ""
         ).strip(),
+        "failure_domain_classification": failure_domain,
+        "provider_circuit_state": provider_circuit_state,
+        "provider_recovery_reserve": provider_reserve,
+        "provider_level_replan_required": bool(
+            result.get("PROVIDER_LEVEL_REPLAN_REQUIRED")
+        ),
+        "ejected_provider": ejected_provider,
     }
 
 
@@ -1710,6 +1750,47 @@ def run(
                                     merged.append(dict(item))
                             return merged
 
+                        prior_circuit_states = dict(
+                            prior_internal.get("PROVIDER_CIRCUIT_STATES")
+                            or {}
+                        )
+                        prior_ejected = {
+                            str(item).strip()
+                            for item in (
+                                prior_internal.get(
+                                    "TEMPORARILY_EJECTED_PROVIDER_IDS"
+                                ) or ()
+                            )
+                            if str(item).strip()
+                        }
+                        domain = dict(
+                            provider_failure[
+                                "failure_domain_classification"
+                            ] or {}
+                        )
+                        ejected_provider = str(
+                            provider_failure["ejected_provider"] or ""
+                        ).strip()
+                        if ejected_provider:
+                            prior_ejected.add(ejected_provider)
+                            prior_circuit_states[ejected_provider] = (
+                                provider_failure[
+                                    "provider_circuit_state"
+                                ]
+                                or "OPEN"
+                            )
+                        if (
+                            decision.strategy
+                            == "RECONCILE_PROVIDER_HEALTH"
+                        ):
+                            for provider_id, state in list(
+                                prior_circuit_states.items()
+                            ):
+                                if str(state).upper() == "OPEN":
+                                    prior_circuit_states[provider_id] = (
+                                        "HALF_OPEN"
+                                    )
+
                         retry_context["internal_recovery"] = {
                             **prior_internal,
                             "ORIGINAL_MISSION_ID": spec.mission_id,
@@ -1726,6 +1807,26 @@ def run(
                                 classification.failure_signature
                             ),
                             "RECOVERY_STRATEGY": decision.strategy,
+                            "FAILURE_DOMAIN_CLASSIFICATION": (
+                                domain
+                                or prior_internal.get(
+                                    "FAILURE_DOMAIN_CLASSIFICATION"
+                                )
+                            ),
+                            "PROVIDER_CIRCUIT_STATES": (
+                                prior_circuit_states
+                            ),
+                            "TEMPORARILY_EJECTED_PROVIDER_IDS": sorted(
+                                prior_ejected
+                            ),
+                            "PROVIDER_RECOVERY_RESERVE": (
+                                provider_failure[
+                                    "provider_recovery_reserve"
+                                ]
+                                or prior_internal.get(
+                                    "PROVIDER_RECOVERY_RESERVE"
+                                )
+                            ),
                             "PROVIDER_RECOVERY_CYCLE": {
                                 "schema": "ProviderRecoveryCycle/v1",
                                 "mission_id": spec.mission_id,
@@ -1765,7 +1866,8 @@ def run(
                                 ],
                             ])),
                             "PREVIOUS_SELECTED_PROVIDER": (
-                                provider_failure["selected_provider"]
+                                provider_failure["ejected_provider"]
+                                or provider_failure["selected_provider"]
                                 or prior_internal.get(
                                     "PREVIOUS_SELECTED_PROVIDER"
                                 )

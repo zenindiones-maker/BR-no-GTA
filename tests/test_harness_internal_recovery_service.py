@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from app.services.harness_internal_recovery_service import (
     CONTRACT_INPUT_GAP,
     MODEL_SET_EXHAUSTED,
+    PROVIDER_FAILURE_DOMAIN,
     PROVIDER_POOL_EXHAUSTED,
     PROVIDER_ROUTE_UNAVAILABLE,
     PROVIDER_TRANSIENT,
@@ -245,3 +246,61 @@ def test_model_set_exhausted_selects_provider_level_replan(tmp_path):
     decision = state.select_recovery(observed)
     assert decision.strategy == "PROVIDER_LEVEL_REPLAN"
     assert decision.human_intervention_required is False
+
+
+def test_correlated_provider_domain_goes_direct_to_provider_level_replan(tmp_path):
+    from app.services.harness_capability_adapter import (
+        CapabilityReturnedFailure,
+    )
+
+    domain = {
+        "schema": "FailureDomainClassification/v1",
+        "provider_id": "provider-a",
+        "scope": "PROVIDER_LOCAL",
+        "provider_ejected": True,
+        "confidence": 0.95,
+        "provider_circuit": {
+            "from_state": "CLOSED",
+            "to_state": "OPEN",
+        },
+    }
+    failure = CapabilityReturnedFailure(
+        "addy:debugging-and-error-recovery",
+        "FAILED",
+        "provider-wide correlated failures",
+        failure_evidence={
+            "failure_class": "PROVIDER_FAILURE_DOMAIN",
+            "failure_domain_classification": domain,
+            "provider_level_replan_required": True,
+            "adapter_terminal_decision": False,
+        },
+    )
+    classification = classify_internal_failure(
+        failure,
+        task=_task(),
+        context={"dependency_context_sha256": "provider-domain"},
+    )
+    assert classification.failure_class == PROVIDER_FAILURE_DOMAIN
+    assert classification.human_intervention_required is False
+
+    state = HarnessInternalRecoveryState(
+        mission_id="mission-domain",
+        goal_id="goal-domain",
+        artifact_dir=tmp_path,
+    )
+    observed = state.observe_failure(
+        task=_task(),
+        exc=failure,
+        context={"dependency_context_sha256": "provider-domain"},
+    )
+    assert state.snapshot()["RECOVERY_STATE"] == (
+        "PROVIDER_FAILURE_DOMAIN_DETECTED"
+    )
+    assert state.snapshot()["NEXT_TRANSITION"] == (
+        "PROVIDER_LEVEL_REPLAN_REQUIRED"
+    )
+    decision = state.select_recovery(observed)
+    assert decision.strategy == "PROVIDER_LEVEL_REPLAN"
+    assert state.snapshot()["NEXT_TRANSITION"] == (
+        "PROVIDER_LEVEL_REPLAN_REQUIRED"
+    )

@@ -31,6 +31,12 @@ from app.services.provider_health_service import (
     nvidia_semantic_planner_latency_budget,
     semantic_provider_health,
 )
+from app.services.provider_failure_domain_service import (
+    classify_failure_domain,
+    failure_episode_rows,
+    provider_admission_state,
+    transition_provider_circuit,
+)
 from app.services.swarm_execution_proof_service import AgentInvocationReceipt
 from app.services.task_output_contract_service import task_output_json_schema
 from app.services.semantic_tool_loop_service import (
@@ -204,7 +210,11 @@ def execute_authorized_addy_skill(
     if not mission_id or not task_id or not goal_id:
         raise ValueError("mission_id, task_id and goal_id must be non-empty")
 
-    context = payload.get("context")
+    context = (
+        dict(payload.get("context"))
+        if isinstance(payload.get("context"), dict)
+        else {}
+    )
     correction_feedback = (
         context.get("output_validation_feedback")
         if isinstance(context, dict)
@@ -314,6 +324,23 @@ def execute_authorized_addy_skill(
     provider_attempts: list[dict[str, Any]] = []
     provider_health_snapshots: list[dict[str, Any]] = []
     routing_health_snapshots: dict[str, dict[str, Any]] = {}
+    provider_admission_decisions: list[dict[str, Any]] = []
+    prior_failure_domain = dict(
+        internal_recovery.get("FAILURE_DOMAIN_CLASSIFICATION") or {}
+    )
+    prior_circuit_states = dict(
+        internal_recovery.get("PROVIDER_CIRCUIT_STATES") or {}
+    )
+    temporarily_ejected_provider_ids = {
+        str(item).strip()
+        for item in (
+            internal_recovery.get(
+                "TEMPORARILY_EJECTED_PROVIDER_IDS"
+            ) or ()
+        )
+        if str(item).strip()
+    }
+    half_open_probe_claimed = False
     nvidia_latency_budget: dict[str, Any] | None = None
     agent_instance_id = str(
         payload.get("agent_instance_id")
@@ -610,7 +637,7 @@ def execute_authorized_addy_skill(
         return decision
 
     def _execute_provider(provider_routing, *, phase: str):
-        nonlocal nvidia_latency_budget
+        nonlocal nvidia_latency_budget, half_open_probe_claimed
         selected_provider = str(
             provider_routing.selected_provider or ""
         ).strip()
@@ -621,6 +648,43 @@ def execute_authorized_addy_skill(
             raise RuntimeError("ADDY_SEMANTIC_PROVIDER_UNAVAILABLE")
         if not selected_model:
             raise RuntimeError("ADDY_SEMANTIC_MODEL_UNAVAILABLE")
+        circuit_state = str(
+            prior_circuit_states.get(selected_provider) or "CLOSED"
+        ).strip().upper()
+        if (
+            recovery_strategy == "RECONCILE_PROVIDER_HEALTH"
+            and selected_provider in temporarily_ejected_provider_ids
+            and circuit_state == "OPEN"
+        ):
+            circuit_state = transition_provider_circuit(
+                "OPEN",
+                "COOLDOWN_ELAPSED",
+            )["to_state"]
+        admission = provider_admission_state(
+            provider_id=selected_provider,
+            circuit_state=circuit_state,
+            effective_eligible=True,
+            half_open_probe_claimed=half_open_probe_claimed,
+            retry_budget_remaining=1,
+            failure_pressure=float(
+                prior_failure_domain.get("provider_failure_score") or 0.0
+            ),
+        )
+        provider_admission_decisions.append(dict(admission))
+        if admission["decision"] != "ADMIT":
+            raise RoutingPolicyError(
+                "Provider admission rejected before external call",
+                evidence={
+                    "failure_stage": "provider_admission",
+                    "failure_class": "PROVIDER_ROUTE_UNAVAILABLE",
+                    "provider_id": selected_provider,
+                    "model_id": selected_model,
+                    "provider_admission_state": admission,
+                    "PROVIDER_CALL_EXECUTED": "NO",
+                },
+            )
+        if admission.get("single_half_open_probe") is True:
+            half_open_probe_claimed = True
         pair_key = (selected_provider, selected_model)
         if (
             phase in {"INITIAL", "LOCALIZED_MODEL_REPLAN"}
@@ -689,6 +753,21 @@ def execute_authorized_addy_skill(
             )
         finally:
             consume_harness_authorization(provider_auth)
+        if circuit_state == "HALF_OPEN":
+            probe_transition = transition_provider_circuit(
+                "HALF_OPEN",
+                (
+                    "PROBE_SUCCESS"
+                    if semantic_evidence.status == "EXECUTED"
+                    else "PROBE_FAILURE"
+                ),
+            )
+            prior_circuit_states[selected_provider] = (
+                probe_transition["to_state"]
+            )
+            provider_admission_decisions[-1][
+                "probe_circuit_transition"
+            ] = probe_transition
         observed_provider = str(
             semantic_evidence.provider or selected_provider
         ).strip()
@@ -754,6 +833,25 @@ def execute_authorized_addy_skill(
             "performance": dict(semantic_evidence.performance or {}),
         })
         return semantic_evidence
+
+    def _eligible_models_at_cycle_start(provider_id: str) -> int:
+        counts: list[int] = []
+        for snapshot in routing_health_snapshots.values():
+            eligibility = snapshot.get("provider_eligibility_snapshot")
+            if not isinstance(eligibility, dict):
+                continue
+            models = {
+                str(item.get("model_id") or "").strip()
+                for item in (
+                    eligibility.get("effective_candidates") or ()
+                )
+                if isinstance(item, dict)
+                and str(item.get("provider_id") or "").strip()
+                == provider_id
+                and str(item.get("model_id") or "").strip()
+            }
+            counts.append(len(models))
+        return max(counts) if counts else 0
 
     started_at = datetime.now(timezone.utc).isoformat()
     recovery_preferred_provider = str(
@@ -1027,6 +1125,54 @@ def execute_authorized_addy_skill(
         seen_exhausted.add(key)
         exhausted_provider_model_pairs.append(dict(item))
 
+    failure_provider = str(
+        semantic.provider
+        or provider_routing.selected_provider
+        or ""
+    ).strip()
+    failure_model = str(
+        semantic.model
+        or provider_routing.selected_model
+        or ""
+    ).strip()
+    failure_domain_classification: dict[str, Any] = {}
+    if (
+        semantic.status != "EXECUTED"
+        and failure_provider
+        and provider_attempts
+    ):
+        failure_domain_classification = classify_failure_domain(
+            mission_id=mission_id,
+            task_id=task_id,
+            agent_instance_id=agent_instance_id,
+            provider_id=failure_provider,
+            model_id=failure_model,
+            attempts=[
+                *prior_exhausted_pairs,
+                *provider_attempts,
+            ],
+            eligible_models_at_cycle_start=(
+                _eligible_models_at_cycle_start(failure_provider)
+            ),
+            current_circuit_state=str(
+                prior_circuit_states.get(failure_provider) or "CLOSED"
+            ),
+        )
+    provider_failure_domain_detected = bool(
+        failure_domain_classification.get("scope") == "PROVIDER_LOCAL"
+        and failure_domain_classification.get("provider_ejected") is True
+    )
+    if provider_failure_domain_detected:
+        provider_model_set_exhausted_classified = False
+    effective_failure_domain = (
+        failure_domain_classification
+        or prior_failure_domain
+    )
+    failure_episodes = failure_episode_rows(
+        provider_attempts,
+        failure_domain=effective_failure_domain,
+    )
+
     input_refs = tuple(dict.fromkeys([
         *(
             str(item).strip()
@@ -1118,7 +1264,16 @@ def execute_authorized_addy_skill(
                 "TIMEOUT_MS": round(timeout_ms, 3),
                 "RETRY_COUNT": same_routing_retry_count,
                 "FAILURE_CLASS": (
-                    "MODEL_SET_EXHAUSTED"
+                    "PROVIDER_FAILURE_DOMAIN"
+                    if provider_failure_domain_detected
+                    else "MODEL_SET_EXHAUSTED"
+                    if provider_model_set_exhausted_classified
+                    else _failure_class(semantic)
+                ),
+                "failure_class": (
+                    "PROVIDER_FAILURE_DOMAIN"
+                    if provider_failure_domain_detected
+                    else "MODEL_SET_EXHAUSTED"
                     if provider_model_set_exhausted_classified
                     else _failure_class(semantic)
                 ),
@@ -1137,10 +1292,73 @@ def execute_authorized_addy_skill(
                     semantic.model or provider_routing.selected_model
                 ),
                 "RECOVERY_STRATEGY": (
-                    "same-provider alternate-model Harness replan"
+                    "provider-level Harness replan required"
+                    if provider_failure_domain_detected
+                    else "same-provider alternate-model Harness replan"
                     if localized_replan_attempted
                     else "fail closed; Harness replan required"
                 ),
+                "FAILURE_DOMAIN_CLASSIFICATION": effective_failure_domain,
+                "FAILURE_DOMAIN_CLASSIFICATION_TYPED": (
+                    "PASS" if effective_failure_domain else "NOT_APPLICABLE"
+                ),
+                "CORRELATED_PROVIDER_FAILURE_DETECTED": (
+                    provider_failure_domain_detected
+                ),
+                "PROVIDER_FAILURE_DOMAIN_DETECTED": (
+                    "PASS"
+                    if provider_failure_domain_detected
+                    else "NOT_APPLICABLE"
+                ),
+                "PROVIDER_EARLY_EJECTION": (
+                    "PASS"
+                    if provider_failure_domain_detected
+                    else "NOT_APPLICABLE"
+                ),
+                "MISSION_LOCAL_PROVIDER_STATE": (
+                    effective_failure_domain.get(
+                        "mission_local_provider_state"
+                    )
+                    if effective_failure_domain
+                    else None
+                ),
+                "PROVIDER_CIRCUIT_STATE": (
+                    (
+                        effective_failure_domain.get("provider_circuit")
+                        or {}
+                    ).get("to_state")
+                    if effective_failure_domain
+                    else None
+                ),
+                "PROVIDER_RECOVERY_RESERVE": (
+                    effective_failure_domain.get(
+                        "provider_recovery_reserve"
+                    )
+                    if effective_failure_domain
+                    else None
+                ),
+                "PROVIDER_RECOVERY_RESERVE_PRESERVED": (
+                    "PASS"
+                    if (
+                        effective_failure_domain
+                        and (
+                            effective_failure_domain.get(
+                                "provider_recovery_reserve"
+                            )
+                            or {}
+                        ).get("reserve_preserved") is True
+                    )
+                    else "NOT_APPLICABLE"
+                ),
+                "PROVIDER_LEVEL_REPLAN_REQUIRED": (
+                    provider_failure_domain_detected
+                ),
+                "PROVIDER_ADMISSION_DECISIONS": (
+                    provider_admission_decisions
+                ),
+                "MODEL_CALLS_WHILE_PROVIDER_CIRCUIT_OPEN": 0,
+                "FAILURE_EPISODES": failure_episodes,
+                "NO_GLOBAL_PROVIDER_DOWN_FROM_MISSION_LOCAL_FAILURE": True,
             },
             boundary=record.security_boundary,
         )
@@ -1330,6 +1548,41 @@ def execute_authorized_addy_skill(
                 if localized_replan_attempted
                 else "initial-or-same-routing execution"
             ),
+            "FAILURE_DOMAIN_CLASSIFICATION": effective_failure_domain,
+            "FAILURE_DOMAIN_CLASSIFICATION_TYPED": (
+                "PASS" if effective_failure_domain else "NOT_APPLICABLE"
+            ),
+            "PROVIDER_FAILURE_DOMAIN_DETECTED": (
+                "PASS"
+                if (
+                    effective_failure_domain.get("scope")
+                    == "PROVIDER_LOCAL"
+                )
+                else "NOT_APPLICABLE"
+            ),
+            "PROVIDER_EARLY_EJECTION": (
+                "PASS"
+                if (
+                    effective_failure_domain.get("provider_ejected")
+                    is True
+                )
+                else "NOT_APPLICABLE"
+            ),
+            "PROVIDER_RECOVERY_RESERVE_PRESERVED": (
+                "PASS"
+                if (
+                    (
+                        effective_failure_domain.get(
+                            "provider_recovery_reserve"
+                        )
+                        or {}
+                    ).get("reserve_preserved") is True
+                )
+                else "NOT_APPLICABLE"
+            ),
+            "PROVIDER_ADMISSION_DECISIONS": provider_admission_decisions,
+            "MODEL_CALLS_WHILE_PROVIDER_CIRCUIT_OPEN": 0,
+            "NO_GLOBAL_PROVIDER_DOWN_FROM_MISSION_LOCAL_FAILURE": True,
             "ATTEMPTED_PROVIDER_MODEL_PAIRS": attempted_provider_model_pairs,
             "EXHAUSTED_PROVIDER_MODEL_PAIRS": exhausted_provider_model_pairs,
             "SELECTED_RECOVERY_PROVIDER": str(

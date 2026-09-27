@@ -126,6 +126,11 @@ def capture_canonical_execution_episode(
         for item in (result_payload.get("provider_attempts") or ())
         if isinstance(item, Mapping)
     ]
+    failure_episodes = [
+        dict(item)
+        for item in (result_payload.get("FAILURE_EPISODES") or ())
+        if isinstance(item, Mapping)
+    ]
     failure_class = str(
         result_payload.get("FAILURE_CLASS")
         or result_payload.get("failure_class")
@@ -177,6 +182,15 @@ def capture_canonical_execution_episode(
             "FAILURE_CLASS": failure_class,
             "ROUTING_ID": str(canonical.routing_id or "") or None,
             "PROVIDER_ATTEMPTS": provider_attempts,
+            "FAILURE_EPISODES": failure_episodes,
+            "FAILURE_DOMAIN_CLASSIFICATION": (
+                dict(result_payload.get("FAILURE_DOMAIN_CLASSIFICATION") or {})
+                if isinstance(
+                    result_payload.get("FAILURE_DOMAIN_CLASSIFICATION"),
+                    Mapping,
+                )
+                else None
+            ),
         },
         outcome_evidence=evidence,
         skill_id=str(receipt.get("skill_id") or "") or None,

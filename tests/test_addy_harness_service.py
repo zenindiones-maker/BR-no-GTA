@@ -1112,7 +1112,7 @@ def test_no_global_silent_provider_fallback(monkeypatch):
     assert result.result["NO_BLIND_PROVIDER_RETRY"] is True
 
 
-def test_second_failed_model_returns_model_set_exhausted_to_harness(monkeypatch):
+def test_correlated_second_model_failure_ejects_provider_early(monkeypatch):
     _patch_common(monkeypatch)
     routes = iter([
         _route(routing_id="route-a", model="model-a"),
@@ -1135,13 +1135,22 @@ def test_second_failed_model_returns_model_set_exhausted_to_harness(monkeypatch)
         payload=_payload(),
     )
     assert result.status == "FAILED"
-    assert result.result["FAILURE_CLASS"] == "MODEL_SET_EXHAUSTED"
+    assert result.result["FAILURE_CLASS"] == "PROVIDER_FAILURE_DOMAIN"
+    assert result.result["failure_class"] == "PROVIDER_FAILURE_DOMAIN"
     assert result.result[
         "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED"
-    ] is True
+    ] is False
+    domain = result.result["FAILURE_DOMAIN_CLASSIFICATION"]
+    assert domain["scope"] == "PROVIDER_LOCAL"
+    assert domain["provider_ejected"] is True
+    assert domain["provider_circuit"]["to_state"] == "OPEN"
+    assert result.result["PROVIDER_FAILURE_DOMAIN_DETECTED"] == "PASS"
+    assert result.result["PROVIDER_EARLY_EJECTION"] == "PASS"
+    assert result.result["PROVIDER_LEVEL_REPLAN_REQUIRED"] is True
     assert result.result[
         "PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED"
     ] is False
+    assert result.result["MODEL_CALLS_WHILE_PROVIDER_CIRCUIT_OPEN"] == 0
     assert len(result.result["provider_attempts"]) == 2
 
 
@@ -1289,12 +1298,15 @@ def test_recovery_retry_replans_with_all_prior_and_current_exhausted_pairs(
     assert len(route_requests) == 2
     assert len(generation_calls) == 2
     assert result.status == "FAILED"
-    assert result.result["FAILURE_CLASS"] == "MODEL_SET_EXHAUSTED"
+    assert result.result["FAILURE_CLASS"] == "PROVIDER_FAILURE_DOMAIN"
     assert result.result[
         "PROVIDER_MODEL_SET_EXHAUSTED_CLASSIFIED"
-    ] is True
+    ] is False
     assert result.result["LOCALIZED_REPLAN_RESULT"] == "MODEL_SET_EXHAUSTED"
     assert result.result["PROVIDER_LEVEL_REPLAN_HARNESS_AUTHORIZED"] is False
+    assert result.result[
+        "FAILURE_DOMAIN_CLASSIFICATION"
+    ]["scope"] == "PROVIDER_LOCAL"
     exhausted = {
         (item["provider_id"], item["model_id"])
         for item in result.result["EXHAUSTED_PROVIDER_MODEL_PAIRS"]
@@ -1303,3 +1315,51 @@ def test_recovery_retry_replans_with_all_prior_and_current_exhausted_pairs(
         ("nvidia_nim", "model-a"),
         ("nvidia_nim", "model-b"),
     }
+
+
+def test_addy_payload_without_context_uses_empty_bounded_context(monkeypatch):
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "route_harness_request",
+        lambda request: _route(routing_id="route-no-context"),
+    )
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: _success("model-a", "route-no-context"),
+    )
+    payload = _payload()
+    payload.pop("context")
+    result = service.execute_authorized_addy_skill(
+        authorization=_auth("capability:addy:debugging-and-error-recovery"),
+        routing_decision=_addy_route(),
+        payload=payload,
+    )
+    assert result.status == "EXECUTED"
+
+
+def test_provider_circuit_open_blocks_external_model_call(monkeypatch):
+    _patch_common(monkeypatch)
+    route = _route(routing_id="route-open", model="model-a")
+    monkeypatch.setattr(service, "route_harness_request", lambda request: route)
+    external_calls = []
+    monkeypatch.setattr(
+        service,
+        "execute_harness_ai_generation",
+        lambda **kwargs: external_calls.append(kwargs),
+    )
+    payload = _payload()
+    payload["context"]["internal_recovery"] = {
+        "RECOVERY_STRATEGY": "LOCALIZED_PROVIDER_REPLAN",
+        "PREVIOUS_SELECTED_PROVIDER": "nvidia_nim",
+        "PROVIDER_CIRCUIT_STATES": {"nvidia_nim": "OPEN"},
+        "TEMPORARILY_EJECTED_PROVIDER_IDS": ["nvidia_nim"],
+    }
+    with pytest.raises(RoutingPolicyError, match="Provider admission rejected"):
+        service.execute_authorized_addy_skill(
+            authorization=_auth("capability:addy:debugging-and-error-recovery"),
+            routing_decision=_addy_route(),
+            payload=payload,
+        )
+    assert external_calls == []

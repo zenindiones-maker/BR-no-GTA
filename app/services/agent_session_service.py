@@ -500,7 +500,14 @@ class AgentSessionRuntime:
         attempted: list[dict[str, Any]] = []
         exhausted: list[dict[str, Any]] = []
         attempts: list[dict[str, Any]] = []
+        failure_domains: list[dict[str, Any]] = []
         for node in walk(self.state):
+            domain = (
+                node.get("FAILURE_DOMAIN_CLASSIFICATION")
+                or node.get("failure_domain_classification")
+            )
+            if isinstance(domain, dict):
+                failure_domains.append(dict(domain))
             # AgentSession/v1 persists provider history canonically in
             # PROVIDER_ATTEMPTS. Accept the legacy lowercase spelling only as
             # backward compatibility; readers must not silently discard the
@@ -603,6 +610,15 @@ class AgentSessionRuntime:
             if attempt_ids
             else len(attempts)
         )
+        provider_domain = next(
+            (
+                item for item in reversed(failure_domains)
+                if str(item.get("scope") or "").strip().upper()
+                == "PROVIDER_LOCAL"
+                and item.get("provider_ejected") is True
+            ),
+            None,
+        )
         return {
             "ATTEMPTED_PROVIDER_MODEL_PAIRS": attempted,
             "EXHAUSTED_PROVIDER_MODEL_PAIRS": exhausted,
@@ -613,7 +629,29 @@ class AgentSessionRuntime:
                 "FORBIDDEN" if full_timeout else None
             ),
             "RECOVERY_STRATEGY": (
-                "LOCALIZED_PROVIDER_REPLAN" if exhausted else None
+                "PROVIDER_LEVEL_REPLAN"
+                if provider_domain is not None
+                else "LOCALIZED_PROVIDER_REPLAN"
+                if exhausted
+                else None
+            ),
+            "FAILURE_DOMAIN_CLASSIFICATION": provider_domain,
+            "PROVIDER_CIRCUIT_STATES": (
+                {
+                    str(provider_domain.get("provider_id")): str(
+                        (
+                            provider_domain.get("provider_circuit")
+                            or {}
+                        ).get("to_state") or "OPEN"
+                    )
+                }
+                if provider_domain is not None
+                else {}
+            ),
+            "TEMPORARILY_EJECTED_PROVIDER_IDS": (
+                [str(provider_domain.get("provider_id"))]
+                if provider_domain is not None
+                else []
             ),
             "PROVIDER_CALL_COUNT": provider_call_count,
             "FAILED_PROVIDER_ATTEMPTS_PERSISTED": bool(exhausted),

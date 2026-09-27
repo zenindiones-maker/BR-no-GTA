@@ -246,6 +246,12 @@ class CapabilityAdapter:
         if isinstance(result, CapabilityEvidence) and (
             result.status != "EXECUTED" or result.active is not True
         ):
+            result_evidence = _jsonable(result.result)
+            result_evidence = (
+                dict(result_evidence)
+                if isinstance(result_evidence, dict)
+                else {}
+            )
             raise CapabilityReturnedFailure(
                 record.capability_id,
                 result.status,
@@ -255,7 +261,22 @@ class CapabilityAdapter:
                     "provider": result.provider,
                     "status": result.status,
                     "active": result.active,
-                    "result": _jsonable(result.result),
+                    "failure_class": (
+                        result_evidence.get("failure_class")
+                        or result_evidence.get("FAILURE_CLASS")
+                    ),
+                    "failure_domain_classification": (
+                        result_evidence.get(
+                            "FAILURE_DOMAIN_CLASSIFICATION"
+                        )
+                    ),
+                    "provider_level_replan_required": bool(
+                        result_evidence.get(
+                            "PROVIDER_LEVEL_REPLAN_REQUIRED"
+                        )
+                    ),
+                    "adapter_terminal_decision": False,
+                    "result": result_evidence,
                     "boundary": result.boundary,
                 },
             )

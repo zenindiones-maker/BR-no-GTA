@@ -81,3 +81,43 @@ def test_same_agent_session_preserved_after_tool_result(tmp_path):
     assert restored.restored is True
     assert restored.agent_instance_id == identity
     assert restored.state["TOOL_EXECUTIONS"][0]["request_id"] == "request-1"
+
+
+def test_provider_domain_replay_prefers_provider_level_replan(tmp_path):
+    session = _session(tmp_path)
+    session.fail(
+        failure_class="CapabilityReturnedFailure",
+        evidence={
+            "failure_domain_classification": {
+                "schema": "FailureDomainClassification/v1",
+                "provider_id": "provider-a",
+                "scope": "PROVIDER_LOCAL",
+                "provider_ejected": True,
+                "provider_circuit": {"to_state": "OPEN"},
+            },
+            "provider_attempts": [
+                {
+                    "attempt_id": "a1",
+                    "provider_id": "provider-a",
+                    "model_id": "model-a",
+                    "routing_id": "route-a",
+                    "status": "FAILED",
+                    "failure_class": "TRANSIENT_PROVIDER_HTTP_5XX",
+                },
+                {
+                    "attempt_id": "b1",
+                    "provider_id": "provider-a",
+                    "model_id": "model-b",
+                    "routing_id": "route-b",
+                    "status": "FAILED",
+                    "failure_class": "TRANSIENT_PROVIDER_TIMEOUT",
+                },
+            ],
+        },
+        turn_consumed=True,
+    )
+    restored = _session(tmp_path)
+    recovery = restored.provider_recovery_state()
+    assert recovery["RECOVERY_STRATEGY"] == "PROVIDER_LEVEL_REPLAN"
+    assert recovery["TEMPORARILY_EJECTED_PROVIDER_IDS"] == ["provider-a"]
+    assert recovery["PROVIDER_CIRCUIT_STATES"]["provider-a"] == "OPEN"

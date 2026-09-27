@@ -14,6 +14,7 @@ TOOL_REQUEST_INVALID = "TOOL_REQUEST_INVALID"
 TOOL_AUTHORIZATION_SCOPE_GAP = "TOOL_AUTHORIZATION_SCOPE_GAP"
 TOOL_EXECUTION_TRANSIENT = "TOOL_EXECUTION_TRANSIENT"
 PROVIDER_TRANSIENT = "PROVIDER_TRANSIENT"
+PROVIDER_FAILURE_DOMAIN = "PROVIDER_FAILURE_DOMAIN"
 PROVIDER_MODEL_UNAVAILABLE = "PROVIDER_MODEL_UNAVAILABLE"
 PROVIDER_ROUTE_UNAVAILABLE = "PROVIDER_ROUTE_UNAVAILABLE"
 PROVIDER_POOL_EXHAUSTED = "PROVIDER_POOL_EXHAUSTED"
@@ -40,6 +41,10 @@ _STRATEGIES: dict[str, tuple[str, ...]] = {
     TOOL_REQUEST_INVALID: ("STRUCTURED_CORRECTION_TURN",),
     TOOL_EXECUTION_TRANSIENT: ("RETRY_SAME_TASK", "LOCALIZED_TOOL_REPLAN"),
     PROVIDER_TRANSIENT: ("RETRY_SAME_TASK", "LOCALIZED_PROVIDER_REPLAN"),
+    PROVIDER_FAILURE_DOMAIN: (
+        "PROVIDER_LEVEL_REPLAN",
+        "RECONCILE_PROVIDER_HEALTH",
+    ),
     PROVIDER_MODEL_UNAVAILABLE: ("LOCALIZED_PROVIDER_REPLAN",),
     MODEL_SET_EXHAUSTED: ("PROVIDER_LEVEL_REPLAN",),
     PROVIDER_ROUTE_UNAVAILABLE: (
@@ -104,6 +109,7 @@ def _typed_routing_failure_class(
         "MODEL_UNAVAILABLE": PROVIDER_MODEL_UNAVAILABLE,
         "PROVIDER_UNAVAILABLE": PROVIDER_ROUTE_UNAVAILABLE,
         PROVIDER_TRANSIENT: PROVIDER_TRANSIENT,
+        PROVIDER_FAILURE_DOMAIN: PROVIDER_FAILURE_DOMAIN,
         PROVIDER_MODEL_UNAVAILABLE: PROVIDER_MODEL_UNAVAILABLE,
         PROVIDER_ROUTE_UNAVAILABLE: PROVIDER_ROUTE_UNAVAILABLE,
         PROVIDER_POOL_EXHAUSTED: PROVIDER_POOL_EXHAUSTED,
@@ -123,7 +129,22 @@ def _typed_routing_failure_class(
             if id(value) in seen:
                 continue
             seen.add(id(value))
-            typed = str(value.get("failure_class") or "").strip().upper()
+            domain = (
+                value.get("failure_domain_classification")
+                or value.get("FAILURE_DOMAIN_CLASSIFICATION")
+            )
+            if (
+                isinstance(domain, dict)
+                and str(domain.get("scope") or "").strip().upper()
+                == "PROVIDER_LOCAL"
+                and domain.get("provider_ejected") is True
+            ):
+                return PROVIDER_FAILURE_DOMAIN
+            typed = str(
+                value.get("failure_class")
+                or value.get("FAILURE_CLASS")
+                or ""
+            ).strip().upper()
             if typed in aliases:
                 return aliases[typed]
             if str(value.get("failure_pattern") or "").strip().lower() == "provider_model_set_exhausted":
@@ -408,12 +429,20 @@ class HarnessInternalRecoveryState:
             if classification.human_intervention_required
             else "RECOVERING_INTERNAL"
         )
-        self.state["RECOVERY_STATE"] = "CLASSIFIED"
-        self.state["NEXT_TRANSITION"] = (
-            "WAIT_FOR_HUMAN"
-            if classification.human_intervention_required
-            else "SELECT_RECOVERY"
-        )
+        if classification.failure_class == PROVIDER_FAILURE_DOMAIN:
+            self.state["RECOVERY_STATE"] = (
+                "PROVIDER_FAILURE_DOMAIN_DETECTED"
+            )
+            self.state["NEXT_TRANSITION"] = (
+                "PROVIDER_LEVEL_REPLAN_REQUIRED"
+            )
+        else:
+            self.state["RECOVERY_STATE"] = "CLASSIFIED"
+            self.state["NEXT_TRANSITION"] = (
+                "WAIT_FOR_HUMAN"
+                if classification.human_intervention_required
+                else "SELECT_RECOVERY"
+            )
         self._event(
             "TASK_FAILED",
             task_id=self.state["FAILED_TASK"],
@@ -469,9 +498,20 @@ class HarnessInternalRecoveryState:
             exhausted=strategy is None,
             human_intervention_required=False,
         )
-        self.state["NEXT_TRANSITION"] = (
-            "RECOVERY_START" if strategy else "REPLAN_REQUIRED"
-        )
+        if (
+            classification.failure_class == PROVIDER_FAILURE_DOMAIN
+            and strategy == "PROVIDER_LEVEL_REPLAN"
+        ):
+            self.state["RECOVERY_STATE"] = (
+                "PROVIDER_FAILURE_DOMAIN_DETECTED"
+            )
+            self.state["NEXT_TRANSITION"] = (
+                "PROVIDER_LEVEL_REPLAN_REQUIRED"
+            )
+        else:
+            self.state["NEXT_TRANSITION"] = (
+                "RECOVERY_START" if strategy else "REPLAN_REQUIRED"
+            )
         self._event(
             "RECOVERY_SELECTED",
             task_id=self.state.get("FAILED_TASK"),
@@ -487,7 +527,12 @@ class HarnessInternalRecoveryState:
             # eligible capabilities, authorization and budget and then make a
             # governed RETRY/REPLAN/BLOCK decision.
             self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
-            self.state["RECOVERY_STATE"] = "LOCAL_RECOVERY_EXHAUSTED"
+            self.state["RECOVERY_STATE"] = (
+                "PROVIDER_RECOVERY_EXHAUSTED"
+                if classification.failure_class
+                == PROVIDER_FAILURE_DOMAIN
+                else "LOCAL_RECOVERY_EXHAUSTED"
+            )
             self._event(
                 "LOCAL_RECOVERY_EXHAUSTED",
                 task_id=self.state.get("FAILED_TASK"),
@@ -512,7 +557,15 @@ class HarnessInternalRecoveryState:
         by_sig[classification.failure_signature] = used
         self.state["strategies_by_signature"] = by_sig
         self.state["MISSION_STATUS"] = "RECOVERING_INTERNAL"
-        self.state["RECOVERY_STATE"] = "RUNNING"
+        self.state["RECOVERY_STATE"] = (
+            "PROVIDER_LEVEL_REPLAN_RUNNING"
+            if (
+                classification.failure_class
+                == PROVIDER_FAILURE_DOMAIN
+                and decision.strategy == "PROVIDER_LEVEL_REPLAN"
+            )
+            else "RUNNING"
+        )
         self.state["RECOVERY_ATTEMPT"] = int(
             self.state.get("RECOVERY_ATTEMPT") or 0
         ) + 1
