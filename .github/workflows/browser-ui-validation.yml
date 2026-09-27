@@ -30,6 +30,7 @@ on:
           - functional
           - accessibility
           - aria
+          - visual
       viewport:
         description: Deterministic viewport set
         required: false
@@ -215,6 +216,8 @@ jobs:
       - name: Assert Browser QA report boundary
         if: always()
         working-directory: video-engine/frontend
+        env:
+          OPERATION: ${{ inputs.operation || 'all' }}
         run: |
           set -euo pipefail
           test -f browser-qa/browser-qa-report.json
@@ -239,6 +242,17 @@ jobs:
               str(ref).startswith('artifact:browser-qa/sha256/')
               for ref in d['evidence_refs']
           )
+          import os
+          if os.environ.get('OPERATION') in {'all','visual'}:
+              assert d['visual_assertions']
+              assert d['visual_baseline_ref'].startswith(
+                  'artifact:browser-qa/sha256/'
+              )
+              assert d['actual_screenshot_ref'].startswith(
+                  'artifact:browser-qa/sha256/'
+              )
+              assert d['visual_diff_ref'] is None
+              print('VISUAL_REGRESSION_GATE=PASS')
           print('BROWSER_QA_AUTHORITY_NONE=PASS')
           print('CONTENT_ADDRESSED_BROWSER_EVIDENCE=PASS')
           PY

@@ -36,6 +36,7 @@ ALLOWED_BROWSER_OPERATIONS = frozenset({
     "functional",
     "accessibility",
     "aria",
+    "visual",
     "all",
 })
 FORBIDDEN_CALLER_FIELDS = frozenset({

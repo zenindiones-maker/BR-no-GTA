@@ -75,10 +75,16 @@ function classifyFailures(assertions) {
   const classes = new Set()
   for (const item of assertions.filter((row) => row.status !== 'passed')) {
     const text = (item.title + ' ' + item.errors.join(' ')).toLowerCase()
-    if (text.includes('axe') || text.includes('accessibility')) classes.add('ACCESSIBILITY_REGRESSION')
+    if (
+      text.includes('[visual:')
+      || text.includes('screenshot')
+      || text.includes('pixel')
+      || text.includes('responsive')
+      || text.includes('layout')
+    ) classes.add('VISUAL_REGRESSION')
+    else if (text.includes('axe') || text.includes('accessibility')) classes.add('ACCESSIBILITY_REGRESSION')
     else if (text.includes('network')) classes.add('NETWORK_FAILURE')
     else if (text.includes('console')) classes.add('CONSOLE_FAILURE')
-    else if (text.includes('responsive') || text.includes('layout')) classes.add('VISUAL_REGRESSION')
     else classes.add('DETERMINISTIC_FAILURE')
   }
   return [...classes]
@@ -121,7 +127,7 @@ async function contentAddress(root) {
 const started = performance.now()
 const request = await readStdin()
 const authorizedUrl = normalizeLoopback(request.authorized_url)
-const allowedOperations = new Set(['functional', 'accessibility', 'aria', 'all'])
+const allowedOperations = new Set(['functional', 'accessibility', 'aria', 'visual', 'all'])
 const operation = String(request.operation || 'all')
 if (!allowedOperations.has(operation)) throw new Error('Browser QA operation is not allowlisted')
 const scenarios = Array.isArray(request.scenario_ids) ? request.scenario_ids : []
@@ -158,9 +164,13 @@ try {
   await browser.close()
 } catch {}
 
+const testEvidence = await contentAddress(path.join(QA, 'test-results'))
+const htmlEvidence = await contentAddress(path.join(QA, 'html-report'))
+const baselineEvidence = await contentAddress(path.join(QA, 'visual-baselines'))
 const evidence = [
-  ...(await contentAddress(path.join(QA, 'test-results'))),
-  ...(await contentAddress(path.join(QA, 'html-report'))),
+  ...testEvidence,
+  ...htmlEvidence,
+  ...baselineEvidence,
 ]
 const failedAssertions = assertions.filter((row) => row.status !== 'passed')
 const failed = executed.status !== 0 || failedAssertions.length > 0
@@ -189,11 +199,17 @@ const body = {
   functional_assertions: assertions.filter((row) => row.title.includes('[functional:')),
   aria_assertions: assertions.filter((row) => row.title.includes('[aria:')),
   accessibility_findings: assertions.filter((row) => row.title.includes('[accessibility:')),
+  visual_assertions: assertions.filter((row) => row.title.includes('[visual:')),
   console_errors: errorText.filter((text) => text.toLowerCase().includes('console')),
   network_failures: errorText.filter((text) => text.toLowerCase().includes('network')),
-  visual_baseline_ref: null,
-  actual_screenshot_ref: evidence.find((row) => row.source.endsWith('.png'))?.artifact_ref || null,
-  visual_diff_ref: null,
+  visual_baseline_ref:
+    baselineEvidence.find((row) => row.source.endsWith('.png'))?.artifact_ref || null,
+  actual_screenshot_ref:
+    testEvidence.find((row) =>
+      row.source.includes('visual-actual-') && row.source.endsWith('.png')
+    )?.artifact_ref || null,
+  visual_diff_ref:
+    testEvidence.find((row) => row.source.endsWith('-diff.png'))?.artifact_ref || null,
   trace_ref: evidence.find((row) => row.source.endsWith('trace.zip'))?.artifact_ref || null,
   html_report_ref: evidence.find((row) => row.source.endsWith('html-report/index.html'))?.artifact_ref || null,
   mcp_exploration_used: false,
@@ -206,6 +222,9 @@ const body = {
     browser_qa_wall_ms: Math.round(performance.now() - started),
     assertion_count: assertions.length,
     failed_assertion_count: failedAssertions.length,
+    visual_assertion_count: assertions.filter(
+      (row) => row.title.includes('[visual:')
+    ).length,
   },
 }
 const digest = createHash('sha256').update(stableJson(body)).digest('hex')

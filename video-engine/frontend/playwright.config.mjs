@@ -5,7 +5,16 @@ const baseURL = process.env.BROWSER_QA_BASE_URL || 'http://127.0.0.1:8760'
 export default defineConfig({
   testDir: './browser-qa/e2e',
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  expect: {
+    timeout: 5_000,
+    toHaveScreenshot: {
+      pathTemplate: '{testDir}/../visual-baselines/{projectName}/{arg}{ext}',
+      animations: 'disabled',
+      caret: 'hide',
+      maxDiffPixels: 0,
+      threshold: 0,
+    },
+  },
   fullyParallel: false,
   workers: 1,
   retries: 0,
