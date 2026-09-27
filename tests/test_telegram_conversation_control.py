@@ -358,7 +358,12 @@ def test_waiting_for_human_is_explicit_state_not_silent_stop():
         presenter=_presenter,
     )
     state = result["conversation_state"]
-    assert result["plan"]["capability_id"] == "narration.generate.pt-BR"
+    assert result["plan"]["kind"] == "CAPABILITY_DISCOVERY"
+    assert result["plan"]["context_bound_correction"] is True
+    assert (
+        state["last_execution_result"]["capability_id"]
+        == "narration.generate.pt-BR"
+    )
     assert state["waiting_for_human"] is True
     assert state["active_stage"] == "WAITING_FOR_HUMAN"
     assert state["pending_question"] == "Qual take aprovado devo usar como base?"
