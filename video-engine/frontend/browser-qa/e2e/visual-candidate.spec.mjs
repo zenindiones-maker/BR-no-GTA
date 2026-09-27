@@ -7,7 +7,7 @@ import {
 
 async function attachFullPageCandidate(page, testInfo, name) {
   const png = await page.screenshot({
-    fullPage: true,
+    fullPage: false,
     animations: 'disabled',
     caret: 'hide',
   })
@@ -58,10 +58,10 @@ test('[visual-candidate:track-dialog] capture reviewed baseline candidate', asyn
 test('[visual-candidate:inspector-open] capture reviewed baseline candidate', async ({ page }, testInfo) => {
   const gates = installRuntimeGates(page)
   await page.goto('/')
-  const clip = page.locator('.clip').filter({ hasText: 'QA Blue' }).first()
+  const clip = page.locator('.clip').filter({ hasText: 'QA Title' }).first()
   await clip.click()
   await expect(page.locator('.inspector')).toBeVisible()
-  await expect(page.locator('.inspector .section-title')).toContainText('color')
+  await expect(page.locator('.inspector .section-title')).toContainText('text')
   await attachFullPageCandidate(page, testInfo, 'inspector-open')
   await assertRuntimeGates(gates, testInfo)
 })
