@@ -1,0 +1,64 @@
+name: Browser UI Lock Bootstrap
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - .github/workflows/browser-ui-lock-bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: browser-ui-lock-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  pin-lock:
+    name: Pin exact Browser QA lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup exact Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: video-engine/frontend/package.json
+
+      - name: Generate only the approved lockfile
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          test ! -e package-lock.json
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          actual="$(sha256sum package-lock.json | awk '{print $1}')"
+          expected="af425a7f7576b05295e8be828d3cf6a26c1ae329fbff3ae3848a3a81f67ec3cb"
+          printf 'PACKAGE_LOCK_SHA256=%s\n' "$actual"
+          test "$actual" = "$expected"
+
+      - name: Prove mutation containment
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only)"
+          status="$(git status --porcelain=v1)"
+          printf '%s\n' "$status"
+          test "$status" = "?? video-engine/frontend/package-lock.json"
+          git add -- video-engine/frontend/package-lock.json
+          staged="$(git diff --cached --name-only)"
+          test "$staged" = "video-engine/frontend/package-lock.json"
+
+      - name: Commit exact lockfile only
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(frontend): pin browser QA dependency graph"
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = "video-engine/frontend/package-lock.json"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
