@@ -577,3 +577,27 @@ def test_nvidia_probe_persists_structured_error_through_learning_plane(monkeypat
         "failure_class": "rate_limited",
         "http_status": 429,
     }
+
+
+
+def test_nvidia_provider_records_allow_youtube_semantic_reasoning():
+    records = _records()
+    assert records
+    assert all("YOUTUBE" in record.allowed_actions for record in records)
+
+
+def test_youtube_semantic_route_can_select_healthy_nvidia(monkeypatch):
+    monkeypatch.setenv(
+        "BR_RUNTIME_MODEL_HEALTH_JSON",
+        json.dumps(_runtime_health_payload()),
+    )
+    decision = route_harness_request(
+        _request(
+            authorized_action="YOUTUBE",
+            task_class="tubegent-semantic:youtube.department.seo",
+            required_model_capabilities=("reasoning",),
+        )
+    )
+    assert decision.selected_provider == "nvidia_nim"
+    assert decision.selected_model in REQUIRED_MODELS
+    assert decision.authorized_action == "YOUTUBE"

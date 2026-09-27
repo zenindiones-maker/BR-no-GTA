@@ -21,6 +21,7 @@ on:
       - 'app/services/opencode_executor_profile_service.py'
       - 'app/services/opencode_native_ai_provider.py'
       - 'app/services/harness_ai_provider_service.py'
+      - 'app/services/global_capability_registry_base.py'
       - 'app/services/performance_telemetry_service.py'
       - 'scripts/youtube_product_quality_e2e.py'
       - 'scripts/github_run_watcher.py'

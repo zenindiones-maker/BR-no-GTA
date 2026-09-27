@@ -764,7 +764,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "nvidia", "nim", "multi-model",
                 "model-capability:reasoning",
@@ -816,7 +816,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "nvidia", "nim", "multi-model",
                 "model-capability:reasoning",
@@ -871,7 +871,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "nvidia", "nim", "multi-model",
                 "model-capability:reasoning",
@@ -925,7 +925,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "nvidia", "nim", "multi-model",
                 "model-capability:coding",
@@ -976,7 +976,7 @@ def _native_records() -> tuple[CapabilityRecord, ...]:
             ),
             maturity=PROVEN,
             availability=AVAILABLE,
-            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION"),
+            allowed_actions=("RESEARCH", "EDITORIAL", "EXECUTION", "DEVELOPMENT", "DECISION", "YOUTUBE"),
             policy_tags=(
                 "ai", "provider", "nvidia", "nim", "multi-model",
                 "model-capability:fast_reasoning",
