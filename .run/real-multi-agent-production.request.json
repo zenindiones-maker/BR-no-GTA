@@ -10,11 +10,11 @@
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
     "retry_of_run": 36152763201,
-    "reason": "Resume nonterminal durable Production from the 15.409-minute evidence-bounded partial after fixing post-failure reconciliation and governed pending-need resolution",
+    "reason": "Resume canonical nonterminal Production from run 36354116161 after parent-child FreshEvidence lineage fix and bounded TOON decision",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "d143ac3fb8e77063c8b3bb1db173a3c3ccc1b68c",
+    "candidate_head": "918f99886318ba06eeb9c05bbac0695177cb44a4",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,21 +61,21 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36351594043,
+      "resume_run_id": 36354116161,
       "durable_mission_key": "mission-ad890d7d732e9be79838",
-      "continuation_count": 149,
-      "continuation_id": "mission-ad890d7d732e9be79838:152:36351594043",
-      "expected_state_version": 152,
+      "continuation_count": 156,
+      "continuation_id": "mission-ad890d7d732e9be79838:180:36354116161",
+      "expected_state_version": 180,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10942108961,
-      "checkpoint_artifact_digest": "sha256:41299df9264b081eabeb649e1234d8f1bcc773217b28500e2255306d4bbd8b7e",
+      "checkpoint_artifact_id": 10943630303,
+      "checkpoint_artifact_digest": "sha256:fe4453b06a88f5134006fdb0da5a43782a76f4df383593e36534714bf8d4a18f",
       "predecessor_status": "RUNNABLE",
       "predecessor_next_transition": "RESOLVE_REQUIREMENT",
       "predecessor_artifact_expired": false,
       "continuation_transition": "RESOLVE_REQUIREMENT",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:760a4f00dc1326311d0a623a"
+      "continuation_route_id": "continuation-route:c345ede88ff3b845821ab2a6"
     }
   },
-  "requested_from_head": "d143ac3fb8e77063c8b3bb1db173a3c3ccc1b68c"
+  "requested_from_head": "918f99886318ba06eeb9c05bbac0695177cb44a4"
 }
