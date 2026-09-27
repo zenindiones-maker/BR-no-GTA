@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import json
 from types import SimpleNamespace
 
@@ -19,6 +20,9 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+
+
+CANDIDATE_SHA = "a" * 40
 
 
 def _route():
@@ -42,6 +46,53 @@ def _call(payload):
     )
 
 
+def _request(**overrides):
+    payload = {
+        "authorized_url": "http://127.0.0.1:5173/",
+        "operation": "functional",
+        "scenario_ids": ["editor-load"],
+        "mission_id": "mission-a",
+        "plan_id": "plan-a",
+        "task_id": "task-browser-qa",
+        "candidate_sha": CANDIDATE_SHA,
+        "frontend_build_sha": CANDIDATE_SHA,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _report(request, **overrides):
+    body = {
+        "schema": "BrowserQAReport/v1",
+        "authority": "NONE",
+        "mission_id": request["mission_id"],
+        "plan_id": request["plan_id"],
+        "task_id": request["task_id"],
+        "candidate_sha": request["candidate_sha"],
+        "frontend_build_sha": request["frontend_build_sha"],
+        "scenario_id": "editor-load",
+        "browser_name": "chromium",
+        "browser_version": "fixture",
+        "playwright_version": "1.63.0",
+        "result": "PASS",
+        "failure_classes": [],
+        "evidence_refs": [
+            "artifact:browser-qa/sha256/" + ("b" * 64) + ".json",
+        ],
+        "mcp_exploration_used": False,
+        "vision_fallback_used": False,
+    }
+    body.update(overrides)
+    raw = json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    body["content_sha256"] = sha256(raw).hexdigest()
+    return body
+
+
 def test_browser_qa_capability_registered_with_no_authority():
     record = GLOBAL_CAPABILITY_REGISTRY.get(BROWSER_QA_CAPABILITY_ID)
     assert record is not None
@@ -61,13 +112,17 @@ def test_browser_qa_capability_registered_with_no_authority():
 
 
 def test_browser_qa_exact_mcp_binding_is_allowlisted():
-    assert MCP_BOUNDED_EXECUTOR_ALLOWLIST[BROWSER_QA_CAPABILITY_ID] == BROWSER_QA_EXECUTOR_BINDING
+    assert (
+        MCP_BOUNDED_EXECUTOR_ALLOWLIST[BROWSER_QA_CAPABILITY_ID]
+        == BROWSER_QA_EXECUTOR_BINDING
+    )
     assert _route().selected_executor_binding == BROWSER_QA_EXECUTOR_BINDING
 
 
 @pytest.mark.parametrize("field", [
     "executor", "executor_binding", "module", "callable", "command",
-    "mcp_server", "browser_endpoint", "user_data_dir", "profile", "storage_state",
+    "mcp_server", "browser_endpoint", "user_data_dir", "profile",
+    "storage_state", "downloads_path",
 ])
 def test_caller_cannot_override_browser_binding(monkeypatch, field):
     monkeypatch.setattr(
@@ -75,13 +130,16 @@ def test_caller_cannot_override_browser_binding(monkeypatch, field):
         "run",
         lambda *a, **k: pytest.fail("browser runtime must not execute"),
     )
-    payload = _call({"authorized_url": "http://127.0.0.1:5173/", field: "evil"})
+    payload = _call({
+        "authorized_url": "http://127.0.0.1:5173/",
+        field: "evil",
+    })
     assert payload["result"]["status"] == "BLOCKED"
     assert payload["evidence"]["success"] is False
 
 
 @pytest.mark.parametrize("field", ["browser_run_code_unsafe", "browser_evaluate"])
-def test_unsafe_browser_code_is_blocked(monkeypatch, field):
+def test_unsafe_browser_code_is_blocked(field):
     payload = _call({
         "authorized_url": "http://127.0.0.1:5173/",
         field: "document.body.innerHTML",
@@ -101,62 +159,119 @@ def test_unapproved_origin_is_blocked(url):
     assert payload["result"]["status"] == "BLOCKED"
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("candidate_sha", "main"),
+        ("candidate_sha", "A" * 40),
+        ("mission_id", ""),
+        ("task_id", "../escape"),
+    ],
+)
+def test_browser_qa_lineage_input_fails_closed(field, value):
+    payload = _call(_request(**{field: value}))
+    assert payload["result"]["status"] == "BLOCKED"
+
+
 def test_authorized_browser_qa_executes_fixed_runner(monkeypatch, tmp_path):
-    runner = tmp_path / "run-browser-qa.mjs"
+    runner_dir = tmp_path / "frontend" / "browser-qa"
+    runner_dir.mkdir(parents=True)
+    runner = runner_dir / "run-browser-qa.mjs"
     runner.write_text("// fixture", encoding="utf-8")
     monkeypatch.setattr(browser_qa_harness_service, "BROWSER_QA_RUNNER", runner)
     calls = []
 
     def fake_run(argv, **kwargs):
-        calls.append((argv, kwargs))
+        request = json.loads(kwargs["input"])
+        calls.append((argv, kwargs, request))
         return SimpleNamespace(
             returncode=0,
-            stdout=json.dumps({
-                "schema": "BrowserQAReport/v1",
-                "scenario_id": "editor-load",
-                "browser_name": "chromium",
-                "browser_version": "fixture",
-                "playwright_version": "fixture",
-                "result": "PASS",
-                "failure_classes": [],
-                "evidence_refs": ["artifact:browser-qa/report.json"],
-                "authority": "NONE",
-            }),
+            stdout=json.dumps(_report(request)),
             stderr="",
         )
 
     monkeypatch.setattr(browser_qa_harness_service.subprocess, "run", fake_run)
-    payload = _call({
-        "authorized_url": "http://localhost:5173/",
-        "operation": "functional",
-        "scenario_ids": ["editor-load"],
-        "mission_id": "mission-a",
-        "task_id": "task-browser-qa",
-    })
+    payload = _call(_request(authorized_url="http://localhost:5173/"))
     assert payload["result"]["status"] == "EXECUTED"
     assert payload["evidence"]["success"] is True
-    argv, kwargs = calls[0]
+    argv, kwargs, request = calls[0]
     assert argv == ["node", str(runner)]
-    request = json.loads(kwargs["input"])
+    assert kwargs["cwd"] == runner.parent.parent
     assert request["authorized_url"] == "http://127.0.0.1:5173/"
-    assert request["scenario_ids"] == ["editor-load"]
+    assert request["candidate_sha"] == CANDIDATE_SHA
 
 
-def test_browser_report_cannot_claim_authority(monkeypatch, tmp_path):
+def _fake_runner(monkeypatch, tmp_path, transform):
     runner = tmp_path / "run-browser-qa.mjs"
     runner.write_text("// fixture", encoding="utf-8")
     monkeypatch.setattr(browser_qa_harness_service, "BROWSER_QA_RUNNER", runner)
-    monkeypatch.setattr(
-        browser_qa_harness_service.subprocess,
-        "run",
-        lambda *a, **k: SimpleNamespace(
+
+    def fake_run(argv, **kwargs):
+        request = json.loads(kwargs["input"])
+        return SimpleNamespace(
             returncode=0,
-            stdout=json.dumps({
-                "schema": "BrowserQAReport/v1",
-                "authority": "DEEPSEEK_HARNESS",
-            }),
+            stdout=json.dumps(transform(_report(request))),
             stderr="",
-        ),
-    )
-    payload = _call({"authorized_url": "http://127.0.0.1:5173/"})
-    assert payload["result"]["status"] == "BLOCKED"
+        )
+
+    monkeypatch.setattr(browser_qa_harness_service.subprocess, "run", fake_run)
+
+
+def test_browser_report_cannot_claim_authority(monkeypatch, tmp_path):
+    def transform(report):
+        report["authority"] = "DEEPSEEK_HARNESS"
+        return report
+    _fake_runner(monkeypatch, tmp_path, transform)
+    assert _call(_request())["result"]["status"] == "BLOCKED"
+
+
+def test_browser_report_lineage_mismatch_fails_closed(monkeypatch, tmp_path):
+    def transform(report):
+        report["task_id"] = "task-other"
+        return report
+    _fake_runner(monkeypatch, tmp_path, transform)
+    assert _call(_request())["result"]["status"] == "BLOCKED"
+
+
+def test_browser_report_hash_mismatch_fails_closed(monkeypatch, tmp_path):
+    def transform(report):
+        report["content_sha256"] = "0" * 64
+        return report
+    _fake_runner(monkeypatch, tmp_path, transform)
+    assert _call(_request())["result"]["status"] == "BLOCKED"
+
+
+def test_browser_report_must_use_content_addressed_refs(monkeypatch, tmp_path):
+    def transform(report):
+        report["evidence_refs"] = ["artifact:browser-qa/report.json"]
+        body = dict(report)
+        body.pop("content_sha256", None)
+        report["content_sha256"] = sha256(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return report
+    _fake_runner(monkeypatch, tmp_path, transform)
+    assert _call(_request())["result"]["status"] == "BLOCKED"
+
+
+def test_validation_report_cannot_mix_mcp_or_vision(monkeypatch, tmp_path):
+    def transform(report):
+        report["mcp_exploration_used"] = True
+        body = dict(report)
+        body.pop("content_sha256", None)
+        report["content_sha256"] = sha256(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return report
+    _fake_runner(monkeypatch, tmp_path, transform)
+    assert _call(_request())["result"]["status"] == "BLOCKED"

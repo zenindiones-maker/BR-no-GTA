@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from hashlib import sha256
 from pathlib import Path
 import re
 import subprocess
@@ -56,6 +57,9 @@ FORBIDDEN_CALLER_FIELDS = frozenset({
 _ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _ALLOWED_PORTS = frozenset({5173, 8760})
 _SCENARIO_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,159}$")
 
 
 def _blocked(message: str, *, stage: str) -> CapabilityExecutionBlocked:
@@ -132,17 +136,128 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     timeout = int(timeout)
     if timeout < 5 or timeout > 300:
         raise _blocked("browser QA timeout_seconds is outside bounds", stage="policy")
+
+    def required_id(key: str) -> str:
+        value = str(payload.get(key) or "").strip()
+        if not _ID_RE.fullmatch(value):
+            raise _blocked(
+                f"browser QA {key} is outside bounded identity policy",
+                stage="lineage",
+            )
+        return value
+
+    mission_id = required_id("mission_id")
+    task_id = required_id("task_id")
+    plan_id = str(payload.get("plan_id") or "").strip()
+    if plan_id and not _ID_RE.fullmatch(plan_id):
+        raise _blocked(
+            "browser QA plan_id is outside bounded identity policy",
+            stage="lineage",
+        )
+    candidate_sha = str(payload.get("candidate_sha") or "").strip().lower()
+    if not _SHA_RE.fullmatch(candidate_sha):
+        raise _blocked(
+            "browser QA candidate_sha must be an exact lowercase git SHA",
+            stage="lineage",
+        )
+    frontend_build_sha = str(
+        payload.get("frontend_build_sha") or candidate_sha
+    ).strip().lower()
+    if not _SHA_RE.fullmatch(frontend_build_sha):
+        raise _blocked(
+            "browser QA frontend_build_sha must be an exact lowercase git SHA",
+            stage="lineage",
+        )
+
     return {
         "authorized_url": _normalize_url(payload.get("authorized_url")),
         "operation": operation,
         "scenario_ids": normalized_scenarios,
-        "mission_id": str(payload.get("mission_id") or ""),
-        "plan_id": str(payload.get("plan_id") or ""),
-        "task_id": str(payload.get("task_id") or ""),
-        "candidate_sha": str(payload.get("candidate_sha") or ""),
-        "frontend_build_sha": str(payload.get("frontend_build_sha") or ""),
+        "mission_id": mission_id,
+        "plan_id": plan_id,
+        "task_id": task_id,
+        "candidate_sha": candidate_sha,
+        "frontend_build_sha": frontend_build_sha,
         "timeout_seconds": timeout,
     }
+
+
+def _report_content_sha256(report: dict[str, Any]) -> str:
+    body = dict(report)
+    body.pop("content_sha256", None)
+    raw = json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return sha256(raw).hexdigest()
+
+
+def _validate_browser_report(
+    report: dict[str, Any],
+    *,
+    request: dict[str, Any],
+) -> None:
+    if report.get("schema") != "BrowserQAReport/v1":
+        raise _blocked("browser QA runtime returned invalid report", stage="runtime")
+    if report.get("authority") != "NONE":
+        raise _blocked(
+            "browser QA report attempted to claim authority",
+            stage="authority",
+        )
+    if report.get("result") != "PASS":
+        raise _blocked(
+            "browser QA report did not pass deterministic validation",
+            stage="browser-gate",
+        )
+    for key in (
+        "mission_id",
+        "plan_id",
+        "task_id",
+        "candidate_sha",
+        "frontend_build_sha",
+    ):
+        if str(report.get(key) or "") != str(request.get(key) or ""):
+            raise _blocked(
+                f"browser QA report lineage mismatch for {key}",
+                stage="lineage",
+            )
+    digest = str(report.get("content_sha256") or "")
+    if not _DIGEST_RE.fullmatch(digest):
+        raise _blocked(
+            "browser QA report content hash is missing or invalid",
+            stage="evidence",
+        )
+    if digest != _report_content_sha256(report):
+        raise _blocked(
+            "browser QA report content hash mismatch",
+            stage="evidence",
+        )
+    refs = report.get("evidence_refs")
+    if not isinstance(refs, list) or len(refs) > 256:
+        raise _blocked(
+            "browser QA report evidence refs are invalid",
+            stage="evidence",
+        )
+    for ref in refs:
+        value = str(ref or "")
+        if not value.startswith("artifact:browser-qa/sha256/"):
+            raise _blocked(
+                "browser QA evidence ref is not content-addressed",
+                stage="evidence",
+            )
+    if report.get("mcp_exploration_used") is not False:
+        raise _blocked(
+            "browser QA validation report mixed MCP exploration evidence",
+            stage="authority",
+        )
+    if report.get("vision_fallback_used") is not False:
+        raise _blocked(
+            "browser QA validation report used unapproved vision fallback",
+            stage="authority",
+        )
 
 
 def execute_browser_qa_capability(capability, payload: dict[str, Any]) -> dict[str, Any]:
@@ -162,7 +277,7 @@ def execute_browser_qa_capability(capability, payload: dict[str, Any]) -> dict[s
             input=json.dumps(request, ensure_ascii=False),
             text=True,
             capture_output=True,
-            cwd=BROWSER_QA_RUNNER.parents[2],
+            cwd=BROWSER_QA_RUNNER.parent.parent,
             timeout=request["timeout_seconds"],
             check=False,
             env=child_env,
@@ -175,10 +290,9 @@ def execute_browser_qa_capability(capability, payload: dict[str, Any]) -> dict[s
         result = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise _blocked("browser QA runtime returned invalid JSON", stage="runtime") from exc
-    if not isinstance(result, dict) or result.get("schema") != "BrowserQAReport/v1":
+    if not isinstance(result, dict):
         raise _blocked("browser QA runtime returned invalid report", stage="runtime")
-    if result.get("authority") != "NONE":
-        raise _blocked("browser QA report attempted to claim authority", stage="authority")
+    _validate_browser_report(result, request=request)
     return result
 
 
