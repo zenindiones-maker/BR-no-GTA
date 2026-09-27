@@ -1,0 +1,308 @@
+name: Browser MCP Exploration
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact candidate commit SHA
+        required: true
+        type: string
+      mission_id:
+        description: Harness mission identity
+        required: true
+        type: string
+      plan_id:
+        description: Harness plan identity
+        required: false
+        default: ""
+        type: string
+      task_id:
+        description: Harness Browser MCP exploration task identity
+        required: true
+        type: string
+      scenario_goal:
+        description: Bounded observation goal
+        required: true
+        type: string
+      allowed_operations:
+        description: Comma-separated Harness allowlist subset
+        required: true
+        type: string
+      max_actions:
+        required: true
+        type: string
+      max_tabs:
+        required: true
+        type: string
+      max_screenshots:
+        required: true
+        type: string
+      max_navigations:
+        required: true
+        type: string
+      timeout_seconds:
+        required: true
+        type: string
+      viewport:
+        required: true
+        type: choice
+        options:
+          - desktop
+          - desktop-narrow
+  push:
+    paths:
+      - "app/services/browser_mcp_exploration_service.py"
+      - "app/services/global_capability_registry.py"
+      - "app/services/harness_mcp_capability_execution.py"
+      - "app/services/harness_capability_service.py"
+      - "tests/test_browser_mcp_exploration_service.py"
+      - "video-engine/frontend/browser-qa/mcp/**"
+      - ".github/workflows/browser-mcp-exploration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-mcp-exploration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  explore:
+    name: bounded-playwright-mcp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}/video-engine/backend
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node 24.21.0
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: video-engine/frontend/package-lock.json
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install exact Browser MCP client dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e ./video-engine
+          python -m pip install "mcp==2.2.0"
+          cd video-engine/frontend
+          npm ci --ignore-scripts --no-audit --no-fund
+          rm -rf /tmp/browser-mcp
+          npm install             --prefix /tmp/browser-mcp             --ignore-scripts             --no-audit             --no-fund             --package-lock=false             "@playwright/mcp@0.0.82"
+          node - <<'NODE'
+          const fs = require('fs');
+          const mcp = JSON.parse(fs.readFileSync(
+            '/tmp/browser-mcp/node_modules/@playwright/mcp/package.json',
+            'utf8'
+          ));
+          const playwright = JSON.parse(fs.readFileSync(
+            '/tmp/browser-mcp/node_modules/playwright/package.json',
+            'utf8'
+          ));
+          if (mcp.version !== '0.0.82')
+            throw new Error('PLAYWRIGHT_MCP_VERSION_MISMATCH');
+          if (playwright.version !== '1.64.0-alpha-1789764292000')
+            throw new Error('PLAYWRIGHT_MCP_PLAYWRIGHT_VERSION_MISMATCH');
+          console.log('PLAYWRIGHT_MCP_VERSION_PINNED=PASS');
+          console.log('PLAYWRIGHT_MCP_TRANSITIVE_PLAYWRIGHT_PINNED=PASS');
+          NODE
+          echo "MCP_PYTHON_CLIENT_VERSION_PINNED=PASS"
+
+      - name: Install MCP-matched Chromium runtime
+        run: |
+          set -euo pipefail
+          node /tmp/browser-mcp/node_modules/playwright/cli.js             install --with-deps chromium
+          /tmp/browser-mcp/node_modules/.bin/playwright-mcp --version || true
+          node --version
+
+      - name: Build frontend and preserve cheap deterministic gates
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npm run build
+          npm run smoke
+          npm run uiaudit
+          echo "JSDOM_SMOKE_PRESERVED=PASS"
+          echo "UIAUDIT_PRESERVED=PASS"
+
+      - name: Start synthetic real VEdit fixture and wait for readiness
+        working-directory: video-engine
+        run: |
+          set -euo pipefail
+          python frontend/browser-qa/fixture_server.py \
+            --host 127.0.0.1 \
+            --port 8760 \
+            --project /tmp/vedit-browser-mcp/project.json \
+            > /tmp/vedit-browser-mcp.log 2>&1 &
+          echo $! > /tmp/vedit-browser-mcp.pid
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:8760/__qa/ready \
+              > /tmp/vedit-browser-mcp-ready.json; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          test "$ready" = "1"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/vedit-browser-mcp-ready.json'))
+          assert d['status']=='ready'
+          assert d['single_store'] is True
+          print('BROWSER_MCP_FIXTURE_READY=PASS')
+          PY
+
+      - name: Execute bounded Playwright MCP exploration
+        working-directory: video-engine/frontend
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.sha }}
+          MISSION_ID: ${{ inputs.mission_id || format('browser-mcp:{0}', github.run_id) }}
+          PLAN_ID: ${{ inputs.plan_id || '' }}
+          TASK_ID: ${{ inputs.task_id || 'browser-mcp-current-head' }}
+          SCENARIO_GOAL: ${{ inputs.scenario_goal || 'Open local VEdit, inspect accessibility, open Media, collect screenshot, console and network, then close.' }}
+          ALLOWED_OPERATIONS: ${{ inputs.allowed_operations || 'navigate,resize,wait_for,snapshot,click,screenshot,console_messages,network_requests,tabs,close' }}
+          MAX_ACTIONS: ${{ inputs.max_actions || '12' }}
+          MAX_TABS: ${{ inputs.max_tabs || '1' }}
+          MAX_SCREENSHOTS: ${{ inputs.max_screenshots || '2' }}
+          MAX_NAVIGATIONS: ${{ inputs.max_navigations || '1' }}
+          TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '90' }}
+          VIEWPORT: ${{ inputs.viewport || 'desktop' }}
+          PLAYWRIGHT_MCP_VERSION: "0.0.82"
+          PLAYWRIGHT_MCP_BIN: /tmp/browser-mcp/node_modules/.bin/playwright-mcp
+          BROWSER_MCP_EVIDENCE_DIR: browser-qa/mcp-evidence
+        run: |
+          set -euo pipefail
+          export BROWSER_EXECUTABLE_PATH="$(
+            node -e "const {chromium}=require('/tmp/browser-mcp/node_modules/playwright'); process.stdout.write(chromium.executablePath())"
+          )"
+          export BROWSER_VERSION="$(
+            node - <<'NODE'
+          const { chromium } = require('/tmp/browser-mcp/node_modules/playwright');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            process.stdout.write(await browser.version());
+            await browser.close();
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+          )"
+          export NODE_VERSION="$(node --version)"
+          python - <<'PY' > /tmp/browser-mcp-request.json
+          import json, os
+          allowed=[
+              item.strip()
+              for item in os.environ["ALLOWED_OPERATIONS"].split(",")
+              if item.strip()
+          ]
+          print(json.dumps({
+              "schema":"BrowserExplorationRequest/v1",
+              "authorized_url":"http://127.0.0.1:8760/",
+              "allowed_operations":allowed,
+              "scenario_goal":os.environ["SCENARIO_GOAL"],
+              "mission_id":os.environ["MISSION_ID"],
+              "plan_id":os.environ["PLAN_ID"],
+              "task_id":os.environ["TASK_ID"],
+              "candidate_sha":os.environ["CANDIDATE_SHA"],
+              "max_actions":int(os.environ["MAX_ACTIONS"]),
+              "max_tabs":int(os.environ["MAX_TABS"]),
+              "max_screenshots":int(os.environ["MAX_SCREENSHOTS"]),
+              "max_navigations":int(os.environ["MAX_NAVIGATIONS"]),
+              "timeout_seconds":int(os.environ["TIMEOUT_SECONDS"]),
+              "viewport":os.environ["VIEWPORT"],
+              "network_scope":"first-party-loopback",
+              "vision_allowed":False,
+          }))
+          PY
+          python browser-qa/mcp/explore.py \
+            < /tmp/browser-mcp-request.json \
+            > /tmp/browser-mcp-stdout.json
+          cat /tmp/browser-mcp-stdout.json
+
+      - name: Assert bounded MCP evidence contract
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path('browser-qa/mcp-evidence/evidence/browser-exploration-evidence.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['schema']=='BrowserExplorationEvidence/v1'
+          assert d['authority']=='NONE'
+          assert d['result']=='OBSERVATION_COMPLETE'
+          assert d['playwright_mcp_version']=='0.0.82'
+          assert d['mcp_python_sdk_version']=='2.2.0'
+          assert d['isolated_context'] is True
+          assert d['personal_profile_used'] is False
+          assert d['webmcp_enabled'] is False
+          assert d['unsafe_code_enabled'] is False
+          assert d['browser_evaluate_enabled'] is False
+          assert d['vision_fallback_used'] is False
+          assert d['downloads_used'] is False
+          assert d['uploads_used'] is False
+          assert d['page_content_can_change_authority'] is False
+          assert d['page_content_can_expand_tools'] is False
+          assert d['action_count'] <= d['budgets']['max_actions']
+          assert d['navigation_count'] <= d['budgets']['max_navigations']
+          assert d['screenshot_count'] <= d['budgets']['max_screenshots']
+          assert d['tab_count'] <= d['budgets']['max_tabs']
+          tools=[row['tool'] for row in d['operation_records']]
+          assert 'browser_run_code_unsafe' not in tools
+          assert 'browser_evaluate' not in tools
+          assert {
+              'browser_navigate','browser_snapshot','browser_click',
+              'browser_take_screenshot','browser_console_messages',
+              'browser_network_requests','browser_close'
+          } <= set(tools)
+          assert all(
+              str(ref).startswith('artifact:browser-mcp/sha256/')
+              for ref in d['evidence_refs']
+          )
+          digest=d.pop('content_sha256')
+          raw=json.dumps(
+              d,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(',',':'),
+              default=str,
+          ).encode()
+          assert hashlib.sha256(raw).hexdigest()==digest
+          print('PLAYWRIGHT_MCP_BOUNDED_EXECUTION=PASS')
+          print('MCP_AUTHORITY_NONE=PASS')
+          print('MCP_UNSAFE_CODE_DISABLED=PASS')
+          print('MCP_EVIDENCE_CAPTURE=PASS')
+          print('BROWSER_CONTEXT_ISOLATED=PASS')
+          print('NO_PERSISTENT_PERSONAL_PROFILE=PASS')
+          print('WEBMCP_DISABLED=PASS')
+          print('PAGE_CONTENT_CANNOT_CHANGE_AUTHORITY=PASS')
+          print('PAGE_CONTENT_CANNOT_EXPAND_ALLOWED_TOOLS=PASS')
+          PY
+
+      - name: Upload MCP exploration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-mcp-exploration-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            video-engine/frontend/browser-qa/mcp-evidence/
+            /tmp/browser-mcp-stdout.json
+            /tmp/browser-mcp-request.json
+            /tmp/vedit-browser-mcp.log
+            /tmp/vedit-browser-mcp-ready.json

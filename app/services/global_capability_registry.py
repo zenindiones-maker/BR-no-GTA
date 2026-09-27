@@ -1929,4 +1929,108 @@ if _REGISTRY._by_id.get(BROWSER_QA_VALIDATE_RECORD.capability_id) is not None:
 _REGISTRY._by_id[BROWSER_QA_VALIDATE_RECORD.capability_id] = BROWSER_QA_VALIDATE_RECORD
 _REGISTRY._records = tuple(sorted((*_REGISTRY._records, BROWSER_QA_VALIDATE_RECORD), key=lambda item: item.capability_id))
 
+
+BROWSER_QA_EXPLORE_RECORD = CapabilityRecord(
+    capability_id="browser.qa.explore",
+    capability_type="EXECUTOR",
+    domain="browser-qa",
+    implementation=(
+        "Harness-governed bounded Playwright MCP explorer for local VEdit "
+        "reproduction, observation and regression-test discovery"
+    ),
+    input_contract=(
+        "BrowserExplorationRequest/v1 with loopback origin, exact candidate/"
+        "mission/task lineage, explicit safe-tool subset and hard budgets"
+    ),
+    output_contract=(
+        "BrowserExplorationDispatch/v1 followed by BrowserExplorationEvidence/v1 "
+        "with content-addressed snapshot/screenshot/console/network evidence"
+    ),
+    requirements=(
+        "persisted DeepSeek Harness DEVELOPMENT authorization",
+        "exact Global Capability Registry executor binding",
+        "fixed Browser MCP Exploration workflow",
+        "pinned @playwright/mcp 0.0.82",
+        "isolated Chromium context",
+        "local synthetic VEdit fixture only",
+    ),
+    maturity=FUNCTIONAL,
+    availability=AVAILABLE,
+    allowed_actions=("DEVELOPMENT",),
+    policy_tags=(
+        "browser","qa","playwright","mcp","exploration","diagnosis",
+        "observation","frontend","ui","read-only","bounded",
+    ),
+    security_boundary=(
+        "DeepSeek Harness sole authority. Fixed Playwright MCP server/version, "
+        "loopback-only origin, isolated profile, hard action/tab/screenshot/"
+        "navigation/time budgets and client-side tool allowlist. No unsafe code, "
+        "browser_evaluate, WebMCP, arbitrary MCP server/endpoint, file URL, "
+        "personal credentials/profile, upload/download, external navigation, "
+        "repository mutation, golden update, self-approval or publication authority."
+    ),
+    cost_class="FREE_NO_BILLING",
+    quota_class="GITHUB_ACTIONS_BOUNDED",
+    latency_class="CLOUD_INTERACTIVE",
+    quality_class="BOUNDED_MCP_OBSERVATION_EVIDENCE",
+    evidence_contract="BrowserExplorationEvidence/v1",
+    fallback_eligibility=False,
+    executor_binding=(
+        "app.services.browser_mcp_exploration_service."
+        "execute_browser_mcp_exploration_capability"
+    ),
+    version="1",
+    provider_id="internal",
+    agent_id="browser-qa-explorer",
+    side_effects=(
+        "fixed GitHub Actions exploration workflow dispatch",
+        "ephemeral isolated browser context",
+        "synthetic local VEdit fixture interactions",
+    ),
+    authority="NONE",
+    memory_write="FORBIDDEN",
+    routing_authority="NONE",
+    editorial_authority="NONE",
+    publication_authority="NONE",
+    supports_parallelism=False,
+    supports_retry=False,
+    supports_resume=False,
+    supports_review=False,
+    side_effect_class="READ_ONLY",
+    default_read_scope=("video-engine/frontend","artifacts/browser-qa"),
+    default_write_scope=(),
+    allowed_tools=(
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_click",
+        "browser_hover",
+        "browser_type",
+        "browser_press_key",
+        "browser_resize",
+        "browser_take_screenshot",
+        "browser_console_messages",
+        "browser_network_requests",
+        "browser_wait_for",
+        "browser_tabs",
+        "browser_close",
+    ),
+    health_policy="BROWSER_RUNTIME_REQUIRED",
+    execution_operations=(
+        CAN_RUN_TESTS,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    ),
+    execution_kind="TOOL",
+    functional_roles=("QA","OBSERVATION"),
+)
+if _REGISTRY._by_id.get(BROWSER_QA_EXPLORE_RECORD.capability_id) is not None:
+    raise ValueError("Duplicate browser QA explore capability id")
+_REGISTRY._by_id[BROWSER_QA_EXPLORE_RECORD.capability_id] = BROWSER_QA_EXPLORE_RECORD
+_REGISTRY._records = tuple(
+    sorted(
+        (*_REGISTRY._records, BROWSER_QA_EXPLORE_RECORD),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY

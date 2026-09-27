@@ -156,6 +156,7 @@ CAPABILITY_CATALOG = tuple(
             "media.analysis.cloud",
             "gta6.brain.decide",
             "browser.qa.validate",
+            "browser.qa.explore",
         }
     )
 )

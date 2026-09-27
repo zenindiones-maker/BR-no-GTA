@@ -53,6 +53,11 @@ from app.services.browser_qa_harness_service import (
     BROWSER_QA_EXECUTOR_BINDING,
     execute_authorized_browser_qa,
 )
+from app.services.browser_mcp_exploration_service import (
+    BROWSER_MCP_EXPLORATION_CAPABILITY_ID,
+    BROWSER_MCP_EXPLORATION_EXECUTOR_BINDING,
+    execute_authorized_browser_mcp_exploration,
+)
 
 
 SkillExecutor = Callable[[CapabilityDefinition, dict[str, Any]], Any]
@@ -67,6 +72,9 @@ MCP_BOUNDED_EXECUTOR_ALLOWLIST = {
     GTA6_BRAIN_CAPABILITY_ID: GTA6_BRAIN_EXECUTOR_BINDING,
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID: MEDIA_ANALYSIS_CLOUD_EXECUTOR_BINDING,
     BROWSER_QA_CAPABILITY_ID: BROWSER_QA_EXECUTOR_BINDING,
+    BROWSER_MCP_EXPLORATION_CAPABILITY_ID: (
+        BROWSER_MCP_EXPLORATION_EXECUTOR_BINDING
+    ),
     **NATIVE_BINDINGS,
 }
 
@@ -191,7 +199,11 @@ def execute_mcp_capability(
         raise PermissionError("MCP bounded executor implementation type mismatch")
     expected_action = (
         "DEVELOPMENT"
-        if capability_id in {AGENT_OFFICE_CAPABILITY_ID, BROWSER_QA_CAPABILITY_ID}
+        if capability_id in {
+            AGENT_OFFICE_CAPABILITY_ID,
+            BROWSER_QA_CAPABILITY_ID,
+            BROWSER_MCP_EXPLORATION_CAPABILITY_ID,
+        }
         else "EXECUTION"
     )
     if authorization.authorized_action != expected_action:
@@ -212,6 +224,13 @@ def execute_mcp_capability(
 
     if capability_id == BROWSER_QA_CAPABILITY_ID:
         return execute_authorized_browser_qa(
+            authorization=authorization,
+            routing_decision=routing_decision,
+            payload=payload,
+        )
+
+    if capability_id == BROWSER_MCP_EXPLORATION_CAPABILITY_ID:
+        return execute_authorized_browser_mcp_exploration(
             authorization=authorization,
             routing_decision=routing_decision,
             payload=payload,
