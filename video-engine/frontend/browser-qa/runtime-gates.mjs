@@ -46,8 +46,13 @@ export function installRuntimeGates(page) {
   return state
 }
 
-export async function resetFixture(page) {
-  const response = await page.request.post('/__qa/reset')
+export async function resetFixture(page, identityProfile = 'desktop') {
+  if (!['desktop', 'desktop-narrow'].includes(identityProfile)) {
+    throw new Error('Browser QA identity profile is not allowlisted')
+  }
+  const response = await page.request.post(
+    '/__qa/reset?identity_profile=' + encodeURIComponent(identityProfile),
+  )
   expect(response.ok()).toBeTruthy()
   const payload = await response.json()
   expect(payload.single_store).toBe(true)

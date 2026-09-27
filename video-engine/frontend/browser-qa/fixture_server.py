@@ -20,11 +20,17 @@ PROJECT_PATH: Path | None = None
 # Stable IDs are part of the reviewed visual fixture identity. The previous
 # baseline candidates were captured with these exact IDs; making them explicit
 # removes UUID noise without weakening pixel-exact regression checks.
-QA_COLOR_CLIP_ID = "c06931e57"
-QA_TITLE_CLIP_ID = "c673445d8"
+QA_CLIP_IDS = {
+    "desktop": ("c06931e57", "c673445d8"),
+    "desktop-narrow": ("c3b662c49", "c1250a986"),
+}
 
 
-def build_store(project_path: Path) -> Store:
+def build_store(project_path: Path, *, identity_profile: str = "desktop") -> Store:
+    try:
+        color_clip_id, title_clip_id = QA_CLIP_IDS[identity_profile]
+    except KeyError as exc:
+        raise ValueError("unknown Browser QA identity profile") from exc
     project_path.parent.mkdir(parents=True, exist_ok=True)
     store = Store.create(
         name="Browser QA Project",
@@ -39,7 +45,7 @@ def build_store(project_path: Path) -> Store:
         start=0.0,
         duration=4.0,
     )
-    blue.id = QA_COLOR_CLIP_ID
+    blue.id = color_clip_id
     store.set_clip(blue.id, name="QA Blue")
     overlay = store.add_track("video", name="Overlay QA")
     title = store.add_text(
@@ -48,15 +54,15 @@ def build_store(project_path: Path) -> Store:
         start=0.5,
         duration=2.5,
     )
-    title.id = QA_TITLE_CLIP_ID
+    title.id = title_clip_id
     store.set_clip(title.id, name="QA Title")
     store.save()
     return store
 
 
-def reset_store() -> Store:
+def reset_store(*, identity_profile: str = "desktop") -> Store:
     assert PROJECT_PATH is not None
-    store = build_store(PROJECT_PATH)
+    store = build_store(PROJECT_PATH, identity_profile=identity_profile)
     api.attach(store)
     return store
 
@@ -72,8 +78,10 @@ def qa_ready():
 
 
 @api.app.post("/__qa/reset")
-def qa_reset():
-    store = reset_store()
+def qa_reset(identity_profile: str = "desktop"):
+    if identity_profile not in QA_CLIP_IDS:
+        raise HTTPException(400, "unknown Browser QA identity profile")
+    store = reset_store(identity_profile=identity_profile)
     return {
         "status": "reset",
         "project": store.summary("full"),

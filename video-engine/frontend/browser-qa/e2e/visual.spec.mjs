@@ -17,8 +17,11 @@ async function assertReviewedVisual(page, testInfo, name) {
   })
 }
 
-test.beforeEach(async ({ page }) => {
-  await resetFixture(page)
+test.beforeEach(async ({ page }, testInfo) => {
+  const identityProfile = testInfo.project.name === 'chromium-desktop-narrow'
+    ? 'desktop-narrow'
+    : 'desktop'
+  await resetFixture(page, identityProfile)
 })
 
 test('[visual:editor-with-project] reviewed editor baseline remains exact', async ({ page }, testInfo) => {
