@@ -20,6 +20,11 @@ from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
     route_harness_request,
 )
+from app.services.llm_context_projection_service import (
+    bound_llm_records,
+    render_serialized_llm_context,
+    serialize_llm_context,
+)
 from app.services.provider_health_service import semantic_provider_health
 from app.services.script_generator_service import (
     EDITORIAL_SCRIPT_STRUCTURE_JSON_SCHEMA,
@@ -319,14 +324,25 @@ def execute_research_semantic_synthesis_task(
         }
         for item in parents
     ]
-    context_text = json.dumps(
+    bounded_parent_payloads = bound_llm_records(
         parent_payloads,
-        ensure_ascii=False,
-        sort_keys=True,
-        default=str,
+        max_serialized_bytes=22000,
+        max_records=12,
+        essential_fields=(
+            "task_id",
+            "capability_id",
+            "result_summary",
+            "evidence_refs",
+        ),
+        optional_fields=("result",),
     )
-    if len(context_text) > 22000:
-        context_text = context_text[:22000]
+    serialized_context = serialize_llm_context(
+        route="research_semantic_synthesis",
+        payload=bounded_parent_payloads,
+    )
+    context_text = render_serialized_llm_context(
+        serialized_context
+    )
 
     goal_id = str(
         payload.get("goal_id")
@@ -364,7 +380,7 @@ def execute_research_semantic_synthesis_task(
         "JSON with keys topic, why_now, strongest_findings, risks, evidence_refs. "
         "strongest_findings/risks/evidence_refs must be arrays of strings.\n\n"
         f"OBJECTIVE={str(payload.get('objective') or '').strip()}\n"
-        f"DEPENDENCY_ARTIFACTS={context_text}"
+        f"DEPENDENCY_ARTIFACTS\n{context_text}"
     )
     provider = create_resilient_harness_ai_provider(
         authorization=auth,

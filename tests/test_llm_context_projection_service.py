@@ -481,3 +481,95 @@ def test_pinned_serializer_uses_projection_schema_for_numeric_equivalence():
         module=NumericCollapsingPinned,
     )
     assert candidate["roundtrip_verified"] is True
+
+
+
+def test_generic_irregular_context_uses_json_baseline():
+    from app.services.llm_context_projection_service import (
+        serialize_llm_context,
+    )
+
+    source = {
+        "goal": "Preserve canonical state",
+        "rows": [{"id": 1}, {"id": 2, "nested": {"x": True}}],
+    }
+    serialized = serialize_llm_context(
+        route="semantic_mission_planner",
+        payload=source,
+    )
+    assert serialized["schema"] == "SerializedLLMContext/v1"
+    assert serialized["serialization_format"] == JSON_COMPACT
+    assert (
+        serialized["selection_reason"]
+        == "IRREGULAR_PAYLOAD_PREFERS_JSON"
+    )
+    assert json.loads(serialized["payload"]) == source
+    assert serialized["canonical_state_unchanged"] is True
+
+
+def test_bound_records_never_raw_slices_serialized_structure():
+    from app.services.llm_context_projection_service import (
+        bound_llm_records,
+    )
+
+    rows = [
+        {
+            "task_id": "task-a",
+            "capability_id": "gta6.research",
+            "result_summary": "summary",
+            "result": {"body": "x" * 5000},
+            "evidence_refs": ["artifact:evidence-a"],
+        },
+        {
+            "task_id": "task-b",
+            "capability_id": "gta6.fact-check",
+            "result_summary": "summary-b",
+            "result": {"body": "y" * 5000},
+            "evidence_refs": ["artifact:evidence-b"],
+        },
+    ]
+    bounded = bound_llm_records(
+        rows,
+        max_serialized_bytes=500,
+    )
+    assert bounded
+    assert bounded[0]["task_id"] == "task-a"
+    assert bounded[0]["evidence_refs"] == ["artifact:evidence-a"]
+    assert "result" not in bounded[0]
+    json.loads(json.dumps(bounded, ensure_ascii=False))
+
+
+def test_toon_runtime_failure_falls_back_to_json(monkeypatch):
+    from app.services import llm_context_projection_service as service
+
+    rows, projection = _projection()
+    key = (
+        GTA6_KNOWLEDGE_LLM_PROJECTION,
+        "nvidia_nim",
+        "model-a",
+        TOON_SPEC_VERSION,
+    )
+    monkeypatch.setattr(
+        service,
+        "build_pinned_toon_serialization",
+        lambda **_: (_ for _ in ()).throw(
+            RuntimeError("synthetic pinned failure")
+        ),
+    )
+    serialized = service.serialize_llm_context(
+        route="knowledge",
+        payload=projection,
+        target_provider="nvidia_nim",
+        target_model="model-a",
+        measured_input_tokens={
+            JSON_COMPACT: 1000,
+            TOON_V4_1: 800,
+        },
+        certified_promotions=[key],
+    )
+    assert serialized["serialization_format"] == JSON_COMPACT
+    assert serialized["json_fallback_available"] is True
+    assert (
+        serialized["selection_reason"]
+        == "TOON_PINNED_ENCODER_FAILURE_JSON_FALLBACK"
+    )

@@ -9,6 +9,10 @@ from app.database import ideas_repository
 from app.database import research_repository
 from app.services import script_service
 from app.services.ai_provider import AIProvider, AIProviderError
+from app.services.llm_context_projection_service import (
+    render_serialized_llm_context,
+    serialize_llm_context,
+)
 
 
 # Keep long-form script planning aligned with the human-approved Voice B
@@ -208,9 +212,15 @@ def _build_ai_prompt(
 
     editorial_text = ""
     if editorial_context:
+        serialized_editorial = serialize_llm_context(
+            route="editorial_script_context",
+            payload=editorial_context,
+        )
         editorial_text = (
             "\nCONTEXTO EDITORIAL DO YOUTUBE DEPARTMENT\n"
-            + json.dumps(editorial_context, ensure_ascii=False, sort_keys=True)
+            + render_serialized_llm_context(
+                serialized_editorial
+            )
             + "\n"
         )
 

@@ -8,6 +8,11 @@ import re
 import time
 from typing import Any, Callable
 
+from app.services.llm_context_projection_service import (
+    render_serialized_llm_context,
+    serialize_llm_context,
+)
+
 _ALLOWED_ACTIONS = {"RESEARCH", "EDITORIAL", "DEVELOPMENT", "EXECUTION", "DECISION"}
 _ALLOWED_RISK_CLASSES = {
     "READ_ONLY",
@@ -780,15 +785,15 @@ def build_semantic_planner_prompt(
         "2-4 tasks when sufficient; "
         "use <=%d tasks; clarify only if required for a safe feasible plan." % max_tasks
     )
+    serialized_context = serialize_llm_context(
+        route="semantic_mission_planner",
+        payload=_prompt_payload(context, validation_feedback),
+    )
     return "\n".join(
         [
             instructions,
-            "CONTEXT="
-            + json.dumps(
-                _prompt_payload(context, validation_feedback),
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
+            render_serialized_llm_context(
+                serialized_context
             ),
         ]
     )
