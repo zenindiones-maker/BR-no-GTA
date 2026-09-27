@@ -434,6 +434,22 @@ def plan_natural_language_action(
                 "authorized_action": "DECISION",
                 "artifact_ref": resolved_reference or state.get("active_artifact") or "script:last",
             }
+        if (
+            resolved_reference
+            and any(
+                term in text
+                for term in (
+                    "corrige", "corrija", "corrigir",
+                    "altera", "altere", "muda", "mude",
+                )
+            )
+        ):
+            return {
+                "kind": "CAPABILITY_DISCOVERY",
+                "authorized_action": "EXECUTION",
+                "artifact_ref": resolved_reference,
+                "context_bound_correction": True,
+            }
         if any(term in text for term in ("voz", "narracao", "sample", "samples", "audio")):
             return {
                 "kind": "CAPABILITY",

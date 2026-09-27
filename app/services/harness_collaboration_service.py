@@ -1454,8 +1454,20 @@ def plan_mission_from_human_goal(
 
     if not requirements:
         if not health.get("semantic_reasoning_available") and semantic_inference is None:
-            raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
-        with PerformanceSpan(
+            if goal.mission_class == "SYSTEM_IMPROVEMENT":
+                requirements = _deterministic_capability_requirements(goal)
+                planning_mode = "DETERMINISTIC_PROVIDER_UNAVAILABLE_FALLBACK"
+                planning_evidence["planning_mode"] = planning_mode
+                planning_evidence[
+                    "semantic_provider_unavailable_fallback"
+                ] = True
+                planning_evidence["semantic_provider_call_count"] = 0
+            else:
+                raise RuntimeError("SEMANTIC_REASONING_PROVIDER_UNAVAILABLE")
+        if requirements:
+            proposal = None
+        else:
+            with PerformanceSpan(
             stage="harness.planning.semantic-planner",
             category="PLANNING_SEMANTIC_PLANNER_TIME",
             goal_id=goal.goal_id,
@@ -1473,12 +1485,12 @@ def plan_mission_from_human_goal(
                     "replan_count": int(semantic_evidence.get("replan_count") or 0),
                 },
             )
-        proposal = semantic_result.proposal
-        planning_evidence.update(semantic_evidence)
-        planning_evidence["semantic_provider_call_count"] = int(
-            semantic_evidence.get("proposal_attempts") or 1
-        )
-        if proposal.needs_human_clarification:
+            proposal = semantic_result.proposal
+            planning_evidence.update(semantic_evidence)
+            planning_evidence["semantic_provider_call_count"] = int(
+                semantic_evidence.get("proposal_attempts") or 1
+            )
+        if proposal is not None and proposal.needs_human_clarification:
             if _clarification_is_resolved_by_explicit_goal(
                 goal,
                 proposal.clarification_question,
@@ -1499,7 +1511,8 @@ def plan_mission_from_human_goal(
                     "MISSION_NEEDS_HUMAN_CLARIFICATION:"
                     + str(proposal.clarification_question or "")
                 )
-        requirements = proposal_requirements(proposal)
+        if proposal is not None:
+            requirements = proposal_requirements(proposal)
 
     requirements = requirements[: int(resources["max_tasks_per_mission"])]
     if not requirements:

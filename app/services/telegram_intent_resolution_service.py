@@ -124,6 +124,23 @@ def resolve_contextual_intent(
             "explicit governed memory-candidate request",
         )
 
+    gta_subject = any(term in text for term in (
+        "gta 6", "gta6", "gta vi", "grand theft auto vi",
+        "rockstar", "vice city", "leonida", "lucia", "jason",
+    ))
+    explicit_research = any(term in text for term in (
+        "pesquisa", "pesquise", "procura", "procure",
+        "ultimas informacoes", "ultimas noticias",
+        "verifica nas fontes", "confere nas fontes",
+    ))
+    if gta_subject and explicit_research:
+        return IntentResolution(
+            "RESEARCH_REQUEST",
+            "LAYER_1_CONTROL",
+            "HIGH",
+            "explicit GTA6 research request stays on governed research path",
+        )
+
     if text in {"continua", "continue", "retoma", "retome"}:
         return IntentResolution(
             "EXECUTION_REQUEST",
