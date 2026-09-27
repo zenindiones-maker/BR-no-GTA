@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 
 from app.database.schema import initialize_schema
+from app.services.ai_provider import AIProviderError
 from app.services.fake_ai_provider import FakeAIProvider
 from app.services.e2e_stage_checkpoint_service import (
     StageSpec,
@@ -39,12 +40,16 @@ PRODUCT_SPECIALISTS = (
 )
 
 
-def _script_contract() -> None:
-    payload = (
+def _short_script_fixture_payload() -> str:
+    return (
         '{"hook":"HOOK","introduction":"INTRO","development":['
         '{"heading":"A","body":"B"},{"heading":"C","body":"D"},'
         '{"heading":"E","body":"F"}],"conclusion":"CONCLUSION","cta":"CTA"}'
     )
+
+
+def _script_contract() -> None:
+    payload = _short_script_fixture_payload()
     provider = FakeAIProvider(response="```json\n" + payload + "\n```")
     structure = _generate_ai_structure(
         title="GTA VI",
@@ -52,10 +57,33 @@ def _script_contract() -> None:
         research_context=None,
         ai_provider=provider,
         editorial_context={"authority": "DEEPSEEK_HARNESS"},
-        target_duration_seconds=900.0,
+        target_duration_seconds=None,
     )
     assert structure["hook"] == "HOOK"
     assert len(structure["development"]) == 3
+
+
+def _longform_under_delivery_contract() -> None:
+    payload = _short_script_fixture_payload()
+    provider = FakeAIProvider(response="```json\n" + payload + "\n```")
+    try:
+        _generate_ai_structure(
+            title="GTA VI",
+            description="Descrição factual.",
+            research_context=None,
+            ai_provider=provider,
+            editorial_context={"authority": "DEEPSEEK_HARNESS"},
+            target_duration_seconds=900.0,
+        )
+    except AIProviderError as exc:
+        evidence = getattr(exc, "failure_evidence", {})
+        assert "without padding" in str(exc)
+        assert evidence.get("artificial_padding") is False
+        assert int(evidence.get("observed_words") or 0) < int(
+            evidence.get("target_words") or 0
+        )
+        return
+    raise AssertionError("long-form under-delivery must fail closed")
 
 
 def _specialist_contracts() -> None:
@@ -212,6 +240,7 @@ def main() -> int:
     started = time.perf_counter()
 
     _script_contract()
+    _longform_under_delivery_contract()
     _specialist_contracts()
     _context_packet_contracts()
     _production_plan_structure_contract()
@@ -221,6 +250,7 @@ def main() -> int:
     result = {
         "status": "PASS",
         "LOCAL_DETERMINISTIC_INTEGRATION": "PASS",
+        "LONGFORM_UNDER_DELIVERY_FAIL_CLOSED": "PASS",
         "specialists_checked": list(PRODUCT_SPECIALISTS),
         "PRODUCTION_PLAN_STRUCTURE_CONTRACT": "PASS",
         "CHECKPOINT_RESUME_CONTRACT": "PASS",
@@ -229,6 +259,7 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("LOCAL_DETERMINISTIC_INTEGRATION=PASS")
+    print("LONGFORM_UNDER_DELIVERY_FAIL_CLOSED=PASS")
     print("PRODUCTION_PLAN_STRUCTURE_CONTRACT=PASS")
     print("CHECKPOINT_RESUME_CONTRACT=PASS")
     print(f"LOCAL_DETERMINISTIC_INTEGRATION_MS={elapsed_ms:.3f}")
