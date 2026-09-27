@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36354116161,
-  "expected_head_sha": "c2c2f5d35398c8d05d2455d848dd55547b424176",
-  "reason": "cancel active stale successor before it can dispatch another blind-resume continuation",
+  "run_id": 36358089394,
+  "expected_head_sha": "ed0b05b1181fbb7f51ee4fb8a9fbb4863c280b0d",
+  "reason": "contain repeated FACT_CHECK_REQUIRES_RESEARCH_CLAIM durable successor storm before causal fresh-evidence claim rehydration fix",
   "requested_by": "durable-resume-causal-containment"
 }
