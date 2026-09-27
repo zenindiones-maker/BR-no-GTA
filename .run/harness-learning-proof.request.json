@@ -2,7 +2,7 @@
   "schema": "HarnessLearningProofRequest/v1",
   "authority": "DEEPSEEK_HARNESS",
   "purpose": "current-head-full-regression-proof",
-  "source_head": "c98f6ee050b970c453aa6c0007252000af44ca63",
+  "source_head": "b9dbb0c97984fb298605df5808b27504d6443999",
   "expected_workflow": "Harness Continuous Learning Validation",
   "human_intervention_required": false
 }
