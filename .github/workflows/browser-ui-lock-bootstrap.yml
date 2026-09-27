@@ -46,9 +46,11 @@ jobs:
       - name: Prove mutation containment
         run: |
           set -euo pipefail
-          test -z "$(git diff --name-only)"
+          tracked="$(git diff --name-only)"
           status="$(git status --porcelain=v1)"
-          printf '%s\n' "$status"
+          printf 'TRACKED_DIFF=%s\n' "$tracked"
+          printf 'WORKTREE_STATUS<<EOF\n%s\nEOF\n' "$status"
+          test -z "$tracked"
           test "$status" = "?? video-engine/frontend/package-lock.json"
           git add -- video-engine/frontend/package-lock.json
           staged="$(git diff --cached --name-only)"
