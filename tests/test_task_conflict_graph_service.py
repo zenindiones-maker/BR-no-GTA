@@ -172,3 +172,63 @@ def test_nonterminal_release_is_rejected():
     )
     with pytest.raises(ValueError, match="terminal state"):
         ledger.release(task_id="a", terminal_state="RUNNING")
+
+
+
+def test_canonical_lock_order_is_sorted_and_deterministic():
+    ledger = TaskResourceLockLedger()
+    lease = ledger.acquire(
+        mission_id="mission-lock-order",
+        task_id="task-a",
+        resources=(
+            "repo:zeta",
+            "repo:alpha",
+            "repo:middle",
+            "repo:alpha",
+        ),
+    )
+
+    assert lease["resources"] == [
+        "repo:alpha",
+        "repo:middle",
+        "repo:zeta",
+    ]
+    assert lease["acquisition_order"] == [
+        "repo:alpha",
+        "repo:middle",
+        "repo:zeta",
+    ]
+    assert lease["authority"] == "DEEPSEEK_HARNESS"
+
+
+def test_canonical_lock_order_prevents_cross_order_deadlock():
+    ledger = TaskResourceLockLedger()
+    first = ledger.acquire(
+        mission_id="mission-no-deadlock",
+        task_id="task-a",
+        resources=("repo:b", "repo:a"),
+    )
+    assert first["acquisition_order"] == ["repo:a", "repo:b"]
+
+    with pytest.raises(
+        TaskResourceLockConflict,
+        match="TASK_RESOURCE_LOCK_CONFLICT",
+    ):
+        ledger.acquire(
+            mission_id="mission-no-deadlock",
+            task_id="task-b",
+            resources=("repo:a", "repo:b"),
+        )
+
+    released = ledger.release(
+        task_id="task-a",
+        terminal_state="COMPLETED",
+    )
+    assert released["released_resources"] == ["repo:a", "repo:b"]
+
+    second = ledger.acquire(
+        mission_id="mission-no-deadlock",
+        task_id="task-b",
+        resources=("repo:b", "repo:a"),
+    )
+    assert second["acquisition_order"] == ["repo:a", "repo:b"]

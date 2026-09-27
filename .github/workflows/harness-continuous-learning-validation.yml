@@ -12,6 +12,14 @@ on:
       - app/services/harness_routing_policy_service.py
       - scripts/harness_learning_operational_proof.py
       - tests/test_harness_learning_system.py
+      - app/services/task_atomicity_service.py
+      - app/services/task_verification_service.py
+      - app/services/task_conflict_graph_service.py
+      - app/services/harness_collaboration_service.py
+      - tests/test_task_atomicity_service.py
+      - tests/test_task_verification_service.py
+      - tests/test_task_conflict_graph_service.py
+      - tests/test_harness_collaboration_service.py
       - .github/workflows/harness-continuous-learning-validation.yml
       - .run/harness-learning-proof.request.json
   workflow_dispatch:
