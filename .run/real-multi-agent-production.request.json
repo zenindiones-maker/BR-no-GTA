@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36152763201,
-    "reason": "Resume canonical nonterminal Production from run 36354116161 after parent-child FreshEvidence lineage fix and bounded TOON decision",
+    "retry_of_run": 36354116161,
+    "reason": "Resume the same nonterminal durable Production from state_version 180 after bounded TOON decision; consume only typed FreshEvidenceLineage/v1 and resolve the editorial_script evidence gap through MINIMAL_AFFECTED_SUBGRAPH without padding",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "918f99886318ba06eeb9c05bbac0695177cb44a4",
+    "candidate_head": "87450cc95afbb4327ff76e55b9ef4ebb616b889a",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -77,5 +77,5 @@
       "continuation_route_id": "continuation-route:c345ede88ff3b845821ab2a6"
     }
   },
-  "requested_from_head": "918f99886318ba06eeb9c05bbac0695177cb44a4"
+  "requested_from_head": "87450cc95afbb4327ff76e55b9ef4ebb616b889a"
 }
