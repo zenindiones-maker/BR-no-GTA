@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
+
 from types import SimpleNamespace
 
 import pytest
@@ -222,3 +225,65 @@ def test_normalized_request_can_only_narrow_safe_tools():
     )
     assert request.allowed_operations == ("navigate", "snapshot", "close")
     assert request.authority == "NONE"
+
+
+def _load_browser_mcp_runtime_module():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "video-engine"
+        / "frontend"
+        / "browser-qa"
+        / "mcp"
+        / "explore.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "browser_mcp_explore_runtime_test",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_pinned_mcp_npm_symlink_resolves_to_exact_package_cli(tmp_path):
+    runtime = _load_browser_mcp_runtime_module()
+    package = tmp_path / "node_modules" / "@playwright" / "mcp"
+    package.mkdir(parents=True)
+    cli = package / "cli.js"
+    cli.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    bin_dir = tmp_path / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    shim = bin_dir / "playwright-mcp"
+    shim.symlink_to(Path("../@playwright/mcp/cli.js"))
+
+    validated = runtime.validate_pinned_mcp_executable(
+        str(shim),
+        expected_cli=cli,
+    )
+
+    assert validated.name == "playwright-mcp"
+    assert validated.resolve() == cli.resolve()
+
+
+def test_pinned_mcp_symlink_spoof_outside_package_fails_closed(tmp_path):
+    runtime = _load_browser_mcp_runtime_module()
+    package = tmp_path / "node_modules" / "@playwright" / "mcp"
+    package.mkdir(parents=True)
+    expected = package / "cli.js"
+    expected.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    attacker = tmp_path / "attacker.js"
+    attacker.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    bin_dir = tmp_path / "node_modules" / ".bin"
+    bin_dir.mkdir(parents=True)
+    shim = bin_dir / "playwright-mcp"
+    shim.symlink_to(attacker)
+
+    with pytest.raises(
+        runtime.ExplorationPolicyError,
+        match="PINNED_MCP_EXECUTABLE_TARGET_MISMATCH",
+    ):
+        runtime.validate_pinned_mcp_executable(
+            str(shim),
+            expected_cli=expected,
+        )

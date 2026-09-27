@@ -177,6 +177,43 @@ def assert_loopback_observations(text: str) -> None:
             raise ExplorationPolicyError("UNAPPROVED_BROWSER_PORT_OBSERVED")
 
 
+def validate_pinned_mcp_executable(
+    raw_path: str | os.PathLike[str],
+    *,
+    expected_cli: Path | None = None,
+) -> Path:
+    """Validate the npm bin shim without confusing its resolved target name.
+
+    npm creates node_modules/.bin/playwright-mcp as a symlink to the pinned
+    package cli.js. The shim name proves the requested command identity while
+    the resolved target proves it cannot escape to another executable.
+    """
+    shim = Path(raw_path).absolute()
+    if shim.name != "playwright-mcp" or not shim.is_file():
+        raise ExplorationPolicyError("PINNED_MCP_EXECUTABLE_MISSING")
+    try:
+        resolved = shim.resolve(strict=True)
+    except OSError as exc:
+        raise ExplorationPolicyError(
+            "PINNED_MCP_EXECUTABLE_MISSING"
+        ) from exc
+
+    expected = expected_cli or Path(
+        "/tmp/browser-mcp/node_modules/@playwright/mcp/cli.js"
+    )
+    try:
+        expected_resolved = expected.resolve(strict=True)
+    except OSError as exc:
+        raise ExplorationPolicyError(
+            "PINNED_MCP_PACKAGE_CLI_MISSING"
+        ) from exc
+    if resolved != expected_resolved:
+        raise ExplorationPolicyError(
+            "PINNED_MCP_EXECUTABLE_TARGET_MISMATCH"
+        )
+    return shim
+
+
 async def run_exploration(request: dict[str, Any], root: Path) -> dict[str, Any]:
     request = normalize_request(request)
     started = time.monotonic()
@@ -222,14 +259,12 @@ async def run_exploration(request: dict[str, Any], root: Path) -> dict[str, Any]
             "PLAYWRIGHT_BROWSERS_PATH",
         }
     }
-    mcp_bin = Path(
+    mcp_bin = validate_pinned_mcp_executable(
         os.environ.get(
             "PLAYWRIGHT_MCP_BIN",
             "/tmp/browser-mcp/node_modules/.bin/playwright-mcp",
         )
-    ).resolve()
-    if not mcp_bin.is_file() or mcp_bin.name != "playwright-mcp":
-        raise ExplorationPolicyError("PINNED_MCP_EXECUTABLE_MISSING")
+    )
 
     params = StdioServerParameters(
         command=str(mcp_bin),
