@@ -51,6 +51,9 @@ def test_browser_qa_capability_registered_with_no_authority():
     assert record.execution_kind == "TOOL"
     assert record.functional_roles == ("QA",)
     assert record.side_effect_class == "READ_ONLY"
+    assert record.default_write_scope == ()
+    assert "CAN_WRITE_REPOSITORY" not in record.execution_operations
+    assert "CAN_MUTATE_CANDIDATE" not in record.execution_operations
     assert record.authority == "NONE"
     assert record.routing_authority == "NONE"
     assert record.publication_authority == "NONE"
