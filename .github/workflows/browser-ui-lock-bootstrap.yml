@@ -48,11 +48,14 @@ jobs:
           set -euo pipefail
           tracked="$(git diff --name-only)"
           status="$(git status --porcelain=v1)"
+          ignored="$(git check-ignore -v -- video-engine/frontend/package-lock.json)"
           printf 'TRACKED_DIFF=%s\n' "$tracked"
           printf 'WORKTREE_STATUS<<EOF\n%s\nEOF\n' "$status"
+          printf 'LOCK_IGNORE_RULE=%s\n' "$ignored"
           test -z "$tracked"
-          test "$status" = "?? video-engine/frontend/package-lock.json"
-          git add -- video-engine/frontend/package-lock.json
+          test -z "$status"
+          test -n "$ignored"
+          git add -f -- video-engine/frontend/package-lock.json
           staged="$(git diff --cached --name-only)"
           test "$staged" = "video-engine/frontend/package-lock.json"
 
