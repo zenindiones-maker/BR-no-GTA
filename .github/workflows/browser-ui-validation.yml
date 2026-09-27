@@ -1,0 +1,251 @@
+name: Browser UI Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact candidate commit SHA
+        required: true
+        type: string
+      mission_id:
+        description: Harness mission identity
+        required: true
+        type: string
+      plan_id:
+        description: Harness plan identity
+        required: false
+        default: ""
+        type: string
+      task_id:
+        description: Harness Browser QA task identity
+        required: true
+        type: string
+      operation:
+        description: Bounded deterministic Browser QA operation
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - functional
+          - accessibility
+          - aria
+      viewport:
+        description: Deterministic viewport set
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - desktop
+          - desktop-narrow
+  push:
+    paths:
+      - "video-engine/frontend/**"
+      - "video-engine/backend/vedit/api.py"
+      - "video-engine/backend/vedit/store.py"
+      - "app/services/browser_qa_harness_service.py"
+      - "tests/test_browser_qa_harness_service.py"
+      - ".github/workflows/browser-ui-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-ui-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  browser-qa:
+    name: deterministic-chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: ${{ github.workspace }}/video-engine/backend
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node 24.21.0
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.21.0
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install VEdit backend and FFmpeg
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install -e ./video-engine
+
+      - name: Bootstrap exact Browser QA lock candidate
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
+          node - <<'NODE'
+          const p=require('./package-lock.json')
+          const expected={
+            'node_modules/react':'19.2.8',
+            'node_modules/react-dom':'19.2.8',
+            'node_modules/vite':'7.3.6',
+            'node_modules/jsdom':'29.1.1',
+            'node_modules/@vitejs/plugin-react':'5.2.0',
+            'node_modules/@playwright/test':'1.63.0',
+            'node_modules/@axe-core/playwright':'4.13.0',
+          }
+          for (const [k,v] of Object.entries(expected)) {
+            if (p.packages[k]?.version !== v) throw new Error(k+' version mismatch')
+          }
+          console.log('EXACT_TOP_LEVEL_BROWSER_QA_VERSIONS=PASS')
+          NODE
+
+      - name: Install pinned Chromium runtime
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npx --no-install playwright install --with-deps chromium
+          npx --no-install playwright --version
+          node --version
+
+      - name: Build frontend
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npm run build
+
+      - name: Preserve JSDOM smoke
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npm run smoke
+          echo "JSDOM_SMOKE_PRESERVED=PASS"
+
+      - name: Preserve deterministic UI audit
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          npm run uiaudit
+          echo "UIAUDIT_PRESERVED=PASS"
+
+      - name: Start real VEdit fixture and wait for readiness
+        working-directory: video-engine
+        run: |
+          set -euo pipefail
+          python frontend/browser-qa/fixture_server.py \
+            --host 127.0.0.1 \
+            --port 8760 \
+            --project /tmp/vedit-browser-qa/project.json \
+            > /tmp/vedit-browser-qa.log 2>&1 &
+          echo $! > /tmp/vedit-browser-qa.pid
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:8760/__qa/ready \
+              > /tmp/vedit-browser-qa-ready.json; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          test "$ready" = "1"
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/vedit-browser-qa-ready.json'))
+          assert d['status']=='ready'
+          assert d['single_store'] is True
+          print('VEDIT_REAL_STORE_READY=PASS')
+          PY
+
+      - name: Execute deterministic Browser QA
+        working-directory: video-engine/frontend
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.sha }}
+          MISSION_ID: ${{ inputs.mission_id || format('browser-qa:{0}', github.run_id) }}
+          PLAN_ID: ${{ inputs.plan_id || '' }}
+          TASK_ID: ${{ inputs.task_id || 'browser-qa-current-head' }}
+          OPERATION: ${{ inputs.operation || 'all' }}
+          VIEWPORT: ${{ inputs.viewport || 'both' }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/browser-qa-request.json
+          import json, os
+          print(json.dumps({
+              "authorized_url": "http://127.0.0.1:8760/",
+              "operation": os.environ["OPERATION"],
+              "scenario_ids": [],
+              "mission_id": os.environ["MISSION_ID"],
+              "plan_id": os.environ["PLAN_ID"],
+              "task_id": os.environ["TASK_ID"],
+              "candidate_sha": os.environ["CANDIDATE_SHA"],
+              "frontend_build_sha": os.environ["CANDIDATE_SHA"],
+              "viewport": os.environ["VIEWPORT"],
+          }))
+          PY
+          set +e
+          node browser-qa/run-browser-qa.mjs \
+            < /tmp/browser-qa-request.json \
+            > /tmp/browser-qa-stdout.json
+          rc=$?
+          set -e
+          cat /tmp/browser-qa-stdout.json
+          exit "$rc"
+
+      - name: Assert Browser QA report boundary
+        if: always()
+        working-directory: video-engine/frontend
+        run: |
+          set -euo pipefail
+          test -f browser-qa/browser-qa-report.json
+          python - <<'PY'
+          import hashlib,json
+          p='browser-qa/browser-qa-report.json'
+          d=json.load(open(p))
+          assert d['schema']=='BrowserQAReport/v1'
+          assert d['authority']=='NONE'
+          assert d['mcp_exploration_used'] is False
+          assert d['vision_fallback_used'] is False
+          digest=d.pop('content_sha256')
+          raw=json.dumps(
+              d,
+              ensure_ascii=False,
+              sort_keys=True,
+              separators=(',',':'),
+              default=str,
+          ).encode()
+          assert hashlib.sha256(raw).hexdigest()==digest
+          assert all(
+              str(ref).startswith('artifact:browser-qa/sha256/')
+              for ref in d['evidence_refs']
+          )
+          print('BROWSER_QA_AUTHORITY_NONE=PASS')
+          print('CONTENT_ADDRESSED_BROWSER_EVIDENCE=PASS')
+          PY
+
+      - name: Upload Browser QA evidence and candidate lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-ui-validation-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            video-engine/frontend/browser-qa/browser-qa-report.json
+            video-engine/frontend/browser-qa/playwright-results.json
+            video-engine/frontend/browser-qa/html-report/
+            video-engine/frontend/browser-qa/test-results/
+            video-engine/frontend/browser-qa/artifacts/
+            video-engine/frontend/package-lock.json
+            /tmp/vedit-browser-qa.log
+            /tmp/vedit-browser-qa-ready.json
