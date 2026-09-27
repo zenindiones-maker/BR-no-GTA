@@ -443,3 +443,41 @@ def test_pinned_serializer_roundtrip_mismatch_fails_closed():
             projection=projection,
             module=Wrong,
         )
+
+
+
+def test_number_fields_are_schema_normalized_across_int_float_forms():
+    schema = PROJECTION_SCHEMAS[GTA6_KNOWLEDGE_LLM_PROJECTION]
+    rows = flatten_gta6_knowledge_units(_units())
+    normalized = build_llm_context_projection(
+        projection_class=GTA6_KNOWLEDGE_LLM_PROJECTION,
+        rows=rows,
+    )
+    baseline = json.loads(
+        normalized["serialization_candidates"][JSON_COMPACT]["payload"]
+    )
+    assert isinstance(baseline[0]["confidence"], float)
+    assert isinstance(baseline[0]["source_quality_score"], float)
+
+
+def test_pinned_serializer_uses_projection_schema_for_numeric_equivalence():
+    class NumericCollapsingPinned(_PinnedToon):
+        @staticmethod
+        def dumps(value):
+            collapsed = copy.deepcopy(value)
+            for row in collapsed:
+                for key, item in list(row.items()):
+                    if isinstance(item, float) and item.is_integer():
+                        row[key] = int(item)
+            return "PINNED:" + json.dumps(
+                collapsed,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+    _, projection = _projection()
+    candidate = build_pinned_toon_serialization(
+        projection=projection,
+        module=NumericCollapsingPinned,
+    )
+    assert candidate["roundtrip_verified"] is True

@@ -174,14 +174,13 @@ def _sha(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
 
-def _normalize_number(value: int | float) -> int | float:
+def _normalize_number(value: int | float) -> float:
     if isinstance(value, bool):
         raise TypeError("boolean is not numeric")
-    if isinstance(value, int):
-        return value
-    if not math.isfinite(value):
+    numeric = float(value)
+    if not math.isfinite(numeric):
         raise ValueError("non-finite numbers are not supported")
-    return 0 if value == 0 else value
+    return 0.0 if numeric == 0.0 else numeric
 
 
 def _normalize_scalar(value: Any, field: ProjectionField) -> Any:
@@ -725,14 +724,32 @@ def build_pinned_toon_serialization(
     baseline_payload = str(baseline.get("payload") or "")
     if not baseline_payload:
         raise RuntimeError("JSON_BASELINE_REQUIRED_FOR_TOON")
-    canonical_rows = json.loads(baseline_payload)
+    projection_class = str(
+        projection.get("projection_class") or ""
+    )
+    schema = PROJECTION_SCHEMAS.get(projection_class)
+    if schema is None:
+        raise RuntimeError("TOON_PINNED_PROJECTION_SCHEMA_REQUIRED")
+    canonical_rows = normalize_projection_rows(
+        json.loads(baseline_payload),
+        schema=schema,
+    )
     canonical = _canonical_json(canonical_rows)
     started = time.perf_counter()
     payload = str(resolved.dumps(canonical_rows))
     serialization_latency_ms = (
         time.perf_counter() - started
     ) * 1000.0
-    decoded = resolved.loads(payload)
+    decoded_raw = resolved.loads(payload)
+    try:
+        decoded = normalize_projection_rows(
+            decoded_raw,
+            schema=schema,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "TOON_PINNED_DECODE_SCHEMA_MISMATCH"
+        ) from exc
     if _canonical_json(decoded) != canonical:
         raise RuntimeError("TOON_PINNED_ROUNDTRIP_MISMATCH")
     return {
