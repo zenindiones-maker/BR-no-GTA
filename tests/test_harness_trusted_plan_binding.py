@@ -5,7 +5,7 @@ from app.services.harness_trusted_plan_binding import TrustedPlanBinding
 
 def fixture():
  p=PlanRevision.create(mission_id="m",human_goal_id="g",plan_id="P1",revision=1,parent_plan_ref=None,parent_plan_hash=None,supersedes_plan_id=None,reason_ref=None,affected_subgraph=("t1",),plan_payload={"tasks":["t1"]},runtime_revision="r",orchestration_version="o")
- d=asdict(p);ref,_=immutable_ref("plans",d)
+ d=asdict(p);ref=f"objects/plans/sha256/{p.content_sha256}.json"
  h={"mission_id":"m","human_goal_id":"g","active_plan_ref":ref,"active_plan_hash":p.content_sha256,"runtime_revision":"r","orchestration_version":"o","authority_generation":1}
  g={**{k:h[k] for k in ("mission_id","human_goal_id","active_plan_ref","active_plan_hash","runtime_revision","orchestration_version","authority_generation")}}
  return p,d,ref,h,g

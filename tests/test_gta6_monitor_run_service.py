@@ -20,7 +20,10 @@ class FakeMonitor:
         return self.page
 
 
-def make_page(content: str, url: str = "https://www.rockstargames.com/newswire"):
+def make_page(
+    content: str,
+    url: str = gta6_monitor_run_service.ROCKSTAR_NEWSWIRE_URL,
+):
     return SimpleNamespace(
         url=url,
         status_code=200,

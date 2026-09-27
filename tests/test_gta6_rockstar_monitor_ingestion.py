@@ -74,7 +74,7 @@ def test_ingest_rockstar_newswire_from_monitor_persists_items(
     monkeypatch.setattr(
         module,
         "collect_rockstar_newswire_items",
-        lambda timeout=15.0: items,
+        lambda timeout=15.0, monitored_result=None: items,
     )
 
     persisted = [
@@ -105,7 +105,7 @@ def test_ingest_rockstar_newswire_from_monitor_returns_empty_without_items(
     monkeypatch.setattr(
         module,
         "collect_rockstar_newswire_items",
-        lambda timeout=15.0: [],
+        lambda timeout=15.0, monitored_result=None: [],
     )
 
     def fail_if_called(items):
@@ -125,8 +125,16 @@ def test_collect_rockstar_newswire_items_passes_timeout(monkeypatch):
     captured = {}
 
     class FakeMonitor:
-        def __init__(self, *, timeout):
+        def __init__(
+            self,
+            *,
+            timeout,
+            user_agent=None,
+            max_retries=None,
+        ):
             captured["timeout"] = timeout
+            captured["user_agent"] = user_agent
+            captured["max_retries"] = max_retries
 
     def fake_monitor_gta6_page_persisted(monitor, url):
         captured["monitor"] = monitor

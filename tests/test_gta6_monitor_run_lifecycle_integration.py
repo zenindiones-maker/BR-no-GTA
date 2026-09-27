@@ -17,7 +17,7 @@ from app.services.gta6_monitor_run_lifecycle_service import (
 
 def make_page(
     content: str = "<html>GTA VI</html>",
-    url: str = "https://www.rockstargames.com/newswire",
+    url: str = gta6_monitor_run_service.ROCKSTAR_NEWSWIRE_URL,
 ):
     return SimpleNamespace(
         url=url,

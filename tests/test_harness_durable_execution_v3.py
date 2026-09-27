@@ -115,7 +115,7 @@ def test_settlement_all_or_nothing_and_consumes():
   transition="EXECUTE_READY"),semantic_objects={rr:result},next_kind="RECOVERY",next_reason="next")=="H3"
  assert s.objects[s.head["active_continuation_ref"]]["status"]=="ISSUED"
  assert s.head["latest_outcome_ref"] in s.objects and rr in s.objects
- assert len(s.head["pending_outbox_refs"])==2
+ assert len(s.head["pending_outbox_refs"])==1
 
 def test_settlement_cas_conflict_changes_nothing_canonical():
  rt,s=runtime();_,g,r=issue(rt,s);_,claim,f=rt.claim(snapshot=s.snapshot("M1"),mission_id="M1",

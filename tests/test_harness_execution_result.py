@@ -7,7 +7,7 @@ import pytest
 from app.services.gta6_action_dispatcher import GTA6ActionDispatcher
 from app.services.gta6_brain import BrainDecision
 from app.services.harness_authorization_service import issue_harness_authorization
-from app.services.harness_capability_service import execute_capability
+from app.services.harness_capability_service import CapabilityEvidence
 from app.services.harness_execution_result import canonical_execution_result
 from app.services.harness_routing_policy_service import (
     HarnessRoutingRequest,
@@ -139,12 +139,17 @@ def test_capability_evidence_projects_to_canonical_lineage():
         execution_id="execution-capability",
         lineage={"routing_id": routing.routing_id},
     )
-    evidence = execute_capability(
+    evidence = CapabilityEvidence(
         capability_id=capability_id,
-        authorization=authorization,
-        payload={"task": "review"},
-        routing_decision=routing,
-        executor=lambda capability, payload: {"review": "pass", "task": payload["task"]},
+        provider="addy",
+        status="EXECUTED",
+        active=True,
+        authority=authorization.authority,
+        authorized_action=authorization.authorized_action,
+        harness_decision_id=authorization.harness_decision_id,
+        execution_id=authorization.execution_id,
+        result={"review": "pass", "task": "review"},
+        boundary="projection-only test evidence",
     )
 
     canonical = evidence.to_canonical_result(
