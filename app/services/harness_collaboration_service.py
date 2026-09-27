@@ -24,6 +24,7 @@ from app.services.harness_routing_policy_service import (
     route_harness_request,
 )
 from app.services.performance_telemetry_service import PerformanceSpan
+from app.services.task_atomicity_service import require_atomic_task
 from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_PRODUCE_ARTIFACT_REFS,
@@ -87,6 +88,14 @@ class TaskEnvelope:
     idempotency_key: str = ""
     expires_at: str = ""
     human_gate_policy: str = "NONE"
+    atomic_goals: tuple[str, ...] = ()
+    expected_outputs: tuple[str, ...] = ()
+    preconditions: tuple[str, ...] = ()
+    postconditions: tuple[str, ...] = ()
+    evidence_requirements: tuple[str, ...] = ()
+    failure_semantics: str = "FAIL_CLOSED"
+    retry_semantics: str = ""
+    independent_outcomes: bool = False
     mission_id: str = "UNBOUND"
     goal_id: str = "UNBOUND"
 
@@ -216,6 +225,40 @@ class TaskEnvelope:
             human_gate_policy=str(
                 value.get("human_gate_policy") or "NONE"
             ).strip().upper(),
+            atomic_goals=tuple(
+                str(item).strip()
+                for item in value.get("atomic_goals") or ()
+                if str(item).strip()
+            ),
+            expected_outputs=tuple(
+                str(item).strip()
+                for item in value.get("expected_outputs") or ()
+                if str(item).strip()
+            ),
+            preconditions=tuple(
+                str(item).strip()
+                for item in value.get("preconditions") or ()
+                if str(item).strip()
+            ),
+            postconditions=tuple(
+                str(item).strip()
+                for item in value.get("postconditions") or ()
+                if str(item).strip()
+            ),
+            evidence_requirements=tuple(
+                str(item).strip()
+                for item in value.get("evidence_requirements") or ()
+                if str(item).strip()
+            ),
+            failure_semantics=str(
+                value.get("failure_semantics") or "FAIL_CLOSED"
+            ).strip().upper(),
+            retry_semantics=str(
+                value.get("retry_semantics") or ""
+            ).strip().upper(),
+            independent_outcomes=bool(
+                value.get("independent_outcomes", False)
+            ),
             mission_id=str(value.get("mission_id") or "UNBOUND").strip(),
             goal_id=str(value.get("goal_id") or "UNBOUND").strip(),
         )
@@ -276,6 +319,7 @@ class RoutedCollaborationTask:
     supports_resume: bool = False
     supports_review: bool = False
     selection_evidence: dict[str, Any] = field(default_factory=dict)
+    atomicity_contract: dict[str, Any] = field(default_factory=dict)
 
     @property
     def authorized_action(self) -> str:
@@ -365,6 +409,14 @@ def _task_idempotency_key(
         "functional_role": task.functional_role,
         "mission_policy_class": task.mission_policy_class,
         "objective": task.objective,
+        "atomic_goals": list(task.atomic_goals),
+        "expected_outputs": list(task.expected_outputs),
+        "preconditions": list(task.preconditions),
+        "postconditions": list(task.postconditions),
+        "evidence_requirements": list(task.evidence_requirements),
+        "failure_semantics": task.failure_semantics,
+        "retry_semantics": task.retry_semantics,
+        "independent_outcomes": task.independent_outcomes,
     }
     digest = sha256(
         json.dumps(
@@ -389,6 +441,13 @@ def build_collaboration_plan(
         item if isinstance(item, TaskEnvelope) else TaskEnvelope.from_mapping(item)
         for item in tasks
     )
+    atomicity_by_task = {
+        task.task_id: require_atomic_task(
+            task.to_dict(),
+            mission_id=mission_id,
+        )
+        for task in normalized
+    }
     execution_levels = _levels(normalized)
     routed: list[RoutedCollaborationTask] = []
     for task in normalized:
@@ -482,6 +541,9 @@ def build_collaboration_plan(
                     "selected_implementation": selected,
                     "policy_metadata": dict(decision.policy_metadata),
                 },
+                atomicity_contract=atomicity_by_task[
+                    task.task_id
+                ].to_dict(),
             )
         )
     return CollaborationPlan(

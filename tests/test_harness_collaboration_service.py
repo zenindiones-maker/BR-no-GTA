@@ -740,3 +740,99 @@ def test_durable_mission_identity_goal_mismatch_fails_closed():
             semantic_inference=should_never_run,
         )
     assert calls["semantic"] == 0
+
+
+def test_task_atomicity_contract_is_harness_owned_and_backward_compatible():
+    plan = build_collaboration_plan(
+        mission_id="mission-atomicity-legacy",
+        goal_id="goal-atomicity-legacy",
+        tasks=[{
+            "task_id": "fact-check",
+            "capability_id": "gta6.fact-check",
+            "action": "RESEARCH",
+            "objective": "verify one GTA6 claim set",
+            "expected_output": "FactCheckResult",
+            "acceptance_criteria": ["result is evidence-bounded"],
+        }],
+    )
+    contract = plan.tasks[0].atomicity_contract
+    assert contract["schema"] == "TaskAtomicityContract/v1"
+    assert contract["authority"] == "DEEPSEEK_HARNESS"
+    assert contract["decision"] == "ATOMIC"
+    assert contract["atomic_goal"] == "verify one GTA6 claim set"
+    assert contract["expected_outputs"] == ("FactCheckResult",)
+    assert contract["postconditions"] == (
+        "result is evidence-bounded",
+    )
+    assert contract["content_sha256"]
+
+
+def test_multiple_atomic_goals_are_split_before_routing(monkeypatch):
+    monkeypatch.setattr(
+        collaboration_service,
+        "route_harness_request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("routing must not run before atomicity")
+        ),
+    )
+    try:
+        build_collaboration_plan(
+            mission_id="mission-split",
+            goal_id="goal-split",
+            tasks=[{
+                "task_id": "multi",
+                "capability_id": "gta6.fact-check",
+                "action": "RESEARCH",
+                "objective": "compound work",
+                "atomic_goals": [
+                    "verify GTA6 claims",
+                    "design unrelated thumbnail",
+                ],
+                "expected_output": "MixedResult",
+            }],
+        )
+    except ValueError as exc:
+        assert "TASK_SPLIT_REQUIRED:multi:MULTIPLE_ATOMIC_GOALS" in str(exc)
+    else:
+        raise AssertionError("multi-goal task was not split")
+
+
+def test_agent_cannot_self_attest_atomicity():
+    try:
+        build_collaboration_plan(
+            mission_id="mission-self-attest",
+            goal_id="goal-self-attest",
+            tasks=[{
+                "task_id": "multi",
+                "capability_id": "gta6.fact-check",
+                "action": "RESEARCH",
+                "objective": "two separable outcomes",
+                "atomic_goals": ["claim verification", "unrelated SEO"],
+                "atomicity_decision": "ATOMIC",
+                "atomicity_contract": {"decision": "ATOMIC"},
+            }],
+        )
+    except ValueError as exc:
+        assert "TASK_SPLIT_REQUIRED" in str(exc)
+    else:
+        raise AssertionError("caller self-attested atomicity was trusted")
+
+
+def test_independent_outcomes_require_split():
+    try:
+        build_collaboration_plan(
+            mission_id="mission-independent-outcomes",
+            goal_id="goal-independent-outcomes",
+            tasks=[{
+                "task_id": "multi",
+                "capability_id": "gta6.fact-check",
+                "action": "RESEARCH",
+                "objective": "produce independently shippable outputs",
+                "expected_outputs": ["FactCheckResult", "SeoPackage"],
+                "independent_outcomes": True,
+            }],
+        )
+    except ValueError as exc:
+        assert "INDEPENDENT_OUTCOMES_DECLARED" in str(exc)
+    else:
+        raise AssertionError("independent outcomes did not require split")
