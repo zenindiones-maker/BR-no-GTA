@@ -30,6 +30,8 @@ test('[accessibility:axe] automated WCAG A/AA serious and critical gate', async 
 test('[aria:editor] important surfaces expose stable accessible structure', async ({ page }, testInfo) => {
   const gates = installRuntimeGates(page)
   await page.goto('/')
+  await expect(page.getByText('Video principal', { exact: true })).toBeVisible()
+  await expect(page.getByText('Overlay QA', { exact: true })).toBeVisible()
   const topbar = await page.locator('.topbar').ariaSnapshot()
   const timeline = await page.locator('.timeline').ariaSnapshot()
   expect(topbar).toContain('button')
