@@ -226,7 +226,7 @@ export default function Timeline({
               .catch((e) => setError(e.message))
             // sotto una certa altezza i controlli non ci starebbero: si tiene
             // il nome e i pulsanti essenziali, cosi' 20 tracce restano leggibili
-            const compact = trackH < 62
+            const compact = trackH < 80
             return (
             // stessa altezza per video e audio: la testata ha gli stessi comandi
             // in entrambi i casi, quindi una traccia piu' bassa non li conterrebbe

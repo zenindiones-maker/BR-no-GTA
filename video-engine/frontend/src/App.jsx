@@ -16,7 +16,7 @@ const MEDIA_EXT = /\.(mp4|mov|mkv|avi|webm|m4v|mpe?g|wmv|flv|ts|mp3|wav|aac|m4a|
 // Le misure dei pannelli restano tra una sessione e l'altra. Vengono rilette
 // entro i limiti di adesso: una misura salvata da una versione precedente puo'
 // essere fuori scala e mandare i comandi fuori dalla loro riga.
-const LIMITS = { bin: [170, 520], inspector: [240, 600], timeline: [120, 1400], trackH: [44, 140] }
+const LIMITS = { bin: [170, 520], inspector: [240, 600], timeline: [120, 1400], trackH: [54, 140] }
 
 const loadSizes = () => {
   let saved = {}
@@ -56,7 +56,7 @@ export default function App() {
   const [dropping, setDropping] = useState(false)
   const [confirm, setConfirm] = useState(null)   // {title, message, ok, danger, onOk}
   const [sizes, setSizes] = useState(() => ({
-    bin: 250, inspector: 320, timeline: 300, trackH: 72, ...loadSizes(),
+    bin: 250, inspector: 320, timeline: 300, trackH: 80, ...loadSizes(),
   }))
   const playheadRef = useRef(0)
 

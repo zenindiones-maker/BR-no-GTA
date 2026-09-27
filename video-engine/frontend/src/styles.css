@@ -42,7 +42,7 @@
   --r: 4px;
   --r-lg: 7px;
   --h-ctl: 26px;
-  --h-ctl-sm: 21px;
+  --h-ctl-sm: 24px;
 
   /* colonna dei nomi traccia: stesso valore di HEAD in Timeline.jsx */
   --tl-head: 150px;
@@ -399,8 +399,8 @@ input[type=range]::-moz-range-thumb {
 .track-head input.rename {
   height: 18px; font-size: 11px; font-weight: 600; padding: 0 4px;
 }
-.track-head button { width: 20px; height: 18px; padding: 0; }
-.track-head .tvol { height: 12px; margin-top: 1px; }
+.track-head button { width: 24px; height: 24px; padding: 0; }
+.track-head .tvol { height: 24px; margin-top: 1px; }
 /* solo e blocco: tinta appena accennata, si notano senza dominare */
 .track-head button.solo { background: rgba(217,164,65,.18); color: var(--warn); border-color: transparent; }
 .track-head button.lock { background: rgba(226,88,90,.16); color: var(--danger); border-color: transparent; }
@@ -416,7 +416,7 @@ input[type=range]::-moz-range-thumb {
   background: transparent; border-right: 1px solid var(--line);
 }
 .track.addtrack .track-head button {
-  flex: 1; width: auto; height: 22px; font-size: 11px; gap: 4px;
+  flex: 1; width: auto; height: 24px; font-size: 11px; gap: 4px;
   background: transparent; border: 1px dashed var(--line); color: var(--dim);
 }
 .track.addtrack .track-head button:hover { border-style: solid; color: var(--text); }

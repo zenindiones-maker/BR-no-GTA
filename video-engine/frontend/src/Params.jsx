@@ -9,10 +9,20 @@ import { EASINGS, isKf, sampleKf } from './util.js'
  * disfare una prova bisogna ricordarsi il numero di prima e riscriverlo.
  */
 export function Row({ label, children, extra, onReset, modificato }) {
+  const fieldId = React.useId()
+  const control = React.isValidElement(children)
+    ? React.cloneElement(
+      children,
+      typeof children.type === 'string'
+        ? { id: children.props.id || fieldId, 'aria-label': children.props['aria-label'] || label }
+        : { id: children.props.id || fieldId, ariaLabel: children.props.ariaLabel || label },
+    )
+    : children
+
   return (
     <div className="row">
-      <label>{label}</label>
-      <div>{children}</div>
+      <label htmlFor={fieldId}>{label}</label>
+      <div>{control}</div>
       <div className="rowextra">
         {extra}
         {onReset && (
@@ -35,7 +45,7 @@ export function Row({ label, children, extra, onReset, modificato }) {
  * o cancellare una cifra per correggerla, perche' il valore tornava indietro.
  * Si conferma uscendo dal campo o con Invio, si annulla con Esc.
  */
-export function Num({ value, onChange, min, max, step = 0.01, disabled }) {
+export function Num({ value, onChange, min, max, step = 0.01, disabled, id, ariaLabel }) {
   const [bozza, setBozza] = useState(null)      // testo in scrittura, null = non attivo
   const inputRef = useRef(null)
   const mostrato = bozza ?? String(round(value))
@@ -74,7 +84,8 @@ export function Num({ value, onChange, min, max, step = 0.01, disabled }) {
   return (
     <div className="num">
       <input
-        ref={inputRef} type="text" inputMode="decimal" value={mostrato} disabled={disabled}
+        ref={inputRef} id={id} aria-label={ariaLabel}
+        type="text" inputMode="decimal" value={mostrato} disabled={disabled}
         onChange={(e) => setBozza(e.target.value)}
         onBlur={conferma}
         onKeyDown={(e) => {
@@ -98,8 +109,8 @@ export function Num({ value, onChange, min, max, step = 0.01, disabled }) {
   )
 }
 
-export function Check({ value, onChange, title }) {
-  return <input type="checkbox" checked={!!value} title={title}
+export function Check({ value, onChange, title, id, ariaLabel }) {
+  return <input id={id} aria-label={ariaLabel} type="checkbox" checked={!!value} title={title}
     onChange={(e) => onChange(e.target.checked)} />
 }
 
@@ -109,7 +120,7 @@ export function Check({ value, onChange, title }) {
  * Un'operazione per ogni tasto premuto voleva dire un giro completo al server
  * per lettera, e il nome che si stava scrivendo tornava indietro a meta' parola.
  */
-export function Text({ value, onChange, placeholder }) {
+export function Text({ value, onChange, placeholder, id, ariaLabel }) {
   const [bozza, setBozza] = useState(null)
   const conferma = () => {
     if (bozza === null) return
@@ -119,6 +130,7 @@ export function Text({ value, onChange, placeholder }) {
   }
   return (
     <input
+      id={id} aria-label={ariaLabel}
       value={bozza ?? value ?? ''} placeholder={placeholder}
       onChange={(e) => setBozza(e.target.value)}
       onBlur={conferma}
@@ -130,9 +142,9 @@ export function Text({ value, onChange, placeholder }) {
   )
 }
 
-export function Select({ value, onChange, options }) {
+export function Select({ value, onChange, options, id, ariaLabel }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
+    <select id={id} aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)}>
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   )
