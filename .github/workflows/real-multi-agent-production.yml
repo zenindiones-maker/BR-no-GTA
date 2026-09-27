@@ -333,6 +333,17 @@ jobs:
           echo "CHECKPOINT_REHYDRATION=PASS"
           echo "COMPLETED_WORK_NOT_REEXECUTED=ENFORCED_BY_TASK_RESULT_IDEMPOTENCY"
 
+      - name: Install bounded controller runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r requirements.txt pytest
+          python -m pip install -q psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 rich==14.3.3 pathspec==1.1.1
+          python scripts/bootstrap_hermes_agent.py \
+            --target "$BR_HERMES_UPSTREAM_ROOT" \
+            --output artifacts/real-multi-agent-production/hermes-upstream.json
+          test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
+          echo "HERMES_UPSTREAM_PINNED=PASS"
+
       - name: Reconcile durable pending need before semantic resume
         if: ${{ env.BR_RESUME_RUN_ID != '' }}
         env:
@@ -398,17 +409,6 @@ jobs:
           print("NO_PADDING=PASS")
           PY
 
-      - name: Install bounded controller runtime
-        run: |
-          set -euo pipefail
-          python -m pip install -q -r requirements.txt pytest
-          python -m pip install -q psutil==7.2.2 pyyaml==6.0.3 python-dotenv==1.2.2 rich==14.3.3 pathspec==1.1.1
-          python scripts/bootstrap_hermes_agent.py \
-            --target "$BR_HERMES_UPSTREAM_ROOT" \
-            --output artifacts/real-multi-agent-production/hermes-upstream.json
-          test "$(git -C "$BR_HERMES_UPSTREAM_ROOT" rev-parse HEAD)" = "9eca7f388f71755293343dddd6ec4d9111d68fc4"
-          echo "HERMES_UPSTREAM_PINNED=PASS"
-
       - name: Focused production control-plane regression
         run: |
           set -euo pipefail
@@ -421,7 +421,7 @@ jobs:
             app/services/harness_adaptive_planning_service.py \
             app/services/semantic_mission_planner_service.py \
             app/services/native_capability_adapters.py \
-            app/services/task_result_envelope_service.py
+            app/services/task_result_envelope_service.py             app/services/production_durable_resume_service.py
           python -m pytest -q \
             tests/test_global_capability_registry.py \
             tests/test_capability_execution_contract_service.py \
@@ -431,7 +431,7 @@ jobs:
             tests/test_youtube_department_learning_boundary.py \
             tests/test_production_mission_execution_contracts.py \
             tests/test_script_generator_service.py \
-            tests/test_current_audio_contract.py
+            tests/test_current_audio_contract.py             tests/test_production_durable_resume_service.py             tests/test_production_durable_resume_workflow.py             tests/test_harness_execution_need_control_plane.py             tests/test_harness_mission_supervisor_service.py
           echo "PRODUCTION_CONTROL_PLANE_FOCUSED=PASS"
           echo "ARTIFACT_CONSUMPTION_REAL=PASS"
           echo "ARTIFACT_PRODUCTION_REAL=PASS"
