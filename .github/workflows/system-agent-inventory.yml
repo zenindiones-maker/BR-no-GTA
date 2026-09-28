@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - work/gate6f-analytics-learning
+      - work/superpowers-skill-pack
     paths:
       - '.github/workflows/system-agent-inventory.yml'
       - '.run001/system-agent-inventory.request.json'
       - 'scripts/audit_harness_ecosystem.py'
       - 'scripts/agent-tooling/**'
+      - 'config/agent_skill_pack_v1.json'
       - 'app/services/global_capability_registry.py'
       - 'app/services/global_capability_registry_base.py'
       - 'app/services/capability_health_service.py'
@@ -91,6 +93,16 @@ jobs:
           assert d['NATIVE_HARNESS_DECLARED_AGENT_COUNT'] == 1
           assert d['NATIVE_HARNESS_DECLARED_AGENT_IDS'] == ['gta6-master']
           assert d['NATIVE_HARNESS_SEMANTIC_EXECUTION_PROVEN'] is False
+          assert d['CONTROL_PLANE_COUNT'] == 1
+          assert d['CONTROL_PLANE_IDS'] == ['deepseek-harness']
+          assert d['REQUESTED_SKILLS_DISCOVERED'] is True
+          assert d['PINNED_PROVENANCE'] is True
+          assert d['CONTENT_DIGEST_VERIFIED'] is True
+          assert d['HARNESS_AUTHORITY_PRESERVED'] is True
+          assert d['NO_DIRECT_EXECUTION_BYPASS'] is True
+          assert len(d['agent_skill_pack']) == 6
+          assert all(x['AUTHORITY']=='NONE' for x in d['agent_skill_pack'])
+          assert all(x['PROMOTED_TO_CAPABILITY'] is False for x in d['agent_skill_pack'])
           assert d['ALL_ACTIVE_CAPABILITIES_DISCOVERABLE'] is True
           assert d['EXECUTOR_BINDINGS_VALID'] is True
           assert 'addy-agent-skills' in d['AGENT_IDS']
@@ -137,12 +149,19 @@ jobs:
           print('CODEX_CURRENT_HEALTH=BLOCKED_EXTERNAL')
           print('CODEX_BLOCKER_EXPLICIT=PASS')
           print('BROKEN_ACTIVE_BINDINGS=0')
+          print('REQUESTED_SKILLS_DISCOVERED=PASS')
+          print('HARNESS_AUTHORITY_PRESERVED=PASS')
+          print('CONTROL_PLANE_COUNT=1')
+          print('NO_DIRECT_EXECUTION_BYPASS=PASS')
+          print('PINNED_PROVENANCE=PASS')
+          print('CONTENT_DIGEST_VERIFIED=PASS')
+          print('SYSTEM_AGENT_INVENTORY_COHERENT=PASS')
           PY
 
       - name: Run focused registry and collaboration tests
         run: |
           set -euo pipefail
-          pytest -q             tests/test_harness_ecosystem_inventory.py             tests/test_harness_collaboration_service.py             tests/test_system_synergy_service.py             tests/test_addy_24_certification.py             tests/test_agent_office.py             tests/test_native_capability_boundaries.py             tests/test_gta6_brain_harness_boundary.py
+          pytest -q             tests/test_agent_skill_pack_contracts.py             tests/test_harness_ecosystem_inventory.py             tests/test_harness_collaboration_service.py             tests/test_system_synergy_service.py             tests/test_addy_24_certification.py             tests/test_agent_office.py             tests/test_native_capability_boundaries.py             tests/test_gta6_brain_harness_boundary.py
 
       - name: Upload auditable inventory
         if: always()

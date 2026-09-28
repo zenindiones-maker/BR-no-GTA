@@ -905,10 +905,85 @@ def _runtime_identity_inventory() -> list[dict[str, Any]]:
     return rows
 
 
+
+def _agent_skill_pack_inventory() -> list[dict[str, Any]]:
+    """Inventory governed third-party skills without promoting them to capabilities."""
+    loader_path = ROOT / "scripts" / "agent-tooling" / "agent_skill_pack.py"
+    if not loader_path.is_file():
+        return []
+
+    spec = importlib.util.spec_from_file_location(
+        "br_agent_skill_pack_inventory",
+        loader_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load governed agent skill pack verifier")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    pack = module.load_agent_skill_pack(ROOT)
+
+    capability_ids = {
+        record.capability_id for record in GLOBAL_CAPABILITY_REGISTRY.all()
+    }
+    rows: list[dict[str, Any]] = []
+    for entry in pack.skills:
+        source_commit_pinned = bool(
+            re.fullmatch(r"[0-9a-f]{40}", entry.source.commit)
+        )
+        local_materialized = False
+        digest_verified = entry.local_path is None
+        if entry.local_path is not None:
+            local_path = ROOT / entry.local_path
+            local_materialized = (
+                local_path.is_dir()
+                and (local_path / "SKILL.md").is_file()
+            )
+            digest_verified = bool(
+                local_materialized
+                and entry.content_digest
+                and module.skill_tree_digest(local_path)
+                == entry.content_digest
+            )
+
+        provider_declared = bool(entry.provider_id) if entry.local_path is None else False
+        discovered = local_materialized or provider_declared
+        provenance_ok = source_commit_pinned and digest_verified
+        rows.append(
+            {
+                "SKILL_ID": entry.skill_id,
+                "IDENTITY_KIND": entry.kind,
+                "SOURCE_REPOSITORY": entry.source.repository,
+                "SOURCE_COMMIT": entry.source.commit,
+                "SOURCE_PATH": entry.source.path,
+                "LICENSE": entry.source.license,
+                "LOCAL_PATH": entry.local_path,
+                "PROVIDER_ID": entry.provider_id,
+                "CONTENT_DIGEST": entry.content_digest,
+                "AUTHORITY": entry.authority,
+                "ROUTING_AUTHORITY": entry.routing_authority,
+                "POLICY_AUTHORITY": entry.policy_authority,
+                "PUBLICATION_AUTHORITY": entry.publication_authority,
+                "DIRECT_EXTERNAL_SIDE_EFFECTS": (
+                    entry.direct_external_side_effects
+                ),
+                "DIRECT_REPOSITORY_MUTATION": (
+                    entry.direct_repository_mutation
+                ),
+                "BOOTSTRAP_GLOBAL": pack.superpowers_bootstrap_global,
+                "DISCOVERED": discovered,
+                "CONTENT_DIGEST_VERIFIED": digest_verified,
+                "PROVENANCE_STATUS": "PASS" if provenance_ok else "FAIL",
+                "PROMOTED_TO_CAPABILITY": entry.skill_id in capability_ids,
+            }
+        )
+    return rows
+
+
 def audit() -> dict[str, Any]:
     capabilities = _capability_rows()
     identities = _identity_inventory(capabilities)
     runtime_identities = _runtime_identity_inventory()
+    agent_skill_pack = _agent_skill_pack_inventory()
     control_planes = [
         row for row in runtime_identities if row["CONTROL_PLANE"] is True
     ]
@@ -983,6 +1058,7 @@ def audit() -> dict[str, Any]:
         "schema_version": 3,
         "authority": "DEEPSEEK_HARNESS",
         "CONTROL_PLANE_COUNT": len(control_planes),
+        "CONTROL_PLANE_IDS": [row["RUNTIME_ID"] for row in control_planes],
         "CONTROL_PLANE_ID": (
             control_planes[0]["RUNTIME_ID"]
             if len(control_planes) == 1
@@ -1023,6 +1099,37 @@ def audit() -> dict[str, Any]:
             )["CONTROL_PLANE"]
             is False
         ),
+        "REQUESTED_SKILLS_DISCOVERED": (
+            len(agent_skill_pack) == 6
+            and all(row["DISCOVERED"] for row in agent_skill_pack)
+        ),
+        "PINNED_PROVENANCE": (
+            len(agent_skill_pack) == 6
+            and all(
+                row["PROVENANCE_STATUS"] == "PASS"
+                for row in agent_skill_pack
+            )
+        ),
+        "CONTENT_DIGEST_VERIFIED": (
+            len(agent_skill_pack) == 6
+            and all(
+                row["CONTENT_DIGEST_VERIFIED"]
+                for row in agent_skill_pack
+            )
+        ),
+        "HARNESS_AUTHORITY_PRESERVED": (
+            len(control_planes) == 1
+            and control_planes[0]["RUNTIME_ID"] == "deepseek-harness"
+            and all(row["AUTHORITY"] == "NONE" for row in agent_skill_pack)
+        ),
+        "NO_DIRECT_EXECUTION_BYPASS": (
+            all(
+                not row["PROMOTED_TO_CAPABILITY"]
+                and not row["DIRECT_EXTERNAL_SIDE_EFFECTS"]
+                and not row["DIRECT_REPOSITORY_MUTATION"]
+                for row in agent_skill_pack
+            )
+        ),
         "inventory_scope": {
             "global_registry": True,
             "local_dsh_skills": True,
@@ -1030,6 +1137,7 @@ def audit() -> dict[str, Any]:
             "agent_office_worker_engines": True,
             "python_agent_brain_classes": True,
             "deepseek_harness_agent_loop_config": True,
+            "governed_agent_skill_pack": True,
             "munder_dynamic_upstream_agents_counted_as_active": False,
         },
         "TOTAL_CAPABILITIES_FOUND": len(capabilities),
@@ -1121,6 +1229,7 @@ def audit() -> dict[str, Any]:
         "capabilities": capabilities,
         "identities": identities,
         "runtime_identities": runtime_identities,
+        "agent_skill_pack": agent_skill_pack,
         "local_dsh_skills": _dsh_skills(),
         "python_agent_classes": _python_agent_classes(),
     }
@@ -1187,6 +1296,11 @@ def main() -> int:
         "NO_PARALLEL_CONTROL_PLANE",
         "NO_UNAUTHORIZED_DIRECT_ENTRYPOINT",
         "NO_DIRECT_MASTERAGENT_CONTROL_PLANE",
+        "REQUESTED_SKILLS_DISCOVERED",
+        "PINNED_PROVENANCE",
+        "CONTENT_DIGEST_VERIFIED",
+        "HARNESS_AUTHORITY_PRESERVED",
+        "NO_DIRECT_EXECUTION_BYPASS",
     ):
         print(f"{key}=" + ("PASS" if result[key] else "FAIL"))
     return 0 if (
