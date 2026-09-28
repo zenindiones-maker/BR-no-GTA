@@ -372,6 +372,93 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS",
         )
 
+    def test_dedicated_canary_reconciles_exact_connection_from_official_call_log(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        model = target["omniroute_model"]
+
+        def fake_http(url, *, body, headers, timeout=180):
+            return (
+                200,
+                12.0,
+                '{"choices":[{"message":{"content":"OMNIROUTE_PROVIDER_CANARY_OK"}}]}',
+                {"choices": [{"message": {"content": "OMNIROUTE_PROVIDER_CANARY_OK"}}]},
+                {
+                    "X-OmniRoute-Provider": "nvidia",
+                    "X-OmniRoute-Model": model,
+                    "X-Correlation-Id": "corr-dedicated-1",
+                },
+            )
+
+        logs = [{
+            "correlationId": "corr-dedicated-1",
+            "connectionId": "conn-nvidia-123",
+            "provider": "nvidia",
+            "model": model,
+            "path": "/v1/providers/nvidia/chat/completions",
+            "status": 200,
+        }]
+        with (
+            mock.patch.object(module, "_http_json", side_effect=fake_http),
+            mock.patch.object(module, "_fetch_logs", return_value=logs),
+        ):
+            evidence = module._dedicated_canary(
+                target,
+                "http://127.0.0.1:20128",
+                connection_id="conn-nvidia-123",
+            )
+
+        self.assertEqual(evidence["status"], "PASS")
+        self.assertEqual(evidence["connection_evidence_source"], "REQUEST_LOG")
+        self.assertEqual(
+            evidence["reported_connection_identity_redacted"],
+            module._connection_identity_redacted("conn-nvidia-123"),
+        )
+        self.assertNotIn("conn-nvidia-123", json.dumps(evidence, sort_keys=True))
+
+    def test_dedicated_canary_fails_closed_when_call_log_connection_mismatches(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        model = target["omniroute_model"]
+
+        def fake_http(url, *, body, headers, timeout=180):
+            return (
+                200,
+                12.0,
+                '{"choices":[{"message":{"content":"OMNIROUTE_PROVIDER_CANARY_OK"}}]}',
+                {"choices": [{"message": {"content": "OMNIROUTE_PROVIDER_CANARY_OK"}}]},
+                {
+                    "X-OmniRoute-Provider": "nvidia",
+                    "X-OmniRoute-Model": model,
+                    "X-Correlation-Id": "corr-dedicated-2",
+                },
+            )
+
+        logs = [{
+            "correlationId": "corr-dedicated-2",
+            "connectionId": "conn-other",
+            "provider": "nvidia",
+            "model": model,
+            "path": "/v1/providers/nvidia/chat/completions",
+            "status": 200,
+        }]
+        with (
+            mock.patch.object(module, "_http_json", side_effect=fake_http),
+            mock.patch.object(module, "_fetch_logs", return_value=logs),
+        ):
+            evidence = module._dedicated_canary(
+                target,
+                "http://127.0.0.1:20128",
+                connection_id="conn-nvidia-123",
+            )
+
+        self.assertEqual(evidence["status"], "FAIL")
+        self.assertEqual(
+            evidence["failure_class"],
+            "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+        )
+        self.assertIsNone(evidence["reported_connection_identity_redacted"])
+
     def test_direct_pass_materializes_provider_before_dedicated_canary_and_catalog(self):
         module = load_module()
         one = plan()
