@@ -6,18 +6,12 @@ from app.workers.audiovisual_worker import validate_job
 from app.workers.professional_audiovisual_worker import (
     PROFILE,
     TARGET_MAX_SECONDS,
-    VOICE_CALIBRATION_MAX_ATTEMPTS,
     VOICE_CAPABILITY_ID,
     VOICE_EXECUTOR,
-    VOICE_NATURAL_RATE_MAX_PERCENT,
-    VOICE_NATURAL_RATE_MIN_PERCENT,
     WorkerError,
     _can_skip_a1_post_render_remux,
-    _initial_calibrated_rate_percent,
-    _next_calibrated_rate_percent,
     _registry,
     _split_sentences,
-    _voice_duration_is_acceptable,
     validate_product_job,
 )
 
@@ -45,41 +39,18 @@ class ProfessionalAudiovisualWorkerTests(unittest.TestCase):
         parts = _split_sentences("Primeiro fato. Depois, análise! E a dúvida?")
         self.assertEqual(parts, ["Primeiro fato.", "Depois, análise!", "E a dúvida?"])
 
-    def test_slow_configured_rate_is_brought_inside_naturalness_guard(self):
-        self.assertEqual(_initial_calibrated_rate_percent("-25%"), VOICE_NATURAL_RATE_MIN_PERCENT)
-        self.assertGreaterEqual(VOICE_NATURAL_RATE_MIN_PERCENT, -15)
-        self.assertLessEqual(VOICE_NATURAL_RATE_MAX_PERCENT, 15)
+    def test_owner_only_runtime_has_no_provider_specific_rate_calibration(self):
+        import app.workers.professional_audiovisual_worker as worker
 
-    def test_duration_above_professional_ceiling_cannot_be_accepted(self):
+        self.assertFalse(hasattr(worker, "_initial_calibrated_rate_percent"))
+        self.assertFalse(hasattr(worker, "_next_calibrated_rate_percent"))
+        self.assertFalse(hasattr(worker, "_voice_duration_is_acceptable"))
+        self.assertFalse(hasattr(worker, "VOICE_CALIBRATION_MAX_ATTEMPTS"))
+        self.assertFalse(hasattr(worker, "VOICE_NATURAL_RATE_MIN_PERCENT"))
+        self.assertFalse(hasattr(worker, "VOICE_NATURAL_RATE_MAX_PERCENT"))
+
+    def test_professional_duration_ceiling_remains_30_minutes(self):
         self.assertEqual(TARGET_MAX_SECONDS, 1800)
-        self.assertFalse(
-            _voice_duration_is_acceptable(
-                duration_seconds=1811.544,
-                target_seconds=1549.92,
-                rate_percent=-15,
-            )
-        )
-
-    def test_calibration_moves_slow_voice_toward_editorial_target(self):
-        calibrated = _next_calibrated_rate_percent(
-            current_rate_percent=-15,
-            actual_seconds=1598.0,
-            target_seconds=1549.92,
-        )
-        self.assertEqual(calibrated, -12)
-        self.assertTrue(VOICE_NATURAL_RATE_MIN_PERCENT <= calibrated <= VOICE_NATURAL_RATE_MAX_PERCENT)
-
-    def test_calibration_retries_are_bounded(self):
-        self.assertEqual(VOICE_CALIBRATION_MAX_ATTEMPTS, 3)
-        self.assertGreater(VOICE_CALIBRATION_MAX_ATTEMPTS, 1)
-
-    def test_impossible_target_fails_instead_of_unnaturally_accelerating_voice(self):
-        with self.assertRaisesRegex(WorkerError, "outside naturalness guard"):
-            _next_calibrated_rate_percent(
-                current_rate_percent=15,
-                actual_seconds=1800.0,
-                target_seconds=1200.0,
-            )
 
     def test_a1_post_render_remux_is_skipped_only_after_both_execution_and_edit_qa_prove_a1(self):
         base={"status":"PASS","checks":{"a1_voice_contract":True,"full_decode":True}}

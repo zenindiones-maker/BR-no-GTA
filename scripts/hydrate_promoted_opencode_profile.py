@@ -6,7 +6,11 @@ from pathlib import Path
 
 from app.database.schema import initialize_schema
 from app.services.harness_learning_service import register_skill_version
-from app.database.harness_learning_repository import get_version
+from app.database.harness_learning_repository import (
+    activate_version,
+    get_active_version,
+    get_version,
+)
 from app.services.opencode_executor_profile_service import (
     BASELINE_OPENCODE_EXECUTOR_VERSION,
     CANDIDATE_OPENCODE_EXECUTOR_VERSION,
@@ -23,8 +27,8 @@ def hydrate() -> dict:
     initialize_schema()
     v1 = executable_opencode_executor_profile(BASELINE_OPENCODE_EXECUTOR_VERSION)
     v2 = executable_opencode_executor_profile(CANDIDATE_OPENCODE_EXECUTOR_VERSION)
-    if v2["options"].get("status") != "PROMOTED":
-        raise RuntimeError("OpenCode v2 is not versioned as PROMOTED")
+    if v2["options"].get("status") != "EXECUTABLE_CANDIDATE":
+        raise RuntimeError("OpenCode v2 immutable definition is not canonical")
     evidence = (
         "github:run:35340487375:observed-baseline-403",
         "github:run:35343942135:official-cli-candidate",
@@ -67,14 +71,31 @@ def hydrate() -> dict:
         )
     elif existing_v2["checksum"] != v2["checksum"] or existing_v2["content_ref"] != v2["content_ref"]:
         raise RuntimeError("persisted OpenCode v2 profile conflicts with immutable definition")
+
+    active_record = get_active_version(
+        table="harness_skill_versions",
+        identity_field="skill_id",
+        identity=OPENCODE_EXECUTOR_SKILL_ID,
+    )
+    if active_record is None or active_record.get("version") != CANDIDATE_OPENCODE_EXECUTOR_VERSION:
+        activate_version(
+            table="harness_skill_versions",
+            identity_field="skill_id",
+            identity=OPENCODE_EXECUTOR_SKILL_ID,
+            version=CANDIDATE_OPENCODE_EXECUTOR_VERSION,
+            promoted_at="2026-09-19T14:40:18.249249+00:00",
+        )
+
     active = resolve_active_opencode_executor_profile()
     if active["version"] != CANDIDATE_OPENCODE_EXECUTOR_VERSION:
         raise RuntimeError("promoted OpenCode v2 profile did not become active")
     return {
         "status": "PASS",
-        "mode": "REHYDRATE_IMMUTABLE_PROMOTION",
+        "mode": "REHYDRATE_IMMUTABLE_PROMOTION_STATE",
         "promotion_evidence_run_id": PROMOTION_EVIDENCE_RUN_ID,
         "active_profile": active,
+        "immutable_profile_checksum": v2["checksum"],
+        "immutable_profile_conflict": False,
         "quality_regression": "NO",
         "fallback_occurred": False,
         "zero_cost": True,
@@ -89,6 +110,8 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print("OPENCODE_PROMOTED_PROFILE=PASS")
+    print("OPEN_CODE_PROFILE_REHYDRATION=PASS")
+    print("IMMUTABLE_PROFILE_CONFLICT=0")
     print("OPENCODE_ACTIVE_PROFILE=v2")
     print(f"PROMOTION_EVIDENCE_RUN_ID={PROMOTION_EVIDENCE_RUN_ID}")
     return 0

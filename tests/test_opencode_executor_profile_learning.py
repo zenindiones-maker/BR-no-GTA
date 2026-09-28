@@ -100,6 +100,13 @@ def _auth(route):
     )
 
 
+def test_opencode_v2_definition_remains_immutable_after_promotion():
+    profile = executable_opencode_executor_profile(CANDIDATE_OPENCODE_EXECUTOR_VERSION)
+    assert profile["checksum"] == "825c7036a59755845f56ad5a247f9cae356e6a6256ae38b4a1d09ba337a51ff0"
+    assert profile["options"]["status"] == "EXECUTABLE_CANDIDATE"
+    assert profile["options"]["evidence_run_id"] == 35343942135
+
+
 def test_default_opencode_profile_is_observed_blocked_v1_and_fails_closed(monkeypatch):
     route = _route(monkeypatch)
     assert route.selected_provider == "opencode"
