@@ -328,27 +328,64 @@ class PrivateVoiceRuntimeProvider:
         token = str(os.environ.get(self.auth_token_env) or "").strip()
         if not token:
             raise VoiceProviderUnavailable("VOICE_RUNTIME_AUTH_UNAVAILABLE")
+
+        _profile, binding = _materialized_owner_binding(
+            request.voice_identity_id,
+            self._identity_resolver,
+        )
         payload = {
             **request.to_dict(),
             "provider": self.provider_id,
             "model": self.model_id,
             "model_revision": self.model_revision,
+            "voice_identity_binding": binding,
         }
-        audio = self._transport(
+        raw_response = self._transport(
             self.base_url + "/v1/speech",
             payload,
             {"authorization": "Bearer " + token},
         )
+        if isinstance(raw_response, bytes):
+            raise VoiceProviderUnavailable("VOICE_RUNTIME_RECEIPT_MISSING")
+        if not isinstance(raw_response, PrivateVoiceRuntimeResponse):
+            raise VoiceProviderUnavailable("VOICE_RUNTIME_RECEIPT_MISSING")
+        audio = raw_response.audio
         if not audio:
             raise VoiceProviderUnavailable("TTS_EMPTY_OUTPUT")
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(audio)
-        import hashlib
-        return {
-            "audio_path": str(path),
-            "audio_sha256": hashlib.sha256(audio).hexdigest(),
+
+        receipt = dict(raw_response.receipt or {})
+        expected = {
+            "schema": "OwnerVoiceSynthesisReceipt/v1",
+            "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
+            "profile_sha256": binding["profile_sha256"],
+            "voice_prompt_sha256": binding["voice_prompt_sha256"],
+            "reference_set_sha256": binding["reference_set_sha256"],
             "provider": self.provider_id,
             "model": self.model_id,
             "model_revision": self.model_revision,
+            "usage": request.usage,
+        }
+        for key, value in expected.items():
+            if str(receipt.get(key) or "") != str(value):
+                raise VoiceProviderUnavailable("OWNER_VOICE_RECEIPT_MISMATCH")
+        if not str(receipt.get("request_id") or "").strip():
+            raise VoiceProviderUnavailable("OWNER_VOICE_RECEIPT_MISMATCH")
+
+        audio_sha = hashlib.sha256(audio).hexdigest()
+        runtime_audio_sha = str(receipt.get("audio_sha256") or "").strip().lower()
+        if runtime_audio_sha and runtime_audio_sha != audio_sha:
+            raise VoiceProviderUnavailable("OWNER_VOICE_RECEIPT_MISMATCH")
+        receipt["audio_sha256"] = audio_sha
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(audio)
+        return {
+            "audio_path": str(path),
+            "audio_sha256": audio_sha,
+            "provider": self.provider_id,
+            "model": self.model_id,
+            "model_revision": self.model_revision,
+            "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
+            "receipt": receipt,
         }
