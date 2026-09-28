@@ -4,89 +4,121 @@ import json
 from pathlib import Path
 
 from app.services.channel_spoken_branding_service import (
-    OFFICIAL_VOICE_BLIND_ID,
-    OFFICIAL_VOICE_SHORT_NAME,
+    OFFICIAL_VOICE_IDENTITY_ID,
     build_spoken_branding_contract,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OWNER_IDENTITY = "BR_OWNER_V1"
 
 
-def test_runtime_has_one_canonical_owner_voice_and_legacy_profile_is_historical_only():
+def _chars(*values: int) -> str:
+    return "".join(chr(value) for value in values)
+
+
+# Encoded so this gate can scan its own source without self-matching.
+FORBIDDEN_CURRENT_TREE_TERMS = (
+    _chars(86, 111, 105, 99, 101, 32, 66),
+    _chars(86, 111, 105, 99, 101, 32, 67),
+    _chars(112, 116, 45, 66, 82, 45, 84, 104, 97, 108, 105, 116, 97, 77, 117, 108, 116, 105, 108, 105, 110, 103, 117, 97, 108, 78, 101, 117, 114, 97, 108),
+    _chars(84, 104, 97, 108, 105, 116, 97),
+    _chars(118, 111, 105, 99, 101, 45, 98, 45, 99, 111, 110, 116, 114, 111, 108),
+    _chars(71, 45, 98, 114, 97, 110, 100, 45, 109, 105, 120, 101, 100),
+    _chars(73, 45, 111, 112, 101, 110, 105, 110, 103, 45, 102, 108, 117, 105, 100, 45, 50),
+    _chars(70, 108, 117, 105, 100, 32, 50),
+    _chars(116, 97, 107, 101, 45, 50),
+)
+
+FORBIDDEN_EXACT_PATHS = (
+    "assets/branding/audio/closing-from-g-approved-20260919.flac",
+    "assets/branding/audio/g-brand-mixed-approved-20260919.mp3",
+    "assets/branding/audio/human-approval-manifest.json",
+    ".github/workflows/send-official-voice-proof.yml",
+    ".github/workflows/promote-human-approved-brand-audio.yml",
+    ".github/workflows/video-a-brand-audio-checkpoint.yml",
+    ".github/workflows/video-a-narration-fluency-proof.yml",
+    ".github/workflows/video-a-narration-readiness-audition.yml",
+    "scripts/voice_bc_character_review.py",
+    "tests/test_voice_bc_character_review.py",
+    ".run001/official-narration-profile.json",
+    ".run001/promote-human-approved-brand-audio.request.json",
+    ".run001/send-official-voice-proof.request.json",
+    ".run001/video-a-brand-audio.request.json",
+    ".run001/video-a-final-audio-approval.json",
+    ".run001/narration-optimization.request.json",
+    ".run001/pronunciation-proof.request.json",
+    ".run001/character-name-pronunciation-proof.request.json",
+    "config/pronunciation_character_aliases.bc-review.json",
+    "config/pronunciation_character_aliases.candidate.json",
+)
+
+
+def _iter_checkout_files():
+    for path in ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(ROOT)
+        if ".git" in rel.parts or "runtime" in rel.parts:
+            continue
+        yield rel, path
+
+
+def _scan_current_tree() -> list[dict[str, str]]:
+    matches: list[dict[str, str]] = []
+    lowered = tuple((term, term.casefold()) for term in FORBIDDEN_CURRENT_TREE_TERMS)
+    for rel, path in _iter_checkout_files():
+        rel_text = rel.as_posix()
+        rel_folded = rel_text.casefold()
+        for term, folded in lowered:
+            if folded in rel_folded:
+                matches.append({"path": rel_text, "term": term, "location": "path"})
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        folded_text = text.casefold()
+        for term, folded in lowered:
+            if folded in folded_text:
+                matches.append({"path": rel_text, "term": term, "location": "content"})
+    return matches
+
+
+def test_only_owner_voice_exists_in_current_tree():
     enrollment = json.loads(
         (ROOT / "config" / "voice_owner_enrollment_v1.json").read_text(encoding="utf-8")
     )
-    legacy = json.loads(
-        (ROOT / ".run001" / "official-narration-profile.json").read_text(encoding="utf-8")
-    )
-
-    assert OFFICIAL_VOICE_BLIND_ID == "BR_OWNER_V1"
-    assert OFFICIAL_VOICE_SHORT_NAME == "BR_OWNER_V1"
-    assert enrollment["official_voice"] == "BR_OWNER_V1"
-    assert enrollment["legacy_voice_b_runtime_enabled"] is False
-    assert enrollment["legacy_voice_b_fallback_allowed"] is False
-    assert legacy["voice"]["blind_id"] == "Voice B"
-    assert legacy["provider"] == "edge-tts"
-    assert legacy["version"] == "official-narration-profile/v2"
-
-    forbidden_paths = [
-        ROOT / "app" / "services" / "voice_casting_service.py",
-        ROOT / "app" / "services" / "voice_casting_round2_service.py",
-        ROOT / ".github" / "workflows" / "ptbr-voice-casting-round1.yml",
-        ROOT / ".github" / "workflows" / "ptbr-voice-casting-round2.yml",
-        ROOT / "scripts" / "ptbr_voice_casting.py",
-        ROOT / "scripts" / "ptbr_voice_casting_round2.py",
-        ROOT / "scripts" / "send_voice_casting_round1_telegram.py",
-        ROOT / "scripts" / "send_voice_casting_round2_telegram.py",
-    ]
-    assert all(not path.exists() for path in forbidden_paths)
-
-    services_text = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "app" / "services").glob("*.py")
-    )
-    assert "edge_tts.list_voices" not in services_text
-    assert "collect_ptbr_edge_voice_inventory" not in services_text
-
-
-def test_production_branding_contains_only_owner_voice_runtime_identity():
     contract = build_spoken_branding_contract(
-        theme="fatos, vazamentos, tecnologia e rumores de GTA 6"
+        theme="fatos, tecnologia e novidades de GTA 6"
     )
 
-    assert contract["voice_short_name"] == OFFICIAL_VOICE_SHORT_NAME == "BR_OWNER_V1"
-    assert contract["production_opening_take_ids"] == ["BR_OWNER_V1-dynamic"]
-    assert contract["production_closing_policy"] == "owner-voice-dynamic-private-runtime"
-    assert contract["human_approved_opening_reference"] is None
-    assert contract["human_approved_final_end_sample_id"] is None
-    assert len(contract["take_profiles"]) == 1
-    assert contract["take_profiles"][0]["take_id"] == "BR_OWNER_V1-dynamic"
-    assert contract["take_profiles"][0]["runtime_enabled"] is True
+    assert OFFICIAL_VOICE_IDENTITY_ID == OWNER_IDENTITY
+    assert enrollment["official_voice"] == OWNER_IDENTITY
+    assert enrollment["official_voice_identity"] == OWNER_IDENTITY
+    assert contract["official_voice_profile"] == OWNER_IDENTITY
+    assert contract["voice_short_name"] == OWNER_IDENTITY
+    assert [OWNER_IDENTITY] == [OFFICIAL_VOICE_IDENTITY_ID]
 
 
-def test_brand_audio_runtime_has_no_legacy_voice_b_or_edge_synthesis_path():
-    source = (ROOT / "app" / "services" / "brand_audio_service.py").read_text(
+def test_legacy_voice_artifacts_and_references_are_absent_from_current_tree():
+    existing = [path for path in FORBIDDEN_EXACT_PATHS if (ROOT / path).exists()]
+    matches = _scan_current_tree()
+    assert existing == [], f"forbidden legacy paths remain: {existing}"
+    assert matches == [], f"legacy current-tree matches remain: {matches}"
+
+
+def test_new_production_has_no_old_provider_binding_or_fallback():
+    branding = (ROOT / "app" / "services" / "channel_spoken_branding_service.py").read_text(
         encoding="utf-8"
     )
-    assert 'BUNDLE_VERSION="brand-audio-bundle/v4"' in source
-    assert "_materialize_approved_closing" not in source
-    assert '"G-brand-mixed"' not in source
-    assert "synthesize_edge_plan" not in source
-    assert "edge_tts" not in source
-    assert "OWNER_VOICE_RUNTIME_REQUIRED" in source
-    assert "BR_OWNER_V1" in source
+    narration = (ROOT / "app" / "services" / "narration_pipeline.py").read_text(
+        encoding="utf-8"
+    )
 
-def test_historical_pronunciation_script_fails_closed_under_owner_only_policy():
-    source = (ROOT / "scripts" / "pronunciation_proof.py").read_text(encoding="utf-8")
-    assert "LEGACY_VOICE_B_PRONUNCIATION_RUNTIME_DISABLED" in source
-
-
-def test_legacy_voice_b_pronunciation_workflow_is_not_an_active_synthesis_surface():
-    from pathlib import Path
-    workflow = Path(".github/workflows/pronunciation-proof.yml").read_text(encoding="utf-8")
-    assert "Generate real Voice B pronunciation proof" not in workflow
-    assert "edge-tts==7.2.8" not in workflow
-    assert "pt-BR-ThalitaMultilingualNeural" not in workflow
-    assert "BR_OWNER_V1" in workflow
-    assert "legacy_voice_b_fallback_allowed" in workflow
+    assert "LEGACY_" not in branding
+    assert "legacy_" not in branding
+    assert "EdgeTTSProvider" not in narration
+    assert 'PROVIDER_ID = "edge-tts"' not in narration
+    assert "provider or EdgeTTSProvider()" not in narration
+    assert OWNER_IDENTITY in branding
+    assert OWNER_IDENTITY in narration
