@@ -3064,4 +3064,3 @@ def select_capability_for_requirement(
         tuple(dict.fromkeys(avoided)),
         selection,
     )
-
