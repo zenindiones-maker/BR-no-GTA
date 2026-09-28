@@ -11,6 +11,14 @@ CAN_REVIEW = "CAN_REVIEW"
 CAN_CONSUME_ARTIFACT_REFS = "CAN_CONSUME_ARTIFACT_REFS"
 CAN_PRODUCE_ARTIFACT_REFS = "CAN_PRODUCE_ARTIFACT_REFS"
 
+# Typed effects/surfaces/output contracts are orthogonal to risk and execution
+# operations. They extend the canonical capability contract rather than
+# replacing side_effect_class or execution_operations.
+EFFECT_HUMAN_MESSAGE_DELIVERY = "HUMAN_MESSAGE_DELIVERY"
+SURFACE_TELEGRAM_GROUP = "telegram_group"
+OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1 = "TelegramDeliveryReceipt/v1"
+OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1 = "YouTubeSpecialistResult/v1"
+
 ALL_EXECUTION_OPERATIONS = frozenset({
     CAN_SEMANTIC_REASONING,
     CAN_READ_REPOSITORY,
@@ -46,6 +54,7 @@ _CANONICAL_ROLE_BY_TASK_CLASS = {
     "apply-recovery": "APPLY",
     "recovery-validation": "VALIDATE",
     "validate-recovery": "VALIDATE",
+    "presentation": "PRESENTATION",
 }
 
 _CANONICAL_ROLE_BY_OUTPUT = {
@@ -56,6 +65,7 @@ _CANONICAL_ROLE_BY_OUTPUT = {
     "IndependentReviewEvidence": "REVIEW",
     "RecoveryApplyReceipt": "APPLY",
     "RecoveryValidationReceipt": "VALIDATE",
+    OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1: "PRESENTATION",
 }
 
 _CANONICAL_ROLE_OPERATIONS = {
@@ -94,6 +104,10 @@ _CANONICAL_ROLE_OPERATIONS = {
     "VALIDATE": frozenset({
         CAN_READ_REPOSITORY,
         CAN_RUN_TESTS,
+        CAN_CONSUME_ARTIFACT_REFS,
+        CAN_PRODUCE_ARTIFACT_REFS,
+    }),
+    "PRESENTATION": frozenset({
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }),
@@ -203,6 +217,7 @@ def infer_required_execution_kind(
         "REVIEW": EXECUTION_KIND_INDEPENDENT_REVIEWER,
         "APPLY": EXECUTION_KIND_MUTATION_EXECUTOR,
         "VALIDATE": EXECUTION_KIND_VALIDATOR,
+        "PRESENTATION": EXECUTION_KIND_PRESENTATION,
     }
     if role == "REVIEW" and _is_editorial_review_requirement(requirement):
         # Editorial/script review is a YouTube domain task, not the

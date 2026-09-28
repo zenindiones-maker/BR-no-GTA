@@ -174,7 +174,7 @@ jobs:
       - name: Run native Harness and GTA6 Brain boundary tests
         run: |
           set -euo pipefail
-          pytest -q             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py
+          pytest -q             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py
 
       - name: Record native-agent proof scope honestly
         run: |

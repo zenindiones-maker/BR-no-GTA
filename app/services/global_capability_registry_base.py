@@ -85,6 +85,9 @@ class CapabilityRecord:
     execution_operations: tuple[str, ...] = ()
     execution_kind: str = "AUTO"
     functional_roles: tuple[str, ...] = ()
+    execution_effects: tuple[str, ...] = ()
+    execution_surfaces: tuple[str, ...] = ()
+    output_contract_ids: tuple[str, ...] = ()
 
     @property
     def provider(self) -> str:

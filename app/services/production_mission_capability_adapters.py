@@ -506,8 +506,11 @@ def execute_telegram_review_delivery_task(
         message_refs = [f"telegram-review:{auth.execution_id}"]
     return {
         **dict(result),
+        "schema": "TelegramDeliveryReceipt/v1",
         "direction": "HARNESS_TO_TELEGRAM_HUMAN",
+        "human_surface": "telegram_group",
         "input_refs": list(dependency_refs),
+        "message_refs": message_refs,
         "artifact_refs": message_refs,
         "TELEGRAM_INGRESS_NOT_USED_FOR_DELIVERY": "PASS",
         "TELEGRAM_OUTBOUND_BOUNDARY_VALID": "PASS",

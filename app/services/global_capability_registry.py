@@ -26,6 +26,9 @@ from app.services.capability_execution_contract_service import (
     CAN_RUN_TESTS,
     CAN_SEMANTIC_REASONING,
     CAN_WRITE_REPOSITORY,
+    EFFECT_HUMAN_MESSAGE_DELIVERY,
+    OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,
+    SURFACE_TELEGRAM_GROUP,
 )
 from app.services.media_analysis_cloud_service import (
     MEDIA_ANALYSIS_CLOUD_CAPABILITY_ID,
@@ -886,6 +889,11 @@ TELEGRAM_REVIEW_DELIVERY_RECORD = CapabilityRecord(
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     ),
+    execution_kind="PRESENTATION",
+    functional_roles=("PRESENTATION",),
+    execution_effects=(EFFECT_HUMAN_MESSAGE_DELIVERY,),
+    execution_surfaces=(SURFACE_TELEGRAM_GROUP,),
+    output_contract_ids=(OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,),
 )
 
 YOUTUBE_PACKAGE_PERSIST_RECORD = CapabilityRecord(

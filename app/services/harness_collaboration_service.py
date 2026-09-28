@@ -80,6 +80,18 @@ class TaskEnvelope:
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
     required_operations: tuple[str, ...] = ()
+    typed_requirement_schema: str = ""
+    requirement_digest: str = ""
+    required_execution_kind: str = ""
+    required_effects: tuple[str, ...] = ()
+    required_surfaces: tuple[str, ...] = ()
+    required_domain: str = ""
+    required_domain_family: str = ""
+    required_output_contract_ids: tuple[str, ...] = ()
+    product_contract_digest: str = ""
+    proposal_candidate_hints: tuple[str, ...] = ()
+    risk_level: str = ""
+    required_side_effect_class: str = "READ_ONLY"
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -212,7 +224,65 @@ class TaskEnvelope:
             ).strip(),
             acceptance_criteria=acceptance,
             candidate_requirement=candidate_requirement,
-            required_operations=tuple(str(item).strip() for item in value.get("required_operations") or () if str(item).strip()),
+            required_operations=tuple(
+                str(item).strip()
+                for item in value.get("required_operations") or ()
+                if str(item).strip()
+            ),
+            typed_requirement_schema=str(
+                value.get("schema")
+                or value.get("typed_requirement_schema")
+                or ""
+            ).strip(),
+            requirement_digest=str(
+                value.get("requirement_digest") or ""
+            ).strip(),
+            required_execution_kind=str(
+                value.get("required_execution_kind") or ""
+            ).strip().upper(),
+            required_effects=tuple(
+                str(item).strip()
+                for item in value.get("required_effects") or ()
+                if str(item).strip()
+            ),
+            required_surfaces=tuple(
+                str(item).strip()
+                for item in value.get("required_surfaces") or ()
+                if str(item).strip()
+            ),
+            required_domain=str(
+                value.get("required_domain") or ""
+            ).strip(),
+            required_domain_family=str(
+                value.get("required_domain_family") or ""
+            ).strip(),
+            required_output_contract_ids=tuple(
+                str(item).strip()
+                for item in value.get("required_output_contract_ids") or ()
+                if str(item).strip()
+            ),
+            product_contract_digest=str(
+                value.get("product_contract_digest") or ""
+            ).strip(),
+            proposal_candidate_hints=tuple(
+                str(item).strip()
+                for item in (
+                    value.get("proposal_candidate_hints")
+                    or value.get("candidate_capability_ids")
+                    or ()
+                )
+                if str(item).strip()
+            ),
+            risk_level=str(
+                value.get("risk_level")
+                or value.get("declared_risk_side_effect_class")
+                or ""
+            ).strip().upper(),
+            required_side_effect_class=str(
+                value.get("required_side_effect_class")
+                or value.get("risk_side_effect_class")
+                or risk_class
+            ).strip().upper(),
             read_scope=read_scope,
             write_scope=write_scope,
             allowed_tools=tuple(
@@ -322,6 +392,18 @@ class RoutedCollaborationTask:
     acceptance_criteria: tuple[str, ...] = ()
     candidate_requirement: str = "REQUIRED"
     required_operations: tuple[str, ...] = ()
+    typed_requirement_schema: str = ""
+    requirement_digest: str = ""
+    required_execution_kind: str = ""
+    required_effects: tuple[str, ...] = ()
+    required_surfaces: tuple[str, ...] = ()
+    required_domain: str = ""
+    required_domain_family: str = ""
+    required_output_contract_ids: tuple[str, ...] = ()
+    product_contract_digest: str = ""
+    proposal_candidate_hints: tuple[str, ...] = ()
+    risk_level: str = ""
+    required_side_effect_class: str = "READ_ONLY"
     read_scope: tuple[str, ...] = ()
     write_scope: tuple[str, ...] = ()
     allowed_tools: tuple[str, ...] = ()
@@ -436,6 +518,20 @@ def _task_idempotency_key(
         "write_scope": list(write_scope),
         "candidate_requirement": task.candidate_requirement,
         "required_operations": list(task.required_operations),
+        "typed_requirement_schema": task.typed_requirement_schema,
+        "requirement_digest": task.requirement_digest,
+        "required_execution_kind": task.required_execution_kind,
+        "required_effects": list(task.required_effects),
+        "required_surfaces": list(task.required_surfaces),
+        "required_domain": task.required_domain,
+        "required_domain_family": task.required_domain_family,
+        "required_output_contract_ids": list(
+            task.required_output_contract_ids
+        ),
+        "product_contract_digest": task.product_contract_digest,
+        "proposal_candidate_hints": list(task.proposal_candidate_hints),
+        "risk_level": task.risk_level,
+        "required_side_effect_class": task.required_side_effect_class,
         "task_class": task.task_class,
         "functional_role": task.functional_role,
         "mission_policy_class": task.mission_policy_class,
@@ -550,6 +646,22 @@ def build_collaboration_plan(
                 acceptance_criteria=task.acceptance_criteria,
                 candidate_requirement=task.candidate_requirement,
                 required_operations=task.required_operations,
+                typed_requirement_schema=task.typed_requirement_schema,
+                requirement_digest=task.requirement_digest,
+                required_execution_kind=task.required_execution_kind,
+                required_effects=task.required_effects,
+                required_surfaces=task.required_surfaces,
+                required_domain=task.required_domain,
+                required_domain_family=task.required_domain_family,
+                required_output_contract_ids=(
+                    task.required_output_contract_ids
+                ),
+                product_contract_digest=task.product_contract_digest,
+                proposal_candidate_hints=task.proposal_candidate_hints,
+                risk_level=task.risk_level,
+                required_side_effect_class=(
+                    task.required_side_effect_class
+                ),
                 read_scope=read_scope,
                 write_scope=write_scope,
                 allowed_tools=allowed_tools,
@@ -1644,7 +1756,12 @@ def plan_mission_from_human_goal(
                     + str(proposal.clarification_question or "")
                 )
         if proposal is not None:
-            requirements = proposal_requirements(proposal)
+            requirements = proposal_requirements(
+                proposal,
+                product_contract_digest=adaptive_context.get(
+                    "product_contract_digest"
+                ),
+            )
 
     requirements = requirements[: int(resources["max_tasks_per_mission"])]
     if not requirements:
@@ -1754,6 +1871,44 @@ def plan_mission_from_human_goal(
             ).upper(),
             "required_operations": list(
                 selection_requirement.get("required_operations") or ()
+            ),
+            "typed_requirement_schema": str(
+                requirement.get("schema") or ""
+            ),
+            "requirement_digest": str(
+                requirement.get("requirement_digest") or ""
+            ),
+            "required_execution_kind": str(
+                requirement.get("required_execution_kind") or ""
+            ),
+            "required_effects": list(
+                requirement.get("required_effects") or ()
+            ),
+            "required_surfaces": list(
+                requirement.get("required_surfaces") or ()
+            ),
+            "required_domain": str(
+                requirement.get("required_domain") or ""
+            ),
+            "required_domain_family": str(
+                requirement.get("required_domain_family") or ""
+            ),
+            "required_output_contract_ids": list(
+                requirement.get("required_output_contract_ids") or ()
+            ),
+            "product_contract_digest": str(
+                requirement.get("product_contract_digest") or ""
+            ),
+            "proposal_candidate_hints": list(
+                requirement.get("proposal_candidate_hints") or ()
+            ),
+            "risk_level": str(
+                requirement.get("risk_level") or ""
+            ),
+            "required_side_effect_class": str(
+                requirement.get("required_side_effect_class")
+                or requirement.get("risk_side_effect_class")
+                or "READ_ONLY"
             ),
             "read_scope": list(record.default_read_scope),
             "write_scope": list(record.default_write_scope),

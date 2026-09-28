@@ -21,6 +21,9 @@ from app.services.capability_execution_contract_service import (
     infer_required_execution_kind,
     effective_candidate_requirement as execution_candidate_requirement,
     effective_side_effect_class as execution_side_effect_class,
+    EFFECT_HUMAN_MESSAGE_DELIVERY,
+    OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,
+    SURFACE_TELEGRAM_GROUP,
 )
 from app.services.harness_executor_contract_service import (
     registry_executor_is_task_adapter_compatible,
@@ -36,6 +39,7 @@ from app.services.mission_product_contract_service import (
     mission_product_contract_digest,
     validate_mission_plan_product_contract,
 )
+from app.services.typed_task_requirement_service import TypedTaskRequirement
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{2,}", re.IGNORECASE)
@@ -1543,54 +1547,146 @@ def propose_validated_semantic_plan(
     raise RuntimeError("SEMANTIC_MISSION_PROPOSAL_REJECTED")
 
 
-def proposal_requirements(proposal: MissionPlanProposal) -> list[dict[str, Any]]:
+def proposal_requirements(
+    proposal: MissionPlanProposal,
+    *,
+    product_contract_digest: str | None = None,
+) -> list[dict[str, Any]]:
     requirements: list[dict[str, Any]] = []
     for task in proposal.tasks:
-        effective_risk = effective_required_side_effect_class(
-            task_class=task.task_class,
-            declared=task.risk_side_effect_class,
-        )
         candidate_requirement = _candidate_requirement_for_task(
             task_class=task.task_class,
             declared=task.risk_side_effect_class,
             dependencies=task.dependencies,
         )
-        requirement = {
+        query = (
+            task.required_capability_description
+            + " "
+            + task.objective
+            + " "
+            + " ".join(task.acceptance_criteria)
+        )
+        seed = {
             "task_id": task.task_id,
             "task_class": task.task_class,
-            "functional_role": infer_functional_role({
-                "task_class": task.task_class,
-                "expected_output": task.expected_output,
-            }),
             "action": task.action,
             "declared_action": task.action,
-            "query": (
-                task.required_capability_description
-                + " "
-                + task.objective
-                + " "
-                + " ".join(task.acceptance_criteria)
-            ),
+            "query": query,
             "objective": task.objective,
-            "required_capability_description": task.required_capability_description,
+            "required_capability_description": (
+                task.required_capability_description
+            ),
             "candidate_capability_ids": list(task.candidate_capability_ids),
             "dependencies": list(task.dependencies),
             "expected_output": task.expected_output,
             "acceptance_criteria": list(task.acceptance_criteria),
-            "risk_side_effect_class": effective_risk,
-            "declared_risk_side_effect_class": task.risk_side_effect_class,
             "candidate_requirement": candidate_requirement,
         }
-        requirement["action"] = _effective_requirement_action(requirement)
-        requirement["task_family"] = _task_semantic_family(requirement)
-        required_operations = derive_required_operations(requirement)
-        requirement["required_operations"] = list(required_operations)
-        requirement["candidate_requirement"] = execution_candidate_requirement(
-            candidate_requirement, required_operations
+        seed["functional_role"] = infer_functional_role(seed)
+        seed["action"] = _effective_requirement_action(seed)
+        seed["task_family"] = _task_semantic_family(seed)
+        required_operations = derive_required_operations(seed)
+        seed["required_operations"] = list(required_operations)
+        seed["candidate_requirement"] = execution_candidate_requirement(
+            candidate_requirement,
+            required_operations,
         )
-        requirement["risk_side_effect_class"] = execution_side_effect_class(
-            effective_risk, required_operations
+
+        semantic_text = " ".join(
+            str(value or "").casefold()
+            for value in (
+                task.task_class,
+                task.objective,
+                task.required_capability_description,
+                task.expected_output,
+                " ".join(task.acceptance_criteria),
+            )
         )
+        telegram_delivery = bool(
+            "telegram" in semantic_text
+            and any(
+                marker in semantic_text
+                for marker in (
+                    "deliver",
+                    "delivery",
+                    "human",
+                    "review",
+                    "sent",
+                    "message_ref",
+                    "message refs",
+                )
+            )
+        )
+        required_effects = (
+            (EFFECT_HUMAN_MESSAGE_DELIVERY,)
+            if telegram_delivery
+            else ()
+        )
+        required_surfaces = (
+            (SURFACE_TELEGRAM_GROUP,)
+            if telegram_delivery
+            else ()
+        )
+        required_output_contract_ids = (
+            (OUTPUT_CONTRACT_TELEGRAM_DELIVERY_RECEIPT_V1,)
+            if telegram_delivery
+            else ()
+        )
+        required_domain = "telegram-outbound" if telegram_delivery else None
+        required_domain_family = "telegram" if telegram_delivery else None
+        required_side_effect_class = (
+            "EXTERNAL_SIDE_EFFECT"
+            if required_effects
+            else execution_side_effect_class(
+                effective_required_side_effect_class(
+                    task_class=task.task_class,
+                    declared=task.risk_side_effect_class,
+                ),
+                required_operations,
+            )
+        )
+        typed = TypedTaskRequirement(
+            task_id=task.task_id,
+            action=str(seed["action"]),
+            task_class=task.task_class,
+            functional_role=infer_functional_role(seed),
+            required_execution_kind=infer_required_execution_kind({
+                **seed,
+                "required_operations": list(required_operations),
+            }),
+            required_operations=tuple(required_operations),
+            required_effects=required_effects,
+            required_surfaces=required_surfaces,
+            risk_level=str(task.risk_side_effect_class).upper(),
+            required_side_effect_class=required_side_effect_class,
+            required_domain=required_domain,
+            required_domain_family=required_domain_family,
+            required_output_contract_ids=required_output_contract_ids,
+            expected_output=task.expected_output,
+            acceptance_criteria=tuple(task.acceptance_criteria),
+            product_contract_digest=product_contract_digest,
+            proposal_candidate_hints=tuple(task.candidate_capability_ids),
+            dependencies=tuple(task.dependencies),
+            objective=task.objective,
+            required_capability_description=(
+                task.required_capability_description
+            ),
+            query=query,
+            candidate_requirement=str(seed["candidate_requirement"]),
+        )
+        requirement = typed.to_dict()
+        requirement.update({
+            "requirement_digest": typed.digest(),
+            "declared_action": task.action,
+            "candidate_capability_ids": list(
+                typed.proposal_candidate_hints
+            ),
+            "declared_risk_side_effect_class": (
+                task.risk_side_effect_class
+            ),
+            "risk_side_effect_class": typed.required_side_effect_class,
+            "task_family": seed["task_family"],
+        })
         requirements.append(requirement)
     return requirements
 
@@ -2207,20 +2303,26 @@ def select_capability_for_requirement(
                 f"{capability_id}:semantic-provider-unnecessary-for-contract"
             )
             continue
-        declared_side_effect = effective_required_side_effect_class(
-            task_class=str(requirement.get("task_class") or ""),
-            declared=str(
-                requirement.get("risk_side_effect_class") or "READ_ONLY"
-            ),
-        )
-        required_side_effect = (
-            execution_side_effect_class(
-                declared_side_effect,
-                required_operations,
+        explicit_required_side_effect = str(
+            requirement.get("required_side_effect_class") or ""
+        ).strip().upper()
+        if explicit_required_side_effect:
+            required_side_effect = explicit_required_side_effect
+        else:
+            declared_side_effect = effective_required_side_effect_class(
+                task_class=str(requirement.get("task_class") or ""),
+                declared=str(
+                    requirement.get("risk_side_effect_class") or "READ_ONLY"
+                ),
             )
-            if required_operations
-            else declared_side_effect
-        )
+            required_side_effect = (
+                execution_side_effect_class(
+                    declared_side_effect,
+                    required_operations,
+                )
+                if required_operations
+                else declared_side_effect
+            )
         record_side_effect = str(
             getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
         ).upper()

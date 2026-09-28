@@ -12,6 +12,7 @@ from app.services.capability_execution_contract_service import (
     CAN_CONSUME_ARTIFACT_REFS,
     CAN_PRODUCE_ARTIFACT_REFS,
     CAN_SEMANTIC_REASONING,
+    OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
 )
 
 
@@ -83,6 +84,10 @@ def youtube_department_records() -> tuple[CapabilityRecord, ...]:
                     CAN_PRODUCE_ARTIFACT_REFS,
                 ),
                 execution_kind="SEMANTIC_REASONER",
+                functional_roles=("YOUTUBE_SPECIALIST",),
+                output_contract_ids=(
+                    OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
+                ),
             )
         )
     return tuple(records)
