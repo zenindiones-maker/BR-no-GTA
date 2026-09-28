@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "control_plane": "DEEPSEEK_HARNESS",
+  "superpowers_bootstrap_global": false,
+  "skills": [
+    {
+      "skill_id": "superpowers",
+      "kind": "PROVIDER_SUPPORT",
+      "source": {
+        "repository": "LayneChai/superpowers-dsh",
+        "commit": "0b660254ab93b592e9810b493ccd63ecdf1a4663",
+        "path": ".",
+        "license": "MIT",
+        "upstream_repository": "obra/superpowers",
+        "upstream_commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d"
+      },
+      "provider_id": "superpowers-dsh",
+      "local_path": null,
+      "content_digest": null,
+      "invocation_policy": "HARNESS_DEVELOPMENT_EXPLICIT",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    },
+    {
+      "skill_id": "tdd",
+      "kind": "SKILL",
+      "source": {
+        "repository": "mattpocock/skills",
+        "commit": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+        "path": "skills/engineering/tdd",
+        "license": "MIT"
+      },
+      "provider_id": null,
+      "local_path": ".dsh/skills/tdd",
+      "content_digest": null,
+      "invocation_policy": "HARNESS_ROUTED",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    },
+    {
+      "skill_id": "teach",
+      "kind": "SKILL",
+      "source": {
+        "repository": "mattpocock/skills",
+        "commit": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+        "path": "skills/productivity/teach",
+        "license": "MIT"
+      },
+      "provider_id": null,
+      "local_path": ".dsh/skills/teach",
+      "content_digest": null,
+      "invocation_policy": "EXPLICIT_USER_OR_HARNESS",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    },
+    {
+      "skill_id": "caveman",
+      "kind": "SKILL",
+      "source": {
+        "repository": "JuliusBrussee/caveman",
+        "commit": "2fd153c67988e980fb0b2455c90832159a6a5a25",
+        "path": "skills/caveman",
+        "license": "MIT"
+      },
+      "provider_id": null,
+      "local_path": ".dsh/skills/caveman",
+      "content_digest": null,
+      "invocation_policy": "EXPLICIT_OR_PRESENTATION_ROUTED",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    },
+    {
+      "skill_id": "handoff",
+      "kind": "SKILL",
+      "source": {
+        "repository": "mattpocock/skills",
+        "commit": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+        "path": "skills/productivity/handoff",
+        "license": "MIT"
+      },
+      "provider_id": null,
+      "local_path": ".dsh/skills/handoff",
+      "content_digest": null,
+      "invocation_policy": "EXPLICIT_USER_OR_HARNESS",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    },
+    {
+      "skill_id": "video-edit",
+      "kind": "SKILL",
+      "source": {
+        "repository": "genmedia-labs/skills",
+        "commit": "c163a9fd3ab3c36193f634445592586df5b64f1e",
+        "path": "video-edit",
+        "license": "MIT"
+      },
+      "provider_id": null,
+      "local_path": ".dsh/skills/video-edit",
+      "content_digest": null,
+      "invocation_policy": "HARNESS_ROUTED_ADVISORY",
+      "authority": "NONE",
+      "routing_authority": "NONE",
+      "policy_authority": "NONE",
+      "publication_authority": "NONE",
+      "memory_write": "FORBIDDEN",
+      "side_effect_class": "NONE",
+      "direct_external_side_effects": false,
+      "direct_repository_mutation": false
+    }
+  ]
+}
