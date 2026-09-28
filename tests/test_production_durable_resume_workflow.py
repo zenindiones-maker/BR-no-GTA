@@ -215,14 +215,10 @@ def test_logical_continuation_claim_allows_only_proven_pre_semantic_physical_ret
     )[1].split("- uses: actions/setup-python@v5",1)[0]
     assert "continuation_claim_decision" in block
     assert "retry-safe-runs.json" in block
-    assert "Execute natural goal through Harness-selected agents" in block
-    assert "Dispatch professional render" in block
-    assert "Dispatch canonical YouTube PRIVATE HD review upload" in block
-    assert "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS" in block
-    assert "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS" in block
+    assert "physical_attempt_retry_safe" in block
+    assert "successor-dispatch-receipt.json" in block
     assert "PHYSICAL_RETRY_OF_RUN_ID=" in block
     assert "FAILED_PRE_SEMANTIC_ATTEMPT_REPLACED=PASS" in block
-
 
 def test_physical_retry_safety_uses_canonical_dispatch_receipt_not_raw_log_grep():
     text=Path(
