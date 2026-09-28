@@ -184,6 +184,94 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             commands,
         )
 
+    def test_provider_materialization_reconciles_unique_connection_when_add_output_has_no_id(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        expected_name = module._provider_connection_name(target)
+        commands = []
+
+        def fake_run(command, *, env=None):
+            commands.append(command)
+            if command[:3] == ["omniroute", "providers", "add"]:
+                return CompletedProcess(command, 0, '{"status":"created"}', "")
+            if command[:3] == ["omniroute", "providers", "list"]:
+                return CompletedProcess(
+                    command,
+                    0,
+                    json.dumps({
+                        "connections": [{
+                            "id": "conn-nvidia-reconciled",
+                            "provider": "nvidia",
+                            "name": expected_name,
+                        }]
+                    }),
+                    "",
+                )
+            return CompletedProcess(command, 0, "{}", "")
+
+        with mock.patch.object(module, "_run", side_effect=fake_run):
+            materialized = module._materialize_provider(target)
+
+        self.assertTrue(materialized["ok"])
+        self.assertEqual(
+            materialized["connection_id"],
+            "conn-nvidia-reconciled",
+        )
+        self.assertEqual(
+            materialized["connection_id_source"],
+            "PROVIDERS_LIST_RECONCILIATION",
+        )
+        self.assertIn(
+            ["omniroute", "providers", "list", "--json"],
+            commands,
+        )
+        self.assertIn(
+            [
+                "omniroute",
+                "providers",
+                "test",
+                "conn-nvidia-reconciled",
+                "--json",
+            ],
+            commands,
+        )
+
+    def test_provider_materialization_fails_closed_on_ambiguous_connection_reconciliation(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        expected_name = module._provider_connection_name(target)
+
+        def fake_run(command, *, env=None):
+            if command[:3] == ["omniroute", "providers", "add"]:
+                return CompletedProcess(command, 0, '{"status":"created"}', "")
+            if command[:3] == ["omniroute", "providers", "list"]:
+                payload = {
+                    "connections": [
+                        {
+                            "id": "conn-a",
+                            "provider": "nvidia",
+                            "name": expected_name,
+                        },
+                        {
+                            "id": "conn-b",
+                            "provider": "nvidia",
+                            "name": expected_name,
+                        },
+                    ]
+                }
+                return CompletedProcess(command, 0, json.dumps(payload), "")
+            return CompletedProcess(command, 0, "{}", "")
+
+        with mock.patch.object(module, "_run", side_effect=fake_run):
+            materialized = module._materialize_provider(target)
+
+        self.assertFalse(materialized["ok"])
+        self.assertIsNone(materialized["connection_id"])
+        self.assertEqual(
+            materialized["failure_class"],
+            "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS",
+        )
+
     def test_direct_pass_materializes_provider_before_catalog_and_dedicated_canary(self):
         module = load_module()
         one = plan()
