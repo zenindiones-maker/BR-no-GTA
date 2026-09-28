@@ -373,6 +373,18 @@ terminate_gateway_pids() {
   done
 }
 
+handoff_owner_voice_references() {
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+  export TELEGRAM_CONTROL_STATE_FILE="${STATE_DIR}/telegram-control.json"
+  export BR_GITHUB_REPOSITORY="zenindiones-maker/BR-no-GTA"
+  export BR_GITHUB_BRANCH
+  BR_GITHUB_BRANCH="$(git -C "${ROOT}" branch --show-current 2>/dev/null || true)"
+  export BR_OWNER_VOICE_HANDOFF_STATE_FILE="${STATE_DIR}/owner-voice-reference-handoff.json"
+  cd "${ROOT}"
+  "${PYTHON_BIN}" scripts/owner_voice_reference_handoff.py
+}
+
+
 is_running() {
   [[ -s "${PID_FILE}" ]] || return 1
   local pid
@@ -457,6 +469,7 @@ start_gateway() {
     echo "TELEGRAM_GATEWAY=STARTED PID=${pid}"
     echo "TELEGRAM_GATEWAY_REVISION=${BR_TELEGRAM_GATEWAY_REVISION}"
     publish_runtime_status
+    handoff_owner_voice_references || true
     echo "TELEGRAM_LOG=${LOG_FILE}"
     echo "BR_OMNIROUTE_REF=${BR_OMNIROUTE_REF}"
     release_start_lock
