@@ -210,10 +210,24 @@ def verify_agent_skill_pack(root: Path) -> SkillPackVerification:
     materialized: list[str] = []
     pending: list[str] = []
     for entry in pack.skills:
-        if entry.local_path and (root / entry.local_path).is_dir():
-            materialized.append(entry.skill_id)
-        elif entry.local_path:
+        if not entry.local_path:
+            continue
+        local_path = root / entry.local_path
+        if not local_path.is_dir():
             pending.append(entry.skill_id)
+            continue
+        if not entry.content_digest:
+            raise ValueError(
+                f"missing content digest for materialized skill {entry.skill_id}"
+            )
+        actual_digest = skill_tree_digest(local_path)
+        if actual_digest != entry.content_digest:
+            raise ValueError(
+                "digest mismatch for "
+                f"{entry.skill_id}: expected={entry.content_digest} "
+                f"actual={actual_digest}"
+            )
+        materialized.append(entry.skill_id)
 
     return SkillPackVerification(
         status="PENDING_MATERIALIZATION" if pending else "PASS",
