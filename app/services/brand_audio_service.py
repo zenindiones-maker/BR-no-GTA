@@ -161,11 +161,9 @@ def prepare_brand_audio(job: dict[str, Any], root: Path) -> dict[str, Any]:
             "selected_opening_take_id": "BR_OWNER_V1-dynamic",
             "selected_closing_fallback_take_id": "BR_OWNER_V1-dynamic",
             "automatic_naturality_winner": False,
-            "legacy_voice_fallback": False,
         },
         "checks": {
             "owner_voice_used": True,
-            "legacy_voice_b_used": False,
             "opening_text_canonical": True,
             "closing_text_canonical": True,
             "same_voice_identity": (
