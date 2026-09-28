@@ -265,6 +265,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 "provider": "nvidia",
             },
             "valid": False,
+            "unsupported": True,
             "skipped": True,
             "error": "Provider test not supported",
         })
@@ -287,8 +288,9 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         self.assertTrue(materialized["ok"])
         self.assertEqual(
             materialized["provider_test_status"],
-            "UNSUPPORTED_SKIPPED_TO_DEDICATED_CANARY",
+            "UNSUPPORTED",
         )
+        self.assertFalse(materialized["provider_test_supported"])
         self.assertIsNone(materialized["failure_class"])
 
     def test_provider_materialization_reconciles_unique_connection_from_active_server_api(self):
