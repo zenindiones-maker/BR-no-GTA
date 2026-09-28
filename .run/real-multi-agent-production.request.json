@@ -9,12 +9,12 @@
   "voice": "pt-BR-ThalitaMultilingualNeural",
   "canonical_auth_checkpoint": 35850473901,
   "resume_metadata": {
-    "retry_of_run": 36372603032,
-    "reason": "Resume the same durable human mission after receipt-grounded proof that run 36372603032 failed before semantic/effectful execution and did not materialize a successor intent or dispatch receipt; preserve the completed 24.636-minute editorial result and continue only the minimal affected subgraph to MASTER_FINAL -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING.",
+    "retry_of_run": 36425340607,
+    "reason": "Resume the same durable human mission from the latest checkpoint after TDD-proven repair of durable fact-check provenance replay. Preserve the completed 24.636-minute editorial result and all completed nodes; continue only PRODUCT_ASSEMBLY_REQUIRED -> RENDERJOB_REQUIRED -> MASTER_RENDER_REQUIRED -> MASTER_QA_REQUIRED -> YouTube PRIVATE HD -> Telegram -> HUMAN_REVIEW_PENDING.",
     "preserve_longform_recovery": true,
     "preserve_web_fabric": true,
     "preserve_audiovisual_contracts": true,
-    "candidate_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b",
+    "candidate_head": "8d298e998d1ceda77fd51d0461500b3276e79d43",
     "baseline_source_selected": 2,
     "baseline_source_acquired": 0,
     "baseline_provenance": "INSUFFICIENT",
@@ -61,22 +61,22 @@
     },
     "durable_continuation": {
       "schema": "DurableProductionContinuationRequest/v1",
-      "resume_run_id": 36372445498,
+      "resume_run_id": 36425340607,
       "durable_mission_key": "mission-5c239dbac2eb4abd29b1",
-      "continuation_count": 181,
-      "continuation_id": "continuation:e7432ba1094affa2379443336b2d3cd1",
-      "expected_state_version": 277,
+      "continuation_count": 184,
+      "continuation_id": "continuation:2d028ddae0c9e654383215b5f398ad1d",
+      "expected_state_version": 281,
       "continuation_authority_schema": "ContinuationAuthorization/v1",
-      "checkpoint_artifact_id": 10949557836,
-      "checkpoint_artifact_digest": "sha256:76665472595132c86af52b658a0b867dfad271c70adccb11d31d810ef47f1748",
-      "predecessor_status": "RUNNABLE",
-      "predecessor_next_transition": "RESOLVE_REQUIREMENT",
+      "checkpoint_artifact_id": 10971148622,
+      "checkpoint_artifact_digest": "sha256:aee7abb7de6b8dd1fa6995632ce9c618de7322f46d0700fcdcf73c7ce6409a03",
+      "predecessor_status": "REPLANNING",
+      "predecessor_next_transition": "REPLAN_REQUIRED",
       "predecessor_artifact_expired": false,
-      "continuation_transition": "RESOLVE_REQUIREMENT",
+      "continuation_transition": "REPLAN_REQUIRED",
       "continuation_strategy": "MINIMAL_AFFECTED_SUBGRAPH",
-      "continuation_route_id": "continuation-route:693129864afc9cb10990dec8",
-      "successor_intent_id": "successor-intent:e7432ba1094affa2379443336b2d3cd1",
-      "effective_input_digest": "sha256:dc7854f8483034e99d175d55619a29aadf514f3e1eadfc6a9a28e49b369e65de"
+      "continuation_route_id": "continuation-route:2d028ddae0c9e654383215b5",
+      "successor_intent_id": "successor-intent:2d028ddae0c9e654383215b5f398ad1d",
+      "effective_input_digest": "sha256:2d028ddae0c9e654383215b5f398ad1d5c510726157ae5812920ae0caf2e7cec"
     },
     "physical_retry_proof": {
       "schema": "DurablePhysicalRetryProof/v1",
@@ -93,7 +93,33 @@
       "contract_proof_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b",
       "ci_run_id": 36424566454,
       "ci_status": "SUCCESS"
+    },
+    "code_repair_transition": {
+      "schema": "DurableCodeRepairTransition/v1",
+      "authority": "DEEPSEEK_HARNESS",
+      "source_run_id": 36425340607,
+      "source_checkpoint_artifact_id": 10971148622,
+      "source_checkpoint_artifact_digest": "sha256:aee7abb7de6b8dd1fa6995632ce9c618de7322f46d0700fcdcf73c7ce6409a03",
+      "source_state_version": 281,
+      "previous_continuation_id": "continuation:b434c4631b37ce2075921407737d0de3",
+      "source_failure": "REAL_EVIDENCE_ARTIFACT_REQUIRES_OFFICIAL_PRIMARY_SOURCE",
+      "repair_class": "OFFICIAL_EVIDENCE_REPLAY_PROJECTION",
+      "repair_head": "8d298e998d1ceda77fd51d0461500b3276e79d43",
+      "red_proof_run_id": 36434926657,
+      "green_proof_run_id": 36435563420,
+      "ci_run_id": 36435564234,
+      "next_requirement": "PRODUCT_ASSEMBLY_REQUIRED",
+      "transition": "REPLAN_REQUIRED",
+      "evidence": {
+        "durable_fact_check_task_result": "artifact:task-results/fact_verification-1.json",
+        "official_source": "https://www.rockstargames.com/VI",
+        "prior_fresh_evidence_ref": "github-actions:36351695467",
+        "prior_lineage_schema": "FreshEvidenceLineage/v1"
+      },
+      "no_gate_weakening": true,
+      "no_padding": true,
+      "preserve_completed_results": true
     }
   },
-  "requested_from_head": "9c2a13ad80eb213102adfc73a12d8b427c4da74b"
+  "requested_from_head": "8d298e998d1ceda77fd51d0461500b3276e79d43"
 }
