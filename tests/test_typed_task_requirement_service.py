@@ -153,7 +153,6 @@ def test_dynamic_youtube_specialist_has_non_telegram_typed_output_contract():
         "youtube.department.analytics-analysis"
     )
     assert record is not None
-    assert record.functional_roles == ("YOUTUBE_SPECIALIST",)
     assert record.execution_effects == ()
     assert record.execution_surfaces == ()
     assert record.output_contract_ids == ("YouTubeSpecialistResult/v1",)

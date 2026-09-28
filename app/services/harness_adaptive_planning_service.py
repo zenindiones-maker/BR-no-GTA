@@ -1645,15 +1645,22 @@ def proposal_requirements(
                 required_operations,
             )
         )
+        functional_role = (
+            "PRESENTATION"
+            if telegram_delivery
+            else infer_functional_role(seed)
+        )
+        required_execution_kind = infer_required_execution_kind({
+            **seed,
+            "functional_role": functional_role,
+            "required_operations": list(required_operations),
+        })
         typed = TypedTaskRequirement(
             task_id=task.task_id,
             action=str(seed["action"]),
             task_class=task.task_class,
-            functional_role=infer_functional_role(seed),
-            required_execution_kind=infer_required_execution_kind({
-                **seed,
-                "required_operations": list(required_operations),
-            }),
+            functional_role=functional_role,
+            required_execution_kind=required_execution_kind,
             required_operations=tuple(required_operations),
             required_effects=required_effects,
             required_surfaces=required_surfaces,

@@ -84,7 +84,6 @@ def youtube_department_records() -> tuple[CapabilityRecord, ...]:
                     CAN_PRODUCE_ARTIFACT_REFS,
                 ),
                 execution_kind="SEMANTIC_REASONER",
-                functional_roles=("YOUTUBE_SPECIALIST",),
                 output_contract_ids=(
                     OUTPUT_CONTRACT_YOUTUBE_SPECIALIST_RESULT_V1,
                 ),
