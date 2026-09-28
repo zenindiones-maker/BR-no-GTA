@@ -1,7 +1,7 @@
 {
   "schema": "cancel-stale-production/v1",
-  "run_id": 36368806929,
-  "expected_head_sha": "460c94f576dc80072843cbbd3635e5e9311ab27b",
-  "reason": "cancel successor emitted before zero-progress storm containment completed; preserve checkpoint for causal replay fix",
+  "run_id": 36369750277,
+  "expected_head_sha": "1d2059a7a6c6c4b643eb87fcb5788a8d46464581",
+  "reason": "contain production-planning semantic contract successor storm before canonical presentation-to-production-plan normalization fix",
   "requested_by": "durable-resume-causal-containment"
 }
