@@ -73,6 +73,59 @@ def workflow_log_has_emitted_marker(
             return True
     return False
 
+
+EFFECTFUL_PRODUCTION_STEP_NAMES=(
+    "Execute natural goal through Harness-selected agents",
+    "Deliver human-readable editorial package to Telegram",
+    "Create canonical professional RenderJob from new product",
+    "Publish canonical RenderJob handoff checkpoint",
+    "Dispatch professional render",
+    "Wait only for canonical render",
+    "Reconcile render checkpoint",
+    "Download QA-passed MASTER_FINAL and narration checkpoint",
+    "Validate MASTER_FINAL before any YouTube review upload",
+    "Deliver requested narration master to Telegram without recompression",
+    "Create PRIVATE-only YouTube review record after QA",
+    "Dispatch canonical YouTube PRIVATE HD review upload",
+    "Wait only for private HD review readiness",
+    "Reconcile PRIVATE HD review and Telegram link delivery",
+)
+
+
+def physical_attempt_retry_safe(
+    *,
+    step_conclusions: dict[str,Any],
+    successor_transaction_files=(),
+)->bool:
+    """Prove that a failed physical attempt had no semantic/external effects."""
+    files={
+        Path(str(item)).name
+        for item in successor_transaction_files
+        if str(item).strip()
+    }
+    # Durable ownership was claimed, but no successor work may have been
+    # planned or dispatched. Missing transaction evidence fails closed.
+    if "continuation-claim.json" not in files:
+        return False
+    if "successor-intent.json" in files:
+        return False
+    if "successor-dispatch-receipt.json" in files:
+        return False
+
+    normalized={
+        str(name):str(value or "").strip().lower()
+        for name,value in dict(step_conclusions or {}).items()
+    }
+    semantic=EFFECTFUL_PRODUCTION_STEP_NAMES[0]
+    if normalized.get(semantic)!="skipped":
+        return False
+    for name in EFFECTFUL_PRODUCTION_STEP_NAMES:
+        observed=normalized.get(name,"")
+        if observed not in {"","skipped"}:
+            return False
+    return True
+
+
 def _canonical_sha(value: Any)->str:
     raw=json.dumps(
         value,ensure_ascii=True,sort_keys=True,

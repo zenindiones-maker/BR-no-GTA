@@ -300,72 +300,57 @@ jobs:
             )"
             for RID in $PRIOR_IDS; do
               JOBS_JSON="$RUNNER_TEMP/retry-jobs-$RID.json"
-              RUN_LOG="$RUNNER_TEMP/retry-log-$RID.txt"
+              SUCCESSOR_DIR="$RUNNER_TEMP/retry-successor-$RID"
+              ARTIFACT_NAME="durable-successor-transaction-$RID"
+              rm -rf "$SUCCESSOR_DIR"
+              mkdir -p "$SUCCESSOR_DIR"
               gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RID/jobs?per_page=100" \
                 > "$JOBS_JSON"
-              gh run view "$RID" --repo "$GITHUB_REPOSITORY" --log \
-                > "$RUN_LOG" 2>&1 || true
-              STEP_SAFE="$(python - "$JOBS_JSON" <<'PY'
+              ARTIFACT_PRESENT=0
+              if gh run download "$RID" \
+                --repo "$GITHUB_REPOSITORY" \
+                -n "$ARTIFACT_NAME" \
+                -D "$SUCCESSOR_DIR" >/dev/null 2>&1; then
+                ARTIFACT_PRESENT=1
+              fi
+              CONTINUATION_CLAIM="$(find "$SUCCESSOR_DIR" -type f \
+                -name 'continuation-claim.json' -print -quit)"
+              SUCCESSOR_INTENT="$(find "$SUCCESSOR_DIR" -type f \
+                -name 'successor-intent.json' -print -quit)"
+              SUCCESSOR_RECEIPT="$(find "$SUCCESSOR_DIR" -type f \
+                -name 'successor-dispatch-receipt.json' -print -quit)"
+              STEP_SAFE="$(python - "$JOBS_JSON" "$SUCCESSOR_DIR" "$ARTIFACT_PRESENT" <<'PY'
           import json,sys
+          from pathlib import Path
+          from app.services.production_durable_resume_service import (
+              physical_attempt_retry_safe,
+          )
           data=json.load(open(sys.argv[1],encoding="utf-8"))
           jobs=list(data.get("jobs") or [])
           production=next(
               (job for job in jobs if str(job.get("name") or "")=="production"),
               None,
           )
-          if production is None:
+          if production is None or int(sys.argv[3])!=1:
               print("0")
               raise SystemExit
           by_name={
               str(step.get("name") or ""):str(step.get("conclusion") or "")
               for step in (production.get("steps") or [])
           }
-          semantic="Execute natural goal through Harness-selected agents"
-          effectful=(
-              semantic,
-              "Deliver human-readable editorial package to Telegram",
-              "Create canonical professional RenderJob from new product",
-              "Publish canonical RenderJob handoff checkpoint",
-              "Dispatch professional render",
-              "Wait only for canonical render",
-              "Reconcile render checkpoint",
-              "Download QA-passed MASTER_FINAL and narration checkpoint",
-              "Validate MASTER_FINAL before any YouTube review upload",
-              "Deliver requested narration master to Telegram without recompression",
-              "Create PRIVATE-only YouTube review record after QA",
-              "Dispatch canonical YouTube PRIVATE HD review upload",
-              "Wait only for private HD review readiness",
-              "Reconcile PRIVATE HD review and Telegram link delivery",
+          root=Path(sys.argv[2])
+          files=tuple(
+              path.name for path in root.rglob("*")
+              if path.is_file()
           )
-          safe=by_name.get(semantic)=="skipped"
-          for name in effectful:
-              observed=by_name.get(name)
-              if observed not in {None,"","skipped"}:
-                  safe=False
+          safe=physical_attempt_retry_safe(
+              step_conclusions=by_name,
+              successor_transaction_files=files,
+          )
           print("1" if safe else "0")
           PY
               )"
-              SUCCESSOR_SAFE="$(python - "$RUN_LOG" <<'PY'
-          import sys
-          from pathlib import Path
-          from app.services.production_durable_resume_service import (
-              workflow_log_has_emitted_marker,
-          )
-          log_text=Path(sys.argv[1]).read_text(
-              encoding="utf-8",
-              errors="replace",
-          )
-          emitted=any(
-              workflow_log_has_emitted_marker(log_text, marker)
-              for marker in (
-                  "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS",
-                  "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS",
-              )
-          )
-          print("0" if emitted else "1")
-          PY
-              )"
-              if [ "$STEP_SAFE" = 1 ] && [ "$SUCCESSOR_SAFE" = 1 ]; then
+              if [ "$STEP_SAFE" = 1 ]; then
                 python - "$RETRY_SAFE_JSON" "$RID" <<'PY'
           import json,sys
           path=sys.argv[1]
