@@ -409,7 +409,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             )
 
         self.assertEqual(evidence["status"], "PASS")
-        self.assertEqual(evidence["connection_evidence_source"], "REQUEST_LOG")
+        self.assertEqual(evidence["connection_receipt_source"], "CALL_LOG_CORRELATION")
         self.assertEqual(
             evidence["reported_connection_identity_redacted"],
             module._connection_identity_redacted("conn-nvidia-123"),
@@ -455,7 +455,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "FAIL")
         self.assertEqual(
             evidence["failure_class"],
-            "OMNIROUTE_CONNECTION_EVIDENCE_MISMATCH",
+            "OMNIROUTE_CONNECTION_RECEIPT_MISMATCH",
         )
         self.assertIsNone(evidence["reported_connection_identity_redacted"])
 
