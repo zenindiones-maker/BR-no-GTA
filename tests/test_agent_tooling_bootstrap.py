@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / "scripts" / "agent-tooling" / "bootstrap.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "agent-tooling-bootstrap.yml"
 
 
 def test_bootstrap_exposes_pinned_claude_code_mode():
@@ -24,6 +25,11 @@ def test_claude_install_target_exists_before_binary_install():
     assert mkdir_index < install_index
 
 
+def test_tooling_workflow_exposes_repo_to_python_discovery():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert 'PYTHONPATH="$GITHUB_WORKSPACE" python3 scripts/agent-tooling/check_discovery.py all' in text
+
+
 def test_claude_only_mode_does_not_require_node_or_npm():
     text = BOOTSTRAP.read_text(encoding="utf-8")
     assert 'if [[ "$mode" = all || "$mode" = codex || "$mode" = higgsfield ]]; then' in text
@@ -32,5 +38,6 @@ def test_claude_only_mode_does_not_require_node_or_npm():
 if __name__ == "__main__":
     test_bootstrap_exposes_pinned_claude_code_mode()
     test_claude_install_target_exists_before_binary_install()
+    test_tooling_workflow_exposes_repo_to_python_discovery()
     test_claude_only_mode_does_not_require_node_or_npm()
     print("CLAUDE_CODE_BOOTSTRAP_CONTRACT=PASS")

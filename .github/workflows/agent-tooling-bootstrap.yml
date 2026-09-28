@@ -43,4 +43,4 @@ jobs:
           echo "CLAUDE_CODE_RUNTIME_PROOF=PASS"
 
       - name: Verify native Codex discovery without model calls
-        run: python3 scripts/agent-tooling/check_discovery.py all
+        run: PYTHONPATH="$GITHUB_WORKSPACE" python3 scripts/agent-tooling/check_discovery.py all
