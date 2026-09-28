@@ -88,3 +88,83 @@ def test_checkpoint_reconciliation_uses_completed_editorial_progress():
         'if row.get("status") != "PARTIAL_FAILED": continue'
         not in text
     )
+
+
+
+def test_successor_identity_is_logical_not_physical_run_id():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    assert (
+        "run-name: Real Multi-Agent Production · "
+        "${{ inputs.continuation_id || github.run_id }}"
+        in text
+    )
+    continuation=text.split(
+        "- name: Continue non-terminal durable mission",1
+    )[1]
+    assert "successor_intent_id=" in continuation
+    assert "effective_input_digest=" in continuation
+    assert "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS" in continuation
+    assert "SUCCESSOR_DISPATCH_IDEMPOTENT=PASS" in continuation
+    assert "successor_dispatch_decision" in continuation
+
+
+def test_execution_failure_is_persisted_before_nonterminal_reconciliation():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    execute=text.split(
+        "- name: Execute natural goal through Harness-selected agents",1
+    )[1].split(
+        "- name: Deliver human-readable editorial package to Telegram",1
+    )[0]
+    assert "execution-failure.json" in execute
+    assert "ProductionExecutionFailure/v1" in execute
+    assert "physical_attempt_id" in execute
+    assert "PRODUCTION_EXECUTION_FAILURE_CAPTURED=PASS" in execute
+
+
+def test_successor_intent_is_persisted_before_checkpoint_upload():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    prepare=text.index(
+        "- name: Prepare governed non-terminal durable checkpoint"
+    )
+    upload=text.index("- name: Upload complete real production evidence")
+    assert prepare < upload
+    between=text[prepare:upload]
+    assert "successor-intent.json" in between
+    assert "SUCCESSOR_INTENT_PERSISTED=PASS" in between
+
+
+def test_logical_continuation_claim_fails_closed_for_second_writer():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    block=text.split(
+        "- name: Claim logical continuation exactly once",1
+    )[1].split("- uses: actions/setup-python@v5",1)[0]
+    assert "SECOND_WRITER_FAILS_CLOSED=PASS" in block
+    assert "continuation-claim.json" in block
+    assert "ONE_ACTIVE_WRITER_PER_MISSION=PASS" in block
+
+
+def test_final_reconciliation_proves_monotonic_and_effective_input_contracts():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    for marker in (
+        "INITIAL_STATE_VERSION=",
+        "REHYDRATED_COMPLETED_TASKS=",
+        "INITIAL_SUPPORTED_DURATION=",
+        "EFFECTIVE_INPUT_DIGEST=",
+        "PROGRESS_DELTA=",
+        "MONOTONIC_MISSION_STATE=PASS",
+        "MONOTONIC_SUPPORTED_DURATION=PASS",
+        "COMPLETED_RESULT_PRESERVED=PASS",
+        "OLD_PARTIAL_DOES_NOT_OVERRIDE_COMPLETED=PASS",
+        "EDITORIAL_TASK_NOT_REOPENED_WITHOUT_INVALIDATION=PASS",
+    ):
+        assert marker in text

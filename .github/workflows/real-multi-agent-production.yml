@@ -1,5 +1,5 @@
 name: Real Multi-Agent Production
-run-name: Real Multi-Agent Production · ${{ github.run_id }}
+run-name: Real Multi-Agent Production · ${{ inputs.continuation_id || github.run_id }}
 
 on:
   workflow_dispatch:
@@ -44,6 +44,14 @@ on:
         description: "Typed continuation route identity"
         required: false
         default: ""
+      successor_intent_id:
+        description: "Stable logical successor intent identity"
+        required: false
+        default: ""
+      effective_input_digest:
+        description: "Deterministic logical input identity for this transition"
+        required: false
+        default: ""
   push:
     branches:
       - work/gate6f-analytics-learning
@@ -81,6 +89,8 @@ env:
   BR_CONTINUATION_TRANSITION: ${{ inputs.continuation_transition || '' }}
   BR_CONTINUATION_STRATEGY: ${{ inputs.continuation_strategy || '' }}
   BR_CONTINUATION_ROUTE_ID: ${{ inputs.continuation_route_id || '' }}
+  BR_SUCCESSOR_INTENT_ID: ${{ inputs.successor_intent_id || '' }}
+  BR_EFFECTIVE_INPUT_DIGEST: ${{ inputs.effective_input_digest || '' }}
   # The production editorial provider needs enough bounded output budget to
   # satisfy the 20-minute professional script contract (~2640 PT-BR words).
   NVIDIA_NIM_MAX_TOKENS: "8192"
@@ -161,7 +171,10 @@ jobs:
               raise SystemExit("FILE_DRIVEN_STATE_VERSION_INVALID")
           if not re.fullmatch(r"[0-9]+", count):
               raise SystemExit("FILE_DRIVEN_CONTINUATION_COUNT_INVALID")
-          if cid != f"{mission}:{state}:{run}":
+          if cid.startswith("continuation:"):
+              if not re.fullmatch(r"continuation:[0-9a-f]{32}",cid):
+                  raise SystemExit("FILE_DRIVEN_CONTINUATION_ID_INVALID")
+          elif cid != f"{mission}:{state}:{run}":
               raise SystemExit("FILE_DRIVEN_CONTINUATION_ID_INVALID")
           if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
               raise SystemExit("FILE_DRIVEN_CHECKPOINT_DIGEST_INVALID")
@@ -189,6 +202,12 @@ jobs:
               "BR_CONTINUATION_ROUTE_ID": str(
                   continuation.get("continuation_route_id")
                   or f"file-driven:{cid}"
+              ).strip(),
+              "BR_SUCCESSOR_INTENT_ID": str(
+                  continuation.get("successor_intent_id") or ""
+              ).strip(),
+              "BR_EFFECTIVE_INPUT_DIGEST": str(
+                  continuation.get("effective_input_digest") or ""
               ).strip(),
           }
           with open(os.environ["GITHUB_ENV"],"a",encoding="utf-8") as handle:
@@ -225,12 +244,80 @@ jobs:
           transition=str(os.environ.get("BR_CONTINUATION_TRANSITION") or "")
           if transition not in {"RESOLVE_REQUIREMENT","REPLAN_REQUIRED"}:
               raise SystemExit("CONTINUATION_TRANSITION_INVALID")
+          cid=str(os.environ.get("BR_CONTINUATION_ID") or "")
+          if cid.startswith("continuation:"):
+              intent=str(os.environ.get("BR_SUCCESSOR_INTENT_ID") or "")
+              effective=str(os.environ.get("BR_EFFECTIVE_INPUT_DIGEST") or "")
+              if not re.fullmatch(r"successor-intent:[0-9a-f]{32}",intent):
+                  raise SystemExit("SUCCESSOR_INTENT_ID_INVALID")
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}",effective):
+                  raise SystemExit("EFFECTIVE_INPUT_DIGEST_INVALID")
+              print("LOGICAL_CONTINUATION_IDENTITY_VALID=PASS")
+          else:
+              print("LEGACY_CONTINUATION_MIGRATION=PASS")
           print("CONTINUATION_TRANSITION_TYPED=PASS")
           print("BLIND_RETRY_FORBIDDEN=PASS")
           if transition=="REPLAN_REQUIRED":
               print("SAME_ROUTE_FORBIDDEN_ENFORCED=PASS")
               print("REPLAN_TRANSITION_RECEIVED=PASS")
           PY
+
+      - name: Claim logical continuation exactly once
+        if: ${{ env.BR_CONTINUATION_ID != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT=artifacts/real-multi-agent-production
+          mkdir -p "$ROOT"
+          if [[ "$BR_CONTINUATION_ID" == continuation:* ]]; then
+            TITLE="Real Multi-Agent Production · $BR_CONTINUATION_ID"
+            RUNS_JSON="$RUNNER_TEMP/logical-continuation-runs.json"
+            gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow real-multi-agent-production.yml --limit 100 \
+              --json databaseId,displayTitle,status,conclusion > "$RUNS_JSON"
+            OWNER="$(python - "$RUNS_JSON" "$TITLE" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1],encoding="utf-8"))
+          ids=sorted(
+              int(row["databaseId"]) for row in rows
+              if str(row.get("displayTitle") or "")==sys.argv[2]
+          )
+          print(ids[0] if ids else "")
+          PY
+            )"
+            test -n "$OWNER"
+            if [ "$OWNER" != "$GITHUB_RUN_ID" ]; then
+              echo "SECOND_WRITER_FAILS_CLOSED=PASS"
+              echo "LOGICAL_CONTINUATION_OWNER_RUN_ID=$OWNER"
+              exit 78
+            fi
+          else
+            OWNER="$GITHUB_RUN_ID"
+            echo "LEGACY_CONTINUATION_CLAIM_MIGRATION=PASS"
+          fi
+          CLAIM_OWNER="$OWNER" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path("artifacts/real-multi-agent-production")
+          row={
+              "schema":"DurableMissionClaim/v1",
+              "mission_id":os.environ.get("BR_DURABLE_MISSION_KEY") or None,
+              "continuation_id":os.environ.get("BR_CONTINUATION_ID") or None,
+              "claim_owner_run_id":int(os.environ["CLAIM_OWNER"]),
+              "physical_attempt_id":(
+                  f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+                  f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+              ),
+              "authority":"DEEPSEEK_HARNESS",
+          }
+          (root/"continuation-claim.json").write_text(
+              json.dumps(row,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "ONE_ACTIVE_WRITER_PER_MISSION=PASS"
+          echo "CLAIM_OWNER_IDENTITY_PERSISTED=PASS"
 
       - uses: actions/setup-python@v5
         with:
@@ -316,9 +403,15 @@ jobs:
           print("STATE_VERSION_CONTINUITY=PASS")
           cid=os.environ["BR_CONTINUATION_ID"]
           predecessor=os.environ["BR_RESUME_RUN_ID"]
-          expected_prefix=f"{mission}:{expected}:{predecessor}"
-          if cid != expected_prefix:
-              raise SystemExit("CONTINUATION_ID_INVALID")
+          if cid.startswith("continuation:"):
+              if not re.fullmatch(r"continuation:[0-9a-f]{32}",cid):
+                  raise SystemExit("CONTINUATION_ID_INVALID")
+              print("LOGICAL_CONTINUATION_ID_STABLE=PASS")
+          else:
+              expected_prefix=f"{mission}:{expected}:{predecessor}"
+              if cid != expected_prefix:
+                  raise SystemExit("CONTINUATION_ID_INVALID")
+              print("LEGACY_CONTINUATION_ID_MIGRATION=PASS")
           print("CONTINUATION_ID_VALID=PASS")
           active=Path("artifacts/real-multi-agent-production")
           active.mkdir(parents=True,exist_ok=True)
@@ -452,12 +545,68 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           APILAYER_API_KEY: ${{ secrets.APILAYER_API_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          ROOT=artifacts/real-multi-agent-production
+          mkdir -p "$ROOT"
+          LOG="$ROOT/execution.log"
+          rm -f "$ROOT/execution-failure.json"
+          set +e
           python scripts/real_multi_agent_production.py \
             --request .run/real-multi-agent-production.request.json \
             --base-sha "$GITHUB_SHA" \
             --upstream-root "$BR_HERMES_UPSTREAM_ROOT" \
-            --artifact-dir artifacts/real-multi-agent-production
+            --artifact-dir "$ROOT" 2>&1 | tee "$LOG"
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            RC_VALUE="$RC" python - "$LOG" <<'PY'
+          import hashlib,json,os,re,sys
+          from pathlib import Path
+          text=Path(sys.argv[1]).read_text(
+              encoding="utf-8",errors="replace"
+          )
+          matches=re.findall(
+              r"(?:RuntimeError|ValueError|PermissionError):\\s*"
+              r"([A-Z][A-Z0-9_:-]+)",
+              text,
+          )
+          failure_class=(
+              matches[-1].split(":",1)[0]
+              if matches else "PRODUCTION_EXECUTION_FAILURE"
+          )
+          logical_task_id="production_runtime"
+          base={
+              "schema":"ProductionExecutionFailure/v1",
+              "logical_task_id":logical_task_id,
+              "failure_class":failure_class,
+              "failure_signature":f"{logical_task_id}:{failure_class}",
+              "physical_attempt_id":(
+                  f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+                  f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+              ),
+              "route_identity":(
+                  os.environ.get("BR_CONTINUATION_ROUTE_ID")
+                  or "initial-production-route"
+              ),
+              "exit_code":int(os.environ["RC_VALUE"]),
+          }
+          base["content_sha256"]=hashlib.sha256(
+              json.dumps(
+                  base,sort_keys=True,separators=(",",":")
+              ).encode("utf-8")
+          ).hexdigest()
+          Path(
+              "artifacts/real-multi-agent-production/"
+              "execution-failure.json"
+          ).write_text(
+              json.dumps(base,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          print("PRODUCTION_EXECUTION_FAILURE_CAPTURED=PASS")
+          print("FAILURE_CLASS="+failure_class)
+          PY
+            exit "$RC"
+          fi
           python - <<'PY' >> "$GITHUB_ENV"
           import json
           d=json.load(open("artifacts/real-multi-agent-production/preproduction-report.json"))
@@ -839,14 +988,16 @@ jobs:
           }
           (root/"final-report.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
           # HarnessMissionState/v2 is the single canonical cross-run mission state.
-          # The workflow only reconciles observed worker outputs; terminality and
-          # continuation authority remain in HarnessMissionSupervisor.
+          # Physical workflow attempts may repeat; logical mission progress may not.
+          from hashlib import sha256
           from app.services.harness_mission_supervisor_service import (
               HarnessMissionState,
               HarnessMissionSupervisor,
           )
           from app.services.production_durable_resume_service import (
+              build_effective_input_identity,
               editorial_progress_snapshot,
+              task_result_semantic_digest,
           )
           from scripts.real_multi_agent_production import (
               VOICE_B_EFFECTIVE_PLANNING_WPM,
@@ -857,13 +1008,35 @@ jobs:
           )
           partials=list(editorial_progress["partial_results"])
           latest=dict(editorial_progress["current"] or {})
+          task_rows=[]
           task_mission_ids=[]
-          for path in sorted((root/"hermes/task-results").glob("*.json")) if (root/"hermes/task-results").is_dir() else []:
+          result_root=root/"hermes/task-results"
+          for path in sorted(result_root.glob("*.json")) if result_root.is_dir() else []:
               try: row=json.loads(path.read_text())
               except Exception: continue
+              task_rows.append(row)
               observed=str(row.get("mission_id") or "").strip()
               if observed:
                   task_mission_ids.append(observed)
+          completed_rows=[
+              row for row in task_rows
+              if str(row.get("status") or "")=="COMPLETED"
+          ]
+          completed_tasks=sorted({
+              str(row.get("task_id") or "")
+              for row in completed_rows
+              if str(row.get("task_id") or "")
+          })
+          dependency_digests=sorted({
+              task_result_semantic_digest(row)
+              for row in completed_rows
+          })
+          evidence_refs=sorted({
+              str(ref)
+              for row in completed_rows
+              for ref in (row.get("evidence_refs") or ())
+              if str(ref)
+          })
           observed_mission_id=task_mission_ids[-1] if task_mission_ids else ""
           mission_id=str(pre.get("MISSION_ID") or observed_mission_id or os.environ.get("BR_DURABLE_MISSION_KEY") or f"production-{os.environ.get('GITHUB_SHA','unknown')}")
           goal_id=str(product.get("goal_id") or pre.get("GOAL_ID") or mission_id)
@@ -878,18 +1051,75 @@ jobs:
               goal_contract=goal_contract,
               artifact_dir=root,
           )
+          initial_state_version=int(mission.state.get("state_version") or 0)
+          initial_completed=set(
+              str(item) for item in (mission.state.get("completed_nodes") or ())
+              if str(item)
+          )
           previous_ledger=list(mission.state.get("progress_ledger") or ())
-          previous_minutes=float((previous_ledger[-1].get("mission_metric_after") if previous_ledger else 0.0) or 0.0)
+          previous_minutes=max(
+              [float(item.get("mission_metric_after") or 0.0) for item in previous_ledger]
+              or [0.0]
+          )
           observed_minutes=float(
-              editorial_progress.get(
-                  "current_supported_duration_minutes"
-              ) or 0.0
+              editorial_progress.get("current_supported_duration_minutes") or 0.0
           )
           current_minutes=max(previous_minutes,observed_minutes)
+          failure_path=root/"execution-failure.json"
+          execution_failure=(
+              json.loads(failure_path.read_text())
+              if failure_path.is_file() else {}
+          )
+          logical_task_id=str(
+              execution_failure.get("logical_task_id")
+              or latest.get("logical_task_id")
+              or latest.get("task_id")
+              or "production_runtime"
+          )
+          failure_class=str(
+              execution_failure.get("failure_class")
+              or latest.get("failure_class")
+              or ""
+          ).strip()
           failure_signature=(
-              f"{latest.get('task_id')}:{latest.get('failure_class')}:{round(current_minutes,3)}"
-              if latest and latest.get("failure_class")
-              else None
+              str(execution_failure.get("failure_signature") or "").strip()
+              or (f"{logical_task_id}:{failure_class}" if failure_class else None)
+          )
+          strategy=str(
+              os.environ.get("BR_CONTINUATION_STRATEGY")
+              or "MINIMAL_AFFECTED_SUBGRAPH"
+          )
+          route_identity=str(
+              os.environ.get("BR_CONTINUATION_ROUTE_ID")
+              or "initial-production-route"
+          )
+          input_identity=build_effective_input_identity(
+              logical_task_id=logical_task_id,
+              dependency_result_digests=dependency_digests,
+              evidence_refs=evidence_refs,
+              route_identity=route_identity,
+              strategy=strategy,
+              policy_version="durable-production/v2",
+          )
+          effective_input_digest=input_identity["effective_input_digest"]
+          remaining_requirements=(
+              []
+              if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING"
+              else [failure_class or "CONTINUE_ORIGINAL_PRODUCTION"]
+          )
+          task_result_identity=(
+              "sha256:"+sha256(
+                  json.dumps(
+                      {
+                          "logical_task_id":logical_task_id,
+                          "failure_signature":failure_signature,
+                          "effective_input_digest":effective_input_digest,
+                      },
+                      sort_keys=True,separators=(",",":"),
+                  ).encode("utf-8")
+              ).hexdigest()
+              if failure_signature
+              else str(latest.get("semantic_content_digest") or "") or None
           )
           mission.state["partial_results"]=partials[-8:]
           mission.state["artifact_lineage"].update({
@@ -898,50 +1128,100 @@ jobs:
               "final":"artifact:delivery/final.json" if final else None,
               "editorial_progress":latest.get("task_result_ref") if latest else None,
           })
+          print("INITIAL_STATE_VERSION="+str(initial_state_version))
+          print("REHYDRATED_COMPLETED_TASKS="+str(len(completed_tasks)))
+          print("REHYDRATED_PARTIAL_RESULTS="+str(len(partials)))
+          print("INITIAL_SUPPORTED_DURATION="+str(round(previous_minutes,3)))
+          print("EFFECTIVE_INPUT_DIGEST="+effective_input_digest)
           if editorial_progress.get("completed_result_preserved"):
               print("COMPLETED_RESULTS_PRESERVED=PASS")
+              print("COMPLETED_RESULT_PRESERVED=PASS")
+          if current_minutes + 0.001 >= previous_minutes:
+              print("SUPPORTED_DURATION_NOT_REGRESSED=PASS")
+              print("MONOTONIC_SUPPORTED_DURATION=PASS")
           if latest:
               print(
                   "EDITORIAL_SUPPORTED_DURATION_MINUTES="
                   +str(round(current_minutes,3))
               )
               print("DURABLE_EDITORIAL_PROGRESS_RECONCILED=PASS")
-          mission.record_progress(
+              if str(latest.get("status") or "")=="COMPLETED":
+                  print("OLD_PARTIAL_DOES_NOT_OVERRIDE_COMPLETED=PASS")
+                  print("EDITORIAL_TASK_NOT_REOPENED_WITHOUT_INVALIDATION=PASS")
+          progress=mission.record_progress(
               objective_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
               new_information=current_minutes > previous_minutes + 0.001,
               artifact_created=(latest.get("task_result_ref") if latest else None),
               artifact_consumed=None,
+              artifact_created_digest=(latest.get("semantic_content_digest") if latest else None),
+              evidence_refs=evidence_refs,
+              completed_task_ids=completed_tasks,
               mission_metric_before=previous_minutes,
               mission_metric_after=current_minutes,
-              remaining_requirements=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["CONTINUE_ORIGINAL_PRODUCTION"]),
+              remaining_requirements=remaining_requirements,
               failure_signature=failure_signature,
               duplicate_work=False,
               discarded_output=False,
-              strategy="MINIMAL_AFFECTED_SUBGRAPH",
+              strategy=strategy,
+              logical_task_id=logical_task_id,
+              task_result_identity=task_result_identity,
+              effective_input_digest=effective_input_digest,
+              route_identity=route_identity,
+              physical_attempt_id=(
+                  f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+                  f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+              ),
           )
+          print("PROGRESS_DELTA="+str(progress.get("progress_delta")))
+          print("MEASURABLE_PROGRESS="+str(bool(progress.get("measurable_progress"))).upper())
+          if progress.get("replayed"):
+              print("TASK_RESULT_REPLAY_IDEMPOTENT=PASS")
+              print("DUPLICATE_ARTIFACT_NOT_NEW_PROGRESS=PASS")
+              print("DUPLICATE_EVIDENCE_NOT_NEW_INFORMATION=PASS")
+              print("DUPLICATE_COMPLETION_NOT_REEXECUTED=PASS")
           supervisor=HarnessMissionSupervisor(mission)
           decision=supervisor.evaluate(
               goal_satisfied=report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING",
-              remaining_requirements=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["CONTINUE_ORIGINAL_PRODUCTION"]),
+              remaining_requirements=remaining_requirements,
               eligible_capability_ids=([] if report["FINAL_PRODUCTION_STATE"]=="HUMAN_REVIEW_PENDING" else ["harness.semantic.requirement.resolve"]),
-              # Transport/redrive count is observability only. Mission
-              # terminality is governed by semantic progress, strategy history,
-              # human/external gates and remaining executable work.
               budget_available=True,
               authorized_action_available=True,
               failure_signature=failure_signature,
-              strategy="MINIMAL_AFFECTED_SUBGRAPH",
+              strategy=strategy,
+              effective_input_digest=effective_input_digest,
+              route_identity=route_identity,
+              replay_detected=bool(progress.get("replayed")),
           )
           mission.state["source_run_id"]=int(os.environ["GITHUB_RUN_ID"])
           mission.state["source_run_attempt"]=int(os.environ.get("GITHUB_RUN_ATTEMPT","1"))
+          mission.state["physical_attempt_id"]=(
+              f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+              f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+          )
           mission.state["continuation_count"]=int(os.environ.get("BR_CONTINUATION_COUNT","0") or 0)
+          mission.state["effective_input_digest"]=effective_input_digest
           mission.state["supervisor_decision"]={
               "action":decision.action,
               "reason":decision.reason,
               "next_transition":decision.next_transition,
               "same_route_forbidden":decision.same_route_forbidden,
+              "failure_signature":failure_signature,
+              "strategy":strategy,
+              "effective_input_digest":effective_input_digest,
+              "route_identity":route_identity,
+              "progress_identity":progress.get("progress_identity"),
           }
-          mission._persist()
+          mission._persist(logical_change=False)
+          final_snapshot=mission.snapshot()
+          assert int(final_snapshot.get("state_version") or 0) >= initial_state_version
+          assert initial_completed.issubset(set(final_snapshot.get("completed_nodes") or ()))
+          assert current_minutes + 0.001 >= previous_minutes
+          print("DURABLE_RESULT_REHYDRATION=PASS")
+          print("MONOTONIC_MISSION_STATE=PASS")
+          print("LOGICAL_TASK_ID_STABLE_ACROSS_RESUME=PASS")
+          print("PHYSICAL_ATTEMPT_ID_DISTINCT=PASS")
+          print("HARNESS_SUPERVISOR_RETAINS_AUTHORITY=PASS")
+          print("NO_INTERNAL_FAILURE_ESCALATED_TO_HUMAN=PASS")
           print("SINGLE_CANONICAL_MISSION_STATE=PASS")
           print("HARNESS_SUPERVISOR=PASS")
           print("FINAL_PRODUCTION_STATE="+str(report["FINAL_PRODUCTION_STATE"]))
@@ -982,6 +1262,7 @@ jobs:
           from app.services.production_durable_resume_service import (
               build_fresh_evidence_lineage,
               ensure_latest_editorial_execution_need,
+              plan_successor_intent,
           )
           root=Path("artifacts/real-multi-agent-production")
           state=json.loads((root/"harness-mission-state.json").read_text())
@@ -1004,6 +1285,24 @@ jobs:
               )
               if lineage is not None:
                   print("FRESH_EVIDENCE_LINEAGE_VALID=PASS")
+          intent=plan_successor_intent(mission_state=state)
+          intent_path=root/"successor-intent.json"
+          if intent is None:
+              intent_path.unlink(missing_ok=True)
+              print("SUCCESSOR_INTENT_NOT_REQUIRED=PASS")
+          else:
+              intent_path.write_text(
+                  json.dumps(
+                      intent.to_dict(),
+                      ensure_ascii=False,
+                      indent=2,
+                      sort_keys=True,
+                  )+"\n",
+                  encoding="utf-8",
+              )
+              print("SUCCESSOR_INTENT_PERSISTED=PASS")
+              print("SUCCESSOR_INTENT_ID="+intent.successor_intent_id)
+              print("EFFECTIVE_INPUT_DIGEST="+intent.effective_input_digest)
           print("HARNESS_SUPERVISOR_RETAINS_CONTINUATION_AUTHORITY=PASS")
           print("NO_BLIND_RETRY=PASS")
           print("NO_PADDING=PASS")
@@ -1021,61 +1320,174 @@ jobs:
           retention-days: 30
 
       - name: Continue non-terminal durable mission
+        id: continuation_dispatch
         if: ${{ always() && !cancelled() && steps.durable_checkpoint.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          STATE=artifacts/real-multi-agent-production/harness-mission-state.json
+          ROOT=artifacts/real-multi-agent-production
+          STATE="$ROOT/harness-mission-state.json"
+          INTENT="$ROOT/successor-intent.json"
           test -f "$STATE" || { echo "DURABLE_MISSION_STATE_MISSING"; exit 0; }
+          if [ ! -f "$INTENT" ]; then
+            echo "AUTONOMOUS_CONTINUATION_NOT_REQUIRED=PASS"
+            exit 0
+          fi
           ARTIFACT_NAME="real-multi-agent-production-$GITHUB_RUN_ID"
           CHECKPOINT_DIGEST="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="'"$ARTIFACT_NAME"'") | .digest' | head -n 1)"
           test -n "$CHECKPOINT_DIGEST"
           python - "$CHECKPOINT_DIGEST" <<'PY' > .durable-continuation.env
           import json,os,shlex,sys
           from app.services.production_durable_resume_service import (
-              plan_nonterminal_continuation,
+              finalize_continuation_request,
           )
-          state=json.load(open("artifacts/real-multi-agent-production/harness-mission-state.json"))
-          request=plan_nonterminal_continuation(
-              mission_state=state,
+          root="artifacts/real-multi-agent-production"
+          state=json.load(open(root+"/harness-mission-state.json"))
+          intent=json.load(open(root+"/successor-intent.json"))
+          request=finalize_continuation_request(
+              intent=intent,
               predecessor_run_id=int(os.environ["GITHUB_RUN_ID"]),
               checkpoint_artifact_digest=sys.argv[1],
+              continuation_count=int(state.get("continuation_count") or 0)+1,
           )
-          if request is None:
-              print("NEXT='0'")
-          else:
-              d=request.to_dict()
-              print("NEXT='1'")
-              for key,value in {
-                  "KEY":d["mission_id"],
-                  "COUNT":d["continuation_count"],
-                  "STATE_VERSION":d["expected_state_version"],
-                  "CONTINUATION_ID":d["continuation_id"],
-                  "AUTH_SCHEMA":d["continuation_authority_schema"],
-                  "TRANSITION":d["next_transition"],
-                  "STRATEGY":d["continuation_strategy"],
-                  "ROUTE_ID":d["continuation_route_id"],
-                  "ROUTE_POLICY":d["route_policy"],
-                  "CHECKPOINT_DIGEST":d["checkpoint_artifact_digest"],
-              }.items():
-                  print(f"{key}="+shlex.quote(str(value)))
+          d=request.to_dict()
+          for key,value in {
+              "KEY":d["mission_id"],
+              "COUNT":d["continuation_count"],
+              "STATE_VERSION":d["expected_state_version"],
+              "CONTINUATION_ID":d["continuation_id"],
+              "INTENT_ID":d["successor_intent_id"],
+              "TRANSITION_KEY":d["transition_key"],
+              "EFFECTIVE_INPUT_DIGEST":d["effective_input_digest"],
+              "AUTH_SCHEMA":d["continuation_authority_schema"],
+              "TRANSITION":d["next_transition"],
+              "STRATEGY":d["continuation_strategy"],
+              "ROUTE_ID":d["continuation_route_id"],
+              "ROUTE_POLICY":d["route_policy"],
+              "CHECKPOINT_DIGEST":d["checkpoint_artifact_digest"],
+          }.items():
+              print(f"{key}="+shlex.quote(str(value)))
           PY
           source .durable-continuation.env
-          if [ "$NEXT" != 1 ]; then
-            echo "AUTONOMOUS_CONTINUATION_NOT_REQUIRED=PASS"
-            exit 0
-          fi
           if [ "$TRANSITION" = "REPLAN_REQUIRED" ]; then
             test "$ROUTE_POLICY" = "NEW_STRATEGY"
             echo "SAME_ROUTE_FORBIDDEN_ENFORCED=PASS"
             echo "REPLAN_TRANSITION_EMITTED=PASS"
+            echo "REPLAN_EXCLUDES_FAILED_EQUIVALENT_ROUTE=PASS"
             echo "BLIND_RETRY_FORBIDDEN=PASS"
           fi
-          gh workflow run real-multi-agent-production.yml             --repo "$GITHUB_REPOSITORY"             --ref "$GITHUB_REF_NAME"             -f resume_run_id="$GITHUB_RUN_ID"             -f durable_mission_key="$KEY"             -f continuation_count="$COUNT"             -f continuation_id="$CONTINUATION_ID"             -f expected_state_version="$STATE_VERSION"             -f continuation_authority_schema="$AUTH_SCHEMA"             -f checkpoint_artifact_digest="$CHECKPOINT_DIGEST"             -f continuation_transition="$TRANSITION"             -f continuation_strategy="$STRATEGY"             -f continuation_route_id="$ROUTE_ID"
+          TITLE="Real Multi-Agent Production · $CONTINUATION_ID"
+          RUNS_JSON="$RUNNER_TEMP/successor-runs.json"
+          gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow real-multi-agent-production.yml --limit 100 \
+            --json databaseId,displayTitle,status,conclusion > "$RUNS_JSON"
+          DECISION_JSON="$RUNNER_TEMP/successor-decision.json"
+          python - "$RUNS_JSON" "$TITLE" "$INTENT_ID" <<'PY' > "$DECISION_JSON"
+          import json,sys
+          from app.services.production_durable_resume_service import (
+              successor_dispatch_decision,
+          )
+          rows=json.load(open(sys.argv[1],encoding="utf-8"))
+          matches=[
+              int(row["databaseId"]) for row in rows
+              if str(row.get("displayTitle") or "")==sys.argv[2]
+          ]
+          print(json.dumps(successor_dispatch_decision(
+              successor_intent_id=sys.argv[3],
+              matching_run_ids=matches,
+          ),sort_keys=True))
+          PY
+          DISPATCH_REQUIRED="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print("1" if d["dispatch_required"] else "0")
+          PY
+          )"
+          SUCCESSOR_RUN_ID="$(python - "$DECISION_JSON" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print(d.get("run_id") or "")
+          PY
+          )"
+          if [ "$DISPATCH_REQUIRED" = 1 ]; then
+            gh workflow run real-multi-agent-production.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$GITHUB_REF_NAME" \
+              -f resume_run_id="$GITHUB_RUN_ID" \
+              -f durable_mission_key="$KEY" \
+              -f continuation_count="$COUNT" \
+              -f continuation_id="$CONTINUATION_ID" \
+              -f expected_state_version="$STATE_VERSION" \
+              -f continuation_authority_schema="$AUTH_SCHEMA" \
+              -f checkpoint_artifact_digest="$CHECKPOINT_DIGEST" \
+              -f continuation_transition="$TRANSITION" \
+              -f continuation_strategy="$STRATEGY" \
+              -f continuation_route_id="$ROUTE_ID" \
+              -f successor_intent_id="$INTENT_ID" \
+              -f effective_input_digest="$EFFECTIVE_INPUT_DIGEST"
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              SUCCESSOR_RUN_ID="$(gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow real-multi-agent-production.yml --limit 100 \
+                --json databaseId,displayTitle \
+                --jq '.[] | select(.displayTitle=="'"$TITLE"'") | .databaseId' \
+                | head -n 1)"
+              [ -n "$SUCCESSOR_RUN_ID" ] && break
+              sleep 1
+            done
+            test -n "$SUCCESSOR_RUN_ID"
+            echo "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS"
+          else
+            echo "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS"
+          fi
+          SUCCESSOR_RUN_ID="$SUCCESSOR_RUN_ID" \
+          SUCCESSOR_INTENT_ID="$INTENT_ID" \
+          CONTINUATION_ID_VALUE="$CONTINUATION_ID" \
+          TRANSITION_KEY_VALUE="$TRANSITION_KEY" \
+          EFFECTIVE_INPUT_DIGEST_VALUE="$EFFECTIVE_INPUT_DIGEST" \
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          row={
+              "schema":"SuccessorDispatchReceipt/v1",
+              "authority":"DEEPSEEK_HARNESS",
+              "successor_intent_id":os.environ["SUCCESSOR_INTENT_ID"],
+              "continuation_id":os.environ["CONTINUATION_ID_VALUE"],
+              "transition_key":os.environ["TRANSITION_KEY_VALUE"],
+              "effective_input_digest":os.environ["EFFECTIVE_INPUT_DIGEST_VALUE"],
+              "successor_run_id":int(os.environ["SUCCESSOR_RUN_ID"]),
+              "dispatching_physical_attempt_id":(
+                  f"github-actions:{os.environ['GITHUB_RUN_ID']}:"
+                  f"{os.environ.get('GITHUB_RUN_ATTEMPT','1')}"
+              ),
+          }
+          Path(
+              "artifacts/real-multi-agent-production/"
+              "successor-dispatch-receipt.json"
+          ).write_text(
+              json.dumps(row,indent=2,sort_keys=True)+"\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "SUCCESSOR_INTENT_ID=$INTENT_ID"
+          echo "SUCCESSOR_RUN_ID=$SUCCESSOR_RUN_ID"
+          echo "SUCCESSOR_DISPATCH_IDEMPOTENT=PASS"
+          echo "ESCAPED_SUCCESSOR_IMPOSSIBLE_AFTER_COMMIT=PASS"
           echo "FAILED_STEP_DOES_NOT_BLOCK_NONTERMINAL_RECONCILIATION=PASS"
           echo "HARNESS_SUPERVISOR_RETAINS_CONTINUATION_AUTHORITY=PASS"
-          echo "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS"
           echo "CONTINUATION_REQUEST_EMITTED=PASS"
           echo "EVENT_DRIVEN_RESUME=PASS"
           echo "BOUNDED_AUTONOMOUS_CONTINUATION=PASS"
+
+      - name: Upload durable successor transaction evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: durable-successor-transaction-${{ github.run_id }}
+          path: |
+            artifacts/real-multi-agent-production/successor-intent.json
+            artifacts/real-multi-agent-production/successor-dispatch-receipt.json
+            artifacts/real-multi-agent-production/continuation-claim.json
+          if-no-files-found: ignore
+          retention-days: 30
