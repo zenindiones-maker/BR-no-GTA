@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused test dependency
-        run: python -m pip install --disable-pip-version-check pytest==8.4.2
+        run: python -m pip install --disable-pip-version-check pytest==8.4.2 python-dotenv==1.2.3
       - name: Run Voice Plane focused tests
         run: |
           python3 -m pytest -q             tests/test_voice_plane_foundation.py             tests/test_telegram_voice_plane.py             tests/test_realtime_voice_plane.py             tests/test_voice_capability_registry.py
