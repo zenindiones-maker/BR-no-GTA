@@ -11,6 +11,8 @@ MODULE = ROOT / "scripts" / "agent-tooling" / "claude_omniroute_contract.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "claude-code-omniroute-proof.yml"
 AUTH_WORKFLOW = ROOT / ".github" / "workflows" / "claude-code-auth-validation.yml"
 
+LOGICAL_ROUTE = "combo/harness-claude-0123456789abcdef"
+
 
 def load_module():
     spec = importlib.util.spec_from_file_location("claude_omniroute_contract", MODULE)
@@ -21,49 +23,63 @@ def load_module():
 
 
 class ClaudeOmniRouteContractTests(unittest.TestCase):
-    def test_build_env_pins_loopback_gateway_and_model(self):
+    def test_build_env_pins_loopback_gateway_and_logical_route_alias(self):
         module = load_module()
-        env = module.build_gateway_env(provider="opencode", model="oc/big-pickle")
+        env = module.build_gateway_env(
+            logical_model=LOGICAL_ROUTE,
+            proof_mode=True,
+        )
         self.assertEqual(env["ANTHROPIC_BASE_URL"], "http://127.0.0.1:20128")
         self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "omniroute-no-auth")
-        self.assertEqual(env["ANTHROPIC_MODEL"], "oc/big-pickle")
-        self.assertEqual(env["ANTHROPIC_CUSTOM_MODEL_OPTION"], "oc/big-pickle")
+        self.assertEqual(env["ANTHROPIC_MODEL"], LOGICAL_ROUTE)
+        self.assertEqual(env["ANTHROPIC_CUSTOM_MODEL_OPTION"], LOGICAL_ROUTE)
+        self.assertEqual(env["OMNIROUTE_ENDPOINT_AUTH_MODE"], "PROOF_LOOPBACK_SENTINEL")
         self.assertNotIn("ANTHROPIC_API_KEY", env)
         self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", env)
+        self.assertNotIn("NVIDIA_API_KEY", env)
         self.assertNotIn("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", env)
 
-    def test_rejects_autonomous_routing_and_v1_suffix(self):
+    def test_rejects_physical_or_autonomous_models_and_v1_suffix(self):
         module = load_module()
-        with self.assertRaises(ValueError):
-            module.build_gateway_env(provider="auto", model="oc/big-pickle")
-        with self.assertRaises(ValueError):
-            module.build_gateway_env(provider="opencode", model="auto")
+        for invalid in (
+            "auto",
+            "auto/coding",
+            "oc/big-pickle",
+            "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+            "harness-claude-0123456789abcdef",
+        ):
+            with self.assertRaises(ValueError):
+                module.build_gateway_env(logical_model=invalid, proof_mode=True)
         with self.assertRaises(ValueError):
             module.build_gateway_env(
-                provider="opencode",
-                model="oc/big-pickle",
+                logical_model=LOGICAL_ROUTE,
                 base_url="http://127.0.0.1:20128/v1",
+                proof_mode=True,
             )
 
-    def test_zero_cost_proof_allows_only_current_proven_route(self):
+    def test_production_mode_requires_separate_endpoint_token(self):
         module = load_module()
-        self.assertEqual(
-            module.validate_zero_cost_proof_selection("opencode", "oc/big-pickle"),
-            ("opencode", "oc/big-pickle"),
-        )
         with self.assertRaises(ValueError):
-            module.validate_zero_cost_proof_selection("nvidia_nim", "z-ai/glm-5.3")
+            module.build_gateway_env(
+                logical_model=LOGICAL_ROUTE,
+                proof_mode=False,
+            )
+        env = module.build_gateway_env(
+            logical_model=LOGICAL_ROUTE,
+            proof_mode=False,
+            auth_token="endpoint-scoped-token",
+        )
+        self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "endpoint-scoped-token")
+        self.assertEqual(env["OMNIROUTE_ENDPOINT_AUTH_MODE"], "SCOPED_INFERENCE_KEY")
 
     def test_contract_cli_does_not_print_token(self):
         result = subprocess.run(
             [
                 sys.executable,
                 str(MODULE),
-                "--provider",
-                "opencode",
-                "--model",
-                "oc/big-pickle",
-                "--zero-cost-proof",
+                "--logical-model",
+                LOGICAL_ROUTE,
+                "--proof-mode",
             ],
             text=True,
             capture_output=True,
@@ -71,14 +87,39 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("CLAUDE_OMNIROUTE_CONTRACT=PASS", result.stdout)
+        self.assertIn("PROOF_LOOPBACK_SENTINEL", result.stdout)
         self.assertNotIn("omniroute-no-auth", result.stdout)
 
-    def test_live_workflow_is_read_only_and_harness_pinned(self):
+    def test_live_workflow_materializes_bounded_route_and_never_exposes_physical_model_to_claude(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("ANTHROPIC_BASE_URL: http://127.0.0.1:20128", text)
-        self.assertIn("ANTHROPIC_AUTH_TOKEN: omniroute-no-auth", text)
-        self.assertIn("ANTHROPIC_MODEL: ${{ inputs.model || 'oc/big-pickle' }}", text)
-        self.assertIn("ANTHROPIC_CUSTOM_MODEL_OPTION: ${{ inputs.model || 'oc/big-pickle' }}", text)
+        self.assertIn("REQUIRE_API_KEY: \"false\"", text)
+        self.assertIn("OMNIROUTE_ENDPOINT_AUTH_MODE: PROOF_LOOPBACK_SENTINEL", text)
+        self.assertIn("omniroute@3.8.50", text)
+        self.assertNotIn("omniroute@latest", text)
+        self.assertIn("dist.integrity", text)
+        self.assertIn("HarnessOmniRoutePlan/v1", text)
+        self.assertIn("Resolve Harness-governed replan", text)
+        self.assertIn("HARNESS_OMNIROUTE_ROUTE_PLAN=PASS", text)
+        self.assertIn("ProviderDirectCanary/v1", text)
+        self.assertIn("OmniRouteProviderCanary/v1", text)
+        self.assertIn("omniroute providers add", text)
+        self.assertIn("--credential-env", text)
+        self.assertNotIn('--api-key "$NVIDIA_API_KEY"', text)
+        self.assertIn("omniroute providers validate", text)
+        self.assertIn("omniroute providers test", text)
+        self.assertIn("omniroute combo create", text)
+        self.assertIn("--strategy priority", text)
+        self.assertNotIn("auto/coding", text)
+        self.assertNotIn("ANTHROPIC_MODEL=auto", text)
+        self.assertIn("OMNIROUTE_BOUNDED_COMBO=PASS", text)
+        self.assertIn("Re-probe OmniRoute Anthropic Messages through bounded route", text)
+        self.assertIn("X-OmniRoute-Provider", text)
+        self.assertIn("X-OmniRoute-Model", text)
+        self.assertIn("X-OmniRoute-Fallback-Attempts", text)
+        self.assertIn("OmniRouteDispatchEvidence/v1", text)
+        self.assertIn('--model "$HARNESS_MATERIALIZED_OMNIROUTE_ROUTE"', text)
+        self.assertNotIn('--model "$OMNIROUTE_SELECTED_MODEL"', text)
         self.assertIn('--tools ""', text)
         self.assertIn("--permission-prompts none", text)
         self.assertIn("--no-session-persistence", text)
@@ -87,30 +128,18 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertNotIn("secrets.ANTHROPIC_API_KEY", text)
         self.assertNotIn("secrets.CLAUDE_CODE_OAUTH_TOKEN", text)
         self.assertIn("git status --porcelain", text)
-        self.assertIn("Probe OmniRoute OpenAI-compatible baseline", text)
-        self.assertIn("/v1/providers/$HARNESS_SELECTED_PROVIDER/chat/completions", text)
-        self.assertIn("Probe OmniRoute Anthropic Messages endpoint", text)
-        self.assertIn("Classify OmniRoute Claude compatibility", text)
-        self.assertIn("Resolve Harness-governed replan", text)
-        self.assertIn("claude_omniroute_replan.py", text)
-        self.assertIn("secrets.NVIDIA_API_KEY", text)
-        self.assertIn("omniroute setup --non-interactive", text)
-        self.assertIn("Re-probe OmniRoute Anthropic Messages after Harness replan", text)
-        self.assertIn("OMNIROUTE_SELECTED_MODEL", text)
-        self.assertIn('--model "$OMNIROUTE_SELECTED_MODEL"', text)
-        self.assertIn("SHARED_ROUTE_UNAVAILABLE", text)
-        self.assertIn("ANTHROPIC_MESSAGES_INCOMPATIBLE", text)
+        self.assertIn("UPSTREAM_DENIED_HTTP_403", text)
         self.assertIn("/v1/messages", text)
         self.assertIn('"anthropic-version": "2023-06-01"', text)
         self.assertIn("ClaudeCodeOmniRouteProof/v1", text)
         self.assertIn("if: ${{ always() }}", text)
-        self.assertIn("if-no-files-found: warn", text)
 
-    def test_legacy_auth_workflow_no_longer_requires_anthropic_secret(self):
+    def test_gateway_boundary_tracks_new_route_plan_contract(self):
         text = AUTH_WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("secrets.ANTHROPIC_API_KEY", text)
         self.assertNotIn("secrets.CLAUDE_CODE_OAUTH_TOKEN", text)
-        self.assertIn("claude_omniroute_contract.py", text)
+        self.assertIn("claude_omniroute_route_plan.py", text)
+        self.assertIn("tests.test_claude_omniroute_route_plan", text)
 
 
 if __name__ == "__main__":
