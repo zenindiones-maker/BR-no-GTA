@@ -15,6 +15,10 @@ if (typeof skillFilesystem.FileSystemSkillProvider !== "function") {
 const abortController = new AbortController();
 const warnings = [];
 const ctx = {
+  get(name) {
+    if (name === "fs") return undefined;
+    return undefined;
+  },
   logger: {
     warn(message) {
       warnings.push(String(message));
