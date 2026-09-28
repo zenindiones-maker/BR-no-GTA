@@ -243,7 +243,11 @@ def run(output: Path) -> dict[str, Any]:
 
     report: dict[str, Any] = {
         "profile_kind": "SINGLE_BOUNDED_LOCAL_DIAGNOSTIC",
-        "status": "RUNNING",
+        "status": "MEASUREMENT_RUNNING",
+        "MEASUREMENT_STATUS": "RUNNING",
+        "CANDIDATE_STATUS": "UNEVALUATED",
+        "CANDIDATE_PROFILE_ACCEPTED": False,
+        "REJECTION_REASON": None,
         "provider": "ollama_local",
         "model": MODEL,
         "LOCAL_PROVIDER_ROLE": LOCAL_PROVIDER_ROLE,
@@ -278,7 +282,11 @@ def run(output: Path) -> dict[str, Any]:
     if not prompt_bound:
         report.update(
             {
-                "status": "PASS",
+                "status": "MEASUREMENT_COMPLETED",
+                "MEASUREMENT_STATUS": "COMPLETED",
+                "CANDIDATE_STATUS": "REJECTED",
+                "CANDIDATE_PROFILE_ACCEPTED": False,
+                "REJECTION_REASON": "PROMPT_TOKEN_TARGET_EXCEEDED",
                 "LOCAL_PROVIDER_PROFILE_RESULT": "FAIL",
                 "failure_class": "PROMPT_TOKEN_TARGET_EXCEEDED",
                 "PROFILE_DIAGNOSTIC_CAPTURED": True,
@@ -326,7 +334,11 @@ def run(output: Path) -> dict[str, Any]:
 
     report.update(
         {
-            "status": "PASS",
+            "status": "MEASUREMENT_COMPLETED",
+            "MEASUREMENT_STATUS": "COMPLETED",
+            "CANDIDATE_STATUS": "ACCEPTED" if profile_pass else "REJECTED",
+            "CANDIDATE_PROFILE_ACCEPTED": bool(profile_pass),
+            "REJECTION_REASON": None if profile_pass else failure,
             "LOCAL_PROVIDER_PROFILE_RESULT": "PASS" if profile_pass else "FAIL",
             "failure_class": failure,
             "PROFILE_DIAGNOSTIC_CAPTURED": True,
@@ -335,6 +347,9 @@ def run(output: Path) -> dict[str, Any]:
     _write_json(output, report)
 
     print("LOCAL_PROVIDER_ROLE=" + LOCAL_PROVIDER_ROLE)
+    print("MEASUREMENT_STATUS=" + str(report["MEASUREMENT_STATUS"]))
+    print("CANDIDATE_STATUS=" + str(report["CANDIDATE_STATUS"]))
+    print("REJECTION_REASON=" + str(report.get("REJECTION_REASON")))
     print(
         "LOCAL_PROVIDER_PROFILE_RESULT="
         + str(report["LOCAL_PROVIDER_PROFILE_RESULT"])
