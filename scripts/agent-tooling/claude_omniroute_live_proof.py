@@ -47,6 +47,14 @@ OPENCODE_FAILURE = {
 
 
 
+class OmniRouteObservabilityUnavailable(RuntimeError):
+    failure_class = "OMNIROUTE_OBSERVABILITY_UNAVAILABLE"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = str(reason or "official OmniRoute observability unavailable")
+        super().__init__(f"{self.failure_class}:{self.reason}")
+
+
 def credential_preflight(
     plan: dict[str, Any],
     *,
@@ -690,6 +698,7 @@ def _resolve_dedicated_connection_evidence(
     expected_connection_id: str,
     provider: str,
     model: str,
+    response_status: int,
 ) -> dict[str, Any]:
     selected_connection = _header(
         response_headers,
@@ -718,9 +727,11 @@ def _resolve_dedicated_connection_evidence(
             "ok": False,
             "source": None,
             "connection_identity_redacted": None,
-            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
+            "failure_class": "OMNIROUTE_CONNECTION_RECEIPT_MISSING",
         }
 
+    expected_path = f"/v1/providers/{provider}/chat/completions"
+    expected_status = int(response_status or 0)
     matches: list[dict[str, Any]] = []
     for _ in range(20):
         rows = _fetch_logs(base_url)
@@ -734,6 +745,8 @@ def _resolve_dedicated_connection_evidence(
                 str(row.get("model") or ""),
             )
             == _canonical_dispatch_model(provider, model)
+            and str(row.get("path") or "") == expected_path
+            and int(row.get("status") or 0) == expected_status
         ]
         if matches:
             break
@@ -744,7 +757,7 @@ def _resolve_dedicated_connection_evidence(
             "ok": False,
             "source": "CALL_LOG_CORRELATION",
             "connection_identity_redacted": None,
-            "failure_class": "OMNIROUTE_CONNECTION_EVIDENCE_MISSING",
+            "failure_class": "OMNIROUTE_CONNECTION_RECEIPT_MISSING",
         }
 
     connection_ids = {
@@ -752,7 +765,7 @@ def _resolve_dedicated_connection_evidence(
         for row in matches
         if str(row.get("connectionId") or "").strip()
     }
-    if connection_ids != {expected_connection_id}:
+    if len(matches) != 1 or connection_ids != {expected_connection_id}:
         return {
             "ok": False,
             "source": "CALL_LOG_CORRELATION",
@@ -798,6 +811,7 @@ def _dedicated_canary(
         expected_connection_id=connection_id,
         provider=provider,
         model=model,
+        response_status=status,
     )
     canonical_actual_model = _canonical_dispatch_model(
         str(actual_provider or provider),
@@ -1150,11 +1164,45 @@ def probe(
 
 
 def _fetch_logs(base_url: str) -> list[dict[str, Any]]:
-    url = base_url.rstrip("/") + "/api/logs/export?hours=1&type=request-logs"
-    with urllib.request.urlopen(url, timeout=20) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    rows = payload.get("logs") if isinstance(payload, dict) else []
-    return [item for item in rows or [] if isinstance(item, dict)]
+    env = dict(os.environ)
+    env["OMNIROUTE_BASE_URL"] = base_url.rstrip("/")
+    for secret_name in (
+        "NVIDIA_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+    ):
+        env.pop(secret_name, None)
+
+    command = [
+        "omniroute",
+        "--output",
+        "json",
+        "api",
+        "usage",
+        "get-api-usage-call-logs",
+        "--limit",
+        "500",
+    ]
+    result = _run(command, env=env)
+    if result.returncode != 0:
+        raise OmniRouteObservabilityUnavailable(
+            f"official management CLI exited {result.returncode}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise OmniRouteObservabilityUnavailable(
+            "official management CLI returned invalid JSON"
+        ) from exc
+    if not isinstance(payload, list) or any(
+        not isinstance(item, dict) for item in payload
+    ):
+        raise OmniRouteObservabilityUnavailable(
+            "official management CLI returned unexpected call-log schema"
+        )
+    return [dict(item) for item in payload]
 
 
 def verify_claude_dispatch(
