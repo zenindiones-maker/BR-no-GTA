@@ -42,14 +42,14 @@ class ClaudeOmniRouteRoutePlanTests(unittest.TestCase):
             provider_id="nvidia_nim",
             model_id="nvidia/nemotron-3-ultra-550b-a55b",
         )
-        provider, model = module.map_harness_target(source)
-        self.assertEqual(provider.provider_id, "nvidia")
-        self.assertEqual(provider.credential_env, "NVIDIA_API_KEY")
-        self.assertEqual(
-            model.model_id,
-            "nvidia/nemotron-3-ultra-550b-a55b",
-        )
-        self.assertEqual(model.provider_id, "nvidia")
+        mapping = module.map_harness_target(source)
+        self.assertEqual(mapping.harness_provider_id, "nvidia_nim")
+        self.assertEqual(mapping.harness_model_id, "nvidia/nemotron-3-ultra-550b-a55b")
+        self.assertEqual(mapping.upstream_provider_id, "nvidia")
+        self.assertEqual(mapping.upstream_model_id, "nvidia/nemotron-3-ultra-550b-a55b")
+        self.assertEqual(mapping.omniroute_provider_id, "nvidia")
+        self.assertEqual(mapping.omniroute_model_id, "nvidia/nemotron-3-ultra-550b-a55b")
+        self.assertEqual(mapping.credential_env, "NVIDIA_API_KEY")
         self.assertIn("nvidia_nim", module.PROVIDER_IDENTITY_MAPPINGS)
 
     def test_unknown_provider_mapping_fails_closed_without_fuzzy_match(self):
@@ -121,6 +121,11 @@ class ClaudeOmniRouteRoutePlanTests(unittest.TestCase):
             first["candidate_targets"][0]["harness_model"],
             "nvidia/nemotron-3-ultra-550b-a55b",
         )
+        target = first["candidate_targets"][0]
+        self.assertEqual(target["upstream_provider"], "nvidia")
+        self.assertEqual(target["upstream_model"], target["harness_model"])
+        self.assertEqual(target["omniroute_provider"], "nvidia")
+        self.assertEqual(target["omniroute_model"], "nvidia/nemotron-3-ultra-550b-a55b")
         self.assertTrue(all(item["authorized_target"] for item in first["candidate_targets"]))
         self.assertNotIn("auto", json.dumps(first).lower())
 

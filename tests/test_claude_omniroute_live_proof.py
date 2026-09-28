@@ -4,6 +4,9 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest import mock
+from tempfile import TemporaryDirectory
+from subprocess import CompletedProcess
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "scripts" / "agent-tooling" / "claude_omniroute_live_proof.py"
@@ -31,7 +34,9 @@ def plan():
                 "harness_provider": "nvidia_nim",
                 "harness_model": "nvidia/nemotron-3-ultra-550b-a55b",
                 "omniroute_provider": "nvidia",
-                "omniroute_model": "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+                "upstream_provider": "nvidia",
+                "upstream_model": "nvidia/nemotron-3-ultra-550b-a55b",
+                "omniroute_model": "nvidia/nemotron-3-ultra-550b-a55b",
                 "credential_env": "NVIDIA_API_KEY",
                 "authorized_target": True,
                 "priority_rank": 0,
@@ -41,7 +46,9 @@ def plan():
                 "harness_provider": "nvidia_nim",
                 "harness_model": "nvidia/backup-model",
                 "omniroute_provider": "nvidia",
-                "omniroute_model": "nvidia/nvidia/backup-model",
+                "upstream_provider": "nvidia",
+                "upstream_model": "nvidia/backup-model",
+                "omniroute_model": "nvidia/backup-model",
                 "credential_env": "NVIDIA_API_KEY",
                 "authorized_target": True,
                 "priority_rank": 1,
@@ -96,7 +103,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         self.assertEqual([row["candidate_id"] for row in rows], ["n1"])
         self.assertEqual(
             module.combo_models(rows),
-            ["nvidia/nvidia/nemotron-3-ultra-550b-a55b"],
+            ["nvidia/nemotron-3-ultra-550b-a55b"],
         )
 
     def test_dispatch_target_must_match_exact_authorized_identity(self):
@@ -105,7 +112,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             module.is_authorized_target(
                 plan(),
                 "nvidia",
-                "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+                "nvidia/nemotron-3-ultra-550b-a55b",
             )
         )
         self.assertTrue(
@@ -122,6 +129,133 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 "nvidia",
                 "nvidia/nemotron-3-ultra-550b-a55b-extra",
             )
+        )
+
+    def test_direct_canary_uses_upstream_model_identity(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        captured = {}
+
+        def fake_http(url, *, body, headers, timeout=180):
+            captured["url"] = url
+            captured["model"] = body["model"]
+            return (
+                200,
+                10.0,
+                '{"choices":[{"message":{"content":"ROUTE_CANARY_OK"}}]}',
+                {"choices": [{"message": {"content": "ROUTE_CANARY_OK"}}]},
+                {},
+            )
+
+        with mock.patch.object(module, "_http_json", side_effect=fake_http):
+            evidence = module._direct_canary(target)
+
+        self.assertEqual(captured["model"], target["upstream_model"])
+        self.assertEqual(evidence["candidate_id"], target["candidate_id"])
+        self.assertEqual(evidence["upstream_provider"], "nvidia")
+        self.assertEqual(
+            evidence["upstream_model"],
+            "nvidia/nemotron-3-ultra-550b-a55b",
+        )
+
+    def test_provider_materialization_captures_exact_connection_id_and_tests_it(self):
+        module = load_module()
+        target = plan()["candidate_targets"][0]
+        commands = []
+        add_payload = '{"connection":{"id":"conn-nvidia-123","provider":"nvidia","name":"harness-nvidia"}}'
+
+        def fake_run(command, *, env=None):
+            commands.append(command)
+            if command[:3] == ["omniroute", "providers", "add"]:
+                return CompletedProcess(command, 0, add_payload, "")
+            return CompletedProcess(command, 0, "{}", "")
+
+        with mock.patch.object(module, "_run", side_effect=fake_run):
+            materialized = module._materialize_provider(target)
+
+        self.assertTrue(materialized["ok"])
+        self.assertEqual(materialized["connection_id"], "conn-nvidia-123")
+        self.assertIn(
+            ["omniroute", "providers", "test", "conn-nvidia-123", "--json"],
+            commands,
+        )
+        self.assertNotIn(
+            ["omniroute", "providers", "test", "harness-nvidia", "--json"],
+            commands,
+        )
+
+    def test_direct_pass_materializes_provider_before_catalog_and_dedicated_canary(self):
+        module = load_module()
+        one = plan()
+        one["candidate_targets"] = [one["candidate_targets"][0]]
+        order = []
+        candidate = one["candidate_targets"][0]
+
+        def direct(target):
+            order.append("direct")
+            return {
+                "schema": "ProviderDirectCanary/v1",
+                "candidate_id": target["candidate_id"],
+                "status": "PASS",
+                "failure_class": None,
+                "http_status": 200,
+            }
+
+        def materialize(target):
+            order.append("materialize")
+            return {
+                "ok": True,
+                "connection_id": "conn-nvidia-123",
+                "connection_identity_redacted": "sha256:deadbeef",
+                "failure_class": None,
+            }
+
+        def catalog(provider):
+            order.append("catalog")
+            return {candidate["omniroute_model"]}
+
+        def dedicated(target, base_url, *, connection_id):
+            order.append("dedicated")
+            self.assertEqual(connection_id, "conn-nvidia-123")
+            return {
+                "schema": "OmniRouteProviderCanary/v1",
+                "candidate_id": target["candidate_id"],
+                "status": "PASS",
+                "failure_class": None,
+                "http_status": 200,
+                "connection_identity_redacted": "sha256:deadbeef",
+            }
+
+        with TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / "github-env"
+            with (
+                mock.patch.dict(module.os.environ, {"NVIDIA_API_KEY": "secret"}, clear=False),
+                mock.patch.object(module, "_direct_canary", side_effect=direct),
+                mock.patch.object(module, "_materialize_provider", side_effect=materialize),
+                mock.patch.object(module, "_catalog_model_ids", side_effect=catalog),
+                mock.patch.object(module, "_dedicated_canary", side_effect=dedicated),
+                mock.patch.object(
+                    module,
+                    "_run",
+                    return_value=CompletedProcess(["omniroute"], 0, "{}", ""),
+                ),
+            ):
+                plan_path = Path(tmp) / "plan.json"
+                plan_path.write_text(json.dumps(one), encoding="utf-8")
+                module.qualify(
+                    plan_path=plan_path,
+                    evidence_dir=Path(tmp),
+                    base_url="http://127.0.0.1:20128",
+                    github_env=env_path,
+                )
+
+        self.assertEqual(order, ["direct", "materialize", "catalog", "dedicated"])
+
+    def test_direct_pass_plus_catalog_miss_is_not_credential_or_provider_failure(self):
+        module = load_module()
+        self.assertEqual(
+            module.catalog_mapping_failure_class(direct_upstream_passed=True),
+            "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE",
         )
 
 
