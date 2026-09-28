@@ -35,6 +35,15 @@ FORBIDDEN_CURRENT_TREE_TERMS = (
     _chars(118, 111, 105, 99, 101, 95, 99),
 )
 
+BOUNDARY_FORBIDDEN_TERMS = (
+    FORBIDDEN_CURRENT_TREE_TERMS[0],
+    FORBIDDEN_CURRENT_TREE_TERMS[1],
+    FORBIDDEN_CURRENT_TREE_TERMS[-4],
+    FORBIDDEN_CURRENT_TREE_TERMS[-3],
+    FORBIDDEN_CURRENT_TREE_TERMS[-2],
+    FORBIDDEN_CURRENT_TREE_TERMS[-1],
+)
+
 FORBIDDEN_EXACT_PATHS = (
     "assets/branding/audio/closing-from-g-approved-20260919.flac",
     "assets/branding/audio/" + "g-" + "brand-mixed-approved-20260919.mp3",
@@ -70,7 +79,7 @@ def _iter_checkout_files():
 
 
 def _contains_forbidden(value: str, term: str) -> bool:
-    if term in {"Voice B", "Voice C"}:
+    if term in BOUNDARY_FORBIDDEN_TERMS:
         return re.search(
             rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
             value,
