@@ -22,6 +22,7 @@ from app.services.narration_pipeline import (
     segment_fingerprint,
     semantic_section_segments,
     load_narration_bundle,
+    generate_narration_bundle_async,
 )
 
 
@@ -88,6 +89,24 @@ class FakeProvider:
 
 
 class NarrationPipelineTests(unittest.TestCase):
+    def test_new_narration_fails_closed_without_owner_provider(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job = {
+                "script_sections": SECTIONS,
+                "narration": {
+                    "language": "pt-BR",
+                    "voice": "BR_OWNER_V1",
+                    "rate": "+0%",
+                },
+            }
+            with self.assertRaisesRegex(NarrationError, "OWNER_VOICE_NOT_READY"):
+                asyncio.run(generate_narration_bundle_async(
+                    job,
+                    Path(tmp) / "bundle",
+                    cache_root=Path(tmp) / "cache",
+                    provider=None,
+                ))
+
     def setUp(self):
         self._duration_probe = patch(
             "app.services.narration_pipeline._probe_audio_duration",
@@ -129,9 +148,9 @@ class NarrationPipelineTests(unittest.TestCase):
 
     def test_fingerprint_changes_only_when_synthesis_identity_changes(self):
         segment = deterministic_segment_script(SECTIONS, target_wpm=125)[0]
-        base = segment_fingerprint(segment, voice="pt-BR-AntonioNeural", language="pt-BR", rate="-15%", provider_id="edge-tts", provider_version="7.2.8", output_format="mp3")
-        same = segment_fingerprint(segment, voice="pt-BR-AntonioNeural", language="pt-BR", rate="-15%", provider_id="edge-tts", provider_version="7.2.8", output_format="mp3")
-        changed_rate = segment_fingerprint(segment, voice="pt-BR-AntonioNeural", language="pt-BR", rate="-12%", provider_id="edge-tts", provider_version="7.2.8", output_format="mp3")
+        base = segment_fingerprint(segment, voice="BR_OWNER_V1", language="pt-BR", rate="-15%", provider_id="fake-tts", provider_version="1", output_format="mp3")
+        same = segment_fingerprint(segment, voice="BR_OWNER_V1", language="pt-BR", rate="-15%", provider_id="fake-tts", provider_version="1", output_format="mp3")
+        changed_rate = segment_fingerprint(segment, voice="BR_OWNER_V1", language="pt-BR", rate="-12%", provider_id="fake-tts", provider_version="1", output_format="mp3")
         self.assertEqual(base, same)
         self.assertNotEqual(base, changed_rate)
 
@@ -153,7 +172,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=provider,
                 cache=cache,
                 bundle_segment_root=root / "first",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=2,
@@ -169,7 +188,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=second_provider,
                 cache=cache,
                 bundle_segment_root=root / "second",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=4,
@@ -188,7 +207,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=third_provider,
                 cache=cache,
                 bundle_segment_root=root / "third",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=4,
@@ -211,13 +230,13 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=warm_provider,
                 cache=cache,
                 bundle_segment_root=root / "warm",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=3,
                 stats=warm_stats,
             ))
-            fingerprint = segment_fingerprint(target, voice="pt-BR-AntonioNeural", language="pt-BR", rate="-15%", provider_id="fake-tts", provider_version="1", output_format="mp3")
+            fingerprint = segment_fingerprint(target, voice="BR_OWNER_V1", language="pt-BR", rate="-15%", provider_id="fake-tts", provider_version="1", output_format="mp3")
             (cache.audio_root / f"{fingerprint}.mp3").unlink()
             (cache.meta_root / f"{fingerprint}.json").unlink()
             provider = FakeProvider(fail_once_text=target.synthesis_text)
@@ -227,7 +246,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=provider,
                 cache=cache,
                 bundle_segment_root=root / "retry",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=4,
@@ -248,7 +267,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 provider=provider,
                 cache=ContentAddressedNarrationCache(Path(tmp) / "cache"),
                 bundle_segment_root=Path(tmp) / "bundle",
-                voice="pt-BR-AntonioNeural",
+                voice="BR_OWNER_V1",
                 language="pt-BR",
                 rate="-15%",
                 concurrency=2,
@@ -293,7 +312,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 "script_sections": SECTIONS,
                 "narration": {
                     "language": "pt-BR",
-                    "voice": "pt-BR-ThalitaMultilingualNeural",
+                    "voice": "BR_OWNER_V1",
                     "rate": "+0%",
                     "rate_locked": True,
                     "segment_strategy": "semantic-section-v1",
@@ -304,7 +323,7 @@ class NarrationPipelineTests(unittest.TestCase):
                 "version": BUNDLE_VERSION,
                 "status": "PASS",
                 "script_fingerprint": script_fingerprint(SECTIONS),
-                "voice": "pt-BR-ThalitaMultilingualNeural",
+                "voice": "BR_OWNER_V1",
                 "language": "pt-BR",
                 "segment_strategy": "semantic-section-v1",
                 "effective_rate": "+0%",
