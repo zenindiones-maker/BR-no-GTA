@@ -60,7 +60,7 @@ class ClaudeOmniRouteReplanTests(unittest.TestCase):
 
     def test_unknown_provider_mapping_fails_closed(self):
         module = load_module()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(module.ModelMappingUnavailable):
             module.omniroute_identity("tuxevil", "gemini-3-flash")
 
     def test_select_replan_materializes_content_addressed_route_plan(self):
