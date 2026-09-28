@@ -25,17 +25,15 @@ from app.services.pronunciation_service import (
     resolve_synthesis_plan,
     synthesis_plan_cache_payload,
     synthesis_plan_from_dict,
-    synthesize_edge_plan,
 )
 
 CAPABILITY_ID = "narration.generate.pt-BR"
 EXECUTOR_BINDING = "app.services.narration_pipeline.execute_narration_capability"
 BUNDLE_VERSION = "narration-bundle/v2"
-PROVIDER_ID = "edge-tts"
-PROVIDER_VERSION = "7.2.8"
-RATE_SEMANTICS_VERSION = "edge-percent-v1"
+OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
+RATE_SEMANTICS_VERSION = "owner-provider-v1"
 PRONUNCIATION_PROFILE_VERSION = "br-no-gta-ptbr-v3"
-OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
+OUTPUT_FORMAT = "mp3"
 MASTER_TARGET_LUFS = -16.0
 MASTER_TRUE_PEAK_DB = -1.5
 TARGET_MIN_SECONDS = 20 * 60
@@ -96,80 +94,6 @@ class NarrationProvider(Protocol):
 
     async def synthesize_segment(self, *, text: str, voice: str, rate: str, output: Path) -> ProviderResult:
         ...
-
-
-class EdgeTTSProvider:
-    provider_id = PROVIDER_ID
-    provider_version = PROVIDER_VERSION
-    output_format = OUTPUT_FORMAT
-    supports_native_timing = True
-    supports_ssml = False
-    supports_pronunciation_control = False
-    supports_language_spans = False
-    supports_isolated_multilingual_chunks = True
-    supports_custom_lexicon = False
-    supports_same_voice_multilingual = True
-    supports_batch = False
-    supports_long_form = False
-    cost_class = "FREE_NO_BILLING"
-
-    async def synthesize_segment(self, *, text: str, voice: str, rate: str, output: Path) -> ProviderResult:
-        import edge_tts
-
-        output.parent.mkdir(parents=True, exist_ok=True)
-        started = time.monotonic()
-        timing: list[dict[str, Any]] = []
-        bytes_written = 0
-        communicator = edge_tts.Communicate(text=text, voice=voice, rate=rate, boundary="WordBoundary")
-        with output.open("wb") as stream:
-            async for chunk in communicator.stream():
-                chunk_type = chunk.get("type")
-                if chunk_type == "audio":
-                    data = chunk.get("data") or b""
-                    stream.write(data)
-                    bytes_written += len(data)
-                elif chunk_type == "WordBoundary":
-                    timing.append({
-                        "type": "word",
-                        "text": str(chunk.get("text") or ""),
-                        "offset_seconds": float(chunk.get("offset") or 0) / 10_000_000.0,
-                        "duration_seconds": float(chunk.get("duration") or 0) / 10_000_000.0,
-                    })
-        return ProviderResult(
-            audio_path=output,
-            bytes_written=bytes_written,
-            timing=tuple(timing),
-            wall_clock_seconds=time.monotonic() - started,
-            metadata={
-                "join_policy": "single-request-continuous",
-                "inserted_silence_seconds": 0.0,
-                "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
-            },
-        )
-
-    async def synthesize_plan(self, *, plan_payload: dict[str, Any], voice: str, rate: str, output: Path) -> ProviderResult:
-        plan = synthesis_plan_from_dict(plan_payload)
-        metrics = await synthesize_edge_plan(
-            plan,
-            voice=voice,
-            rate=rate,
-            pitch="+0Hz",
-            output=output,
-        )
-        return ProviderResult(
-            audio_path=output,
-            bytes_written=int(metrics["bytes_written"]),
-            timing=tuple(metrics.get("timing") or ()),
-            wall_clock_seconds=float(metrics["wall_clock_seconds"]),
-            metadata={
-                "join_policy": metrics.get("join_policy"),
-                "inserted_silence_seconds": float(metrics.get("inserted_silence_seconds") or 0.0),
-                "crossfade_seconds_total": float(metrics.get("crossfade_seconds_total") or 0.0),
-                "synthesis_group_count": int(metrics.get("synthesis_group_count") or 0),
-                "chunks": list(metrics.get("chunks") or []),
-                "synthesis_join_policy_version": SYNTHESIS_JOIN_POLICY_VERSION,
-            },
-        )
 
 
 PRONUNCIATION_ENTRIES: tuple[dict[str, Any], ...] = canonical_lexicon_entries()
@@ -609,22 +533,13 @@ async def _synthesize_provider_with_retry(
             stats["retried_segments"].add(segment.segment_id)
         try:
             request_started = time.monotonic()
-            plan_payload = segment.synthesis_plan or {}
-            use_mixed = (
-                isinstance(provider, EdgeTTSProvider)
-                and int(plan_payload.get("foreign_span_count") or 0) > 0
+            stats["tts_request_count"] += 1
+            result = await provider.synthesize_segment(
+                text=segment.synthesis_text,
+                voice=voice,
+                rate=rate,
+                output=output,
             )
-            if use_mixed:
-                stats["tts_request_count"] += max(1, len(plan_payload.get("spans") or []))
-                result = await provider.synthesize_plan(
-                    plan_payload=plan_payload,
-                    voice=voice,
-                    rate=rate,
-                    output=output,
-                )
-            else:
-                stats["tts_request_count"] += 1
-                result = await provider.synthesize_segment(text=segment.synthesis_text, voice=voice, rate=rate, output=output)
             stats["remote_tts_wall_clock"] += result.wall_clock_seconds
             stats["tts_bytes"] += result.bytes_written
             if not _valid_mp3_header(result.audio_path):
@@ -1275,14 +1190,15 @@ async def generate_narration_bundle_async(
     lineage: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     started = time.monotonic()
-    provider = provider or EdgeTTSProvider()
+    if provider is None:
+        raise NarrationError("OWNER_VOICE_NOT_READY")
     sections = list(job.get("script_sections") or [])
     narration = dict(job.get("narration") or {})
     language = str(narration.get("language") or job.get("language") or job.get("target_language") or "pt-BR")
     voice = str(narration.get("voice") or "")
     configured_rate = str(narration.get("rate") or "+0%")
-    if language != "pt-BR" or not voice.startswith("pt-BR-"):
-        raise NarrationError("narration bundle requires an explicit pt-BR neural voice")
+    if language != "pt-BR" or voice != OWNER_VOICE_IDENTITY_ID:
+        raise NarrationError("BR_OWNER_V1 is required for new narration")
     target_wpm = float(job.get("target_wpm") or 125.0)
     segment_strategy = str(narration.get("segment_strategy") or "semantic-section-v1")
     rate_locked = bool(narration.get("rate_locked") is True)
@@ -1351,10 +1267,7 @@ async def generate_narration_bundle_async(
     stats["qa_wall_clock"] += time.monotonic() - qa_started
     observed_wpm = total_words * 60.0 / master_duration
     fluency = _narration_fluency_metrics(records)
-    strict_fluency = (
-        provider.provider_id == PROVIDER_ID
-        and voice == PRONUNCIATION_DEFAULT_VOICE
-    )
+    strict_fluency = voice == OWNER_VOICE_IDENTITY_ID
     checks = {
         "file_exists": master.is_file() and master.stat().st_size > 0,
         "audio_stream": any(stream.get("codec_type") == "audio" for stream in probe.get("streams", [])),
