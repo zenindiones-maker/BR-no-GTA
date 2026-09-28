@@ -17,6 +17,7 @@ from app.services.production_durable_resume_service import (
     plan_nonterminal_continuation,
     plan_successor_intent,
     successor_dispatch_decision,
+    continuation_claim_decision,
     task_result_semantic_digest,
 )
 from app.services.task_result_envelope_service import (
@@ -678,3 +679,93 @@ def test_semantic_route_identity_is_stable_across_physical_runs():
     assert a==b
     assert "github-actions" not in a
     assert "continuation:" not in a
+
+
+def test_failed_pre_semantic_physical_attempt_can_be_replaced():
+    decision=continuation_claim_decision(
+        current_run_id=200,
+        matching_runs=(
+            {
+                "run_id":100,
+                "status":"completed",
+                "conclusion":"failure",
+            },
+            {
+                "run_id":200,
+                "status":"in_progress",
+                "conclusion":None,
+            },
+        ),
+        retry_safe_run_ids=(100,),
+    )
+    assert decision["claim_allowed"] is True
+    assert decision["claim_owner_run_id"]==200
+    assert decision["physical_retry"] is True
+    assert decision["retry_of_run_id"]==100
+    assert decision["decision"]=="CLAIM_RETRY_SAFE_PRE_SEMANTIC_FAILURE"
+
+
+def test_failed_attempt_with_unproven_side_effect_state_blocks_replacement():
+    decision=continuation_claim_decision(
+        current_run_id=200,
+        matching_runs=(
+            {
+                "run_id":100,
+                "status":"completed",
+                "conclusion":"failure",
+            },
+            {
+                "run_id":200,
+                "status":"in_progress",
+                "conclusion":None,
+            },
+        ),
+        retry_safe_run_ids=(),
+    )
+    assert decision["claim_allowed"] is False
+    assert decision["claim_owner_run_id"]==100
+    assert decision["decision"]=="BLOCK_UNSAFE_PRIOR_ATTEMPT"
+
+
+def test_successful_prior_logical_continuation_blocks_replacement():
+    decision=continuation_claim_decision(
+        current_run_id=200,
+        matching_runs=(
+            {
+                "run_id":100,
+                "status":"completed",
+                "conclusion":"success",
+            },
+            {
+                "run_id":200,
+                "status":"in_progress",
+                "conclusion":None,
+            },
+        ),
+        retry_safe_run_ids=(),
+    )
+    assert decision["claim_allowed"] is False
+    assert decision["claim_owner_run_id"]==100
+    assert decision["decision"]=="ALREADY_COMPLETED"
+
+
+def test_concurrent_prior_writer_blocks_replacement():
+    decision=continuation_claim_decision(
+        current_run_id=200,
+        matching_runs=(
+            {
+                "run_id":100,
+                "status":"in_progress",
+                "conclusion":None,
+            },
+            {
+                "run_id":200,
+                "status":"in_progress",
+                "conclusion":None,
+            },
+        ),
+        retry_safe_run_ids=(),
+    )
+    assert decision["claim_allowed"] is False
+    assert decision["claim_owner_run_id"]==100
+    assert decision["decision"]=="BLOCK_ACTIVE_WRITER"
