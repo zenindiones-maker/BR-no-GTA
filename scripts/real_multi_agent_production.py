@@ -2421,6 +2421,88 @@ def _ensure_script_package(state: dict[str, Any]) -> None:
         state["content_item_id"] = int(content_item["id"])
 
 
+def _normalize_supported_fact_check_claim(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    if str(payload.get("verdict") or "").upper() != "SUPPORTED":
+        return None
+
+    claim = payload.get("claim")
+    if not isinstance(claim, dict):
+        return None
+    statement = str(
+        claim.get("text")
+        or claim.get("statement")
+        or ""
+    ).strip()
+    if not statement:
+        return None
+
+    refs: list[str] = []
+
+    def add_ref(value: Any) -> None:
+        raw = str(value or "").strip()
+        if not raw:
+            return
+        normalized = raw.removeprefix("url:")
+        if not normalized.startswith("https://"):
+            return
+        if normalized not in refs:
+            refs.append(normalized)
+
+    for item in payload.get("source_refs") or ():
+        add_ref(item)
+    for row in payload.get("provenance") or ():
+        if isinstance(row, dict):
+            add_ref(row.get("artifact_ref"))
+    for row in payload.get("supporting_evidence") or ():
+        if not isinstance(row, dict):
+            continue
+        add_ref(row.get("source_ref"))
+        provenance = row.get("provenance")
+        if isinstance(provenance, dict):
+            add_ref(provenance.get("artifact_ref"))
+
+    if not refs:
+        return None
+
+    official_refs = [
+        item for item in refs
+        if _is_rockstar_official_url(item)
+    ]
+    source = official_refs[0] if official_refs else refs[0]
+    canonical_key = str(claim.get("canonical_key") or "").strip()
+    identity = canonical_key or statement
+    key = hashlib.sha256(
+        (identity + "|" + source).encode("utf-8")
+    ).hexdigest()[:20]
+    confidence = payload.get("confidence")
+    try:
+        normalized_confidence = float(confidence)
+    except (TypeError, ValueError):
+        normalized_confidence = 1.0
+
+    return {
+        "claim_id": f"factcheck-{key}",
+        "statement": statement[:1200],
+        "verification_status": "VERIFIED",
+        "fact_check_result": "SUPPORTED",
+        "verification_basis": "FACT_CHECK",
+        "source_type": (
+            "OFFICIAL_STATEMENT"
+            if _is_rockstar_official_url(source)
+            else "FACT_CHECKED_SOURCE"
+        ),
+        "source": source,
+        "reference": source,
+        "timecode_or_section": None,
+        "confidence": normalized_confidence,
+        "novelty": "CURRENT_RESEARCH",
+        "how_used_in_video": "candidate editorial finding",
+        "evidence_refs": refs,
+    }
+
+
 def _observe_execution(
     *,
     task,
@@ -2453,10 +2535,16 @@ def _observe_execution(
 
     if capability_id == "gta6.fact-check" and isinstance(payload, dict):
         state.setdefault("fact_check_results", []).append(payload)
-        verdict = str(payload.get("verdict") or "").upper()
-        if verdict == "SUPPORTED" and state.get("claims"):
-            state["claims"][0]["fact_check_result"] = "SUPPORTED"
-            state["claims"][0]["verification_basis"] = "FACT_CHECK"
+        verified_claim = _normalize_supported_fact_check_claim(payload)
+        if verified_claim is not None:
+            claims = state.setdefault("claims", [])
+            known_ids = {
+                str(item.get("claim_id") or "")
+                for item in claims
+                if isinstance(item, dict)
+            }
+            if verified_claim["claim_id"] not in known_ids:
+                claims.append(verified_claim)
 
     if capability_id == "gta6.research.semantic-synthesis" and isinstance(payload, dict):
         state["research_semantic"] = payload.get("semantic_output")
