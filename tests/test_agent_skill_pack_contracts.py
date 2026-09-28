@@ -263,3 +263,53 @@ def test_drifted_vendored_source_fails_closed(tmp_path: Path):
 
     with pytest.raises(ValueError, match="digest mismatch"):
         module.verify_agent_skill_pack(root)
+
+
+DIRECT_EFFECT_DSH_ROWS = {
+    "tool-bash",
+    "tool-pwsh",
+    "tool-jobs",
+    "tool-fs",
+    "tool-subagent",
+    "tool-subagent-fork",
+    "tool-workflow",
+}
+
+
+def _cordis_patch_row(patch_text: str, row_id: str) -> str:
+    lines = patch_text.splitlines()
+    start = None
+    indent = None
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\s*)- id:\s*([^\s#]+)\s*$", line)
+        if match and match.group(2) == row_id:
+            start = index
+            indent = len(match.group(1))
+            break
+    if start is None:
+        raise AssertionError(f"missing Cordis row: {row_id}")
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        match = re.match(r"^(\s*)- id:\s*([^\s#]+)\s*$", lines[index])
+        if match and len(match.group(1)) == indent:
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def test_native_gta6_master_direct_effect_tools_are_disabled_by_composition():
+    patch = (ROOT / ".dsh" / "cordis.patch.yml").read_text(encoding="utf-8")
+    for row_id in DIRECT_EFFECT_DSH_ROWS:
+        row = _cordis_patch_row(patch, row_id)
+        assert re.search(r"(?m)^\s*disabled:\s*true\s*$", row), (
+            f"{row_id} must be disabled so gta6-master cannot bypass Harness "
+            "authorization through a direct effect surface"
+        )
+
+
+def test_native_gta6_master_keeps_governed_skill_and_mcp_surfaces():
+    patch = (ROOT / ".dsh" / "cordis.patch.yml").read_text(encoding="utf-8")
+    assert "mcp-br" in patch
+    assert "toolOrder:" in patch
+    assert "- br_capability_execute" in patch
+    assert "- <unlisted-tools>" in patch
