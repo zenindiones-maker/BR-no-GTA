@@ -119,7 +119,10 @@ _CANONICAL_ROLE_OPERATIONS = {
         CAN_PRODUCE_ARTIFACT_REFS,
     }),
     "EDITORIAL_REVIEW": frozenset({
-        CAN_SEMANTIC_REASONING,
+        # Review identity is semantic, but the task requirement itself only
+        # requires artifact consumption/production. The selected reviewer may
+        # have CAN_SEMANTIC_REASONING; least privilege must not require that
+        # extra operation merely to distinguish review from generation.
         CAN_CONSUME_ARTIFACT_REFS,
         CAN_PRODUCE_ARTIFACT_REFS,
     }),
