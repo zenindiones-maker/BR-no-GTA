@@ -372,7 +372,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
             "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS",
         )
 
-    def test_direct_pass_materializes_provider_before_catalog_and_dedicated_canary(self):
+    def test_direct_pass_materializes_provider_before_dedicated_canary_and_catalog(self):
         module = load_module()
         one = plan()
         one["candidate_targets"] = [one["candidate_targets"][0]]
@@ -443,7 +443,97 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                     github_env=env_path,
                 )
 
-        self.assertEqual(order, ["direct", "materialize", "catalog", "dedicated"])
+        self.assertEqual(order, ["direct", "materialize", "dedicated", "catalog"])
+
+    def test_dedicated_pass_with_catalog_miss_remains_qualified_and_records_catalog_stale(self):
+        module = load_module()
+        one = plan()
+        one["candidate_targets"] = [one["candidate_targets"][0]]
+        target = one["candidate_targets"][0]
+
+        def direct(candidate):
+            return {
+                "schema": "ProviderDirectCanary/v1",
+                "candidate_id": candidate["candidate_id"],
+                "status": "PASS",
+                "failure_class": None,
+                "http_status": 200,
+            }
+
+        def materialize(candidate, *, base_url):
+            return {
+                "ok": True,
+                "connection_id": "conn-nvidia-123",
+                "connection_identity_redacted": "sha256:deadbeef",
+                "connection_id_source": "PROVIDERS_ADD_JSON",
+                "provider_test_status": "UNSUPPORTED",
+                "provider_test_supported": False,
+                "failure_class": None,
+            }
+
+        def dedicated(candidate, base_url, *, connection_id):
+            return {
+                "schema": "OmniRouteProviderCanary/v1",
+                "candidate_id": candidate["candidate_id"],
+                "status": "PASS",
+                "failure_class": None,
+                "http_status": 200,
+                "reported_provider": candidate["omniroute_provider"],
+                "reported_model": candidate["omniroute_model"],
+                "connection_identity_redacted": "sha256:deadbeef",
+            }
+
+        with TemporaryDirectory() as tmp:
+            evidence_dir = Path(tmp)
+            env_path = evidence_dir / "github-env"
+            plan_path = evidence_dir / "plan.json"
+            plan_path.write_text(json.dumps(one), encoding="utf-8")
+            with (
+                mock.patch.dict(module.os.environ, {"NVIDIA_API_KEY": "secret"}, clear=False),
+                mock.patch.object(module, "_direct_canary", side_effect=direct),
+                mock.patch.object(module, "_materialize_provider", side_effect=materialize),
+                mock.patch.object(module, "_dedicated_canary", side_effect=dedicated),
+                mock.patch.object(module, "_catalog_model_ids", return_value=set()),
+                mock.patch.object(
+                    module,
+                    "_run",
+                    side_effect=lambda command, **kwargs: CompletedProcess(
+                        command,
+                        0,
+                        "--models" if command[-1:] == ["--help"] else "{}",
+                        "",
+                    ),
+                ),
+            ):
+                module.qualify(
+                    plan_path=plan_path,
+                    evidence_dir=evidence_dir,
+                    base_url="http://127.0.0.1:20128",
+                    github_env=env_path,
+                )
+
+            evidence = json.loads(
+                (evidence_dir / "provider-qualification.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                [item["candidate_id"] for item in evidence["qualified_candidates"]],
+                [target["candidate_id"]],
+            )
+            self.assertEqual(evidence["rejected_candidates"], [])
+            catalog = evidence["catalog_observations"][0]
+            self.assertFalse(catalog["omniroute_model_available"])
+            self.assertEqual(
+                catalog["failure_class"],
+                "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE",
+            )
+            stale = [
+                item
+                for item in evidence["failure_episodes"]
+                if item.get("failure_class")
+                == "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE"
+            ]
+            self.assertEqual(len(stale), 1)
+            self.assertFalse(stale[0]["admission_blocking"])
 
     def test_direct_pass_plus_catalog_miss_is_not_credential_or_provider_failure(self):
         module = load_module()
