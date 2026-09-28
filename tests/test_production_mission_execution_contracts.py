@@ -34,6 +34,7 @@ from scripts.real_multi_agent_production import (
     PRE_TTS_DURATION_TOLERANCE_MINUTES,
     VOICE_B_EFFECTIVE_PLANNING_WPM,
     _bounded_youtube_semantic_context,
+    _build_product,
     _complete_replayed_task,
     _durable_resume_identity,
     _durable_root_task_aliases,
@@ -1685,3 +1686,120 @@ def test_durable_replay_unwraps_nested_fact_check_result_payload():
         },
     }
     assert _result_payload(execution)["verdict"] == "SUPPORTED"
+
+
+
+def test_durable_fact_check_replay_rehydrates_official_claim_for_product_gate():
+    execution = {
+        "schema": "TaskResultEnvelope/v1",
+        "status": "COMPLETED",
+        "result_payload": {
+            "capability_id": "gta6.fact-check",
+            "status": "EXECUTED",
+            "active": True,
+            "result": {
+                "verdict": "SUPPORTED",
+                "claim": {
+                    "canonical_key": "gta6-fact:official-release",
+                    "claim_type": "fact",
+                    "scope": "gta6",
+                    "text": (
+                        "Grand Theft Auto VI is listed by Rockstar Games "
+                        "with official release information."
+                    ),
+                },
+                "source_refs": [
+                    "https://www.rockstargames.com/VI",
+                ],
+                "provenance": [{
+                    "artifact_ref": "https://www.rockstargames.com/VI",
+                    "observed_at": "2026-09-27T21:26:03+00:00",
+                }],
+                "supporting_evidence": [{
+                    "evidence_id": "fresh-official-proof",
+                    "source_ref": "https://www.rockstargames.com/VI",
+                    "stance": "supporting",
+                    "weight": 1.0,
+                }],
+            },
+        },
+    }
+    state = {
+        "claims": [],
+        "task_outputs": {},
+        "target_goal_id": "goal-real-production",
+        "selected_topic": "Current GTA VI official evidence",
+        "source_url": "",
+        "script": {
+            "id": 11,
+            "title": "Current GTA VI official evidence",
+            "content": "evidencia " * 3000,
+        },
+        "script_id": 11,
+        "content_item": {"id": 12},
+        "content_item_id": 12,
+        "production_plan": {"scenes": [{"scene_id": "scene-1"}]},
+        "production_plan_id": 13,
+    }
+    task = SimpleNamespace(
+        task_id="fact_verification",
+        capability_id="gta6.fact-check",
+    )
+
+    _observe_execution(task=task, execution=execution, state=state)
+
+    assert len(state["claims"]) == 1
+    claim = state["claims"][0]
+    assert claim["source"] == "https://www.rockstargames.com/VI"
+    assert claim["fact_check_result"] == "SUPPORTED"
+    assert claim["verification_basis"] == "FACT_CHECK"
+    assert "https://www.rockstargames.com/VI" in claim["evidence_refs"]
+
+    product = _build_product(
+        state,
+        {
+            "status": "PASS",
+            "script_word_count": 3000,
+        },
+    )
+    assert product["status"] == "PASS"
+    assert product["source_url"] == "https://www.rockstargames.com/VI"
+    assert product["claims"][0]["claim_id"] == claim["claim_id"]
+
+
+def test_fact_check_replay_does_not_mutate_unrelated_first_claim():
+    original = {
+        "claim_id": "secondary-existing",
+        "statement": "Independent secondary observation",
+        "source": "https://example.test/report",
+        "fact_check_result": "PENDING_FACT_CHECK",
+        "verification_basis": "SECONDARY",
+    }
+    state = {
+        "claims": [dict(original)],
+        "task_outputs": {},
+    }
+    execution = {
+        "status": "COMPLETED",
+        "result_payload": {
+            "capability_id": "gta6.fact-check",
+            "status": "EXECUTED",
+            "active": True,
+            "result": {
+                "verdict": "SUPPORTED",
+                "claim": {
+                    "canonical_key": "secondary-other",
+                    "text": "A different secondary claim",
+                },
+                "source_refs": ["https://another.example.test/report"],
+            },
+        },
+    }
+    task = SimpleNamespace(
+        task_id="fact_verification",
+        capability_id="gta6.fact-check",
+    )
+
+    _observe_execution(task=task, execution=execution, state=state)
+
+    assert state["claims"][0] == original

@@ -1,0 +1,45 @@
+name: Product Evidence Replay Proof
+
+on:
+  push:
+    branches:
+      - work/fix-official-evidence-replay
+      - work/gate6f-analytics-learning
+    paths:
+      - 'scripts/real_multi_agent_production.py'
+      - 'tests/test_production_mission_execution_contracts.py'
+      - '.github/workflows/product-evidence-replay-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  replay-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install canonical test runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r requirements.txt pytest
+
+      - name: Prove durable official-evidence replay contract
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_production_mission_execution_contracts.py \
+            -k 'durable_fact_check_replay_rehydrates_official_claim_for_product_gate or fact_check_replay_does_not_mutate_unrelated_first_claim'
