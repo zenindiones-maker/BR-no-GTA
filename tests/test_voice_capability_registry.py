@@ -18,8 +18,10 @@ def test_voice_capabilities_are_subordinate_and_fail_closed():
 
     narration = GLOBAL_CAPABILITY_REGISTRY.get("narration.generate.pt-BR")
     assert narration.fallback_eligibility is False
-    assert narration.cost_class == "FREE_NO_BILLING"
-    assert narration.provider_id == "edge-tts"
+    assert narration.cost_class == "SELF_HOSTED_COMPUTE"
+    assert narration.provider_id == "internal-voice-plane"
+    assert narration.health_policy == "VOICE_RUNTIME_AND_IDENTITY_REQUIRED"
+    assert "owner-voice-only" in narration.policy_tags
 
     synthesis = GLOBAL_CAPABILITY_REGISTRY.get("voice.synthesis.pt-BR")
     assert synthesis.health_policy == "VOICE_RUNTIME_AND_IDENTITY_REQUIRED"

@@ -61,17 +61,21 @@ def _record(
     )
 
 
-def test_owner_consent_is_approved_but_official_voice_stays_voice_b():
+def test_owner_consent_selects_owner_voice_and_telegram_is_reference_source():
     state = json.loads(
         (ROOT / "config/voice_owner_enrollment_v1.json").read_text(encoding="utf-8")
     )
     assert state["voice_identity_id"] == "BR_OWNER_V1"
     assert state["consent_status"] == "APPROVED"
-    assert state["declared_reference_count"] == 3
+    assert state["declared_reference_count"] == 9
     assert state["reference_materialization_status"] == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
-    assert state["official_voice"] == "Voice B"
-    assert state["human_ab_review"] == "PENDING"
-    assert state["promotion_allowed"] is False
+    assert state["reference_source"] == "TELEGRAM"
+    assert state["official_voice"] == "BR_OWNER_V1"
+    assert state["legacy_voice_b_runtime_enabled"] is False
+    assert state["legacy_voice_b_fallback_allowed"] is False
+    assert state["human_ab_review"] == "NOT_REQUIRED_FOR_OWNER_SELECTION"
+    assert state["promotion_allowed"] is True
+    assert state["runtime_activation_status"] == "PENDING_PRIVATE_REFERENCE_MATERIALIZATION"
 
 
 def test_reference_classification_rejects_music_multi_speaker_and_bad_language():

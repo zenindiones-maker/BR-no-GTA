@@ -7,6 +7,9 @@ import pytest
 from app.services.channel_spoken_branding_service import (
     CLOSING_LINE,
     OFFICIAL_INTRO_ASSET_ID,
+    ALLOW_LEGACY_VOICE_B_FALLBACK,
+    LEGACY_CONTROL_VOICE_BLIND_ID,
+    OFFICIAL_VOICE_IDENTITY_ID,
     OFFICIAL_VOICE_SHORT_NAME,
     OPENING_PREFIX,
     SELECTED_CLOSING_TAKE_ID,
@@ -29,7 +32,7 @@ def _job():
         "spoken_branding":build_spoken_branding_contract(theme=THEME),
         "narration":{
             "voice":OFFICIAL_VOICE_SHORT_NAME,
-            "human_quality_baseline":"Voice B",
+            "voice_identity_id":OFFICIAL_VOICE_IDENTITY_ID,
         },
         "script_sections":[{"section_id":"A01","role":"hook"}],
     }
@@ -44,7 +47,10 @@ def test_canonical_opening_and_closing_are_exact():
         "official_intro","spoken_channel_opening","editorial_hook"
     ]
     assert contract["timeline_order"][-1]=="spoken_channel_closing"
-    assert contract["official_voice_profile"]=="Voice B"
+    assert contract["official_voice_profile"]=="BR_OWNER_V1"
+    assert contract["provider"]=="private-voice-runtime"
+    assert ALLOW_LEGACY_VOICE_B_FALLBACK is False
+    assert LEGACY_CONTROL_VOICE_BLIND_ID=="Voice B"
     assert contract["voice_short_name"]==OFFICIAL_VOICE_SHORT_NAME
 
 
@@ -70,13 +76,14 @@ def test_contract_fails_closed_on_brand_mutation(field,value):
         validate_spoken_branding_contract(contract)
 
 
-def test_job_rejects_voice_b_substitution_and_intro_omission():
+def test_job_rejects_legacy_voice_b_and_intro_omission():
     job=_job()
     assert validate_job_spoken_branding(job)["opening_theme"]==THEME
 
     changed=copy.deepcopy(job)
-    changed["narration"]["voice"]="pt-BR-AntonioNeural"
-    with pytest.raises(ValueError,match="Voice B"):
+    changed["narration"]["voice"]="pt-BR-ThalitaMultilingualNeural"
+    changed["narration"]["voice_identity_id"]="Voice B"
+    with pytest.raises(ValueError,match="legacy Voice B|BR_OWNER_V1"):
         validate_job_spoken_branding(changed)
 
     changed=copy.deepcopy(job)

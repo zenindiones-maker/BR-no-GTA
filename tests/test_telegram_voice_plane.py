@@ -8,6 +8,7 @@ from app.services.speech.models import (
     SpeechAnalysis, SpeechEngine, SpeechQuality, SpeechSegment,
 )
 from app.services.telegram_voice_service import process_telegram_voice_turn
+from scripts.telegram_harness_gateway import _extract_attachment
 
 
 class FakeTelegram:
@@ -44,13 +45,17 @@ class FakeSpeechProvider:
 class FakeTTS:
     provider_id = "qwen3-tts"
     model_id = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    def __init__(self):
+        self.requests = []
     def synthesize(self, request, output_path):
+        self.requests.append(request)
         output_path.write_bytes(b"fake-wav")
         return {"audio_path": str(output_path), "audio_sha256": "d" * 64}
 
 
 def test_authorized_telegram_voice_converges_to_harness_and_send_voice(tmp_path):
     telegram = FakeTelegram(tmp_path)
+    tts = FakeTTS()
     captured = {}
     def harness_turn(transcript: str, **kwargs):
         captured["transcript"] = transcript
@@ -73,7 +78,7 @@ def test_authorized_telegram_voice_converges_to_harness_and_send_voice(tmp_path)
         telegram=telegram,
         speech_provider=FakeSpeechProvider(),
         harness_turn=harness_turn,
-        tts_provider=FakeTTS(),
+        tts_provider=tts,
         work_dir=tmp_path,
         audio_normalizer=lambda source, target: (target.write_bytes(source.read_bytes()), target)[1],
         audio_encoder=lambda source, target: (target.write_bytes(source.read_bytes()), target)[1],
@@ -85,6 +90,7 @@ def test_authorized_telegram_voice_converges_to_harness_and_send_voice(tmp_path)
     assert result["send_voice"]["ok"] is True
     assert telegram.sent[0][0] == -222
     assert telegram.sent[0][1] == ".ogg"
+    assert tts.requests[0].voice_identity_id == "BR_OWNER_V1"
 
 
 def test_unauthorized_telegram_voice_is_rejected_before_file_download(tmp_path):
@@ -110,3 +116,39 @@ def test_unauthorized_telegram_voice_is_rejected_before_file_download(tmp_path):
             audio_encoder=lambda source, target: target,
         )
     assert not (tmp_path / "voice.ogg").exists()
+
+
+def test_telegram_attachment_extractor_preserves_voice_and_audio_identity():
+    voice = _extract_attachment({
+        "voice": {
+            "file_id": "voice-file-id",
+            "file_unique_id": "voice-unique-id",
+            "duration": 17,
+            "mime_type": "audio/ogg",
+            "file_size": 12345,
+        }
+    })
+    assert voice == {
+        "media_kind": "voice",
+        "telegram_file_id": "voice-file-id",
+        "telegram_file_unique_id": "voice-unique-id",
+        "file_name": None,
+        "mime_type": "audio/ogg",
+        "file_size": 12345,
+        "duration_seconds": 17,
+    }
+
+    audio = _extract_attachment({
+        "audio": {
+            "file_id": "audio-file-id",
+            "file_unique_id": "audio-unique-id",
+            "duration": 31,
+            "mime_type": "audio/mpeg",
+            "file_size": 67890,
+            "file_name": "owner-reference.mp3",
+        }
+    })
+    assert audio["media_kind"] == "audio"
+    assert audio["telegram_file_id"] == "audio-file-id"
+    assert audio["telegram_file_unique_id"] == "audio-unique-id"
+    assert audio["duration_seconds"] == 31
