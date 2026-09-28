@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -108,6 +109,110 @@ class VoiceProviderUnavailable(RuntimeError):
     pass
 
 
+OWNER_VOICE_IDENTITY_ID = "BR_OWNER_V1"
+
+
+@dataclass(frozen=True)
+class PrivateVoiceRuntimeResponse:
+    audio: bytes
+    receipt: dict[str, Any]
+
+
+def _sha256_json(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _valid_sha256(value: Any) -> bool:
+    digest = str(value or "").strip().lower()
+    return len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest)
+
+
+def _default_owner_identity_resolver(voice_identity_id: str) -> dict[str, Any] | None:
+    if voice_identity_id != OWNER_VOICE_IDENTITY_ID:
+        return None
+    enrollment_path = Path(
+        os.environ.get("BR_OWNER_ENROLLMENT_STATE_PATH")
+        or Path(__file__).resolve().parents[2] / "config" / "voice_owner_enrollment_v1.json"
+    )
+    try:
+        enrollment = json.loads(enrollment_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(enrollment, dict):
+        return None
+    if int(enrollment.get("materialized_reference_count") or 0) <= 0:
+        return None
+    if enrollment.get("reference_materialization_status") != "PASS":
+        return None
+    if enrollment.get("runtime_activation_status") != "READY":
+        return None
+    if enrollment.get("owner_voice_status") != "READY":
+        return None
+    store_root = str(os.environ.get("BR_PRIVATE_VOICE_STORE") or "").strip()
+    if not store_root:
+        return None
+    profile_path = Path(store_root).expanduser() / f"{voice_identity_id}.json"
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return profile if isinstance(profile, dict) else None
+
+
+def _materialized_owner_binding(
+    voice_identity_id: str,
+    resolver: Callable[[str], dict[str, Any] | None],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    if voice_identity_id != OWNER_VOICE_IDENTITY_ID:
+        raise VoiceProviderUnavailable("OWNER_VOICE_ONLY")
+    profile = resolver(voice_identity_id)
+    if not isinstance(profile, dict):
+        raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+    if profile.get("voice_identity_id") != OWNER_VOICE_IDENTITY_ID:
+        raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+    if str(profile.get("consent_status") or "") != "APPROVED":
+        raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+    if str(profile.get("quality_status") or "") != "READY":
+        raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+
+    source_refs = tuple(str(v) for v in (profile.get("source_audio_refs") or ()))
+    source_hashes = tuple(str(v).lower() for v in (profile.get("source_audio_sha256s") or ()))
+    transcript_hashes = tuple(str(v).lower() for v in (profile.get("source_transcript_sha256s") or ()))
+    if (
+        not source_refs
+        or len(source_refs) != len(source_hashes)
+        or not transcript_hashes
+        or any(not ref.startswith("private://") for ref in source_refs)
+        or any(not _valid_sha256(value) for value in source_hashes)
+        or any(not _valid_sha256(value) for value in transcript_hashes)
+    ):
+        raise VoiceProviderUnavailable("OWNER_VOICE_NOT_MATERIALIZED")
+
+    prompt_ref = str(profile.get("voice_prompt_ref") or "").strip()
+    prompt_sha = str(profile.get("voice_prompt_sha256") or "").strip().lower()
+    if not prompt_ref.startswith("private://") or not _valid_sha256(prompt_sha):
+        raise VoiceProviderUnavailable("OWNER_VOICE_PROMPT_UNAVAILABLE")
+
+    profile_sha = _sha256_json(profile)
+    reference_set_sha = _sha256_json({
+        "source_audio_sha256s": list(source_hashes),
+        "source_transcript_sha256s": list(transcript_hashes),
+    })
+    return profile, {
+        "voice_identity_id": OWNER_VOICE_IDENTITY_ID,
+        "profile_sha256": profile_sha,
+        "voice_prompt_ref": prompt_ref,
+        "voice_prompt_sha256": prompt_sha,
+        "reference_set_sha256": reference_set_sha,
+    }
+
+
 def _eligible(
     request: VoiceRouteRequest,
     profile: VoiceProviderProfile,
@@ -168,7 +273,11 @@ class PrivateVoiceRuntimeProvider:
         profile: VoiceProviderProfile,
         base_url: str,
         auth_token_env: str = "BR_VOICE_RUNTIME_TOKEN",
-        transport: Callable[[str, dict[str, Any], dict[str, str]], bytes] | None = None,
+        identity_resolver: Callable[[str], dict[str, Any] | None] | None = None,
+        transport: Callable[
+            [str, dict[str, Any], dict[str, str]],
+            PrivateVoiceRuntimeResponse | bytes,
+        ] | None = None,
     ) -> None:
         self.profile = profile
         self.provider_id = profile.provider_id
@@ -178,6 +287,7 @@ class PrivateVoiceRuntimeProvider:
         if not self.base_url.startswith(("http://127.0.0.1:", "https://")):
             raise ValueError("voice runtime must be loopback or HTTPS")
         self.auth_token_env = auth_token_env
+        self._identity_resolver = identity_resolver or _default_owner_identity_resolver
         self._transport = transport or self._http_transport
 
     def _http_transport(
@@ -185,7 +295,7 @@ class PrivateVoiceRuntimeProvider:
         url: str,
         payload: dict[str, Any],
         headers: dict[str, str],
-    ) -> bytes:
+    ) -> PrivateVoiceRuntimeResponse:
         request = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -193,7 +303,22 @@ class PrivateVoiceRuntimeProvider:
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=180) as response:
-            return response.read()
+            audio = response.read()
+            headers = response.headers
+            receipt = {
+                "schema": str(headers.get("X-BR-Voice-Receipt-Schema") or ""),
+                "voice_identity_id": str(headers.get("X-BR-Voice-Identity-Id") or ""),
+                "profile_sha256": str(headers.get("X-BR-Voice-Profile-SHA256") or ""),
+                "voice_prompt_sha256": str(headers.get("X-BR-Voice-Prompt-SHA256") or ""),
+                "reference_set_sha256": str(headers.get("X-BR-Voice-Reference-Set-SHA256") or ""),
+                "provider": str(headers.get("X-BR-Voice-Provider") or ""),
+                "model": str(headers.get("X-BR-Voice-Model") or ""),
+                "model_revision": str(headers.get("X-BR-Voice-Model-Revision") or ""),
+                "request_id": str(headers.get("X-BR-Voice-Request-Id") or ""),
+                "audio_sha256": str(headers.get("X-BR-Voice-Audio-SHA256") or ""),
+                "usage": str(headers.get("X-BR-Voice-Usage") or ""),
+            }
+            return PrivateVoiceRuntimeResponse(audio=audio, receipt=receipt)
 
     def synthesize(
         self,
