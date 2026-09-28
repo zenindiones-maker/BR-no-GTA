@@ -13,18 +13,22 @@ from app.services.channel_spoken_branding_service import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_runtime_has_one_canonical_voice_and_no_casting_surface():
-    profile = json.loads(
+def test_runtime_has_one_canonical_owner_voice_and_legacy_profile_is_historical_only():
+    enrollment = json.loads(
+        (ROOT / "config" / "voice_owner_enrollment_v1.json").read_text(encoding="utf-8")
+    )
+    legacy = json.loads(
         (ROOT / ".run001" / "official-narration-profile.json").read_text(encoding="utf-8")
     )
-    policy = profile["runtime_voice_policy"]
 
-    assert OFFICIAL_VOICE_BLIND_ID == "Voice B"
-    assert OFFICIAL_VOICE_SHORT_NAME == "pt-BR-ThalitaMultilingualNeural"
-    assert policy["single_voice_only"] is True
-    assert policy["allowed_short_names"] == [OFFICIAL_VOICE_SHORT_NAME]
-    assert policy["alternative_voice_casting_enabled"] is False
-    assert policy["automatic_voice_substitution_allowed"] is False
+    assert OFFICIAL_VOICE_BLIND_ID == "BR_OWNER_V1"
+    assert OFFICIAL_VOICE_SHORT_NAME == "BR_OWNER_V1"
+    assert enrollment["official_voice"] == "BR_OWNER_V1"
+    assert enrollment["legacy_voice_b_runtime_enabled"] is False
+    assert enrollment["legacy_voice_b_fallback_allowed"] is False
+    assert legacy["voice"]["blind_id"] == "Voice B"
+    assert legacy["provider"] == "edge-tts"
+    assert legacy["version"] == "official-narration-profile/v2"
 
     forbidden_paths = [
         ROOT / "app" / "services" / "voice_casting_service.py",
@@ -46,40 +50,36 @@ def test_runtime_has_one_canonical_voice_and_no_casting_surface():
     assert "collect_ptbr_edge_voice_inventory" not in services_text
 
 
-def test_production_branding_contains_only_human_approved_runtime_assets():
+def test_production_branding_contains_only_owner_voice_runtime_identity():
     contract = build_spoken_branding_contract(
         theme="fatos, vazamentos, tecnologia e rumores de GTA 6"
     )
 
-    assert contract["voice_short_name"] == OFFICIAL_VOICE_SHORT_NAME
-    assert contract["production_opening_take_ids"] == ["take-2"]
-    assert contract["production_closing_policy"] == "immutable-human-approved-G-brand-mixed"
+    assert contract["voice_short_name"] == OFFICIAL_VOICE_SHORT_NAME == "BR_OWNER_V1"
+    assert contract["production_opening_take_ids"] == ["BR_OWNER_V1-dynamic"]
+    assert contract["production_closing_policy"] == "owner-voice-dynamic-private-runtime"
+    assert contract["human_approved_opening_reference"] is None
+    assert contract["human_approved_final_end_sample_id"] is None
     assert len(contract["take_profiles"]) == 1
-
-    fluid2 = contract["take_profiles"][0]
-    assert fluid2 == {
-        "take_id": "take-2",
-        "rate": "+3%",
-        "pitch": "+1Hz",
-        "role": "human-approved-fluid2-prosody",
-        "runtime_enabled": True,
-    }
-
-    approved_close = (
-        ROOT / "assets" / "branding" / "audio" / "closing-from-g-approved-20260919.flac"
-    )
-    assert approved_close.is_file()
-    assert approved_close.stat().st_size > 0
+    assert contract["take_profiles"][0]["take_id"] == "BR_OWNER_V1-dynamic"
+    assert contract["take_profiles"][0]["runtime_enabled"] is True
 
 
-def test_brand_audio_runtime_does_not_regenerate_review_takes():
+def test_brand_audio_runtime_has_no_legacy_voice_b_or_edge_synthesis_path():
     source = (ROOT / "app" / "services" / "brand_audio_service.py").read_text(
         encoding="utf-8"
     )
-    assert 'for take in contract["take_profiles"]' not in source
-    assert 'BUNDLE_VERSION="brand-audio-bundle/v3"' in source
-    assert "_materialize_approved_closing" in source
-    assert '"G-brand-mixed"' in source
+    assert 'BUNDLE_VERSION="brand-audio-bundle/v4"' in source
+    assert "_materialize_approved_closing" not in source
+    assert '"G-brand-mixed"' not in source
+    assert "synthesize_edge_plan" not in source
+    assert "edge_tts" not in source
+    assert "OWNER_VOICE_RUNTIME_REQUIRED" in source
+    assert "BR_OWNER_V1" in source
+
+def test_historical_pronunciation_script_fails_closed_under_owner_only_policy():
+    source = (ROOT / "scripts" / "pronunciation_proof.py").read_text(encoding="utf-8")
+    assert "LEGACY_VOICE_B_PRONUNCIATION_RUNTIME_DISABLED" in source
 
 
 def test_legacy_voice_b_pronunciation_workflow_is_not_an_active_synthesis_surface():
