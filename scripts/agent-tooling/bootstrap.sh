@@ -2,10 +2,10 @@
 # Development tooling only. Does not dispatch production or run generation.
 set -euo pipefail
 mode="${1:-all}"
-case "$mode" in all|codex|addy|higgsfield) ;; *) echo 'Usage: bootstrap.sh [all|codex|addy|higgsfield]' >&2; exit 2;; esac
+case "$mode" in all|codex|claude|addy|higgsfield) ;; *) echo 'Usage: bootstrap.sh [all|codex|claude|addy|higgsfield]' >&2; exit 2;; esac
 [[ "$(uname -s)" = Linux && -z "${TERMUX_VERSION:-}" ]] || { echo 'Use a Linux cloud agent, not Termux.' >&2; exit 2; }
 command -v git >/dev/null
-if [[ "$mode" != "addy" ]]; then
+if [[ "$mode" = all || "$mode" = codex || "$mode" = higgsfield ]]; then
   command -v npm >/dev/null
   node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
 fi
@@ -15,6 +15,47 @@ mkdir -p "$tooling_root"
 tooling_root="$(cd "$tooling_root" && pwd)"
 export PATH="$tooling_root/bin:$PATH"
 if [[ -n "${GITHUB_PATH:-}" ]]; then printf '%s\n' "$tooling_root/bin" >> "$GITHUB_PATH"; fi
+
+install_claude_code() {
+  local version="2.1.283" asset expected_sha archive tmpdir actual
+  command -v curl >/dev/null
+  command -v sha256sum >/dev/null
+  command -v tar >/dev/null
+  case "$(uname -m)" in
+    x86_64|amd64)
+      asset="claude-linux-x64.tar.gz"
+      expected_sha="db404a91bec8baffb53463166fdc8bf579208a527d60afc2d984d7507dc0c2f9"
+      ;;
+    aarch64|arm64)
+      asset="claude-linux-arm64.tar.gz"
+      expected_sha="a2e7d497d40041d7eca8f8fd1d77405a6501ff8b1a61fa02a0e95c458824a43e"
+      ;;
+    *)
+      echo "Unsupported Linux architecture for Claude Code: $(uname -m)" >&2
+      return 2
+      ;;
+  esac
+  tmpdir="$(mktemp -d)"
+  archive="$tmpdir/$asset"
+  curl -fsSL --retry 3 --retry-all-errors \
+    "https://github.com/anthropics/claude-code/releases/download/v${version}/${asset}" \
+    -o "$archive"
+  printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c -
+  tar -xzf "$archive" -C "$tmpdir" claude
+  install -m 0755 "$tmpdir/claude" "$tooling_root/bin/claude-$version"
+  ln -sfn "claude-$version" "$tooling_root/bin/claude"
+  rm -rf "$tmpdir"
+  actual="$(claude --version)"
+  [[ "$actual" == "$version"* ]] || {
+    echo "Claude Code version mismatch: expected $version, got $actual" >&2
+    return 1
+  }
+  printf 'CLAUDE_CODE_VERSION=%s\nCLAUDE_CODE_BOOTSTRAP=PASS\n' "$actual"
+}
+
+if [[ "$mode" = all || "$mode" = claude ]]; then
+  install_claude_code
+fi
 checkout_revision() {
   local url="$1" sha="$2" destination="$3"
   if [[ ! -d "$destination/.git" ]]; then git clone --no-checkout "$url" "$destination"; fi
@@ -61,4 +102,4 @@ if [[ "$mode" = all || "$mode" = higgsfield ]]; then
   # Bootstrap never starts login or prints account/session data in CI.
   higgsfield auth --help >/dev/null
 fi
-printf 'Bootstrap complete. Start a new Codex session. PATH prefix: %s/bin\n' "$tooling_root"
+printf 'Bootstrap complete. Start a new agent session. PATH prefix: %s/bin\n' "$tooling_root"

@@ -403,3 +403,11 @@ Checkpoints ficam em `.github/codex/run-001.txt` e evidências, não em skills.
 Higgsfield não gera automaticamente: autorização e custo devem ser verificados
 antes de qualquer comando pago. Nunca copiar credenciais para Git ou artifacts.
 Instalação reproduzível: `scripts/agent-tooling/bootstrap.sh` em Linux.
+
+Claude Code é tooling de desenvolvimento subordinado ao Harness, assim como Codex:
+não cria autoridade, dispatcher, scheduler ou pipeline paralelo. O bootstrap Linux
+instala a release oficial pinada e verifica o SHA-256 antes de expor `claude` no
+PATH. Instalação e autenticação são etapas separadas: nunca colocar
+`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` ou qualquer credencial em Git,
+logs ou artifacts. Uma execução real do Claude Code continua sujeita à autorização,
+escopo, side-effect class e evidência definidos pelo Harness.

@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - codex/run-001-app
+      - work/gate6f-analytics-learning
     paths:
       - '.github/workflows/agent-tooling-bootstrap.yml'
       - 'scripts/agent-tooling/**'
+      - 'tests/test_agent_tooling_bootstrap.py'
   workflow_dispatch:
 
 permissions:
@@ -25,8 +27,20 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Validate Claude Code bootstrap contract
+        run: python3 tests/test_agent_tooling_bootstrap.py
+
       - name: Restore pinned development tooling
         run: bash scripts/agent-tooling/bootstrap.sh all
+
+      - name: Verify pinned Claude Code
+        run: |
+          case "$(claude --version)" in
+            2.1.283*) ;;
+            *) echo "CLAUDE_CODE_VERSION_MISMATCH" >&2; exit 1 ;;
+          esac
+          claude --help >/dev/null
+          echo "CLAUDE_CODE_RUNTIME_PROOF=PASS"
 
       - name: Verify native Codex discovery without model calls
         run: python3 scripts/agent-tooling/check_discovery.py all
