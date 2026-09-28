@@ -15,11 +15,10 @@ from app.services.llm_context_projection_service import (
 )
 
 
-# Keep long-form script planning aligned with the human-approved Voice B
-# narration calibration used by the production novelty gate. Run 35399181943 /
-# artifact 10568953094 measured +0% Voice B in the 145-163 spoken-WPM range;
-# 132 WPM is the conservative planning baseline after long-form pause allowance.
-VOICE_B_SCRIPT_PLANNING_WPM = 132.0
+# Keep long-form script planning provider-neutral. 132 WPM is the conservative
+# editorial planning baseline after long-form pause allowance; runtime voice timing
+# is measured separately and cannot change factual content or duration gates.
+LONGFORM_SCRIPT_PLANNING_WPM = 132.0
 LONGFORM_MIN_DEVELOPMENT_SECTIONS = 8
 MAX_EDITORIAL_GENERATION_ATTEMPTS = 3
 MAX_MALFORMED_PROVIDER_RETRIES = 1
@@ -111,7 +110,7 @@ def _requested_word_count(target_duration_seconds: float | None) -> int | None:
     target_minutes = float(target_duration_seconds) / 60.0
     return max(
         300,
-        int(math.ceil(target_minutes * VOICE_B_SCRIPT_PLANNING_WPM)),
+        int(math.ceil(target_minutes * LONGFORM_SCRIPT_PLANNING_WPM)),
     )
 
 
@@ -541,7 +540,7 @@ def _editorial_tokens(value: str) -> set[str]:
 
 
 def _spoken_seconds_for_words(word_count: int) -> float:
-    return max(0.0, float(word_count) * 60.0 / VOICE_B_SCRIPT_PLANNING_WPM)
+    return max(0.0, float(word_count) * 60.0 / LONGFORM_SCRIPT_PLANNING_WPM)
 
 
 def _section_word_count(section: dict[str, Any]) -> int:

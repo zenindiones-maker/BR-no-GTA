@@ -9,11 +9,10 @@ from typing import Any, Iterable
 
 TARGET_MIN_SECONDS = 20 * 60
 TARGET_PREFERRED_MAX_SECONDS = 25 * 60
-# Rejected VIDEO A measured 166.28081098469863 WPM at locked +0% Voice B.
-# Plan at 170 WPM so editorial sufficiency cannot pass by assuming a slower
+# Provider-neutral conservative content planning baseline.
 # speech rate than the human-approved runtime actually delivers.
-VOICE_B_CONTENT_PLANNING_WPM = 170.0
-VOICE_B_REJECTED_OBSERVED_WPM = 166.28081098469863
+CONTENT_PLANNING_WPM = 170.0
+PRIOR_REJECTED_OBSERVED_WPM = 166.28081098469863
 MIN_UNIQUE_MEDIA_ASSETS = 4
 MAX_SINGLE_ASSET_SHARE = 0.45
 MAX_PREVIOUS_MEDIA_REUSE_RATIO = 0.25

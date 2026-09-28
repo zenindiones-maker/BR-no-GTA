@@ -41,7 +41,7 @@ from app.services.operational_efficiency_policy import (
 from app.services.render_media_materializer import materialize_scenes
 from app.services.source_window_validation_service import validate_source_window_usage
 from app.services.human_review_quality_gate import (
-    VOICE_B_CONTENT_PLANNING_WPM,
+    CONTENT_PLANNING_WPM,
     validate_content_duration,
     validate_media_novelty,
     validate_text_overlay_contract,
@@ -72,27 +72,27 @@ VOICE_RECORD = CapabilityRecord(
     capability_id=VOICE_CAPABILITY_ID,
     capability_type="CAPABILITY",
     domain="narration",
-    implementation="Harness-governed cloud PT-BR neural narration materialization",
+    implementation="Harness-governed private owner-voice PT-BR narration materialization",
     input_contract="approved PT-BR script sections + exact Harness EXECUTION lineage",
     output_contract="versioned A1 VOICE files + voice QA evidence",
-    requirements=("Harness EXECUTION authority", "pt-BR neural voice", "ffmpeg", "ffprobe"),
+    requirements=("Harness EXECUTION authority", "BR_OWNER_V1 private voice identity", "ffmpeg", "ffprobe"),
     maturity=FUNCTIONAL,
     availability=AVAILABLE,
     allowed_actions=("EXECUTION",),
-    policy_tags=("narration", "voice", "pt-br", "a1", "zero-cost"),
+    policy_tags=("narration", "voice", "pt-br", "a1", "owner-voice"),
     security_boundary=(
         "DeepSeek Harness routes and authorizes the narration capability; the executor only materializes "
         "the already approved script and receives no editorial or publication authority."
     ),
-    cost_class="FREE_NO_BILLING",
-    quota_class="REMOTE_TTS",
-    latency_class="REMOTE_EPHEMERAL",
-    quality_class="PTBR_NEURAL_VOICE_WITH_AUDIO_QA",
+    cost_class="SELF_HOSTED_COMPUTE",
+    quota_class="PRIVATE_VOICE_RUNTIME",
+    latency_class="PRIVATE_RUNTIME",
+    quality_class="OWNER_PTBR_VOICE_WITH_AUDIO_QA",
     evidence_contract="app.services.harness_capability_service.CapabilityEvidence",
     fallback_eligibility=False,
     executor_binding=VOICE_EXECUTOR,
     version="1",
-    provider_id="edge-tts",
+    provider_id="internal-voice-plane",
     side_effects=("narration audio artifact",),
 )
 
@@ -230,8 +230,8 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
     )
     narration_config = dict(job.get("narration") or {})
     content_planning_wpm = (
-        VOICE_B_CONTENT_PLANNING_WPM
-        if narration_config.get("voice") == "pt-BR-ThalitaMultilingualNeural"
+        CONTENT_PLANNING_WPM
+        if narration_config.get("voice") == "BR_OWNER_V1"
         and narration_config.get("rate_locked") is True
         else max(target_wpm, 1.0)
     )
@@ -312,9 +312,13 @@ def validate_product_job(job: dict[str, Any]) -> dict[str, Any]:
         raise WorkerError("CURRENT_AUDIO_CONTRACT_FINGERPRINT mismatch")
     voice = narration.get("voice")
     if voice != audio_contract["VOICE_SHORT_NAME"]:
-        raise WorkerError("Voice B official identity cannot be substituted")
+        raise WorkerError("BR_OWNER_V1 is the only permitted narration identity")
     if narration.get("human_quality_baseline") != audio_contract["OFFICIAL_VOICE"]:
-        raise WorkerError("Voice B human quality baseline is required")
+        raise WorkerError("BR_OWNER_V1 must be the narration quality identity")
+    if narration.get("voice_identity_id") != audio_contract["VOICE_IDENTITY_ID"]:
+        raise WorkerError("BR_OWNER_V1 voice_identity_id is required")
+    if not audio_contract["OWNER_REFERENCE_READY"]:
+        raise WorkerError("OWNER_VOICE_NOT_READY")
     if narration.get("single_voice_only") is not True:
         raise WorkerError("SINGLE_VOICE_ONLY must remain true")
     if narration.get("alternative_voice_casting_enabled") is not False:
@@ -366,136 +370,6 @@ def _audio_metrics(path: Path) -> dict[str, Any]:
         "mean_volume_db": mean_volume,
         "longest_silence_seconds": max(silence_durations, default=0.0),
     }
-
-
-async def _edge_tts_save(text: str, voice: str, rate: str, output: Path) -> None:
-    import edge_tts
-    communicator = edge_tts.Communicate(text=text, voice=voice, rate=rate)
-    await communicator.save(str(output))
-
-
-def _parse_voice_rate_percent(rate: str) -> int:
-    match = re.fullmatch(r"([+-]?)([0-9]{1,3})%", rate.strip())
-    if not match:
-        raise WorkerError("VOICE_QA: narration rate must use signed percentage syntax")
-    value = int(match.group(2))
-    if match.group(1) == "-":
-        value = -value
-    return value
-
-
-def _format_voice_rate_percent(value: int) -> str:
-    return f"{value:+d}%"
-
-
-def _initial_calibrated_rate_percent(configured_rate: str) -> int:
-    requested = _parse_voice_rate_percent(configured_rate)
-    return max(VOICE_NATURAL_RATE_MIN_PERCENT, min(VOICE_NATURAL_RATE_MAX_PERCENT, requested))
-
-
-def _voice_target_tolerance_seconds(target_seconds: float) -> float:
-    return max(VOICE_TARGET_TOLERANCE_FLOOR_SECONDS, target_seconds * VOICE_TARGET_TOLERANCE_RATIO)
-
-
-def _voice_duration_is_acceptable(*, duration_seconds: float, target_seconds: float, rate_percent: int) -> bool:
-    if not (TARGET_MIN_SECONDS <= duration_seconds <= TARGET_MAX_SECONDS):
-        return False
-    if not (VOICE_NATURAL_RATE_MIN_PERCENT <= rate_percent <= VOICE_NATURAL_RATE_MAX_PERCENT):
-        return False
-    return abs(duration_seconds - target_seconds) <= _voice_target_tolerance_seconds(target_seconds)
-
-
-def _next_calibrated_rate_percent(*, current_rate_percent: int, actual_seconds: float, target_seconds: float) -> int:
-    if not math.isfinite(actual_seconds) or actual_seconds <= 0 or not math.isfinite(target_seconds) or target_seconds <= 0:
-        raise WorkerError("VOICE_QA: invalid duration for narration calibration")
-    current_speed = 1.0 + current_rate_percent / 100.0
-    required_speed = current_speed * actual_seconds / target_seconds
-    candidate = int(round((required_speed - 1.0) * 100.0))
-    if candidate < VOICE_NATURAL_RATE_MIN_PERCENT or candidate > VOICE_NATURAL_RATE_MAX_PERCENT:
-        raise WorkerError(
-            "VOICE_QA: target duration requires narration rate outside naturalness guard "
-            f"[{VOICE_NATURAL_RATE_MIN_PERCENT:+d}%,{VOICE_NATURAL_RATE_MAX_PERCENT:+d}%]: {candidate:+d}%"
-        )
-    if candidate == current_rate_percent:
-        candidate += 1 if actual_seconds > target_seconds else -1
-    if candidate < VOICE_NATURAL_RATE_MIN_PERCENT or candidate > VOICE_NATURAL_RATE_MAX_PERCENT:
-        raise WorkerError("VOICE_QA: bounded narration calibration cannot converge naturally")
-    return candidate
-
-
-def _synthesize_ptbr_attempt(
-    job: dict[str, Any],
-    voice_root: Path,
-    *,
-    voice: str,
-    rate_percent: int,
-    attempt: int,
-) -> tuple[list[dict[str, Any]], Path, float]:
-    attempt_root = voice_root / f"attempt-{attempt:02d}"
-    attempt_root.mkdir(parents=True, exist_ok=False)
-    rate = _format_voice_rate_percent(rate_percent)
-    section_results: list[dict[str, Any]] = []
-    concat_lines: list[str] = []
-
-    for index, section in enumerate(job["script_sections"], start=1):
-        raw_path = attempt_root / f"section-{index:02d}.raw.mp3"
-        normalized = attempt_root / f"section-{index:02d}.wav"
-        asyncio.run(_edge_tts_save(section["narration"], voice, rate, raw_path))
-        if not raw_path.is_file() or raw_path.stat().st_size <= 0:
-            raise WorkerError("VOICE_QA: TTS returned no audio file")
-        _run([
-            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(raw_path), "-af", "loudnorm=I=-16:LRA=11:TP=-1.5",
-            "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(normalized),
-        ], timeout=1200)
-        _, duration = _probe_audio(normalized)
-        metrics = _audio_metrics(normalized)
-        words = len(_words(section["narration"]))
-        words_per_minute = words * 60.0 / duration
-        checks = {
-            "real_file": normalized.is_file() and normalized.stat().st_size > 0,
-            "ptbr_voice_identity": voice.startswith("pt-BR-") and voice.endswith("Neural"),
-            "finite_positive_duration": duration > 0,
-            "no_clipping": metrics["max_volume_db"] <= -0.1,
-            "consistent_level": -35.0 <= metrics["mean_volume_db"] <= -10.0,
-            "no_abnormal_silence": metrics["longest_silence_seconds"] <= 5.0,
-            "speech_rate_plausible": 85.0 <= words_per_minute <= 220.0,
-        }
-        decode = subprocess.run(
-            ["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", str(normalized), "-map", "0:a:0", "-f", "null", "-"],
-            capture_output=True,
-            timeout=600,
-        )
-        checks["full_audio_decode"] = decode.returncode == 0 and not decode.stderr.strip()
-        if not all(checks.values()):
-            raise WorkerError(f"VOICE_QA failed for {section['section_id']}: {checks}")
-        with normalized.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        section_results.append({
-            "section_id": section["section_id"],
-            "path": str(normalized.relative_to(voice_root.parent)),
-            "duration_seconds": duration,
-            "words": words,
-            "words_per_minute": words_per_minute,
-            "sha256": digest,
-            "metrics": metrics,
-            "checks": checks,
-        })
-        concat_lines.append(f"file '{normalized.name}'")
-        raw_path.unlink(missing_ok=True)
-
-    concatenation_file = attempt_root / "concat.txt"
-    concatenation_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
-    master = attempt_root / "narration-master.wav"
-    _run([
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concatenation_file), "-c", "copy", str(master),
-    ], timeout=1200)
-    _, master_duration = _probe_audio(master)
-    section_duration = sum(item["duration_seconds"] for item in section_results)
-    if abs(master_duration - section_duration) > max(0.5, section_duration * 0.002):
-        raise WorkerError("VOICE_QA: narration master duration mismatch")
-    return section_results, master, master_duration
 
 
 def execute_ptbr_narration(job: dict[str, Any], root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1016,7 +890,7 @@ def _build_edit_plan(
                     "order":2,
                     "phase":"spoken_channel_opening",
                     "text":brand_contract["opening_text"],
-                    "voice":"Voice B",
+                    "voice":"BR_OWNER_V1",
                     "content_start_seconds":0.0,
                     "final_start_seconds":"official_intro_end",
                     "duration_seconds":opening_duration,
@@ -1038,7 +912,7 @@ def _build_edit_plan(
                     "order":5,
                     "phase":"spoken_channel_closing",
                     "text":brand_contract["closing_line"],
-                    "voice":"Voice B",
+                    "voice":"BR_OWNER_V1",
                     "content_start_seconds":duration-closing_duration,
                     "duration_seconds":closing_duration,
                 },
@@ -1093,7 +967,7 @@ def _build_edit_plan(
         ),
         "official_intro_first": plan.metadata["timeline_sequence"][0]["phase"] == "official_intro" and plan.metadata["timeline_sequence"][0]["asset_id"] == 1,
         "spoken_opening_after_intro": plan.metadata["timeline_sequence"][1]["phase"] == "spoken_channel_opening",
-        "voice_b_used": brand_contract["official_voice_profile"] == "Voice B",
+        "owner_voice_used": brand_contract["official_voice_profile"] == "BR_OWNER_V1",
         "opening_text_canonical": plan.metadata["timeline_sequence"][1]["text"] == brand_contract["opening_text"],
         "closing_text_canonical": plan.metadata["timeline_sequence"][-1]["text"] == "E BR não dorme em Vice City",
         "brand_audio_cache_policy": bool(brand_contract["cache_policy"]["closing_fixed_reusable"]),
@@ -1452,7 +1326,7 @@ def main() -> int:
     print(f"VIDEO_{job['product_label']}_AUDIOVISUAL_QA=PASS")
     print("OFFICIAL_INTRO_FIRST=PASS")
     print("SPOKEN_OPENING_AFTER_INTRO=PASS")
-    print("VOICE_B_USED=PASS")
+    print("OWNER_VOICE_USED=PASS")
     print("OPENING_TEXT_CANONICAL=PASS")
     print("CLOSING_TEXT_CANONICAL=PASS")
     print("BRAND_AUDIO_CACHE_POLICY=PASS")

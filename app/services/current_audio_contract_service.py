@@ -6,18 +6,16 @@ from pathlib import Path
 from typing import Any
 
 from app.services.channel_spoken_branding_service import (
-    HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
-    HUMAN_APPROVED_OPENING_REFERENCE,
-    OFFICIAL_VOICE_BLIND_ID,
-    OFFICIAL_VOICE_SHORT_NAME,
-    PRODUCTION_CLOSING_POLICY,
+    OFFICIAL_PITCH,
+    OFFICIAL_RATE,
+    OFFICIAL_VOICE_IDENTITY_ID,
+    SELECTED_CLOSING_TAKE_ID,
     SELECTED_OPENING_TAKE_ID,
     SPOKEN_BRANDING_CONTRACT_VERSION,
-    TAKE_PROFILES,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_APPROVED_G_SHA256 = "9e2e7a2d9717f460dd45cf0d07e96a4596e4f61372c6d87028b8809a052c59ca"
+OWNER_VOICE_POLICY = "OWNER_VOICE_ONLY"
 
 
 class CurrentAudioContractError(RuntimeError):
@@ -31,31 +29,19 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def current_audio_contract() -> dict[str, Any]:
-    profile = _load(ROOT / ".run001/official-narration-profile.json")
+    enrollment = _load(ROOT / "config/voice_owner_enrollment_v1.json")
     lexicon = _load(ROOT / "config/pronunciation_lexicon.json")
-    approval = _load(ROOT / "assets/branding/audio/human-approval-manifest.json")
-    approved_g = ROOT / "assets/branding/audio/g-brand-mixed-approved-20260919.mp3"
-    closing = ROOT / "assets/branding/audio/closing-from-g-approved-20260919.flac"
-
-    approved_g_sha = _sha256(approved_g)
-    closing_sha = _sha256(closing)
-    if approved_g_sha != EXPECTED_APPROVED_G_SHA256:
-        raise CurrentAudioContractError("human-approved G closing asset hash mismatch")
-    approved = approval.get("approved_reference") or {}
-    canonical_closing = approval.get("canonical_closing_asset") or {}
-    if approved.get("sha256") != approved_g_sha:
-        raise CurrentAudioContractError("approval manifest G closing hash mismatch")
-    if canonical_closing.get("sha256") != closing_sha:
-        raise CurrentAudioContractError("derived closing asset hash mismatch")
+    if enrollment.get("voice_identity_id") != OFFICIAL_VOICE_IDENTITY_ID:
+        raise CurrentAudioContractError("owner voice identity mismatch")
+    if enrollment.get("official_voice") != OFFICIAL_VOICE_IDENTITY_ID:
+        raise CurrentAudioContractError("official owner voice mismatch")
+    if enrollment.get("voice_policy") != OWNER_VOICE_POLICY:
+        raise CurrentAudioContractError("owner-only voice policy is required")
+    if enrollment.get("active_voice_identities") != [OFFICIAL_VOICE_IDENTITY_ID]:
+        raise CurrentAudioContractError("exactly one owner voice identity must be active")
+    if enrollment.get("consent_status") != "APPROVED":
+        raise CurrentAudioContractError("owner voice consent must be approved")
 
     entries = {
         str(item.get("identity")): item
@@ -65,31 +51,33 @@ def current_audio_contract() -> dict[str, Any]:
     gta = entries.get("gta-6") or {}
     vice = entries.get("vice-city") or {}
     lucia = entries.get("character-lucia") or {}
-    runtime = profile.get("runtime_voice_policy") or {}
-    take = next(
-        (item for item in TAKE_PROFILES if item.get("take_id") == SELECTED_OPENING_TAKE_ID),
-        None,
+    materialized = int(enrollment.get("materialized_reference_count") or 0)
+    reference_ready = (
+        materialized > 0
+        and enrollment.get("reference_materialization_status")
+        == "PRIVATE_REFERENCE_MATERIALIZED"
     )
-    if not take:
-        raise CurrentAudioContractError("approved Fluid 2 opening profile missing")
 
     payload = {
-        "OFFICIAL_VOICE": OFFICIAL_VOICE_BLIND_ID,
-        "VOICE_SHORT_NAME": OFFICIAL_VOICE_SHORT_NAME,
-        "SINGLE_VOICE_ONLY": runtime.get("single_voice_only") is True,
-        "ALTERNATIVE_VOICE_CASTING": (
-            "DISABLED" if runtime.get("alternative_voice_casting_enabled") is False else "ENABLED"
-        ),
+        "OFFICIAL_VOICE": OFFICIAL_VOICE_IDENTITY_ID,
+        "VOICE_SHORT_NAME": OFFICIAL_VOICE_IDENTITY_ID,
+        "VOICE_IDENTITY_ID": OFFICIAL_VOICE_IDENTITY_ID,
+        "VOICE_POLICY": OWNER_VOICE_POLICY,
+        "SINGLE_VOICE_ONLY": True,
+        "ALTERNATIVE_VOICE_CASTING": "DISABLED",
+        "ACTIVE_VOICE_IDENTITIES": [OFFICIAL_VOICE_IDENTITY_ID],
+        "OWNER_REFERENCE_SOURCE": enrollment.get("reference_source"),
+        "OWNER_REFERENCE_STATUS": enrollment.get("reference_materialization_status"),
+        "OWNER_REFERENCE_COUNT": materialized,
+        "OWNER_REFERENCE_READY": reference_ready,
         "SPOKEN_BRANDING_CONTRACT": SPOKEN_BRANDING_CONTRACT_VERSION,
-        "OPENING_REFERENCE": HUMAN_APPROVED_OPENING_REFERENCE,
+        "OPENING_REFERENCE": None,
         "OPENING_TAKE": SELECTED_OPENING_TAKE_ID,
-        "OPENING_RATE": take.get("rate"),
-        "OPENING_PITCH": take.get("pitch"),
-        "CLOSING_ASSET": HUMAN_APPROVED_FINAL_END_SAMPLE_ID,
-        "CLOSING_ASSET_POLICY": "IMMUTABLE_HUMAN_APPROVED",
-        "CLOSING_POLICY_INTERNAL": PRODUCTION_CLOSING_POLICY,
-        "APPROVED_G_SHA256": approved_g_sha,
-        "DERIVED_CLOSING_SHA256": closing_sha,
+        "OPENING_RATE": OFFICIAL_RATE,
+        "OPENING_PITCH": OFFICIAL_PITCH,
+        "CLOSING_ASSET": None,
+        "CLOSING_TAKE": SELECTED_CLOSING_TAKE_ID,
+        "CLOSING_ASSET_POLICY": "SYNTHESIZE_WITH_OWNER_IDENTITY",
         "DEFAULT_NARRATION_LOCALE": lexicon.get("default_locale"),
         "ONLY_FORCED_EN_US_TERM": (lexicon.get("policy") or {}).get("only_forced_en_us_term"),
         "GTA_6_SYNTHESIS": gta.get("synthesis_text"),
@@ -97,33 +85,7 @@ def current_audio_contract() -> dict[str, Any]:
         "VICE_CITY_TARGET_IPA": vice.get("target_ipa"),
         "PRONUNCIATION_LEXICON_VERSION": lexicon.get("version"),
         "LUCIA_SYNTHESIS_ALIAS": lucia.get("synthesis_text"),
-        "OFFICIAL_NARRATION_PROFILE_ID": profile.get("profile_id"),
     }
-    expected = {
-        "OFFICIAL_VOICE": "Voice B",
-        "VOICE_SHORT_NAME": "pt-BR-ThalitaMultilingualNeural",
-        "SINGLE_VOICE_ONLY": True,
-        "ALTERNATIVE_VOICE_CASTING": "DISABLED",
-        "SPOKEN_BRANDING_CONTRACT": "br-no-gta-spoken-branding/v3",
-        "OPENING_REFERENCE": "I-opening-fluid-2.mp3",
-        "OPENING_TAKE": "take-2",
-        "OPENING_RATE": "+3%",
-        "OPENING_PITCH": "+1Hz",
-        "CLOSING_ASSET": "G-brand-mixed",
-        "CLOSING_ASSET_POLICY": "IMMUTABLE_HUMAN_APPROVED",
-        "DEFAULT_NARRATION_LOCALE": "pt-BR",
-        "ONLY_FORCED_EN_US_TERM": None,
-        "GTA_6_SYNTHESIS": "gê tê á seis",
-        "VICE_CITY_LOCALE": "pt-BR",
-        "VICE_CITY_TARGET_IPA": "vaɪs ˈsɪti",
-        "PRONUNCIATION_LEXICON_VERSION": "2026.09.20.5-all-ptbr-no-language-switch",
-        "LUCIA_SYNTHESIS_ALIAS": "Lucía",
-    }
-    for key, value in expected.items():
-        if payload.get(key) != value:
-            raise CurrentAudioContractError(
-                f"current audio contract mismatch for {key}: {payload.get(key)!r}"
-            )
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return {
         **payload,

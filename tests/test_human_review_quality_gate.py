@@ -88,9 +88,9 @@ def test_content_must_support_full_target_not_only_twenty_minutes():
     assert result["CONTENT_SUPPORTS_TARGET"] is False
 
 
-def test_locked_voice_b_planning_rate_requires_about_3400_words_for_20_minutes():
-    from app.services.human_review_quality_gate import VOICE_B_CONTENT_PLANNING_WPM
-    required=20*VOICE_B_CONTENT_PLANNING_WPM
+def test_conservative_planning_rate_requires_about_3400_words_for_20_minutes():
+    from app.services.human_review_quality_gate import CONTENT_PLANNING_WPM
+    required=20*CONTENT_PLANNING_WPM
     assert required==3400.0
 
 
