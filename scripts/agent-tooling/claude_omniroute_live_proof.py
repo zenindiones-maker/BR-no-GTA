@@ -521,6 +521,38 @@ def _reconcile_provider_connection(
     return connection, failure, "PROVIDERS_LIST_RECONCILIATION"
 
 
+def _classify_provider_test_result(
+    result: subprocess.CompletedProcess[str],
+) -> dict[str, Any]:
+    payload = _parse_json_object(result.stdout)
+    record = payload if isinstance(payload, dict) else {}
+    unsupported = (
+        record.get("skipped") is True
+        and record.get("unsupported") is True
+        and str(record.get("error") or "").strip() == "Provider test not supported"
+    )
+    if unsupported:
+        return {
+            "status": "UNSUPPORTED",
+            "supported": False,
+            "failure_class": None,
+            "next_validation": "DEDICATED_PROVIDER_CANARY",
+        }
+    if result.returncode == 0 and record.get("valid") is not False:
+        return {
+            "status": "PASS",
+            "supported": True,
+            "failure_class": None,
+            "next_validation": "DEDICATED_PROVIDER_CANARY",
+        }
+    return {
+        "status": "FAIL",
+        "supported": True,
+        "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
+        "next_validation": None,
+    }
+
+
 def _materialize_provider(
     target: dict[str, Any],
     *,
@@ -579,36 +611,24 @@ def _materialize_provider(
             "failure_class": "OMNIROUTE_PROVIDER_VALIDATION_FAILURE",
         }
     test = _run(["omniroute", "providers", "test", connection_id, "--json"])
-    provider_test_status = "PASS"
-    if test.returncode != 0:
-        test_payload = _parse_json_object(test.stdout)
-        unsupported = (
-            isinstance(test_payload, dict)
-            and test_payload.get("skipped") is True
-            and str(test_payload.get("error") or "").strip()
-            == "Provider test not supported"
-        )
-        if unsupported:
-            # OmniRoute 3.8.50's CLI probe table does not include NVIDIA.
-            # This is a probe-capability gap, not evidence that the connection
-            # is unhealthy. The exact connection is still required to pass the
-            # dedicated routed canary before admission to the bounded combo.
-            provider_test_status = "UNSUPPORTED_SKIPPED_TO_DEDICATED_CANARY"
-        else:
-            return {
-                "ok": False,
-                "connection_id": connection_id,
-                "connection_identity_redacted": _connection_identity_redacted(connection_id),
-                "connection_id_source": connection_id_source,
-                "provider_test_status": "FAIL",
-                "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
-            }
+    provider_test = _classify_provider_test_result(test)
+    if provider_test["status"] == "FAIL":
+        return {
+            "ok": False,
+            "connection_id": connection_id,
+            "connection_identity_redacted": _connection_identity_redacted(connection_id),
+            "connection_id_source": connection_id_source,
+            "provider_test_status": provider_test["status"],
+            "provider_test_supported": provider_test["supported"],
+            "failure_class": provider_test["failure_class"],
+        }
     return {
         "ok": True,
         "connection_id": connection_id,
         "connection_identity_redacted": _connection_identity_redacted(connection_id),
         "connection_id_source": connection_id_source,
-        "provider_test_status": provider_test_status,
+        "provider_test_status": provider_test["status"],
+        "provider_test_supported": provider_test["supported"],
         "failure_class": None,
     }
 
