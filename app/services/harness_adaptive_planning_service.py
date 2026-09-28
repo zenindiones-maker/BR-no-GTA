@@ -2394,10 +2394,41 @@ def select_capability_for_requirement(
                 capability_contract_digest(record)
             )
         hard_rejected.append(entry)
+
+        # CapabilityResolutionReceipt/v1 owns the new typed rejection codes.
+        # Keep the pre-existing avoided surface backward-compatible because
+        # durable tests and downstream diagnostics consume these strings.
         for item in reasons:
-            avoided.append(
-                f"{capability_id}:{item['code']}:{item['detail']}"
-            )
+            code = str(item["code"])
+            detail = str(item["detail"])
+            if code == "FAILURE_MEMORY_HARD_BLOCK":
+                legacy = detail
+            elif code == "HEALTH_HARD_FAIL":
+                state = detail.split("=", 1)[-1].strip().casefold()
+                legacy = f"{capability_id}:health:{state}"
+            elif code == "SIDE_EFFECT_AUTHORIZATION_MISMATCH":
+                if "required=READ_ONLY" in detail:
+                    legacy = (
+                        f"{capability_id}:side-effect-exceeds:read-only"
+                    )
+                elif (
+                    "required=BOUNDED_MUTATION" in detail
+                    or "required=MUTATING" in detail
+                ):
+                    observed = (
+                        detail.split("observed=", 1)[-1]
+                        .strip()
+                        .casefold()
+                    )
+                    legacy = (
+                        f"{capability_id}:"
+                        f"side-effect-insufficient:{observed}"
+                    )
+                else:
+                    legacy = f"{capability_id}:{detail}"
+            else:
+                legacy = f"{capability_id}:{detail}"
+            avoided.append(legacy)
 
     for ordinal, capability_id in enumerate(ordered_ids):
         if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
