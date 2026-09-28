@@ -410,6 +410,40 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
         )
         self.assertNotIn("NVIDIA_API_KEY", calls[0][0])
 
+    def test_fetch_logs_accepts_one_top_level_json_after_cli_diagnostic_prefix(self):
+        module = load_module()
+        rows = [{
+            "correlationId": "corr-1",
+            "connectionId": "conn-nvidia-123",
+            "provider": "nvidia",
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+            "status": 200,
+        }]
+        stdout = "[omniroute] connected to http://127.0.0.1:20128\n" + json.dumps(rows)
+        with mock.patch.object(
+            module,
+            "_run",
+            return_value=CompletedProcess(["omniroute"], 0, stdout, ""),
+        ):
+            self.assertEqual(
+                module._fetch_logs("http://127.0.0.1:20128"),
+                rows,
+            )
+
+    def test_fetch_logs_rejects_ambiguous_multiple_top_level_json_documents(self):
+        module = load_module()
+        stdout = (
+            '{"status":"diagnostic"}\n'
+            '[{"correlationId":"corr-1","connectionId":"conn-1"}]'
+        )
+        with mock.patch.object(
+            module,
+            "_run",
+            return_value=CompletedProcess(["omniroute"], 0, stdout, ""),
+        ):
+            with self.assertRaises(module.OmniRouteObservabilityUnavailable):
+                module._fetch_logs("http://127.0.0.1:20128")
+
     def test_fetch_logs_fails_closed_when_official_cli_cannot_read_logs(self):
         module = load_module()
         with mock.patch.object(
