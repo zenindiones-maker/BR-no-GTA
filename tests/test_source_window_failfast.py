@@ -10,7 +10,7 @@ def _brand_contract():
     return {
         "opening_text": "Booooa meu povo, aqui é BR no GTA 6 e hoje vamos de teste!",
         "closing_line": "E BR não dorme em Vice City",
-        "official_voice_profile": "Voice B",
+        "official_voice_profile": "BR_OWNER_V1",
         "cache_policy": {"closing_fixed_reusable": True},
     }
 

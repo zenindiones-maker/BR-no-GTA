@@ -93,7 +93,7 @@ def build_spoken_branding_contract(*, theme: str) -> dict[str, Any]:
         "provider": OFFICIAL_PROVIDER,
         "provider_version": OFFICIAL_PROVIDER_VERSION,
         "language": OFFICIAL_LANGUAGE,
-        "opening_template": "fixed_prefix_plus_theme",
+        "opening_template": f"{OPENING_PREFIX}[tema do vídeo]!",
         "opening_fixed_prefix": OPENING_PREFIX,
         "opening_theme": theme,
         "opening_text": canonical_opening_text(theme),
