@@ -1,0 +1,38 @@
+name: Claude Code Auth Validation
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - ".github/workflows/claude-code-auth-validation.yml"
+      - "scripts/agent-tooling/bootstrap.sh"
+      - "scripts/agent-tooling/claude_auth_preflight.sh"
+      - "tests/test_claude_auth_boundary.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  auth-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prove authentication boundary contract
+        run: python3 -m unittest -q tests.test_claude_auth_boundary
+
+      - name: Install pinned Claude Code
+        run: bash scripts/agent-tooling/bootstrap.sh claude
+
+      - name: Validate configured Claude credential without a model call
+        run: bash scripts/agent-tooling/claude_auth_preflight.sh

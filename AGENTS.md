@@ -411,3 +411,14 @@ PATH. Instalação e autenticação são etapas separadas: nunca colocar
 `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` ou qualquer credencial em Git,
 logs ou artifacts. Uma execução real do Claude Code continua sujeita à autorização,
 escopo, side-effect class e evidência definidos pelo Harness.
+
+## Autenticação Claude Code
+
+A autenticação do Claude Code é separada da instalação e permanece subordinada
+ao Harness. Em CI, configure exatamente uma credencial como GitHub Actions secret:
+`CLAUDE_CODE_OAUTH_TOKEN` para token de assinatura gerado por `claude setup-token`,
+ou `ANTHROPIC_API_KEY` para acesso direto pelo Claude Console. Nunca configure as
+duas simultaneamente. O preflight canônico é
+`scripts/agent-tooling/claude_auth_preflight.sh`, que executa somente
+`claude auth status`; ele não faz chamada de modelo, não imprime credenciais e
+falha fechado para credencial ausente, ambígua ou rejeitada.
