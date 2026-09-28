@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -180,6 +181,27 @@ def load_agent_skill_pack(root: Path) -> AgentSkillPack:
         superpowers_bootstrap_global=False,
         skills=skills,
     )
+
+
+
+def skill_tree_digest(path: Path) -> str:
+    path = Path(path)
+    if not path.is_dir():
+        raise FileNotFoundError(path)
+    digest = hashlib.sha256()
+    files = sorted(
+        (item for item in path.rglob("*") if item.is_file()),
+        key=lambda item: item.relative_to(path).as_posix(),
+    )
+    if not files:
+        raise ValueError(f"skill bundle is empty: {path}")
+    for item in files:
+        relative = item.relative_to(path).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(item.read_bytes())
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
 
 
 def verify_agent_skill_pack(root: Path) -> SkillPackVerification:
