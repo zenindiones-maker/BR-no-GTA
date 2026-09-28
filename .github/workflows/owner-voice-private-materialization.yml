@@ -6,13 +6,7 @@ on:
     branches:
       - work/gate6f-analytics-learning
     paths:
-      - ".github/workflows/owner-voice-private-materialization.yml"
-      - "app/services/owner_voice_private_materialization_service.py"
-      - "app/services/owner_voice_telegram_handoff_service.py"
-      - "scripts/owner_voice_private_materialization.py"
-      - "scripts/owner_voice_reference_handoff.py"
-      - "tests/test_owner_voice_private_materialization.py"
-      - "tests/test_owner_voice_reference_handoff.py"
+      - ".run/owner-voice-private-materialization.request.json"
 
 permissions:
   contents: read
@@ -34,61 +28,33 @@ jobs:
       - name: Install focused test dependency
         run: python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3"
 
-      - name: Prove secure handoff and private boundary
-        run: |
-          set -euo pipefail
-          python -m pytest -q             tests/test_owner_voice_reference_handoff.py             tests/test_owner_voice_private_materialization.py
-          echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
-
-  secret-preflight:
-    name: Owner voice secret presence preflight
-    if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      BR_OWNER_TELEGRAM_REFERENCE_INDEX: ${{ secrets.BR_OWNER_TELEGRAM_REFERENCE_INDEX }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      BR_VOICE_RUNTIME_URL: ${{ secrets.BR_VOICE_RUNTIME_URL }}
-      BR_VOICE_RUNTIME_TOKEN: ${{ secrets.BR_VOICE_RUNTIME_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Report safe materialization readiness
-        env:
-          PYTHONPATH: ${{ github.workspace }}
+      - name: Validate explicit materialization request
+        if: ${{ github.event_name == 'push' }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import os
-          from app.services.owner_voice_private_materialization_service import (
-              parse_owner_reference_index_secret,
-          )
-
-          raw = os.environ.get("BR_OWNER_TELEGRAM_REFERENCE_INDEX", "").strip()
-          print("OWNER_REFERENCE_INDEX_PRESENT=" + ("true" if raw else "false"))
-          print(
-              "TELEGRAM_BOT_TOKEN_PRESENT="
-              + ("true" if os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() else "false")
-          )
-          print(
-              "BR_VOICE_RUNTIME_URL_PRESENT="
-              + ("true" if os.environ.get("BR_VOICE_RUNTIME_URL", "").strip() else "false")
-          )
-          print(
-              "BR_VOICE_RUNTIME_TOKEN_PRESENT="
-              + ("true" if os.environ.get("BR_VOICE_RUNTIME_TOKEN", "").strip() else "false")
-          )
-          if raw:
-              index = parse_owner_reference_index_secret(raw)
-              print(f"OWNER_TELEGRAM_REFERENCES_FOUND={index['reference_count']}")
-              print(f"OWNER_REFERENCE_INDEX_SHA256={index['index_sha256']}")
+          import json
+          from pathlib import Path
+          p=Path(".run/owner-voice-private-materialization.request.json")
+          d=json.loads(p.read_text(encoding="utf-8"))
+          assert d["schema"]=="OwnerVoicePrivateMaterializationRequest/v1"
+          assert d["voice_identity_id"]=="BR_OWNER_V1"
+          assert d["requested_action"]=="MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES"
+          assert d["generic_voice_fallback"] is False
+          assert d["fail_closed"] is True
+          print("OWNER_VOICE_MATERIALIZATION_REQUEST=PASS")
           PY
+
+      - name: Prove secure handoff and private boundary
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_owner_voice_reference_handoff.py \
+            tests/test_owner_voice_private_materialization.py
+          echo "OWNER_VOICE_PRIVATE_MATERIALIZATION_CONTRACT=PASS"
 
   materialize:
     name: Materialize real Telegram owner references
-    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: contract
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -114,12 +80,14 @@ jobs:
             echo "OWNER_REFERENCE_INDEX_PRESENT=true"
           else
             echo "OWNER_REFERENCE_INDEX_PRESENT=false"
+            echo "OWNER_REFERENCE_MATERIALIZATION_BLOCKER=OWNER_TELEGRAM_REFERENCE_INDEX_NOT_MATERIALIZED"
             exit 21
           fi
           if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
             echo "TELEGRAM_BOT_TOKEN_PRESENT=true"
           else
             echo "TELEGRAM_BOT_TOKEN_PRESENT=false"
+            echo "OWNER_REFERENCE_MATERIALIZATION_BLOCKER=TELEGRAM_BOT_TOKEN_NOT_MATERIALIZED"
             exit 22
           fi
           if [[ -n "${BR_VOICE_RUNTIME_URL:-}" ]]; then
@@ -151,7 +119,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: owner-voice-private-materialization-evidence
+          name: owner-voice-private-materialization-evidence-${{ github.run_id }}
           path: runtime/owner-voice-materialization/
           if-no-files-found: warn
           retention-days: 7

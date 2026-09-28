@@ -1,0 +1,9 @@
+{
+  "schema": "OwnerVoicePrivateMaterializationRequest/v1",
+  "voice_identity_id": "BR_OWNER_V1",
+  "requested_action": "MATERIALIZE_REAL_TELEGRAM_OWNER_REFERENCES",
+  "requested_by": "authorized_human_owner",
+  "source": "governed_human_instruction",
+  "generic_voice_fallback": false,
+  "fail_closed": true
+}
