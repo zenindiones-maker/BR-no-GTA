@@ -50,6 +50,29 @@ class DurableResumePolicyError(RuntimeError):
     pass
 
 
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_LOG_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T[^\s]+Z\s+"
+)
+
+
+def workflow_log_has_emitted_marker(
+    log_text: str,
+    marker: str,
+)->bool:
+    target=str(marker or "").strip()
+    if not target or "\n" in target or "\r" in target:
+        return False
+    for raw_line in str(log_text or "").splitlines():
+        line=_ANSI_ESCAPE_RE.sub("",raw_line).strip()
+        if "\t" in line:
+            line=line.rsplit("\t",1)[-1].strip()
+        line=_LOG_TIMESTAMP_RE.sub("",line,count=1).strip()
+        if line==target:
+            return True
+    return False
+
 def _canonical_sha(value: Any)->str:
     raw=json.dumps(
         value,ensure_ascii=True,sort_keys=True,

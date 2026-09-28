@@ -345,12 +345,26 @@ jobs:
           print("1" if safe else "0")
           PY
               )"
-              SUCCESSOR_SAFE=1
-              if grep -Eq \
-                'NONTERMINAL_SUCCESSOR_DISPATCHED=PASS|DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS' \
-                "$RUN_LOG"; then
-                SUCCESSOR_SAFE=0
-              fi
+              SUCCESSOR_SAFE="$(python - "$RUN_LOG" <<'PY'
+          import sys
+          from pathlib import Path
+          from app.services.production_durable_resume_service import (
+              workflow_log_has_emitted_marker,
+          )
+          log_text=Path(sys.argv[1]).read_text(
+              encoding="utf-8",
+              errors="replace",
+          )
+          emitted=any(
+              workflow_log_has_emitted_marker(log_text, marker)
+              for marker in (
+                  "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS",
+                  "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS",
+              )
+          )
+          print("0" if emitted else "1")
+          PY
+              )"
               if [ "$STEP_SAFE" = 1 ] && [ "$SUCCESSOR_SAFE" = 1 ]; then
                 python - "$RETRY_SAFE_JSON" "$RID" <<'PY'
           import json,sys

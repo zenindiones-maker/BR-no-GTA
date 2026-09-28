@@ -222,3 +222,16 @@ def test_logical_continuation_claim_allows_only_proven_pre_semantic_physical_ret
     assert "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS" in block
     assert "PHYSICAL_RETRY_OF_RUN_ID=" in block
     assert "FAILED_PRE_SEMANTIC_ATTEMPT_REPLACED=PASS" in block
+
+
+def test_physical_retry_checks_emitted_successor_markers_not_log_substrings():
+    text=Path(
+        ".github/workflows/real-multi-agent-production.yml"
+    ).read_text(encoding="utf-8")
+    block=text.split(
+        "- name: Claim logical continuation exactly once",1
+    )[1].split("- uses: actions/setup-python@v5",1)[0]
+    assert "workflow_log_has_emitted_marker" in block
+    assert "grep -Eq" not in block
+    assert "NONTERMINAL_SUCCESSOR_DISPATCHED=PASS" in block
+    assert "DUPLICATE_SUCCESSOR_INTENT_DEDUPED=PASS" in block
