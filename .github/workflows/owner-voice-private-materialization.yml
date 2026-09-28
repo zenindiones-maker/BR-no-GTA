@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install focused test dependency
-        run: python -m pip install --disable-pip-version-check -q pytest
+        run: python -m pip install --disable-pip-version-check -q pytest "python-dotenv==1.2.3"
 
       - name: Prove secure handoff and private boundary
         run: |
