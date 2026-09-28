@@ -101,6 +101,13 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertIn("dist.integrity", text)
         self.assertIn("HarnessOmniRoutePlan/v1", text)
         self.assertIn("python3 -m pip install -r requirements.txt", text)
+        self.assertIn("NVIDIA credential preflight for Harness routing", text)
+        self.assertIn("NVIDIA_API_KEY_PRESENT=true", text)
+        replan_section = text.split("- name: Resolve Harness-governed replan", 1)[1].split(
+            "- name: Qualify bounded provider candidates", 1
+        )[0]
+        self.assertIn("NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}", replan_section)
+        self.assertNotIn('echo "$NVIDIA_API_KEY"', text)
         self.assertIn("Resolve Harness-governed replan", text)
         self.assertIn("HARNESS_OMNIROUTE_ROUTE_PLAN=PASS", text)
         self.assertIn("ProviderDirectCanary/v1", text)
