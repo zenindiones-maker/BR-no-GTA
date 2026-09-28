@@ -100,6 +100,7 @@ class ClaudeOmniRouteContractTests(unittest.TestCase):
         self.assertNotIn("omniroute@latest", text)
         self.assertIn("dist.integrity", text)
         self.assertIn("HarnessOmniRoutePlan/v1", text)
+        self.assertIn("python3 -m pip install -r requirements.txt", text)
         self.assertIn("Resolve Harness-governed replan", text)
         self.assertIn("HARNESS_OMNIROUTE_ROUTE_PLAN=PASS", text)
         self.assertIn("ProviderDirectCanary/v1", text)
