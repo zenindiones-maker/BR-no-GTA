@@ -399,9 +399,21 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 "failure_class": None,
             }
 
-        def catalog(provider):
+        def catalog(target, *, connection_id, base_url):
             order.append("catalog")
-            return {candidate["omniroute_model"]}
+            self.assertEqual(connection_id, "conn-nvidia-123")
+            return {
+                "schema": "OmniRouteModelCatalogEvidence/v1",
+                "candidate_id": target["candidate_id"],
+                "provider": target["omniroute_provider"],
+                "model": target["omniroute_model"],
+                "connection_identity_redacted": "sha256:deadbeef",
+                "model_available": True,
+                "upstream_model_available": True,
+                "omniroute_model_available": True,
+                "status": "PASS",
+                "failure_class": None,
+            }
 
         def dedicated(target, base_url, *, connection_id):
             order.append("dedicated")
@@ -421,7 +433,7 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 mock.patch.dict(module.os.environ, {"NVIDIA_API_KEY": "secret"}, clear=False),
                 mock.patch.object(module, "_direct_canary", side_effect=direct),
                 mock.patch.object(module, "_materialize_provider", side_effect=materialize),
-                mock.patch.object(module, "_catalog_model_ids", side_effect=catalog),
+                mock.patch.object(module, "_sync_exact_connection_catalog", side_effect=catalog),
                 mock.patch.object(module, "_dedicated_canary", side_effect=dedicated),
                 mock.patch.object(
                     module,
@@ -493,7 +505,22 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 mock.patch.object(module, "_direct_canary", side_effect=direct),
                 mock.patch.object(module, "_materialize_provider", side_effect=materialize),
                 mock.patch.object(module, "_dedicated_canary", side_effect=dedicated),
-                mock.patch.object(module, "_catalog_model_ids", return_value=set()),
+                mock.patch.object(
+                    module,
+                    "_sync_exact_connection_catalog",
+                    return_value={
+                        "schema": "OmniRouteModelCatalogEvidence/v1",
+                        "candidate_id": target["candidate_id"],
+                        "provider": target["omniroute_provider"],
+                        "model": target["omniroute_model"],
+                        "connection_identity_redacted": "sha256:deadbeef",
+                        "model_available": False,
+                        "upstream_model_available": True,
+                        "omniroute_model_available": False,
+                        "status": "STALE",
+                        "failure_class": "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE",
+                    },
+                ),
                 mock.patch.object(
                     module,
                     "_run",

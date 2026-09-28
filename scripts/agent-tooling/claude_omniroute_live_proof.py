@@ -490,6 +490,56 @@ def _http_get_json(url: str, *, timeout: int = 30) -> tuple[int, Any]:
     return status, payload
 
 
+def _sync_exact_connection_catalog(
+    target: dict[str, Any],
+    *,
+    connection_id: str,
+    base_url: str,
+) -> dict[str, Any]:
+    provider = str(target["omniroute_provider"]).strip()
+    model = str(target["omniroute_model"]).strip()
+    encoded = urllib.parse.quote(connection_id, safe="")
+    sync_url = (
+        base_url.rstrip("/")
+        + f"/api/providers/{encoded}/sync-models?mode=import&quiet=1"
+    )
+    sync_status, sync_latency, sync_raw, sync_payload, _ = _http_json(
+        sync_url,
+        body={},
+        headers={},
+        timeout=120,
+    )
+    catalog_url = (
+        base_url.rstrip("/")
+        + f"/api/providers/{encoded}/models?excludeCustom=true&chatOnly=true"
+    )
+    catalog_status, catalog_payload = _http_get_json(catalog_url)
+    model_ids = _collect_model_ids(sync_payload) | _collect_model_ids(catalog_payload)
+    available = model in model_ids
+    failure_class = (
+        None
+        if 200 <= sync_status < 300 and 200 <= catalog_status < 300 and available
+        else "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE"
+    )
+    evidence = {
+        "schema": "OmniRouteModelCatalogEvidence/v1",
+        "candidate_id": str(target["candidate_id"]),
+        "provider": provider,
+        "model": model,
+        "connection_identity_redacted": _connection_identity_redacted(connection_id),
+        "sync_http_status": sync_status,
+        "catalog_http_status": catalog_status,
+        "sync_latency_ms": sync_latency,
+        "model_available": available,
+        "upstream_model_available": True,
+        "omniroute_model_available": available,
+        "status": "PASS" if failure_class is None else "STALE",
+        "failure_class": failure_class,
+        "sync_response_sha256": hashlib.sha256(sync_raw.encode()).hexdigest(),
+    }
+    return evidence
+
+
 def _reconcile_provider_connection(
     *,
     provider: str,
@@ -736,6 +786,7 @@ def qualify(
             )
 
     qualified_runtime: list[dict[str, Any]] = []
+    catalog_observations: list[dict[str, Any]] = []
     for target in direct_passed:
         provider = str(target["omniroute_provider"])
         materialized = provider_state[provider]
@@ -747,27 +798,6 @@ def qualify(
                 "provider": target["harness_provider"],
                 "model": target["harness_model"],
                 "failure_class": failure_class,
-                "same_failure_domain_retry_allowed": False,
-            })
-            continue
-
-        model = str(target["omniroute_model"])
-        catalog = _catalog_model_ids(provider)
-        if model not in catalog:
-            failure_class = catalog_mapping_failure_class(direct_upstream_passed=True)
-            rejected.append({
-                **target,
-                "failure_class": failure_class,
-                "upstream_model_available": True,
-                "omniroute_model_available": False,
-            })
-            failures.append({
-                "schema": "ProviderFailureEpisode/v1",
-                "provider": target["harness_provider"],
-                "model": target["harness_model"],
-                "failure_class": failure_class,
-                "upstream_model_available": True,
-                "omniroute_model_available": False,
                 "same_failure_domain_retry_allowed": False,
             })
             continue
@@ -790,10 +820,33 @@ def qualify(
                 "same_failure_domain_retry_allowed": False,
             })
             continue
+
+        catalog = _sync_exact_connection_catalog(
+            target,
+            connection_id=connection_id,
+            base_url=base_url,
+        )
+        catalog_observations.append(catalog)
+        if catalog["failure_class"] is not None:
+            failures.append({
+                "schema": "ProviderFailureEpisode/v1",
+                "provider": target["harness_provider"],
+                "model": target["harness_model"],
+                "failure_class": catalog["failure_class"],
+                "upstream_model_available": True,
+                "omniroute_model_available": bool(catalog["model_available"]),
+                "same_failure_domain_retry_allowed": False,
+                "admission_blocking": False,
+            })
+
         qualified_runtime.append({
             **target,
             "connection_id": connection_id,
             "connection_identity_redacted": materialized["connection_identity_redacted"],
+            "connection_id_source": materialized.get("connection_id_source"),
+            "provider_test_status": materialized.get("provider_test_status"),
+            "provider_test_supported": materialized.get("provider_test_supported"),
+            "catalog_status": catalog["status"],
         })
 
     qualified_evidence = [
@@ -812,6 +865,7 @@ def qualify(
         "rejected_candidates": rejected,
         "direct_canaries": direct,
         "omniroute_canaries": dedicated,
+        "catalog_observations": catalog_observations,
         "failure_episodes": failures,
         "secret_value_recorded": False,
     }
