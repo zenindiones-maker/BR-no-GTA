@@ -2047,4 +2047,23 @@ _REGISTRY._records = tuple(
     )
 )
 
+
+from app.services.agenttube_capability_bridge import agenttube_capability_records
+
+_AGENTTUBE_CAPABILITY_RECORDS = agenttube_capability_records()
+for _agenttube_record in _AGENTTUBE_CAPABILITY_RECORDS:
+    if _REGISTRY._by_id.get(_agenttube_record.capability_id) is not None:
+        raise ValueError(
+            "Duplicate AgentTube capability id: "
+            + _agenttube_record.capability_id
+        )
+    _REGISTRY._by_id[_agenttube_record.capability_id] = _agenttube_record
+
+_REGISTRY._records = tuple(
+    sorted(
+        (*_REGISTRY._records, *_AGENTTUBE_CAPABILITY_RECORDS),
+        key=lambda item: item.capability_id,
+    )
+)
+
 GLOBAL_CAPABILITY_REGISTRY = _REGISTRY

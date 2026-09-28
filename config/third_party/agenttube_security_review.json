@@ -1,0 +1,66 @@
+{
+  "schema": "AgentTubeSecurityReview/v1",
+  "repository": "darkzOGx/youtube-automation-agent",
+  "commit_sha": "0d7eaf9628ce84e34103f1d1c263dfd89027547e",
+  "reviewed_at": "2026-09-28T19:00:00Z",
+  "package_scripts": {
+    "start": "node index.js",
+    "setup": "node setup.js",
+    "scheduler": "node schedules/daily-automation.js",
+    "credentials_setup": "node utils/credential-manager.js setup",
+    "preinstall": null,
+    "postinstall": null,
+    "prepare": null
+  },
+  "findings": [
+    {
+      "surface": "agents/publishing-scheduling-agent.js",
+      "network": true,
+      "filesystem": true,
+      "youtube_mutation": true
+    },
+    {
+      "surface": "agents/analytics-optimization-agent.js",
+      "network": true,
+      "youtube_mutation": false
+    },
+    {
+      "surface": "utils/audience-engagement-service.js",
+      "network": true,
+      "oauth": true,
+      "youtube_mutation": true
+    },
+    {
+      "surface": "utils/credential-manager.js",
+      "network": true,
+      "filesystem": true,
+      "oauth": true
+    },
+    {
+      "surface": "schedules/daily-automation.js",
+      "filesystem": true,
+      "cron": true
+    },
+    {
+      "surface": "utils/production-readiness-service.js",
+      "network": true,
+      "filesystem": true
+    },
+    {
+      "surface": "utils/autonomous-channel-operator.js",
+      "parallel_control_plane_risk": true
+    }
+  ],
+  "upstream_runtime_executed": false,
+  "npm_install_executed": false,
+  "npm_start_executed": false,
+  "npm_setup_executed": false,
+  "scheduler_imported": false,
+  "credential_manager_imported": false,
+  "lumen_imported_as_authority": false,
+  "youtube_mutation_code_executed": false,
+  "secrets_copied": false,
+  "paid_side_effects": 0,
+  "decision": "ADAPT_ONLY",
+  "rationale": "Port typed contracts and bounded algorithms only; reject upstream control-plane, scheduler, DB, credential and publication authority."
+}
