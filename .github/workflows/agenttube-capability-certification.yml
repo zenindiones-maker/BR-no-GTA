@@ -1,0 +1,32 @@
+name: AgentTube Capability Certification
+
+on:
+  push:
+    branches:
+      - work/gate6f-analytics-learning
+    paths:
+      - "app/services/agenttube_capability_bridge.py"
+      - "app/services/global_capability_registry.py"
+      - "config/third_party/agenttube_*.json"
+      - "docs/third-party/agenttube-*"
+      - "tests/test_agenttube_capability_bridge.py"
+      - "scripts/agenttube_capability_certification.py"
+      - ".github/workflows/agenttube-capability-certification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Focused AgentTube bridge tests
+        run: python -m pytest -q tests/test_agenttube_capability_bridge.py
+      - name: Emit machine-readable certification
+        run: python scripts/agenttube_capability_certification.py
