@@ -237,7 +237,12 @@ class ClaudeOmniRouteLiveProofTests(unittest.TestCase):
                 mock.patch.object(
                     module,
                     "_run",
-                    return_value=CompletedProcess(["omniroute"], 0, "{}", ""),
+                    side_effect=lambda command, **kwargs: CompletedProcess(
+                        command,
+                        0,
+                        "--models" if command[-1:] == ["--help"] else "{}",
+                        "",
+                    ),
                 ),
             ):
                 plan_path = Path(tmp) / "plan.json"

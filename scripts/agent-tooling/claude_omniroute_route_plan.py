@@ -34,13 +34,25 @@ class OmniRouteModelIdentity(NamedTuple):
 
 class ProviderIdentityMapping(NamedTuple):
     harness_provider_id: str
+    upstream_provider_id: str
     omniroute_provider_id: str
+    credential_env: str
+
+
+class ProviderTargetMapping(NamedTuple):
+    harness_provider_id: str
+    harness_model_id: str
+    upstream_provider_id: str
+    upstream_model_id: str
+    omniroute_provider_id: str
+    omniroute_model_id: str
     credential_env: str
 
 
 PROVIDER_IDENTITY_MAPPINGS: dict[str, ProviderIdentityMapping] = {
     "nvidia_nim": ProviderIdentityMapping(
         harness_provider_id="nvidia_nim",
+        upstream_provider_id="nvidia",
         omniroute_provider_id="nvidia",
         credential_env="NVIDIA_API_KEY",
     ),
@@ -53,7 +65,7 @@ def mapped_harness_provider_ids() -> tuple[str, ...]:
 
 def map_harness_target(
     identity: HarnessProviderIdentity,
-) -> tuple[OmniRouteProviderIdentity, OmniRouteModelIdentity]:
+) -> ProviderTargetMapping:
     provider_id = str(identity.provider_id or "").strip()
     model_id = str(identity.model_id or "").strip()
     if not provider_id or not model_id:
@@ -64,17 +76,16 @@ def map_harness_target(
             f"MODEL_MAPPING_UNAVAILABLE:{provider_id}/{model_id}"
         )
 
-    # Harness model IDs are canonical provider-runtime IDs. Preserve exactly.
-    omniroute_model = model_id
-    return (
-        OmniRouteProviderIdentity(
-            provider_id=mapping.omniroute_provider_id,
-            credential_env=mapping.credential_env,
-        ),
-        OmniRouteModelIdentity(
-            provider_id=mapping.omniroute_provider_id,
-            model_id=omniroute_model,
-        ),
+    # Harness/upstream model IDs remain canonical. OmniRoute's NVIDIA registry
+    # exposes the same model id in 3.8.50; never derive another id by prefixing.
+    return ProviderTargetMapping(
+        harness_provider_id=provider_id,
+        harness_model_id=model_id,
+        upstream_provider_id=mapping.upstream_provider_id,
+        upstream_model_id=model_id,
+        omniroute_provider_id=mapping.omniroute_provider_id,
+        omniroute_model_id=model_id,
+        credential_env=mapping.credential_env,
     )
 
 
@@ -160,17 +171,17 @@ def build_route_plan(
         model = str(row.get("model_id") or "").strip()
         if not provider or not model:
             raise ValueError("accepted candidate missing provider/model")
-        gateway_provider, gateway_model = map_harness_target(
-            HarnessProviderIdentity(provider, model)
-        )
+        mapping = map_harness_target(HarnessProviderIdentity(provider, model))
         accepted.append(
             {
                 "candidate_id": str(row.get("candidate_id") or ""),
-                "harness_provider": provider,
-                "harness_model": model,
-                "omniroute_provider": gateway_provider.provider_id,
-                "omniroute_model": gateway_model.model_id,
-                "credential_env": gateway_provider.credential_env,
+                "harness_provider": mapping.harness_provider_id,
+                "harness_model": mapping.harness_model_id,
+                "upstream_provider": mapping.upstream_provider_id,
+                "upstream_model": mapping.upstream_model_id,
+                "omniroute_provider": mapping.omniroute_provider_id,
+                "omniroute_model": mapping.omniroute_model_id,
+                "credential_env": mapping.credential_env,
                 "authorized_target": True,
             }
         )
@@ -221,6 +232,8 @@ def build_route_plan(
             {
                 "harness_provider": item["harness_provider"],
                 "harness_model": item["harness_model"],
+                "upstream_provider": item["upstream_provider"],
+                "upstream_model": item["upstream_model"],
                 "omniroute_provider": item["omniroute_provider"],
                 "omniroute_model": item["omniroute_model"],
                 "credential_env": item["credential_env"],

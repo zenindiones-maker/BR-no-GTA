@@ -72,6 +72,14 @@ def credential_preflight(
     return evidence
 
 
+def catalog_mapping_failure_class(*, direct_upstream_passed: bool) -> str:
+    return (
+        "OMNIROUTE_CATALOG_STALE_OR_MAPPING_UNAVAILABLE"
+        if direct_upstream_passed
+        else "MODEL_RUNTIME_UNAVAILABLE"
+    )
+
+
 def classify_http_failure(http_status: int) -> str:
     status = int(http_status or 0)
     if status in {401}:
@@ -271,14 +279,21 @@ def _credential_preflight(plan: dict[str, Any], evidence_dir: Path) -> None:
 
 
 def _direct_canary(target: dict[str, Any]) -> dict[str, Any]:
-    provider = str(target["omniroute_provider"])
-    model = str(target["omniroute_model"])
+    provider = str(target["upstream_provider"])
+    model = str(target["upstream_model"])
     endpoint = DIRECT_CANARY_ENDPOINTS.get(provider)
+    base = {
+        "schema": "ProviderDirectCanary/v1",
+        "candidate_id": str(target["candidate_id"]),
+        "harness_provider": str(target["harness_provider"]),
+        "harness_model": str(target["harness_model"]),
+        "upstream_provider": provider,
+        "upstream_model": model,
+    }
     if not endpoint:
         return {
-            "schema": "ProviderDirectCanary/v1",
-            "provider": target["harness_provider"],
-            "model": target["harness_model"],
+            **base,
+            "status": "FAIL",
             "http_status": 0,
             "latency_ms": 0,
             "response_nonempty": False,
@@ -303,9 +318,8 @@ def _direct_canary(target: dict[str, Any]) -> dict[str, Any]:
     text = _assistant_text(payload)
     failure = None if 200 <= status < 300 and bool(text) else classify_http_failure(status)
     return {
-        "schema": "ProviderDirectCanary/v1",
-        "provider": target["harness_provider"],
-        "model": target["harness_model"],
+        **base,
+        "status": "PASS" if failure is None else "FAIL",
         "http_status": status,
         "latency_ms": latency,
         "response_nonempty": bool(text),
@@ -332,21 +346,73 @@ def _provider_add_command(target: dict[str, Any]) -> list[str]:
     ]
 
 
-def _materialize_provider(target: dict[str, Any]) -> tuple[bool, str | None]:
-    provider = str(target["omniroute_provider"])
+def _connection_identity_redacted(connection_id: str) -> str:
+    digest = hashlib.sha256(str(connection_id).encode("utf-8")).hexdigest()
+    return "sha256:" + digest[:16]
+
+
+def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
     add = _run(_provider_add_command(target))
     if add.returncode != 0:
-        return False, "OMNIROUTE_PROVIDER_MATERIALIZATION_FAILURE"
+        return {
+            "ok": False,
+            "connection_id": None,
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_PROVIDER_MATERIALIZATION_FAILURE",
+        }
+    try:
+        payload = json.loads(add.stdout)
+    except json.JSONDecodeError:
+        return {
+            "ok": False,
+            "connection_id": None,
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING",
+        }
+    connection = payload.get("connection") if isinstance(payload, dict) else None
+    connection_id = (
+        str(connection.get("id") or "").strip()
+        if isinstance(connection, dict)
+        else ""
+    )
+    if not connection_id:
+        return {
+            "ok": False,
+            "connection_id": None,
+            "connection_identity_redacted": None,
+            "failure_class": "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING",
+        }
+
     validate = _run(["omniroute", "providers", "validate", "--json"])
     if validate.returncode != 0:
-        return False, "OMNIROUTE_PROVIDER_VALIDATION_FAILURE"
-    test = _run(["omniroute", "providers", "test", f"harness-{provider}", "--json"])
+        return {
+            "ok": False,
+            "connection_id": connection_id,
+            "connection_identity_redacted": _connection_identity_redacted(connection_id),
+            "failure_class": "OMNIROUTE_PROVIDER_VALIDATION_FAILURE",
+        }
+    test = _run(["omniroute", "providers", "test", connection_id, "--json"])
     if test.returncode != 0:
-        return False, "OMNIROUTE_PROVIDER_TEST_FAILURE"
-    return True, None
+        return {
+            "ok": False,
+            "connection_id": connection_id,
+            "connection_identity_redacted": _connection_identity_redacted(connection_id),
+            "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
+        }
+    return {
+        "ok": True,
+        "connection_id": connection_id,
+        "connection_identity_redacted": _connection_identity_redacted(connection_id),
+        "failure_class": None,
+    }
 
 
-def _dedicated_canary(target: dict[str, Any], base_url: str) -> dict[str, Any]:
+def _dedicated_canary(
+    target: dict[str, Any],
+    base_url: str,
+    *,
+    connection_id: str,
+) -> dict[str, Any]:
     provider = str(target["omniroute_provider"])
     model = str(target["omniroute_model"])
     status, latency, raw, payload, headers = _http_json(
@@ -358,22 +424,40 @@ def _dedicated_canary(target: dict[str, Any], base_url: str) -> dict[str, Any]:
             "temperature": 0.2,
             "stream": False,
         },
-        headers={},
+        headers={"X-OmniRoute-Connection": connection_id},
     )
     text = _assistant_text(payload)
     actual_provider = _header(headers, "X-OmniRoute-Provider")
     actual_model = _header(headers, "X-OmniRoute-Model")
-    exact = actual_provider == provider and actual_model == model
+    selected_connection = _header(headers, "X-OmniRoute-Selected-Connection-Id")
+    canonical_actual_model = _canonical_dispatch_model(
+        str(actual_provider or provider),
+        str(actual_model or ""),
+    )
+    canonical_expected_model = _canonical_dispatch_model(provider, model)
+    exact = (
+        actual_provider == provider
+        and canonical_actual_model == canonical_expected_model
+        and selected_connection == connection_id
+    )
     passed = 200 <= status < 300 and bool(text) and exact
     return {
         "schema": "OmniRouteProviderCanary/v1",
+        "candidate_id": str(target["candidate_id"]),
         "provider": provider,
         "model": model,
-        "connection_identity": "REDACTED",
+        "harness_provider": str(target["harness_provider"]),
+        "harness_model": str(target["harness_model"]),
+        "connection_identity_redacted": _connection_identity_redacted(connection_id),
         "http_status": status,
         "latency_ms": latency,
         "reported_provider": actual_provider,
         "reported_model": actual_model,
+        "reported_connection_identity_redacted": (
+            _connection_identity_redacted(selected_connection)
+            if selected_connection
+            else None
+        ),
         "response_nonempty": bool(text),
         "response_sha256": hashlib.sha256(raw.encode()).hexdigest(),
         "status": "PASS" if passed else "FAIL",
@@ -414,30 +498,20 @@ def qualify(
                 "same_failure_domain_retry_allowed": False,
             })
             continue
-        model = str(target["omniroute_model"])
-        catalog = _catalog_model_ids(str(target["omniroute_provider"]))
-        if model not in catalog:
-            rejected.append({**target, "failure_class": "MODEL_RUNTIME_UNAVAILABLE"})
-            failures.append({
-                "schema": "ProviderFailureEpisode/v1",
-                "provider": target["harness_provider"],
-                "model": target["harness_model"],
-                "failure_class": "MODEL_RUNTIME_UNAVAILABLE",
-                "same_failure_domain_retry_allowed": False,
-            })
-            continue
         direct_passed.append(target)
 
-    provider_status: dict[str, tuple[bool, str | None]] = {}
+    provider_state: dict[str, dict[str, Any]] = {}
     for target in direct_passed:
         provider = str(target["omniroute_provider"])
-        if provider not in provider_status:
-            provider_status[provider] = _materialize_provider(target)
+        if provider not in provider_state:
+            provider_state[provider] = _materialize_provider(target)
 
-    qualified: list[dict[str, Any]] = []
+    qualified_runtime: list[dict[str, Any]] = []
     for target in direct_passed:
-        ok, failure_class = provider_status[str(target["omniroute_provider"])]
-        if not ok:
+        provider = str(target["omniroute_provider"])
+        materialized = provider_state[provider]
+        if not materialized["ok"]:
+            failure_class = str(materialized["failure_class"])
             rejected.append({**target, "failure_class": failure_class})
             failures.append({
                 "schema": "ProviderFailureEpisode/v1",
@@ -447,7 +521,34 @@ def qualify(
                 "same_failure_domain_retry_allowed": False,
             })
             continue
-        canary = _dedicated_canary(target, base_url)
+
+        model = str(target["omniroute_model"])
+        catalog = _catalog_model_ids(provider)
+        if model not in catalog:
+            failure_class = catalog_mapping_failure_class(direct_upstream_passed=True)
+            rejected.append({
+                **target,
+                "failure_class": failure_class,
+                "upstream_model_available": True,
+                "omniroute_model_available": False,
+            })
+            failures.append({
+                "schema": "ProviderFailureEpisode/v1",
+                "provider": target["harness_provider"],
+                "model": target["harness_model"],
+                "failure_class": failure_class,
+                "upstream_model_available": True,
+                "omniroute_model_available": False,
+                "same_failure_domain_retry_allowed": False,
+            })
+            continue
+
+        connection_id = str(materialized["connection_id"])
+        canary = _dedicated_canary(
+            target,
+            base_url,
+            connection_id=connection_id,
+        )
         dedicated.append(canary)
         if canary["status"] != "PASS":
             rejected.append({**target, "failure_class": canary["failure_class"]})
@@ -460,13 +561,25 @@ def qualify(
                 "same_failure_domain_retry_allowed": False,
             })
             continue
-        qualified.append(target)
+        qualified_runtime.append({
+            **target,
+            "connection_id": connection_id,
+            "connection_identity_redacted": materialized["connection_identity_redacted"],
+        })
 
+    qualified_evidence = [
+        {
+            key: value
+            for key, value in item.items()
+            if key != "connection_id"
+        }
+        for item in qualified_runtime
+    ]
     evidence = {
         "schema": "OmniRouteProviderQualification/v1",
         "route_plan_id": plan["route_plan_id"],
         "authorized_candidates": targets,
-        "qualified_candidates": qualified,
+        "qualified_candidates": qualified_evidence,
         "rejected_candidates": rejected,
         "direct_canaries": direct,
         "omniroute_canaries": dedicated,
@@ -476,7 +589,7 @@ def qualify(
     _write_json(evidence_dir / "provider-qualification.json", evidence)
     _write_json(evidence_dir / "opencode-failure-episode.json", OPENCODE_FAILURE)
 
-    if not qualified:
+    if not qualified_runtime:
         _write_json(
             evidence_dir / "provider-pool-exhausted.json",
             {
@@ -491,41 +604,87 @@ def qualify(
         )
         raise SystemExit("PROVIDER_POOL_EXHAUSTED")
 
-    models = ",".join(combo_models(qualified))
-    combo_command = [
-        "omniroute",
-        "combo",
-        "create",
-        str(plan["omniroute_combo_name"]),
-        "--strategy",
-        str(plan["strategy"]),
-        "--models",
-        models,
+    combo_entries = [
+        {
+            "kind": "model",
+            "providerId": str(item["omniroute_provider"]),
+            "model": str(item["omniroute_model"]),
+            "connectionId": str(item["connection_id"]),
+        }
+        for item in qualified_runtime
     ]
-    combo = _run(combo_command)
-    if combo.returncode != 0:
-        raise SystemExit("OMNIROUTE_COMBO_MATERIALIZATION_FAILURE")
+    help_result = _run(["omniroute", "combo", "create", "--help"])
+    supports_models = "--models" in (help_result.stdout + help_result.stderr)
+    if supports_models:
+        combo = _run([
+            "omniroute",
+            "combo",
+            "create",
+            str(plan["omniroute_combo_name"]),
+            "--strategy",
+            str(plan["strategy"]),
+            "--models",
+            json.dumps(combo_entries, separators=(",", ":")),
+        ])
+        if combo.returncode != 0:
+            raise SystemExit("OMNIROUTE_COMBO_MATERIALIZATION_FAILURE")
+        materialization_method = "CLI_STRUCTURED_MODELS"
+    else:
+        status, _, _, _, _ = _http_json(
+            base_url.rstrip("/") + "/api/combos",
+            body={
+                "name": str(plan["omniroute_combo_name"]),
+                "strategy": str(plan["strategy"]),
+                "models": combo_entries,
+                "config": {},
+            },
+            headers={},
+        )
+        if not 200 <= status < 300:
+            raise SystemExit("OMNIROUTE_COMBO_MATERIALIZATION_FAILURE")
+        materialization_method = "OFFICIAL_REST_API"
 
     _write_json(
         evidence_dir / "bounded-combo.json",
         {
-            "schema": "HarnessBoundedOmniRouteCombo/v1",
+            "schema": "HarnessBoundedOmniRouteCombo/v2",
             "route_plan_id": plan["route_plan_id"],
             "route_plan_sha256": plan["route_plan_sha256"],
             "combo_name": plan["omniroute_combo_name"],
             "logical_model": plan["logical_claude_model"],
             "strategy": plan["strategy"],
-            "models": [item["omniroute_model"] for item in qualified],
-            "zero_config_auto": False,
+            "authorized_targets": [
+                {
+                    "provider": item["omniroute_provider"],
+                    "model": item["omniroute_model"],
+                    "connection_identity_redacted": item["connection_identity_redacted"],
+                }
+                for item in qualified_runtime
+            ],
+            "materialized_targets": [
+                {
+                    "provider": item["providerId"],
+                    "model": item["model"],
+                    "connection_identity_redacted": _connection_identity_redacted(item["connectionId"]),
+                }
+                for item in combo_entries
+            ],
+            "target_set_match": True,
+            "global_fallback": False,
+            "auto_unbounded": False,
+            "materialization_method": materialization_method,
         },
     )
+    models = ",".join(combo_models(qualified_runtime))
     _append_env(
         github_env,
         {
             "QUALIFIED_MODELS_CSV": models,
-            "QUALIFIED_CANDIDATE_COUNT": str(len(qualified)),
+            "QUALIFIED_CANDIDATE_COUNT": str(len(qualified_runtime)),
         },
     )
+    print("PROVIDER_DIRECT_CANARY=PASS")
+    print("OMNIROUTE_PROVIDER_CANARY=PASS")
     print("OMNIROUTE_PROVIDER_QUALIFICATION=PASS")
     print("OMNIROUTE_BOUNDED_COMBO=PASS")
     print("OPEN_CODE_3_8_50_STATUS=TEMPORARILY_INELIGIBLE_HTTP_403")
