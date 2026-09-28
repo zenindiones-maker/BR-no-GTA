@@ -2,14 +2,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
+import sys
 from typing import Any, Callable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claude_omniroute_route_plan import (
+    HarnessProviderIdentity,
+    build_route_plan,
+    map_harness_target,
+    mapped_harness_provider_ids,
+)
 
 FAILED_PROVIDER = "opencode"
 FAILED_MODEL = "oc/big-pickle"
-ALLOWED_REPLAN_PROVIDERS = ("nvidia_nim",)
 REQUIRED_MODEL_CAPABILITIES = ("reasoning", "coding", "structured_output")
+EXCLUDED_FAILURE_CLASS = "UPSTREAM_DENIED_HTTP_403"
 
 
 def replan_request_values() -> dict[str, Any]:
@@ -18,8 +29,8 @@ def replan_request_values() -> dict[str, Any]:
         "authorized_action": "DEVELOPMENT",
         "required_capability_id": "ai.reasoning.text",
         "provider_required": True,
-        "allowed_providers": ALLOWED_REPLAN_PROVIDERS,
-        "preferred_providers": ALLOWED_REPLAN_PROVIDERS,
+        "allowed_providers": mapped_harness_provider_ids(),
+        "preferred_providers": (),
         "unavailable_provider_ids": (FAILED_PROVIDER,),
         "exhausted_provider_model_pairs": ((FAILED_PROVIDER, FAILED_MODEL),),
         "required_model_capabilities": REQUIRED_MODEL_CAPABILITIES,
@@ -33,18 +44,17 @@ def replan_request_values() -> dict[str, Any]:
 
 
 def omniroute_identity(provider: str, model: str) -> dict[str, str]:
-    canonical_provider = str(provider or "").strip().lower().replace("-", "_")
-    canonical_model = str(model or "").strip()
-    if not canonical_model:
-        raise ValueError("Harness-selected model is required")
-    if canonical_provider == "nvidia_nim":
-        return {
-            "provider": "nvidia",
-            "model": f"nvidia/{canonical_model}",
-        }
-    raise ValueError(
-        f"Claude OmniRoute replan has no governed gateway mapping for provider={canonical_provider!r}"
+    gateway_provider, gateway_model = map_harness_target(
+        HarnessProviderIdentity(
+            provider_id=str(provider or "").strip(),
+            model_id=str(model or "").strip(),
+        )
     )
+    return {
+        "provider": gateway_provider.provider_id,
+        "model": gateway_model.model_id,
+        "credential_env": gateway_provider.credential_env,
+    }
 
 
 def select_harness_replan(
@@ -64,39 +74,46 @@ def select_harness_replan(
     decision = route_fn(request)
     provider = str(getattr(decision, "selected_provider", "") or "")
     model = str(getattr(decision, "selected_model", "") or "")
-    if provider not in ALLOWED_REPLAN_PROVIDERS or not model:
+    if provider not in mapped_harness_provider_ids() or not model:
         raise RuntimeError("HARNESS_REPLAN_SELECTED_UNSUPPORTED_ROUTE")
     if bool(getattr(decision, "fallback_occurred", False)):
         raise RuntimeError("HARNESS_REPLAN_UNAUTHORIZED_FALLBACK")
 
-    gateway = omniroute_identity(provider, model)
+    route_plan = build_route_plan(
+        decision,
+        required_capabilities=REQUIRED_MODEL_CAPABILITIES,
+        strategy="priority",
+        zero_cost=True,
+        excluded_targets=(
+            {
+                "provider": FAILED_PROVIDER,
+                "model": FAILED_MODEL,
+                "failure_class": EXCLUDED_FAILURE_CLASS,
+            },
+        ),
+        created_from_execution_need="SHARED_ROUTE_UNAVAILABLE",
+    )
     evidence = {
-        "schema": "ClaudeOmniRouteHarnessReplan/v1",
+        "schema": "ClaudeOmniRouteHarnessReplan/v2",
         "authority": "DEEPSEEK_HARNESS",
-        "status": "SELECTED",
+        "status": "ROUTE_PLAN_MATERIALIZED",
         "routing_id": str(getattr(decision, "routing_id", "") or ""),
         "selected_capability_id": str(
             getattr(decision, "selected_capability_id", "") or ""
         ),
         "selected_provider": provider,
         "selected_model": model,
-        "gateway_provider": gateway["provider"],
-        "gateway_model": gateway["model"],
+        "logical_claude_model": route_plan["logical_claude_model"],
+        "route_plan_id": route_plan["route_plan_id"],
+        "route_plan_sha256": route_plan["route_plan_sha256"],
         "recovery_phase": "PROVIDER_LEVEL_REPLAN",
         "from_provider": FAILED_PROVIDER,
         "exhausted_provider_model_pairs": [[FAILED_PROVIDER, FAILED_MODEL]],
         "required_model_capabilities": list(REQUIRED_MODEL_CAPABILITIES),
         "fallback_allowed": False,
         "fallback_occurred": False,
+        "route_plan": route_plan,
     }
-    policy_metadata = getattr(decision, "policy_metadata", None)
-    if isinstance(policy_metadata, dict):
-        snapshot = policy_metadata.get("provider_eligibility_snapshot")
-        if isinstance(snapshot, dict):
-            evidence["provider_eligibility_snapshot_ref"] = snapshot.get("snapshot_ref")
-            evidence["provider_eligibility_snapshot_sha256"] = snapshot.get(
-                "content_sha256"
-            )
     if not evidence["routing_id"]:
         raise RuntimeError("HARNESS_REPLAN_MISSING_ROUTING_ID")
     return decision, evidence
@@ -113,36 +130,57 @@ def _append_github_env(path: Path, values: dict[str, str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-path", type=Path, required=True)
+    parser.add_argument("--route-plan-path", type=Path)
     parser.add_argument("--github-env", type=Path)
     args = parser.parse_args()
 
-    if not str(os.getenv("NVIDIA_API_KEY") or "").strip():
-        raise SystemExit("HARNESS_REPLAN_AUTH_UNAVAILABLE")
-
     _decision, evidence = select_harness_replan()
+    route_plan = evidence["route_plan"]
     args.evidence_path.parent.mkdir(parents=True, exist_ok=True)
     args.evidence_path.write_text(
         json.dumps(evidence, sort_keys=True), encoding="utf-8"
     )
+    route_plan_path = (
+        args.route_plan_path
+        if args.route_plan_path is not None
+        else args.evidence_path.parent / "route-plan.json"
+    )
+    route_plan_path.parent.mkdir(parents=True, exist_ok=True)
+    route_plan_path.write_text(
+        json.dumps(route_plan, sort_keys=True), encoding="utf-8"
+    )
 
+    first_target = route_plan["candidate_targets"][0]
     env_values = {
         "HARNESS_SELECTED_PROVIDER": str(evidence["selected_provider"]),
         "HARNESS_SELECTED_MODEL": str(evidence["selected_model"]),
-        "OMNIROUTE_SELECTED_PROVIDER": str(evidence["gateway_provider"]),
-        "OMNIROUTE_SELECTED_MODEL": str(evidence["gateway_model"]),
-        "ANTHROPIC_MODEL": str(evidence["gateway_model"]),
-        "ANTHROPIC_CUSTOM_MODEL_OPTION": str(evidence["gateway_model"]),
+        "HARNESS_OMNIROUTE_ROUTE_PLAN_ID": str(route_plan["route_plan_id"]),
+        "HARNESS_OMNIROUTE_ROUTE_PLAN_SHA256": str(route_plan["route_plan_sha256"]),
+        "HARNESS_MATERIALIZED_OMNIROUTE_ROUTE": str(
+            route_plan["logical_claude_model"]
+        ),
+        "ANTHROPIC_MODEL": str(route_plan["logical_claude_model"]),
+        "ANTHROPIC_CUSTOM_MODEL_OPTION": str(route_plan["logical_claude_model"]),
+        "OMNIROUTE_PRIMARY_PROVIDER": str(first_target["omniroute_provider"]),
+        "OMNIROUTE_PRIMARY_MODEL": str(first_target["omniroute_model"]),
+        "OMNIROUTE_PRIMARY_CREDENTIAL_ENV": str(first_target["credential_env"]),
         "CLAUDE_OMNIROUTE_REPLAN_REQUIRED": "1",
     }
     if args.github_env is not None:
         _append_github_env(args.github_env, env_values)
 
     print("CLAUDE_OMNIROUTE_HARNESS_REPLAN=PASS")
+    print("HARNESS_OMNIROUTE_ROUTE_PLAN=PASS")
     print("HARNESS_ROUTING_ID=" + str(evidence["routing_id"]))
-    print("HARNESS_SELECTED_PROVIDER=" + str(evidence["selected_provider"]))
-    print("HARNESS_SELECTED_MODEL=" + str(evidence["selected_model"]))
-    print("OMNIROUTE_SELECTED_PROVIDER=" + str(evidence["gateway_provider"]))
-    print("OMNIROUTE_SELECTED_MODEL=" + str(evidence["gateway_model"]))
+    print("HARNESS_OMNIROUTE_ROUTE_PLAN_ID=" + str(route_plan["route_plan_id"]))
+    print(
+        "HARNESS_OMNIROUTE_ROUTE_PLAN_SHA256="
+        + str(route_plan["route_plan_sha256"])
+    )
+    print(
+        "HARNESS_MATERIALIZED_OMNIROUTE_ROUTE="
+        + str(route_plan["logical_claude_model"])
+    )
     return 0
 
 
