@@ -17,12 +17,14 @@ on:
       - 'app/services/mission_product_contract_service.py'
       - 'app/services/typed_task_requirement_service.py'
       - 'app/services/capability_execution_contract_service.py'
+      - 'app/services/capability_resolution_receipt_service.py'
       - 'app/services/global_capability_registry.py'
       - 'app/services/global_capability_registry_base.py'
       - 'app/services/youtube_department_service.py'
       - 'app/services/production_mission_capability_adapters.py'
       - 'tests/test_mission_product_contract_service.py'
       - 'tests/test_typed_task_requirement_service.py'
+      - 'tests/test_capability_resolution_contract_service.py'
   workflow_dispatch:
 
 permissions:
@@ -183,7 +185,7 @@ jobs:
       - name: Run native Harness and GTA6 Brain boundary tests
         run: |
           set -euo pipefail
-          pytest -q             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py
+          pytest -q             tests/test_deepseek_harness.py             tests/test_gta6_brain.py             tests/test_gta6_brain_harness_boundary.py             tests/test_gta6_master_agent.py             tests/test_mission_product_contract_service.py             tests/test_typed_task_requirement_service.py             tests/test_capability_resolution_contract_service.py
 
       - name: Record native-agent proof scope honestly
         run: |

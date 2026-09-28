@@ -560,3 +560,109 @@ def capability_execution_contract_rejection(
     if missing:
         return "execution-contract-insufficient:missing=" + ",".join(missing)
     return None
+
+
+def capability_required_effects_rejection(
+    record: Any,
+    required_effects: tuple[str, ...] | list[str],
+) -> str | None:
+    required = {
+        str(item).strip()
+        for item in required_effects
+        if str(item).strip()
+    }
+    supported = {
+        str(item).strip()
+        for item in (getattr(record, "execution_effects", ()) or ())
+        if str(item).strip()
+    }
+    missing = sorted(required - supported)
+    if missing:
+        return "required-effect-mismatch:missing=" + ",".join(missing)
+    return None
+
+
+def capability_required_surfaces_rejection(
+    record: Any,
+    required_surfaces: tuple[str, ...] | list[str],
+) -> str | None:
+    required = {
+        str(item).strip()
+        for item in required_surfaces
+        if str(item).strip()
+    }
+    supported = {
+        str(item).strip()
+        for item in (getattr(record, "execution_surfaces", ()) or ())
+        if str(item).strip()
+    }
+    missing = sorted(required - supported)
+    if missing:
+        return "surface-mismatch:missing=" + ",".join(missing)
+    return None
+
+
+def capability_output_contract_rejection(
+    record: Any,
+    required_output_contract_ids: tuple[str, ...] | list[str],
+) -> str | None:
+    required = {
+        str(item).strip()
+        for item in required_output_contract_ids
+        if str(item).strip()
+    }
+    supported = {
+        str(item).strip()
+        for item in (getattr(record, "output_contract_ids", ()) or ())
+        if str(item).strip()
+    }
+    missing = sorted(required - supported)
+    if missing:
+        return "output-contract-mismatch:missing=" + ",".join(missing)
+    return None
+
+
+def capability_side_effect_class_rejection(
+    record: Any,
+    required_side_effect_class: str | None,
+) -> str | None:
+    required = str(required_side_effect_class or "").strip().upper()
+    if not required or required in {"LOW", "MEDIUM", "HIGH"}:
+        return None
+    observed = str(
+        getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
+    ).strip().upper()
+    write_scope = tuple(
+        getattr(record, "default_write_scope", ()) or ()
+    )
+    if required == "READ_ONLY":
+        if observed in {
+            "EXTERNAL_SIDE_EFFECT",
+            "BOUNDED_MUTATION",
+            "MUTATING",
+        } or write_scope:
+            return (
+                "side-effect-authorization-mismatch:"
+                f"required=READ_ONLY:observed={observed}"
+            )
+        return None
+    if required == "EXTERNAL_SIDE_EFFECT":
+        if observed != "EXTERNAL_SIDE_EFFECT":
+            return (
+                "side-effect-authorization-mismatch:"
+                f"required=EXTERNAL_SIDE_EFFECT:observed={observed}"
+            )
+        return None
+    if required in {"BOUNDED_MUTATION", "MUTATING"}:
+        if observed not in {"BOUNDED_MUTATION", "MUTATING"} and not write_scope:
+            return (
+                "side-effect-authorization-mismatch:"
+                f"required={required}:observed={observed}"
+            )
+        return None
+    if observed != required:
+        return (
+            "side-effect-authorization-mismatch:"
+            f"required={required}:observed={observed}"
+        )
+    return None

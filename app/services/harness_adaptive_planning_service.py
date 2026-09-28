@@ -14,6 +14,10 @@ from app.services.capability_execution_contract_service import (
     CAN_MUTATE_CANDIDATE,
     CAN_SEMANTIC_REASONING,
     capability_execution_contract_rejection,
+    capability_output_contract_rejection,
+    capability_required_effects_rejection,
+    capability_required_surfaces_rejection,
+    capability_side_effect_class_rejection,
     derive_required_operations,
     execution_kind_rejection,
     functional_role_rejection,
@@ -40,6 +44,13 @@ from app.services.mission_product_contract_service import (
     validate_mission_plan_product_contract,
 )
 from app.services.typed_task_requirement_service import TypedTaskRequirement
+from app.services.capability_resolution_receipt_service import (
+    CapabilityResolutionReceipt,
+    build_contract_equivalence_proof,
+    candidate_universe_ref,
+    capability_contract_digest,
+    resolution_requirement_digest,
+)
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{2,}", re.IGNORECASE)
@@ -140,6 +151,15 @@ def _profiled_registry_get(capability_id: str):
         metadata={"registry_read_count": 1, "registry_operation": "get"},
     ):
         return GLOBAL_CAPABILITY_REGISTRY.get(capability_id)
+
+
+def _profiled_registry_all():
+    with PerformanceSpan(
+        stage="harness.planning.registry.all",
+        category="PLANNING_REGISTRY_RETRIEVAL_TIME",
+        metadata={"registry_read_count": 1, "registry_operation": "all"},
+    ):
+        return GLOBAL_CAPABILITY_REGISTRY.all()
 
 
 def _profiled_registry_discover(**kwargs):
@@ -2050,11 +2070,45 @@ def _effective_requirement_action(requirement: dict[str, Any]) -> str:
     }.get(family, declared)
 
 
-def _record_domain_compatible(
+def _domain_matches(observed: str, required: str) -> bool:
+    observed = str(observed or "").strip().casefold()
+    required = str(required or "").strip().casefold()
+    if not observed or not required:
+        return False
+    return (
+        observed == required
+        or observed.startswith(required + "/")
+        or observed.startswith(required + "-")
+    )
+
+
+def _record_domain_rejection(
     record: Any,
     requirement: dict[str, Any],
-) -> bool:
+) -> str | None:
     domain = str(getattr(record, "domain", "") or "").strip().casefold()
+    required_domain = str(
+        requirement.get("required_domain") or ""
+    ).strip().casefold()
+    if required_domain and not _domain_matches(domain, required_domain):
+        return (
+            "domain-incompatible:"
+            f"required={required_domain}:observed={domain}"
+        )
+
+    required_family = str(
+        requirement.get("required_domain_family") or ""
+    ).strip().casefold()
+    if (
+        required_family
+        and not required_domain
+        and not _domain_matches(domain, required_family)
+    ):
+        return (
+            "domain-family-incompatible:"
+            f"required={required_family}:observed={domain}"
+        )
+
     explicit_domains = tuple(
         str(item).strip().casefold()
         for item in (
@@ -2063,29 +2117,51 @@ def _record_domain_compatible(
         )
         if str(item).strip()
     )
-    if explicit_domains:
-        return any(
-            domain == required
-            or domain.startswith(required + "/")
-            or domain.startswith(required + "-")
-            for required in explicit_domains
+    if explicit_domains and not any(
+        _domain_matches(domain, required)
+        for required in explicit_domains
+    ):
+        return (
+            "domain-incompatible:"
+            f"required={','.join(explicit_domains)}:observed={domain}"
         )
+
+    if required_domain or required_family or explicit_domains:
+        return None
 
     family = _task_semantic_family(requirement)
     if family in {"RESEARCH", "EDITORIAL", "PRODUCTION", "EXECUTION"} and (
         domain == "development" or domain.startswith("development/")
     ):
-        return False
-    if family == "EDITORIAL":
         return (
-            domain == "editorial"
-            or domain == "production"
-            or domain == "youtube-department"
-            or domain.startswith("youtube-")
+            "task-domain-incompatible:"
+            f"task_family={family}:capability_domain={domain}"
         )
-    if family == "PRODUCTION":
-        return domain == "production" or domain.startswith("production-")
-    return True
+    if family == "EDITORIAL" and not (
+        domain == "editorial"
+        or domain == "production"
+        or domain == "youtube-department"
+        or domain.startswith("youtube-")
+    ):
+        return (
+            "task-domain-incompatible:"
+            f"task_family={family}:capability_domain={domain}"
+        )
+    if family == "PRODUCTION" and not (
+        domain == "production" or domain.startswith("production-")
+    ):
+        return (
+            "task-domain-incompatible:"
+            f"task_family={family}:capability_domain={domain}"
+        )
+    return None
+
+
+def _record_domain_compatible(
+    record: Any,
+    requirement: dict[str, Any],
+) -> bool:
+    return _record_domain_rejection(record, requirement) is None
 
 
 _EXECUTION_TOPOLOGY_CAPABILITY_IDS = {
@@ -2166,6 +2242,24 @@ def select_capability_for_requirement(
             f"action={effective_action}:"
             f"allowed_actions={allowed}"
         )
+
+    proposed = [
+        str(item)
+        for item in (
+            requirement.get("proposal_candidate_hints")
+            or requirement.get("candidate_capability_ids")
+            or ()
+        )
+        if str(item).strip()
+    ]
+    typed_requirement = (
+        str(
+            requirement.get("schema")
+            or requirement.get("typed_requirement_schema")
+            or ""
+        ).strip()
+        == "TypedTaskRequirement/v1"
+    )
     discovery_intent = " ".join(
         str(value or "").strip()
         for value in (
@@ -2178,42 +2272,48 @@ def select_capability_for_requirement(
         if str(value or "").strip()
     )
     discovery_intent = re.sub(r"[._:/\\-]+", " ", discovery_intent)
-    discovered = _profiled_registry_discover(
-        intent=discovery_intent,
-        authorized_action=effective_action,
-        limit=40,
-    )
-    proposed = [
-        str(item)
-        for item in requirement.get("candidate_capability_ids") or ()
-        if str(item).strip()
-    ]
+    if typed_requirement:
+        discovered_ids = [
+            str(record.capability_id)
+            for record in _profiled_registry_all()
+        ]
+        candidate_partition_source = "CANONICAL_RUNTIME_REGISTRY"
+    else:
+        discovered = _profiled_registry_discover(
+            intent=discovery_intent,
+            authorized_action=effective_action,
+            limit=40,
+        )
+        discovered_ids = [
+            str(item["capability_id"]) for item in discovered
+        ]
+        candidate_partition_source = "DISCOVERY_PARTITION"
+
     ordered_ids: list[str] = []
-    for capability_id in [*proposed, *(str(item["capability_id"]) for item in discovered)]:
+    for capability_id in [*proposed, *discovered_ids]:
         if capability_id not in ordered_ids:
             ordered_ids.append(capability_id)
 
-    ranked: list[
-        tuple[
-            float,
-            str,
-            bool,
-            dict[str, Any] | None,
-            list[str],
-            dict[str, Any],
-            dict[str, float],
-        ]
-    ] = []
-    avoided: list[str] = []
-    query_tokens = _tokens(requirement.get("query"), requirement.get("objective"))
-    proposal_bonus_ids = set(proposed)
-    # Execution-contract enforcement is explicit at the selector boundary.
-    # Semantic MissionPlan requirements are enriched by proposal_requirements();
-    # legacy/deterministic requirements remain backward compatible until their
-    # planner supplies a typed execution contract.
     required_operations = tuple(
         str(item).strip()
         for item in (requirement.get("required_operations") or ())
+        if str(item).strip()
+    )
+    required_effects = tuple(
+        str(item).strip()
+        for item in (requirement.get("required_effects") or ())
+        if str(item).strip()
+    )
+    required_surfaces = tuple(
+        str(item).strip()
+        for item in (requirement.get("required_surfaces") or ())
+        if str(item).strip()
+    )
+    required_output_contract_ids = tuple(
+        str(item).strip()
+        for item in (
+            requirement.get("required_output_contract_ids") or ()
+        )
         if str(item).strip()
     )
     required_functional_role = str(
@@ -2226,20 +2326,260 @@ def select_capability_for_requirement(
         "required_operations": list(required_operations),
     })
     legacy_untyped_requirement = bool(
-        not required_operations
+        not typed_requirement
+        and not required_operations
         and required_functional_role in {"", "GENERAL"}
         and not required_execution_kind
     )
+    explicit_required_side_effect = str(
+        requirement.get("required_side_effect_class") or ""
+    ).strip().upper()
+    if explicit_required_side_effect:
+        required_side_effect = explicit_required_side_effect
+    else:
+        declared_side_effect = effective_required_side_effect_class(
+            task_class=str(requirement.get("task_class") or ""),
+            declared=str(
+                requirement.get("risk_side_effect_class") or "READ_ONLY"
+            ),
+        )
+        required_side_effect = (
+            execution_side_effect_class(
+                declared_side_effect,
+                required_operations,
+            )
+            if required_operations
+            else declared_side_effect
+        )
+    declared_candidate_requirement = str(
+        requirement.get("candidate_requirement")
+        or _candidate_requirement_for_task(
+            task_class=str(requirement.get("task_class") or ""),
+            declared=str(
+                requirement.get("risk_side_effect_class") or "READ_ONLY"
+            ),
+            dependencies=requirement.get("dependencies") or (),
+        )
+    ).strip().upper()
+    candidate_requirement = (
+        execution_candidate_requirement(
+            declared_candidate_requirement,
+            required_operations,
+        )
+        if required_operations
+        else declared_candidate_requirement
+    )
+    if candidate_requirement not in {
+        "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
+    }:
+        raise ValueError("candidate_requirement is invalid")
+
+    avoided: list[str] = []
+    hard_rejected: list[dict[str, Any]] = []
+    contract_valid: list[dict[str, Any]] = []
+
+    def reject(
+        capability_id: str,
+        reasons: list[dict[str, str]],
+        *,
+        record: Any | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "capability_id": capability_id,
+            "hard_contract_fail": True,
+            "reasons": [dict(item) for item in reasons],
+        }
+        if record is not None:
+            entry["capability_contract_digest"] = (
+                capability_contract_digest(record)
+            )
+        hard_rejected.append(entry)
+        for item in reasons:
+            avoided.append(
+                f"{capability_id}:{item['code']}:{item['detail']}"
+            )
 
     for ordinal, capability_id in enumerate(ordered_ids):
         if capability_id in _EXECUTION_TOPOLOGY_CAPABILITY_IDS:
-            avoided.append(
-                f"{capability_id}:execution-topology-not-task-capability"
+            reject(
+                capability_id,
+                [{
+                    "code": "MISSION_TASK_PARTITION_MISMATCH",
+                    "detail": "execution-topology-not-task-capability",
+                }],
             )
             continue
         record = _profiled_registry_get(capability_id)
-        if record is None or record.capability_type == "PROVIDER":
+        if record is None:
+            reject(
+                capability_id,
+                [{
+                    "code": "REGISTRY_RECORD_MISSING",
+                    "detail": "capability-id-not-present-in-runtime-registry",
+                }],
+            )
             continue
+        if record.capability_type == "PROVIDER":
+            reject(
+                capability_id,
+                [{
+                    "code": "MISSION_TASK_PARTITION_MISMATCH",
+                    "detail": "provider-record-is-not-task-capability",
+                }],
+                record=record,
+            )
+            continue
+        if not record.execution_enabled:
+            reject(
+                capability_id,
+                [{
+                    "code": "CAPABILITY_NOT_EXECUTION_ENABLED",
+                    "detail": "registry-record-not-executable",
+                }],
+                record=record,
+            )
+            continue
+
+        reasons: list[dict[str, str]] = []
+        if effective_action not in record.allowed_actions:
+            reasons.append({
+                "code": "ACTION_MISMATCH",
+                "detail": (
+                    f"required={effective_action}:"
+                    f"supported={','.join(record.allowed_actions)}"
+                ),
+            })
+
+        role_rejection = functional_role_rejection(
+            record,
+            required_functional_role,
+        )
+        if role_rejection:
+            reasons.append({
+                "code": "FUNCTIONAL_ROLE_MISMATCH",
+                "detail": role_rejection,
+            })
+
+        kind_rejection = execution_kind_rejection(
+            record,
+            required_execution_kind,
+        )
+        if kind_rejection:
+            reasons.append({
+                "code": "EXECUTION_KIND_MISMATCH",
+                "detail": kind_rejection,
+            })
+
+        effect_rejection = capability_required_effects_rejection(
+            record,
+            required_effects,
+        )
+        if effect_rejection:
+            reasons.append({
+                "code": "REQUIRED_EFFECT_MISMATCH",
+                "detail": effect_rejection,
+            })
+
+        surface_rejection = capability_required_surfaces_rejection(
+            record,
+            required_surfaces,
+        )
+        if surface_rejection:
+            reasons.append({
+                "code": "SURFACE_MISMATCH",
+                "detail": surface_rejection,
+            })
+
+        domain_rejection = _record_domain_rejection(
+            record,
+            requirement,
+        )
+        if domain_rejection:
+            reasons.append({
+                "code": "DOMAIN_MISMATCH",
+                "detail": domain_rejection,
+            })
+
+        semantic_contract_rejection = _semantic_task_contract_rejection(
+            record,
+            requirement,
+        )
+        if semantic_contract_rejection:
+            reasons.append({
+                "code": "SEMANTIC_CONTRACT_MISMATCH",
+                "detail": semantic_contract_rejection,
+            })
+
+        output_rejection = capability_output_contract_rejection(
+            record,
+            required_output_contract_ids,
+        )
+        if output_rejection:
+            reasons.append({
+                "code": "OUTPUT_CONTRACT_MISMATCH",
+                "detail": output_rejection,
+            })
+
+        contract_rejection = capability_execution_contract_rejection(
+            record,
+            required_operations,
+        )
+        if contract_rejection:
+            reasons.append({
+                "code": "REQUIRED_OPERATION_MISMATCH",
+                "detail": contract_rejection,
+            })
+
+        if not registry_executor_is_task_adapter_compatible(
+            record.executor_binding
+        ):
+            reasons.append({
+                "code": "EXECUTOR_BINDING_MISMATCH",
+                "detail": "task-adapter-incompatible",
+            })
+
+        if (
+            required_operations
+            and CAN_SEMANTIC_REASONING not in required_operations
+            and str(getattr(record, "health_policy", "") or "")
+            == "SEMANTIC_PROVIDER_REQUIRED"
+        ):
+            reasons.append({
+                "code": "EXECUTION_KIND_MISMATCH",
+                "detail": "semantic-provider-unnecessary-for-contract",
+            })
+
+        side_effect_rejection = capability_side_effect_class_rejection(
+            record,
+            required_side_effect,
+        )
+        if side_effect_rejection:
+            reasons.append({
+                "code": "SIDE_EFFECT_AUTHORIZATION_MISMATCH",
+                "detail": side_effect_rejection,
+            })
+
+        mutation_capable = _record_is_mutation_capable(record)
+        if (
+            candidate_requirement in {"REQUIRED", "CONDITIONAL"}
+            and not mutation_capable
+        ):
+            reasons.append({
+                "code": "CANDIDATE_SEMANTICS_MISMATCH",
+                "detail": (
+                    "candidate-semantics-insufficient:"
+                    f"{candidate_requirement.casefold()}"
+                ),
+            })
+        if (
+            candidate_requirement == "NOT_APPLICABLE"
+            and mutation_capable
+        ):
+            reasons.append({
+                "code": "CANDIDATE_SEMANTICS_MISMATCH",
+                "detail": "candidate-semantics-exceeds:not-applicable",
+            })
+
         incident_subject = _incident_subject_capability(context)
         if (
             incident_subject
@@ -2247,250 +2587,55 @@ def select_capability_for_requirement(
             and _incident_diagnostic_requirement(requirement)
             and not _incident_reproduction_requested(requirement)
         ):
-            avoided.append(
-                f"{capability_id}:incident-subject-cannot-self-diagnose"
-            )
-            continue
-        if not _record_domain_compatible(record, requirement):
-            avoided.append(
-                f"{capability_id}:task-domain-incompatible:"
-                f"task_family={requirement['task_family']}:"
-                f"capability_domain={record.domain}"
-            )
-            continue
-        if not record.execution_enabled or effective_action not in record.allowed_actions:
-            continue
-        semantic_contract_rejection = _semantic_task_contract_rejection(
-            record,
-            requirement,
-        )
-        if semantic_contract_rejection:
-            avoided.append(
-                f"{capability_id}:{semantic_contract_rejection}"
-            )
-            continue
-        role_rejection = functional_role_rejection(
-            record,
-            required_functional_role,
-        )
-        if role_rejection:
-            avoided.append(
-                f"{capability_id}:{role_rejection}"
-            )
-            continue
-        kind_rejection = execution_kind_rejection(
-            record,
-            required_execution_kind,
-        )
-        if kind_rejection:
-            avoided.append(
-                f"{capability_id}:{kind_rejection}"
-            )
-            continue
-        if not registry_executor_is_task_adapter_compatible(
-            record.executor_binding
-        ):
-            avoided.append(
-                f"{capability_id}:task-adapter-incompatible"
-            )
-            continue
-        contract_rejection = capability_execution_contract_rejection(
-            record, required_operations
-        )
-        if contract_rejection:
-            avoided.append(f"{capability_id}:{contract_rejection}")
-            continue
-        if (
-            required_operations
-            and CAN_SEMANTIC_REASONING not in required_operations
-            and str(getattr(record, "health_policy", "") or "")
-            == "SEMANTIC_PROVIDER_REQUIRED"
-        ):
-            avoided.append(
-                f"{capability_id}:semantic-provider-unnecessary-for-contract"
-            )
-            continue
-        explicit_required_side_effect = str(
-            requirement.get("required_side_effect_class") or ""
-        ).strip().upper()
-        if explicit_required_side_effect:
-            required_side_effect = explicit_required_side_effect
-        else:
-            declared_side_effect = effective_required_side_effect_class(
-                task_class=str(requirement.get("task_class") or ""),
-                declared=str(
-                    requirement.get("risk_side_effect_class") or "READ_ONLY"
-                ),
-            )
-            required_side_effect = (
-                execution_side_effect_class(
-                    declared_side_effect,
-                    required_operations,
-                )
-                if required_operations
-                else declared_side_effect
-            )
-        record_side_effect = str(
-            getattr(record, "side_effect_class", "READ_ONLY") or "READ_ONLY"
-        ).upper()
-        mutation_capable = _record_is_mutation_capable(record)
-        declared_candidate_requirement = str(
-            requirement.get("candidate_requirement")
-            or _candidate_requirement_for_task(
-                task_class=str(requirement.get("task_class") or ""),
-                declared=str(
-                    requirement.get("risk_side_effect_class") or "READ_ONLY"
-                ),
-                dependencies=requirement.get("dependencies") or (),
-            )
-        ).strip().upper()
-        candidate_requirement = (
-            execution_candidate_requirement(
-                declared_candidate_requirement,
-                required_operations,
-            )
-            if required_operations
-            else declared_candidate_requirement
-        )
-        if candidate_requirement not in {
-            "REQUIRED", "CONDITIONAL", "NOT_APPLICABLE"
-        }:
-            raise ValueError("candidate_requirement is invalid")
-        if required_side_effect in {"BOUNDED_MUTATION", "MUTATING"} and not mutation_capable:
-            avoided.append(
-                f"{capability_id}:side-effect-insufficient:{record_side_effect.casefold()}"
-            )
-            continue
-        if required_side_effect == "READ_ONLY" and mutation_capable:
-            avoided.append(
-                f"{capability_id}:side-effect-exceeds:read-only"
-            )
-            continue
-        if (
-            candidate_requirement in {"REQUIRED", "CONDITIONAL"}
-            and not mutation_capable
-        ):
-            avoided.append(
-                f"{capability_id}:candidate-semantics-insufficient:"
-                f"{candidate_requirement.casefold()}"
-            )
-            continue
-        if candidate_requirement == "NOT_APPLICABLE" and mutation_capable:
-            avoided.append(
-                f"{capability_id}:candidate-semantics-exceeds:not-applicable"
-            )
-            continue
-        failure = _capability_failure_memory(capability_id, context=context)
-        if failure is not None:
-            avoided.append(
-                str(failure.get("failure_pattern") or capability_id)
-            )
-            continue
-        health = _profiled_capability_health(capability_id).to_dict()
-        health_state = str(health.get("state") or "UNKNOWN")
-        if health_state in {"BLOCKED", "QUARANTINED"}:
-            avoided.append(
-                f"{capability_id}:health:{health_state.casefold()}"
-            )
+            reasons.append({
+                "code": "INCIDENT_SUBJECT_SELF_DIAGNOSIS_FORBIDDEN",
+                "detail": "incident-subject-cannot-self-diagnose",
+            })
+
+        if reasons:
+            reject(capability_id, reasons, record=record)
             continue
 
-        metadata_text = " ".join([
-            record.capability_id,
-            record.domain,
-            record.implementation,
-            " ".join(record.policy_tags),
-            record.input_contract,
-            record.output_contract,
-        ])
-        overlap = len(query_tokens & _tokens(metadata_text))
-        lexical = min(5.0, float(overlap) * 0.55)
-        discovery_bonus = 0.0
-        proposal_bonus = (
-            6.0
-            if legacy_untyped_requirement
-            and capability_id in proposal_bonus_ids
-            else 0.35
-            if capability_id in proposal_bonus_ids
-            else 0.0
-        )
-        competence_score, competence_used, competence = _competence_score(
-            record,
-            requirement=requirement,
+        failure = _capability_failure_memory(
+            capability_id,
             context=context,
         )
-        supported_operations = {
-            str(item).strip()
-            for item in getattr(record, "execution_operations", ()) or ()
-            if str(item).strip()
-        }
-        required_operation_set = set(required_operations)
-        excess_operations = supported_operations - required_operation_set
-        least_privilege_penalty = min(
-            1.5,
-            0.15 * float(len(excess_operations)),
-        )
-        duplicate_penalty = 1.25 if capability_id in used else 0.0
-        cost_class = str(record.cost_class or "").upper()
-        latency_class = str(record.latency_class or "").upper()
-        registry_cost_penalty = 0.0 if any(
-            marker in cost_class
-            for marker in ("FREE", "LOCAL", "NONE", "ZERO")
-        ) else (1.25 if cost_class not in {"", "UNKNOWN"} else 0.35)
-        registry_latency_penalty = (
-            0.9
-            if any(marker in latency_class for marker in ("REMOTE", "EXTERNAL", "HEAVY"))
-            else (0.25 if latency_class in {"", "UNKNOWN"} else 0.0)
-        )
-        side_effect_penalty = 0.0
-        if (
-            str(requirement.get("risk_side_effect_class") or "").upper() == "READ_ONLY"
-            and record.side_effects
-        ):
-            side_effect_penalty = 1.5
-        health_penalty = (
-            1.35 if health_state == "DEGRADED"
-            else 0.65 if health_state == "UNKNOWN"
-            else 0.0
-        )
-        components = {
-            "semantic_overlap": lexical,
-            "registry_discovery": discovery_bonus,
-            "proposal_hint": proposal_bonus,
-            "competence": competence_score,
-            "least_privilege": -least_privilege_penalty,
-            "duplicate_penalty": -duplicate_penalty,
-            "registry_cost": -registry_cost_penalty,
-            "registry_latency": -registry_latency_penalty,
-            "side_effect": -side_effect_penalty,
-            "health": -health_penalty,
-        }
-        total = sum(components.values())
-        reasons = [
-            f"semantic_overlap={overlap}",
-            f"registry_discovery_bonus={discovery_bonus:.3f}",
-            f"discovery_ordinal_tiebreak={ordinal}",
-            f"proposal_hint_bonus={proposal_bonus:.3f}",
-            f"competence_score={competence_score:.3f}",
-            f"least_privilege_penalty={least_privilege_penalty:.3f}",
-            f"excess_operations={','.join(sorted(excess_operations)) or 'NONE'}",
-            f"duplicate_penalty={duplicate_penalty:.3f}",
-            f"registry_cost_penalty={registry_cost_penalty:.3f}",
-            f"registry_latency_penalty={registry_latency_penalty:.3f}",
-            f"side_effect_penalty={side_effect_penalty:.3f}",
-            f"health_state={health_state}",
-            f"health_penalty={health_penalty:.3f}",
-        ]
-        ranked.append((
-            total,
-            capability_id,
-            competence_used,
-            competence,
-            reasons,
-            health,
-            components,
-        ))
+        if failure is not None:
+            reject(
+                capability_id,
+                [{
+                    "code": "FAILURE_MEMORY_HARD_BLOCK",
+                    "detail": str(
+                        failure.get("failure_pattern") or capability_id
+                    ),
+                }],
+                record=record,
+            )
+            continue
 
-    if not ranked:
+        health = _profiled_capability_health(
+            capability_id
+        ).to_dict()
+        health_state = str(health.get("state") or "UNKNOWN")
+        if health_state in {"BLOCKED", "QUARANTINED"}:
+            reject(
+                capability_id,
+                [{
+                    "code": "HEALTH_HARD_FAIL",
+                    "detail": f"state={health_state}",
+                }],
+                record=record,
+            )
+            continue
+
+        contract_valid.append({
+            "capability_id": capability_id,
+            "record": record,
+            "health": health,
+            "ordinal": ordinal,
+        })
+
+    if not contract_valid:
         bounded_avoided = list(dict.fromkeys(avoided))[:12]
         raise RuntimeError(
             "no healthy Registry capability for task_class="
@@ -2502,16 +2647,286 @@ def select_capability_for_requirement(
             + "; avoided="
             + "|".join(bounded_avoided)
         )
-    ranked.sort(key=lambda item: (-item[0], item[1]))
-    (
-        best_score,
-        capability_id,
-        competence_used,
-        competence,
-        reasons,
-        selected_health,
-        score_components,
-    ) = ranked[0]
+
+    query_tokens = _tokens(
+        requirement.get("query"),
+        requirement.get("objective"),
+    )
+    proposal_bonus_ids = set(proposed)
+    ranked: list[
+        tuple[
+            float,
+            str,
+            bool,
+            dict[str, Any] | None,
+            list[str],
+            dict[str, Any],
+            dict[str, float],
+        ]
+    ] = []
+
+    if len(contract_valid) == 1:
+        selected_row = contract_valid[0]
+        capability_id = str(selected_row["capability_id"])
+        competence_used = False
+        competence = None
+        selected_health = dict(selected_row["health"])
+        best_score = 0.0
+        score_components = {"hard_contract_valid": 1.0}
+        reasons = ["single_contract_valid_candidate"]
+        soft_ranked_candidates: tuple[dict[str, Any], ...] = ()
+        top_candidates = [{
+            "capability_id": capability_id,
+            "score": best_score,
+            "competence_used": False,
+            "health_state": selected_health.get("state"),
+            "sample_size": 0,
+            "confidence_adjusted_success": None,
+            "score_components": score_components,
+        }]
+        selection_reason = "SINGLE_CONTRACT_VALID_CANDIDATE"
+    else:
+        for row in contract_valid:
+            capability_id = str(row["capability_id"])
+            record = row["record"]
+            health = dict(row["health"])
+            ordinal = int(row["ordinal"])
+            health_state = str(health.get("state") or "UNKNOWN")
+            metadata_text = " ".join([
+                record.capability_id,
+                record.domain,
+                record.implementation,
+                " ".join(record.policy_tags),
+                record.input_contract,
+                record.output_contract,
+            ])
+            overlap = len(query_tokens & _tokens(metadata_text))
+            lexical = min(5.0, float(overlap) * 0.55)
+            discovery_bonus = 0.0
+            proposal_bonus = (
+                6.0
+                if legacy_untyped_requirement
+                and capability_id in proposal_bonus_ids
+                else 0.35
+                if capability_id in proposal_bonus_ids
+                else 0.0
+            )
+            competence_score, competence_was_used, competence_row = (
+                _competence_score(
+                    record,
+                    requirement=requirement,
+                    context=context,
+                )
+            )
+            supported_operations = {
+                str(item).strip()
+                for item in (
+                    getattr(record, "execution_operations", ()) or ()
+                )
+                if str(item).strip()
+            }
+            supported_effects = {
+                str(item).strip()
+                for item in (
+                    getattr(record, "execution_effects", ()) or ()
+                )
+                if str(item).strip()
+            }
+            supported_surfaces = {
+                str(item).strip()
+                for item in (
+                    getattr(record, "execution_surfaces", ()) or ()
+                )
+                if str(item).strip()
+            }
+            excess_operations = (
+                supported_operations - set(required_operations)
+            )
+            excess_effects = supported_effects - set(required_effects)
+            excess_surfaces = (
+                supported_surfaces - set(required_surfaces)
+            )
+            least_privilege_penalty = min(
+                2.0,
+                0.15 * float(len(excess_operations))
+                + 0.25 * float(len(excess_effects))
+                + 0.15 * float(len(excess_surfaces)),
+            )
+            duplicate_penalty = (
+                1.25 if capability_id in used else 0.0
+            )
+            cost_class = str(record.cost_class or "").upper()
+            latency_class = str(record.latency_class or "").upper()
+            registry_cost_penalty = 0.0 if any(
+                marker in cost_class
+                for marker in ("FREE", "LOCAL", "NONE", "ZERO")
+            ) else (
+                1.25
+                if cost_class not in {"", "UNKNOWN"}
+                else 0.35
+            )
+            registry_latency_penalty = (
+                0.9
+                if any(
+                    marker in latency_class
+                    for marker in ("REMOTE", "EXTERNAL", "HEAVY")
+                )
+                else (
+                    0.25
+                    if latency_class in {"", "UNKNOWN"}
+                    else 0.0
+                )
+            )
+            health_penalty = (
+                1.35
+                if health_state == "DEGRADED"
+                else 0.65
+                if health_state == "UNKNOWN"
+                else 0.0
+            )
+            components = {
+                "semantic_overlap": lexical,
+                "registry_discovery": discovery_bonus,
+                "proposal_hint": proposal_bonus,
+                "competence": competence_score,
+                "least_privilege": -least_privilege_penalty,
+                "duplicate_penalty": -duplicate_penalty,
+                "registry_cost": -registry_cost_penalty,
+                "registry_latency": -registry_latency_penalty,
+                "side_effect": 0.0,
+                "health": -health_penalty,
+            }
+            total = sum(components.values())
+            rank_reasons = [
+                f"semantic_overlap={overlap}",
+                f"registry_discovery_bonus={discovery_bonus:.3f}",
+                f"discovery_ordinal_tiebreak={ordinal}",
+                f"proposal_hint_bonus={proposal_bonus:.3f}",
+                f"competence_score={competence_score:.3f}",
+                (
+                    "least_privilege_penalty="
+                    f"{least_privilege_penalty:.3f}"
+                ),
+                (
+                    "excess_operations="
+                    + (
+                        ",".join(sorted(excess_operations))
+                        or "NONE"
+                    )
+                ),
+                (
+                    "excess_effects="
+                    + (",".join(sorted(excess_effects)) or "NONE")
+                ),
+                (
+                    "excess_surfaces="
+                    + (
+                        ",".join(sorted(excess_surfaces))
+                        or "NONE"
+                    )
+                ),
+                f"duplicate_penalty={duplicate_penalty:.3f}",
+                f"registry_cost_penalty={registry_cost_penalty:.3f}",
+                (
+                    "registry_latency_penalty="
+                    f"{registry_latency_penalty:.3f}"
+                ),
+                f"health_state={health_state}",
+                f"health_penalty={health_penalty:.3f}",
+            ]
+            ranked.append((
+                total,
+                capability_id,
+                competence_was_used,
+                competence_row,
+                rank_reasons,
+                health,
+                components,
+            ))
+
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        (
+            best_score,
+            capability_id,
+            competence_used,
+            competence,
+            reasons,
+            selected_health,
+            score_components,
+        ) = ranked[0]
+        soft_ranked_candidates = tuple(
+            {
+                "capability_id": item[1],
+                "score": item[0],
+            }
+            for item in ranked
+        )
+        top_candidates = [
+            {
+                "capability_id": item[1],
+                "score": item[0],
+                "competence_used": item[2],
+                "health_state": item[5].get("state"),
+                "sample_size": int(
+                    (item[3] or {}).get("tested_cases") or 0
+                ),
+                "confidence_adjusted_success": (
+                    (item[3] or {}).get(
+                        "confidence_adjusted_success"
+                    )
+                ),
+                "score_components": item[6],
+            }
+            for item in ranked[:5]
+        ]
+        selection_reason = (
+            "SOFT_RANKING_AMONG_CONTRACT_VALID_CANDIDATES"
+        )
+
+    valid_ids = tuple(
+        str(row["capability_id"]) for row in contract_valid
+    )
+    contract_digests = {
+        str(row["capability_id"]): capability_contract_digest(
+            row["record"]
+        )
+        for row in contract_valid
+    }
+    selected_contract_digest = contract_digests[capability_id]
+    proposal_preserved = capability_id in proposal_bonus_ids
+    proposal_substituted = bool(
+        proposed and not proposal_preserved
+    )
+    requirement_digest = resolution_requirement_digest(requirement)
+    equivalence_proof = (
+        build_contract_equivalence_proof(
+            requirement_digest=requirement_digest,
+            selected_capability_id=capability_id,
+            selected_contract_digest=selected_contract_digest,
+            proposal_candidates=tuple(proposed),
+            contract_valid_candidates=valid_ids,
+            contract_digests=contract_digests,
+        )
+        if proposal_substituted
+        else None
+    )
+    receipt = CapabilityResolutionReceipt(
+        requirement_digest=requirement_digest,
+        candidate_universe_ref=candidate_universe_ref(ordered_ids),
+        candidate_partition_source=candidate_partition_source,
+        candidate_universe_size=len(ordered_ids),
+        hard_rejected_candidates=tuple(hard_rejected),
+        contract_valid_candidates=valid_ids,
+        soft_ranked_candidates=soft_ranked_candidates,
+        selected_capability_id=capability_id,
+        selected_capability_contract_digest=selected_contract_digest,
+        proposal_candidates=tuple(proposed),
+        proposal_preserved=proposal_preserved,
+        proposal_substituted=proposal_substituted,
+        selection_reason=selection_reason,
+        contract_equivalence_proof=equivalence_proof,
+    ).to_dict()
+
     selection = {
         "task_id": requirement.get("task_id"),
         "task_class": requirement.get("task_class"),
@@ -2519,15 +2934,34 @@ def select_capability_for_requirement(
         "required_functional_role": required_functional_role,
         "required_execution_kind": required_execution_kind,
         "legacy_untyped_requirement": legacy_untyped_requirement,
-        "mission_policy_class": requirement.get("mission_policy_class"),
+        "typed_requirement": typed_requirement,
+        "mission_policy_class": requirement.get(
+            "mission_policy_class"
+        ),
         "required_operations": list(required_operations),
-        "risk_side_effect_class": requirement.get("risk_side_effect_class"),
+        "required_effects": list(required_effects),
+        "required_surfaces": list(required_surfaces),
+        "required_output_contract_ids": list(
+            required_output_contract_ids
+        ),
+        "required_side_effect_class": required_side_effect,
+        "risk_side_effect_class": requirement.get(
+            "risk_side_effect_class"
+        ),
         "selected_capability_id": capability_id,
+        "selected_capability_contract_digest": (
+            selected_contract_digest
+        ),
         "declared_action": requirement.get("declared_action"),
         "effective_action": effective_action,
         "task_family": requirement.get("task_family"),
         "selected_domain": str(
-            getattr(_profiled_registry_get(capability_id), "domain", "") or ""
+            getattr(
+                _profiled_registry_get(capability_id),
+                "domain",
+                "",
+            )
+            or ""
         ),
         "selected_execution_kind": str(
             getattr(
@@ -2545,27 +2979,24 @@ def select_capability_for_requirement(
         "failure_memory_used": False,
         "discovery_order_functional_weight": 0.0,
         "least_privilege_selection": True,
-        "failure_memory_avoided": list(dict.fromkeys(avoided)),
-        "proposal_candidates": proposed,
-        "harness_substituted_proposal": bool(
-            proposed and capability_id not in proposal_bonus_ids
+        "failure_memory_avoided": list(
+            dict.fromkeys(avoided)
         ),
+        "proposal_candidates": proposed,
+        "harness_substituted_proposal": proposal_substituted,
         "selection_reasons": reasons,
-        "top_candidates": [
-            {
-                "capability_id": item[1],
-                "score": item[0],
-                "competence_used": item[2],
-                "health_state": item[5].get("state"),
-                "sample_size": (
-                    int((item[3] or {}).get("tested_cases") or 0)
-                ),
-                "confidence_adjusted_success": (
-                    (item[3] or {}).get("confidence_adjusted_success")
-                ),
-                "score_components": item[6],
-            }
-            for item in ranked[:5]
-        ],
+        "top_candidates": top_candidates,
+        "contract_valid_count": len(valid_ids),
+        "hard_rejected_candidates": hard_rejected,
+        "soft_ranking_executed": bool(
+            soft_ranked_candidates
+        ),
+        "capability_resolution_receipt": receipt,
     }
-    return capability_id, competence_used, tuple(dict.fromkeys(avoided)), selection
+    return (
+        capability_id,
+        competence_used,
+        tuple(dict.fromkeys(avoided)),
+        selection,
+    )
+
