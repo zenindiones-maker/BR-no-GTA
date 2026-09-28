@@ -369,11 +369,42 @@ def _connection_identity_redacted(connection_id: str) -> str:
 
 
 def _parse_json_object(raw: str) -> dict[str, Any] | list[Any] | None:
-    try:
-        payload = json.loads(str(raw or "").strip())
-    except json.JSONDecodeError:
+    text = str(raw or "").strip()
+    if not text:
         return None
-    return payload if isinstance(payload, (dict, list)) else None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, (dict, list)):
+        return payload
+
+    # OmniRoute CLI commands may emit a diagnostic line before their documented
+    # JSON envelope. Recover exactly one complete top-level JSON document, but
+    # fail closed when stdout contains multiple candidate documents or only a
+    # nested fragment.
+    decoder = json.JSONDecoder()
+    candidates: list[dict[str, Any] | list[Any]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        leading = len(line) - len(line.lstrip())
+        stripped = line.lstrip()
+        if stripped.startswith(("{", "[")):
+            start = offset + leading
+            try:
+                candidate, consumed = decoder.raw_decode(text[start:])
+            except json.JSONDecodeError:
+                candidate = None
+                consumed = 0
+            if isinstance(candidate, (dict, list)):
+                suffix = text[start + consumed :].strip()
+                # A nested JSON fragment leaves structural punctuation from its
+                # parent behind; it is not a valid CLI receipt.
+                if not suffix or suffix[0] not in "}] ,":
+                    candidates.append(candidate)
+        offset += len(line)
+
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _connection_from_add_payload(
