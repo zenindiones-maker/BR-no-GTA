@@ -328,6 +328,23 @@ def _direct_canary(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _provider_connection_name(target: dict[str, Any]) -> str:
+    provider = str(target["omniroute_provider"]).strip()
+    seed = json.dumps(
+        {
+            "candidate_id": str(target.get("candidate_id") or ""),
+            "provider": provider,
+            "model": str(target.get("omniroute_model") or ""),
+            "credential_env": str(target.get("credential_env") or ""),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+    return f"harness-{provider}-{digest}"
+
+
 def _provider_add_command(target: dict[str, Any]) -> list[str]:
     provider = str(target["omniroute_provider"])
     return [
@@ -338,7 +355,7 @@ def _provider_add_command(target: dict[str, Any]) -> list[str]:
         "--credential-env",
         str(target["credential_env"]),
         "--name",
-        f"harness-{provider}",
+        _provider_connection_name(target),
         "--default-model",
         str(target["omniroute_model"]),
         "--yes",
@@ -351,35 +368,121 @@ def _connection_identity_redacted(connection_id: str) -> str:
     return "sha256:" + digest[:16]
 
 
+def _parse_json_object(raw: str) -> dict[str, Any] | list[Any] | None:
+    try:
+        payload = json.loads(str(raw or "").strip())
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, (dict, list)) else None
+
+
+def _connection_from_add_payload(
+    payload: dict[str, Any] | list[Any] | None,
+    *,
+    provider: str,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    nested = payload.get("connection")
+    candidates = [nested, payload]
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        connection_id = str(candidate.get("id") or "").strip()
+        candidate_provider = str(candidate.get("provider") or "").strip()
+        if (
+            connection_id
+            and (
+                not candidate_provider
+                or candidate_provider == provider
+            )
+        ):
+            return candidate
+    return None
+
+
+def _provider_list_rows(
+    payload: dict[str, Any] | list[Any] | None,
+) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        if isinstance(payload.get("providers"), list):
+            rows = payload["providers"]
+        elif isinstance(payload.get("connections"), list):
+            rows = payload["connections"]
+        else:
+            rows = []
+    else:
+        rows = []
+    return [item for item in rows if isinstance(item, dict)]
+
+
+def _reconcile_provider_connection(
+    *,
+    provider: str,
+    expected_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    listed = _run(["omniroute", "providers", "list", "--json"])
+    if listed.returncode != 0:
+        return None, "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING"
+    rows = _provider_list_rows(_parse_json_object(listed.stdout))
+    matches = [
+        row
+        for row in rows
+        if (
+            str(row.get("provider") or "").strip() == provider
+            and str(row.get("name") or "").strip() == expected_name
+            and str(row.get("id") or "").strip()
+        )
+    ]
+    if len(matches) > 1:
+        return None, "OMNIROUTE_PROVIDER_CONNECTION_AMBIGUOUS"
+    if len(matches) != 1:
+        return None, "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING"
+    return matches[0], None
+
+
 def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
+    provider = str(target["omniroute_provider"]).strip()
+    expected_name = _provider_connection_name(target)
     add = _run(_provider_add_command(target))
     if add.returncode != 0:
         return {
             "ok": False,
             "connection_id": None,
             "connection_identity_redacted": None,
+            "connection_id_source": None,
             "failure_class": "OMNIROUTE_PROVIDER_MATERIALIZATION_FAILURE",
         }
-    try:
-        payload = json.loads(add.stdout)
-    except json.JSONDecodeError:
-        return {
-            "ok": False,
-            "connection_id": None,
-            "connection_identity_redacted": None,
-            "failure_class": "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING",
-        }
-    connection = payload.get("connection") if isinstance(payload, dict) else None
-    connection_id = (
-        str(connection.get("id") or "").strip()
-        if isinstance(connection, dict)
-        else ""
+
+    connection = _connection_from_add_payload(
+        _parse_json_object(add.stdout),
+        provider=provider,
     )
+    connection_id_source = "PROVIDERS_ADD_JSON"
+    if connection is None:
+        connection, failure_class = _reconcile_provider_connection(
+            provider=provider,
+            expected_name=expected_name,
+        )
+        if connection is None:
+            return {
+                "ok": False,
+                "connection_id": None,
+                "connection_identity_redacted": None,
+                "connection_id_source": None,
+                "failure_class": failure_class,
+            }
+        connection_id_source = "PROVIDERS_LIST_RECONCILIATION"
+
+    connection_id = str(connection.get("id") or "").strip()
     if not connection_id:
         return {
             "ok": False,
             "connection_id": None,
             "connection_identity_redacted": None,
+            "connection_id_source": None,
             "failure_class": "OMNIROUTE_PROVIDER_CONNECTION_ID_MISSING",
         }
 
@@ -389,6 +492,7 @@ def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
             "ok": False,
             "connection_id": connection_id,
             "connection_identity_redacted": _connection_identity_redacted(connection_id),
+            "connection_id_source": connection_id_source,
             "failure_class": "OMNIROUTE_PROVIDER_VALIDATION_FAILURE",
         }
     test = _run(["omniroute", "providers", "test", connection_id, "--json"])
@@ -397,12 +501,14 @@ def _materialize_provider(target: dict[str, Any]) -> dict[str, Any]:
             "ok": False,
             "connection_id": connection_id,
             "connection_identity_redacted": _connection_identity_redacted(connection_id),
+            "connection_id_source": connection_id_source,
             "failure_class": "OMNIROUTE_PROVIDER_TEST_FAILURE",
         }
     return {
         "ok": True,
         "connection_id": connection_id,
         "connection_identity_redacted": _connection_identity_redacted(connection_id),
+        "connection_id_source": connection_id_source,
         "failure_class": None,
     }
 
