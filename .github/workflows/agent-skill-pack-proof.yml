@@ -18,6 +18,8 @@ on:
       - '.dsh/skills/caveman/**'
       - '.dsh/skills/video-edit/**'
       - 'tests/test_agent_skill_pack_contracts.py'
+      - 'tests/test_harness_ecosystem_inventory.py'
+      - 'scripts/audit_harness_ecosystem.py'
   workflow_dispatch:
 
 permissions:
@@ -65,5 +67,8 @@ jobs:
                   print(f"SKILL_DIGEST {entry.skill_id} {module.skill_tree_digest(local)}")
           PY
 
-      - name: Run agent skill pack contract tests
-        run: pytest -q tests/test_agent_skill_pack_contracts.py
+      - name: Run agent skill pack and inventory contract tests
+        run: |
+          pytest -q \
+            tests/test_agent_skill_pack_contracts.py \
+            tests/test_harness_ecosystem_inventory.py

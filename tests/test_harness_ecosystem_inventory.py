@@ -9,6 +9,7 @@ from app.services.harness_routing_policy_service import (
 )
 from scripts.audit_harness_ecosystem import (
     _masteragent_direct_entrypoint_safe,
+    audit,
     _runtime_identity_inventory,
     _worker_runner_identity,
     canonical_worker_engine_ids,
@@ -150,3 +151,32 @@ def test_native_gta6_agent_wording_does_not_claim_parallel_control_plane():
     assert "DeepSeek Harness é a única autoridade/control plane" in text
     assert "Você é o orquestrador de uma máquina editorial GTA6." not in text
     assert "O BR é a fonte de verdade operacional; você é o orquestrador." not in text
+
+
+def test_governed_agent_skill_pack_is_inventoried_without_capability_promotion():
+    result = audit()
+    rows = result["agent_skill_pack"]
+    expected = {"superpowers", "tdd", "teach", "caveman", "handoff", "video-edit"}
+
+    assert {row["SKILL_ID"] for row in rows} == expected
+    assert all(row["AUTHORITY"] == "NONE" for row in rows)
+    assert all(
+        row["IDENTITY_KIND"] in {"SKILL", "PROVIDER_SUPPORT"}
+        for row in rows
+    )
+    assert all(row["DIRECT_EXTERNAL_SIDE_EFFECTS"] is False for row in rows)
+    assert all(row["PROVENANCE_STATUS"] == "PASS" for row in rows)
+
+    capability_ids = {
+        row["CAPABILITY_ID"] for row in result["capabilities"]
+    }
+    assert expected.isdisjoint(capability_ids)
+
+    assert result["CONTROL_PLANE_COUNT"] == 1
+    assert result["CONTROL_PLANE_IDS"] == ["deepseek-harness"]
+    assert result["NATIVE_HARNESS_DECLARED_AGENT_COUNT"] == 1
+    assert result["REQUESTED_SKILLS_DISCOVERED"] is True
+    assert result["PINNED_PROVENANCE"] is True
+    assert result["CONTENT_DIGEST_VERIFIED"] is True
+    assert result["HARNESS_AUTHORITY_PRESERVED"] is True
+    assert result["NO_DIRECT_EXECUTION_BYPASS"] is True
